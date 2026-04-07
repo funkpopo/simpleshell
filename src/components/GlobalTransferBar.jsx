@@ -13,6 +13,7 @@ import {
   FileDownload,
   Folder,
   CheckCircle,
+  WarningAmber,
   Error as ErrorIcon,
   Cancel,
   Close,
@@ -20,6 +21,7 @@ import {
   ExpandMore,
 } from "@mui/icons-material";
 import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
+import { useTranslation } from "react-i18next";
 import { sumTransferFileCount } from "../utils/transferCounts.js";
 
 /**
@@ -62,10 +64,13 @@ const getTransferColor = (type) => {
  * 获取状态图标
  */
 const getStatusIcon = (transfer) => {
-  const { progress, isCancelled, error } = transfer;
+  const { progress, isCancelled, error, warning } = transfer;
 
   if (error) {
     return <ErrorIcon sx={{ fontSize: 14, color: "#f44336" }} />;
+  }
+  if (warning) {
+    return <WarningAmber sx={{ fontSize: 14, color: "#ff9800" }} />;
   }
   if (isCancelled) {
     return <Cancel sx={{ fontSize: 14, color: "#ff9800" }} />;
@@ -80,12 +85,16 @@ const getStatusIcon = (transfer) => {
  * 单个传输任务标签
  */
 const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
-  const { type, fileName, progress, isCancelled, error } = transfer;
+  const { t } = useTranslation();
+  const { type, fileName, progress, isCancelled, error, warning, statusText } =
+    transfer;
 
   const isCompleted = progress >= 100;
   const hasError = !!error;
+  const hasWarning = !!warning;
   const statusIcon = getStatusIcon(transfer);
   const showDelete = isCompleted || hasError || isCancelled;
+  const secondaryText = statusText || sshHost || "";
 
   return (
     <Chip
@@ -115,16 +124,29 @@ const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 fontSize: "0.75rem",
+                whiteSpace: "nowrap",
               }}
             >
-              {fileName || "传输中..."}
+              {fileName || t("fileManager.transfer.fallbackName")}
             </span>
-            {sshHost && (
+            {secondaryText && (
               <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>
-                {sshHost}
+                {secondaryText}
               </span>
             )}
           </Box>
+          {!showDelete && (
+            <span
+              style={{
+                fontSize: "0.7rem",
+                opacity: 0.8,
+                marginLeft: 4,
+                flexShrink: 0,
+              }}
+            >
+              {Math.round(progress || 0)}%
+            </span>
+          )}
           {showDelete && (
             <IconButton
               size="small"
@@ -159,28 +181,34 @@ const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
         paddingRight: showDelete ? 0.5 : undefined,
         backgroundColor: hasError
           ? "#ffebee"
-          : isCancelled
-            ? "#fff3e0"
-            : isCompleted
-              ? "#e8f5e8"
-              : `${getTransferColor(type)}15`,
+          : hasWarning
+            ? "#fff8e1"
+            : isCancelled
+              ? "#fff3e0"
+              : isCompleted
+                ? "#e8f5e8"
+                : `${getTransferColor(type)}15`,
         color: hasError
           ? "#f44336"
-          : isCancelled
+          : hasWarning
             ? "#ff9800"
-            : isCompleted
-              ? "#4caf50"
-              : getTransferColor(type),
+            : isCancelled
+              ? "#ff9800"
+              : isCompleted
+                ? "#4caf50"
+                : getTransferColor(type),
         cursor: "pointer",
         transition: "all 0.2s ease",
         "&:hover": {
           backgroundColor: hasError
             ? "#ffcdd2"
-            : isCancelled
-              ? "#ffe0b2"
-              : isCompleted
-                ? "#c8e6c9"
-                : `${getTransferColor(type)}30`,
+            : hasWarning
+              ? "#ffecb3"
+              : isCancelled
+                ? "#ffe0b2"
+                : isCompleted
+                  ? "#c8e6c9"
+                  : `${getTransferColor(type)}30`,
         },
         "& .MuiChip-label": {
           paddingLeft: 1,
@@ -199,6 +227,7 @@ TransferTag.displayName = "TransferTag";
  */
 const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { allTransfers, clearCompletedTransfers, removeTransferProgress } =
     useAllGlobalTransfers();
   const [sshHostMap, setSshHostMap] = useState({});
@@ -361,15 +390,17 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
         {/* 状态文本 */}
         <Box sx={{ fontSize: "0.75rem", color: theme.palette.text.secondary }}>
           {activeTransfers.length > 0
-            ? `进行中: ${activeFileCount}`
+            ? t("fileManager.transfer.activeCount", { count: activeFileCount })
             : completedCount > 0
-              ? `已完成: ${completedCount}`
+              ? t("fileManager.transfer.completedCount", {
+                  count: completedCount,
+                })
               : ""}
         </Box>
 
         {/* 清除已完成按钮 */}
         {completedCount > 0 && (
-          <Tooltip title="清除已完成">
+          <Tooltip title={t("fileManager.transfer.clearCompleted")}>
             <IconButton size="small" onClick={handleClearCompleted}>
               <Close sx={{ fontSize: 16 }} />
             </IconButton>
@@ -377,7 +408,13 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
         )}
 
         {/* 展开/收起详情按钮 */}
-        <Tooltip title={isFloatOpen ? "收起详情" : "查看详情"}>
+        <Tooltip
+          title={
+            isFloatOpen
+              ? t("fileManager.transfer.collapseDetails")
+              : t("fileManager.transfer.viewDetails")
+          }
+        >
           <IconButton
             size="small"
             onClick={() =>

@@ -71,6 +71,7 @@ const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
 const FILE_LIST_ROW_HEIGHT = 36;
 const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
 const FILE_LIST_OVERSCAN = 12;
+const FILE_MANAGER_PATH_HISTORY_LIMIT = 50;
 
 const FILE_LIST_ITEM_MIN_HEIGHT = 32;
 
@@ -171,6 +172,34 @@ const getParentPath = (targetPath) => {
   return normalizedPath.slice(0, lastSlashIndex);
 };
 
+const normalizeNavigationState = (navigationState, currentPath = "/") => {
+  const safeCurrentPath =
+    typeof currentPath === "string" && currentPath.trim() ? currentPath : "/";
+
+  let pathHistory = Array.isArray(navigationState?.pathHistory)
+    ? navigationState.pathHistory.filter(
+        (value) => typeof value === "string" && value.trim(),
+      )
+    : [];
+
+  if (pathHistory.length > FILE_MANAGER_PATH_HISTORY_LIMIT) {
+    pathHistory = pathHistory.slice(-FILE_MANAGER_PATH_HISTORY_LIMIT);
+  }
+
+  const currentPathIndex = pathHistory.lastIndexOf(safeCurrentPath);
+  if (currentPathIndex === -1) {
+    pathHistory = [...pathHistory, safeCurrentPath];
+    if (pathHistory.length > FILE_MANAGER_PATH_HISTORY_LIMIT) {
+      pathHistory = pathHistory.slice(-FILE_MANAGER_PATH_HISTORY_LIMIT);
+    }
+  }
+
+  return {
+    pathHistory,
+    historyIndex: pathHistory.lastIndexOf(safeCurrentPath),
+  };
+};
+
 const VirtualizedFileRow = memo(function VirtualizedFileRow({
   index,
   style,
@@ -260,11 +289,19 @@ const FileManager = memo(
     tabId,
     tabName,
     initialPath = "/",
+    navigationState,
     onPathChange,
+    onNavigationStateChange,
   }) => {
     const theme = useTheme();
     const { t } = useTranslation();
-    const [currentPath, setCurrentPath] = useState("/");
+    const normalizedInitialPath =
+      typeof initialPath === "string" && initialPath.trim() ? initialPath : "/";
+    const initialNavigationState = useMemo(
+      () => normalizeNavigationState(navigationState, normalizedInitialPath),
+      [navigationState, normalizedInitialPath],
+    );
+    const [currentPath, setCurrentPath] = useState(normalizedInitialPath);
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -350,7 +387,7 @@ const FileManager = memo(
     const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
     const [propertiesLoading, setPropertiesLoading] = useState(false);
     const [propertiesData, setPropertiesData] = useState(null);
-    const [pathInput, setPathInput] = useState("");
+    const [pathInput, setPathInput] = useState(normalizedInitialPath);
     const [transferCancelled, setTransferCancelled] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
     const [notification, setNotification] = useState(null);
@@ -359,8 +396,12 @@ const FileManager = memo(
     const [externalEditorEnabled, setExternalEditorEnabled] = useState(false);
     const [sortMode, setSortMode] = useState("name"); // "name" or "time"
     const [sortMenuAnchor, setSortMenuAnchor] = useState(null);
-    const [pathHistory, setPathHistory] = useState([]); // 路径历史记录
-    const [historyIndex, setHistoryIndex] = useState(-1); // 当前在历史记录中的位置
+    const [pathHistory, setPathHistory] = useState(
+      initialNavigationState.pathHistory,
+    ); // 路径历史记录
+    const [historyIndex, setHistoryIndex] = useState(
+      initialNavigationState.historyIndex,
+    ); // 当前在历史记录中的位置
     const pathHistoryRef = useRef(pathHistory);
     useEffect(() => {
       pathHistoryRef.current = pathHistory;
@@ -369,8 +410,18 @@ const FileManager = memo(
     useEffect(() => {
       historyIndexRef.current = historyIndex;
     }, [historyIndex]);
+    useEffect(() => {
+      if (!tabId || typeof onNavigationStateChange !== "function") {
+        return;
+      }
+
+      onNavigationStateChange(tabId, {
+        pathHistory,
+        historyIndex,
+      });
+    }, [tabId, pathHistory, historyIndex, onNavigationStateChange]);
     const skipInitialPathSyncRef = useRef(false);
-    const previousInitialPathRef = useRef(initialPath);
+    const previousInitialPathRef = useRef(normalizedInitialPath);
     const [isDragging, setIsDragging] = useState(false); // 拖拽状态
     const [, setDragCounter] = useState(0); // 拖拽计数器，用于处理子元素的dragenter/dragleave
     const selectedFileRef = useRef(selectedFile);
@@ -716,6 +767,167 @@ const FileManager = memo(
 
     // 清理所有传输任务
 
+    const normalizeExistsResponse = useCallback((result) => {
+      if (typeof result === "boolean") {
+        return result;
+      }
+
+      if (result && typeof result === "object") {
+        return result.exists === true;
+      }
+
+      return false;
+    }, []);
+
+    const revealDownloadedItem = useCallback(
+      async (targetPath) => {
+        if (!targetPath) {
+          return;
+        }
+
+        if (!window.terminalAPI?.showItemInFolder) {
+          showNotification(
+            t("fileManager.messages.openDownloadedLocationFailed", {
+              path: targetPath,
+            }),
+            "warning",
+          );
+          return;
+        }
+
+        try {
+          const response =
+            await window.terminalAPI.showItemInFolder(targetPath);
+          if (!response?.success) {
+            showNotification(
+              t("fileManager.messages.openDownloadedLocationFailed", {
+                path: targetPath,
+              }),
+              "warning",
+            );
+          }
+        } catch {
+          showNotification(
+            t("fileManager.messages.openDownloadedLocationFailed", {
+              path: targetPath,
+            }),
+            "warning",
+          );
+        }
+      },
+      [showNotification, t],
+    );
+
+    const showDownloadedLocationNotification = useCallback(
+      async ({
+        itemName,
+        downloadPath,
+        successMessage,
+        missingPathMessage,
+        severity = "success",
+        duration = 15000,
+      }) => {
+        const resolvedItemName = itemName || t("fileManager.fileTypes.file");
+        const normalizedPath =
+          typeof downloadPath === "string" && downloadPath.trim()
+            ? downloadPath.replace(/\//g, "\\")
+            : "";
+
+        if (!normalizedPath) {
+          showNotification(
+            successMessage ||
+              t("fileManager.messages.downloadCompleted", {
+                name: resolvedItemName,
+              }),
+            severity,
+            duration,
+          );
+          return;
+        }
+
+        let exists = true;
+        if (window.terminalAPI?.checkPathExists) {
+          try {
+            exists = normalizeExistsResponse(
+              await window.terminalAPI.checkPathExists(normalizedPath),
+            );
+          } catch {
+            exists = true;
+          }
+        }
+
+        if (!exists) {
+          showNotification(
+            missingPathMessage ||
+              t("fileManager.messages.downloadMissingPath", {
+                name: resolvedItemName,
+                path: normalizedPath,
+              }),
+            "warning",
+            10000,
+          );
+          return;
+        }
+
+        showNotification(
+          successMessage ||
+            t("fileManager.messages.downloadSavedToPath", {
+              name: resolvedItemName,
+              path: normalizedPath,
+            }),
+          severity,
+          duration,
+          true,
+          () => {
+            void revealDownloadedItem(normalizedPath);
+          },
+        );
+      },
+      [normalizeExistsResponse, revealDownloadedItem, showNotification, t],
+    );
+
+    const buildBatchDownloadStatusText = useCallback(
+      ({ processedFiles = 0, totalFiles = 0, currentFile = "" } = {}) => {
+        if (currentFile) {
+          return t("fileManager.transfer.status.downloadingFile", {
+            name: currentFile,
+          });
+        }
+
+        if (totalFiles > 1) {
+          const completedCount = Math.max(0, Number(processedFiles) || 0);
+          return t("fileManager.transfer.status.downloadingBatch", {
+            completed: Math.min(completedCount, totalFiles),
+            total: totalFiles,
+          });
+        }
+
+        return t("fileManager.transfer.status.downloading");
+      },
+      [t],
+    );
+
+    const buildFolderDownloadStatusText = useCallback(
+      ({ currentFile = "", processedFiles = 0, totalFiles = 0 } = {}) => {
+        if (currentFile) {
+          return t("fileManager.transfer.status.downloadingFile", {
+            name: currentFile,
+          });
+        }
+
+        if (totalFiles > 0) {
+          const completedCount = Math.max(0, Number(processedFiles) || 0);
+          return t("fileManager.transfer.status.processingFolder", {
+            completed: Math.min(completedCount, totalFiles),
+            total: totalFiles,
+          });
+        }
+
+        return t("fileManager.transfer.status.scanningRemoteFolder");
+      },
+      [t],
+    );
+
     // 检查错误消息是否与用户取消操作相关
     const isUserCancellationError = (error) => {
       // 检查错误对象
@@ -795,10 +1007,11 @@ const FileManager = memo(
       }
 
       // 使用记忆的路径或默认路径
-      const pathToLoad = initialPath || "/";
+      const pathToLoad = normalizedInitialPath;
       const isSamePath = pathToLoad === currentPathRef.current;
-      const initialPathChanged = previousInitialPathRef.current !== initialPath;
-      previousInitialPathRef.current = initialPath;
+      const initialPathChanged =
+        previousInitialPathRef.current !== normalizedInitialPath;
+      previousInitialPathRef.current = normalizedInitialPath;
 
       if (skipInitialPathSyncRef.current && initialPathChanged && isSamePath) {
         skipInitialPathSyncRef.current = false;
@@ -811,10 +1024,11 @@ const FileManager = memo(
       // 清空缓存
       directoryCacheRef.current.clear();
 
-      updateCurrentPath(pathToLoad);
+      currentPathRef.current = pathToLoad;
+      setCurrentPath(pathToLoad);
       setPathInput(pathToLoad);
-      loadDirectory(pathToLoad);
-    }, [open, sshConnection, tabId, initialPath]);
+      loadDirectory(pathToLoad, 0, false, true);
+    }, [open, sshConnection, tabId, normalizedInitialPath]);
 
     // 从缓存中获取目录内容
     // 增量目录加载 token（listFiles 首批响应返回）
@@ -1469,8 +1683,8 @@ const FileManager = memo(
           baseHistory[baseHistory.length - 1] !== path
         ) {
           nextHistory = [...baseHistory, path];
-          if (nextHistory.length > 50) {
-            nextHistory = nextHistory.slice(-50);
+          if (nextHistory.length > FILE_MANAGER_PATH_HISTORY_LIMIT) {
+            nextHistory = nextHistory.slice(-FILE_MANAGER_PATH_HISTORY_LIMIT);
           }
           nextIndex = nextHistory.length - 1;
         } else {
@@ -2976,7 +3190,6 @@ const FileManager = memo(
                 2000,
               );
             }
-
           } else if (!transferCancelled) {
             // 检查是否是取消操作相关的错误
             if (!isUserCancellationError(result)) {
@@ -3170,7 +3383,8 @@ const FileManager = memo(
             // 标记传输完成
             updateTransferProgress(transferId, {
               progress: 100,
-              fileName: result.message || "文件夹上传完成",
+              fileName:
+                result.message || t("fileManager.messages.uploadComplete"),
             });
 
             // 传输完成后延迟移除
@@ -3191,7 +3405,6 @@ const FileManager = memo(
                 2000,
               );
             }
-
           } else if (!transferCancelled) {
             // 检查是否是取消操作相关的错误
             if (!isUserCancellationError(result)) {
@@ -3893,7 +4106,8 @@ const FileManager = memo(
                 typeof item.file?.path === "string" ? item.file.path : "";
               if (!localPath && window.terminalAPI?.getPathForFile) {
                 try {
-                  localPath = window.terminalAPI.getPathForFile(item.file) || "";
+                  localPath =
+                    window.terminalAPI.getPathForFile(item.file) || "";
                 } catch {
                   localPath = "";
                 }
@@ -4371,112 +4585,175 @@ const FileManager = memo(
       const filesToDownload = getSelectedFiles().filter((f) => !f.isDirectory);
       if (filesToDownload.length === 0 || !sshConnection) return;
 
-      // 重置取消状态
       setTransferCancelled(false);
-
-      // 保存当前路径状态
       const savedCurrentPath = currentPath;
 
       if (filesToDownload.length === 1) {
-        // 单文件下载 - 保持原有逻辑
         const savedSelectedFile = filesToDownload[0];
+        let activeDownloadTransferId = null;
 
         try {
           const fullPath = joinPath(savedCurrentPath, savedSelectedFile.name);
 
-          if (window.terminalAPI && window.terminalAPI.downloadFile) {
-            // 创建新的下载传输任务
-            const transferId = addTransferProgress({
-              type: "download",
-              progress: 0,
-              fileName: savedSelectedFile.name,
-              transferredBytes: 0,
-              totalBytes: savedSelectedFile.size || 0,
-              transferSpeed: 0,
-              remainingTime: 0,
-              processedFiles: 0,
-              totalFiles: 1,
+          if (!window.terminalAPI?.downloadFile) {
+            throw new Error(t("fileManager.errors.fileApiNotAvailable"));
+          }
+
+          showNotification(
+            t("fileManager.messages.startDownloadNamed", {
+              name: savedSelectedFile.name,
+            }),
+            "info",
+            2000,
+          );
+
+          const transferId = addTransferProgress({
+            type: "download",
+            progress: 0,
+            fileName: savedSelectedFile.name,
+            statusText: t("fileManager.transfer.status.waitingForSaveLocation"),
+            currentFile: savedSelectedFile.name,
+            transferredBytes: 0,
+            totalBytes: savedSelectedFile.size || 0,
+            transferSpeed: 0,
+            remainingTime: 0,
+            processedFiles: 0,
+            totalFiles: 1,
+          });
+          activeDownloadTransferId = transferId;
+
+          const result = await window.terminalAPI.downloadFile(
+            tabId,
+            fullPath,
+            (
+              progress,
+              fileName,
+              transferredBytes,
+              totalBytes,
+              transferSpeed,
+              remainingTime,
+              processedFiles,
+              totalFiles,
+              transferKey,
+            ) => {
+              updateTransferProgress(transferId, {
+                progress: Math.max(0, Math.min(100, progress || 0)),
+                fileName: fileName || savedSelectedFile.name,
+                statusText: t("fileManager.transfer.status.downloading"),
+                currentFile: fileName || savedSelectedFile.name,
+                transferredBytes: Math.max(0, transferredBytes || 0),
+                totalBytes: Math.max(0, totalBytes || 0),
+                transferSpeed: Math.max(0, transferSpeed || 0),
+                remainingTime: Math.max(0, remainingTime || 0),
+                processedFiles: Math.max(0, processedFiles || 0),
+                totalFiles: Math.max(1, totalFiles || 1),
+                transferKey: transferKey || "",
+              });
+            },
+          );
+
+          if (result?.cancelled || isUserCancellationError(result)) {
+            setTransferCancelled(true);
+            updateTransferProgress(transferId, {
+              isCancelled: true,
+              statusText: t("fileManager.transfer.status.downloadCancelled"),
+              cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
             });
-
-            // 使用progressCallback处理进度更新
-            const result = await window.terminalAPI.downloadFile(
-              tabId,
-              fullPath,
-              (
-                progress,
-                fileName,
-                transferredBytes,
-                totalBytes,
-                transferSpeed,
-                remainingTime,
-                processedFiles,
-                totalFiles,
-                transferKey,
-              ) => {
-                updateTransferProgress(transferId, {
-                  progress,
-                  fileName,
-                  transferredBytes,
-                  totalBytes,
-                  transferSpeed,
-                  remainingTime,
-                  processedFiles: processedFiles || 0,
-                  totalFiles: totalFiles || 1,
-                  transferKey, // 添加transferKey到进度状态
-                });
-              },
+            storeScheduleTransferCleanup(transferId, 3000);
+            showNotification(
+              t("fileManager.errors.downloadCancelledByUser"),
+              "info",
+              3000,
             );
-
-            // 处理下载结果
-            if (result?.success) {
-              updateTransferProgress(transferId, {
-                progress: 100,
-                fileName: result.message || "下载完成",
-              });
-              storeScheduleTransferCleanup(transferId, 3000);
-            } else if (result?.error) {
-              updateTransferProgress(transferId, {
-                error: result.error,
-              });
-            }
+          } else if (result?.success) {
+            updateTransferProgress(transferId, {
+              progress: 100,
+              fileName: savedSelectedFile.name,
+              statusText: t("fileManager.transfer.status.completed"),
+              currentFile: "",
+              processedFiles: 1,
+              totalFiles: 1,
+              downloadPath: result.downloadPath || "",
+            });
+            storeScheduleTransferCleanup(transferId, 3000);
+            void showDownloadedLocationNotification({
+              itemName: savedSelectedFile.name,
+              downloadPath: result.downloadPath,
+              successMessage: t("fileManager.messages.downloadSavedToLocal", {
+                name: savedSelectedFile.name,
+              }),
+            });
+          } else {
+            const errorMessage =
+              result?.error || t("fileManager.errors.downloadFailed");
+            updateTransferProgress(transferId, {
+              error: errorMessage,
+              statusText: t("fileManager.transfer.status.downloadFailed"),
+            });
+            storeScheduleTransferCleanup(transferId, 5000);
+            showNotification(
+              `${t("fileManager.errors.downloadFailed")}: ${errorMessage}`,
+              "error",
+              6000,
+            );
           }
         } catch (error) {
-          // 下载文件失败
+          const errorMessage =
+            error?.message || t("fileManager.errors.unknownError");
 
-          // 只有在不是用户主动取消的情况下才显示错误
-          if (
-            !transferCancelled &&
-            !error.message?.includes("reply was never sent")
-          ) {
-            setError(
-              t("fileManager.errors.downloadFailed") +
-                ": " +
-                (error.message || t("fileManager.errors.unknownError")),
-            );
-            // 更新所有未完成的传输为错误状态
-            const errorMessage =
-              error.message || t("fileManager.errors.unknownError");
-            transferProgressList
-              .filter(
-                (transfer) => transfer.progress < 100 && !transfer.isCancelled,
-              )
-              .forEach((transfer) => {
-                updateTransferProgress(transfer.transferId, {
-                  error: errorMessage,
-                });
+          if (isUserCancellationError(error)) {
+            setTransferCancelled(true);
+            if (activeDownloadTransferId) {
+              updateTransferProgress(activeDownloadTransferId, {
+                isCancelled: true,
+                statusText: t("fileManager.transfer.status.downloadCancelled"),
+                cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
               });
+              storeScheduleTransferCleanup(activeDownloadTransferId, 3000);
+            }
+            showNotification(
+              t("fileManager.errors.downloadCancelledByUser"),
+              "info",
+              3000,
+            );
+          } else if (!errorMessage.includes("reply was never sent")) {
+            if (activeDownloadTransferId) {
+              updateTransferProgress(activeDownloadTransferId, {
+                error: errorMessage,
+                statusText: t("fileManager.transfer.status.downloadFailed"),
+              });
+              storeScheduleTransferCleanup(activeDownloadTransferId, 5000);
+            }
+            showNotification(
+              `${t("fileManager.errors.downloadFailed")}: ${errorMessage}`,
+              "error",
+              6000,
+            );
           }
         }
       } else {
-        // 多文件下载 - 使用批量下载 API
-        try {
-          showNotification(`开始下载 ${filesToDownload.length} 个文件`, "info");
+        let batchTransferId = null;
 
-          // 创建总体进度跟踪
-          const batchTransferId = addTransferProgress({
+        try {
+          showNotification(
+            t("fileManager.messages.startDownload", {
+              count: filesToDownload.length,
+            }),
+            "info",
+          );
+
+          if (!window.terminalAPI?.downloadFiles) {
+            throw new Error(t("fileManager.errors.fileApiNotAvailable"));
+          }
+
+          batchTransferId = addTransferProgress({
             type: "download",
             progress: 0,
-            fileName: `批量下载 (${filesToDownload.length} 个文件)`,
+            fileName: t("fileManager.messages.batchDownloadTitle", {
+              count: filesToDownload.length,
+            }),
+            statusText: t("fileManager.transfer.status.waitingForTargetFolder"),
+            currentFile: "",
             transferredBytes: 0,
             totalBytes: filesToDownload.reduce(
               (sum, file) => sum + (file.size || 0),
@@ -4488,7 +4765,6 @@ const FileManager = memo(
             totalFiles: filesToDownload.length,
           });
 
-          // 准备文件列表
           const files = filesToDownload.map((file) => ({
             remotePath: joinPath(savedCurrentPath, file.name),
             fileName: file.name,
@@ -4507,60 +4783,174 @@ const FileManager = memo(
               remainingTime,
               processedFiles,
               totalFiles,
+              transferKey,
             ) => {
               updateTransferProgress(batchTransferId, {
-                progress,
-                fileName,
-                transferredBytes,
-                totalBytes,
-                transferSpeed,
-                remainingTime,
-                processedFiles,
-                totalFiles,
+                progress: Math.max(0, Math.min(100, progress || 0)),
+                fileName:
+                  fileName ||
+                  t("fileManager.messages.batchDownloadTitle", {
+                    count: filesToDownload.length,
+                  }),
+                statusText: buildBatchDownloadStatusText({
+                  processedFiles,
+                  totalFiles,
+                  currentFile: fileName,
+                }),
+                currentFile: fileName || "",
+                transferredBytes: Math.max(0, transferredBytes || 0),
+                totalBytes: Math.max(0, totalBytes || 0),
+                transferSpeed: Math.max(0, transferSpeed || 0),
+                remainingTime: Math.max(0, remainingTime || 0),
+                processedFiles: Math.max(0, processedFiles || 0),
+                totalFiles: Math.max(1, totalFiles || filesToDownload.length),
+                transferKey: transferKey || "",
               });
             },
           );
 
-          if (result?.cancelled) {
-            // 用户取消了下载
+          if (result?.cancelled || isUserCancellationError(result)) {
+            setTransferCancelled(true);
             updateTransferProgress(batchTransferId, {
-              error: "用户取消下载",
+              isCancelled: true,
+              statusText: t(
+                "fileManager.transfer.status.batchDownloadCancelled",
+              ),
+              cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
             });
-          } else if (result?.success) {
+            storeScheduleTransferCleanup(batchTransferId, 3000);
+            showNotification(
+              t("fileManager.errors.downloadCancelledByUser"),
+              "info",
+              3000,
+            );
+          } else if (result?.partialSuccess) {
+            const completedCount = Math.max(0, result.completed || 0);
+            const failedCount = Math.max(0, result.failed || 0);
+            const warningMessage = t(
+              "fileManager.messages.partialDownloadCompleted",
+              {
+                completed: completedCount,
+                total: completedCount + failedCount,
+              },
+            );
             updateTransferProgress(batchTransferId, {
               progress: 100,
-              fileName: `批量下载完成 (${result.completed} 个文件)`,
+              fileName: t("fileManager.messages.batchDownloadTitle", {
+                count: filesToDownload.length,
+              }),
+              statusText: warningMessage,
+              warning: warningMessage,
+              currentFile: "",
+              processedFiles: completedCount + failedCount,
+              totalFiles: Math.max(1, filesToDownload.length),
             });
-            showNotification(`成功下载 ${result.completed} 个文件`, "success");
-          } else if (result?.completed > 0) {
-            updateTransferProgress(batchTransferId, {
-              error: `部分下载失败，已完成 ${result.completed}/${result.completed + result.failed} 个文件`,
+            storeScheduleTransferCleanup(batchTransferId, 6000);
+            showNotification(warningMessage, "warning", 6000);
+            void showDownloadedLocationNotification({
+              itemName: t("fileManager.messages.batchDownloadItemName"),
+              downloadPath: result.targetDir,
+              successMessage: result.targetDir
+                ? t("fileManager.messages.batchDownloadSavedToPath", {
+                    path: result.targetDir,
+                  })
+                : warningMessage,
+              severity: "warning",
             });
-            showNotification(
-              `部分下载失败，已完成 ${result.completed}/${result.completed + result.failed} 个文件`,
-              "warning",
+          } else if (result?.success) {
+            const completedCount = Math.max(
+              0,
+              result.completed || filesToDownload.length,
             );
-          } else if (result?.error) {
             updateTransferProgress(batchTransferId, {
-              error: result.error,
+              progress: 100,
+              fileName: t("fileManager.messages.batchDownloadCompleteTitle", {
+                count: completedCount,
+              }),
+              statusText: t(
+                "fileManager.messages.batchDownloadCompletedSummary",
+                {
+                  completed: completedCount,
+                  total: filesToDownload.length,
+                },
+              ),
+              currentFile: "",
+              processedFiles: completedCount,
+              totalFiles: filesToDownload.length,
             });
-            showNotification(`下载失败: ${result.error}`, "error");
+            storeScheduleTransferCleanup(batchTransferId, 3000);
+            showNotification(
+              t("fileManager.messages.downloadSuccessCount", {
+                count: completedCount,
+              }),
+              "success",
+              3000,
+            );
+            void showDownloadedLocationNotification({
+              itemName: t("fileManager.messages.batchDownloadItemName"),
+              downloadPath: result.targetDir,
+              successMessage: result.targetDir
+                ? t("fileManager.messages.batchDownloadSavedToPath", {
+                    path: result.targetDir,
+                  })
+                : t("fileManager.messages.downloadSuccessCount", {
+                    count: completedCount,
+                  }),
+            });
+          } else {
+            const errorMessage =
+              result?.error || t("fileManager.errors.batchDownloadFailed");
+            updateTransferProgress(batchTransferId, {
+              error: errorMessage,
+              statusText: t("fileManager.transfer.status.batchDownloadFailed"),
+            });
+            storeScheduleTransferCleanup(batchTransferId, 5000);
+            showNotification(
+              `${t("fileManager.errors.batchDownloadFailed")}: ${errorMessage}`,
+              "error",
+              6000,
+            );
           }
-
-          storeScheduleTransferCleanup(batchTransferId, 3000);
         } catch (error) {
-          if (
-            !transferCancelled &&
-            !error.message?.includes("reply was never sent")
-          ) {
-            setError(
-              t("fileManager.errors.downloadFailed") +
-                ": " +
-                (error.message || t("fileManager.errors.unknownError")),
+          const errorMessage =
+            error?.message || t("fileManager.errors.unknownError");
+
+          if (isUserCancellationError(error)) {
+            setTransferCancelled(true);
+            if (batchTransferId) {
+              updateTransferProgress(batchTransferId, {
+                isCancelled: true,
+                statusText: t(
+                  "fileManager.transfer.status.batchDownloadCancelled",
+                ),
+                cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
+              });
+              storeScheduleTransferCleanup(batchTransferId, 3000);
+            }
+            showNotification(
+              t("fileManager.errors.downloadCancelledByUser"),
+              "info",
+              3000,
+            );
+          } else if (!errorMessage.includes("reply was never sent")) {
+            if (batchTransferId) {
+              updateTransferProgress(batchTransferId, {
+                error: errorMessage,
+                statusText: t(
+                  "fileManager.transfer.status.batchDownloadFailed",
+                ),
+              });
+              storeScheduleTransferCleanup(batchTransferId, 5000);
+            }
+            showNotification(
+              `${t("fileManager.errors.batchDownloadFailed")}: ${errorMessage}`,
+              "error",
+              6000,
             );
           }
         }
       }
+
       handleContextMenuClose();
     };
 
@@ -4580,13 +4970,16 @@ const FileManager = memo(
     // 处理下载文件夹
     const handleDownloadFolder = async () => {
       if (!sshConnection) {
-        showNotification("SSH连接不可用", "error");
+        showNotification(t("fileManager.errors.noConnection"), "error");
         return;
       }
 
       const foldersToDownload = getSelectedFiles().filter((f) => f.isDirectory);
       if (foldersToDownload.length === 0) {
-        showNotification("请先选择要下载的文件夹", "warning");
+        showNotification(
+          t("fileManager.messages.selectFolderToDownload"),
+          "warning",
+        );
         return;
       }
 
@@ -4596,364 +4989,303 @@ const FileManager = memo(
       // 重置取消状态
       setTransferCancelled(false);
 
-      if (foldersToDownload.length === 1) {
-        // 单文件夹下载 - 保持原有逻辑
-        const savedSelectedFile = foldersToDownload[0];
+      const runSingleFolderDownload = async (folder, index = 0, total = 1) => {
+        const displayName =
+          total > 1 ? `${folder.name} (${index + 1}/${total})` : folder.name;
+        const fullPath = joinPath(savedCurrentPath, folder.name);
+        const transferId = addTransferProgress({
+          type: "download-folder",
+          progress: 0,
+          fileName: displayName,
+          statusText: t("fileManager.transfer.status.waitingForTargetFolder"),
+          currentFile: "",
+          transferredBytes: 0,
+          totalBytes: 0,
+          transferSpeed: 0,
+          remainingTime: 0,
+          processedFiles: 0,
+          totalFiles: 0,
+        });
 
+        try {
+          if (!window.terminalAPI?.downloadFolder) {
+            throw new Error(t("fileManager.errors.fileApiNotAvailable"));
+          }
+
+          const result = await window.terminalAPI.downloadFolder(
+            tabId,
+            fullPath,
+            (
+              progress,
+              currentFile,
+              transferredBytes,
+              totalBytes,
+              transferSpeed,
+              remainingTime,
+              processedFiles,
+              totalFiles,
+              transferKey,
+            ) => {
+              updateTransferProgress(transferId, {
+                progress: Math.max(0, Math.min(100, progress || 0)),
+                fileName: displayName,
+                statusText: buildFolderDownloadStatusText({
+                  currentFile,
+                  processedFiles,
+                  totalFiles,
+                }),
+                currentFile: currentFile || "",
+                transferredBytes: Math.max(0, transferredBytes || 0),
+                totalBytes: Math.max(0, totalBytes || 0),
+                transferSpeed: Math.max(0, transferSpeed || 0),
+                remainingTime: Math.max(0, remainingTime || 0),
+                processedFiles: Math.max(0, processedFiles || 0),
+                totalFiles: Math.max(0, totalFiles || 0),
+                transferKey: transferKey || "",
+              });
+            },
+          );
+
+          if (result?.cancelled || isUserCancellationError(result)) {
+            updateTransferProgress(transferId, {
+              isCancelled: true,
+              statusText: t(
+                "fileManager.transfer.status.folderDownloadCancelled",
+              ),
+              cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
+            });
+            storeScheduleTransferCleanup(transferId, 3000);
+            return {
+              state: "cancelled",
+              transferId,
+              result,
+            };
+          }
+
+          if (result?.partialSuccess) {
+            const completedCount = Math.max(0, result.completed || 0);
+            const failedCount = Math.max(0, result.failed || 0);
+            const warningMessage = t(
+              "fileManager.messages.partialDownloadCompleted",
+              {
+                completed: completedCount,
+                total: completedCount + failedCount,
+              },
+            );
+            updateTransferProgress(transferId, {
+              progress: 100,
+              fileName: displayName,
+              statusText: warningMessage,
+              warning: warningMessage,
+              currentFile: "",
+              processedFiles: completedCount + failedCount,
+              totalFiles: completedCount + failedCount,
+              downloadPath: result.downloadPath || "",
+            });
+            storeScheduleTransferCleanup(transferId, 6000);
+            return {
+              state: "warning",
+              transferId,
+              result,
+              message: warningMessage,
+            };
+          }
+
+          if (result?.success) {
+            const completedCount = Math.max(0, result.completed || 0);
+            updateTransferProgress(transferId, {
+              progress: 100,
+              fileName: displayName,
+              statusText: t("fileManager.transfer.status.completed"),
+              currentFile: "",
+              processedFiles: completedCount,
+              totalFiles: completedCount,
+              downloadPath: result.downloadPath || "",
+            });
+            storeScheduleTransferCleanup(transferId, 3000);
+            return {
+              state: "success",
+              transferId,
+              result,
+            };
+          }
+
+          const errorMessage =
+            result?.error || t("fileManager.messages.downloadFolderFailed");
+          updateTransferProgress(transferId, {
+            error: errorMessage,
+            statusText: t("fileManager.transfer.status.folderDownloadFailed"),
+          });
+          storeScheduleTransferCleanup(transferId, 5000);
+          return {
+            state: "error",
+            transferId,
+            result,
+            message: errorMessage,
+          };
+        } catch (error) {
+          const errorMessage =
+            error?.message || t("fileManager.errors.unknownError");
+
+          if (isUserCancellationError(error)) {
+            updateTransferProgress(transferId, {
+              isCancelled: true,
+              statusText: t(
+                "fileManager.transfer.status.folderDownloadCancelled",
+              ),
+              cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
+            });
+            storeScheduleTransferCleanup(transferId, 3000);
+            return {
+              state: "cancelled",
+              transferId,
+              message: t("fileManager.errors.downloadCancelledByUser"),
+            };
+          }
+
+          updateTransferProgress(transferId, {
+            error: errorMessage,
+            statusText: t("fileManager.transfer.status.folderDownloadFailed"),
+          });
+          storeScheduleTransferCleanup(transferId, 5000);
+          return {
+            state: "error",
+            transferId,
+            message: errorMessage,
+          };
+        }
+      };
+
+      if (foldersToDownload.length === 1) {
+        const savedSelectedFile = foldersToDownload[0];
         if (!savedSelectedFile.isDirectory) {
           return handleDownload();
         }
 
-        try {
-          // 构建完整路径，确保处理各种路径情况
-          const fullPath = joinPath(savedCurrentPath, savedSelectedFile.name);
+        showNotification(
+          t("fileManager.messages.startDownloadFolderNamed", {
+            name: savedSelectedFile.name,
+          }),
+          "info",
+        );
+        const outcome = await runSingleFolderDownload(savedSelectedFile);
 
-          if (window.terminalAPI && window.terminalAPI.downloadFolder) {
-            // 创建新的文件夹下载传输任务
-            const transferId = addTransferProgress({
-              type: "download-folder",
-              progress: 0,
-              fileName: savedSelectedFile.name,
-              currentFile: "",
-              transferredBytes: 0,
-              totalBytes: 0,
-              transferSpeed: 0,
-              remainingTime: 0,
-              processedFiles: 0,
-              totalFiles: 0,
-            });
-
-            // 使用progressCallback处理进度更新
-            try {
-              const downloadResult = await window.terminalAPI.downloadFolder(
-                tabId,
-                fullPath,
-                (
-                  progress,
-                  currentFile,
-                  transferredBytes,
-                  totalBytes,
-                  transferSpeed,
-                  remainingTime,
-                  processedFiles,
-                  totalFiles,
-                  transferKey,
-                ) => {
-                  updateTransferProgress(transferId, {
-                    progress,
-                    fileName: savedSelectedFile.name,
-                    currentFile,
-                    transferredBytes,
-                    totalBytes,
-                    transferSpeed,
-                    remainingTime,
-                    processedFiles,
-                    totalFiles,
-                    transferKey, // 添加transferKey到状态
-                  });
-                },
-              );
-
-              // 标记传输完成
-              updateTransferProgress(transferId, {
-                progress: 100,
-                fileName: "文件夹下载完成",
-              });
-
-              // 下载完成后延迟移除
-              addTimeout(() => {
-                removeTransferProgress(transferId);
-
-                // 显示详细的成功通知
-                if (downloadResult && downloadResult.downloadPath) {
-                  const normalizedPath = downloadResult.downloadPath.replace(
-                    /\//g,
-                    "\\",
-                  );
-                  // 验证路径存在
-                  window.terminalAPI
-                    .checkPathExists?.(normalizedPath)
-                    .then((exists) => {
-                      if (exists) {
-                        // 显示包含下载路径的成功消息
-                        showNotification(
-                          `文件夹 ${savedSelectedFile.name} 已下载到: ${normalizedPath}`,
-                          "success",
-                          15000, // 显示更长时间
-                          true, // 提供打开选项
-                          () => {
-                            if (!window.terminalAPI?.showItemInFolder) {
-                              showNotification(
-                                `无法自动打开文件夹，位置: ${normalizedPath}`,
-                                "warning",
-                              );
-                              return;
-                            }
-
-                            window.terminalAPI
-                              .showItemInFolder(normalizedPath)
-                              .catch(() => {
-                                showNotification(
-                                  `无法自动打开文件夹，位置: ${normalizedPath}`,
-                                  "warning",
-                                );
-                              });
-                          },
-                        );
-                      } else {
-                        showNotification(
-                          `文件夹下载可能未完成，无法在 ${normalizedPath} 找到文件`,
-                          "warning",
-                          10000,
-                        );
-                      }
-                    })
-                    .catch(() => {
-                      // 如果无法验证，仍然显示成功消息
-                      showNotification(
-                        `文件夹 ${savedSelectedFile.name} 下载已完成，但无法验证路径: ${normalizedPath}`,
-                        "success",
-                        10000,
-                      );
-                    });
-                } else {
-                  // 基本成功通知
-                  showNotification(
-                    `文件夹 ${savedSelectedFile.name} 下载成功`,
-                    "success",
-                  );
-                }
-
-                setError(null); // 清除可能存在的错误信息
-              }, 1500);
-            } catch (downloadError) {
-              // 文件夹下载过程中出错
-              if (!downloadError) {
-                throw new Error("Download failed");
-              }
-              throw downloadError; // 重新抛出错误，让外层 catch 处理
-            }
-          } else {
-            throw new Error("下载文件夹API不可用");
-          }
-        } catch (error) {
-          // 下载文件夹失败
-
-          // 处理各种错误情况
-          if (transferCancelled) {
-            showNotification(
-              t("fileManager.errors.downloadCancelledByUser"),
-              "info",
-            );
-          } else if (error.message?.includes("reply was never sent")) {
-            showNotification(
-              t("fileManager.errors.downloadProcessInterrupted"),
-              "warning",
-              8000,
-            );
-          } else if (
-            error.message?.includes(t("fileManager.errors.userCancelled"))
-          ) {
-            // 特别处理这个可能误报的情况，提供更详细的解释
-            showNotification(
-              "下载路径选择有问题，请重试并确保正确选择下载文件夹",
-              "warning",
-              10000,
-              true,
-              () => {
-                addTimeout(() => handleDownloadFolder(), 500);
+        if (outcome.state === "cancelled") {
+          setTransferCancelled(true);
+          showNotification(
+            t("fileManager.errors.downloadCancelledByUser"),
+            "info",
+            3000,
+          );
+        } else if (outcome.state === "warning") {
+          showNotification(outcome.message, "warning", 6000);
+          void showDownloadedLocationNotification({
+            itemName: savedSelectedFile.name,
+            downloadPath: outcome.result?.downloadPath,
+            successMessage: t(
+              "fileManager.messages.folderPartialDownloadSavedToLocal",
+              {
+                name: savedSelectedFile.name,
               },
-            );
-          } else if (error.message?.includes("无法创建本地文件夹结构")) {
-            showNotification(
-              `下载失败: 无法创建本地文件夹。请检查您的磁盘空间及权限。`,
-              "error",
-              10000,
-            );
-          } else if (
-            error.message?.includes("权限不足") ||
-            error.message?.includes("拒绝访问") ||
-            error.message?.includes("Access denied")
-          ) {
-            showNotification(
-              `下载失败: 权限不足。请尝试以管理员身份运行或选择其他下载位置。`,
-              "error",
-              10000,
-            );
-          } else if (
-            error.message?.includes("网络") ||
-            error.message?.includes("Network") ||
-            error.message?.includes("timeout")
-          ) {
-            showNotification(
-              `下载失败: 网络连接问题。请检查您的网络连接并重试。`,
-              "error",
-              10000,
-            );
-          } else if (
-            error.message?.includes("路径无效") ||
-            error.message?.includes("选择的下载路径无效")
-          ) {
-            showNotification(
-              `下载失败: 您选择的下载路径无效或不可访问。请选择其他位置。`,
-              "error",
-              10000,
-            );
-          } else {
-            // 通用错误处理
-            showNotification(
-              `${t("fileManager.messages.downloadFolderFailed")}: ${error.message || t("fileManager.errors.unknownError")}`,
-              "error",
-              10000,
-            );
-          }
-
-          // 提供重试选项
-          if (
-            error &&
-            !transferCancelled &&
-            !error.message?.includes(t("fileManager.errors.userCancelled"))
-          ) {
-            addTimeout(() => {
-              showNotification(
-                "您可以尝试重新下载文件夹",
-                "info",
-                8000,
-                true,
-                () => handleDownloadFolder(),
-              );
-            }, 3000);
-          }
-
-          // 标记所有未完成的传输为错误状态
-          const errorMessage =
-            error.message || t("fileManager.errors.unknownError");
-          transferProgressList
-            .filter(
-              (transfer) => transfer.progress < 100 && !transfer.isCancelled,
-            )
-            .forEach((transfer) => {
-              updateTransferProgress(transfer.transferId, {
-                error: errorMessage,
-              });
-            });
+            ),
+            severity: "warning",
+          });
+        } else if (outcome.state === "success") {
+          void showDownloadedLocationNotification({
+            itemName: savedSelectedFile.name,
+            downloadPath: outcome.result?.downloadPath,
+            successMessage: t(
+              "fileManager.messages.folderDownloadSavedToLocal",
+              {
+                name: savedSelectedFile.name,
+              },
+            ),
+          });
+        } else if (outcome.message) {
+          showNotification(
+            `${t("fileManager.messages.downloadFolderFailed")}: ${outcome.message}`,
+            "error",
+            8000,
+          );
         }
       } else {
-        // 多文件夹下载
-        try {
-          showNotification(
-            `开始下载 ${foldersToDownload.length} 个文件夹`,
-            "info",
+        showNotification(
+          t("fileManager.messages.startDownloadFolders", {
+            count: foldersToDownload.length,
+          }),
+          "info",
+        );
+
+        let successfulFolders = 0;
+        let warningFolders = 0;
+        let failedFolders = 0;
+        let cancelledFolders = 0;
+
+        for (let index = 0; index < foldersToDownload.length; index += 1) {
+          const folder = foldersToDownload[index];
+          const outcome = await runSingleFolderDownload(
+            folder,
+            index,
+            foldersToDownload.length,
           );
 
-          let completedFolders = 0;
-
-          // 逐个下载文件夹
-          for (const folder of foldersToDownload) {
-            if (transferCancelled) break;
-
-            if (window.terminalAPI && window.terminalAPI.downloadFolder) {
-              // 创建单个文件夹下载传输任务
-              const transferId = addTransferProgress({
-                type: "download-folder",
-                progress: 0,
-                fileName: `${folder.name} (${completedFolders + 1}/${foldersToDownload.length})`,
-                currentFile: "",
-                transferredBytes: 0,
-                totalBytes: 0,
-                transferSpeed: 0,
-                remainingTime: 0,
-                processedFiles: 0,
-                totalFiles: 0,
-              });
-
-              try {
-                const fullPath = (() => {
-                  if (savedCurrentPath === "/") {
-                    return "/" + folder.name;
-                  } else if (savedCurrentPath === "~") {
-                    return "~/" + folder.name;
-                  } else {
-                    return savedCurrentPath + "/" + folder.name;
-                  }
-                })();
-
-                await window.terminalAPI.downloadFolder(
-                  tabId,
-                  fullPath,
-                  (
-                    progress,
-                    currentFile,
-                    transferredBytes,
-                    totalBytes,
-                    transferSpeed,
-                    remainingTime,
-                    processedFiles,
-                    totalFiles,
-                    transferKey,
-                  ) => {
-                    updateTransferProgress(transferId, {
-                      progress,
-                      fileName: `${folder.name} (${completedFolders + 1}/${foldersToDownload.length})`,
-                      currentFile,
-                      transferredBytes,
-                      totalBytes,
-                      transferSpeed,
-                      remainingTime,
-                      processedFiles,
-                      totalFiles,
-                      transferKey,
-                    });
-                  },
-                );
-
-                // 标记单个文件夹完成
-                updateTransferProgress(transferId, {
-                  progress: 100,
-                  fileName: `${folder.name} 下载完成`,
-                });
-
-                completedFolders++;
-
-                storeScheduleTransferCleanup(transferId, 2000);
-              } catch (folderError) {
-                updateTransferProgress(transferId, {
-                  error: `${folder.name} 下载失败: ${folderError.message}`,
-                });
-                showNotification(
-                  `文件夹 ${folder.name} 下载失败: ${folderError.message}`,
-                  "error",
-                );
-                storeScheduleTransferCleanup(transferId, 5000);
-              }
-            }
+          if (outcome.state === "success") {
+            successfulFolders += 1;
+            continue;
           }
 
-          // 批量下载完成通知
-          if (completedFolders === foldersToDownload.length) {
-            showNotification(
-              `成功下载 ${completedFolders} 个文件夹`,
-              "success",
-            );
-          } else {
-            showNotification(
-              `部分下载失败，已完成 ${completedFolders}/${foldersToDownload.length} 个文件夹`,
-              "warning",
-            );
+          if (outcome.state === "warning") {
+            successfulFolders += 1;
+            warningFolders += 1;
+            continue;
           }
-        } catch (error) {
-          if (
-            !transferCancelled &&
-            !error.message?.includes("reply was never sent")
-          ) {
+
+          if (outcome.state === "cancelled") {
+            cancelledFolders += 1;
+            setTransferCancelled(true);
+            break;
+          }
+
+          failedFolders += 1;
+          if (outcome.message) {
             showNotification(
-              `${t("fileManager.messages.batchDownloadFolderFailed")}: ${error.message || t("fileManager.errors.unknownError")}`,
+              t("fileManager.messages.downloadFolderItemFailed", {
+                name: folder.name,
+                error: outcome.message,
+              }),
               "error",
-              10000,
+              6000,
             );
           }
         }
+
+        if (cancelledFolders > 0 && successfulFolders === 0) {
+          showNotification(
+            t("fileManager.errors.downloadCancelledByUser"),
+            "info",
+            3000,
+          );
+        } else if (failedFolders === 0 && warningFolders === 0) {
+          showNotification(
+            t("fileManager.messages.downloadFoldersSuccessCount", {
+              count: successfulFolders,
+            }),
+            "success",
+            3000,
+          );
+        } else {
+          showNotification(
+            t("fileManager.messages.downloadFoldersSummary", {
+              success: successfulFolders,
+              warning: warningFolders,
+              failed: failedFolders,
+            }),
+            failedFolders > 0 || warningFolders > 0 ? "warning" : "success",
+            6000,
+          );
+        }
       }
+
       handleContextMenuClose();
     };
 
