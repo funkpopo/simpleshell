@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState, useCallback } from "react";
+import React, { memo, useEffect, useState, useCallback, useRef } from "react";
 import { Box, Chip, Tooltip, Typography, useTheme, Fade } from "@mui/material";
 import SignalWifi4BarIcon from "@mui/icons-material/SignalWifi4Bar";
 import SignalWifi3BarIcon from "@mui/icons-material/SignalWifi3Bar";
@@ -23,6 +23,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   // 延迟状态
   const [latencyData, setLatencyData] = useState(null);
   const [isVisible, setIsVisible] = useState(false);
+  const latencyRequestIdRef = useRef(0);
 
   /**
    * 获取当前应该显示延迟的标签页
@@ -84,6 +85,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
    * 获取延迟信息并更新显示状态
    */
   const updateLatencyDisplay = useCallback(async () => {
+    const requestId = ++latencyRequestIdRef.current;
     const currentTabForLatency = getCurrentTabForLatency();
 
     if (!currentTabForLatency || currentTabForLatency.type !== "ssh") {
@@ -97,6 +99,9 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
         const result = await window.terminalAPI.getLatencyInfo(
           currentTabForLatency.id,
         );
+        if (requestId !== latencyRequestIdRef.current) {
+          return;
+        }
         if (result.success && result.data) {
           setLatencyData(result.data);
           setIsVisible(true);
@@ -106,6 +111,9 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
         }
       }
     } catch (error) {
+      if (requestId !== latencyRequestIdRef.current) {
+        return;
+      }
       console.error("获取延迟信息失败:", error);
       setLatencyData(null);
       setIsVisible(false);
