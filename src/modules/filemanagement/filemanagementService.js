@@ -99,6 +99,34 @@ function toPosixPath(p) {
   return String(p || "").replace(/\\/g, "/");
 }
 
+function normalizeTransferName(name) {
+  return typeof name === "string" ? name.trim() : "";
+}
+
+function buildTransferDisplayName(names, itemLabel = "项目") {
+  const normalizedNames = Array.from(
+    new Set((names || []).map(normalizeTransferName).filter(Boolean)),
+  );
+
+  if (normalizedNames.length === 0) {
+    return "";
+  }
+
+  if (normalizedNames.length === 1) {
+    return normalizedNames[0];
+  }
+
+  return `${normalizedNames[0]} 等 ${normalizedNames.length} 个${itemLabel}`;
+}
+
+function getTopLevelTransferItemName(targetPath) {
+  const normalizedPath = toPosixPath(targetPath).trim().replace(/^\/+/, "");
+  if (!normalizedPath) return "";
+
+  const [firstSegment] = normalizedPath.split("/").filter(Boolean);
+  return firstSegment || "";
+}
+
 class FilemanagementService {
   constructor() {
     this.transferEngineMode = TRANSFER_ENGINE_MODE;
@@ -790,6 +818,9 @@ class FilemanagementService {
       cancelLatencyRecorded: false,
       activeStreams: new Set(),
       metadata: { ...metadata },
+      displayName: normalizeTransferName(metadata?.displayName),
+      lastDisplayName: normalizeTransferName(metadata?.displayName),
+      lastCurrentFile: "",
       transferEngineMode: this.transferEngineMode,
     };
     this.activeTransfers.set(transferKey, state);
@@ -862,6 +893,20 @@ class FilemanagementService {
     return transfer;
   }
 
+  _getTransferDisplayName(transfer, fallback = "") {
+    const fallbackName = normalizeTransferName(fallback);
+    if (!transfer) {
+      return fallbackName;
+    }
+
+    return (
+      normalizeTransferName(transfer.lastDisplayName) ||
+      normalizeTransferName(transfer.displayName) ||
+      normalizeTransferName(transfer.lastCurrentFile) ||
+      fallbackName
+    );
+  }
+
   _emitTransferProgress(
     transferKey,
     {
@@ -876,6 +921,21 @@ class FilemanagementService {
   ) {
     const transfer = this._getTransfer(transferKey);
     if (!transfer) return;
+
+    const normalizedFileName = normalizeTransferName(fileName);
+    const normalizedCurrentFile = normalizeTransferName(currentFile);
+
+    if (normalizedFileName) {
+      transfer.lastDisplayName = normalizedFileName;
+    }
+    if (normalizedCurrentFile) {
+      transfer.lastCurrentFile = normalizedCurrentFile;
+    }
+
+    const resolvedFileName =
+      normalizedFileName ||
+      this._getTransferDisplayName(transfer) ||
+      normalizedCurrentFile;
 
     const now = Date.now();
     if (!force && now - transfer.lastEmitAt < DEFAULT_PROGRESS_INTERVAL_MS) {
@@ -924,7 +984,7 @@ class FilemanagementService {
       tabId: transfer.tabId,
       transferKey,
       progress,
-      fileName,
+      fileName: resolvedFileName,
       currentFile,
       transferredBytes: transfer.transferredBytes,
       totalBytes: transfer.totalBytes,
@@ -1460,7 +1520,7 @@ class FilemanagementService {
     this._destroyTransferStreams(transferKey, "Transfer cancelled by user");
     this._emitTransferProgress(transferKey, {
       force: true,
-      fileName: "传输已取消",
+      fileName: this._getTransferDisplayName(transfer),
       extra: {
         cancelled: true,
         userCancelled: true,
@@ -1490,7 +1550,7 @@ class FilemanagementService {
       );
       this._emitTransferProgress(transferKey, {
         force: true,
-        fileName: "传输已取消",
+        fileName: this._getTransferDisplayName(transfer),
         extra: {
           cancelled: true,
           userCancelled: true,
@@ -1970,6 +2030,9 @@ class FilemanagementService {
         sender,
         progressChannel: "download-progress",
         totalFiles: 1,
+        metadata: {
+          displayName: defaultName || normalizedRemotePath,
+        },
       });
 
       let fileSize = 0;
@@ -2206,6 +2269,17 @@ class FilemanagementService {
         (sum, file) => sum + (Number.isFinite(file?.size) ? file.size : 0),
         0,
       );
+      const displayName =
+        buildTransferDisplayName(
+          files.map(
+            (file) =>
+              file?.fileName ||
+              path.posix.basename(
+                this._normalizeRemotePath(file?.remotePath || ""),
+              ),
+          ),
+          "文件",
+        ) || `批量下载 (${totalFiles} 个文件)`;
       const sshConfig = await this._resolveTransferSshConfig(tabId);
 
       transferKey = this._generateTransferKey(tabId, "batch-download");
@@ -2217,13 +2291,16 @@ class FilemanagementService {
         progressChannel: "download-progress",
         totalBytes,
         totalFiles,
+        metadata: {
+          displayName,
+        },
       });
 
       this._emitTransferProgress(transferKey, {
         channel: "download-progress",
         force: true,
         isBatch: true,
-        fileName: `批量下载 (${totalFiles} 个文件)`,
+        fileName: displayName,
       });
       this._throwIfTransferCancelled(transferKey);
 
@@ -2436,7 +2513,10 @@ class FilemanagementService {
           channel: "download-progress",
           force: true,
           isBatch: true,
-          fileName: "批量下载已取消",
+          fileName: this._getTransferDisplayName(
+            this._getTransfer(transferKey),
+            displayName,
+          ),
           extra: {
             cancelled: true,
             userCancelled: true,
@@ -2523,7 +2603,10 @@ class FilemanagementService {
           channel: "download-progress",
           force: true,
           isBatch: true,
-          fileName: "批量下载已取消",
+          fileName: this._getTransferDisplayName(
+            this._getTransfer(transferKey),
+            displayName,
+          ),
           extra: {
             cancelled: true,
             userCancelled: true,
@@ -2662,6 +2745,9 @@ class FilemanagementService {
         progressChannel: "download-folder-progress",
         totalBytes: 0,
         totalFiles: 1,
+        metadata: {
+          displayName: folderName,
+        },
       });
       this._emitTransferProgress(transferKey, {
         channel: "download-folder-progress",
@@ -3157,6 +3243,22 @@ class FilemanagementService {
       existingTransfer.processedFiles = 0;
       existingTransfer.preparationTotal = 0;
       existingTransfer.preparationCompleted = 0;
+      existingTransfer.displayName =
+        normalizeTransferName(displayName) ||
+        existingTransfer.displayName ||
+        "";
+      existingTransfer.lastDisplayName =
+        normalizeTransferName(displayName) ||
+        existingTransfer.lastDisplayName ||
+        "";
+      existingTransfer.lastCurrentFile = "";
+      existingTransfer.metadata = {
+        ...(existingTransfer.metadata || {}),
+        displayName:
+          normalizeTransferName(displayName) ||
+          existingTransfer.metadata?.displayName ||
+          "",
+      };
     } else {
       this._registerTransfer({
         transferKey,
@@ -3166,6 +3268,9 @@ class FilemanagementService {
         progressChannel,
         totalBytes,
         totalFiles,
+        metadata: {
+          displayName: normalizeTransferName(displayName),
+        },
       });
     }
 
@@ -3407,7 +3512,10 @@ class FilemanagementService {
       if (this._isTransferCancelled(transferKey)) {
         this._emitTransferProgress(transferKey, {
           force: true,
-          fileName: "上传已取消",
+          fileName: this._getTransferDisplayName(
+            this._getTransfer(transferKey),
+            displayName,
+          ),
           currentFile: "",
           currentFileIndex: 0,
           extra: {
@@ -3484,7 +3592,10 @@ class FilemanagementService {
       if (this._isTransferCancelled(transferKey)) {
         this._emitTransferProgress(transferKey, {
           force: true,
-          fileName: "上传已取消",
+          fileName: this._getTransferDisplayName(
+            this._getTransfer(transferKey),
+            displayName,
+          ),
           currentFile: "",
           currentFileIndex: 0,
           extra: {
@@ -3639,7 +3750,11 @@ class FilemanagementService {
         entries,
         progressChannel,
         transferType: "upload-multifile",
-        displayName: "上传文件",
+        displayName:
+          buildTransferDisplayName(
+            entries.map((entry) => entry.fileName),
+            "文件",
+          ) || "上传文件",
         includeOperationComplete: true,
       });
     } catch (error) {
@@ -3707,6 +3822,18 @@ class FilemanagementService {
       const remoteDirectories = rawFolders.map((folderPath) =>
         this._joinRemotePath(normalizedTarget, toPosixPath(folderPath)),
       );
+      const displayName =
+        buildTransferDisplayName(
+          [
+            ...entries.map((entry) =>
+              getTopLevelTransferItemName(entry.relativePath || entry.fileName),
+            ),
+            ...rawFolders.map((folderPath) =>
+              getTopLevelTransferItemName(folderPath),
+            ),
+          ],
+          "项目",
+        ) || "拖拽上传";
 
       return this._uploadEntries({
         event,
@@ -3715,7 +3842,7 @@ class FilemanagementService {
         remoteDirectories,
         progressChannel,
         transferType: "upload-multifile",
-        displayName: "拖拽上传",
+        displayName,
         includeOperationComplete: true,
       });
     } catch (error) {
@@ -3765,6 +3892,9 @@ class FilemanagementService {
         progressChannel,
         totalBytes: 0,
         totalFiles: 1,
+        metadata: {
+          displayName: folderName,
+        },
       });
       this._emitTransferProgress(transferKey, {
         force: true,
