@@ -14,6 +14,8 @@ import Alert from "@mui/material/Alert";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import { useTranslation } from "react-i18next";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useNotification } from "../contexts/NotificationContext";
 import {
   Download as DownloadIcon,
@@ -52,7 +54,7 @@ const updatePanelSx = {
 
 const releaseNoteSx = {
   mt: 2,
-  maxHeight: 140,
+  maxHeight: 220,
   overflow: "auto",
   borderRadius: 1.5,
   border: "1px solid",
@@ -63,6 +65,167 @@ const releaseNoteSx = {
       : "rgba(17, 24, 39, 0.04)",
   p: 1.25,
   fontSize: "0.75rem",
+  lineHeight: 1.6,
+  "& > :first-of-type": {
+    mt: 0,
+  },
+  "& > :last-child": {
+    mb: 0,
+  },
+  "& h1, & h2, & h3, & h4": {
+    mt: 0,
+    mb: 1,
+    fontWeight: 700,
+    lineHeight: 1.35,
+  },
+  "& h1": {
+    fontSize: "1rem",
+  },
+  "& h2": {
+    fontSize: "0.95rem",
+  },
+  "& h3, & h4": {
+    fontSize: "0.875rem",
+  },
+  "& p": {
+    my: 0,
+    mb: 1,
+  },
+  "& ul, & ol": {
+    mt: 0,
+    mb: 1,
+    pl: 2.5,
+  },
+  "& li + li": {
+    mt: 0.5,
+  },
+  "& blockquote": {
+    m: 0,
+    mb: 1,
+    py: 0.75,
+    px: 1.25,
+    borderLeft: "3px solid",
+    borderColor: "primary.main",
+    bgcolor: (theme) =>
+      theme.palette.mode === "dark"
+        ? "rgba(255, 255, 255, 0.04)"
+        : "rgba(25, 118, 210, 0.06)",
+    color: "text.secondary",
+  },
+  "& hr": {
+    border: 0,
+    borderTop: "1px solid",
+    borderColor: "divider",
+    my: 1.25,
+  },
+  "& code": {
+    fontFamily:
+      '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+    fontSize: "0.85em",
+    px: 0.5,
+    py: 0.125,
+    borderRadius: 0.75,
+    bgcolor: (theme) =>
+      theme.palette.mode === "dark"
+        ? "rgba(255, 255, 255, 0.08)"
+        : "rgba(17, 24, 39, 0.08)",
+  },
+  "& pre": {
+    mt: 0,
+    mb: 1,
+    p: 1,
+    overflowX: "auto",
+    borderRadius: 1,
+    border: "1px solid",
+    borderColor: "divider",
+    bgcolor: (theme) =>
+      theme.palette.mode === "dark"
+        ? "rgba(0, 0, 0, 0.28)"
+        : "rgba(17, 24, 39, 0.06)",
+  },
+  "& pre code": {
+    display: "block",
+    p: 0,
+    bgcolor: "transparent",
+    fontSize: "0.75rem",
+  },
+  "& table": {
+    width: "100%",
+    mb: 1,
+    borderCollapse: "collapse",
+  },
+  "& th, & td": {
+    border: "1px solid",
+    borderColor: "divider",
+    p: 0.75,
+    textAlign: "left",
+    verticalAlign: "top",
+  },
+  "& th": {
+    fontWeight: 600,
+    bgcolor: (theme) =>
+      theme.palette.mode === "dark"
+        ? "rgba(255, 255, 255, 0.04)"
+        : "rgba(17, 24, 39, 0.05)",
+  },
+  "& input[type='checkbox']": {
+    pointerEvents: "none",
+    mr: 0.75,
+  },
+};
+
+const MAX_MARKDOWN_LINK_LENGTH = 2048;
+const ALLOWED_MARKDOWN_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+const RELEASE_NOTE_ALLOWED_ELEMENTS = [
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "p",
+  "a",
+  "code",
+  "pre",
+  "strong",
+  "em",
+  "del",
+  "ul",
+  "ol",
+  "li",
+  "blockquote",
+  "hr",
+  "br",
+  "table",
+  "thead",
+  "tbody",
+  "tr",
+  "th",
+  "td",
+  "input",
+];
+
+const normalizeSafeMarkdownHref = (href) => {
+  if (typeof href !== "string") {
+    return null;
+  }
+
+  const trimmedHref = href.trim();
+  if (!trimmedHref || trimmedHref.length > MAX_MARKDOWN_LINK_LENGTH) {
+    return null;
+  }
+
+  let urlObj;
+  try {
+    urlObj = new URL(trimmedHref);
+  } catch {
+    return null;
+  }
+
+  const protocol = urlObj.protocol.toLowerCase();
+  if (!ALLOWED_MARKDOWN_LINK_PROTOCOLS.has(protocol)) {
+    return null;
+  }
+
+  return urlObj.toString();
 };
 
 const AboutDialog = memo(function AboutDialog({ open, onClose }) {
@@ -316,7 +479,11 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
               mb={1}
             >
               <Typography variant="body2">{t("update.downloading")}</Typography>
-              <Typography variant="caption" color="primary.main" fontWeight={600}>
+              <Typography
+                variant="caption"
+                color="primary.main"
+                fontWeight={600}
+              >
                 {Math.round(downloadProgress)}%
               </Typography>
             </Box>
@@ -332,7 +499,11 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
                 },
               }}
             />
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ mt: 0.75 }}
+            >
               {t("update.downloadProgress", {
                 percent: Math.round(downloadProgress),
               })}
@@ -450,6 +621,29 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     }
   };
 
+  const releaseNoteMarkdownComponents = {
+    a: ({ href, children }) => {
+      const safeHref = normalizeSafeMarkdownHref(href);
+
+      if (!safeHref) {
+        return <Box component="span">{children}</Box>;
+      }
+
+      return (
+        <Link
+          href={safeHref}
+          underline="hover"
+          onClick={(event) => {
+            event.preventDefault();
+            void handleOpenExternalLink(safeHref);
+          }}
+        >
+          {children}
+        </Link>
+      );
+    },
+  };
+
   return (
     <GlassDialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>{t("about.title")}</DialogTitle>
@@ -491,22 +685,19 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 
             {renderUpdateContent()}
 
-            {updateInfo?.releaseNotes && updateStatus === "available" && (
+            {updateInfo?.releaseNotes && updateInfo?.hasUpdate && (
               <Box sx={{ mt: 2 }}>
                 <Typography variant="subtitle2" gutterBottom>
                   {t("update.releaseNotes")}
                 </Typography>
                 <Box sx={releaseNoteSx}>
-                  <pre
-                    style={{
-                      whiteSpace: "pre-wrap",
-                      margin: 0,
-                      fontSize: "inherit",
-                    }}
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={releaseNoteMarkdownComponents}
+                    allowedElements={RELEASE_NOTE_ALLOWED_ELEMENTS}
                   >
-                    {updateInfo.releaseNotes.slice(0, 300)}
-                    {updateInfo.releaseNotes.length > 300 ? "..." : ""}
-                  </pre>
+                    {updateInfo.releaseNotes}
+                  </ReactMarkdown>
                 </Box>
               </Box>
             )}
