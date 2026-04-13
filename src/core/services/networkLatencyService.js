@@ -1,10 +1,19 @@
 const { EventEmitter } = require("events");
+const { performance } = require("node:perf_hooks");
 const { logToFile } = require("../utils/logger");
 const net = require("node:net");
 const proxyManager = require("../proxy/proxy-manager");
 
 function nowMs() {
   return Date.now();
+}
+
+function monotonicNow() {
+  return performance.now();
+}
+
+function elapsedMs(startTime) {
+  return Math.max(0, Math.round(performance.now() - startTime));
 }
 
 /**
@@ -21,8 +30,15 @@ class NetworkLatencyService extends EventEmitter {
     // 检测间隔 (60秒 = 1分钟)
     this.checkInterval = 60 * 1000;
 
-    // 检测定时器
-    this.timers = new Map();
+    // 调度器每秒检查一次是否有到期任务，避免为每个连接各自维护定时器
+    this.schedulerIntervalMs = 1000;
+    this.schedulerTimer = null;
+    this.schedulerBusy = false;
+
+    // 限制并发探测数，避免大量连接时同时建连造成瞬时压力
+    this.maxConcurrentChecks = 4;
+    this.activeCheckCount = 0;
+    this.serviceGeneration = 0;
 
     // 是否正在运行
     this.isRunning = false;
@@ -46,6 +62,14 @@ class NetworkLatencyService extends EventEmitter {
     }
 
     this.isRunning = true;
+    this.serviceGeneration += 1;
+    this.schedulerTimer = setInterval(() => {
+      void this._runDueChecks();
+    }, this.schedulerIntervalMs);
+    if (typeof this.schedulerTimer.unref === "function") {
+      this.schedulerTimer.unref();
+    }
+
     logToFile("网络延迟检测服务已启动", "INFO");
     this.emit("service:started");
   }
@@ -58,11 +82,13 @@ class NetworkLatencyService extends EventEmitter {
       return;
     }
 
-    // 清除所有定时器
-    this.timers.forEach((timer) => {
-      clearInterval(timer);
-    });
-    this.timers.clear();
+    if (this.schedulerTimer) {
+      clearInterval(this.schedulerTimer);
+      this.schedulerTimer = null;
+    }
+    this.schedulerBusy = false;
+    this.activeCheckCount = 0;
+    this.serviceGeneration += 1;
 
     // 清除延迟数据
     this.latencyData.clear();
@@ -92,7 +118,7 @@ class NetworkLatencyService extends EventEmitter {
       return;
     }
 
-    if (this.timers.has(tabId)) {
+    if (this.latencyData.has(tabId)) {
       logToFile(`连接${tabId}已存在，先注销旧连接`, "DEBUG");
       this.unregisterConnection(tabId);
     }
@@ -109,17 +135,12 @@ class NetworkLatencyService extends EventEmitter {
       errors: 0,
       status: "checking",
       history: [], // 保存最近10次的延迟记录
+      lastError: null,
+      checkPromise: null,
+      nextCheckAt: nowMs(),
     });
 
-    // 立即执行一次检测
-    this.checkLatency(tabId, sshConnection).then(() => {
-      // 然后启动定时检测
-      const timer = setInterval(() => {
-        this.checkLatency(tabId, sshConnection);
-      }, this.checkInterval);
-
-      this.timers.set(tabId, timer);
-    });
+    void this._runDueChecks();
 
     logToFile(`已注册SSH连接延迟检测: ${tabId} -> ${host}:${port}`, "INFO");
   }
@@ -129,15 +150,11 @@ class NetworkLatencyService extends EventEmitter {
    * @param {string} tabId 标签页ID
    */
   unregisterConnection(tabId) {
-    const timer = this.timers.get(tabId);
-    if (timer) {
-      clearInterval(timer);
-      this.timers.delete(tabId);
+    const hadConnection = this.latencyData.delete(tabId);
+
+    if (hadConnection) {
+      logToFile(`已注销SSH连接延迟检测: ${tabId}`, "INFO");
     }
-
-    this.latencyData.delete(tabId);
-
-    logToFile(`已注销SSH连接延迟检测: ${tabId}`, "INFO");
     this.emit("latency:disconnected", { tabId });
   }
 
@@ -149,65 +166,14 @@ class NetworkLatencyService extends EventEmitter {
   async checkLatency(tabId, sshConnection) {
     const data = this.latencyData.get(tabId);
     if (!data) {
-      return;
+      return null;
     }
 
-    try {
-      // 关键：延迟测试应走“连接项对应的代理配置”
-      // - 若连接项配置了代理：通过代理 CONNECT 建 TCP 隧道测量建连耗时（更贴近真实路径）
-      // - 否则：直连 TCP connect 测量建连耗时
-      // - 若上述失败：回退到 SSH exec echo 测量往返耗时
-      const latency = await this.measureLatency(sshConnection, {
-        host: data.host,
-        port: data.port,
-        proxyConfig: data.proxyConfig,
-      });
-
-      // 更新延迟数据
-      data.latency = latency;
-      data.lastCheck = nowMs();
-      data.checkCount++;
-      data.status = "connected";
-
-      // 添加到历史记录 (最多保留10条)
-      data.history.push({
-        latency,
-        timestamp: nowMs(),
-      });
-
-      if (data.history.length > 10) {
-        data.history.shift();
-      }
-
-      // 发送延迟更新事件
-      this.emit("latency:updated", {
-        tabId,
-        latency,
-        host: data.host,
-        port: data.port,
-        // 统一字段：lastCheck 用于 UI 展示；timestamp 保留向后兼容
-        lastCheck: data.lastCheck,
-        timestamp: data.lastCheck,
-        status: data.status,
-      });
-
-      logToFile(`SSH连接${tabId}延迟检测: ${latency}ms`, "DEBUG");
-    } catch (error) {
-      data.errors++;
-      data.status = "error";
-      data.lastCheck = nowMs();
-
-      logToFile(`SSH连接${tabId}延迟检测失败: ${error.message}`, "WARN");
-
-      this.emit("latency:error", {
-        tabId,
-        error: error.message,
-        host: data.host,
-        port: data.port,
-        lastCheck: data.lastCheck,
-        timestamp: data.lastCheck,
-      });
+    if (sshConnection) {
+      data.sshConnection = sshConnection;
     }
+
+    return this._startLatencyCheck(tabId, data, { force: true });
   }
 
   /**
@@ -232,6 +198,172 @@ class NetworkLatencyService extends EventEmitter {
     // 立即执行延迟检测，使用存储的SSH连接实例
     await this.checkLatency(tabId, data.sshConnection);
     logToFile(`已触发连接${tabId}的立即延迟测试`, "INFO");
+  }
+
+  async _runDueChecks() {
+    if (!this.isRunning || this.schedulerBusy) {
+      return;
+    }
+
+    this.schedulerBusy = true;
+
+    try {
+      const now = nowMs();
+      const dueEntries = [];
+
+      for (const [tabId, data] of this.latencyData.entries()) {
+        if (data.checkPromise) {
+          continue;
+        }
+        if (typeof data.nextCheckAt !== "number" || data.nextCheckAt > now) {
+          continue;
+        }
+        dueEntries.push({ tabId, data });
+      }
+
+      dueEntries.sort((a, b) => a.data.nextCheckAt - b.data.nextCheckAt);
+
+      for (const entry of dueEntries) {
+        if (this.activeCheckCount >= this.maxConcurrentChecks) {
+          break;
+        }
+        this._startLatencyCheck(entry.tabId, entry.data);
+      }
+    } finally {
+      this.schedulerBusy = false;
+    }
+  }
+
+  _startLatencyCheck(tabId, data, { force = false } = {}) {
+    if (!this.isRunning) {
+      return Promise.resolve(null);
+    }
+
+    const currentData = this.latencyData.get(tabId);
+    if (!currentData || currentData !== data) {
+      return Promise.resolve(null);
+    }
+
+    if (currentData.checkPromise) {
+      return currentData.checkPromise;
+    }
+
+    if (
+      !force &&
+      typeof currentData.nextCheckAt === "number" &&
+      currentData.nextCheckAt > nowMs()
+    ) {
+      return Promise.resolve(null);
+    }
+
+    this.activeCheckCount += 1;
+    const checkGeneration = this.serviceGeneration;
+    currentData.nextCheckAt = null;
+
+    const checkPromise = (async () => {
+      try {
+        // 关键：延迟测试应走“连接项对应的代理配置”
+        // - 若连接项配置了代理：通过代理 CONNECT 建 TCP 隧道测量建连耗时（更贴近真实路径）
+        // - 否则：直连 TCP connect 测量建连耗时
+        // - 若上述失败：回退到 SSH exec echo 测量往返耗时
+        const measuredLatency = await this.measureLatency(
+          currentData.sshConnection,
+          {
+            host: currentData.host,
+            port: currentData.port,
+            proxyConfig: currentData.proxyConfig,
+          },
+        );
+        const latency = Number.isFinite(measuredLatency)
+          ? Math.max(0, Math.round(measuredLatency))
+          : null;
+
+        if (latency === null) {
+          throw new Error("延迟检测结果无效");
+        }
+
+        if (
+          !this.isRunning ||
+          this.serviceGeneration !== checkGeneration ||
+          this.latencyData.get(tabId) !== currentData
+        ) {
+          return null;
+        }
+
+        currentData.latency = latency;
+        currentData.lastCheck = nowMs();
+        currentData.checkCount++;
+        currentData.status = "connected";
+        currentData.lastError = null;
+
+        currentData.history.push({
+          latency,
+          timestamp: currentData.lastCheck,
+        });
+
+        if (currentData.history.length > 10) {
+          currentData.history.shift();
+        }
+
+        this.emit("latency:updated", {
+          tabId,
+          latency,
+          host: currentData.host,
+          port: currentData.port,
+          lastCheck: currentData.lastCheck,
+          timestamp: currentData.lastCheck,
+          status: currentData.status,
+        });
+
+        logToFile(`SSH连接${tabId}延迟检测: ${latency}ms`, "DEBUG");
+        return latency;
+      } catch (error) {
+        if (
+          !this.isRunning ||
+          this.serviceGeneration !== checkGeneration ||
+          this.latencyData.get(tabId) !== currentData
+        ) {
+          return null;
+        }
+
+        currentData.latency = null;
+        currentData.errors++;
+        currentData.status = "error";
+        currentData.lastCheck = nowMs();
+        const errorMessage = error?.message || String(error);
+        currentData.lastError = errorMessage;
+
+        logToFile(`SSH连接${tabId}延迟检测失败: ${errorMessage}`, "WARN");
+
+        this.emit("latency:error", {
+          tabId,
+          error: errorMessage,
+          host: currentData.host,
+          port: currentData.port,
+          lastCheck: currentData.lastCheck,
+          timestamp: currentData.lastCheck,
+        });
+
+        return null;
+      } finally {
+        if (this.serviceGeneration !== checkGeneration) {
+          return;
+        }
+
+        if (this.latencyData.get(tabId) === currentData) {
+          currentData.checkPromise = null;
+          currentData.nextCheckAt = nowMs() + this.checkInterval;
+        }
+
+        this.activeCheckCount = Math.max(0, this.activeCheckCount - 1);
+        if (this.isRunning) {
+          void this._runDueChecks();
+        }
+      }
+    })();
+
+    currentData.checkPromise = checkPromise;
+    return checkPromise;
   }
 
   /**
@@ -269,7 +401,7 @@ class NetworkLatencyService extends EventEmitter {
 
   _measureTcpLatencyDirect(host, port, timeoutMs = 5000) {
     return new Promise((resolve, reject) => {
-      const startTime = nowMs();
+      const startTime = monotonicNow();
       const socket = net.connect({ host, port });
       let fallbackTimer = null;
 
@@ -296,10 +428,15 @@ class NetworkLatencyService extends EventEmitter {
         onError(new Error("延迟检测超时 (5秒)")),
       );
       socket.once("error", onError);
+      socket.once("close", () =>
+        onError(
+          new Error("Socket closed before latency measurement completed"),
+        ),
+      );
 
       // 一旦收到任何数据（SSH banner），就认为链路可达并计算耗时
       socket.once("data", () => {
-        const latency = nowMs() - startTime;
+        const latency = elapsedMs(startTime);
         cleanup();
         resolve(latency);
       });
@@ -309,7 +446,7 @@ class NetworkLatencyService extends EventEmitter {
       socket.once("connect", () => {
         fallbackTimer = setTimeout(
           () => {
-            const latency = nowMs() - startTime;
+            const latency = elapsedMs(startTime);
             cleanup();
             resolve(latency);
           },
@@ -325,7 +462,7 @@ class NetworkLatencyService extends EventEmitter {
     port,
     timeoutMs = 5000,
   ) {
-    const startTime = nowMs();
+    const startTime = monotonicNow();
     const sock = await proxyManager.createTunnelSocket(
       resolvedProxyConfig,
       host,
@@ -359,7 +496,7 @@ class NetworkLatencyService extends EventEmitter {
       const onData = () => {
         if (settled) return;
         settled = true;
-        const ms = nowMs() - startTime;
+        const ms = elapsedMs(startTime);
         cleanup();
         resolve(ms);
       };
@@ -379,107 +516,105 @@ class NetworkLatencyService extends EventEmitter {
 
   _measureLatencyViaSshExec(sshConnection) {
     return new Promise((resolve, reject) => {
-      const startTime = Date.now();
-      let timeoutId = null;
-      let resolved = false;
+      if (!sshConnection || typeof sshConnection.exec !== "function") {
+        reject(new Error("SSH实例不可用"));
+        return;
+      }
 
-      const cleanup = (error = null) => {
+      const startTime = monotonicNow();
+      let timeoutId = null;
+      let settled = false;
+      let streamRef = null;
+
+      const closeStream = () => {
+        if (!streamRef) {
+          return;
+        }
+
+        try {
+          if (typeof streamRef.close === "function") {
+            streamRef.close();
+          } else if (typeof streamRef.destroy === "function") {
+            streamRef.destroy();
+          }
+        } catch {
+          // 忽略关闭错误
+        }
+      };
+
+      const cleanup = () => {
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
         }
-        if (error && !resolved) {
-          resolved = true;
-          reject(error);
+
+        if (streamRef) {
+          streamRef.removeListener("data", onData);
+          streamRef.removeListener("error", onStreamError);
+          streamRef.removeListener("close", onStreamClose);
+          streamRef.removeListener("exit", onStreamExit);
         }
       };
 
-      timeoutId = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          reject(new Error("延迟检测超时 (5秒)"));
+      const finish = (error = null, latency = null) => {
+        if (settled) {
+          return;
         }
+
+        settled = true;
+        cleanup();
+        closeStream();
+
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(latency);
+      };
+
+      function onData() {
+        finish(null, elapsedMs(startTime));
+      }
+
+      function onStreamError(streamErr) {
+        finish(streamErr);
+      }
+
+      function onStreamClose() {
+        finish(new Error("未收到响应数据"));
+      }
+
+      function onStreamExit() {
+        closeStream();
+      }
+
+      timeoutId = setTimeout(() => {
+        finish(new Error("延迟检测超时 (5秒)"));
       }, 5000);
 
       try {
         // 执行简单的echo命令
         sshConnection.exec("echo latency_test", (err, stream) => {
           if (err) {
-            if (!resolved) {
-              resolved = true;
-              cleanup();
-              reject(err);
-            }
+            finish(err);
             return;
           }
 
-          let dataReceived = false;
+          streamRef = stream;
 
-          // 处理数据接收
-          stream.on("data", () => {
-            if (!dataReceived && !resolved) {
-              dataReceived = true;
-              resolved = true;
-              const latency = Date.now() - startTime;
+          if (settled) {
+            closeStream();
+            return;
+          }
 
-              // 显式关闭流以释放通道
-              try {
-                if (typeof stream.close === "function") {
-                  stream.close();
-                } else if (typeof stream.destroy === "function") {
-                  stream.destroy();
-                }
-              } catch {
-                // 忽略关闭错误
-              }
-
-              cleanup();
-              resolve(latency);
-            }
-          });
-
-          // 处理流错误
-          stream.on("error", (streamErr) => {
-            if (!resolved) {
-              resolved = true;
-              try {
-                if (typeof stream.close === "function") {
-                  stream.close();
-                }
-              } catch {
-                // 忽略关闭错误
-              }
-              cleanup(streamErr);
-            }
-          });
-
-          // 处理流关闭
-          stream.on("close", () => {
-            if (!dataReceived && !resolved) {
-              resolved = true;
-              cleanup(new Error("未收到响应数据"));
-            }
-          });
-
-          // 处理流退出
-          stream.on("exit", () => {
-            if (!resolved) {
-              // 尝试优雅关闭
-              try {
-                if (typeof stream.close === "function") {
-                  stream.close();
-                }
-              } catch {
-                // 忽略关闭错误
-              }
-            }
-          });
+          stream.once("data", onData);
+          stream.once("error", onStreamError);
+          stream.once("close", onStreamClose);
+          stream.once("exit", onStreamExit);
         });
       } catch (error) {
-        if (!resolved) {
-          resolved = true;
-          cleanup(error);
-        }
+        finish(error);
       }
     });
   }
@@ -504,6 +639,8 @@ class NetworkLatencyService extends EventEmitter {
       checkCount: data.checkCount,
       errors: data.errors,
       status: data.status,
+      lastError: data.lastError,
+      isChecking: Boolean(data.checkPromise),
       history: [...data.history], // 返回历史记录副本
     };
   }
@@ -550,6 +687,8 @@ class NetworkLatencyService extends EventEmitter {
       isRunning: this.isRunning,
       monitoredConnections: this.latencyData.size,
       checkInterval: this.checkInterval,
+      schedulerIntervalMs: this.schedulerIntervalMs,
+      activeChecks: this.activeCheckCount,
       connections: this.getAllLatencyInfo(),
     };
   }
