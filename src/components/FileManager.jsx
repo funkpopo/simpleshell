@@ -172,6 +172,39 @@ const getParentPath = (targetPath) => {
   return normalizedPath.slice(0, lastSlashIndex);
 };
 
+const normalizeTransferName = (name) =>
+  typeof name === "string" ? name.trim() : "";
+
+const buildTransferDisplayName = (names, itemLabel = "项目") => {
+  const normalizedNames = Array.from(
+    new Set((names || []).map(normalizeTransferName).filter(Boolean)),
+  );
+
+  if (normalizedNames.length === 0) {
+    return "";
+  }
+
+  if (normalizedNames.length === 1) {
+    return normalizedNames[0];
+  }
+
+  return `${normalizedNames[0]} 等 ${normalizedNames.length} 个${itemLabel}`;
+};
+
+const getTopLevelTransferItemName = (targetPath) => {
+  const normalizedPath = String(targetPath || "")
+    .replace(/\\/g, "/")
+    .trim()
+    .replace(/^\/+/, "");
+
+  if (!normalizedPath) {
+    return "";
+  }
+
+  const [firstSegment] = normalizedPath.split("/").filter(Boolean);
+  return firstSegment || "";
+};
+
 const normalizeNavigationState = (navigationState, currentPath = "/") => {
   const safeCurrentPath =
     typeof currentPath === "string" && currentPath.trim() ? currentPath : "/";
@@ -3095,20 +3128,6 @@ const FileManager = memo(
             2000,
           );
 
-          // 创建新的传输任务
-          const transferId = addTransferProgress({
-            type: "upload-multifile", // Always use upload-multifile for file uploads
-            progress: 0,
-            fileName: t("fileManager.messages.preparingUpload"),
-            transferredBytes: 0,
-            totalBytes: 0,
-            transferSpeed: 0,
-            remainingTime: 0,
-            currentFileIndex: 0,
-            totalFiles: 1,
-          });
-          activeUploadTransferId = transferId;
-
           // 使用progressCallback处理进度更新
           const result = await window.terminalAPI.uploadFile(
             tabId,
@@ -3136,7 +3155,25 @@ const FileManager = memo(
               const validProcessedFiles = Math.max(0, processedFiles || 0);
               const validTotalFiles = Math.max(0, totalFiles || 0);
 
-              updateTransferProgress(transferId, {
+              if (!activeUploadTransferId) {
+                activeUploadTransferId = addTransferProgress({
+                  type: "upload-multifile",
+                  progress: validProgress,
+                  fileName:
+                    fileName || t("fileManager.messages.preparingUpload"),
+                  transferredBytes: validTransferredBytes,
+                  totalBytes: validTotalBytes,
+                  transferSpeed: validTransferSpeed,
+                  remainingTime: validRemainingTime,
+                  currentFileIndex: validCurrentFileIndex,
+                  processedFiles: validProcessedFiles,
+                  totalFiles: validTotalFiles || 1,
+                  transferKey: transferKey || "",
+                  fileList: fileList || null,
+                });
+              }
+
+              updateTransferProgress(activeUploadTransferId, {
                 progress: validProgress,
                 fileName: fileName || "",
                 transferredBytes: validTransferredBytes,
@@ -3154,26 +3191,30 @@ const FileManager = memo(
 
           if (isUserCancellationError(result)) {
             setTransferCancelled(true);
-            updateTransferProgress(transferId, {
-              isCancelled: true,
-              cancelMessage: t("fileManager.errors.userCancelled"),
-            });
+            if (activeUploadTransferId) {
+              updateTransferProgress(activeUploadTransferId, {
+                isCancelled: true,
+                cancelMessage: t("fileManager.errors.userCancelled"),
+              });
+            }
           } else if (result?.success) {
             // 标记传输完成
-            updateTransferProgress(transferId, {
-              progress: 100,
-              fileName:
-                result.message || t("fileManager.messages.uploadComplete"),
-              processedFiles: Math.max(
-                0,
-                result.successfulFiles ?? result.totalFiles ?? 0,
-              ),
-              currentFileIndex: Math.max(0, result.totalFiles || 0),
-              totalFiles: Math.max(0, result.totalFiles || 0),
-            });
+            if (activeUploadTransferId) {
+              updateTransferProgress(activeUploadTransferId, {
+                progress: 100,
+                fileName:
+                  result.message || t("fileManager.messages.uploadComplete"),
+                processedFiles: Math.max(
+                  0,
+                  result.successfulFiles ?? result.totalFiles ?? 0,
+                ),
+                currentFileIndex: Math.max(0, result.totalFiles || 0),
+                totalFiles: Math.max(0, result.totalFiles || 0),
+              });
 
-            // 传输完成后延迟移除
-            storeScheduleTransferCleanup(transferId, 3000);
+              // 传输完成后延迟移除
+              storeScheduleTransferCleanup(activeUploadTransferId, 3000);
+            }
 
             // 如果是上传到选中的文件夹，刷新当前目录即可
             // 不需要切换到目标文件夹
@@ -3199,16 +3240,20 @@ const FileManager = memo(
                 "error",
                 6000,
               );
-              updateTransferProgress(transferId, {
-                error: result.error || t("fileManager.errors.uploadFailed"),
-              });
-              storeScheduleTransferCleanup(transferId, 5000);
+              if (activeUploadTransferId) {
+                updateTransferProgress(activeUploadTransferId, {
+                  error: result.error || t("fileManager.errors.uploadFailed"),
+                });
+                storeScheduleTransferCleanup(activeUploadTransferId, 5000);
+              }
             } else {
               setTransferCancelled(true);
-              updateTransferProgress(transferId, {
-                isCancelled: true,
-                cancelMessage: t("fileManager.errors.userCancelled"),
-              });
+              if (activeUploadTransferId) {
+                updateTransferProgress(activeUploadTransferId, {
+                  isCancelled: true,
+                  cancelMessage: t("fileManager.errors.userCancelled"),
+                });
+              }
             }
           }
 
@@ -3316,21 +3361,6 @@ const FileManager = memo(
             2000,
           );
 
-          // 创建新的文件夹传输任务
-          const transferId = addTransferProgress({
-            type: "upload-folder",
-            progress: 0,
-            fileName: t("fileManager.messages.preparingUpload"),
-            currentFile: "",
-            transferredBytes: 0,
-            totalBytes: 0,
-            transferSpeed: 0,
-            remainingTime: 0,
-            processedFiles: 0,
-            totalFiles: 0,
-          });
-          activeUploadTransferId = transferId;
-
           // 使用progressCallback处理进度更新
           const result = await window.terminalAPI.uploadFolder(
             tabId,
@@ -3357,7 +3387,25 @@ const FileManager = memo(
               const validProcessedFiles = Math.max(0, processedFiles || 0);
               const validTotalFiles = Math.max(0, totalFiles || 0);
 
-              updateTransferProgress(transferId, {
+              if (!activeUploadTransferId) {
+                activeUploadTransferId = addTransferProgress({
+                  type: "upload-folder",
+                  progress: validProgress,
+                  fileName:
+                    fileName || t("fileManager.messages.preparingUpload"),
+                  currentFile: currentFile || "",
+                  transferredBytes: validTransferredBytes,
+                  totalBytes: validTotalBytes,
+                  transferSpeed: validTransferSpeed,
+                  remainingTime: validRemainingTime,
+                  processedFiles: validProcessedFiles,
+                  totalFiles: validTotalFiles,
+                  transferKey: transferKey || "",
+                  fileList: fileList || null,
+                });
+              }
+
+              updateTransferProgress(activeUploadTransferId, {
                 progress: validProgress,
                 fileName: fileName || "",
                 currentFile: currentFile || "",
@@ -3375,20 +3423,24 @@ const FileManager = memo(
 
           if (isUserCancellationError(result)) {
             setTransferCancelled(true);
-            updateTransferProgress(transferId, {
-              isCancelled: true,
-              cancelMessage: t("fileManager.errors.userCancelled"),
-            });
+            if (activeUploadTransferId) {
+              updateTransferProgress(activeUploadTransferId, {
+                isCancelled: true,
+                cancelMessage: t("fileManager.errors.userCancelled"),
+              });
+            }
           } else if (result?.success) {
             // 标记传输完成
-            updateTransferProgress(transferId, {
-              progress: 100,
-              fileName:
-                result.message || t("fileManager.messages.uploadComplete"),
-            });
+            if (activeUploadTransferId) {
+              updateTransferProgress(activeUploadTransferId, {
+                progress: 100,
+                fileName:
+                  result.message || t("fileManager.messages.uploadComplete"),
+              });
 
-            // 传输完成后延迟移除
-            storeScheduleTransferCleanup(transferId, 3000);
+              // 传输完成后延迟移除
+              storeScheduleTransferCleanup(activeUploadTransferId, 3000);
+            }
 
             // 如果是上传到选中的文件夹，刷新当前目录即可
             // 不需要切换到目标文件夹
@@ -3414,16 +3466,20 @@ const FileManager = memo(
                 "error",
                 6000,
               );
-              updateTransferProgress(transferId, {
-                error: result.error || t("fileManager.errors.uploadFailed"),
-              });
-              storeScheduleTransferCleanup(transferId, 5000);
+              if (activeUploadTransferId) {
+                updateTransferProgress(activeUploadTransferId, {
+                  error: result.error || t("fileManager.errors.uploadFailed"),
+                });
+                storeScheduleTransferCleanup(activeUploadTransferId, 5000);
+              }
             } else {
               setTransferCancelled(true);
-              updateTransferProgress(transferId, {
-                isCancelled: true,
-                cancelMessage: t("fileManager.errors.userCancelled"),
-              });
+              if (activeUploadTransferId) {
+                updateTransferProgress(activeUploadTransferId, {
+                  isCancelled: true,
+                  cancelMessage: t("fileManager.errors.userCancelled"),
+                });
+              }
             }
           }
 
@@ -4082,11 +4138,26 @@ const FileManager = memo(
 
         // 使用与右键菜单上传相同的逻辑
         if (window.terminalAPI && window.terminalAPI.uploadDroppedFiles) {
+          const droppedDisplayName =
+            buildTransferDisplayName(
+              [
+                ...allFiles.map((item) =>
+                  getTopLevelTransferItemName(
+                    item.relativePath || item.file?.name,
+                  ),
+                ),
+                ...Array.from(folderStructure).map((folderPath) =>
+                  getTopLevelTransferItemName(folderPath),
+                ),
+              ],
+              "项目",
+            ) || t("fileManager.messages.preparingUpload");
+
           // 创建新的传输任务 - 与 handleUploadFile 保持一致
           const transferId = addTransferProgress({
             type: "upload-multifile",
             progress: 0,
-            fileName: t("fileManager.messages.preparingUpload"),
+            fileName: droppedDisplayName,
             transferredBytes: 0,
             totalBytes: 0,
             transferSpeed: 0,
@@ -4746,12 +4817,19 @@ const FileManager = memo(
             throw new Error(t("fileManager.errors.fileApiNotAvailable"));
           }
 
+          const batchDisplayName =
+            buildTransferDisplayName(
+              filesToDownload.map((file) => file.name),
+              "文件",
+            ) ||
+            t("fileManager.messages.batchDownloadTitle", {
+              count: filesToDownload.length,
+            });
+
           batchTransferId = addTransferProgress({
             type: "download",
             progress: 0,
-            fileName: t("fileManager.messages.batchDownloadTitle", {
-              count: filesToDownload.length,
-            }),
+            fileName: batchDisplayName,
             statusText: t("fileManager.transfer.status.waitingForTargetFolder"),
             currentFile: "",
             transferredBytes: 0,
@@ -4787,11 +4865,7 @@ const FileManager = memo(
             ) => {
               updateTransferProgress(batchTransferId, {
                 progress: Math.max(0, Math.min(100, progress || 0)),
-                fileName:
-                  fileName ||
-                  t("fileManager.messages.batchDownloadTitle", {
-                    count: filesToDownload.length,
-                  }),
+                fileName: fileName || batchDisplayName,
                 statusText: buildBatchDownloadStatusText({
                   processedFiles,
                   totalFiles,
@@ -4836,9 +4910,7 @@ const FileManager = memo(
             );
             updateTransferProgress(batchTransferId, {
               progress: 100,
-              fileName: t("fileManager.messages.batchDownloadTitle", {
-                count: filesToDownload.length,
-              }),
+              fileName: batchDisplayName,
               statusText: warningMessage,
               warning: warningMessage,
               currentFile: "",
