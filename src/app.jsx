@@ -403,10 +403,6 @@ const buildReconnectStatusTitle = (t, status, now = Date.now()) => {
   const state = normalizeReconnectUiState(status?.state);
   const seconds = getReconnectCountdownSeconds(getReconnectNextAt(status), now);
 
-  if (state === "reconnecting" && status?.phase === "restoring-shell") {
-    return t("tabMenu.reconnectRestoringShell");
-  }
-
   switch (state) {
     case "pending":
       return Number.isFinite(seconds) && seconds > 0
@@ -455,12 +451,7 @@ const shouldClearStaleReconnectStatus = (status, loadedState) => {
     return false;
   }
 
-  const state = normalizeReconnectUiState(status?.state);
-  if (!state || status?.phase === "restoring-shell") {
-    return false;
-  }
-
-  return state === "failed" || state === "abandoned";
+  return Boolean(status);
 };
 
 function AppContent() {
@@ -935,17 +926,7 @@ function AppContent() {
         return;
       }
 
-      updateReconnectStatus(payload.tabId, {
-        state: "reconnecting",
-        phase: "restoring-shell",
-        attempts: Number(payload?.attempts || 0),
-        maxAttempts: Number(payload?.maxAttempts || 0),
-        nextRetryAt: null,
-        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
-        failureReason: null,
-        error: null,
-        hint: t("tabMenu.reconnectRestoringShellHint"),
-      });
+      clearReconnectStatus(payload.tabId);
       setReconnectActionTabId((current) =>
         current === payload.tabId ? null : current,
       );
