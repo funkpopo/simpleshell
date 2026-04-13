@@ -20,6 +20,9 @@ use tokio::fs::OpenOptions as TokioOpenOptions;
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 type SshHandle = Handle<AcceptAnyServerKey>;
+const MODE_TYPE_MASK: u32 = 0o170000;
+const MODE_TYPE_DIRECTORY: u32 = 0o040000;
+const MODE_TYPE_FILE: u32 = 0o100000;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,6 +113,24 @@ struct RemoteFileStat {
     modify_time: u64,
     access_time: u64,
     is_directory: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteFolderFileEntry {
+    remote_path: String,
+    relative_path: String,
+    file_name: String,
+    size: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteFolderScanResult {
+    total_bytes: u64,
+    file_count: usize,
+    files: Vec<RemoteFolderFileEntry>,
+    directories: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -293,6 +314,17 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 "data": entries,
             }))
         }
+        "scanRemoteFolderTree" => {
+            let path = required_path(request.path.as_deref(), "path")?;
+            let result = scan_remote_folder_tree(sftp, path).await?;
+            Ok(json!({
+                "success": true,
+                "totalBytes": result.total_bytes,
+                "fileCount": result.file_count,
+                "files": result.files,
+                "directories": result.directories,
+            }))
+        }
         "copyFile" => {
             let source = required_path(request.source_path.as_deref(), "sourcePath")?;
             let target = required_path(request.target_path.as_deref(), "targetPath")?;
@@ -440,16 +472,8 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
         }
         "setFileOwnership" => {
             let path = required_path(request.path.as_deref(), "path")?;
-            let owner = request
-                .owner
-                .as_deref()
-                .map(parse_numeric_id)
-                .transpose()?;
-            let group = request
-                .group
-                .as_deref()
-                .map(parse_numeric_id)
-                .transpose()?;
+            let owner = request.owner.as_deref().map(parse_numeric_id).transpose()?;
+            let group = request.group.as_deref().map(parse_numeric_id).transpose()?;
 
             if owner.is_none() && group.is_none() {
                 return Ok(json!({ "success": true }));
@@ -600,13 +624,11 @@ async fn list_files(sftp: &Sftp, remote_path: &str) -> Result<Vec<RemoteFileEntr
             continue;
         }
 
-        let metadata = entry.metadata();
-        let file_type = metadata.file_type();
-        let is_directory = file_type.map(|kind| kind.is_dir()).unwrap_or(false);
-        let mode = metadata
-            .permissions()
-            .map(permissions_to_mode)
-            .unwrap_or(0);
+        let full_path = join_remote_path(remote_path, &name);
+        let metadata = resolve_entry_metadata(sftp, &full_path, entry.metadata()).await?;
+        let is_directory = metadata_is_directory(&metadata)
+            .ok_or_else(|| format!("remote entry type is unknown: {full_path}"))?;
+        let mode = metadata_mode(&metadata);
 
         entries.push(RemoteFileEntry {
             name,
@@ -632,6 +654,65 @@ async fn list_files(sftp: &Sftp, remote_path: &str) -> Result<Vec<RemoteFileEntr
     }
 
     Ok(entries)
+}
+
+async fn scan_remote_folder_tree(
+    sftp: &Sftp,
+    remote_root_path: &str,
+) -> Result<RemoteFolderScanResult, String> {
+    let mut stack = vec![(remote_root_path.to_string(), String::new())];
+    let mut files = Vec::new();
+    let mut directories = Vec::new();
+    let mut total_bytes = 0u64;
+
+    while let Some((current_path, relative_base)) = stack.pop() {
+        let mut fs = sftp.fs();
+        let dir = fs
+            .open_dir(&current_path)
+            .await
+            .map_err(|error| format!("open_dir failed for {current_path}: {error}"))?;
+        let read_dir = dir.read_dir();
+        futures_util::pin_mut!(read_dir);
+
+        while let Some(entry_result) = read_dir.next().await {
+            let entry = entry_result.map_err(|error| format!("readdir failed: {error}"))?;
+            let name = entry.filename().to_string_lossy().to_string();
+            if name == "." || name == ".." {
+                continue;
+            }
+
+            let child_path = join_remote_path(&current_path, &name);
+            let child_relative = join_remote_relative_path(&relative_base, &name);
+            let metadata = resolve_entry_metadata(sftp, &child_path, entry.metadata()).await?;
+            let is_directory = metadata_is_directory(&metadata)
+                .ok_or_else(|| format!("remote entry type is unknown: {child_path}"))?;
+
+            if is_directory {
+                directories.push(child_relative.clone());
+                stack.push((child_path, child_relative));
+                continue;
+            }
+
+            let size = metadata.len().unwrap_or(0);
+            total_bytes += size;
+            files.push(RemoteFolderFileEntry {
+                remote_path: child_path,
+                relative_path: child_relative,
+                file_name: name,
+                size,
+            });
+        }
+    }
+
+    directories.sort();
+    files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+
+    Ok(RemoteFolderScanResult {
+        total_bytes,
+        file_count: files.len(),
+        files,
+        directories,
+    })
 }
 
 async fn copy_file(sftp: &Sftp, source_path: &str, target_path: &str) -> Result<(), String> {
@@ -662,7 +743,8 @@ async fn upload_local_file(
         .await
         .map_err(|error| format!("stat local file failed: {error}"))?
         .len();
-    let (offset, total_bytes) = resolve_transfer_window(local_size, segment_offset, segment_length)?;
+    let (offset, total_bytes) =
+        resolve_transfer_window(local_size, segment_offset, segment_length)?;
 
     if offset > 0 {
         local_file
@@ -821,14 +903,8 @@ async fn stat_metadata(sftp: &Sftp, remote_path: &str) -> Result<MetaData, Strin
 
 async fn stat_path(sftp: &Sftp, remote_path: &str) -> Result<RemoteFileStat, String> {
     let metadata = stat_metadata(sftp, remote_path).await?;
-    let mode = metadata
-        .permissions()
-        .map(permissions_to_mode)
-        .unwrap_or(0);
-    let is_directory = metadata
-        .file_type()
-        .map(|kind| kind.is_dir())
-        .unwrap_or(false);
+    let mode = metadata_mode(&metadata);
+    let is_directory = metadata_is_directory(&metadata).unwrap_or(false);
 
     Ok(RemoteFileStat {
         size: metadata.len().unwrap_or(0),
@@ -1005,6 +1081,53 @@ fn permissions_to_mode(permissions: Permissions) -> u32 {
     }
 
     mode
+}
+
+fn metadata_is_directory(metadata: &MetaData) -> Option<bool> {
+    metadata.file_type().map(|kind| kind.is_dir())
+}
+
+fn metadata_mode(metadata: &MetaData) -> u32 {
+    let permission_bits =
+        metadata.permissions().map(permissions_to_mode).unwrap_or(0) & !MODE_TYPE_MASK;
+
+    match metadata_is_directory(metadata) {
+        Some(true) => MODE_TYPE_DIRECTORY | permission_bits,
+        Some(false) => MODE_TYPE_FILE | permission_bits,
+        None => permission_bits,
+    }
+}
+
+async fn resolve_entry_metadata(
+    sftp: &Sftp,
+    remote_path: &str,
+    metadata: MetaData,
+) -> Result<MetaData, String> {
+    if metadata.file_type().is_some() {
+        return Ok(metadata);
+    }
+
+    stat_metadata(sftp, remote_path)
+        .await
+        .map_err(|error| format!("stat failed for {remote_path}: {error}"))
+}
+
+fn join_remote_path(parent: &str, child: &str) -> String {
+    let normalized_parent = parent.trim_end_matches('/');
+    if normalized_parent.is_empty() || normalized_parent == "." {
+        return child.to_string();
+    }
+    if normalized_parent == "/" {
+        return format!("/{child}");
+    }
+    format!("{normalized_parent}/{child}")
+}
+
+fn join_remote_relative_path(parent: &str, child: &str) -> String {
+    if parent.is_empty() {
+        return child.to_string();
+    }
+    format!("{parent}/{child}")
 }
 
 fn emit_result(result: serde_json::Value) -> Result<(), String> {

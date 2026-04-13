@@ -15,10 +15,7 @@ async function resolveSshConfig(tabId) {
   const processInfo = processManager.getProcess(tabId);
   const rawConfig = processInfo?.config;
   if (!rawConfig?.host || !rawConfig?.username) {
-    logToFile(
-      `Native SFTP: missing SSH config for tab ${tabId}`,
-      "WARN",
-    );
+    logToFile(`Native SFTP: missing SSH config for tab ${tabId}`, "WARN");
     throw new Error("SSH connection config is unavailable");
   }
 
@@ -49,9 +46,7 @@ function invokeNativeRequest(tabId, request, options = {}) {
       `Native SFTP: sidecar binary not found for ${request?.operation || "unknown-operation"}`,
       "ERROR",
     );
-    return Promise.reject(
-      new Error("Rust transfer sidecar was not found"),
-    );
+    return Promise.reject(new Error("Rust transfer sidecar was not found"));
   }
 
   logToFile(
@@ -76,9 +71,7 @@ function invokeNativeRequestWithConfig(
       `Native SFTP: sidecar binary not found for ${request?.operation || "unknown-operation"}`,
       "ERROR",
     );
-    return Promise.reject(
-      new Error("Rust transfer sidecar was not found"),
-    );
+    return Promise.reject(new Error("Rust transfer sidecar was not found"));
   }
 
   return new Promise((resolve, reject) => {
@@ -219,10 +212,25 @@ function invokeNativeRequestWithConfig(
 }
 
 async function listFiles(tabId, remotePath, options = {}) {
-  return invokeNativeRequest(tabId, {
-    operation: "listFiles",
-    path: remotePath,
-  }, options);
+  return invokeNativeRequest(
+    tabId,
+    {
+      operation: "listFiles",
+      path: remotePath,
+    },
+    options,
+  );
+}
+
+async function scanRemoteFolderTree(tabId, remotePath, options = {}) {
+  return invokeNativeRequest(
+    tabId,
+    {
+      operation: "scanRemoteFolderTree",
+      path: remotePath,
+    },
+    options,
+  );
 }
 
 async function copyFile(tabId, sourcePath, targetPath) {
@@ -303,7 +311,9 @@ async function saveFileContent(tabId, targetPath, content) {
   return invokeNativeRequest(tabId, {
     operation: "saveFileContent",
     path: targetPath,
-    contentBase64: Buffer.from(String(content ?? ""), "utf8").toString("base64"),
+    contentBase64: Buffer.from(String(content ?? ""), "utf8").toString(
+      "base64",
+    ),
   });
 }
 
@@ -356,42 +366,41 @@ async function getFilePermissionsBatch(tabId, filePaths) {
   return { success: true, results };
 }
 
-async function uploadFile(
-  tabId,
-  localPath,
-  remotePath,
-  options = {},
-) {
-  return invokeNativeRequest(tabId, {
-    operation: "uploadFileToRemote",
-    path: remotePath,
-    localPath,
-    segmentOffset: options.segmentOffset,
-    segmentLength: options.segmentLength,
-    remoteWriteFlags: options.remoteWriteFlags,
-  }, options);
+async function uploadFile(tabId, localPath, remotePath, options = {}) {
+  return invokeNativeRequest(
+    tabId,
+    {
+      operation: "uploadFileToRemote",
+      path: remotePath,
+      localPath,
+      segmentOffset: options.segmentOffset,
+      segmentLength: options.segmentLength,
+      remoteWriteFlags: options.remoteWriteFlags,
+    },
+    options,
+  );
 }
 
-async function downloadFile(
-  tabId,
-  remotePath,
-  localPath,
-  options = {},
-) {
-  return invokeNativeRequest(tabId, {
-    operation: "downloadFileToLocal",
-    path: remotePath,
-    localPath,
-    segmentOffset: options.segmentOffset,
-    segmentLength: options.segmentLength,
-    localWriteFlags: options.localWriteFlags,
-  }, options);
+async function downloadFile(tabId, remotePath, localPath, options = {}) {
+  return invokeNativeRequest(
+    tabId,
+    {
+      operation: "downloadFileToLocal",
+      path: remotePath,
+      localPath,
+      segmentOffset: options.segmentOffset,
+      segmentLength: options.segmentLength,
+      localWriteFlags: options.localWriteFlags,
+    },
+    options,
+  );
 }
 
 module.exports = {
   invokeNativeRequest,
   invokeNativeRequestWithConfig,
   listFiles,
+  scanRemoteFolderTree,
   copyFile,
   moveFile,
   deleteFile,
