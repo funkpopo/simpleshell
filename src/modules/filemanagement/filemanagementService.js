@@ -3,13 +3,13 @@ const fsp = require("fs/promises");
 const os = require("os");
 const path = require("path");
 const { execFile } = require("child_process");
-const { Readable } = require("stream");
-const { pipeline } = require("stream/promises");
 const crypto = require("crypto");
 const { app, dialog, shell, BrowserWindow } = require("electron");
 
 const processManager = require("../../core/process/processManager");
-const { getTransferNativeScannerPath } = require("../../core/utils/nativeTransferSidecar");
+const {
+  getTransferNativeScannerPath,
+} = require("../../core/utils/nativeTransferSidecar");
 const { processSSHPrivateKeyAsync } = require("../../core/utils/ssh-utils");
 const nativeSftpClient = require("../../core/utils/nativeSftpClient");
 const { logToFile } = require("../../core/utils/logger");
@@ -19,12 +19,9 @@ const TransferProcessPool = require("./transferProcessPool");
 const DIRECTORY_TYPE_MASK = 0o170000;
 const DIRECTORY_MODE = 0o040000;
 const DEFAULT_PROGRESS_INTERVAL_MS = 200;
-const DEFAULT_STALL_TIMEOUT_MS = 45000;
-const MAX_TRANSFER_RETRIES = 2;
-const RETRY_BACKOFF_BASE_MS = 300;
 const PREPARATION_PROGRESS_PERCENT = 5;
 const EVENT_LOOP_LAG_INTERVAL_MS = 1000;
-const TRANSFER_ENGINE_MODE = "process-worker-pool-v1";
+const TRANSFER_ENGINE_MODE = "native-sidecar-transfer-v1";
 const CHUNK_PARALLEL_THRESHOLD_BYTES = 128 * 1024 * 1024;
 const CHUNK_PARALLEL_TARGET_CHUNK_BYTES = 32 * 1024 * 1024;
 const CHUNK_PARALLEL_MAX_SEGMENTS = 16;
@@ -46,10 +43,6 @@ function buildEmptyTransferPoolStats() {
   };
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function normalizeErrorMessage(error) {
   if (!error) return "Unknown error";
   if (typeof error === "string") return error;
@@ -60,6 +53,10 @@ function isDirectoryMode(mode) {
   return (
     typeof mode === "number" && (mode & DIRECTORY_TYPE_MASK) === DIRECTORY_MODE
   );
+}
+
+function hasKnownRemoteEntryType(mode) {
+  return typeof mode === "number" && (mode & DIRECTORY_TYPE_MASK) !== 0;
 }
 
 function isRootPath(targetPath) {
@@ -88,22 +85,6 @@ function isCancelledError(error) {
   );
 }
 
-function isRetryableTransferError(error) {
-  if (!error || isCancelledError(error)) return false;
-  const message = normalizeErrorMessage(error).toLowerCase();
-  const code = String(error.code || "").toUpperCase();
-  return (
-    message.includes("timeout") ||
-    message.includes("timed out") ||
-    message.includes("econnreset") ||
-    message.includes("socket hang up") ||
-    message.includes("connection lost") ||
-    code === "ETIMEDOUT" ||
-    code === "ECONNRESET" ||
-    code === "ENOTCONN"
-  );
-}
-
 function isPathExistsError(error) {
   const code = String(error?.code || "").toUpperCase();
   const message = normalizeErrorMessage(error).toLowerCase();
@@ -116,26 +97,6 @@ function isPathExistsError(error) {
 
 function toPosixPath(p) {
   return String(p || "").replace(/\\/g, "/");
-}
-
-function makeBufferReadStream(buffer, chunkSize) {
-  let offset = 0;
-  const normalizedChunkSize = Math.max(
-    64 * 1024,
-    Math.floor(chunkSize || 64 * 1024),
-  );
-  return new Readable({
-    read() {
-      if (offset >= buffer.length) {
-        this.push(null);
-        return;
-      }
-      const end = Math.min(offset + normalizedChunkSize, buffer.length);
-      const chunk = buffer.subarray(offset, end);
-      offset = end;
-      this.push(chunk);
-    },
-  });
 }
 
 class FilemanagementService {
@@ -237,7 +198,8 @@ class FilemanagementService {
         return;
       }
 
-      const poolStats = pool.getRuntimeStats?.() || buildEmptyTransferPoolStats();
+      const poolStats =
+        pool.getRuntimeStats?.() || buildEmptyTransferPoolStats();
       const hasPendingWork =
         (poolStats.queuedTasks || 0) > 0 ||
         (poolStats.pendingTasks || 0) > 0 ||
@@ -255,7 +217,8 @@ class FilemanagementService {
 
       this.transferProcessPool = null;
 
-      pool.shutdown()
+      pool
+        .shutdown()
         .catch((error) => {
           this._log(
             `Idle transfer process pool shutdown failed: ${normalizeErrorMessage(error)}`,
@@ -651,33 +614,6 @@ class FilemanagementService {
     return worker(this._createNativeSftpShim(tabId), null);
   }
 
-  async _withTransferRetry(transferKey, task) {
-    let lastError = null;
-    for (let attempt = 0; attempt <= MAX_TRANSFER_RETRIES; attempt += 1) {
-      if (this._isTransferCancelled(transferKey)) {
-        throw buildCancelledError();
-      }
-
-      try {
-        return await task(attempt);
-      } catch (error) {
-        lastError = error;
-        if (this._isTransferCancelled(transferKey) || isCancelledError(error)) {
-          throw buildCancelledError();
-        }
-        const shouldRetry =
-          attempt < MAX_TRANSFER_RETRIES && isRetryableTransferError(error);
-        if (!shouldRetry) {
-          throw error;
-        }
-        const waitMs = RETRY_BACKOFF_BASE_MS * Math.pow(2, attempt);
-        await sleep(waitMs);
-      }
-    }
-
-    throw lastError || new Error("Transfer failed");
-  }
-
   _chooseChunkSize(totalBytes) {
     const bytes = Number.isFinite(totalBytes) ? totalBytes : 0;
     if (bytes >= 4 * 1024 * 1024 * 1024) return 4 * 1024 * 1024;
@@ -965,7 +901,8 @@ class FilemanagementService {
     const preparationRatio = hasPreparation
       ? Math.min(
           1,
-          transfer.preparationCompleted / Math.max(1, transfer.preparationTotal),
+          transfer.preparationCompleted /
+            Math.max(1, transfer.preparationTotal),
         )
       : 0;
     let progress = byteProgress;
@@ -1026,66 +963,6 @@ class FilemanagementService {
     }
   }
 
-  async _pumpStreams({
-    transferKey,
-    readStream,
-    writeStream,
-    onBytes,
-    stallTimeoutMs = DEFAULT_STALL_TIMEOUT_MS,
-  }) {
-    this._trackTransferStream(transferKey, readStream);
-    this._trackTransferStream(transferKey, writeStream);
-
-    let lastProgressAt = Date.now();
-    const onData = (chunk) => {
-      const size = chunk?.length || 0;
-      lastProgressAt = Date.now();
-      if (size > 0 && typeof onBytes === "function") {
-        onBytes(size);
-      }
-    };
-
-    readStream.on("data", onData);
-
-    const guard = setInterval(() => {
-      if (this._isTransferCancelled(transferKey)) {
-        const cancelError = buildCancelledError();
-        try {
-          readStream.destroy(cancelError);
-        } catch {
-          // ignore
-        }
-        try {
-          writeStream.destroy(cancelError);
-        } catch {
-          // ignore
-        }
-        return;
-      }
-
-      if (Date.now() - lastProgressAt > stallTimeoutMs) {
-        const timeoutError = new Error("Transfer stalled: no progress");
-        try {
-          readStream.destroy(timeoutError);
-        } catch {
-          // ignore
-        }
-        try {
-          writeStream.destroy(timeoutError);
-        } catch {
-          // ignore
-        }
-      }
-    }, 1000);
-
-    try {
-      await pipeline(readStream, writeStream);
-    } finally {
-      clearInterval(guard);
-      readStream.removeListener("data", onData);
-    }
-  }
-
   async _stat(sftp, remotePath) {
     return new Promise((resolve, reject) => {
       sftp.stat(remotePath, (error, stats) => {
@@ -1111,6 +988,38 @@ class FilemanagementService {
         else resolve(Array.isArray(list) ? list : []);
       });
     });
+  }
+
+  async _resolveRemoteEntryAttrs(sftp, remotePath, item = null) {
+    const baseAttrs =
+      item?.attrs && typeof item.attrs === "object" ? item.attrs : {};
+    let resolvedAttrs = { ...baseAttrs };
+
+    if (
+      hasKnownRemoteEntryType(resolvedAttrs.mode) &&
+      Number.isFinite(resolvedAttrs.size)
+    ) {
+      return resolvedAttrs;
+    }
+
+    const lstatResult = await this._lstat(sftp, remotePath).catch(() => null);
+    if (lstatResult && typeof lstatResult === "object") {
+      resolvedAttrs = { ...resolvedAttrs, ...lstatResult };
+    }
+
+    if (
+      hasKnownRemoteEntryType(resolvedAttrs.mode) &&
+      Number.isFinite(resolvedAttrs.size)
+    ) {
+      return resolvedAttrs;
+    }
+
+    const statResult = await this._stat(sftp, remotePath).catch(() => null);
+    if (statResult && typeof statResult === "object") {
+      resolvedAttrs = { ...resolvedAttrs, ...statResult };
+    }
+
+    return resolvedAttrs;
   }
 
   async _rename(sftp, sourcePath, targetPath) {
@@ -1232,7 +1141,8 @@ class FilemanagementService {
       if (!name || name === "." || name === "..") continue;
 
       const childPath = path.posix.join(remotePath, name);
-      const mode = item?.attrs?.mode;
+      const attrs = await this._resolveRemoteEntryAttrs(sftp, childPath, item);
+      const mode = attrs?.mode;
       if (isDirectoryMode(mode)) {
         await this._deleteRemoteDirectoryRecursive(sftp, childPath);
       } else {
@@ -1864,7 +1774,8 @@ class FilemanagementService {
           : Number.isFinite(scanResult?.totalSize) && scanResult.totalSize >= 0
             ? scanResult.totalSize
             : files.reduce(
-                (sum, file) => sum + (Number.isFinite(file.size) ? file.size : 0),
+                (sum, file) =>
+                  sum + (Number.isFinite(file.size) ? file.size : 0),
                 0,
               );
 
@@ -1874,64 +1785,49 @@ class FilemanagementService {
         totalBytes: totalBytesFromPayload,
       };
     };
-    const nativeScan = await this._scanLocalFolderWithNativeSidecar(
-      normalizedRoot,
-    );
+    const nativeScan =
+      await this._scanLocalFolderWithNativeSidecar(normalizedRoot);
     return normalizeScanResult(nativeScan);
   }
 
   async _scanRemoteFolderTree(tabId, remoteRootPath, transferKey = null) {
     const rootPath = this._normalizeRemotePath(remoteRootPath);
-    const queue = [{ remotePath: rootPath, relativePath: "" }];
-    const files = [];
-    const directories = new Set();
-    let totalBytes = 0;
+    if (transferKey) {
+      this._throwIfTransferCancelled(transferKey);
+    }
 
-    await this._withBorrowedSftp(tabId, async (sftp) => {
-      while (queue.length > 0) {
-        if (transferKey) {
-          this._throwIfTransferCancelled(transferKey);
-        }
-        const current = queue.shift();
-        const entries = await this._readdir(sftp, current.remotePath);
+    const result = await nativeSftpClient.scanRemoteFolderTree(tabId, rootPath);
+    if (!result?.success) {
+      throw new Error(result?.error || "scan remote folder tree failed");
+    }
 
-        for (const item of entries) {
-          if (transferKey) {
-            this._throwIfTransferCancelled(transferKey);
-          }
-          const name = item?.filename;
-          if (!name || name === "." || name === "..") continue;
+    if (transferKey) {
+      this._throwIfTransferCancelled(transferKey);
+    }
 
-          const remotePath = path.posix.join(current.remotePath, name);
-          const relativePath = current.relativePath
-            ? path.posix.join(current.relativePath, name)
-            : name;
-          const mode = item?.attrs?.mode;
-
-          if (isDirectoryMode(mode)) {
-            directories.add(relativePath);
-            queue.push({ remotePath, relativePath });
-            continue;
-          }
-
-          const fileSize = Number.isFinite(item?.attrs?.size)
-            ? item.attrs.size
-            : 0;
-          totalBytes += fileSize;
-          files.push({
-            remotePath,
-            relativePath,
-            fileName: name,
-            size: fileSize,
-          });
-        }
-      }
-    });
+    const rawFiles = Array.isArray(result?.files) ? result.files : [];
+    const rawDirectories = Array.isArray(result?.directories)
+      ? result.directories
+      : [];
 
     return {
-      files,
-      directories: Array.from(directories),
-      totalBytes,
+      files: rawFiles.map((file) => ({
+        remotePath: this._normalizeRemotePath(file?.remotePath || ""),
+        relativePath: toPosixPath(file?.relativePath || ""),
+        fileName:
+          file?.fileName ||
+          path.posix.basename(
+            toPosixPath(file?.relativePath || file?.remotePath || ""),
+          ),
+        size: Number.isFinite(file?.size) ? file.size : 0,
+      })),
+      directories: rawDirectories.map((entry) => toPosixPath(entry || "")),
+      totalBytes: Number.isFinite(result?.totalBytes)
+        ? result.totalBytes
+        : rawFiles.reduce(
+            (sum, file) => sum + (Number.isFinite(file?.size) ? file.size : 0),
+            0,
+          ),
     };
   }
 
@@ -1984,8 +1880,6 @@ class FilemanagementService {
                 : undefined,
             fileName: fileLabel,
             currentFile: fileLabel,
-            maxRetries: MAX_TRANSFER_RETRIES,
-            noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
           },
         ],
         maxConcurrency: 1,
@@ -2002,8 +1896,8 @@ class FilemanagementService {
           if (message?.taskId !== taskId) return;
           const reportedTotal =
             Number.isFinite(knownSize) && knownSize > 0
-            ? knownSize
-            : Number(message?.totalBytes) || 0;
+              ? knownSize
+              : Number(message?.totalBytes) || 0;
           const remainder = Math.max(0, reportedTotal - trackedBytes);
           if (remainder <= 0) return;
           trackedBytes += remainder;
@@ -2018,8 +1912,7 @@ class FilemanagementService {
           ) {
             return;
           }
-          taskFailedMessage =
-            message?.error?.message || "Download task failed";
+          taskFailedMessage = message?.error?.message || "Download task failed";
         },
       });
 
@@ -2134,9 +2027,6 @@ class FilemanagementService {
             segmentIndex: segment.index,
             segmentCount: chunkSegments.length,
             localWriteFlags: "r+",
-            skipLocalTempRename: true,
-            maxRetries: MAX_TRANSFER_RETRIES,
-            noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
           };
         });
         this._throwIfTransferCancelled(transferKey);
@@ -2407,9 +2297,6 @@ class FilemanagementService {
               segmentIndex: segment.index,
               segmentCount: chunkSegments.length,
               localWriteFlags: "r+",
-              skipLocalTempRename: true,
-              maxRetries: MAX_TRANSFER_RETRIES,
-              noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
             });
           }
           continue;
@@ -2439,8 +2326,6 @@ class FilemanagementService {
           totalBytes: knownSize,
           fileName,
           currentFile: fileName,
-          maxRetries: MAX_TRANSFER_RETRIES,
-          noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
         });
       }
       this._throwIfTransferCancelled(transferKey);
@@ -2891,9 +2776,6 @@ class FilemanagementService {
               segmentIndex: segment.index,
               segmentCount: chunkSegments.length,
               localWriteFlags: "r+",
-              skipLocalTempRename: true,
-              maxRetries: MAX_TRANSFER_RETRIES,
-              noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
             });
           }
           continue;
@@ -2923,8 +2805,6 @@ class FilemanagementService {
           totalBytes: knownSize,
           fileName: file.relativePath,
           currentFile: file.relativePath,
-          maxRetries: MAX_TRANSFER_RETRIES,
-          noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
         });
       }
       this._throwIfTransferCancelled(transferKey);
@@ -3223,62 +3103,6 @@ class FilemanagementService {
     }
   }
 
-  async _uploadEntry({
-    tabId,
-    transferKey,
-    remotePath,
-    localPath = null,
-    buffer = null,
-    knownSize = 0,
-    onBytes,
-  }) {
-    this._throwIfTransferCancelled(transferKey);
-    const normalizedRemotePath = this._normalizeRemotePath(remotePath);
-    let uploadSourcePath = localPath;
-    let cleanupTempPath = null;
-
-    if (!uploadSourcePath && buffer) {
-      cleanupTempPath = path.join(
-        os.tmpdir(),
-        `simpleshell-upload-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.tmp`,
-      );
-      await fsp.writeFile(cleanupTempPath, buffer);
-      uploadSourcePath = cleanupTempPath;
-      this._throwIfTransferCancelled(transferKey);
-    }
-
-    try {
-      await this._withTransferRetry(transferKey, async () => {
-        let size = knownSize;
-        if (uploadSourcePath && (!Number.isFinite(size) || size <= 0)) {
-          const stats = await fsp.stat(uploadSourcePath);
-          size = Number.isFinite(stats?.size) ? stats.size : 0;
-        }
-        const result = await nativeSftpClient.uploadFile(
-          tabId,
-          uploadSourcePath,
-          normalizedRemotePath,
-          {
-            onProgress: (payload) => {
-              const delta = Math.max(0, Number(payload?.deltaBytes) || 0);
-              if (delta > 0 && typeof onBytes === "function") {
-                onBytes(delta);
-              }
-            },
-            remoteWriteFlags: "w",
-          },
-        );
-        if (!result?.success) {
-          throw new Error(result?.error || "upload failed");
-        }
-      });
-    } finally {
-      if (cleanupTempPath) {
-        await fsp.rm(cleanupTempPath, { force: true }).catch(() => {});
-      }
-    }
-  }
-
   _extractDroppedFileBuffer(fileData) {
     if (!fileData) return null;
     if (Buffer.isBuffer(fileData.data)) return fileData.data;
@@ -3452,8 +3276,6 @@ class FilemanagementService {
               segmentIndex: segment.index,
               segmentCount: chunkSegments.length,
               remoteWriteFlags: "r+",
-              maxRetries: MAX_TRANSFER_RETRIES,
-              noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
             });
           }
           continue;
@@ -3483,8 +3305,6 @@ class FilemanagementService {
           totalBytes: knownSize,
           fileName: fileLabel,
           currentFile: fileLabel,
-          maxRetries: MAX_TRANSFER_RETRIES,
-          noProgressTimeoutMs: DEFAULT_STALL_TIMEOUT_MS,
         });
       }
       this._throwIfTransferCancelled(transferKey);

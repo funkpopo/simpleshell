@@ -1073,7 +1073,7 @@ async function testD2AppQuitReleasesAllResources() {
   const telnetHealthTimer = setInterval(() => {}, 10_000);
 
   let filemanagementStats = {
-    transferEngineMode: "process-worker-pool-v1",
+    transferEngineMode: "native-sidecar-transfer-v1",
     activeTransferCount: 2,
     throughputBytesPerSec: 1024,
     latestTransferThroughput: 512,
