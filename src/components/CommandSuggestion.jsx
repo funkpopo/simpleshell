@@ -496,17 +496,6 @@ const CommandSuggestion = ({
                   {highlightMatch(suggestion.command, currentInput)}
                 </Typography>
               }
-              secondary={
-                suggestion.count > 1 && (
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ fontSize: "10px" }}
-                  >
-                    使用了 {suggestion.count} 次
-                  </Typography>
-                )
-              }
               sx={{
                 margin: 0,
                 flex: 1,
