@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useWindowEvent } from "./useWindowEvent.js";
 import { getCharacterMetricsCss } from "../modules/terminal/controller/terminalDom.js";
 import { processCache } from "../modules/terminal/controller/terminalSessionStore.js";
+import {
+  normalizeCommandSuggestionInput,
+  shouldRequestCommandSuggestions,
+} from "../modules/terminal/commandSuggestionState.js";
 
 export const useTerminalSuggestions = ({
   tabId,
@@ -130,8 +134,8 @@ export const useTerminalSuggestions = ({
         return;
       }
 
-      const trimmedInput = input.trim();
-      if (trimmedInput.length < 2) {
+      const trimmedInput = normalizeCommandSuggestionInput(input);
+      if (!shouldRequestCommandSuggestions(trimmedInput)) {
         setSuggestions([]);
         setShowSuggestions(false);
         return;

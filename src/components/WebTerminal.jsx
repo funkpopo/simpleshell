@@ -20,6 +20,11 @@ import WebTerminalSearchOverlay from "./web-terminal/WebTerminalSearchOverlay.js
 import WebTerminalContextMenu from "./web-terminal/WebTerminalContextMenu.jsx";
 import { RendererTerminalIOMailbox } from "../modules/terminal/io/RendererTerminalIOMailbox.js";
 import { isPromptReadyFromTerminal } from "../modules/terminal/promptDetection.js";
+import {
+  isSuggestionTrackingContext,
+  shouldDisplayCommandSuggestions,
+  shouldResumePromptTrackingOnInput,
+} from "../modules/terminal/commandSuggestionState.js";
 import { resetSessionRestoreInteractionState } from "../modules/terminal/sessionRestoreUI.js";
 import {
   isSystemShortcutRecoveryKey,
@@ -482,7 +487,6 @@ const WebTerminal = ({
 
   // 命令执行状态跟踪
   const [isCommandExecuting, setIsCommandExecuting] = useState(false);
-  const [isShellPromptReady, setIsShellPromptReady] = useState(false);
   const lastExecutedCommandTimeRef = useRef(0);
   const lastExecutedCommandRef = useRef("");
   const pendingSystemShortcutRecoveryRef = useRef(false);
@@ -651,7 +655,7 @@ const WebTerminal = ({
 
   const applyPromptTrackingState = useCallback((nextState = {}) => {
     const state = promptTrackingStateRef.current;
-    let promptReadyChanged = false;
+    let promptStateChanged = false;
     let commandRunningChanged = false;
 
     if (
@@ -659,7 +663,7 @@ const WebTerminal = ({
       state.promptReady !== nextState.promptReady
     ) {
       state.promptReady = nextState.promptReady;
-      promptReadyChanged = true;
+      promptStateChanged = true;
     }
 
     if (
@@ -670,11 +674,7 @@ const WebTerminal = ({
       commandRunningChanged = true;
     }
 
-    if (promptReadyChanged) {
-      setIsShellPromptReady(state.promptReady);
-    }
-
-    if (promptReadyChanged || commandRunningChanged) {
+    if (promptStateChanged || commandRunningChanged) {
       setIsCommandExecuting(state.commandRunning && !state.promptReady);
     }
   }, []);
@@ -687,9 +687,28 @@ const WebTerminal = ({
     };
     clearPendingWrappedInputRefresh(termRef.current);
 
-    setIsShellPromptReady(false);
     setIsCommandExecuting(false);
   }, []);
+
+  const resumePromptTrackingForSuggestionInput = useCallback(
+    (term) => {
+      if (
+        !isSuggestionTrackingContext(term, {
+          inEditorMode: inEditorModeRef.current,
+        })
+      ) {
+        return false;
+      }
+
+      clearPendingWrappedInputRefresh(term);
+      applyPromptTrackingState({
+        promptReady: true,
+        commandRunning: false,
+      });
+      return true;
+    },
+    [applyPromptTrackingState],
+  );
 
   const commitExecutedCommand = useCallback(() => {
     const pendingCommand = pendingCommandBoundaryRef.current?.command || "";
@@ -753,6 +772,11 @@ const WebTerminal = ({
       }
 
       syncPromptTrackingFromTerminal(term);
+
+      if (currentInput.trim()) {
+        resumePromptTrackingForSuggestionInput(term);
+      }
+
       updateCursorPosition();
       scheduleHighlightRefresh(term);
 
@@ -789,6 +813,7 @@ const WebTerminal = ({
       suggestionsSuppressedUntilEnter,
       syncPromptTrackingFromTerminal,
       updateCursorPosition,
+      resumePromptTrackingForSuggestionInput,
     ],
   );
 
@@ -1181,9 +1206,20 @@ const WebTerminal = ({
         pendingSystemShortcutRecoveryRef.current = false;
       }
 
-      const canTrackPromptInput =
+      let canTrackPromptInput =
         promptTrackingStateRef.current.promptReady &&
         !promptTrackingStateRef.current.commandRunning;
+
+      if (
+        !canTrackPromptInput &&
+        shouldResumePromptTrackingOnInput({
+          term,
+          inEditorMode,
+          data,
+        })
+      ) {
+        canTrackPromptInput = resumePromptTrackingForSuggestionInput(term);
+      }
 
       if (
         canTrackPromptInput &&
@@ -2542,7 +2578,7 @@ const WebTerminal = ({
 
       const scheduleActivationRecovery = ({
         delays = [0, 60, 160],
-        refreshSuggestions = false,
+        refreshSuggestions = true,
       } = {}) => {
         delays.forEach((delay) => {
           eventManager.setTimeout(() => {
@@ -3634,7 +3670,7 @@ const WebTerminal = ({
         recoverTerminalAfterActivation({
           resize: true,
           refocus: true,
-          refreshSuggestions: false,
+          refreshSuggestions: true,
         });
       }, delay),
     );
@@ -3653,7 +3689,7 @@ const WebTerminal = ({
         recoverTerminalAfterActivation({
           resize: true,
           refocus: true,
-          refreshSuggestions: false,
+          refreshSuggestions: true,
         });
       }, 120);
     };
@@ -4352,7 +4388,13 @@ const WebTerminal = ({
       {/* 命令建议组件 */}
       <CommandSuggestion
         suggestions={suggestions}
-        visible={showSuggestions && isShellPromptReady}
+        visible={shouldDisplayCommandSuggestions({
+          showSuggestions,
+          suggestions,
+          currentInput,
+          inEditorMode,
+          isCommandExecuting,
+        })}
         position={cursorPosition}
         onSelectSuggestion={handleSuggestionSelect}
         onClose={closeSuggestions}
