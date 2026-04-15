@@ -728,11 +728,22 @@ const WebTerminal = ({
     lastExecutedCommandRef.current = command;
     lastExecutedCommandTimeRef.current = now;
 
+    const selectedSuggestionCommand =
+      typeof suggestionSelectedRef.current === "string"
+        ? suggestionSelectedRef.current.trim()
+        : "";
+
     if (
-      !suggestionSelectedRef.current &&
-      window.terminalAPI?.addToCommandHistory
+      selectedSuggestionCommand &&
+      selectedSuggestionCommand === command &&
+      window.terminalAPI?.incrementCommandUsage
     ) {
-      window.terminalAPI.addToCommandHistory(command);
+      void window.terminalAPI.incrementCommandUsage(command);
+      return;
+    }
+
+    if (window.terminalAPI?.addToCommandHistory) {
+      void window.terminalAPI.addToCommandHistory(command);
     }
   }, [suggestionSelectedRef]);
 
@@ -1442,9 +1453,6 @@ const WebTerminal = ({
           // 重置当前输入缓冲区
           currentInputBuffer = "";
 
-          // 重置建议选择标记
-          suggestionSelectedRef.current = false;
-
           // 隐藏命令建议
           setShowSuggestions(false);
           setSuggestions([]);
@@ -1455,6 +1463,7 @@ const WebTerminal = ({
             commandRunning: true,
           });
           commitExecutedCommand();
+          suggestionSelectedRef.current = false;
           pendingCommandBoundaryRef.current = {
             command: "",
             capturedAt: 0,

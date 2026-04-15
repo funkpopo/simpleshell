@@ -8,6 +8,75 @@ const fileCache = require("../../utils/fileCache");
  * 设置相关的IPC处理器
  */
 class SettingsHandlers {
+  notifyCommandHistoryChanged(reason, history) {
+    const payload = {
+      reason,
+      history,
+      count: Array.isArray(history) ? history.length : 0,
+      timestamp: Date.now(),
+    };
+
+    const windows = BrowserWindow.getAllWindows();
+    for (const win of windows) {
+      if (
+        win &&
+        !win.isDestroyed() &&
+        win.webContents &&
+        !win.webContents.isDestroyed?.()
+      ) {
+        try {
+          win.webContents.send("command-history:changed", payload);
+        } catch (error) {
+          logToFile(
+            `Error broadcasting command history change: ${error.message}`,
+            "WARN",
+          );
+        }
+      }
+    }
+  }
+
+  persistCommandHistoryChange(reason) {
+    const historyToSave = commandHistoryService.exportHistory();
+    const saved = configService.saveCommandHistory(historyToSave);
+    if (!saved) {
+      throw new Error("Failed to persist command history");
+    }
+
+    const history = commandHistoryService.getAllHistory();
+    this.notifyCommandHistoryChanged(reason, history);
+    return history;
+  }
+
+  applyCommandHistoryMutation(reason, mutate) {
+    const previousHistory = commandHistoryService.exportHistory();
+    const mutationResult = mutate();
+    const changed =
+      typeof mutationResult === "object" && mutationResult !== null
+        ? mutationResult.changed === true
+        : mutationResult === true;
+
+    if (!changed) {
+      return {
+        changed: false,
+        mutationResult,
+        history: commandHistoryService.getAllHistory(),
+      };
+    }
+
+    try {
+      const history = this.persistCommandHistoryChange(reason);
+      return {
+        changed: true,
+        mutationResult,
+        history,
+      };
+    } catch (error) {
+      commandHistoryService.initialize(previousHistory);
+      throw error;
+    }
+  }
+
   /**
    * 获取所有设置处理器
    */
@@ -250,8 +319,15 @@ class SettingsHandlers {
 
   async addCommandHistory(event, command) {
     try {
-      const history = commandHistoryService.addCommand(command);
-      return { success: true, data: history };
+      const result = this.applyCommandHistoryMutation("add", () =>
+        commandHistoryService.addCommand(command),
+      );
+      return {
+        success: true,
+        data: result.mutationResult,
+        saved: result.changed,
+        history: result.history,
+      };
     } catch (error) {
       logToFile(`Error adding command to history: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -273,8 +349,15 @@ class SettingsHandlers {
 
   async incrementCommandUsage(event, command) {
     try {
-      commandHistoryService.incrementCommandUsage(command);
-      return { success: true };
+      const result = this.applyCommandHistoryMutation("increment", () =>
+        commandHistoryService.incrementCommandUsage(command),
+      );
+      return {
+        success: true,
+        data: result.mutationResult,
+        saved: result.changed,
+        history: result.history,
+      };
     } catch (error) {
       logToFile(`Error incrementing command usage: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -283,9 +366,18 @@ class SettingsHandlers {
 
   async clearCommandHistory() {
     try {
-      commandHistoryService.clearHistory();
-      logToFile("Command history cleared", "INFO");
-      return { success: true };
+      const result = this.applyCommandHistoryMutation("clear", () =>
+        commandHistoryService.clearHistory(),
+      );
+      if (result.changed) {
+        logToFile("Command history cleared", "INFO");
+      }
+      return {
+        success: true,
+        data: result.mutationResult,
+        saved: result.changed,
+        history: result.history,
+      };
     } catch (error) {
       logToFile(`Error clearing command history: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -314,8 +406,15 @@ class SettingsHandlers {
 
   async deleteCommand(event, command) {
     try {
-      const result = commandHistoryService.deleteCommand(command);
-      return { success: result };
+      const result = this.applyCommandHistoryMutation("delete", () =>
+        commandHistoryService.deleteCommand(command),
+      );
+      return {
+        success: result.mutationResult === true,
+        data: result.mutationResult,
+        saved: result.changed,
+        history: result.history,
+      };
     } catch (error) {
       logToFile(`Error deleting command: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
@@ -325,13 +424,26 @@ class SettingsHandlers {
   async deleteCommandBatch(event, commands) {
     try {
       let deletedCount = 0;
-      for (const command of commands) {
-        if (commandHistoryService.deleteCommand(command)) {
-          deletedCount++;
+      const result = this.applyCommandHistoryMutation("deleteBatch", () => {
+        for (const command of commands) {
+          if (commandHistoryService.deleteCommand(command)) {
+            deletedCount++;
+          }
         }
+        return {
+          changed: deletedCount > 0,
+          deletedCount,
+        };
+      });
+      if (deletedCount > 0) {
+        logToFile(`Deleted ${deletedCount} commands from history`, "INFO");
       }
-      logToFile(`Deleted ${deletedCount} commands from history`, "INFO");
-      return { success: true, deletedCount };
+      return {
+        success: true,
+        deletedCount,
+        saved: result.changed,
+        history: result.history,
+      };
     } catch (error) {
       logToFile(`Error deleting command batch: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
