@@ -260,6 +260,19 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     }
   };
 
+  useEffect(() => {
+    if (!open || !window.terminalAPI?.onCommandHistoryChanged) {
+      return undefined;
+    }
+
+    return window.terminalAPI.onCommandHistoryChanged((payload) => {
+      if (Array.isArray(payload?.history)) {
+        setHistory(payload.history);
+        setLoading(false);
+      }
+    });
+  }, [open]);
+
   // 显示通知
   const showNotification = (message, severity = "success") => {
     setNotification({

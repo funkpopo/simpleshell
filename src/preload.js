@@ -11,6 +11,7 @@ const {
 // Listener wrapper stores (avoid mutating callback functions with hidden properties)
 const topConnectionsChangedWrappers = new WeakMap();
 const connectionsChangedWrappers = new WeakMap();
+const commandHistoryChangedWrappers = new WeakMap();
 const streamWrappersByChannel = {
   "stream-chunk": new WeakMap(),
   "stream-end": new WeakMap(),
@@ -1045,6 +1046,24 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("command-history:delete", command),
   deleteCommandHistoryBatch: (commands) =>
     ipcRenderer.invoke("command-history:deleteBatch", commands),
+  onCommandHistoryChanged: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_event, payload) => callback(payload);
+    commandHistoryChangedWrappers.set(callback, wrappedCallback);
+    ipcRenderer.on("command-history:changed", wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener("command-history:changed", wrappedCallback);
+      commandHistoryChangedWrappers.delete(callback);
+    };
+  },
+  offCommandHistoryChanged: (callback) => {
+    if (!callback) return;
+    const wrappedCallback = commandHistoryChangedWrappers.get(callback);
+    if (wrappedCallback) {
+      ipcRenderer.removeListener("command-history:changed", wrappedCallback);
+      commandHistoryChangedWrappers.delete(callback);
+    }
+  },
 
   // 文件缓存管理API
   cleanupFileCache: (cacheFilePath) =>

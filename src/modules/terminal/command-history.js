@@ -1,3 +1,6 @@
+const MIN_COMMAND_HISTORY_LENGTH = 3;
+const MIN_COMMAND_SUGGESTION_QUERY_LENGTH = 1;
+
 class CommandHistoryService {
   constructor() {
     this.history = [];
@@ -17,8 +20,8 @@ class CommandHistoryService {
 
     const trimmedCommand = command.trim();
 
-    // 最小长度限制降低到2
-    if (trimmedCommand.length < 2) {
+    // 只保存长度大于 2 的命令
+    if (trimmedCommand.length < MIN_COMMAND_HISTORY_LENGTH) {
       return false;
     }
 
@@ -117,15 +120,19 @@ class CommandHistoryService {
     }
 
     const trimmedCommand = command.trim();
+    const existingCommand = this.history.find(
+      (item) => item.command === trimmedCommand,
+    );
+    const nextCount = existingCommand ? (existingCommand.count || 1) + 1 : 1;
 
-    // 移除重复的命令（如果存在）
+    // 移除重复的命令（如果存在），再将最新记录置顶
     this.removeCommand(trimmedCommand);
 
     // 添加到历史记录开头
     this.history.unshift({
       command: trimmedCommand,
       timestamp: Date.now(),
-      count: 1,
+      count: nextCount,
     });
 
     // 保持历史记录大小限制
@@ -152,7 +159,10 @@ class CommandHistoryService {
     if (item) {
       item.count = (item.count || 1) + 1;
       item.timestamp = Date.now();
+      return true;
     }
+
+    return false;
   }
 
   getSuggestions(input, maxResults = 10) {
@@ -164,8 +174,10 @@ class CommandHistoryService {
     // 只对开头进行trim，保留末尾的空格以支持精确匹配
     const normalizedInput = input.trimStart().toLowerCase();
 
-    // 降低最小输入长度要求到1个字符，以支持2字符最短命令
-    if (normalizedInput.trim().length < 2) {
+    // 首字符即允许触发历史建议查询
+    if (
+      normalizedInput.trim().length < MIN_COMMAND_SUGGESTION_QUERY_LENGTH
+    ) {
       return [];
     }
 
@@ -249,7 +261,12 @@ class CommandHistoryService {
 
   clearHistory() {
     // 清空所有历史记录
+    if (this.history.length === 0) {
+      return false;
+    }
+
     this.history = [];
+    return true;
   }
 }
 

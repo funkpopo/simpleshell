@@ -245,7 +245,7 @@ export const useTerminalSuggestions = ({
       }
 
       try {
-        suggestionSelectedRef.current = true;
+        suggestionSelectedRef.current = suggestion.command;
 
         const currentLine =
           termRef.current.buffer.active
