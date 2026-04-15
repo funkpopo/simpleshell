@@ -19,7 +19,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Chip,
   InputAdornment,
   CircularProgress,
   Snackbar,
@@ -115,14 +114,6 @@ const HistoryItem = React.memo(
                   >
                     {item.command}
                   </Typography>
-                  {item.count > 1 && (
-                    <Chip
-                      label={`${item.count}次`}
-                      size="small"
-                      variant="outlined"
-                      sx={{ fontSize: "0.7rem", height: 20 }}
-                    />
-                  )}
                 </Box>
               }
               secondary={
