@@ -13,6 +13,8 @@ class FileHandlers {
   constructor() {
     this.activeTransfers = new Map();
     this.activeDirectoryReads = new Map();
+    this.activeDirectoryWatches = new Map();
+    this.activeDirectoryWatchOwners = new Map();
   }
 
   /**
@@ -96,6 +98,16 @@ class FileHandlers {
         handler: this.cancelListFiles.bind(this),
       },
       {
+        channel: "startDirectoryWatch",
+        category: "file",
+        handler: this.startDirectoryWatch.bind(this),
+      },
+      {
+        channel: "stopDirectoryWatch",
+        category: "file",
+        handler: this.stopDirectoryWatch.bind(this),
+      },
+      {
         channel: "downloadFiles",
         category: "file",
         handler: this.downloadFiles.bind(this),
@@ -160,6 +172,76 @@ class FileHandlers {
     }
 
     return true;
+  }
+
+  _generateDirectoryWatchId() {
+    return `${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+  }
+
+  _getDirectoryWatchOwnerKey(sender, tabId) {
+    const senderId = sender?.id ? String(sender.id) : "unknown";
+    return `${senderId}::${String(tabId ?? "")}`;
+  }
+
+  _removeActiveDirectoryWatch(entry) {
+    if (!entry || !entry.watchId) {
+      return;
+    }
+
+    this.activeDirectoryWatches.delete(entry.watchId);
+    if (this.activeDirectoryWatchOwners.get(entry.ownerKey) === entry.watchId) {
+      this.activeDirectoryWatchOwners.delete(entry.ownerKey);
+    }
+
+    if (typeof entry.removeDestroyedListener === "function") {
+      entry.removeDestroyedListener();
+      entry.removeDestroyedListener = null;
+    }
+  }
+
+  _sendDirectoryWatchEvent(entry, eventName, payload = {}) {
+    try {
+      if (!entry?.sender || entry.sender.isDestroyed()) {
+        return;
+      }
+
+      entry.sender.send("directory-watch:event", {
+        ...payload,
+        watchId: entry.watchId,
+        tabId: entry.tabId,
+        path: entry.path,
+        event: eventName,
+      });
+    } catch {
+      // ignore renderer send failures during teardown
+    }
+  }
+
+  _stopActiveDirectoryWatch(entry, reason = "stopped") {
+    if (!entry) {
+      return false;
+    }
+
+    entry.stopped = true;
+    entry.stopReason = reason;
+    this._removeActiveDirectoryWatch(entry);
+
+    try {
+      entry.controller?.close?.();
+    } catch {
+      // ignore sidecar shutdown failures
+    }
+
+    return true;
+  }
+
+  _findDirectoryWatchById(watchId) {
+    if (!watchId) {
+      return null;
+    }
+    return this.activeDirectoryWatches.get(String(watchId)) || null;
   }
 
   // 实现各个处理器方法
@@ -528,6 +610,143 @@ class FileHandlers {
       return { success: true, cancelledCount };
     } catch (error) {
       logToFile(`Error cancelling listFiles: ${error.message}`, "WARN");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async startDirectoryWatch(event, tabId, remotePath, options = {}) {
+    try {
+      const normalizedTabId = String(tabId ?? "");
+      if (!normalizedTabId) {
+        return { success: false, error: "tabId is required" };
+      }
+
+      const sender = event?.sender;
+      if (!sender || sender.isDestroyed()) {
+        return { success: false, error: "renderer is unavailable" };
+      }
+
+      const ownerKey = this._getDirectoryWatchOwnerKey(sender, normalizedTabId);
+      const previousWatchId = this.activeDirectoryWatchOwners.get(ownerKey);
+      if (previousWatchId) {
+        const previousEntry = this._findDirectoryWatchById(previousWatchId);
+        this._stopActiveDirectoryWatch(previousEntry, "replaced");
+      }
+
+      const watchId = this._generateDirectoryWatchId();
+      const requestedPath =
+        typeof remotePath === "string" ? remotePath : String(remotePath ?? "");
+
+      const entry = {
+        watchId,
+        tabId: normalizedTabId,
+        path: requestedPath,
+        ownerKey,
+        sender,
+        controller: null,
+        stopped: false,
+        stopReason: null,
+        removeDestroyedListener: null,
+      };
+
+      const handleSenderDestroyed = () => {
+        this._stopActiveDirectoryWatch(entry, "renderer-destroyed");
+      };
+      sender.on("destroyed", handleSenderDestroyed);
+      entry.removeDestroyedListener = () => {
+        try {
+          sender.removeListener("destroyed", handleSenderDestroyed);
+        } catch {
+          // ignore listener cleanup failures
+        }
+      };
+
+      let controller;
+      try {
+        controller = await nativeSftpClient.watchDirectory(
+          normalizedTabId,
+          requestedPath,
+          {
+            intervalMs: options?.intervalMs,
+            onChanged: (payload) => {
+              if (!this.activeDirectoryWatches.has(watchId)) {
+                return;
+              }
+              this._sendDirectoryWatchEvent(entry, "changed", payload);
+            },
+            onError: (error) => {
+              if (!this.activeDirectoryWatches.has(watchId)) {
+                return;
+              }
+              this._sendDirectoryWatchEvent(entry, "error", {
+                error: error?.message || String(error),
+              });
+            },
+            onExit: () => {
+              const isStillActive =
+                this.activeDirectoryWatches.get(watchId) === entry;
+              if (isStillActive) {
+                this._removeActiveDirectoryWatch(entry);
+              }
+            },
+          },
+        );
+      } catch (error) {
+        entry.removeDestroyedListener?.();
+        entry.removeDestroyedListener = null;
+        throw error;
+      }
+
+      entry.controller = controller;
+      this.activeDirectoryWatches.set(watchId, entry);
+      this.activeDirectoryWatchOwners.set(ownerKey, watchId);
+
+      return {
+        success: true,
+        watchId,
+        path: requestedPath,
+      };
+    } catch (error) {
+      logToFile(`Error starting directory watch: ${error.message}`, "WARN");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async stopDirectoryWatch(event, tabId, watchId = null) {
+    try {
+      const normalizedTabId = String(tabId ?? "");
+      if (!normalizedTabId) {
+        return { success: false, error: "tabId is required" };
+      }
+
+      if (watchId) {
+        const entry = this._findDirectoryWatchById(watchId);
+        if (!entry || entry.tabId !== normalizedTabId) {
+          return { success: true, stopped: false };
+        }
+
+        return {
+          success: true,
+          stopped: this._stopActiveDirectoryWatch(entry, "client-stop"),
+        };
+      }
+
+      const ownerKey = this._getDirectoryWatchOwnerKey(
+        event?.sender,
+        normalizedTabId,
+      );
+      const activeWatchId = this.activeDirectoryWatchOwners.get(ownerKey);
+      if (!activeWatchId) {
+        return { success: true, stopped: false };
+      }
+
+      const entry = this._findDirectoryWatchById(activeWatchId);
+      return {
+        success: true,
+        stopped: this._stopActiveDirectoryWatch(entry, "client-stop"),
+      };
+    } catch (error) {
+      logToFile(`Error stopping directory watch: ${error.message}`, "WARN");
       return { success: false, error: error.message };
     }
   }

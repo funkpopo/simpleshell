@@ -534,8 +534,8 @@ const FileManager = memo(
         const currentSelectedMatch = currentSelectedKey
           ? nextEntriesByKey.get(currentSelectedKey)
           : null;
-        const fallbackSelected = nextSelectedFiles[0] || null;
-        const nextSelectedFile = currentSelectedMatch?.file || fallbackSelected;
+        const preservedSelected = nextSelectedFiles[0] || null;
+        const nextSelectedFile = currentSelectedMatch?.file || preservedSelected;
         const nextAnchorIndex = currentSelectedMatch
           ? currentSelectedMatch.index
           : nextSelectedFile
@@ -570,32 +570,6 @@ const FileManager = memo(
       filesRef.current = files;
     }, [files]);
     const externalEditorEventThrottles = useRef(new Map());
-
-    // Fallback: 自动结束增量状态的定时器
-    const chunkingResetTimerRef = useRef(null);
-    const scheduleChunkingReset = useCallback(() => {
-      try {
-        if (chunkingResetTimerRef.current)
-          clearTimeout(chunkingResetTimerRef.current);
-      } catch {
-        /* intentionally ignored */
-      }
-      chunkingResetTimerRef.current = setTimeout(() => {
-        isChunkingRef.current = false;
-        setIsChunking(false);
-      }, 800);
-    }, []);
-    useEffect(
-      () => () => {
-        try {
-          if (chunkingResetTimerRef.current)
-            clearTimeout(chunkingResetTimerRef.current);
-        } catch {
-          /* intentionally ignored */
-        }
-      },
-      [],
-    );
 
     const handleDragEnter = useCallback((e) => {
       e.preventDefault();
@@ -768,13 +742,7 @@ const FileManager = memo(
 
     // 自动刷新相关参数
     const USER_ACTIVITY_REFRESH_DELAY = 300; // 将用户活动后刷新延迟从1000ms减少到300ms
-
-    // 低负载轮询与后台刷新参数（仅用于刷新当前目录列表）
-    const FILE_LIST_POLL_BASE_INTERVAL_MS = 5000;
-    const FILE_LIST_POLL_MAX_INTERVAL_MS = 30000;
-    const FILE_LIST_POLL_NO_CHANGE_BACKOFF_AFTER = 3;
-    const FILE_LIST_POLL_BACKOFF_STEP_MS = 5000;
-    const FILE_LIST_POLL_ERROR_BACKOFF_STEP_MS = 5000;
+    const DIRECTORY_WATCH_INTERVAL_MS = 1500;
 
     // 防止主进程阻塞时反复触发 IPC，导致 listFiles 积压
     const BACKGROUND_REFRESH_MIN_INTERVAL_MS = 2000;
@@ -1077,7 +1045,7 @@ const FileManager = memo(
       token: null,
       apiPath: null,
       startedAt: 0,
-      reason: null, // "poll" | "userActivity" | "manual" | ...
+      reason: null, // "directoryWatch" | "userActivity" | "manual" | ...
       resolve: null,
       reject: null,
       watchdog: null,
@@ -1092,14 +1060,11 @@ const FileManager = memo(
     // 稳定列表签名（用于判断文件列表是否变化，避免对大列表 JSON.stringify）
     const stableListSignatureRef = useRef(null);
     const stableListSignatureKeyRef = useRef(null);
-
-    // 轮询状态（使用 ref 避免频繁重渲染）
-    const pollTimerRef = useRef(null);
-    const pollStateRef = useRef({
-      intervalMs: FILE_LIST_POLL_BASE_INTERVAL_MS,
-      noChangeCount: 0,
-      errorCount: 0,
-    });
+    const directoryWatchIdRef = useRef(null);
+    const directoryWatchPathRef = useRef(null);
+    const directoryWatchGenerationRef = useRef(0);
+    const pendingDirectoryWatchRefreshRef = useRef(false);
+    const directoryWatchRefreshRetryTimerRef = useRef(null);
 
     const toApiPath = useCallback((path) => {
       if (path === "~") return "";
@@ -1275,8 +1240,6 @@ const FileManager = memo(
           if (Array.isArray(payload.items) && payload.items.length > 0) {
             isChunkingRef.current = true;
             setIsChunking(true);
-            if (typeof scheduleChunkingReset === "function")
-              scheduleChunkingReset();
 
             // buffer chunks and batch update to reduce re-renders
             try {
@@ -1353,7 +1316,6 @@ const FileManager = memo(
       makeListKey,
       computeFileListSignature,
       reconcileSelectionWithNextList,
-      scheduleChunkingReset,
       markLastRefreshTime,
     ]);
 
@@ -1537,7 +1499,7 @@ const FileManager = memo(
           return { ok: true, started: true };
         }
 
-        // 兜底：成功但没有 token（理论上不该发生）
+        // 非阻塞刷新必须返回 token；没有 token 视为协议错误。
         const resolve = bg.resolve;
         bg.inFlight = false;
         bg.token = null;
@@ -1547,10 +1509,11 @@ const FileManager = memo(
         bg.resolve = null;
         bg.reject = null;
         backgroundListBufferRef.current = [];
+        const protocolError = "listFiles nonBlocking response missing token";
         if (typeof resolve === "function") {
-          resolve({ ok: true, changed: false, immediate: true });
+          resolve({ ok: false, error: protocolError });
         }
-        return { ok: true, changed: false, immediate: true };
+        return { ok: false, error: protocolError };
       },
       [open, sshConnection, tabId, toApiPath],
     );
@@ -1563,102 +1526,110 @@ const FileManager = memo(
       }).catch(() => {});
     }, [startBackgroundDirectoryRefresh]);
 
-    // 低负载轮询：保证侧边栏列表可及时刷新（自动退避）
-    useEffect(() => {
-      if (!open) return;
+    const flushPendingDirectoryWatchRefreshRef = useRef(null);
 
-      // 每次打开/切换 tab/path 时重置轮询状态
-      pollStateRef.current = {
-        intervalMs: FILE_LIST_POLL_BASE_INTERVAL_MS,
-        noChangeCount: 0,
-        errorCount: 0,
-      };
-
-      let cancelled = false;
-
-      const schedule = (delayMs) => {
+    const scheduleDirectoryWatchRefreshRetry = useCallback(
+      (delayMs = BACKGROUND_REFRESH_MIN_INTERVAL_MS) => {
         try {
-          if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+          if (directoryWatchRefreshRetryTimerRef.current) {
+            clearTimeout(directoryWatchRefreshRetryTimerRef.current);
+          }
         } catch {
           /* intentionally ignored */
         }
-        pollTimerRef.current = setTimeout(
-          () => {
-            tick().catch(() => {});
-          },
-          Math.max(250, delayMs || FILE_LIST_POLL_BASE_INTERVAL_MS),
-        );
-      };
 
-      const tick = async () => {
-        if (cancelled) return;
+        directoryWatchRefreshRetryTimerRef.current = setTimeout(() => {
+          if (
+            typeof flushPendingDirectoryWatchRefreshRef.current === "function"
+          ) {
+            flushPendingDirectoryWatchRefreshRef.current();
+          }
+        }, Math.max(250, delayMs));
+      },
+      [],
+    );
 
-        // 条件不满足时降低频率尝试，避免空转
-        if (!open || !sshConnection || !tabId || !currentPath) {
-          schedule(1000);
-          return;
-        }
+    const flushPendingDirectoryWatchRefresh = useCallback(() => {
+      if (!pendingDirectoryWatchRefreshRef.current) {
+        return;
+      }
 
-        // 页面不可见时降低刷新频率（低负载）
-        try {
-          if (typeof document !== "undefined" && document.hidden) {
-            schedule(Math.min(pollStateRef.current.intervalMs, 15000));
+      if (
+        !openRef.current ||
+        !sshConnection ||
+        !tabId ||
+        !currentPathRef.current
+      ) {
+        return;
+      }
+
+      if (
+        foregroundLoadCountRef.current > 0 ||
+        loadingRef.current ||
+        isChunkingRef.current ||
+        listTokenRef.current
+      ) {
+        scheduleDirectoryWatchRefreshRetry(500);
+        return;
+      }
+
+      pendingDirectoryWatchRefreshRef.current = false;
+
+      startBackgroundDirectoryRefresh({
+        reason: "directoryWatch",
+        awaitDone: false,
+      })
+        .then((result) => {
+          if (result?.ok) {
             return;
           }
-        } catch {
-          /* intentionally ignored */
-        }
 
-        const result = await startBackgroundDirectoryRefresh({
-          reason: "poll",
-          awaitDone: true,
-        });
-
-        const state = pollStateRef.current;
-
-        if (!result || result.skipped || result.discarded) {
-          schedule(state.intervalMs);
-          return;
-        }
-
-        if (result.ok) {
-          state.errorCount = 0;
-
-          if (result.changed) {
-            state.noChangeCount = 0;
-            state.intervalMs = FILE_LIST_POLL_BASE_INTERVAL_MS;
-          } else {
-            state.noChangeCount = (state.noChangeCount || 0) + 1;
-            if (state.noChangeCount >= FILE_LIST_POLL_NO_CHANGE_BACKOFF_AFTER) {
-              state.intervalMs = Math.min(
-                FILE_LIST_POLL_MAX_INTERVAL_MS,
-                state.intervalMs + FILE_LIST_POLL_BACKOFF_STEP_MS,
-              );
-            }
+          pendingDirectoryWatchRefreshRef.current = true;
+          if (openRef.current) {
+            scheduleDirectoryWatchRefreshRetry(
+              result?.skipped ? 500 : BACKGROUND_REFRESH_MIN_INTERVAL_MS,
+            );
           }
-        } else {
-          state.errorCount = (state.errorCount || 0) + 1;
-          state.intervalMs = Math.min(
-            FILE_LIST_POLL_MAX_INTERVAL_MS,
-            state.intervalMs + FILE_LIST_POLL_ERROR_BACKOFF_STEP_MS,
-          );
-        }
+        })
+        .catch(() => {
+          pendingDirectoryWatchRefreshRef.current = true;
+          if (openRef.current) {
+            scheduleDirectoryWatchRefreshRetry(
+              BACKGROUND_REFRESH_MIN_INTERVAL_MS,
+            );
+          }
+        });
+    }, [
+      sshConnection,
+      tabId,
+      startBackgroundDirectoryRefresh,
+      scheduleDirectoryWatchRefreshRetry,
+    ]);
 
-        schedule(state.intervalMs);
-      };
+    flushPendingDirectoryWatchRefreshRef.current =
+      flushPendingDirectoryWatchRefresh;
 
-      schedule(pollStateRef.current.intervalMs);
+    useEffect(() => {
+      flushPendingDirectoryWatchRefresh();
+    }, [
+      currentPath,
+      isChunking,
+      listToken,
+      loading,
+      flushPendingDirectoryWatchRefresh,
+    ]);
 
+    useEffect(() => {
       return () => {
-        cancelled = true;
         try {
-          if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+          if (directoryWatchRefreshRetryTimerRef.current) {
+            clearTimeout(directoryWatchRefreshRetryTimerRef.current);
+          }
         } catch {
           /* intentionally ignored */
         }
-        pollTimerRef.current = null;
+        directoryWatchRefreshRetryTimerRef.current = null;
 
-        // 清理后台刷新上下文，避免 promise 永久悬挂
         const bg = backgroundListRequestRef.current;
         if (bg && bg.inFlight) {
           try {
@@ -1681,12 +1652,175 @@ const FileManager = memo(
           }
         }
       };
+    }, [open, sshConnection, tabId, currentPath]);
+
+    useEffect(() => {
+      if (!window.terminalAPI?.onDirectoryWatchEvent || !tabId) {
+        return undefined;
+      }
+
+      const unsubscribe = window.terminalAPI.onDirectoryWatchEvent((event) => {
+        if (!event || event.tabId !== String(tabId)) {
+          return;
+        }
+
+        if (
+          !directoryWatchIdRef.current ||
+          event.watchId !== directoryWatchIdRef.current ||
+          event.path !== directoryWatchPathRef.current
+        ) {
+          return;
+        }
+
+        if (event.event === "changed") {
+          pendingDirectoryWatchRefreshRef.current = true;
+          flushPendingDirectoryWatchRefresh();
+          return;
+        }
+
+        if (event.event === "error") {
+          directoryWatchIdRef.current = null;
+          directoryWatchPathRef.current = null;
+          showNotification(
+            t("fileManager.errors.directoryWatchFailed", {
+              error: event.error || t("fileManager.errors.unknownError"),
+            }),
+            "error",
+            6000,
+          );
+        }
+      });
+
+      return () => {
+        if (typeof unsubscribe === "function") {
+          unsubscribe();
+        }
+      };
+    }, [tabId, flushPendingDirectoryWatchRefresh, showNotification, t]);
+
+    useEffect(() => {
+      const generation = ++directoryWatchGenerationRef.current;
+      let cancelled = false;
+
+      const stopWatch = async (watchId) => {
+        if (!watchId || !window.terminalAPI?.stopDirectoryWatch || !tabId) {
+          return;
+        }
+
+        try {
+          await window.terminalAPI.stopDirectoryWatch(tabId, watchId);
+        } catch {
+          /* intentionally ignored */
+        }
+      };
+
+      const syncDirectoryWatch = async () => {
+        const previousWatchId = directoryWatchIdRef.current;
+        directoryWatchIdRef.current = null;
+        directoryWatchPathRef.current = null;
+        pendingDirectoryWatchRefreshRef.current = false;
+
+        try {
+          if (directoryWatchRefreshRetryTimerRef.current) {
+            clearTimeout(directoryWatchRefreshRetryTimerRef.current);
+          }
+        } catch {
+          /* intentionally ignored */
+        }
+        directoryWatchRefreshRetryTimerRef.current = null;
+
+        if (previousWatchId) {
+          await stopWatch(previousWatchId);
+        }
+
+        if (
+          cancelled ||
+          generation !== directoryWatchGenerationRef.current ||
+          !open ||
+          !sshConnection ||
+          !tabId ||
+          !window.terminalAPI?.startDirectoryWatch
+        ) {
+          return;
+        }
+
+        const watchPath = toApiPath(currentPath);
+
+        try {
+          const response = await window.terminalAPI.startDirectoryWatch(
+            tabId,
+            watchPath,
+            {
+              intervalMs: DIRECTORY_WATCH_INTERVAL_MS,
+            },
+          );
+
+          if (cancelled || generation !== directoryWatchGenerationRef.current) {
+            if (response?.success && response.watchId) {
+              await stopWatch(response.watchId);
+            }
+            return;
+          }
+
+          if (!response?.success || !response?.watchId) {
+            showNotification(
+              t("fileManager.errors.directoryWatchFailed", {
+                error:
+                  response?.error || t("fileManager.errors.unknownError"),
+              }),
+              "error",
+              6000,
+            );
+            return;
+          }
+
+          directoryWatchIdRef.current = response.watchId;
+          directoryWatchPathRef.current = watchPath;
+        } catch (error) {
+          if (cancelled || generation !== directoryWatchGenerationRef.current) {
+            return;
+          }
+
+          showNotification(
+            t("fileManager.errors.directoryWatchFailed", {
+              error: error?.message || t("fileManager.errors.unknownError"),
+            }),
+            "error",
+            6000,
+          );
+        }
+      };
+
+      syncDirectoryWatch().catch(() => {});
+
+      return () => {
+        cancelled = true;
+        directoryWatchGenerationRef.current += 1;
+        const activeWatchId = directoryWatchIdRef.current;
+        directoryWatchIdRef.current = null;
+        directoryWatchPathRef.current = null;
+        pendingDirectoryWatchRefreshRef.current = false;
+
+        try {
+          if (directoryWatchRefreshRetryTimerRef.current) {
+            clearTimeout(directoryWatchRefreshRetryTimerRef.current);
+          }
+        } catch {
+          /* intentionally ignored */
+        }
+        directoryWatchRefreshRetryTimerRef.current = null;
+
+        void stopWatch(activeWatchId);
+      };
     }, [
       open,
       sshConnection,
       tabId,
       currentPath,
-      startBackgroundDirectoryRefresh,
+      toApiPath,
+      showNotification,
+      t,
+      DIRECTORY_WATCH_INTERVAL_MS,
     ]);
 
     const updatePathHistoryState = useCallback((nextHistory, nextIndex) => {
@@ -1846,7 +1980,6 @@ const FileManager = memo(
               setListToken(response.token);
               isChunkingRef.current = true;
               setIsChunking(true);
-              scheduleChunkingReset();
             } else {
               listTokenRef.current = null;
               setListToken(null);
@@ -3257,7 +3390,7 @@ const FileManager = memo(
             }
           }
 
-          // 上传未触发前台刷新时，安排一次静默刷新兜底
+          // 上传没有前台刷新结果时，提交一次静默刷新同步列表
           if (!didForegroundRefresh) {
             refreshAfterUserActivity();
           }
@@ -3319,7 +3452,7 @@ const FileManager = memo(
           }
         }
 
-        // 异常分支如果尚未前台刷新，安排静默刷新兜底
+        // 异常分支如果尚未前台刷新，提交静默刷新同步列表
         if (!didForegroundRefresh) {
           refreshAfterUserActivity();
         }
@@ -3483,7 +3616,7 @@ const FileManager = memo(
             }
           }
 
-          // 上传未触发前台刷新时，安排一次静默刷新兜底
+          // 上传没有前台刷新结果时，提交一次静默刷新同步列表
           if (!didForegroundRefresh) {
             refreshAfterUserActivity();
           }
@@ -3521,7 +3654,7 @@ const FileManager = memo(
           }
         }
 
-        // 异常分支如果尚未前台刷新，安排静默刷新兜底
+        // 异常分支如果尚未前台刷新，提交静默刷新同步列表
         if (!didForegroundRefresh) {
           refreshAfterUserActivity();
         }
@@ -4336,7 +4469,7 @@ const FileManager = memo(
                 });
               }
 
-              // 上传未触发前台刷新时，安排一次静默刷新兜底
+              // 上传没有前台刷新结果时，提交一次静默刷新同步列表
               if (!didForegroundRefresh) {
                 refreshAfterUserActivity();
               }
@@ -4370,7 +4503,7 @@ const FileManager = memo(
               removeTransferProgress(transferId);
             }, 3000);
 
-            // 异常分支如果尚未前台刷新，安排静默刷新兜底
+            // 异常分支如果尚未前台刷新，提交静默刷新同步列表
             if (!didForegroundRefresh) {
               refreshAfterUserActivity();
             }

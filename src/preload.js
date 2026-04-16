@@ -23,6 +23,8 @@ const terminalMailboxWrappersByChannel = new Map();
 const terminalMailboxListenersByChannel = new Map();
 const listFilesChunkWrappers = new WeakMap();
 const listFilesChunkListeners = new Set();
+const directoryWatchEventWrappers = new WeakMap();
+const directoryWatchEventListeners = new Set();
 const listFilesTokensByTab = new Map();
 const listFilesTabByToken = new Map();
 
@@ -638,6 +640,40 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     listFilesChunkListeners.delete(wrapped);
     listFilesChunkWrappers.delete(callback);
     maybeAutoCancelTrackedListFiles();
+  },
+  startDirectoryWatch: (tabId, path, options) =>
+    ipcRenderer.invoke("startDirectoryWatch", tabId, path, options),
+  stopDirectoryWatch: (tabId, watchId = null) =>
+    ipcRenderer.invoke("stopDirectoryWatch", tabId, watchId),
+  onDirectoryWatchEvent: (callback) => {
+    if (typeof callback !== "function") {
+      return () => {};
+    }
+
+    const wrapped = (_, data) => callback(data);
+    ipcRenderer.on("directory-watch:event", wrapped);
+    directoryWatchEventWrappers.set(callback, wrapped);
+    directoryWatchEventListeners.add(wrapped);
+
+    return () => {
+      ipcRenderer.removeListener("directory-watch:event", wrapped);
+      directoryWatchEventListeners.delete(wrapped);
+      directoryWatchEventWrappers.delete(callback);
+    };
+  },
+  offDirectoryWatchEvent: (callback) => {
+    if (typeof callback !== "function") {
+      return;
+    }
+
+    const wrapped = directoryWatchEventWrappers.get(callback);
+    if (!wrapped) {
+      return;
+    }
+
+    ipcRenderer.removeListener("directory-watch:event", wrapped);
+    directoryWatchEventListeners.delete(wrapped);
+    directoryWatchEventWrappers.delete(callback);
   },
   copyFile: (tabId, sourcePath, targetPath) =>
     ipcRenderer.invoke("copyFile", tabId, sourcePath, targetPath),

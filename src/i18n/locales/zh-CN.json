@@ -632,6 +632,7 @@
         "emptyName": "名称不能为空",
         "unknownError": "未知错误",
         "refreshTimeout": "刷新超时",
+        "directoryWatchFailed": "目录自动刷新监听失败：{{error}}",
         "noFilesSelected": "未选择任何文件",
         "dragDropNotSupported": "不支持拖拽上传",
         "noConnection": "没有可用的 SSH 连接",
