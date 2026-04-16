@@ -211,6 +211,226 @@ function invokeNativeRequestWithConfig(
   });
 }
 
+function watchDirectory(tabId, remotePath, options = {}) {
+  const sidecarPath = getTransferNativeScannerPath();
+  if (!sidecarPath) {
+    logToFile(
+      "Native SFTP: sidecar binary not found for watchDirectory",
+      "ERROR",
+    );
+    return Promise.reject(new Error("Rust transfer sidecar was not found"));
+  }
+
+  logToFile(
+    `Native SFTP: starting directory watch for tab ${tabId} via ${sidecarPath}`,
+    "INFO",
+  );
+
+  return resolveSshConfig(tabId).then((config) =>
+    watchDirectoryWithConfig(config, remotePath, options, sidecarPath),
+  );
+}
+
+function watchDirectoryWithConfig(
+  config,
+  remotePath,
+  options = {},
+  resolvedSidecarPath = null,
+) {
+  const sidecarPath = resolvedSidecarPath || getTransferNativeScannerPath();
+  if (!sidecarPath) {
+    logToFile(
+      "Native SFTP: sidecar binary not found for watchDirectory",
+      "ERROR",
+    );
+    return Promise.reject(new Error("Rust transfer sidecar was not found"));
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(sidecarPath, ["sftp-watch"], {
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    let stdoutBuffer = "";
+    let stderrBuffer = "";
+    let settled = false;
+    let closedByClient = false;
+    let runtimeErrorNotified = false;
+
+    const notifyRuntimeError = (error) => {
+      if (runtimeErrorNotified) {
+        return;
+      }
+      runtimeErrorNotified = true;
+      if (typeof options.onError === "function") {
+        options.onError(error);
+      }
+    };
+
+    const controller = {
+      close: () => {
+        closedByClient = true;
+        try {
+          if (!child.killed) {
+            child.kill();
+          }
+        } catch {
+          // ignore sidecar shutdown failures
+        }
+      },
+    };
+
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
+      resolve(controller);
+    };
+
+    const rejectOnce = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+
+    const handleOutputLine = (line) => {
+      if (!line) return;
+
+      let payload;
+      try {
+        payload = JSON.parse(line);
+      } catch (error) {
+        const wrapped = new Error(
+          `Native SFTP sidecar returned invalid JSON: ${normalizeErrorMessage(error)}`,
+        );
+        if (settled) {
+          notifyRuntimeError(wrapped);
+          controller.close();
+        } else {
+          rejectOnce(wrapped);
+        }
+        return;
+      }
+
+      if (payload?.type !== "watch") {
+        return;
+      }
+
+      const eventName = payload?.event;
+      const eventPayload =
+        payload?.payload && typeof payload.payload === "object"
+          ? payload.payload
+          : {};
+
+      if (eventName === "ready") {
+        if (typeof options.onReady === "function") {
+          options.onReady(eventPayload);
+        }
+        resolveOnce();
+        return;
+      }
+
+      if (eventName === "changed") {
+        if (typeof options.onChanged === "function") {
+          options.onChanged(eventPayload);
+        }
+      }
+    };
+
+    child.stdout.on("data", (chunk) => {
+      stdoutBuffer += chunk.toString("utf8");
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() || "";
+      for (const line of lines) {
+        handleOutputLine(line.trim());
+      }
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderrBuffer += chunk.toString("utf8");
+    });
+
+    child.on("error", (error) => {
+      const wrapped = new Error(
+        `Failed to start native SFTP sidecar: ${normalizeErrorMessage(error)}`,
+      );
+      if (settled) {
+        notifyRuntimeError(wrapped);
+        return;
+      }
+      rejectOnce(wrapped);
+    });
+
+    child.on("close", (code, signal) => {
+      if (stdoutBuffer.trim()) {
+        handleOutputLine(stdoutBuffer.trim());
+      }
+
+      const exitInfo = {
+        code,
+        signal,
+        stderr: stderrBuffer.trim(),
+        closedByClient,
+      };
+      const emitExit = () => {
+        if (typeof options.onExit === "function") {
+          options.onExit(exitInfo);
+        }
+      };
+
+      if (closedByClient || signal === "SIGTERM" || signal === "SIGKILL") {
+        if (!settled) {
+          rejectOnce(new Error("Native SFTP directory watch was cancelled"));
+        }
+        emitExit();
+        return;
+      }
+
+      if (code !== 0) {
+        const wrapped = new Error(
+          stderrBuffer.trim() ||
+            `Native SFTP directory watch exited with code ${code}`,
+        );
+        if (settled) {
+          notifyRuntimeError(wrapped);
+        } else {
+          rejectOnce(wrapped);
+        }
+        emitExit();
+        return;
+      }
+
+      if (!settled) {
+        rejectOnce(
+          new Error("Native SFTP directory watch closed before it became ready"),
+        );
+        emitExit();
+        return;
+      }
+
+      notifyRuntimeError(
+        new Error("Native SFTP directory watch closed unexpectedly"),
+      );
+      emitExit();
+    });
+
+    const requestedIntervalMs = Math.floor(Number(options.intervalMs));
+    const envelope = JSON.stringify({
+      config,
+      request: {
+        operation: "watchDirectory",
+        path: remotePath,
+        watchIntervalMs:
+          Number.isFinite(requestedIntervalMs) && requestedIntervalMs > 0
+            ? requestedIntervalMs
+            : undefined,
+      },
+    });
+
+    child.stdin.end(envelope, "utf8");
+  });
+}
+
 async function listFiles(tabId, remotePath, options = {}) {
   return invokeNativeRequest(
     tabId,
@@ -400,6 +620,7 @@ module.exports = {
   invokeNativeRequest,
   invokeNativeRequestWithConfig,
   listFiles,
+  watchDirectory,
   scanRemoteFolderTree,
   copyFile,
   moveFile,

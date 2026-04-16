@@ -632,6 +632,7 @@
         "emptyName": "Name cannot be empty",
         "unknownError": "Unknown error",
         "refreshTimeout": "Refresh timeout",
+        "directoryWatchFailed": "Directory auto-refresh watcher failed: {{error}}",
         "noFilesSelected": "No files selected",
         "dragDropNotSupported": "Drag and drop upload is not supported",
         "noConnection": "No SSH connection available",

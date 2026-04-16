@@ -15,7 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::Arc;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::fs::OpenOptions as TokioOpenOptions;
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
@@ -86,6 +86,7 @@ struct SftpRequest {
     segment_length: Option<u64>,
     remote_write_flags: Option<String>,
     local_write_flags: Option<String>,
+    watch_interval_ms: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -159,11 +160,12 @@ async fn run() -> Result<(), String> {
     let mut args = env::args().skip(1);
     let command = args
         .next()
-        .ok_or_else(|| "missing command, expected scan-folder or sftp-request".to_string())?;
+        .ok_or_else(|| "missing command, expected scan-folder, sftp-request, or sftp-watch".to_string())?;
 
     match command.as_str() {
         "scan-folder" => run_scan_folder(args),
         "sftp-request" => run_sftp_request().await,
+        "sftp-watch" => run_sftp_watch().await,
         "--version" => {
             println!("{}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -238,6 +240,37 @@ async fn run_sftp_request() -> Result<(), String> {
     Ok(())
 }
 
+async fn run_sftp_watch() -> Result<(), String> {
+    let mut stdin = io::stdin();
+    let mut payload = String::new();
+    stdin
+        .read_to_string(&mut payload)
+        .await
+        .map_err(|error| format!("failed to read stdin: {error}"))?;
+
+    let envelope: SftpEnvelope = serde_json::from_str(payload.trim())
+        .map_err(|error| format!("failed to parse request: {error}"))?;
+
+    if envelope.request.operation != "watchDirectory" {
+        return Err(format!(
+            "unsupported watch operation: {}",
+            envelope.request.operation
+        ));
+    }
+
+    let (sftp, handle) = connect_sftp(&envelope.config).await?;
+    let watch_result = watch_directory(&sftp, &envelope.request).await;
+
+    let close_result = sftp.close().await.map_err(|error| error.to_string());
+    let _ = handle
+        .disconnect(Disconnect::ByApplication, "", "English")
+        .await;
+
+    watch_result?;
+    close_result?;
+    Ok(())
+}
+
 async fn connect_sftp(config: &SshConnectionConfig) -> Result<(Sftp, SshHandle), String> {
     let client_config = Arc::new(client::Config {
         inactivity_timeout: Some(Duration::from_secs(30)),
@@ -307,16 +340,16 @@ async fn connect_sftp(config: &SshConnectionConfig) -> Result<(Sftp, SshHandle),
 async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_json::Value, String> {
     match request.operation.as_str() {
         "listFiles" => {
-            let path = required_path(request.path.as_deref(), "path")?;
-            let entries = list_files(sftp, path).await?;
+            let path = resolve_directory_path(request.path.as_deref());
+            let entries = list_files(sftp, &path).await?;
             Ok(json!({
                 "success": true,
                 "data": entries,
             }))
         }
         "scanRemoteFolderTree" => {
-            let path = required_path(request.path.as_deref(), "path")?;
-            let result = scan_remote_folder_tree(sftp, path).await?;
+            let path = resolve_directory_path(request.path.as_deref());
+            let result = scan_remote_folder_tree(sftp, &path).await?;
             Ok(json!({
                 "success": true,
                 "totalBytes": result.total_bytes,
@@ -504,6 +537,15 @@ fn required_path<'a>(value: Option<&'a str>, field_name: &str) -> Result<&'a str
         .ok_or_else(|| format!("{field_name} is required"))
 }
 
+fn resolve_directory_path(value: Option<&str>) -> String {
+    let normalized = value.unwrap_or("").trim();
+    if normalized.is_empty() {
+        ".".to_string()
+    } else {
+        normalized.to_string()
+    }
+}
+
 fn parse_numeric_id(value: &str) -> Result<u32, String> {
     value
         .trim()
@@ -654,6 +696,96 @@ async fn list_files(sftp: &Sftp, remote_path: &str) -> Result<Vec<RemoteFileEntr
     }
 
     Ok(entries)
+}
+
+fn update_signature_bytes(hash: &mut u64, bytes: &[u8]) {
+    const FNV_PRIME: u64 = 1099511628211;
+    for byte in bytes {
+        *hash ^= u64::from(*byte);
+        *hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    *hash ^= 0xff;
+    *hash = hash.wrapping_mul(FNV_PRIME);
+}
+
+fn update_signature_u64(hash: &mut u64, value: u64) {
+    update_signature_bytes(hash, &value.to_le_bytes());
+}
+
+fn compute_directory_signature(entries: &[RemoteFileEntry]) -> String {
+    let mut normalized_entries: Vec<&RemoteFileEntry> = entries.iter().collect();
+    normalized_entries.sort_by(|left, right| {
+        left.name
+            .cmp(&right.name)
+            .then(left.is_directory.cmp(&right.is_directory))
+            .then(left.size.cmp(&right.size))
+            .then(left.modify_time.cmp(&right.modify_time))
+            .then(left.mode.cmp(&right.mode))
+            .then(left.uid.cmp(&right.uid))
+            .then(left.gid.cmp(&right.gid))
+    });
+
+    let mut hash = 14695981039346656037u64;
+    update_signature_u64(&mut hash, normalized_entries.len() as u64);
+
+    for entry in normalized_entries {
+        update_signature_bytes(&mut hash, entry.name.as_bytes());
+        update_signature_u64(&mut hash, u64::from(entry.is_directory));
+        update_signature_u64(&mut hash, entry.size);
+        update_signature_u64(&mut hash, entry.modify_time);
+        update_signature_u64(&mut hash, u64::from(entry.mode));
+        update_signature_u64(&mut hash, u64::from(entry.uid));
+        update_signature_u64(&mut hash, u64::from(entry.gid));
+    }
+
+    format!("{hash:016x}:{}", entries.len())
+}
+
+fn current_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+async fn watch_directory(sftp: &Sftp, request: &SftpRequest) -> Result<(), String> {
+    let remote_path = resolve_directory_path(request.path.as_deref());
+    let interval_ms = request.watch_interval_ms.unwrap_or(1500).clamp(500, 10_000);
+
+    let initial_entries = list_files(sftp, &remote_path).await?;
+    let mut previous_signature = compute_directory_signature(&initial_entries);
+
+    emit_watch_event(
+        "ready",
+        json!({
+            "path": &remote_path,
+            "signature": &previous_signature,
+            "entryCount": initial_entries.len(),
+            "timestamp": current_timestamp_ms(),
+            "intervalMs": interval_ms,
+        }),
+    )?;
+
+    loop {
+        tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+
+        let entries = list_files(sftp, &remote_path).await?;
+        let next_signature = compute_directory_signature(&entries);
+        if next_signature == previous_signature {
+            continue;
+        }
+
+        previous_signature = next_signature.clone();
+        emit_watch_event(
+            "changed",
+            json!({
+                "path": &remote_path,
+                "signature": &next_signature,
+                "entryCount": entries.len(),
+                "timestamp": current_timestamp_ms(),
+            }),
+        )?;
+    }
 }
 
 async fn scan_remote_folder_tree(
@@ -1138,6 +1270,19 @@ fn emit_result(result: serde_json::Value) -> Result<(), String> {
             "result": result,
         }))
         .map_err(|error| format!("failed to serialize result: {error}"))?
+    );
+    Ok(())
+}
+
+fn emit_watch_event(event: &str, payload: serde_json::Value) -> Result<(), String> {
+    println!(
+        "{}",
+        serde_json::to_string(&json!({
+            "type": "watch",
+            "event": event,
+            "payload": payload,
+        }))
+        .map_err(|error| format!("failed to serialize watch event: {error}"))?
     );
     Ok(())
 }
