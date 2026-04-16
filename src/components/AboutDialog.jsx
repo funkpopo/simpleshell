@@ -13,6 +13,7 @@ import LinearProgress from "@mui/material/LinearProgress";
 import Alert from "@mui/material/Alert";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
+import PropTypes from "prop-types";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -203,6 +204,29 @@ const RELEASE_NOTE_ALLOWED_ELEMENTS = [
   "input",
 ];
 
+const normalizeVersionString = (value) => {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().replace(/^v/i, "");
+};
+
+const doesInstallerMatchUpdate = (installerInfo, nextUpdateInfo) => {
+  const installerVersion = normalizeVersionString(
+    installerInfo?.installerVersion,
+  );
+  const latestVersion = normalizeVersionString(nextUpdateInfo?.latestVersion);
+
+  return Boolean(
+    installerInfo?.available &&
+    nextUpdateInfo?.hasUpdate &&
+    installerVersion &&
+    latestVersion &&
+    installerVersion === latestVersion,
+  );
+};
+
 const normalizeSafeMarkdownHref = (href) => {
   if (typeof href !== "string") {
     return null;
@@ -234,10 +258,29 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   const [checkingForUpdate, setCheckingForUpdate] = useState(false);
   const [appVersion, setAppVersion] = useState("1.0.0");
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [downloadedInstallerInfo, setDownloadedInstallerInfo] = useState(null);
   const [updateStatus, setUpdateStatus] = useState("idle"); // idle, checking, available, downloading, downloaded, installing, error, upToDate
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState("");
+
+  const downloadedInstallerMatchesUpdate = doesInstallerMatchUpdate(
+    downloadedInstallerInfo,
+    updateInfo,
+  );
+  const canInstallDownloadedUpdate =
+    downloadedInstallerInfo?.available &&
+    (updateStatus === "downloaded" ||
+      (updateStatus !== "checking" &&
+        updateStatus !== "downloading" &&
+        updateStatus !== "installing" &&
+        (!updateInfo?.hasUpdate || downloadedInstallerMatchesUpdate)));
+  const shouldShowDownloadedInstallerNotice =
+    downloadedInstallerInfo?.available &&
+    updateStatus !== "downloaded" &&
+    updateStatus !== "downloading" &&
+    updateStatus !== "installing" &&
+    (!updateInfo?.hasUpdate || downloadedInstallerMatchesUpdate);
 
   // Get app version
   useEffect(() => {
@@ -255,18 +298,51 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 
   // 对话框打开时检测是否有已下载的安装包
   useEffect(() => {
-    if (open && updateStatus === "idle") {
-      (async () => {
-        try {
-          const result = await window.terminalAPI.hasDownloadedInstaller?.();
-          if (result?.available) {
-            setUpdateStatus("downloaded");
-          }
-        } catch {
-          // ignore
-        }
-      })();
+    if (!open) {
+      return undefined;
     }
+
+    let cancelled = false;
+    setDownloadedInstallerInfo(null);
+    setUpdateStatus((currentStatus) =>
+      currentStatus === "downloaded" ? "idle" : currentStatus,
+    );
+
+    (async () => {
+      try {
+        const result = await window.terminalAPI.hasDownloadedInstaller?.();
+        if (cancelled) {
+          return;
+        }
+
+        const nextInstallerInfo = result?.available ? result : null;
+        setDownloadedInstallerInfo(nextInstallerInfo);
+        setUpdateStatus((currentStatus) => {
+          if (currentStatus !== "downloaded" || nextInstallerInfo) {
+            return currentStatus;
+          }
+
+          return updateInfo?.hasUpdate ? "available" : "idle";
+        });
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        setDownloadedInstallerInfo(null);
+        setUpdateStatus((currentStatus) =>
+          currentStatus === "downloaded"
+            ? updateInfo?.hasUpdate
+              ? "available"
+              : "idle"
+            : currentStatus,
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   // 监听下载进度
@@ -332,7 +408,16 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 
       if (result.success) {
         setUpdateInfo(result.updateInfo);
-        setUpdateStatus(result.updateInfo.hasUpdate ? "available" : "upToDate");
+        setUpdateStatus(
+          result.updateInfo.hasUpdate
+            ? doesInstallerMatchUpdate(
+                downloadedInstallerInfo,
+                result.updateInfo,
+              )
+              ? "downloaded"
+              : "available"
+            : "upToDate",
+        );
       } else {
         setError(result.error || t("update.errors.checkFailed"));
         setUpdateStatus("error");
@@ -343,7 +428,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     } finally {
       setCheckingForUpdate(false);
     }
-  }, []);
+  }, [downloadedInstallerInfo, t]);
 
   // Download update
   const downloadUpdate = useCallback(async () => {
@@ -361,6 +446,11 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
       const result = await window.terminalAPI.downloadUpdate();
 
       if (result.success) {
+        const installerResult =
+          await window.terminalAPI.hasDownloadedInstaller?.();
+        setDownloadedInstallerInfo(
+          installerResult?.available ? installerResult : null,
+        );
         setUpdateStatus("downloaded");
       } else {
         setError(result.error || t("update.errors.downloadFailed"));
@@ -372,11 +462,11 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
     } finally {
       setIsDownloading(false);
     }
-  }, [updateInfo]);
+  }, [t, updateInfo]);
 
   // Install update
   const installUpdate = useCallback(async () => {
-    if (updateStatus !== "downloaded") {
+    if (!canInstallDownloadedUpdate) {
       setError(t("update.errors.noInstallerFile"));
       return;
     }
@@ -396,7 +486,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
       setError(err.message || t("update.errors.installationFailed"));
       setUpdateStatus("error");
     }
-  }, [updateStatus]);
+  }, [canInstallDownloadedUpdate, t]);
 
   // Cancel download
   const cancelDownload = useCallback(async () => {
@@ -412,17 +502,11 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 
   // 渲染更新状态内容
   const renderUpdateContent = () => {
-    if (error) {
-      return (
-        <Alert severity="error" variant="outlined" sx={{ mt: 1, mb: 1 }}>
-          {error}
-        </Alert>
-      );
-    }
+    let primaryContent = null;
 
     switch (updateStatus) {
       case "checking":
-        return (
+        primaryContent = (
           <Box sx={updatePanelSx}>
             <Box display="flex" alignItems="center" gap={1}>
               <CircularProgress size={16} />
@@ -430,9 +514,10 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
             </Box>
           </Box>
         );
+        break;
 
       case "upToDate":
-        return (
+        primaryContent = (
           <Box sx={updatePanelSx}>
             <Box display="flex" alignItems="center" gap={1}>
               <CheckIcon color="success" />
@@ -442,9 +527,10 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
             </Box>
           </Box>
         );
+        break;
 
       case "available":
-        return (
+        primaryContent = (
           <Box sx={updatePanelSx}>
             <Box
               display="flex"
@@ -468,9 +554,10 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
             </Typography>
           </Box>
         );
+        break;
 
       case "downloading":
-        return (
+        primaryContent = (
           <Box sx={updatePanelSx}>
             <Box
               display="flex"
@@ -510,9 +597,10 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
             </Typography>
           </Box>
         );
+        break;
 
       case "downloaded":
-        return (
+        primaryContent = (
           <Box sx={updatePanelSx}>
             <Box display="flex" alignItems="center" gap={1}>
               <CheckIcon color="success" />
@@ -522,9 +610,10 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
             </Box>
           </Box>
         );
+        break;
 
       case "installing":
-        return (
+        primaryContent = (
           <Box sx={updatePanelSx}>
             <Box display="flex" alignItems="center" gap={1}>
               <CircularProgress size={16} />
@@ -532,28 +621,70 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
             </Box>
           </Box>
         );
+        break;
 
       default:
-        return null;
+        primaryContent = null;
     }
+
+    return (
+      <>
+        {error ? (
+          <Alert severity="error" variant="outlined" sx={{ mt: 1, mb: 1 }}>
+            {error}
+          </Alert>
+        ) : null}
+        {primaryContent}
+        {shouldShowDownloadedInstallerNotice ? (
+          <Box sx={updatePanelSx}>
+            <Box display="flex" alignItems="center" gap={1}>
+              <CheckIcon color="success" />
+              <Typography variant="body2" color="success.main">
+                {t("update.readyToInstall")}
+              </Typography>
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+              {t("update.currentVersion")}:{" "}
+              {downloadedInstallerInfo?.currentVersion || appVersion} →{" "}
+              {downloadedInstallerInfo?.installerVersion}
+            </Typography>
+          </Box>
+        ) : null}
+      </>
+    );
   };
 
   // 渲染更新按钮
   const renderUpdateButtons = () => {
+    const installButton =
+      canInstallDownloadedUpdate && updateStatus !== "downloaded" ? (
+        <Button
+          variant="contained"
+          onClick={installUpdate}
+          color="primary"
+          startIcon={<UpdateIcon />}
+        >
+          {t("update.installNow")}
+        </Button>
+      ) : null;
+
     switch (updateStatus) {
       case "idle":
       case "error":
         return (
-          <Button
-            variant="outlined"
-            onClick={handleCheckForUpdate}
-            disabled={checkingForUpdate}
-            startIcon={
-              checkingForUpdate ? <CircularProgress size={16} /> : null
-            }
-          >
-            {t("update.title")}
-          </Button>
+          <>
+            <Button
+              variant="outlined"
+              onClick={handleCheckForUpdate}
+              disabled={checkingForUpdate}
+              startIcon={
+                checkingForUpdate ? <CircularProgress size={16} /> : null
+              }
+            >
+              {t("about.checkUpdateButton")}
+            </Button>
+            {installButton}
+          </>
         );
 
       case "checking":
@@ -592,6 +723,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
             variant="contained"
             onClick={installUpdate}
             color="primary"
+            disabled={!canInstallDownloadedUpdate}
             startIcon={<UpdateIcon />}
           >
             {t("update.installNow")}
@@ -607,13 +739,16 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 
       case "upToDate":
         return (
-          <Button
-            variant="outlined"
-            onClick={handleCheckForUpdate}
-            disabled={checkingForUpdate}
-          >
-            {t("update.retryCheck")}
-          </Button>
+          <>
+            <Button
+              variant="outlined"
+              onClick={handleCheckForUpdate}
+              disabled={checkingForUpdate}
+            >
+              {t("update.retryCheck")}
+            </Button>
+            {installButton}
+          </>
         );
 
       default:
@@ -727,5 +862,9 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
 });
 
 AboutDialog.displayName = "AboutDialog";
+AboutDialog.propTypes = {
+  open: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+};
 
 export default AboutDialog;
