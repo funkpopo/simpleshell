@@ -6,7 +6,6 @@ const crypto = require("crypto");
 const { spawn, execFile } = require("child_process");
 const { logToFile } = require("../utils/logger");
 
-const UPDATE_TEMP_RETENTION_MS = 24 * 60 * 60 * 1000;
 const DOWNLOAD_CONNECTION_TIMEOUT = 30000;
 const DOWNLOAD_DATA_TIMEOUT = 60000;
 const MAX_REDIRECTS = 5;
@@ -34,8 +33,8 @@ class UpdateService {
     this.latestReleaseAsset = null;
     this.lastDownloadedInstaller = null;
 
-    // 启动时清理“已安装版本”的遗留安装包，避免关于页反复显示“立即安装”
-    void this.cleanupConsumedInstaller();
+    // 启动时清空更新目录中的安装包与元数据，避免残留 setup.exe 持续堆积。
+    void this.clearInstallerTempDir();
   }
 
   /**
@@ -132,26 +131,46 @@ class UpdateService {
   }
 
   /**
-   * 清理临时目录中的旧文件
+   * 判断文件是否为更新安装包工件
+   * @param {string} fileName
+   * @returns {boolean}
    */
-  async cleanupTempDir() {
+  isInstallerArtifactFile(fileName) {
+    const normalizedFileName = path.basename(String(fileName || ""));
+    if (!normalizedFileName) {
+      return false;
+    }
+
+    if (normalizedFileName === path.basename(this.installerMetaPath)) {
+      return true;
+    }
+
+    const fileExt = path.extname(normalizedFileName).toLowerCase();
+    return this.getAllowedInstallerExtensions().has(fileExt);
+  }
+
+  /**
+   * 清空更新目录中的安装包与元数据
+   */
+  async clearInstallerTempDir() {
     try {
+      await this.ensureTempDir();
+      this.lastDownloadedInstaller = null;
+
       const entries = await fsp.readdir(this.tempDir, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isFile()) {
           continue;
         }
 
-        if (entry.name === path.basename(this.installerMetaPath)) {
+        if (!this.isInstallerArtifactFile(entry.name)) {
           continue;
         }
 
         const filePath = path.join(this.tempDir, entry.name);
-        const stats = await fsp.stat(filePath);
-        if (Date.now() - stats.mtime.getTime() > UPDATE_TEMP_RETENTION_MS) {
-          await fsp.unlink(filePath);
-          logToFile(`Cleaned up old update file: ${entry.name}`, "INFO");
-        }
+        this.assertPathInTempDir(filePath);
+        await fsp.unlink(filePath);
+        logToFile(`Cleared update artifact: ${entry.name}`, "INFO");
       }
     } catch (error) {
       logToFile(`Error cleaning update directory: ${error.message}`, "WARN");
@@ -185,14 +204,15 @@ class UpdateService {
       const downloadUrl = targetAsset ? targetAsset.browser_download_url : null;
       const expectedSha256 = this.extractExpectedSha256(targetAsset);
 
-      this.latestReleaseAsset = targetAsset
-        ? {
-            name: targetAsset.name,
-            downloadUrl,
-            expectedSha256,
-            version: latestVersion,
-          }
-        : null;
+      this.latestReleaseAsset =
+        hasUpdate && targetAsset
+          ? {
+              name: targetAsset.name,
+              downloadUrl,
+              expectedSha256,
+              version: latestVersion,
+            }
+          : null;
 
       const updateInfo = {
         hasUpdate,
@@ -392,6 +412,10 @@ class UpdateService {
       throw new Error(checkResult.error || "Failed to refresh update metadata");
     }
 
+    if (!checkResult.updateInfo?.hasUpdate) {
+      throw new Error("Application is already up to date");
+    }
+
     if (!this.latestReleaseAsset?.downloadUrl) {
       throw new Error("No update package found for current platform");
     }
@@ -426,7 +450,7 @@ class UpdateService {
 
     try {
       await this.ensureTempDir();
-      await this.cleanupTempDir();
+      await this.clearInstallerTempDir();
 
       const asset = await this.getLatestReleaseAsset();
       const downloadUrl = this.validateAndNormalizeDownloadUrl(
@@ -664,6 +688,20 @@ class UpdateService {
   }
 
   /**
+   * 标准化 SHA-256 字符串
+   * @param {string} value
+   * @returns {string|null}
+   */
+  normalizeSha256(value) {
+    if (typeof value !== "string") {
+      return null;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    return /^[a-f0-9]{64}$/.test(normalized) ? normalized : null;
+  }
+
+  /**
    * 持久化下载后的安装包元数据
    * @param {object} meta
    */
@@ -695,6 +733,22 @@ class UpdateService {
         typeof meta.sha256 !== "string"
       ) {
         return null;
+      }
+
+      const normalizedSha256 = this.normalizeSha256(meta.sha256);
+      if (!normalizedSha256) {
+        return null;
+      }
+
+      meta.sha256 = normalizedSha256;
+      if (typeof meta.expectedSha256 === "string") {
+        const normalizedExpectedSha256 = this.normalizeSha256(
+          meta.expectedSha256,
+        );
+        if (!normalizedExpectedSha256) {
+          return null;
+        }
+        meta.expectedSha256 = normalizedExpectedSha256;
       }
 
       this.assertPathInTempDir(meta.filePath);
@@ -785,33 +839,102 @@ class UpdateService {
   }
 
   /**
+   * 校验已下载的安装包是否仍然可安装
+   * @param {{cleanupInvalidArtifacts?: boolean, requireNewerThanCurrent?: boolean}} options
+   * @returns {Promise<{meta: object, filePath: string, fileExt: string, installerVersion: string, actualSha256: string}>}
+   */
+  async assertDownloadedInstallerReady(options = {}) {
+    const { cleanupInvalidArtifacts = false, requireNewerThanCurrent = true } =
+      options;
+    const meta = await this.loadInstallerMeta();
+    if (!meta) {
+      throw new Error("No downloaded update package available");
+    }
+
+    let filePath = "";
+    const cleanupInvalid = async (message, cleanupFile = true) => {
+      if (cleanupInvalidArtifacts) {
+        if (cleanupFile && filePath) {
+          await this.cleanupInstallerArtifacts(filePath);
+        } else {
+          await this.cleanupInstallerMetaFile();
+        }
+      }
+
+      throw new Error(message);
+    };
+
+    try {
+      filePath = path.resolve(meta.filePath);
+      this.assertPathInTempDir(filePath);
+    } catch {
+      await cleanupInvalid("Installer metadata path is invalid", false);
+    }
+
+    try {
+      await fsp.access(filePath);
+    } catch {
+      await cleanupInvalid("Downloaded installer file is missing", false);
+    }
+
+    const fileExt = path.extname(filePath).toLowerCase();
+    const allowedExt = this.getAllowedInstallerExtensions();
+    if (!allowedExt.has(fileExt)) {
+      await cleanupInvalid(`Unsupported installer format: ${fileExt}`);
+    }
+
+    const metaSha256 = this.normalizeSha256(meta.sha256);
+    if (!metaSha256) {
+      await cleanupInvalid("Installer hash metadata is invalid");
+    }
+
+    let actualSha256;
+    try {
+      actualSha256 = await this.calculateFileSha256(filePath);
+    } catch (error) {
+      await cleanupInvalid(
+        `Unable to read downloaded installer: ${error.message}`,
+        false,
+      );
+    }
+
+    if (metaSha256 !== actualSha256) {
+      await cleanupInvalid("Installer hash verification failed");
+    }
+
+    if (meta.expectedSha256 && meta.expectedSha256 !== actualSha256) {
+      await cleanupInvalid(
+        "Installer hash does not match expected release hash",
+      );
+    }
+
+    const installerVersion = this.resolveInstallerVersion(meta, filePath);
+    if (!installerVersion) {
+      await cleanupInvalid("Installer version metadata is missing");
+    }
+
+    if (
+      requireNewerThanCurrent &&
+      this.compareVersions(installerVersion, this.currentVersion) <= 0
+    ) {
+      await cleanupInvalid(
+        `Installer version ${installerVersion} is not newer than current version ${this.currentVersion}`,
+      );
+    }
+
+    return { meta, filePath, fileExt, installerVersion, actualSha256 };
+  }
+
+  /**
    * 若当前版本已不低于安装包目标版本，自动清理遗留安装包
    */
   async cleanupConsumedInstaller() {
     try {
-      const meta = await this.loadInstallerMeta();
-      if (!meta) {
-        return;
-      }
-
-      const filePath = path.resolve(meta.filePath);
-      this.assertPathInTempDir(filePath);
-      try {
-        await fsp.access(filePath);
-      } catch {
-        await this.cleanupInstallerMetaFile();
-        return;
-      }
-
-      const installerVersion = this.resolveInstallerVersion(meta, filePath);
-      if (!installerVersion) {
-        logToFile(
-          "Installer version metadata missing, cleaning stale installer artifact",
-          "WARN",
-        );
-        await this.cleanupInstallerArtifacts(filePath);
-        return;
-      }
+      const { filePath, installerVersion } =
+        await this.assertDownloadedInstallerReady({
+          cleanupInvalidArtifacts: true,
+          requireNewerThanCurrent: false,
+        });
 
       if (this.compareVersions(installerVersion, this.currentVersion) <= 0) {
         logToFile(
@@ -821,6 +944,10 @@ class UpdateService {
         await this.cleanupInstallerArtifacts(filePath);
       }
     } catch (error) {
+      if (error?.message === "No downloaded update package available") {
+        return;
+      }
+
       logToFile(
         `Failed to cleanup consumed installer: ${error.message}`,
         "WARN",
@@ -833,41 +960,8 @@ class UpdateService {
    * @returns {Promise<{filePath: string, fileExt: string, installerVersion: string}>}
    */
   async verifyInstallerBeforeInstall() {
-    const meta = await this.loadInstallerMeta();
-    if (!meta) {
-      throw new Error("No downloaded update package available");
-    }
-
-    const filePath = path.resolve(meta.filePath);
-    this.assertPathInTempDir(filePath);
-    await fsp.access(filePath);
-
-    const fileExt = path.extname(filePath).toLowerCase();
-    const allowedExt = this.getAllowedInstallerExtensions();
-    if (!allowedExt.has(fileExt)) {
-      throw new Error(`Unsupported installer format: ${fileExt}`);
-    }
-
-    const actualSha256 = await this.calculateFileSha256(filePath);
-    if (meta.sha256 !== actualSha256) {
-      throw new Error("Installer hash verification failed before execution");
-    }
-
-    if (meta.expectedSha256 && meta.expectedSha256 !== actualSha256) {
-      throw new Error("Installer hash does not match expected release hash");
-    }
-
-    const installerVersion = this.resolveInstallerVersion(meta, filePath);
-    if (!installerVersion) {
-      throw new Error("Installer version metadata is missing");
-    }
-
-    if (this.compareVersions(installerVersion, this.currentVersion) <= 0) {
-      throw new Error(
-        `Installer version ${installerVersion} is not newer than current version ${this.currentVersion}`,
-      );
-    }
-
+    const { filePath, fileExt, installerVersion } =
+      await this.assertDownloadedInstallerReady();
     return { filePath, fileExt, installerVersion };
   }
 
@@ -1045,31 +1139,9 @@ class UpdateService {
    */
   async hasDownloadedInstaller() {
     try {
-      const meta = await this.loadInstallerMeta();
-      if (!meta) {
-        return { available: false };
-      }
-
-      const filePath = path.resolve(meta.filePath);
-      this.assertPathInTempDir(filePath);
-
-      try {
-        await fsp.access(filePath);
-      } catch {
-        await this.cleanupInstallerMetaFile();
-        return { available: false };
-      }
-
-      const installerVersion = this.resolveInstallerVersion(meta, filePath);
-      if (!installerVersion) {
-        await this.cleanupInstallerArtifacts(filePath);
-        return { available: false };
-      }
-
-      if (this.compareVersions(installerVersion, this.currentVersion) <= 0) {
-        await this.cleanupInstallerArtifacts(filePath);
-        return { available: false };
-      }
+      const { installerVersion } = await this.assertDownloadedInstallerReady({
+        cleanupInvalidArtifacts: true,
+      });
 
       return {
         available: true,
