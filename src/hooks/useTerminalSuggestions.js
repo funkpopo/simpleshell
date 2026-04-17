@@ -27,11 +27,17 @@ export const useTerminalSuggestions = ({
 
   const suppressionContextRef = useRef({ input: "", timestamp: 0 });
   const suggestionsSuppressedRef = useRef(false);
+  const suggestionsHiddenByEscRef = useRef(false);
   const suggestionSelectedRef = useRef(false);
+  const getSuggestionsRef = useRef(null);
 
   useEffect(() => {
     suggestionsSuppressedRef.current = suggestionsSuppressedUntilEnter;
   }, [suggestionsSuppressedUntilEnter]);
+
+  useEffect(() => {
+    suggestionsHiddenByEscRef.current = suggestionsHiddenByEsc;
+  }, [suggestionsHiddenByEsc]);
 
   const updateCursorPosition = useCallback(() => {
     if (!termRef.current || !terminalRef.current) {
@@ -215,6 +221,10 @@ export const useTerminalSuggestions = ({
     ],
   );
 
+  useEffect(() => {
+    getSuggestionsRef.current = getSuggestions;
+  }, [getSuggestions]);
+
   const handleRefreshSuggestions = useCallback(
     (event) => {
       const { input } = event.detail || {};
@@ -297,8 +307,10 @@ export const useTerminalSuggestions = ({
     setSuggestionsSuppressedUntilEnter,
     suppressionContextRef,
     suggestionsSuppressedRef,
+    suggestionsHiddenByEscRef,
     suggestionSelectedRef,
     getSuggestions,
+    getSuggestionsRef,
     updateCursorPosition,
     handleSuggestionSelect,
     closeSuggestions,
