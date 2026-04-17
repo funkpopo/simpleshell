@@ -529,8 +529,10 @@ const WebTerminal = ({
     setSuggestionsSuppressedUntilEnter,
     suppressionContextRef,
     suggestionsSuppressedRef,
+    suggestionsHiddenByEscRef,
     suggestionSelectedRef,
     getSuggestions,
+    getSuggestionsRef,
     updateCursorPosition,
     handleSuggestionSelect,
     closeSuggestions,
@@ -546,10 +548,15 @@ const WebTerminal = ({
   });
 
   const inEditorModeRef = useRef(false);
+  const isCommandExecutingRef = useRef(false);
 
   useEffect(() => {
     inEditorModeRef.current = inEditorMode;
   }, [inEditorMode]);
+
+  useEffect(() => {
+    isCommandExecutingRef.current = isCommandExecuting;
+  }, [isCommandExecuting]);
 
   const attachTerminalToContainer = useCallback(
     (termInstance = null) => {
@@ -1333,13 +1340,32 @@ const WebTerminal = ({
           if (!inEditorMode) {
             setCurrentInput(currentInputBuffer);
 
-            // 只有在非命令执行状态下才触发建议搜索
+            // 退格导致内容显著变化时，自动解除抑制，避免 Esc 后无法重新唤起
+            if (suggestionsSuppressedRef.current) {
+              try {
+                const anchor = (
+                  suppressionContextRef.current?.input || ""
+                ).trim();
+                const nowInput = currentInputBuffer.trim();
+                if (!anchor || nowInput.length === 0 || nowInput !== anchor) {
+                  setSuggestionsSuppressedUntilEnter(false);
+                  setSuggestionsHiddenByEsc(false);
+                }
+              } catch {
+                /* intentionally ignored */
+              }
+            }
+
+            // 使用 ref 读取最新状态，避免 onData 闭包捕获过时值
             if (
-              !suggestionsHiddenByEsc &&
-              !suggestionsSuppressedUntilEnter &&
-              !isCommandExecuting
+              !suggestionsHiddenByEscRef.current &&
+              !suggestionsSuppressedRef.current &&
+              !isCommandExecutingRef.current
             ) {
-              getSuggestions(currentInputBuffer);
+              const fn = getSuggestionsRef.current;
+              if (typeof fn === "function") {
+                fn(currentInputBuffer);
+              }
             }
             if (currentInputBuffer.length === 0) {
               setSuggestionsHiddenByEsc(false);
@@ -1511,14 +1537,19 @@ const WebTerminal = ({
           }
         }, 10); // 10ms延迟确保终端已处理输入
 
-        // 更新当前输入状态并触发建议搜索（仅在普通字符输入时，且不在Tab补全状态）
+        // 更新当前输入状态并触发建议搜索（普通可见字符，含非 ASCII，如 CJK）
+        const firstCode = data.length > 0 ? data.charCodeAt(0) : 0;
+        const isPrintableInput =
+          data.length >= 1 &&
+          firstCode >= 32 &&
+          firstCode !== 0x7f &&
+          !/[\u0000-\u001f\u007f]/.test(data);
+
         if (
           canTrackPromptInput &&
           !inEditorMode &&
           !tabCompletionUsed &&
-          data.length === 1 &&
-          data.charCodeAt(0) >= 32 &&
-          data.charCodeAt(0) <= 126
+          isPrintableInput
         ) {
           setCurrentInput(currentInputBuffer);
 
@@ -1538,13 +1569,16 @@ const WebTerminal = ({
             }
           }
 
-          // 只有在非命令执行状态下才触发建议搜索
+          // 使用 ref 读取最新状态，避免 onData 闭包捕获过时值
           if (
-            !suggestionsHiddenByEsc &&
-            !suggestionsSuppressedUntilEnter &&
-            !isCommandExecuting
+            !suggestionsHiddenByEscRef.current &&
+            !suggestionsSuppressedRef.current &&
+            !isCommandExecutingRef.current
           ) {
-            getSuggestions(currentInputBuffer);
+            const fn = getSuggestionsRef.current;
+            if (typeof fn === "function") {
+              fn(currentInputBuffer);
+            }
           }
         }
       }
