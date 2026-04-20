@@ -90,6 +90,10 @@ const TERMINAL_COMMAND_LINE_REGEX =
   /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.+)$/;
 const FULLSCREEN_COMMAND_REGEX =
   /\b(top|htop|vi|vim|nano|less|more|watch|tail -f)\b/;
+// 服务端关闭回显后的密码/口令/密钥短语提示识别
+// 匹配示例：Password: / [sudo] password for root: / Enter passphrase for key '...': / 密码: / 验证码：
+const PASSWORD_PROMPT_REGEX =
+  /(?:password|passphrase|passcode|pin|verification\s*code|密码|口令|验证码)[^:：\r\n]*[:：]\s*$/i;
 
 const createPromptTrackingState = () => ({
   promptReady: false,
@@ -1446,6 +1450,32 @@ const WebTerminal = ({
               .getLine(term.buffer.active.cursorY)
               ?.translateToString() || "";
 
+          // 密码/口令提示场景：shell 已关闭回显，lastLine 不是常规提示符，
+          // 但 currentInputBuffer 里累积了用户按键。此时直接丢弃，避免密码入历史。
+          if (PASSWORD_PROMPT_REGEX.test(lastLine.trimEnd())) {
+            currentInputBuffer = "";
+            tabCompletionUsed = false;
+            currentLineBeforeTab = null;
+            pendingCommandBoundaryRef.current = {
+              command: "",
+              capturedAt: 0,
+            };
+            setCurrentInput("");
+            setShowSuggestions(false);
+            setSuggestions([]);
+            setSuggestionsHiddenByEsc(false);
+            setSuggestionsSuppressedUntilEnter(false);
+            applyPromptTrackingState({
+              promptReady: false,
+              commandRunning: true,
+            });
+            suggestionSelectedRef.current = false;
+            if (processId) {
+              sendInputToProcess(processId, data);
+            }
+            return;
+          }
+
           // 特殊处理：如果使用了Tab补全，直接使用当前行的完整内容
           let command = extractCommand(lastLine);
           if (tabCompletionUsed) {
@@ -1917,6 +1947,44 @@ const WebTerminal = ({
     }
     const terminalDisposables = disposablesCache[tabId];
 
+    // 统一的 mailbox 初始化：复用分支与新建分支都通过这里拿到可用 mailbox，
+    // 避免主 effect 清理后重入"缓存命中"路径时 mailbox 永远为 null 导致回显丢失。
+    const ensureTerminalMailbox = (term) => {
+      const queueOutputHandler = (data) => {
+        if (scrollbackUsageTrackerRef.current) {
+          scrollbackUsageTrackerRef.current.addData(data);
+        }
+        contentUpdatedRef.current = true;
+        setContentUpdated(true);
+      };
+      const writeCompleteHandler = ({ data, duration }) => {
+        if (performanceMonitorRef.current) {
+          performanceMonitorRef.current.recordWrite(data.length, duration);
+        }
+        const forceRefresh = shouldForceTerminalViewportRefresh(
+          term,
+          inEditorModeRef.current,
+        );
+        clearPendingWrappedInputRefresh(term);
+        scheduleHighlightRefresh(term, { force: forceRefresh });
+      };
+
+      if (!terminalIOMailboxRef.current) {
+        terminalIOMailboxRef.current = new RendererTerminalIOMailbox({
+          term,
+          onQueueOutput: queueOutputHandler,
+          onWriteComplete: writeCompleteHandler,
+        });
+      } else {
+        terminalIOMailboxRef.current.setTerm(term);
+        terminalIOMailboxRef.current.updateHandlers({
+          onQueueOutput: queueOutputHandler,
+          onWriteComplete: writeCompleteHandler,
+        });
+      }
+      registerTerminalIOMailbox(tabId, terminalIOMailboxRef.current);
+    };
+
     // 初始化 xterm.js
     if (terminalRef.current) {
       let term;
@@ -1990,6 +2058,9 @@ const WebTerminal = ({
             }
           }, 0);
         }
+        // 复用分支也要重建/重绑 mailbox，否则主 effect 清理后回到这里会丢失输出订阅
+        ensureTerminalMailbox(term);
+
         const existingProcessId = processCache[tabId];
         if (existingProcessId) {
           try {
@@ -2330,58 +2401,7 @@ const WebTerminal = ({
           });
         }
 
-        if (!terminalIOMailboxRef.current) {
-          terminalIOMailboxRef.current = new RendererTerminalIOMailbox({
-            term,
-            onQueueOutput: (data) => {
-              if (scrollbackUsageTrackerRef.current) {
-                scrollbackUsageTrackerRef.current.addData(data);
-              }
-              contentUpdatedRef.current = true;
-              setContentUpdated(true);
-            },
-            onWriteComplete: ({ data, duration }) => {
-              if (performanceMonitorRef.current) {
-                performanceMonitorRef.current.recordWrite(
-                  data.length,
-                  duration,
-                );
-              }
-              const forceRefresh = shouldForceTerminalViewportRefresh(
-                term,
-                inEditorModeRef.current,
-              );
-              clearPendingWrappedInputRefresh(term);
-              scheduleHighlightRefresh(term, { force: forceRefresh });
-            },
-          });
-        } else {
-          terminalIOMailboxRef.current.setTerm(term);
-          terminalIOMailboxRef.current.updateHandlers({
-            onQueueOutput: (data) => {
-              if (scrollbackUsageTrackerRef.current) {
-                scrollbackUsageTrackerRef.current.addData(data);
-              }
-              contentUpdatedRef.current = true;
-              setContentUpdated(true);
-            },
-            onWriteComplete: ({ data, duration }) => {
-              if (performanceMonitorRef.current) {
-                performanceMonitorRef.current.recordWrite(
-                  data.length,
-                  duration,
-                );
-              }
-              const forceRefresh = shouldForceTerminalViewportRefresh(
-                term,
-                inEditorModeRef.current,
-              );
-              clearPendingWrappedInputRefresh(term);
-              scheduleHighlightRefresh(term, { force: forceRefresh });
-            },
-          });
-        }
-        registerTerminalIOMailbox(tabId, terminalIOMailboxRef.current);
+        ensureTerminalMailbox(term);
         if (webglRendererEnabledRef.current) {
           tryEnableWebglRenderer(term);
         } else {
