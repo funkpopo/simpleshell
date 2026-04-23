@@ -1,7 +1,7 @@
 {
   "name": "simpleshell",
   "productName": "simpleshell",
-  "version": "0.4.15",
+  "version": "0.4.16",
   "description": "A Simple Electron SSH Terminal for Windows",
   "main": ".webpack/main",
   "scripts": {
@@ -56,7 +56,7 @@
     "@codemirror/lang-java": "6.0.2",
     "@codemirror/lang-javascript": "6.2.5",
     "@codemirror/lang-json": "6.0.2",
-    "@codemirror/lang-markdown": "6.4.0",
+    "@codemirror/lang-markdown": "6.5.0",
     "@codemirror/lang-php": "6.0.2",
     "@codemirror/lang-python": "6.2.1",
     "@codemirror/lang-rust": "6.0.2",
