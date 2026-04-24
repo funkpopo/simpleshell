@@ -478,7 +478,6 @@ class TerminalHandlers {
     const result = await dialog.showOpenDialog({
       properties: ["openFile"],
       filters: [
-        { name: "SSH Keys", extensions: ["pem", "ppk", "key", "pub", ""] },
         { name: "All Files", extensions: ["*"] },
       ],
     });
