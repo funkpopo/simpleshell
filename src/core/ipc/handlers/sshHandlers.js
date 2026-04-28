@@ -9,6 +9,7 @@ const {
   DEFAULT_SSH_RETRY_CONFIG,
   buildReconnectTimeoutMessage,
   buildReconnectWaitMessage,
+  checkSshPreflight,
 } = require("../../connection/ssh-retry-helper");
 
 /**
@@ -1287,6 +1288,60 @@ class SSHHandlers {
     );
   }
 
+  _buildSSHPreAuthReachabilityError(sshConfig, preflightResult) {
+    const host = sshConfig?.host || "unknown";
+    const port = sshConfig?.port || 22;
+    const code = String(preflightResult?.code || "").toUpperCase();
+    const message = String(preflightResult?.message || "");
+
+    if (code === "EPROXYUNAVAILABLE") {
+      return new Error(
+        `代理不可用: 无法通过当前代理连接到 ${host}:${port}，请检查代理/VPN/网络后重试`,
+      );
+    }
+
+    if (code === "ECONNREFUSED" || message.includes("ECONNREFUSED")) {
+      return new Error(`连接被拒绝: 无法连接到 ${host}:${port}`);
+    }
+
+    if (
+      code === "ENOTFOUND" ||
+      code === "EAI_AGAIN" ||
+      message.includes("getaddrinfo")
+    ) {
+      return new Error(`主机不存在: 无法解析主机名 ${host}`);
+    }
+
+    if (
+      code === "ETIMEDOUT" ||
+      code === "ETIMEOUT" ||
+      message.toLowerCase().includes("timeout")
+    ) {
+      return new Error(`连接超时: ${host}:${port}`);
+    }
+
+    return new Error(`服务器不可连接: ${host}:${port}`);
+  }
+
+  async _assertSSHReachableBeforeAuth(sshConfig) {
+    const preflightResult = await checkSshPreflight(
+      sshConfig,
+      DEFAULT_SSH_RETRY_CONFIG,
+    );
+
+    if (preflightResult?.ok === true) {
+      return;
+    }
+
+    const error = this._buildSSHPreAuthReachabilityError(
+      sshConfig,
+      preflightResult,
+    );
+    error.code = preflightResult?.code || "ESSHPREFLIGHT";
+    error.preflightResult = preflightResult;
+    throw error;
+  }
+
   async startSSH(event, sshConfig) {
     const processId = this.getNextProcessId();
     const mainWindow = this._getMainWindow();
@@ -1317,6 +1372,8 @@ class SSHHandlers {
             `SSH connection requires authentication for ${sshConfig.host}`,
             "INFO",
           );
+
+          await this._assertSSHReachableBeforeAuth(sshConfig);
 
           const authResult = await this._requestUserAuth(sshConfig.tabId, {
             step: "hostVerify",

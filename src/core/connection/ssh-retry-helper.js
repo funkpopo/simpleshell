@@ -269,7 +269,9 @@ function probeTcp(host, port, timeoutMs) {
     };
 
     socket.setTimeout(timeoutMs);
-    socket.once("connect", () => finish({ ok: true, code: null, message: null }));
+    socket.once("connect", () =>
+      finish({ ok: true, code: null, message: null }),
+    );
     socket.once("timeout", () =>
       finish({
         ok: false,
@@ -311,6 +313,7 @@ async function checkSshPreflight(sshConfig, retryConfig) {
 
   if (usingProxy) {
     const proxyPort = Number(resolvedProxyConfig.port);
+    const targetPort = Number(sshConfig?.port ?? 22);
     if (!Number.isFinite(proxyPort) || proxyPort <= 0) {
       return {
         ok: false,
@@ -319,27 +322,57 @@ async function checkSshPreflight(sshConfig, retryConfig) {
         message: "proxy endpoint is unavailable",
       };
     }
-    const probeResult = await probeTcp(
-      resolvedProxyConfig.host,
-      proxyPort,
-      tcpTimeoutMs,
-    );
-    if (probeResult.ok) {
+
+    if (!Number.isFinite(targetPort) || targetPort <= 0) {
+      return {
+        ok: false,
+        code: "EINVAL",
+        failureReason: FAILURE_REASON.UNKNOWN,
+        message: "invalid ssh target port",
+      };
+    }
+
+    let tunnel = null;
+    try {
+      tunnel = await proxyManager.createTunnelSocket(
+        resolvedProxyConfig,
+        sshConfig?.host,
+        targetPort,
+        { timeoutMs: tcpTimeoutMs },
+      );
       return {
         ok: true,
         failureReason: null,
         code: null,
         message: null,
       };
+    } catch (error) {
+      const probeError =
+        error instanceof Error ? error : new Error(String(error));
+      const code = String(
+        probeError?.code ||
+          probeError?.originalError?.code ||
+          "EPROXYUNAVAILABLE",
+      ).toUpperCase();
+      return {
+        ok: false,
+        code,
+        failureReason:
+          code === "ECONNREFUSED"
+            ? FAILURE_REASON.CONNECTION_REFUSED
+            : analyzeSshFailureReason(probeError),
+        message:
+          probeError.message ||
+          `ssh target ${sshConfig?.host}:${targetPort} is unavailable through proxy`,
+        originalError: probeError,
+      };
+    } finally {
+      try {
+        if (tunnel) tunnel.destroy();
+      } catch {
+        /* intentionally ignored */
+      }
     }
-    return {
-      ...probeResult,
-      code: "EPROXYUNAVAILABLE",
-      failureReason: FAILURE_REASON.PROXY_UNAVAILABLE,
-      message:
-        probeResult.message ||
-        `proxy ${resolvedProxyConfig.host}:${proxyPort} is unavailable`,
-    };
   }
 
   const targetPort = Number(sshConfig?.port ?? 22);
