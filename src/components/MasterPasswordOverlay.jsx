@@ -5,13 +5,22 @@ import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import TextField from "@mui/material/TextField";
 import Button from "@mui/material/Button";
+import IconButton from "@mui/material/IconButton";
 import Alert from "@mui/material/Alert";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import CloseIcon from "@mui/icons-material/Close";
 import { alpha } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 
 const MasterPasswordOverlay = React.memo(
-  ({ open, loading = false, isSubmitting = false, error = "", onUnlock }) => {
+  ({
+    open,
+    loading = false,
+    isSubmitting = false,
+    error = "",
+    onUnlock,
+    onClose,
+  }) => {
     const { t } = useTranslation();
     const [password, setPassword] = React.useState("");
     const inputRef = React.useRef(null);
@@ -36,6 +45,12 @@ const MasterPasswordOverlay = React.memo(
 
       onUnlock(password);
     }, [isSubmitting, onUnlock, password]);
+
+    const handleClose = React.useCallback(() => {
+      if (typeof onClose === "function") {
+        onClose();
+      }
+    }, [onClose]);
 
     return (
       <Backdrop
@@ -89,6 +104,26 @@ const MasterPasswordOverlay = React.memo(
             },
           }}
         >
+          <IconButton
+            aria-label={t("common.close", "关闭")}
+            size="small"
+            onClick={handleClose}
+            sx={{
+              position: "absolute",
+              top: 10,
+              right: 10,
+              zIndex: 2,
+              color: "text.secondary",
+              bgcolor: (theme) => alpha(theme.palette.background.paper, 0.45),
+              "&:hover": {
+                color: "text.primary",
+                bgcolor: (theme) => alpha(theme.palette.action.hover, 0.75),
+              },
+            }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+
           <Box
             sx={{
               width: 52,

@@ -4185,6 +4185,7 @@ function AppContent() {
         isSubmitting={unlockingCredentialStore}
         error={masterPasswordError}
         onUnlock={handleUnlockCredentialStore}
+        onClose={handleExit}
       />
 
       {/* 错误通知 */}
