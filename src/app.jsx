@@ -659,6 +659,8 @@ function AppContent() {
 
   // ============ 从全局状态读取 ============
   const tabs = state.tabs;
+  const latestTabsForActionsRef = useRef(tabs);
+  latestTabsForActionsRef.current = tabs;
   const currentTab = state.currentTab;
   const connectionManagerOpen = state.connectionManagerOpen;
   const resourceMonitorOpen = state.resourceMonitorOpen;
@@ -1852,6 +1854,13 @@ function AppContent() {
     [tabs, dispatch, loadReconnectStatus],
   );
 
+  const handleTabContextMenuRef = useRef(handleTabContextMenu);
+  handleTabContextMenuRef.current = handleTabContextMenu;
+
+  const handleTabContextMenuFromTab = useCallback((event, tabId, index) => {
+    handleTabContextMenuRef.current(event, index, tabId);
+  }, []);
+
   // 标签页右键菜单关闭
   const handleTabContextMenuClose = useCallback(() => {
     dispatch(
@@ -2243,6 +2252,21 @@ function AppContent() {
       }
     }
   };
+
+  const handleCloseTabRef = useRef(handleCloseTab);
+  handleCloseTabRef.current = handleCloseTab;
+
+  const handleTabCloseRequest = useCallback((tabId) => {
+    if (!tabId || tabId === "welcome") {
+      return;
+    }
+    const index = latestTabsForActionsRef.current.findIndex(
+      (t) => t.id === tabId,
+    );
+    if (index >= 0) {
+      handleCloseTabRef.current(index);
+    }
+  }, []);
 
   // 优化的拖动开始处理函数 - 使用useCallback减少重建
   const handleDragStart = useCallback(
@@ -3224,18 +3248,14 @@ function AppContent() {
                         statusColor={tabReconnectColor}
                         statusTooltip={tabReconnectTooltip}
                         onClose={
-                          tab.id !== "welcome"
-                            ? () => handleCloseTab(index)
-                            : null
+                          tab.id !== "welcome" ? handleTabCloseRequest : null
                         }
-                        onContextMenu={(e) =>
-                          handleTabContextMenu(e, index, tab.id)
-                        }
+                        onContextMenu={handleTabContextMenuFromTab}
                         draggable={dndEnabled && tab.id !== "welcome"}
-                        onDragStart={(e) => handleDragStart(e, index)}
-                        onDragOver={(e) => handleDragOver(e, index)}
+                        onDragStart={handleDragStart}
+                        onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
-                        onDrop={(e) => handleDrop(e, index)}
+                        onDrop={handleDrop}
                         onDragEnd={handleDragEnd}
                         value={index}
                         selected={currentTab === index}

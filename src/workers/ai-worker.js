@@ -5,11 +5,55 @@ const { SocksProxyAgent } = require("socks-proxy-agent");
 const { HttpsProxyAgent } = require("https-proxy-agent");
 const { HttpProxyAgent } = require("http-proxy-agent");
 
+const GLOBAL_HTTP_AGENT = new http.Agent({
+  keepAlive: true,
+  maxSockets: 64,
+  scheduling: "lifo",
+});
+const GLOBAL_HTTPS_AGENT = new https.Agent({
+  keepAlive: true,
+  maxSockets: 64,
+  scheduling: "lifo",
+});
+
+const PROXY_AGENT_CACHE = new Map();
+const PROXY_AGENT_CACHE_MAX = 32;
+
+const STANDARD_REQUEST_TIMEOUT_MS = 120000;
+const STREAM_CONNECT_TIMEOUT_MS = 60000;
+const STREAM_IDLE_TIMEOUT_MS = 180000;
+
 // 存储活跃请求的Map
 const activeRequests = new Map();
 
 // 存储系统代理配置
 let systemProxyConfig = null;
+
+function getProxyAgentCacheKey(protocol) {
+  if (
+    !systemProxyConfig ||
+    !systemProxyConfig.host ||
+    !systemProxyConfig.port
+  ) {
+    return null;
+  }
+  const { type, host, port, username, password } = systemProxyConfig;
+  return [
+    protocol,
+    (type || "http").toLowerCase(),
+    host,
+    String(port),
+    username || "",
+    password || "",
+  ].join("|");
+}
+
+function pruneProxyAgentCache() {
+  while (PROXY_AGENT_CACHE.size > PROXY_AGENT_CACHE_MAX) {
+    const oldestKey = PROXY_AGENT_CACHE.keys().next().value;
+    PROXY_AGENT_CACHE.delete(oldestKey);
+  }
+}
 
 // ============================================
 // API 适配器定义
@@ -464,6 +508,18 @@ function getApiAdapter(provider) {
  * @returns {object|null} 代理Agent或null
  */
 function createProxyAgent(protocol) {
+  const cacheKey = getProxyAgentCacheKey(protocol);
+  if (!cacheKey) {
+    return null;
+  }
+
+  if (PROXY_AGENT_CACHE.has(cacheKey)) {
+    const cached = PROXY_AGENT_CACHE.get(cacheKey);
+    PROXY_AGENT_CACHE.delete(cacheKey);
+    PROXY_AGENT_CACHE.set(cacheKey, cached);
+    return cached;
+  }
+
   if (
     !systemProxyConfig ||
     !systemProxyConfig.host ||
@@ -474,18 +530,18 @@ function createProxyAgent(protocol) {
 
   const { type, host, port, username, password } = systemProxyConfig;
   const proxyType = (type || "http").toLowerCase();
+  const keepAliveOpts = { keepAlive: true, maxSockets: 64 };
 
   try {
+    let agent;
     if (proxyType === "socks4" || proxyType === "socks5") {
-      // SOCKS代理
       let socksUrl = `${proxyType}://`;
       if (username && password) {
         socksUrl += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
       }
       socksUrl += `${host}:${port}`;
-      return new SocksProxyAgent(socksUrl);
+      agent = new SocksProxyAgent(socksUrl, keepAliveOpts);
     } else {
-      // HTTP/HTTPS代理
       let proxyUrl = `http://`;
       if (username && password) {
         proxyUrl += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
@@ -493,15 +549,26 @@ function createProxyAgent(protocol) {
       proxyUrl += `${host}:${port}`;
 
       if (protocol === "https:") {
-        return new HttpsProxyAgent(proxyUrl);
+        agent = new HttpsProxyAgent(proxyUrl, keepAliveOpts);
       } else {
-        return new HttpProxyAgent(proxyUrl);
+        agent = new HttpProxyAgent(proxyUrl, keepAliveOpts);
       }
     }
+
+    PROXY_AGENT_CACHE.set(cacheKey, agent);
+    pruneProxyAgentCache();
+    return agent;
   } catch {
-    // 创建代理Agent失败，返回null使用直连
     return null;
   }
+}
+
+function pickHttpAgent(parsedUrl) {
+  const proxyAgent = createProxyAgent(parsedUrl.protocol);
+  if (proxyAgent) {
+    return proxyAgent;
+  }
+  return parsedUrl.protocol === "https:" ? GLOBAL_HTTPS_AGENT : GLOBAL_HTTP_AGENT;
 }
 
 // 监听来自主线程的消息
@@ -523,6 +590,7 @@ parentPort.on("message", async (message) => {
       case "update_proxy":
         // 更新系统代理配置
         systemProxyConfig = data;
+        PROXY_AGENT_CACHE.clear();
         parentPort.postMessage({
           id,
           result: { success: true, proxyConfigured: !!data },
@@ -610,16 +678,12 @@ function handleStandardRequest(requestId, requestData) {
     path: parsedUrl.pathname + parsedUrl.search,
     port: parsedUrl.port || (parsedUrl.protocol === "https:" ? 443 : 80),
     headers: adapter.buildHeaders(apiKey),
+    agent: pickHttpAgent(parsedUrl),
   };
-
-  // 添加代理Agent
-  const proxyAgent = createProxyAgent(parsedUrl.protocol);
-  if (proxyAgent) {
-    options.agent = proxyAgent;
-  }
 
   // 创建请求
   const req = requestModule.request(options, (res) => {
+    req.setTimeout(0);
     let responseData = "";
 
     // 处理状态码非200的情况
@@ -686,6 +750,10 @@ function handleStandardRequest(requestId, requestData) {
     });
   });
 
+  req.setTimeout(STANDARD_REQUEST_TIMEOUT_MS, () => {
+    req.destroy(new Error("API request timeout"));
+  });
+
   // 处理请求错误
   req.on("error", (error) => {
     parentPort.postMessage({
@@ -743,19 +811,34 @@ function handleStreamRequest(requestId, requestData) {
     path: parsedUrl.pathname + parsedUrl.search,
     port: parsedUrl.port || (parsedUrl.protocol === "https:" ? 443 : 80),
     headers: adapter.buildHeaders(apiKey),
+    agent: pickHttpAgent(parsedUrl),
   };
-
-  // 添加代理Agent
-  const proxyAgent = createProxyAgent(parsedUrl.protocol);
-  if (proxyAgent) {
-    options.agent = proxyAgent;
-  }
 
   // 用于处理Gemini的JSON数组流式响应
   let geminiBuffer = "";
 
   // 创建请求
   const req = requestModule.request(options, (res) => {
+    req.setTimeout(0);
+
+    let streamIdleTimer = null;
+    const clearStreamIdleTimer = () => {
+      if (streamIdleTimer) {
+        clearTimeout(streamIdleTimer);
+        streamIdleTimer = null;
+      }
+    };
+    const bumpStreamIdleTimer = () => {
+      clearStreamIdleTimer();
+      streamIdleTimer = setTimeout(() => {
+        try {
+          res.destroy();
+        } catch {
+          // ignore
+        }
+      }, STREAM_IDLE_TIMEOUT_MS);
+    };
+
     // 处理状态码非200的情况
     if (res.statusCode !== 200) {
       let errorData = "";
@@ -787,9 +870,12 @@ function handleStreamRequest(requestId, requestData) {
       return;
     }
 
+    bumpStreamIdleTimer();
+
     // 接收数据块
     res.on("data", (chunk) => {
       try {
+        bumpStreamIdleTimer();
         const data = chunk.toString("utf-8");
 
         // Gemini使用不同的流式格式（JSON数组）
@@ -873,6 +959,7 @@ function handleStreamRequest(requestId, requestData) {
 
     // 处理流结束
     res.on("end", () => {
+      clearStreamIdleTimer();
       // 移除请求引用
       activeRequests.delete(requestId);
 
@@ -903,6 +990,10 @@ function handleStreamRequest(requestId, requestData) {
         },
       },
     });
+  });
+
+  req.setTimeout(STREAM_CONNECT_TIMEOUT_MS, () => {
+    req.destroy(new Error("Streaming connection timeout"));
   });
 
   // 存储请求引用
@@ -1050,16 +1141,12 @@ function handleModelsRequest(requestId, requestData) {
       parsedModelsUrl.port ||
       (parsedModelsUrl.protocol === "https:" ? 443 : 80),
     headers: adapter.buildHeaders(apiKey),
+    agent: pickHttpAgent(parsedModelsUrl),
   };
-
-  // 添加代理Agent
-  const proxyAgent = createProxyAgent(parsedModelsUrl.protocol);
-  if (proxyAgent) {
-    options.agent = proxyAgent;
-  }
 
   // 创建请求
   const req = requestModule.request(options, (res) => {
+    req.setTimeout(0);
     let responseData = "";
 
     // 处理状态码非200的情况
@@ -1114,6 +1201,10 @@ function handleModelsRequest(requestId, requestData) {
         stack: error.stack,
       },
     });
+  });
+
+  req.setTimeout(STANDARD_REQUEST_TIMEOUT_MS, () => {
+    req.destroy(new Error("Models list request timeout"));
   });
 
   // 存储请求引用

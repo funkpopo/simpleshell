@@ -6,7 +6,7 @@ const { HttpProxyAgent } = require("http-proxy-agent");
 const ipUtils = require("../../utils/ip");
 
 // In-memory LRU + TTL cache (skeleton)
-const CACHE_TTL_MS = parseInt(process.env.IPQUERY_CACHE_TTL_MS || "60000", 10); // 1 min
+const CACHE_TTL_MS = parseInt(process.env.IPQUERY_CACHE_TTL_MS || "300000", 10); // 5 min default
 const CACHE_MAX = parseInt(process.env.IPQUERY_CACHE_MAX || "200", 10);
 const SWR_ENABLED = true; // stale-while-revalidate
 const cache = new Map(); // key -> { ts, result }
