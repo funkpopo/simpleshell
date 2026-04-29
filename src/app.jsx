@@ -3263,7 +3263,7 @@ function AppContent() {
               onMouseDownCapture={handleTopBarInteraction}
               sx={{
                 px: 1,
-                minHeight: "34px",
+                minHeight: "30px",
                 display: "flex",
                 alignItems: "center",
                 gap: 0.5,
@@ -3328,7 +3328,7 @@ function AppContent() {
               sx={{
                 display: "flex",
                 alignItems: "center",
-                minHeight: "40px",
+                minHeight: "30px",
                 px: 1,
                 pb: 0.5,
                 gap: 0.5,
@@ -3360,7 +3360,7 @@ function AppContent() {
                   sx={{
                     flexGrow: 1,
                     minWidth: 0,
-                    minHeight: 40,
+                    minHeight: 30,
                     "& .MuiTabs-indicator": {
                       height: 3,
                       backgroundColor: "primary.main",
