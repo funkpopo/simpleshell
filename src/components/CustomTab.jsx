@@ -314,7 +314,7 @@ const CustomTab = memo((props) => {
         sx={{
           textTransform: "none",
           minWidth: "auto",
-          minHeight: 40,
+          minHeight: 30,
           py: 0,
           cursor: isDraggedOver ? "grab" : "pointer",
           userSelect: "none",
