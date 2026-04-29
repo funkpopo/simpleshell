@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useRef,
 } from "react";
+import { flushSync } from "react-dom";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import {
   Box,
@@ -384,6 +385,8 @@ const FileManager = memo(
       setLastRefreshTime(timestamp);
     }, []);
     const [contextMenu, setContextMenu] = useState(null);
+    const fileManagerRootRef = useRef(null);
+    const contextMenuRedispatchingRef = useRef(false);
     const [searchTerm, setSearchTerm] = useState("");
     const searchInputRef = useRef(null);
     const [showSearch, setShowSearch] = useState(false);
@@ -535,7 +538,8 @@ const FileManager = memo(
           ? nextEntriesByKey.get(currentSelectedKey)
           : null;
         const preservedSelected = nextSelectedFiles[0] || null;
-        const nextSelectedFile = currentSelectedMatch?.file || preservedSelected;
+        const nextSelectedFile =
+          currentSelectedMatch?.file || preservedSelected;
         const nextAnchorIndex = currentSelectedMatch
           ? currentSelectedMatch.index
           : nextSelectedFile
@@ -1538,13 +1542,16 @@ const FileManager = memo(
           /* intentionally ignored */
         }
 
-        directoryWatchRefreshRetryTimerRef.current = setTimeout(() => {
-          if (
-            typeof flushPendingDirectoryWatchRefreshRef.current === "function"
-          ) {
-            flushPendingDirectoryWatchRefreshRef.current();
-          }
-        }, Math.max(250, delayMs));
+        directoryWatchRefreshRetryTimerRef.current = setTimeout(
+          () => {
+            if (
+              typeof flushPendingDirectoryWatchRefreshRef.current === "function"
+            ) {
+              flushPendingDirectoryWatchRefreshRef.current();
+            }
+          },
+          Math.max(250, delayMs),
+        );
       },
       [],
     );
@@ -1765,8 +1772,7 @@ const FileManager = memo(
           if (!response?.success || !response?.watchId) {
             showNotification(
               t("fileManager.errors.directoryWatchFailed", {
-                error:
-                  response?.error || t("fileManager.errors.unknownError"),
+                error: response?.error || t("fileManager.errors.unknownError"),
               }),
               "error",
               6000,
@@ -2892,19 +2898,29 @@ const FileManager = memo(
         event.preventDefault();
         event.stopPropagation();
 
-        // 立即设置菜单位置，不等待任何状态更新
+        // 先更新选中状态，再打开菜单，避免菜单内容/可用操作滞后一帧
+        if (!isFileSelected(file)) {
+          setSelectedFiles([file]);
+        }
+        setSelectedFile(file);
+        setLastSelectedIndex(index);
+        setAnchorIndex(index);
+
+        // 尝试把“焦点”直接切到右键行，减少需要左键才能生效的体感
+        try {
+          const currentTarget = event.currentTarget;
+          const focusTarget =
+            currentTarget?.querySelector?.('[data-file-item="true"]') ||
+            currentTarget;
+          focusTarget?.focus?.();
+        } catch (_) {
+          // ignore
+        }
+
         setContextMenu({
           mouseX: event.clientX,
           mouseY: event.clientY,
         });
-
-        // 然后更新选中状态（如果需要）
-        if (!isFileSelected(file)) {
-          setSelectedFiles([file]);
-          setSelectedFile(file);
-          setLastSelectedIndex(index);
-          setAnchorIndex(index);
-        }
       },
       [isFileSelected],
     );
@@ -3663,15 +3679,20 @@ const FileManager = memo(
 
     // 复制绝对路径
     const handleCopyAbsolutePath = async () => {
-      if (!selectedFile) return;
+      const selectedItems = getSelectedFiles();
+      if (selectedItems.length !== 1) {
+        showNotification(t("fileManager.messages.copyPathError"), "warning");
+        return;
+      }
+      const targetItem = selectedItems[0];
 
       try {
         const relativePath =
           currentPath === "/"
-            ? "/" + selectedFile.name
+            ? "/" + targetItem.name
             : currentPath
-              ? currentPath + "/" + selectedFile.name
-              : selectedFile.name;
+              ? currentPath + "/" + targetItem.name
+              : targetItem.name;
 
         if (window.terminalAPI && window.terminalAPI.getAbsolutePath) {
           const response = await window.terminalAPI.getAbsolutePath(
@@ -3990,6 +4011,116 @@ const FileManager = memo(
     const handleBlankContextMenuClose = () => {
       setBlankContextMenu(null);
     };
+
+    useEffect(() => {
+      if (!contextMenu && !blankContextMenu) {
+        return;
+      }
+
+      const getContextMenuRetargetElement = (event) => {
+        const root = fileManagerRootRef.current;
+        if (!root) {
+          return null;
+        }
+
+        const rawTarget = event.target;
+        if (
+          rawTarget instanceof Element &&
+          (rawTarget.closest('[data-file-manager-context-menu="true"]') ||
+            rawTarget.closest('[role="menu"]'))
+        ) {
+          return null;
+        }
+
+        if (rawTarget instanceof Element && root.contains(rawTarget)) {
+          return rawTarget;
+        }
+
+        const elementsAtPoint =
+          typeof document.elementsFromPoint === "function"
+            ? document.elementsFromPoint(event.clientX, event.clientY)
+            : [];
+
+        return (
+          elementsAtPoint.find(
+            (element) =>
+              root.contains(element) &&
+              !element.closest('[data-file-manager-context-menu="true"]') &&
+              !element.closest('[role="menu"]'),
+          ) || null
+        );
+      };
+
+      const handleContextMenuRetarget = (event) => {
+        if (contextMenuRedispatchingRef.current) {
+          return;
+        }
+
+        const retargetElement = getContextMenuRetargetElement(event);
+        if (!retargetElement) {
+          return;
+        }
+
+        // 尽量把事件派发到“行级”元素，确保 React 的 onContextMenu 回调能稳定命中
+        const itemEl =
+          retargetElement.closest('[data-file-item="true"]') ||
+          retargetElement.closest("li") ||
+          retargetElement;
+
+        if (!itemEl) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const mouseEventInit = {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          button: 2,
+          buttons: 2,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          screenX: event.screenX,
+          screenY: event.screenY,
+          ctrlKey: event.ctrlKey,
+          shiftKey: event.shiftKey,
+          altKey: event.altKey,
+          metaKey: event.metaKey,
+        };
+
+        flushSync(() => {
+          setContextMenu(null);
+          setBlankContextMenu(null);
+        });
+
+        if (!itemEl.isConnected) {
+          return;
+        }
+
+        // 尝试把焦点交给对应行（避免需要左键才能更新“焦点态”）
+        try {
+          itemEl.focus?.();
+        } catch (_) {
+          // ignore
+        }
+
+        contextMenuRedispatchingRef.current = true;
+        try {
+          itemEl.dispatchEvent(new MouseEvent("contextmenu", mouseEventInit));
+        } finally {
+          contextMenuRedispatchingRef.current = false;
+        }
+      };
+
+      document.addEventListener("contextmenu", handleContextMenuRetarget, true);
+      return () => {
+        document.removeEventListener(
+          "contextmenu",
+          handleContextMenuRetarget,
+          true,
+        );
+      };
+    }, [contextMenu, blankContextMenu]);
 
     // 处理创建文件夹
     const handleCreateFolder = () => {
@@ -5700,7 +5831,10 @@ const FileManager = memo(
           if (selectedFilesData.length > 0) {
             handleDelete();
           } else {
-            showNotification("请先选择要删除的文件或文件夹", "warning");
+            showNotification(
+              t("fileManager.messages.selectFileOrFolderToDelete"),
+              "warning",
+            );
           }
         }
 
@@ -5710,9 +5844,15 @@ const FileManager = memo(
           if (selectedFilesData.length === 1) {
             handleRename();
           } else if (selectedFilesData.length > 1) {
-            showNotification("无法批量重命名，请选择单个文件", "warning");
+            showNotification(
+              t("fileManager.messages.batchRenameError"),
+              "warning",
+            );
           } else {
-            showNotification("请先选择要重命名的文件", "warning");
+            showNotification(
+              t("fileManager.messages.selectFileToRename"),
+              "warning",
+            );
           }
         }
 
@@ -5723,11 +5863,14 @@ const FileManager = memo(
             handleOpenPermissions();
           } else if (selectedFilesData.length > 1) {
             showNotification(
-              "暂不支持批量权限设置，请选择单个文件/文件夹",
+              t("fileManager.messages.batchSetPermissionsError"),
               "warning",
             );
           } else {
-            showNotification("请先选择要设置权限的文件/文件夹", "warning");
+            showNotification(
+              t("fileManager.messages.selectFileOrFolderToSetPermissions"),
+              "warning",
+            );
           }
         }
 
@@ -5738,11 +5881,14 @@ const FileManager = memo(
             handleOpenProperties();
           } else if (selectedFilesData.length > 1) {
             showNotification(
-              "暂不支持批量属性查看，请选择单个文件/文件夹",
+              t("fileManager.messages.batchViewPropertiesError"),
               "warning",
             );
           } else {
-            showNotification("请先选择要查看属性的文件/文件夹", "warning");
+            showNotification(
+              t("fileManager.messages.selectFileOrFolderToViewProperties"),
+              "warning",
+            );
           }
         }
 
@@ -5773,11 +5919,7 @@ const FileManager = memo(
         // Ctrl+Shift+C: 复制绝对路径
         if (event.ctrlKey && event.shiftKey && event.key === "C") {
           event.preventDefault();
-          if (selectedFilesData.length === 1) {
-            handleCopyAbsolutePath();
-          } else {
-            showNotification("只能复制单个文件的路径", "warning");
-          }
+          handleCopyAbsolutePath();
         }
 
         // Ctrl+N: 创建文件
@@ -5988,6 +6130,7 @@ const FileManager = memo(
 
     return (
       <Paper
+        ref={fileManagerRootRef}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
@@ -6265,7 +6408,7 @@ const FileManager = memo(
             onKeyDown={handlePathInputSubmit}
             placeholder={t("fileManager.enterPath")}
             InputProps={{
-              style: { fontSize: "0.75rem" },
+              style: { fontSize: "1.0rem" },
               startAdornment: (
                 <InputAdornment position="start">
                   <FolderIcon color="action" fontSize="small" />
@@ -6336,6 +6479,7 @@ const FileManager = memo(
           open={contextMenu !== null && !menuItems.isDeleting}
           onClose={handleContextMenuClose}
           anchorReference="anchorPosition"
+          PaperProps={{ "data-file-manager-context-menu": "true" }}
           anchorPosition={
             contextMenu !== null
               ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
@@ -6413,7 +6557,7 @@ const FileManager = memo(
                 <ListItemIcon>
                   <LinkIcon fontSize="small" />
                 </ListItemIcon>
-                <ListItemText>{t("fileManager.copy")}</ListItemText>
+                <ListItemText>{t("fileManager.copyPath")}</ListItemText>
                 <Typography
                   variant="caption"
                   color="text.secondary"
@@ -6508,6 +6652,7 @@ const FileManager = memo(
           open={blankContextMenu !== null && !menuItems.isDeleting}
           onClose={handleBlankContextMenuClose}
           anchorReference="anchorPosition"
+          PaperProps={{ "data-file-manager-context-menu": "true" }}
           anchorPosition={
             blankContextMenu !== null
               ? { top: blankContextMenu.mouseY, left: blankContextMenu.mouseX }
