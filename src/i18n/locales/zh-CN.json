@@ -193,7 +193,8 @@
       "securityTool": "安全工具",
       "localTerminal": "本地终端",
       "moveToLeft": "将侧边栏移动到左侧",
-      "moveToRight": "将侧边栏移动到右侧"
+      "moveToRight": "将侧边栏移动到右侧",
+      "aiApiUnreachable": "AI API 当前不可达"
     },
     "latency": {
       "connectionInfo": "连接信息",

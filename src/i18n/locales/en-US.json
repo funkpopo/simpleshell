@@ -193,7 +193,8 @@
       "securityTool": "Security Tools",
       "localTerminal": "Local Terminal",
       "moveToLeft": "Move sidebar to left",
-      "moveToRight": "Move sidebar to right"
+      "moveToRight": "Move sidebar to right",
+      "aiApiUnreachable": "AI API unreachable"
     },
     "latency": {
       "connectionInfo": "Connection Info",

@@ -1216,6 +1216,9 @@ function AppContent() {
   // 最后激活的浮动窗口（用于控制z-index层叠顺序）: "ai" | "transfer"
   const [lastActiveFloatWindow, setLastActiveFloatWindow] =
     React.useState("ai");
+  /** AI 当前 API 是否可达（false 包含未配置/不可达） */
+  const [aiApiReachable, setAiApiReachable] = React.useState(false);
+  const aiApiProbeTokenRef = React.useRef(0);
 
   const tabsRef = useRef(null);
   const dragRafRef = React.useRef(null);
@@ -2693,6 +2696,41 @@ function AppContent() {
     }, 15);
   };
 
+  const probeAiApiStatus = useCallback(async () => {
+    if (!window.terminalAPI?.fetchModels || !window.terminalAPI?.loadAISettings) {
+      return;
+    }
+    const probeToken = ++aiApiProbeTokenRef.current;
+
+    try {
+      const settings = await window.terminalAPI.loadAISettings();
+      const current = settings?.current;
+      if (
+        !current?.apiUrl?.trim() ||
+        !current?.model?.trim() ||
+        !current?.hasApiKey
+      ) {
+        if (probeToken !== aiApiProbeTokenRef.current) return;
+        setAiApiReachable(false);
+        return;
+      }
+      const result = await window.terminalAPI.fetchModels({
+        apiConfigId: current.id || undefined,
+        url: current.apiUrl,
+        provider: current.provider || "openai",
+      });
+      if (probeToken !== aiApiProbeTokenRef.current) return;
+      if (result && Array.isArray(result.models)) {
+        setAiApiReachable(true);
+      } else {
+        setAiApiReachable(false);
+      }
+    } catch {
+      if (probeToken !== aiApiProbeTokenRef.current) return;
+      setAiApiReachable(false);
+    }
+  }, []);
+
   // 全局AI聊天窗口处理函数
   const handleToggleGlobalAiChatWindow = () => {
     if (aiChatStatus === "visible") {
@@ -2700,6 +2738,7 @@ function AppContent() {
     } else {
       dispatch(actions.setAiChatStatus("visible"));
       setLastActiveFloatWindow("ai");
+      probeAiApiStatus();
     }
   };
 
@@ -2712,6 +2751,41 @@ function AppContent() {
   const handleCloseGlobalAiChatWindow = () => {
     dispatch(actions.setAiChatStatus("closed"));
   };
+
+  React.useEffect(() => {
+    if (aiChatStatus === "closed") {
+      aiApiProbeTokenRef.current += 1;
+      setAiApiReachable(false);
+    }
+  }, [aiChatStatus]);
+
+  React.useEffect(() => {
+    const aiPanelOpen =
+      aiChatStatus === "minimized" || aiChatStatus === "visible";
+    if (
+      !aiPanelOpen ||
+      !window.terminalAPI?.fetchModels ||
+      !window.terminalAPI?.loadAISettings
+    ) {
+      return undefined;
+    }
+
+    const safeProbe = async () => {
+      await probeAiApiStatus();
+    };
+
+    safeProbe();
+    const intervalId = window.setInterval(safeProbe, 30000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") safeProbe();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [aiChatStatus, probeAiApiStatus]);
 
   // 打开全局传输浮动窗口
   const handleOpenTransferFloat = (transfer) => {
@@ -4145,7 +4219,11 @@ function AppContent() {
 
                 {/* AI助手按钮 */}
                 <Tooltip
-                  title={t("sidebar.ai")}
+                  title={
+                    aiApiReachable === false
+                      ? t("sidebar.aiApiUnreachable")
+                      : t("sidebar.ai")
+                  }
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
@@ -4167,8 +4245,8 @@ function AppContent() {
                     }}
                   >
                     <AIIcon />
-                    {/* 最小化状态指示灯 */}
-                    {aiChatStatus === "minimized" && (
+                    {(aiChatStatus === "minimized" ||
+                      aiChatStatus === "visible") && (
                       <Box
                         sx={{
                           position: "absolute",
@@ -4177,8 +4255,12 @@ function AppContent() {
                           width: 8,
                           height: 8,
                           borderRadius: "50%",
-                          bgcolor: "#4caf50",
-                          boxShadow: "0 0 4px #4caf50",
+                          bgcolor:
+                            aiApiReachable === false ? "#f44336" : "#4caf50",
+                          boxShadow:
+                            aiApiReachable === false
+                              ? "0 0 4px #f44336"
+                              : "0 0 4px #4caf50",
                         }}
                       />
                     )}
