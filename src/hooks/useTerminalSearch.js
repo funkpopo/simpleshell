@@ -17,7 +17,6 @@ const SEARCH_DECORATIONS = Object.freeze({
 export const useTerminalSearch = ({
   searchAddonRef,
   termRef,
-  isActive,
   searchAddonVersion = 0,
 }) => {
   const [showSearchBar, setShowSearchBar] = useState(false);
@@ -152,12 +151,6 @@ export const useTerminalSearch = ({
 
     runSearch("next", { incremental: true });
   }, [clearSearchState, runSearch, searchAddonVersion, searchTerm]);
-
-  useEffect(() => {
-    if (!isActive && showSearchBar) {
-      setShowSearchBar(false);
-    }
-  }, [isActive, showSearchBar]);
 
   useEffect(() => {
     const searchAddon = searchAddonRef.current;

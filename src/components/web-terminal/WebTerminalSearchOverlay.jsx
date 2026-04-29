@@ -22,7 +22,7 @@ const WebTerminalSearchOverlay = ({
 }) => {
   const theme = useTheme();
 
-  if (!isActive) {
+  if (!isActive && !showSearchBar) {
     return null;
   }
 
