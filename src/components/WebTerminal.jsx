@@ -515,7 +515,6 @@ const WebTerminal = ({
   } = useTerminalSearch({
     searchAddonRef,
     termRef,
-    isActive,
     searchAddonVersion,
   });
 
