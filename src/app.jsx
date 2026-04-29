@@ -32,6 +32,7 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import AIIcon from "./components/AIIcon.jsx";
 import Tooltip from "@mui/material/Tooltip";
+import SidebarTooltip from "./components/SidebarTooltip.jsx";
 import Paper from "@mui/material/Paper";
 import HistoryIcon from "@mui/icons-material/History";
 import InfoIcon from "@mui/icons-material/Info";
@@ -3995,17 +3996,17 @@ function AppContent() {
                 }}
               >
                 {/* 主题切换按钮 */}
-                <Tooltip
+                <SidebarTooltip
                   title={t("sidebar.theme")}
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton onClick={toggleTheme} color="primary">
                     {darkMode ? <DarkModeIcon /> : <LightModeIcon />}
                   </IconButton>
-                </Tooltip>
+                </SidebarTooltip>
 
                 {/* 资源监控按钮 */}
-                <Tooltip
+                <SidebarTooltip
                   title={t("sidebar.monitor")}
                   placement={sidebarTooltipPlacement}
                 >
@@ -4025,10 +4026,10 @@ function AppContent() {
                   >
                     <MonitorHeartIcon />
                   </IconButton>
-                </Tooltip>
+                </SidebarTooltip>
 
                 {/* 连接管理按钮 */}
-                <Tooltip
+                <SidebarTooltip
                   title={t("sidebar.connections")}
                   placement={sidebarTooltipPlacement}
                 >
@@ -4048,10 +4049,10 @@ function AppContent() {
                   >
                     <LinkIcon />
                   </IconButton>
-                </Tooltip>
+                </SidebarTooltip>
 
                 {/* 文件管理按钮 */}
-                <Tooltip
+                <SidebarTooltip
                   title={t("sidebar.files")}
                   placement={sidebarTooltipPlacement}
                 >
@@ -4072,10 +4073,10 @@ function AppContent() {
                   >
                     <FolderIcon />
                   </IconButton>
-                </Tooltip>
+                </SidebarTooltip>
 
                 {/* 快捷命令按钮 - 应该放在文件按钮的后面 */}
-                <Tooltip
+                <SidebarTooltip
                   title={t("sidebar.shortcutCommands")}
                   placement={sidebarTooltipPlacement}
                 >
@@ -4096,10 +4097,10 @@ function AppContent() {
                   >
                     <TerminalIcon />
                   </IconButton>
-                </Tooltip>
+                </SidebarTooltip>
 
                 {/* 历史命令按钮 */}
-                <Tooltip
+                <SidebarTooltip
                   title={t("sidebar.history")}
                   placement={sidebarTooltipPlacement}
                 >
@@ -4119,10 +4120,10 @@ function AppContent() {
                   >
                     <HistoryIcon />
                   </IconButton>
-                </Tooltip>
+                </SidebarTooltip>
 
                 {/* IP地址查询按钮 */}
-                <Tooltip
+                <SidebarTooltip
                   title={t("sidebar.ipQuery")}
                   placement={sidebarTooltipPlacement}
                 >
@@ -4142,10 +4143,10 @@ function AppContent() {
                   >
                     <PublicIcon />
                   </IconButton>
-                </Tooltip>
+                </SidebarTooltip>
 
                 {/* 安全工具按钮 */}
-                <Tooltip
+                <SidebarTooltip
                   title={t("sidebar.securityTool")}
                   placement={sidebarTooltipPlacement}
                 >
@@ -4165,7 +4166,7 @@ function AppContent() {
                   >
                     <VpnKeyIcon />
                   </IconButton>
-                </Tooltip>
+                </SidebarTooltip>
 
                 {/* 分隔符 */}
                 <Box
@@ -4178,7 +4179,7 @@ function AppContent() {
                 />
 
                 {/* 本地终端按钮 */}
-                <Tooltip
+                <SidebarTooltip
                   title={t("sidebar.localTerminal")}
                   placement={sidebarTooltipPlacement}
                 >
@@ -4198,7 +4199,7 @@ function AppContent() {
                   >
                     <ComputerIcon />
                   </IconButton>
-                </Tooltip>
+                </SidebarTooltip>
 
                 {/* 传输侧边栏按钮 - 仅在sidebar模式下显示 */}
                 {transferBarMode === "sidebar" && (
@@ -4218,7 +4219,7 @@ function AppContent() {
                 )}
 
                 {/* AI助手按钮 */}
-                <Tooltip
+                <SidebarTooltip
                   title={
                     aiApiReachable === false
                       ? t("sidebar.aiApiUnreachable")
@@ -4265,12 +4266,12 @@ function AppContent() {
                       />
                     )}
                   </IconButton>
-                </Tooltip>
+                </SidebarTooltip>
 
                 <Box sx={{ flexGrow: 1 }} />
 
                 {/* 侧边栏左右切换按钮 */}
-                <Tooltip
+                <SidebarTooltip
                   title={
                     sidebarPosition === "left"
                       ? t("sidebar.moveToRight")
@@ -4288,7 +4289,7 @@ function AppContent() {
                       <FirstPageIcon />
                     )}
                   </IconButton>
-                </Tooltip>
+                </SidebarTooltip>
               </Paper>
             </Box>
           </Box>

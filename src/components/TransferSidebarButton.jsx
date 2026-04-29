@@ -1,6 +1,7 @@
 import React, { memo, useMemo, forwardRef } from "react";
 import PropTypes from "prop-types";
-import { Box, IconButton, Tooltip, CircularProgress } from "@mui/material";
+import { Box, IconButton, CircularProgress } from "@mui/material";
+import SidebarTooltip from "./SidebarTooltip.jsx";
 import { useTheme } from "@mui/material/styles";
 import { SwapVert } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
@@ -55,7 +56,7 @@ const TransferSidebarButton = memo(
     const showProgressRing = hasActiveTransfers && !isOpen;
 
     return (
-      <Tooltip title={resolvedTooltip} placement={tooltipPlacement}>
+      <SidebarTooltip title={resolvedTooltip} placement={tooltipPlacement}>
         <Box
           ref={ref}
           sx={{
@@ -140,7 +141,7 @@ const TransferSidebarButton = memo(
             </Box>
           )}
         </Box>
-      </Tooltip>
+      </SidebarTooltip>
     );
   }),
 );
