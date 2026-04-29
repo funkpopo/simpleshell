@@ -124,7 +124,9 @@
     "menu": {
       "settings": "设置",
       "about": "关于",
-      "exit": "退出"
+      "exit": "退出",
+      "lockApp": "锁定应用",
+      "lockAppSuccess": "应用已锁定"
     },
     "tabMenu": {
       "createGroup": "创建同步分组",
