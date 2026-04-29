@@ -1222,6 +1222,7 @@ function AppContent() {
   const aiApiProbeTokenRef = React.useRef(0);
 
   const tabsRef = useRef(null);
+  const [hasTabOverflow, setHasTabOverflow] = React.useState(false);
   const dragRafRef = React.useRef(null);
   const pendingDragStateRef = React.useRef(null);
   const sidebarTooltipPlacement = "top";
@@ -1334,6 +1335,42 @@ function AppContent() {
 
     return removeListener;
   }, [handleTabsWheel, eventManager]);
+
+  React.useEffect(() => {
+    const tabsRoot = tabsRef.current;
+    if (!tabsRoot) {
+      return undefined;
+    }
+
+    const scroller = tabsRoot.querySelector(".MuiTabs-scroller");
+    if (!scroller) {
+      return undefined;
+    }
+
+    const checkOverflow = () => {
+      const nextHasOverflow = scroller.scrollWidth - scroller.clientWidth > 1;
+      setHasTabOverflow((prev) =>
+        prev === nextHasOverflow ? prev : nextHasOverflow,
+      );
+    };
+
+    checkOverflow();
+
+    const rafId = requestAnimationFrame(checkOverflow);
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(checkOverflow)
+        : null;
+
+    resizeObserver?.observe(scroller);
+    window.addEventListener("resize", checkOverflow);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", checkOverflow);
+    };
+  }, [tabs.length]);
 
   const scrollActiveTabIntoView = useCallback(() => {
     const tabsRoot = tabsRef.current;
@@ -3330,7 +3367,7 @@ function AppContent() {
                 alignItems: "center",
                 minHeight: "30px",
                 px: 1,
-                pb: 0.5,
+                pb: 0,
                 gap: 0.5,
                 WebkitAppRegion: "drag",
                 borderTop: (theme) =>
@@ -3356,15 +3393,34 @@ function AppContent() {
                   value={currentTab}
                   onChange={handleTabChange}
                   variant="scrollable"
-                  scrollButtons="auto"
+                  scrollButtons={hasTabOverflow ? "auto" : false}
                   sx={{
                     flexGrow: 1,
                     minWidth: 0,
                     minHeight: 30,
+                    "& .MuiTabs-scroller": {
+                      px: 0.5,
+                    },
+                    "& .MuiTabs-flexContainer": {
+                      gap: 0.5,
+                    },
                     "& .MuiTabs-indicator": {
-                      height: 3,
-                      backgroundColor: "primary.main",
-                      borderRadius: "1.5px 1.5px 0 0",
+                      height: 2,
+                      background:
+                        "linear-gradient(90deg, rgba(66,165,245,0.85), rgba(124,77,255,0.85))",
+                      borderRadius: "999px",
+                      bottom: 0,
+                    },
+                    "& .MuiTabs-scrollButtons": {
+                      width: 24,
+                      color: "text.secondary",
+                      transition: "opacity 0.2s ease",
+                    },
+                    "& .MuiTabs-scrollButtons.Mui-disabled": {
+                      opacity: 0,
+                      width: 0,
+                      minWidth: 0,
+                      overflow: "hidden",
                     },
                   }}
                 >
