@@ -49,21 +49,11 @@ import {
   EditorSelection,
   RangeSetBuilder,
 } from "@codemirror/state";
-import { javascript } from "@codemirror/lang-javascript";
-import { html } from "@codemirror/lang-html";
-import { css } from "@codemirror/lang-css";
-import { json } from "@codemirror/lang-json";
-import { python } from "@codemirror/lang-python";
-import { xml } from "@codemirror/lang-xml";
-import { php } from "@codemirror/lang-php";
-import { java } from "@codemirror/lang-java";
-import { cpp } from "@codemirror/lang-cpp";
-import { rust } from "@codemirror/lang-rust";
-import { go } from "@codemirror/lang-go";
-import { yaml } from "@codemirror/lang-yaml";
-import { markdown } from "@codemirror/lang-markdown";
-import { sql } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
+import {
+  getCodemirrorLanguageIdFromFilename,
+  loadCodemirrorLanguageExtension,
+} from "../utils/filePreviewCodemirrorLanguages.js";
 import { useTranslation } from "react-i18next";
 import { formatFileSize } from "../core/utils/formatters.js";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
@@ -247,284 +237,6 @@ const getMimeType = (filename) => {
     ico: "image/x-icon",
   };
   return mimeTypes[ext] || "application/octet-stream";
-};
-
-// 获取文件对应的语言模式
-const getLanguageMode = (filename) => {
-  const ext = getFileExtension(filename);
-  const baseName = filename.toLowerCase();
-
-  // 主要通过扩展名判断
-  const langMap = {
-    // JavaScript/TypeScript
-    js: javascript,
-    jsx: javascript,
-    ts: javascript,
-    tsx: javascript,
-    mjs: javascript,
-    cjs: javascript,
-    vue: javascript, // Vue 文件使用 JavaScript 高亮
-
-    // Web 前端
-    html: html,
-    htm: html,
-    xhtml: html,
-    css: css,
-    scss: css,
-    sass: css,
-    less: css,
-    styl: css,
-    stylus: css,
-
-    // 数据格式
-    json: json,
-    jsonc: json,
-    json5: json,
-    geojson: json,
-
-    // Python
-    py: python,
-    pyw: python,
-    pyi: python,
-    pyx: python,
-    ipynb: json, // Jupyter notebooks are JSON
-
-    // Java/Kotlin/Scala
-    java: java,
-    kt: java, // Kotlin 使用 Java 高亮
-    kts: java,
-    scala: java,
-    sc: java,
-
-    // C/C++/C#
-    c: cpp,
-    cpp: cpp,
-    cc: cpp,
-    cxx: cpp,
-    c__: cpp,
-    h: cpp,
-    hpp: cpp,
-    hxx: cpp,
-    hh: cpp,
-    cs: java, // C# 使用 Java 高亮
-
-    // PHP
-    php: php,
-    phtml: php,
-    php3: php,
-    php4: php,
-    php5: php,
-    php7: php,
-    phps: php,
-
-    // Go
-    go: go,
-    mod: go, // go.mod 文件
-
-    // Rust
-    rs: rust,
-    rlib: rust,
-
-    // SQL
-    sql: sql,
-    mysql: sql,
-    pgsql: sql,
-    sqlite: sql,
-    plsql: sql,
-
-    // Markup
-    xml: xml,
-    svg: xml,
-    xsl: xml,
-    xslt: xml,
-    xsd: xml,
-    dtd: xml,
-    plist: xml,
-
-    // YAML
-    yml: yaml,
-    yaml: yaml,
-
-    // Markdown
-    md: markdown,
-    markdown: markdown,
-    mdown: markdown,
-    mkd: markdown,
-    mdx: markdown,
-    rst: markdown, // reStructuredText
-    adoc: markdown, // AsciiDoc
-  };
-
-  // 首先检查扩展名
-  if (langMap[ext]) {
-    return langMap[ext];
-  }
-
-  // 特殊文件名处理（无扩展名）
-  if (baseName === "dockerfile" || baseName.startsWith("dockerfile.")) {
-    return null; // Dockerfile 使用默认高亮
-  }
-
-  if (
-    baseName === "makefile" ||
-    baseName === "gnumakefile" ||
-    baseName.startsWith("makefile.")
-  ) {
-    return null; // Makefile 使用默认高亮
-  }
-
-  if (
-    baseName === "gemfile" ||
-    baseName === "rakefile" ||
-    baseName === "guardfile" ||
-    baseName === "capfile" ||
-    baseName === "vagrantfile" ||
-    baseName === "berksfile" ||
-    baseName === "puppetfile"
-  ) {
-    return null; // Ruby 文件，目前使用默认高亮
-  }
-
-  // CMake 文件
-  if (baseName === "cmakelists.txt" || baseName.endsWith(".cmake")) {
-    return null;
-  }
-
-  if (
-    baseName === "package.json" ||
-    baseName === "composer.json" ||
-    baseName === "bower.json"
-  ) {
-    return json;
-  }
-
-  if (
-    baseName.includes("requirements") &&
-    (baseName.endsWith(".txt") || !baseName.includes("."))
-  ) {
-    return null; // Python requirements 文件
-  }
-
-  // 检查常见的文本文件扩展名
-  const textExtensions = [
-    "txt",
-    "log",
-    "out",
-    "err",
-    "tmp",
-    "temp",
-    "bak",
-    "old",
-    "orig",
-  ];
-  if (textExtensions.includes(ext)) {
-    return null; // 纯文本文件
-  }
-
-  // Swift
-  if (ext === "swift") {
-    return null; // Swift 使用默认高亮
-  }
-
-  // Ruby
-  if (ext === "rb" || ext === "erb" || ext === "rake") {
-    return null; // Ruby 使用默认高亮
-  }
-
-  // Perl
-  if (ext === "pl" || ext === "pm" || ext === "perl") {
-    return null; // Perl 使用默认高亮
-  }
-
-  // Lua
-  if (ext === "lua") {
-    return null; // Lua 使用默认高亮
-  }
-
-  // R
-  if (ext === "r" || ext === "R" || ext === "rmd" || ext === "Rmd") {
-    return null; // R 使用默认高亮
-  }
-
-  if (
-    baseName === "cargo.toml" ||
-    baseName === "pyproject.toml" ||
-    baseName === "gopkg.toml"
-  ) {
-    return null; // TOML 文件，使用默认高亮
-  }
-
-  // 配置文件
-  if (baseName.endsWith(".toml")) {
-    return null; // TOML
-  }
-
-  // Git 文件
-  if (
-    baseName === ".gitignore" ||
-    baseName === ".gitattributes" ||
-    baseName === ".gitmodules"
-  ) {
-    return null;
-  }
-
-  // 更多配置文件类型
-  if (
-    baseName === ".editorconfig" ||
-    baseName === ".eslintrc" ||
-    baseName === ".prettierrc" ||
-    baseName === ".babelrc" ||
-    baseName.endsWith(".eslintrc.js") ||
-    baseName.endsWith(".prettierrc.js") ||
-    baseName.endsWith(".babelrc.js")
-  ) {
-    return baseName.endsWith(".js") ? javascript : json;
-  }
-
-  if (
-    baseName.endsWith(".ini") ||
-    baseName.endsWith(".cfg") ||
-    baseName.endsWith(".conf")
-  ) {
-    return null; // 配置文件
-  }
-
-  if (baseName.endsWith(".env") || baseName.startsWith(".env")) {
-    return null; // 环境变量文件
-  }
-
-  // Shell 脚本
-  if (
-    baseName.endsWith(".sh") ||
-    baseName.endsWith(".bash") ||
-    baseName.endsWith(".zsh") ||
-    baseName.endsWith(".fish") ||
-    baseName.endsWith(".ksh") ||
-    baseName.endsWith(".csh") ||
-    baseName.endsWith(".tcsh") ||
-    baseName === ".bashrc" ||
-    baseName === ".zshrc" ||
-    baseName === ".bash_profile" ||
-    baseName === ".profile"
-  ) {
-    return null; // Shell 脚本，使用默认高亮
-  }
-
-  // PowerShell
-  if (
-    baseName.endsWith(".ps1") ||
-    baseName.endsWith(".psm1") ||
-    baseName.endsWith(".psd1")
-  ) {
-    return null;
-  }
-
-  // Batch files
-  if (baseName.endsWith(".bat") || baseName.endsWith(".cmd")) {
-    return null;
-  }
-
-  return null;
 };
 
 // 获取字体族名称
@@ -866,6 +578,10 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const shouldRestoreTextEditorScrollRef = useRef(false);
   const syncedContentRef = useRef(null);
 
+  const [codemirrorLangExtensions, setCodemirrorLangExtensions] = useState(
+    [],
+  );
+
   // PDF相关状态
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
@@ -1012,6 +728,27 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setShowCloseConfirm(false);
     }
   }, [open]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!open || !isTextPreview || !file?.name) {
+      setCodemirrorLangExtensions([]);
+      return;
+    }
+    const languageId = getCodemirrorLanguageIdFromFilename(file.name);
+    if (!languageId) {
+      setCodemirrorLangExtensions([]);
+      return;
+    }
+    loadCodemirrorLanguageExtension(languageId).then((ext) => {
+      if (!cancelled) {
+        setCodemirrorLangExtensions(ext ? [ext] : []);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isTextPreview, file?.name]);
 
   // 加载字体设置
   useEffect(() => {
@@ -1796,11 +1533,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       return [];
     }
 
-    const nextExtensions = [];
-    const languageModeFn = getLanguageMode(file?.name);
-    if (languageModeFn) {
-      nextExtensions.push(languageModeFn());
-    }
+    const nextExtensions = [...codemirrorLangExtensions];
 
     if (theme.palette.mode === "dark") {
       nextExtensions.push(oneDark);
@@ -1865,7 +1598,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     nextExtensions.push(EditorView.lineWrapping);
 
     return nextExtensions;
-  }, [editorFont, file?.name, isTextPreview, theme]);
+  }, [codemirrorLangExtensions, editorFont, isTextPreview, theme]);
 
   // PDF相关事件处理
   const onDocumentLoadSuccess = ({ numPages }) => {
@@ -2080,7 +1813,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       added: 0,
       removed: 0,
     };
-    const languageModeFn = getLanguageMode(file?.name || "");
     const scrollbarTrackColor =
       theme.palette.mode === "dark"
         ? alpha(theme.palette.common.white, 0.06)
@@ -2204,11 +1936,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     });
 
     const createDiffPaneExtensions = (paneData) => {
-      const extensions = [];
-
-      if (languageModeFn) {
-        extensions.push(languageModeFn());
-      }
+      const extensions = [...codemirrorLangExtensions];
 
       if (theme.palette.mode === "dark") {
         extensions.push(oneDark);
@@ -2370,7 +2098,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 }}
               >
                 <CodeMirror
-                  key={`diff-base-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}`}
+                  key={`diff-base-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}-${codemirrorLangExtensions.length}`}
                   value={snapshotDiffPaneData.base.value}
                   height="100%"
                   basicSetup={false}
@@ -2411,7 +2139,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 }}
               >
                 <CodeMirror
-                  key={`diff-current-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}`}
+                  key={`diff-current-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}-${codemirrorLangExtensions.length}`}
                   value={snapshotDiffPaneData.current.value}
                   height="100%"
                   basicSetup={false}

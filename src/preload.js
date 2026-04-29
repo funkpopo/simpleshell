@@ -33,6 +33,14 @@ const RESTRICTED_EXTERNAL_PROTOCOLS = new Set(["mailto:"]);
 const MAX_EXTERNAL_URL_LENGTH = 2048;
 const OPEN_EXTERNAL_IPC_TIMEOUT = 10000;
 
+/** Main process may coalesce OUTPUT into one IPC with an array of messages. */
+const normalizeTerminalMailboxOutboundMessages = (payload) => {
+  if (payload === undefined || payload === null) {
+    return [];
+  }
+  return Array.isArray(payload) ? payload : [payload];
+};
+
 const getProcessOutputWrapperStore = (channel) => {
   if (!processOutputWrappersByChannel.has(channel)) {
     processOutputWrappersByChannel.set(channel, new WeakMap());
@@ -235,8 +243,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }
 
     const { wrappers, listeners } = getTerminalMailboxWrapperStore(channel);
-    const wrapped = (_event, message) => {
-      callback(message);
+    const wrapped = (_event, messageOrBatch) => {
+      for (const message of normalizeTerminalMailboxOutboundMessages(
+        messageOrBatch,
+      )) {
+        callback(message);
+      }
     };
     wrappers.set(callback, wrapped);
     listeners.add(wrapped);
@@ -399,9 +411,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }
 
     const { wrappers, listeners } = getProcessOutputWrapperStore(channel);
-    const wrapped = (_event, message) => {
-      if (message?.type === TERMINAL_IO_MESSAGE_TYPES.OUTPUT) {
-        callback(message.data);
+    const wrapped = (_event, messageOrBatch) => {
+      for (const message of normalizeTerminalMailboxOutboundMessages(
+        messageOrBatch,
+      )) {
+        if (message?.type === TERMINAL_IO_MESSAGE_TYPES.OUTPUT) {
+          callback(message.data);
+        }
       }
     };
     wrappers.set(callback, wrapped);

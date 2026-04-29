@@ -58,6 +58,9 @@ class TerminalIOMailboxManager {
       lastResize: null,
       getFlowControlTarget: null,
       applyResize: null,
+      outputBatch: [],
+      outputBatchBytes: 0,
+      outputBatchTimer: null,
     };
   }
 
@@ -182,7 +185,7 @@ class TerminalIOMailboxManager {
     }
   }
 
-  _emitMailboxMessage(mailbox, message) {
+  _emitMailboxPayload(mailbox, messages) {
     const mainWindow = this.getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents) {
       return false;
@@ -193,8 +196,97 @@ class TerminalIOMailboxManager {
       return false;
     }
 
-    mainWindow.webContents.send(channel, message);
+    if (!messages.length) {
+      return false;
+    }
+
+    if (messages.length === 1) {
+      mainWindow.webContents.send(channel, messages[0]);
+    } else {
+      mainWindow.webContents.send(channel, messages);
+    }
     return true;
+  }
+
+  _clearOutputBatchTimer(mailbox) {
+    if (mailbox.outputBatchTimer !== null) {
+      clearTimeout(mailbox.outputBatchTimer);
+      mailbox.outputBatchTimer = null;
+    }
+  }
+
+  _countOutputPayloadBytes(payload) {
+    if (Buffer.isBuffer(payload)) {
+      return payload.length;
+    }
+    if (typeof payload === "string") {
+      return Buffer.byteLength(payload, "utf8");
+    }
+    return 0;
+  }
+
+  _flushOutputBatch(mailbox) {
+    this._clearOutputBatchTimer(mailbox);
+    if (!mailbox.outputBatch.length) {
+      return false;
+    }
+
+    const pending = mailbox.outputBatch;
+    mailbox.outputBatch = [];
+    mailbox.outputBatchBytes = 0;
+
+    const messages = pending.map((item) => ({
+      type: TERMINAL_IO_MESSAGE_TYPES.OUTPUT,
+      processId: mailbox.primaryProcessId,
+      data: item.payload,
+    }));
+
+    const sent = this._emitMailboxPayload(mailbox, messages);
+    if (!sent) {
+      return false;
+    }
+
+    for (const item of pending) {
+      if (item.trackBackpressure) {
+        const payloadBytes = this._countOutputPayloadBytes(item.payload);
+        if (payloadBytes > 0) {
+          mailbox.pendingAckBytes += payloadBytes;
+        }
+      }
+    }
+    this._updateFlowControl(mailbox);
+    return true;
+  }
+
+  _scheduleOutputBatchFlush(mailbox) {
+    if (mailbox.outputBatchTimer !== null) {
+      return;
+    }
+    mailbox.outputBatchTimer = setTimeout(() => {
+      mailbox.outputBatchTimer = null;
+      this._flushOutputBatch(mailbox);
+    }, TERMINAL_IO_DEFAULTS.outputDispatchIntervalMs);
+  }
+
+  _enqueueBatchedOutput(mailbox, payload, trackBackpressure) {
+    mailbox.outputBatch.push({ payload, trackBackpressure });
+    const addition = trackBackpressure
+      ? this._countOutputPayloadBytes(payload)
+      : 0;
+    mailbox.outputBatchBytes += addition;
+
+    if (
+      mailbox.outputBatchBytes >=
+      TERMINAL_IO_DEFAULTS.outputDispatchThresholdBytes
+    ) {
+      this._flushOutputBatch(mailbox);
+      return;
+    }
+    this._scheduleOutputBatchFlush(mailbox);
+  }
+
+  _emitMailboxMessage(mailbox, message) {
+    return this._emitMailboxPayload(mailbox, [message]);
   }
 
   _flushResize(mailbox) {
@@ -267,30 +359,18 @@ class TerminalIOMailboxManager {
     }
 
     const trackBackpressure = options.trackBackpressure !== false;
-    const sent = this._emitMailboxMessage(mailbox, {
-      type: TERMINAL_IO_MESSAGE_TYPES.OUTPUT,
-      processId: mailbox.primaryProcessId,
-      data: payload,
-    });
 
-    if (!sent) {
-      return false;
+    if (!trackBackpressure) {
+      void this._flushOutputBatch(mailbox);
+      const sent = this._emitMailboxMessage(mailbox, {
+        type: TERMINAL_IO_MESSAGE_TYPES.OUTPUT,
+        processId: mailbox.primaryProcessId,
+        data: payload,
+      });
+      return Boolean(sent);
     }
 
-    if (trackBackpressure) {
-      let payloadBytes = 0;
-      if (Buffer.isBuffer(payload)) {
-        payloadBytes = payload.length;
-      } else if (typeof payload === "string") {
-        payloadBytes = Buffer.byteLength(payload, "utf8");
-      }
-
-      if (payloadBytes > 0) {
-        mailbox.pendingAckBytes += payloadBytes;
-        this._updateFlowControl(mailbox);
-      }
-    }
-
+    this._enqueueBatchedOutput(mailbox, payload, true);
     return true;
   }
 
@@ -402,6 +482,7 @@ class TerminalIOMailboxManager {
       return false;
     }
 
+    void this._flushOutputBatch(mailbox);
     this._clearFlowRecoveryTimer(mailbox);
     this._clearResizeTimer(mailbox);
 

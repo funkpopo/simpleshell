@@ -87,15 +87,26 @@ const CustomTab = memo((props) => {
   // 优化关闭按钮点击处理
   const handleCloseClick = (e) => {
     e.stopPropagation();
-    onClose?.();
+    if (onClose) {
+      onClose(tabId);
+    }
   };
+
+  const handleDragOverMerged = useCallback(
+    (e) => onDragOver?.(e, index),
+    [onDragOver, index],
+  );
+  const handleDropMerged = useCallback(
+    (e) => onDrop?.(e, index),
+    [onDrop, index],
+  );
 
   // 处理拖拽开始 - 支持分屏功能和幽灵元素预览
   const handleDragStart = useCallback(
     (e) => {
       // 先调用父组件的拖拽开始处理
       if (onDragStart) {
-        onDragStart(e);
+        onDragStart(e, index);
       }
 
       // 设置拖拽数据
@@ -189,12 +200,14 @@ const CustomTab = memo((props) => {
       <Tab
         {...other}
         onClick={onClick}
-        onContextMenu={onContextMenu}
+        onContextMenu={
+          onContextMenu ? (e) => onContextMenu(e, tabId, index) : undefined
+        }
         draggable={draggable}
         onDragStart={draggable ? handleDragStart : undefined}
-        onDragOver={onDragOver}
+        onDragOver={handleDragOverMerged}
         onDragLeave={onDragLeave}
-        onDrop={onDrop}
+        onDrop={handleDropMerged}
         onDragEnd={onDragEnd}
         label={
           <Box

@@ -1787,10 +1787,15 @@ const WebTerminal = ({
         const enabled = settings?.performance?.webglEnabled !== false;
         webglRendererEnabledRef.current = enabled;
         setWebglRendererEnabled(enabled);
+        const rawScroll = Number(settings.terminalScrollbackLines);
+        const terminalScrollbackLines = Number.isFinite(rawScroll)
+          ? Math.min(500000, Math.max(1000, Math.floor(rawScroll)))
+          : 50000;
         return {
           fontSize: settings.terminalFontSize || 14,
           fontFamily: getFontFamilyString(settings.terminalFont || "Fira Code"),
           fontWeight: settings.terminalFontWeight || 500,
+          terminalScrollbackLines,
         };
       }
     } catch {
@@ -1802,6 +1807,7 @@ const WebTerminal = ({
       fontSize: 14,
       fontFamily: getFontFamilyString("Fira Code"),
       fontWeight: 500,
+      terminalScrollbackLines: 50000,
     };
   };
 
@@ -1848,7 +1854,24 @@ const WebTerminal = ({
         terminalFont,
         terminalFontWeight,
         performance,
+        terminalScrollbackLines,
       } = event.detail;
+
+      if (terminalScrollbackLines !== undefined) {
+        const rawScroll = Number(terminalScrollbackLines);
+        if (Number.isFinite(rawScroll)) {
+          const scrollLines = Math.min(
+            500000,
+            Math.max(1000, Math.floor(rawScroll)),
+          );
+          if (terminalCache[tabId]) {
+            terminalCache[tabId].options.scrollback = scrollLines;
+          }
+          if (scrollbackUsageTrackerRef.current) {
+            scrollbackUsageTrackerRef.current.maxLines = scrollLines;
+          }
+        }
+      }
 
       if (
         performance &&
@@ -2113,6 +2136,11 @@ const WebTerminal = ({
             term.options.fontSize = fontSettings.fontSize;
             term.options.fontFamily = fontSettings.fontFamily;
             term.options.fontWeight = fontSettings.fontWeight;
+            const scrollLines = fontSettings.terminalScrollbackLines || 50000;
+            term.options.scrollback = scrollLines;
+            if (scrollbackUsageTrackerRef.current) {
+              scrollbackUsageTrackerRef.current.maxLines = scrollLines;
+            }
             // 使用EventManager管理应用字体设置后自动调整大小
             eventManager.setTimeout(() => {
               if (fitAddon) {

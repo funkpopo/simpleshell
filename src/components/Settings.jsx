@@ -150,6 +150,8 @@ const Settings = memo(({ open, onClose }) => {
   const [terminalFont, setTerminalFont] = React.useState("Fira Code");
   const [terminalFontSize, setTerminalFontSize] = React.useState(14);
   const [terminalFontWeight, setTerminalFontWeight] = React.useState(500);
+  const [terminalScrollbackLines, setTerminalScrollbackLines] =
+    React.useState(50000);
   const [darkMode, setDarkMode] = React.useState(true);
   const [externalEditorEnabled, setExternalEditorEnabled] =
     React.useState(false);
@@ -201,6 +203,12 @@ const Settings = memo(({ open, onClose }) => {
             setTerminalFont(settings.terminalFont || "Fira Code");
             setTerminalFontSize(settings.terminalFontSize || 14);
             setTerminalFontWeight(settings.terminalFontWeight || 500);
+            const rawSb = Number(settings.terminalScrollbackLines);
+            setTerminalScrollbackLines(
+              Number.isFinite(rawSb)
+                ? Math.min(500000, Math.max(1000, Math.floor(rawSb)))
+                : 50000,
+            );
             setDarkMode(
               settings.darkMode !== undefined ? settings.darkMode : true,
             );
@@ -437,6 +445,10 @@ const Settings = memo(({ open, onClose }) => {
           terminalFont,
           terminalFontSize,
           terminalFontWeight,
+          terminalScrollbackLines: Math.min(
+            500000,
+            Math.max(1000, Math.floor(Number(terminalScrollbackLines)) || 50000),
+          ),
           darkMode,
           performance: {
             imageSupported,
@@ -486,6 +498,13 @@ const Settings = memo(({ open, onClose }) => {
             terminalFont,
             terminalFontSize,
             terminalFontWeight,
+            terminalScrollbackLines: Math.min(
+              500000,
+              Math.max(
+                1000,
+                Math.floor(Number(terminalScrollbackLines)) || 50000,
+              ),
+            ),
             darkMode,
             performance: {
               imageSupported,
@@ -834,6 +853,23 @@ const Settings = memo(({ open, onClose }) => {
                       sx={{ width: 70 }}
                     />
                   </Box>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="number"
+                    label="终端回滚行数"
+                    helperText="1000–500000；与性能监控中的缓冲占用统计一致"
+                    value={terminalScrollbackLines}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (Number.isFinite(v)) {
+                        setTerminalScrollbackLines(v);
+                      }
+                    }}
+                    inputProps={{ min: 1000, max: 500000, step: 1000 }}
+                  />
                 </Grid>
               </Grid>
               <Grid container spacing={2}>

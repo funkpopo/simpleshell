@@ -31,6 +31,40 @@ const ipUtils = require("../utils/ip");
 const MY_IP_CACHE_KEY = "ipQuery:myIpCache";
 const MY_IP_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
 
+// In-memory LRU + TTL (browser session); complements main-process cache after IPC
+const CLIENT_IP_MEMORY_MAX = 64;
+const CLIENT_IP_MEMORY_TTL_MS = 10 * 60 * 1000;
+const clientIpMemoryCache = new Map();
+
+function normalizeClientCacheKey(ip) {
+  return ip && String(ip).trim() ? String(ip).trim().toLowerCase() : "__MY_IP__";
+}
+
+function getClientIpMemoryCached(ipKey) {
+  const entry = clientIpMemoryCache.get(ipKey);
+  if (!entry) {
+    return null;
+  }
+  if (Date.now() - entry.ts > CLIENT_IP_MEMORY_TTL_MS) {
+    clientIpMemoryCache.delete(ipKey);
+    return null;
+  }
+  clientIpMemoryCache.delete(ipKey);
+  clientIpMemoryCache.set(ipKey, entry);
+  return entry.result;
+}
+
+function setClientIpMemoryCached(ipKey, result) {
+  if (clientIpMemoryCache.has(ipKey)) {
+    clientIpMemoryCache.delete(ipKey);
+  }
+  clientIpMemoryCache.set(ipKey, { ts: Date.now(), result });
+  while (clientIpMemoryCache.size > CLIENT_IP_MEMORY_MAX) {
+    const oldest = clientIpMemoryCache.keys().next().value;
+    clientIpMemoryCache.delete(oldest);
+  }
+}
+
 // IP地址查询组件
 const IPAddressQuery = memo(({ open, onClose }) => {
   const theme = useTheme();
@@ -63,6 +97,15 @@ const IPAddressQuery = memo(({ open, onClose }) => {
   // 查询IP信息
   const fetchIPInfo = async (ip = "") => {
     try {
+      const ipKey = normalizeClientCacheKey(ip);
+      const memHit = getClientIpMemoryCached(ipKey);
+      if (memHit && memHit.ret === "ok") {
+        setIpInfo(memHit);
+        setLoading(false);
+        setError(null);
+        return;
+      }
+
       const currentId = ++requestIdRef.current; // mark request
       setLoading(true);
       setError(null);
@@ -78,6 +121,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
 
         if (result.ret === "ok") {
           setIpInfo(result);
+          setClientIpMemoryCached(ipKey, result);
           const resolvedIp =
             ip && ip.trim() ? ip.trim() : result.data?.ip || "";
           const locArr = Array.isArray(result.data?.location)
