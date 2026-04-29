@@ -29,6 +29,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import PowerOffIcon from "@mui/icons-material/PowerOff";
 import FolderIcon from "@mui/icons-material/Folder";
 import SettingsIcon from "@mui/icons-material/Settings";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import AIIcon from "./components/AIIcon.jsx";
 import Tooltip from "@mui/material/Tooltip";
 import Paper from "@mui/material/Paper";
@@ -1661,6 +1662,57 @@ function AppContent() {
     dispatch(actions.setAnchorEl(null));
   }, [dispatch]);
 
+  const handleTopBarInteraction = useCallback(
+    (event) => {
+      if (!open) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (target.closest("#menu-appbar")) {
+        return;
+      }
+      if (target.closest('[aria-label="menu"]')) {
+        return;
+      }
+      handleClose();
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    },
+    [open, handleClose],
+  );
+
+  const handleLockApp = useCallback(async () => {
+    if (!window.terminalAPI?.lockCredentialStore) {
+      return;
+    }
+    try {
+      const response = await window.terminalAPI.lockCredentialStore();
+      if (response?.success === false) {
+        showError(response.error || t("masterPassword.unlockFailed"));
+        return;
+      }
+      const nextStatus = response?.status || {
+        masterPasswordEnabled: true,
+        unlocked: false,
+        requiresUnlock: true,
+      };
+      setMasterPasswordError("");
+      setCredentialSecurityStatus({
+        loading: false,
+        masterPasswordEnabled: nextStatus?.masterPasswordEnabled === true,
+        unlocked: nextStatus?.unlocked !== false,
+        requiresUnlock: nextStatus?.requiresUnlock === true,
+      });
+      showInfo(t("menu.lockAppSuccess", "应用已锁定"));
+    } catch {
+      showError(t("masterPassword.unlockFailed"));
+    }
+  }, [showError, showInfo, t]);
+
   // 打开关于对话框
   const handleOpenAbout = useCallback(() => {
     dispatch(actions.setAnchorEl(null));
@@ -3133,13 +3185,15 @@ function AppContent() {
           >
             <Toolbar
               variant="dense"
+              onMouseDownCapture={handleTopBarInteraction}
               sx={{
                 px: 1,
                 minHeight: "34px",
                 display: "flex",
                 alignItems: "center",
                 gap: 0.5,
-                WebkitAppRegion: "drag",
+                // 菜单展开时临时关闭拖拽区，确保点击空白顶部栏可触发收起
+                WebkitAppRegion: open ? "no-drag" : "drag",
               }}
             >
               <IconButton
@@ -3151,6 +3205,17 @@ function AppContent() {
               >
                 <AppsIcon />
               </IconButton>
+              <Tooltip title={t("menu.lockApp", "锁定应用")}>
+                <IconButton
+                  color="inherit"
+                  size="small"
+                  aria-label="lock-app"
+                  sx={{ mr: 1, WebkitAppRegion: "no-drag" }}
+                  onClick={handleLockApp}
+                >
+                  <LockOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
               <Menu
                 id="menu-appbar"
                 anchorEl={anchorEl}
@@ -3184,6 +3249,7 @@ function AppContent() {
             </Toolbar>
 
             <Box
+              onMouseDownCapture={handleTopBarInteraction}
               sx={{
                 display: "flex",
                 alignItems: "center",

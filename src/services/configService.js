@@ -1453,6 +1453,45 @@ class ConfigService {
   }
 
   /**
+   * 锁定凭据存储
+   * @returns {{success: boolean, error?: string, status?: Object}} 结果
+   */
+  lockCredentialStore() {
+    if (!this._initialized) {
+      return {
+        success: false,
+        error: "Config service is not initialized",
+      };
+    }
+
+    try {
+      const config = this._readConfig();
+      const { config: normalizedConfig } = this._ensureSecurityConfig(config);
+      this._applySecuritySettings(normalizedConfig.security);
+      const status = this.crypto.lockCredentialStore();
+      return {
+        success: true,
+        status: {
+          randomKeyConfigured: Boolean(normalizedConfig?.security?.randomKey),
+          masterPasswordEnabled:
+            normalizedConfig?.security?.masterPasswordEnabled === true,
+          unlocked: status?.unlocked !== false,
+          requiresUnlock: Boolean(status?.requiresUnlock),
+        },
+      };
+    } catch (error) {
+      this._log(
+        `ConfigService: Failed to lock credential store - ${error.message}`,
+        "ERROR",
+      );
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
    * 更新凭据安全配置，并按新配置重加密敏感字段
    * @param {Object} options - 安全配置
    * @returns {Object} 更新后的安全状态

@@ -1035,6 +1035,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("settings:updateCredentialSecurity", settings),
   unlockCredentialStore: (masterPassword) =>
     ipcRenderer.invoke("settings:unlockCredentialStore", masterPassword),
+  lockCredentialStore: () => ipcRenderer.invoke("settings:lockCredentialStore"),
 
   // 日志设置相关API
   loadLogSettings: () => ipcRenderer.invoke("settings:loadLogSettings"),

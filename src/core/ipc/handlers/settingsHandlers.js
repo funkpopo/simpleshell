@@ -128,6 +128,11 @@ class SettingsHandlers {
         handler: this.unlockCredentialStore.bind(this),
       },
       {
+        channel: "settings:lockCredentialStore",
+        category: "settings",
+        handler: this.lockCredentialStore.bind(this),
+      },
+      {
         channel: "get-shortcut-commands",
         category: "settings",
         handler: this.getShortcutCommands.bind(this),
@@ -292,6 +297,19 @@ class SettingsHandlers {
       return result;
     } catch (error) {
       logToFile(`Error unlocking credential store: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async lockCredentialStore() {
+    try {
+      const result = configService.lockCredentialStore();
+      if (result.success) {
+        logToFile("Credential store locked", "INFO");
+      }
+      return result;
+    } catch (error) {
+      logToFile(`Error locking credential store: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }
