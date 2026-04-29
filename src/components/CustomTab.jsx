@@ -298,12 +298,16 @@ const CustomTab = memo((props) => {
               ))}
             {onClose && (
               <CloseIcon
+                className="tab-close-icon"
                 fontSize="small"
                 sx={{
                   width: 16,
                   height: 16,
+                  opacity: 0.35,
+                  transition: "opacity 0.2s ease, color 0.2s ease",
                   "&:hover": {
                     color: "error.main",
+                    opacity: 1,
                   },
                 }}
                 onClick={handleCloseClick}
@@ -316,11 +320,23 @@ const CustomTab = memo((props) => {
           minWidth: "auto",
           minHeight: 30,
           py: 0,
+          px: 1.2,
+          borderRadius: "8px 8px 0 0",
           cursor: isDraggedOver ? "grab" : "pointer",
           userSelect: "none",
           color: "text.secondary",
           transition:
-            "opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease",
+            "opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease",
+          "&:hover": {
+            color: "text.primary",
+            backgroundColor: (theme) =>
+              theme.palette.mode === "dark"
+                ? "rgba(255, 255, 255, 0.08)"
+                : "rgba(0, 0, 0, 0.04)",
+            "& .tab-close-icon": {
+              opacity: 0.85,
+            },
+          },
 
           // 拖拽悬停时的特殊样式（仅排序）
           ...(isDraggedOver && {
@@ -362,10 +378,17 @@ const CustomTab = memo((props) => {
             color: "text.primary",
             backgroundColor: (theme) =>
               theme.palette.mode === "dark"
-                ? "rgba(255, 255, 255, 0.1)"
-                : "rgba(245, 245, 245, 0.91)",
-            borderRadius: "4px 4px 0 0",
-            fontWeight: "bold",
+                ? "rgba(255, 255, 255, 0.14)"
+                : "rgba(255, 255, 255, 0.92)",
+            boxShadow: (theme) =>
+              theme.palette.mode === "dark"
+                ? "inset 0 1px 0 rgba(255,255,255,0.18), 0 8px 18px rgba(0,0,0,0.28)"
+                : "inset 0 1px 0 rgba(255,255,255,0.95), 0 6px 16px rgba(0,0,0,0.08)",
+            fontWeight: 600,
+            transform: "translateY(-1px)",
+            "& .tab-close-icon": {
+              opacity: 0.72,
+            },
           },
         }}
       />
