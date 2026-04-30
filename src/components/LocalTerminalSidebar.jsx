@@ -84,6 +84,19 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   // 清理资源的自定义hook - useAutoCleanup不接受参数
   useAutoCleanup();
 
+  const focusSidebarRoot = (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    const focusableTarget = event.target.closest(
+      'input, textarea, select, button, [role="button"], [tabindex]',
+    );
+    if (focusableTarget && focusableTarget !== sidebarRef.current) {
+      return;
+    }
+    sidebarRef.current?.focus({ preventScroll: true });
+  };
+
   // 键盘快捷键处理
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -99,8 +112,14 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
       if (isInTerminal) return;
 
-      // Ctrl+/ 聚焦到搜索框
-      if (e.ctrlKey && e.key === "/") {
+      const isFocusInSidebar =
+        activeElement && sidebarRef.current?.contains(activeElement);
+
+      // Ctrl+/ 全局聚焦搜索框；Ctrl+F 仅在焦点位于侧边栏内时接管浏览器查找
+      if (
+        e.ctrlKey &&
+        (e.key === "/" || (e.key.toLowerCase() === "f" && isFocusInSidebar))
+      ) {
         e.preventDefault();
         e.stopPropagation();
         if (searchInputRef.current) {
@@ -523,6 +542,8 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   return (
     <Paper
       ref={sidebarRef}
+      tabIndex={-1}
+      onMouseDown={focusSidebarRoot}
       elevation={3}
       square={true}
       sx={{

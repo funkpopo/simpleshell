@@ -240,7 +240,21 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   const [tabValue, setTabValue] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState({});
   const [containerHeight, setContainerHeight] = useState(400);
+  const sidebarRootRef = useRef(null);
   const containerRef = useRef(null);
+
+  const focusSidebarRoot = (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    const focusableTarget = event.target.closest(
+      'input, textarea, select, button, [role="button"], [tabindex]',
+    );
+    if (focusableTarget && focusableTarget !== sidebarRootRef.current) {
+      return;
+    }
+    sidebarRootRef.current?.focus({ preventScroll: true });
+  };
 
   // 键盘快捷键处理
   useEffect(() => {
@@ -258,8 +272,14 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
       if (isInTerminal) return;
 
-      // Ctrl+/ 聚焦到搜索框
-      if (e.ctrlKey && e.key === "/") {
+      const isFocusInSidebar =
+        activeElement && sidebarRootRef.current?.contains(activeElement);
+
+      // Ctrl+/ 全局聚焦搜索框；Ctrl+F 仅在焦点位于侧边栏内时接管浏览器查找
+      if (
+        e.ctrlKey &&
+        (e.key === "/" || (e.key.toLowerCase() === "f" && isFocusInSidebar))
+      ) {
         e.preventDefault();
         e.stopPropagation();
         if (searchInputRef.current) {
@@ -1158,6 +1178,9 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   // 渲染组件主体
   return (
     <Paper
+      ref={sidebarRootRef}
+      tabIndex={-1}
+      onMouseDown={focusSidebarRoot}
       sx={{
         width: open ? 300 : 0,
         height: "100%",

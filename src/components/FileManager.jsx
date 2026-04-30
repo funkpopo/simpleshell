@@ -611,6 +611,19 @@ const FileManager = memo(
       e.dataTransfer.dropEffect = "copy";
     }, []);
 
+    const focusSidebarRoot = (event) => {
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+      const focusableTarget = event.target.closest(
+        'input, textarea, select, button, [role="button"], [tabindex]',
+      );
+      if (focusableTarget && focusableTarget !== fileManagerRootRef.current) {
+        return;
+      }
+      fileManagerRootRef.current?.focus({ preventScroll: true });
+    };
+
     // 键盘快捷键处理
     useEffect(() => {
       const handleKeyDown = (e) => {
@@ -636,8 +649,14 @@ const FileManager = memo(
         // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
         if (isInTerminal) return;
 
-        // Ctrl+/ 聚焦到搜索框
-        if (e.ctrlKey && e.key === "/") {
+        const isFocusInSidebar =
+          activeElement && fileManagerRootRef.current?.contains(activeElement);
+
+        // Ctrl+/ 全局聚焦搜索框；Ctrl+F 仅在焦点位于侧边栏内时接管浏览器查找
+        if (
+          e.ctrlKey &&
+          (e.key === "/" || (e.key.toLowerCase() === "f" && isFocusInSidebar))
+        ) {
           e.preventDefault();
           e.stopPropagation();
           if (!showSearch) {
@@ -6131,6 +6150,8 @@ const FileManager = memo(
     return (
       <Paper
         ref={fileManagerRootRef}
+        tabIndex={-1}
+        onMouseDown={focusSidebarRoot}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
