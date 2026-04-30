@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useRef,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   Box,
   Typography,
@@ -26,6 +27,7 @@ import {
   InputLabel,
   MenuItem,
   Select,
+  Menu,
   Tooltip,
   InputAdornment,
   Switch,
@@ -39,6 +41,7 @@ import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import SearchIcon from "@mui/icons-material/Search";
@@ -242,9 +245,69 @@ const cloneConnectionNode = (node) => {
 
 const cloneConnectionList = (list = []) => list.map(cloneConnectionNode);
 
+const dedupeConnectionsById = (list = []) => {
+  if (!Array.isArray(list) || list.length === 0) {
+    return [];
+  }
+
+  const seen = new Set();
+  const deduped = [];
+
+  list.forEach((item) => {
+    if (!item || typeof item !== "object") {
+      return;
+    }
+
+    const itemId = item.id || "";
+    const dedupeKey = `${item.type || "unknown"}:${itemId}`;
+    if (itemId && seen.has(dedupeKey)) {
+      return;
+    }
+    if (itemId) {
+      seen.add(dedupeKey);
+    }
+
+    if (item.type === "group" && Array.isArray(item.items)) {
+      deduped.push({
+        ...item,
+        items: dedupeConnectionsById(item.items),
+      });
+      return;
+    }
+
+    deduped.push(item);
+  });
+
+  return deduped;
+};
+
 const ROOT_CONTAINER_ID = "connection-list";
 const getGroupContainerId = (groupId) => `group-container-${groupId}`;
 const CONNECTION_LIST_VIRTUALIZATION_THRESHOLD = 200;
+const CONNECTION_MANAGER_ROW_DATA_ATTR = "data-connection-manager-item";
+
+/** 复制到剪贴板的主机地址（去掉尾部 :port，保留 [IPv6] 形式） */
+const getHostForClipboard = (connection) => {
+  const raw = String(connection?.host ?? "").trim();
+  if (!raw) {
+    return "";
+  }
+  if (raw.startsWith("[")) {
+    const end = raw.indexOf("]");
+    if (end > 0) {
+      return raw.slice(0, end + 1);
+    }
+    return raw;
+  }
+  const lastColon = raw.lastIndexOf(":");
+  if (lastColon > 0) {
+    const after = raw.slice(lastColon + 1);
+    if (/^\d+$/.test(after)) {
+      return raw.slice(0, lastColon);
+    }
+  }
+  return raw;
+};
 
 // IP地址排序辅助函数
 const parseIpAddress = (ipString) => {
@@ -328,8 +391,7 @@ const ConnectionListItem = memo(function ConnectionListItem({
   theme,
   connection,
   parentGroup,
-  onEdit,
-  onDelete,
+  onOpenRowContextMenu,
   onOpen,
   dragDisabled,
 }) {
@@ -423,32 +485,20 @@ const ConnectionListItem = memo(function ConnectionListItem({
             }
           : {}),
       }}
-      secondaryAction={
-        <Box
-          sx={{
-            opacity: 0,
-            transition: "opacity 0.2s ease",
-            ".MuiListItem-root:hover &": {
-              opacity: 1,
-            },
-          }}
-        >
-          <IconButton
-            edge="end"
-            size="small"
-            onClick={() => onEdit(connection, parentGroup)}
-          >
-            <EditIcon fontSize="small" />
-          </IconButton>
-          <IconButton
-            edge="end"
-            size="small"
-            onClick={() => onDelete(connection.id, parentGroup)}
-          >
-            <DeleteIcon fontSize="small" />
-          </IconButton>
-        </Box>
-      }
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          const focusTarget =
+            e.currentTarget?.querySelector?.(
+              `[${CONNECTION_MANAGER_ROW_DATA_ATTR}="true"]`,
+            ) || e.currentTarget;
+          focusTarget?.focus?.();
+        } catch (_) {
+          // ignore
+        }
+        onOpenRowContextMenu?.(e, connection, parentGroup);
+      }}
     >
       <Box
         ref={setActivatorNodeRef}
@@ -471,6 +521,8 @@ const ConnectionListItem = memo(function ConnectionListItem({
         <DragIndicatorIcon fontSize="small" />
       </Box>
       <ListItemButton
+        {...{ [CONNECTION_MANAGER_ROW_DATA_ATTR]: "true" }}
+        tabIndex={0}
         onClick={() => onOpen(connection)}
         dense
         sx={{
@@ -538,9 +590,8 @@ const GroupListItem = memo(function GroupListItem({
   group,
   dragDisabled,
   onToggle,
-  onAddConnection,
-  onEdit,
-  onDelete,
+  onOpenGroupRowContextMenu,
+  onOpenConnectionRowContextMenu,
   onOpenConnection,
 }) {
   const containerId = getGroupContainerId(group.id);
@@ -604,50 +655,20 @@ const GroupListItem = memo(function GroupListItem({
               }
             : {}),
         }}
-        secondaryAction={
-          <Box
-            sx={{
-              display: "flex",
-              gap: 0.5,
-              opacity: 0,
-              transition: "opacity 0.2s ease",
-              ".MuiListItem-root:hover &": {
-                opacity: 1,
-              },
-            }}
-          >
-            <IconButton
-              edge="end"
-              size="small"
-              onClick={(event) => {
-                event.stopPropagation();
-                onAddConnection(group.id);
-              }}
-            >
-              <AddIcon fontSize="small" />
-            </IconButton>
-            <IconButton
-              edge="end"
-              size="small"
-              onClick={(event) => {
-                event.stopPropagation();
-                onEdit(group);
-              }}
-            >
-              <EditIcon fontSize="small" />
-            </IconButton>
-            <IconButton
-              edge="end"
-              size="small"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete(group.id);
-              }}
-            >
-              <DeleteIcon fontSize="small" />
-            </IconButton>
-          </Box>
-        }
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            const focusTarget =
+              e.currentTarget?.querySelector?.(
+                `[${CONNECTION_MANAGER_ROW_DATA_ATTR}="true"]`,
+              ) || e.currentTarget;
+            focusTarget?.focus?.();
+          } catch (_) {
+            // ignore
+          }
+          onOpenGroupRowContextMenu?.(e, group);
+        }}
       >
         <Box
           ref={setActivatorNodeRef}
@@ -670,6 +691,8 @@ const GroupListItem = memo(function GroupListItem({
           <DragIndicatorIcon fontSize="small" />
         </Box>
         <ListItemButton
+          {...{ [CONNECTION_MANAGER_ROW_DATA_ATTR]: "true" }}
+          tabIndex={0}
           onClick={() => onToggle(group.id)}
           sx={{
             py: 0.5,
@@ -735,8 +758,7 @@ const GroupListItem = memo(function GroupListItem({
                   theme={theme}
                   connection={item}
                   parentGroup={group}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
+                  onOpenRowContextMenu={onOpenConnectionRowContextMenu}
                   onOpen={onOpenConnection}
                   dragDisabled={dragDisabled}
                 />
@@ -777,6 +799,16 @@ const ConnectionManager = memo(
     const [isLoading, setIsLoading] = useState(!initialConnections.length);
     const [searchQuery, setSearchQuery] = useState("");
     const searchInputRef = useRef(null);
+    const [connectionListContextMenu, setConnectionListContextMenu] =
+      useState(null);
+    const connectionManagerListRootRef = useRef(null);
+    const connectionContextMenuRedispatchingRef = useRef(false);
+
+    useEffect(() => {
+      if (!open) {
+        setConnectionListContextMenu(null);
+      }
+    }, [open]);
 
     // 键盘快捷键处理
     useEffect(() => {
@@ -1007,8 +1039,10 @@ const ConnectionManager = memo(
         }, []);
       }
 
+      const dedupedItems = dedupeConnectionsById(items);
+
       // 对根级别的项目进行排序，并对每个分组内的连接项进行排序
-      const sortedItems = sortConnectionsByIp(items).map((item) => {
+      const sortedItems = sortConnectionsByIp(dedupedItems).map((item) => {
         if (item.type === "group" && item.items) {
           return {
             ...item,
@@ -1206,6 +1240,163 @@ const ConnectionManager = memo(
       setDeleteConfirmOpen(false);
       setDeleteItem(null);
     }, []);
+
+    const handleConnectionListContextMenuClose = useCallback(() => {
+      setConnectionListContextMenu(null);
+    }, []);
+
+    const openConnectionContextMenuFromEvent = useCallback(
+      (event, connection, parentGroup) => {
+        setConnectionListContextMenu({
+          mouseX: event.clientX,
+          mouseY: event.clientY,
+          kind: "connection",
+          connection,
+          parentGroup: parentGroup ?? null,
+        });
+      },
+      [],
+    );
+
+    const openGroupContextMenuFromEvent = useCallback((event, group) => {
+      setConnectionListContextMenu({
+        mouseX: event.clientX,
+        mouseY: event.clientY,
+        kind: "group",
+        group,
+      });
+    }, []);
+
+    const handleVirtualizedItemContextMenu = useCallback(
+      (event, item, parentGroup) => {
+        if (!item) {
+          return;
+        }
+        if (item.type === "group") {
+          openGroupContextMenuFromEvent(event, item);
+        } else {
+          openConnectionContextMenuFromEvent(event, item, parentGroup);
+        }
+      },
+      [openConnectionContextMenuFromEvent, openGroupContextMenuFromEvent],
+    );
+
+    useEffect(() => {
+      if (!open || !connectionListContextMenu) {
+        return;
+      }
+
+      const getContextMenuRetargetElement = (event) => {
+        const root = connectionManagerListRootRef.current;
+        if (!root) {
+          return null;
+        }
+
+        const rawTarget = event.target;
+        if (
+          rawTarget instanceof Element &&
+          (rawTarget.closest(
+            '[data-connection-manager-context-menu="true"]',
+          ) ||
+            rawTarget.closest('[role="menu"]'))
+        ) {
+          return null;
+        }
+
+        if (rawTarget instanceof Element && root.contains(rawTarget)) {
+          return rawTarget;
+        }
+
+        const elementsAtPoint =
+          typeof document.elementsFromPoint === "function"
+            ? document.elementsFromPoint(event.clientX, event.clientY)
+            : [];
+
+        return (
+          elementsAtPoint.find(
+            (element) =>
+              root.contains(element) &&
+              !element.closest(
+                '[data-connection-manager-context-menu="true"]',
+              ) &&
+              !element.closest('[role="menu"]'),
+          ) || null
+        );
+      };
+
+      const handleContextMenuRetarget = (event) => {
+        if (connectionContextMenuRedispatchingRef.current) {
+          return;
+        }
+
+        const retargetElement = getContextMenuRetargetElement(event);
+        if (!retargetElement) {
+          return;
+        }
+
+        const itemEl =
+          retargetElement.closest("[data-connection-manager-item]") ||
+          retargetElement.closest(".MuiListItem-root") ||
+          retargetElement;
+
+        if (!itemEl) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const mouseEventInit = {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          button: 2,
+          buttons: 2,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          screenX: event.screenX,
+          screenY: event.screenY,
+          ctrlKey: event.ctrlKey,
+          shiftKey: event.shiftKey,
+          altKey: event.altKey,
+          metaKey: event.metaKey,
+        };
+
+        flushSync(() => {
+          setConnectionListContextMenu(null);
+        });
+
+        if (!itemEl.isConnected) {
+          return;
+        }
+
+        try {
+          itemEl.focus?.();
+        } catch (_) {
+          // ignore
+        }
+
+        connectionContextMenuRedispatchingRef.current = true;
+        try {
+          itemEl.dispatchEvent(new MouseEvent("contextmenu", mouseEventInit));
+        } finally {
+          connectionContextMenuRedispatchingRef.current = false;
+        }
+      };
+
+      document.addEventListener(
+        "contextmenu",
+        handleContextMenuRetarget,
+        true,
+      );
+      return () => {
+        document.removeEventListener(
+          "contextmenu",
+          handleContextMenuRetarget,
+          true,
+        );
+      };
+    }, [connectionListContextMenu, open]);
 
     const handleDialogClose = useCallback(() => {
       setDialogOpen(false);
@@ -1723,9 +1914,10 @@ const ConnectionManager = memo(
                 group={item}
                 dragDisabled={dragDisabled}
                 onToggle={handleToggleGroup}
-                onAddConnection={handleAddConnection}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
+                onOpenGroupRowContextMenu={openGroupContextMenuFromEvent}
+                onOpenConnectionRowContextMenu={
+                  openConnectionContextMenuFromEvent
+                }
                 onOpenConnection={handleOpenConnection}
               />
             ) : (
@@ -1734,8 +1926,7 @@ const ConnectionManager = memo(
                 theme={theme}
                 connection={item}
                 parentGroup={null}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
+                onOpenRowContextMenu={openConnectionContextMenuFromEvent}
                 onOpen={handleOpenConnection}
                 dragDisabled={dragDisabled}
               />
@@ -1748,9 +1939,8 @@ const ConnectionManager = memo(
       theme,
       dragDisabled,
       handleToggleGroup,
-      handleAddConnection,
-      handleEdit,
-      handleDelete,
+      openConnectionContextMenuFromEvent,
+      openGroupContextMenuFromEvent,
       handleOpenConnection,
     ]);
     const groupOptions = useMemo(() => {
@@ -1883,6 +2073,7 @@ const ConnectionManager = memo(
 
             {/* 连接列表区域 */}
             <Box
+              ref={connectionManagerListRootRef}
               sx={{
                 flexGrow: 1,
                 overflow: "auto",
@@ -1901,11 +2092,7 @@ const ConnectionManager = memo(
                   onToggleGroup={handleToggleGroup}
                   onSelectConnection={handleOpenConnection}
                   onDoubleClick={handleOpenConnection}
-                  onEditConnection={handleEdit}
-                  onDeleteConnection={handleDelete}
-                  onEditGroup={handleEdit}
-                  onDeleteGroup={handleDelete}
-                  onAddConnectionToGroup={handleAddConnection}
+                  onItemContextMenu={handleVirtualizedItemContextMenu}
                   height="100%"
                   itemHeight={36}
                   enableVirtualization
@@ -1952,6 +2139,152 @@ const ConnectionManager = memo(
                 </DndContext>
               )}
             </Box>
+
+            <Menu
+              open={Boolean(connectionListContextMenu)}
+              onClose={handleConnectionListContextMenuClose}
+              anchorReference="anchorPosition"
+              anchorPosition={
+                connectionListContextMenu
+                  ? {
+                      top: connectionListContextMenu.mouseY,
+                      left: connectionListContextMenu.mouseX,
+                    }
+                  : undefined
+              }
+              transitionDuration={0}
+              disableAutoFocusItem
+              PaperProps={{
+                "data-connection-manager-context-menu": "true",
+              }}
+            >
+              {connectionListContextMenu?.kind === "connection" && (
+                <>
+                  <MenuItem
+                    disabled={
+                      !getHostForClipboard(
+                        connectionListContextMenu.connection,
+                      )
+                    }
+                    onClick={() => {
+                      const ctx = connectionListContextMenu;
+                      if (!ctx || ctx.kind !== "connection") {
+                        handleConnectionListContextMenuClose();
+                        return;
+                      }
+                      const text = getHostForClipboard(ctx.connection);
+                      if (!text) {
+                        handleConnectionListContextMenuClose();
+                        return;
+                      }
+                      handleConnectionListContextMenuClose();
+                      window.clipboardAPI
+                        ?.writeText(text)
+                        .then(() => {
+                          showSuccess(t("connectionManager.ipCopied"));
+                        })
+                        .catch(() => {
+                          showError(t("connectionManager.copyFailed"));
+                        });
+                    }}
+                  >
+                    <ListItemIcon>
+                      <ContentCopyIcon fontSize="small" />
+                    </ListItemIcon>
+                    {t("connectionManager.contextCopyIp")}
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      const ctx = connectionListContextMenu;
+                      if (!ctx || ctx.kind !== "connection") {
+                        handleConnectionListContextMenuClose();
+                        return;
+                      }
+                      const { connection, parentGroup } = ctx;
+                      handleConnectionListContextMenuClose();
+                      handleEdit(connection, parentGroup ?? null);
+                    }}
+                  >
+                    <ListItemIcon>
+                      <EditIcon fontSize="small" />
+                    </ListItemIcon>
+                    {t("common.edit")}
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      const ctx = connectionListContextMenu;
+                      if (!ctx || ctx.kind !== "connection") {
+                        handleConnectionListContextMenuClose();
+                        return;
+                      }
+                      const { connection, parentGroup } = ctx;
+                      handleConnectionListContextMenuClose();
+                      handleDelete(connection.id, parentGroup ?? null);
+                    }}
+                  >
+                    <ListItemIcon>
+                      <DeleteIcon fontSize="small" />
+                    </ListItemIcon>
+                    {t("connectionManager.delete")}
+                  </MenuItem>
+                </>
+              )}
+              {connectionListContextMenu?.kind === "group" && (
+                <>
+                  <MenuItem
+                    onClick={() => {
+                      const ctx = connectionListContextMenu;
+                      if (!ctx || ctx.kind !== "group") {
+                        handleConnectionListContextMenuClose();
+                        return;
+                      }
+                      const groupId = ctx.group.id;
+                      handleConnectionListContextMenuClose();
+                      handleAddConnection(groupId);
+                    }}
+                  >
+                    <ListItemIcon>
+                      <AddIcon fontSize="small" />
+                    </ListItemIcon>
+                    {t("connectionManager.contextAddConnection")}
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      const ctx = connectionListContextMenu;
+                      if (!ctx || ctx.kind !== "group") {
+                        handleConnectionListContextMenuClose();
+                        return;
+                      }
+                      const { group } = ctx;
+                      handleConnectionListContextMenuClose();
+                      handleEdit(group);
+                    }}
+                  >
+                    <ListItemIcon>
+                      <EditIcon fontSize="small" />
+                    </ListItemIcon>
+                    {t("common.edit")}
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      const ctx = connectionListContextMenu;
+                      if (!ctx || ctx.kind !== "group") {
+                        handleConnectionListContextMenuClose();
+                        return;
+                      }
+                      const groupId = ctx.group.id;
+                      handleConnectionListContextMenuClose();
+                      handleDelete(groupId);
+                    }}
+                  >
+                    <ListItemIcon>
+                      <DeleteIcon fontSize="small" />
+                    </ListItemIcon>
+                    {t("connectionManager.delete")}
+                  </MenuItem>
+                </>
+              )}
+            </Menu>
 
             {/* 添加/编辑对话框 */}
             <Dialog

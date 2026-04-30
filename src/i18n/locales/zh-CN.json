@@ -284,7 +284,11 @@
       "proxyUsername": "代理用户名 (可选)",
       "proxyPassword": "代理密码 (可选)",
       "hostPlaceholder": "例如: 127.0.0.1",
-      "portPlaceholder": "8080"
+      "portPlaceholder": "8080",
+      "contextCopyIp": "复制IP地址",
+      "contextAddConnection": "添加连接",
+      "ipCopied": "已复制到剪贴板",
+      "copyFailed": "复制失败"
     },
     "common": {
       "cancel": "取消",

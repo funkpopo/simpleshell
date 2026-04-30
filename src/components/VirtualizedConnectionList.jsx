@@ -17,7 +17,6 @@ import {
   Typography,
   useTheme,
   IconButton,
-  Tooltip,
 } from "@mui/material";
 import {
   Computer as ComputerIcon,
@@ -25,12 +24,11 @@ import {
   FolderOpen as FolderOpenIcon,
   ExpandMore as ExpandMoreIcon,
   DragIndicator as DragIndicatorIcon,
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
 } from "@mui/icons-material";
 
-// Connection group or item component for virtualization
+// Matches ConnectionManager.jsx row markers for native contextmenu retarget focus
+const CONNECTION_MANAGER_ITEM_DATA_ATTR = "data-connection-manager-item";
+
 const ConnectionItem = memo(
   ({
     index,
@@ -42,11 +40,7 @@ const ConnectionItem = memo(
     onDoubleClick,
     dragHandleProps,
     isDragging,
-    onEditConnection,
-    onDeleteConnection,
-    onEditGroup,
-    onDeleteGroup,
-    onAddConnectionToGroup,
+    onItemContextMenu,
   }) => {
     const theme = useTheme();
 
@@ -72,6 +66,27 @@ const ConnectionItem = memo(
       }
     }, [item, onDoubleClick]);
 
+    const handleRowContextMenu = useCallback(
+      (event) => {
+        if (!onItemContextMenu) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          const focusTarget =
+            event.currentTarget?.querySelector?.(
+              `[${CONNECTION_MANAGER_ITEM_DATA_ATTR}="true"]`,
+            ) || event.currentTarget;
+          focusTarget?.focus?.();
+        } catch (_) {
+          // ignore
+        }
+        onItemContextMenu(event, item, item.parentGroup || null);
+      },
+      [item, onItemContextMenu],
+    );
+
     const itemIcon = useMemo(() => {
       if (isGroup) {
         return item.expanded ? (
@@ -83,47 +98,22 @@ const ConnectionItem = memo(
       return <ComputerIcon color={item.connected ? "success" : "disabled"} />;
     }, [isGroup, item.expanded, item.connected]);
 
-    const handleEdit = (event) => {
-      event.stopPropagation();
-      if (isGroup) {
-        onEditGroup?.(item);
-      } else {
-        onEditConnection?.(item, item.parentGroup || null);
-      }
-    };
-
-    const handleDelete = (event) => {
-      event.stopPropagation();
-      if (isGroup) {
-        onDeleteGroup?.(item.id);
-      } else {
-        onDeleteConnection?.(item.id, item.parentGroup || null);
-      }
-    };
-
-    const handleAddConnection = (event) => {
-      event.stopPropagation();
-      if (isGroup) {
-        onAddConnectionToGroup?.(item.id);
-      }
-    };
-
     return (
       <div style={style}>
         <ListItem
           disablePadding
+          onContextMenu={handleRowContextMenu}
           sx={{
             bgcolor: isSelected ? "action.selected" : "transparent",
             borderLeft: isSelected
               ? `3px solid ${theme.palette.primary.main}`
               : "3px solid transparent",
             opacity: isDragging ? 0.5 : 1,
-            "&:hover .connection-actions": {
-              opacity: 1,
-            },
           }}
         >
           <ListItemButton
+            {...{ [CONNECTION_MANAGER_ITEM_DATA_ATTR]: "true" }}
+            tabIndex={0}
             onClick={handleClick}
             onDoubleClick={handleDoubleClick}
             sx={{
@@ -210,34 +200,6 @@ const ConnectionItem = memo(
                 <ExpandMoreIcon fontSize="small" />
               </IconButton>
             )}
-
-            <Box
-              className="connection-actions"
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                opacity: 0,
-                transition: "opacity 0.2s ease",
-              }}
-            >
-              {isGroup && (
-                <Tooltip title="添加连接">
-                  <IconButton size="small" onClick={handleAddConnection}>
-                    <AddIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              )}
-              <Tooltip title="编辑">
-                <IconButton size="small" onClick={handleEdit}>
-                  <EditIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="删除">
-                <IconButton size="small" onClick={handleDelete}>
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
           </ListItemButton>
         </ListItem>
       </div>
@@ -341,11 +303,7 @@ const VirtualizedConnectionList = ({
   onToggleGroup,
   onSelectConnection,
   onDoubleClick,
-  onEditConnection,
-  onDeleteConnection,
-  onEditGroup,
-  onDeleteGroup,
-  onAddConnectionToGroup,
+  onItemContextMenu,
   height = 400,
   itemHeight = 48,
   enableVirtualization = true,
@@ -465,11 +423,7 @@ const VirtualizedConnectionList = ({
       onToggleGroup: handleToggleGroup,
       onSelectConnection,
       onDoubleClick,
-      onEditConnection,
-      onDeleteConnection,
-      onEditGroup,
-      onDeleteGroup,
-      onAddConnectionToGroup,
+      onItemContextMenu,
       dragHandleProps: enableDragDrop ? { "data-drag-handle": true } : null,
       isDragging: false,
     }),
@@ -479,11 +433,7 @@ const VirtualizedConnectionList = ({
       handleToggleGroup,
       onSelectConnection,
       onDoubleClick,
-      onEditConnection,
-      onDeleteConnection,
-      onEditGroup,
-      onDeleteGroup,
-      onAddConnectionToGroup,
+      onItemContextMenu,
       enableDragDrop,
     ],
   );
