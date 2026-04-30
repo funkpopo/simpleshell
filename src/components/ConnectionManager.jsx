@@ -799,10 +799,24 @@ const ConnectionManager = memo(
     const [isLoading, setIsLoading] = useState(!initialConnections.length);
     const [searchQuery, setSearchQuery] = useState("");
     const searchInputRef = useRef(null);
+    const sidebarRootRef = useRef(null);
     const [connectionListContextMenu, setConnectionListContextMenu] =
       useState(null);
     const connectionManagerListRootRef = useRef(null);
     const connectionContextMenuRedispatchingRef = useRef(false);
+
+    const focusSidebarRoot = (event) => {
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+      const focusableTarget = event.target.closest(
+        'input, textarea, select, button, [role="button"], [tabindex]',
+      );
+      if (focusableTarget && focusableTarget !== sidebarRootRef.current) {
+        return;
+      }
+      sidebarRootRef.current?.focus({ preventScroll: true });
+    };
 
     useEffect(() => {
       if (!open) {
@@ -826,8 +840,14 @@ const ConnectionManager = memo(
         // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
         if (isInTerminal) return;
 
-        // Ctrl+/ 聚焦到搜索框
-        if (e.ctrlKey && e.key === "/") {
+        const isFocusInSidebar =
+          activeElement && sidebarRootRef.current?.contains(activeElement);
+
+        // Ctrl+/ 全局聚焦搜索框；Ctrl+F 仅在焦点位于侧边栏内时接管浏览器查找
+        if (
+          e.ctrlKey &&
+          (e.key === "/" || (e.key.toLowerCase() === "f" && isFocusInSidebar))
+        ) {
           e.preventDefault();
           e.stopPropagation();
           if (searchInputRef.current) {
@@ -1295,9 +1315,7 @@ const ConnectionManager = memo(
         const rawTarget = event.target;
         if (
           rawTarget instanceof Element &&
-          (rawTarget.closest(
-            '[data-connection-manager-context-menu="true"]',
-          ) ||
+          (rawTarget.closest('[data-connection-manager-context-menu="true"]') ||
             rawTarget.closest('[role="menu"]'))
         ) {
           return null;
@@ -1384,11 +1402,7 @@ const ConnectionManager = memo(
         }
       };
 
-      document.addEventListener(
-        "contextmenu",
-        handleContextMenuRetarget,
-        true,
-      );
+      document.addEventListener("contextmenu", handleContextMenuRetarget, true);
       return () => {
         document.removeEventListener(
           "contextmenu",
@@ -1963,6 +1977,9 @@ const ConnectionManager = memo(
 
     return (
       <Paper
+        ref={sidebarRootRef}
+        tabIndex={-1}
+        onMouseDown={focusSidebarRoot}
         sx={{
           width: open ? 300 : 0,
           height: "100%",
@@ -2162,9 +2179,7 @@ const ConnectionManager = memo(
                 <>
                   <MenuItem
                     disabled={
-                      !getHostForClipboard(
-                        connectionListContextMenu.connection,
-                      )
+                      !getHostForClipboard(connectionListContextMenu.connection)
                     }
                     onClick={() => {
                       const ctx = connectionListContextMenu;
