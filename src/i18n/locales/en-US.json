@@ -284,7 +284,11 @@
       "proxyUsername": "Proxy Username (Optional)",
       "proxyPassword": "Proxy Password (Optional)",
       "hostPlaceholder": "e.g., 127.0.0.1",
-      "portPlaceholder": "8080"
+      "portPlaceholder": "8080",
+      "contextCopyIp": "Copy IP address",
+      "contextAddConnection": "Add connection",
+      "ipCopied": "Copied to clipboard",
+      "copyFailed": "Copy failed"
     },
     "common": {
       "cancel": "Cancel",
