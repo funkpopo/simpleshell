@@ -8,14 +8,31 @@ import { findGroupByTab } from "../core/syncInputGroups";
 const dragIndicatorStyles = (
   <GlobalStyles
     styles={{
-      "@keyframes indicatorPopIn": {
+      "@keyframes indicatorGlassIn": {
         "0%": {
-          transform: "scaleY(0.3)",
+          transform: "scaleY(0.25)",
           opacity: 0,
+          filter: "blur(6px)",
+        },
+        "55%": {
+          transform: "scaleY(1.08)",
+          opacity: 1,
+          filter: "blur(0px)",
         },
         "100%": {
           transform: "scaleY(1)",
           opacity: 1,
+          filter: "blur(0px)",
+        },
+      },
+      "@keyframes indicatorGlowPulse": {
+        "0%, 100%": {
+          boxShadow:
+            "0 0 12px rgba(100, 180, 255, 0.45), 0 0 2px rgba(255, 255, 255, 0.6) inset",
+        },
+        "50%": {
+          boxShadow:
+            "0 0 18px rgba(130, 200, 255, 0.65), 0 0 3px rgba(255, 255, 255, 0.75) inset",
         },
       },
       "@keyframes reconnectPulse": {
@@ -55,7 +72,9 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.statusColor === nextProps.statusColor &&
     prevProps.statusTooltip === nextProps.statusTooltip &&
     prevProps.isDraggedOver === nextProps.isDraggedOver &&
-    prevProps.dragInsertPosition === nextProps.dragInsertPosition
+    prevProps.dragInsertPosition === nextProps.dragInsertPosition &&
+    prevProps.isDragSource === nextProps.isDragSource &&
+    prevProps.dragSessionActive === nextProps.dragSessionActive
   );
 };
 
@@ -78,6 +97,8 @@ const CustomTab = memo((props) => {
     statusTooltip = null,
     isDraggedOver = false, // 是否被拖拽悬停
     dragInsertPosition = null, // 插入位置 ('before' | 'after')
+    isDragSource = false, // 当前标签是否为被拖动的源（原位占位）
+    dragSessionActive = false, // 是否有任意标签正在被拖动
     ...other
   } = props;
 
@@ -120,26 +141,37 @@ const CustomTab = memo((props) => {
       e.dataTransfer.setData("application/json", JSON.stringify(dragData));
       e.dataTransfer.effectAllowed = "move";
 
-      // 创建幽灵元素预览
+      // 创建幽灵元素预览（液态玻璃：多层高光、饱和模糊、柔和色散描边）
       const createDragPreview = () => {
         const preview = document.createElement("div");
         const isDark = document.body.classList.contains("dark-theme");
 
+        const glassBg = isDark
+          ? "linear-gradient(155deg, rgba(255,255,255,0.14) 0%, rgba(120,160,220,0.08) 42%, rgba(20,24,34,0.72) 100%)"
+          : "linear-gradient(155deg, rgba(255,255,255,0.92) 0%, rgba(230,240,255,0.55) 38%, rgba(255,255,255,0.38) 100%)";
+
         preview.style.cssText = `
-          padding: 6px 14px;
-          background-color: ${isDark ? "rgba(40, 40, 40, 0.85)" : "rgba(255, 255, 255, 0.85)"};
-          color: ${isDark ? "#fff" : "#333"};
-          border-radius: 6px;
-          font-family: system-ui, -apple-system, sans-serif;
+          position: relative;
+          padding: 8px 16px;
+          background: ${glassBg};
+          color: ${isDark ? "rgba(255,255,255,0.96)" : "rgba(30,34,42,0.94)"};
+          border-radius: 12px;
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           font-size: 13px;
-          font-weight: 500;
-          box-shadow: ${
+          font-weight: 600;
+          letter-spacing: 0.01em;
+          border: 1px solid ${
             isDark
-              ? "0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1)"
-              : "0 8px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05)"
+              ? "rgba(255, 255, 255, 0.22)"
+              : "rgba(255, 255, 255, 0.85)"
           };
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
+          box-shadow:
+            0 1px 0 rgba(255,255,255,0.35) inset,
+            0 12px 40px rgba(0, 0, 0, ${isDark ? 0.45 : 0.14}),
+            0 4px 16px rgba(80, 140, 255, ${isDark ? 0.2 : 0.12}),
+            0 0 0 1px rgba(120, 170, 255, ${isDark ? 0.12 : 0.08});
+          backdrop-filter: saturate(180%) blur(24px);
+          -webkit-backdrop-filter: saturate(180%) blur(24px);
           display: flex;
           align-items: center;
           gap: 6px;
@@ -149,43 +181,73 @@ const CustomTab = memo((props) => {
           top: -9999px;
           z-index: 99999;
           white-space: nowrap;
-          max-width: 200px;
+          max-width: 220px;
           overflow: hidden;
           text-overflow: ellipsis;
         `;
 
-        // 创建图标元素
+        const sheen = document.createElement("div");
+        sheen.style.cssText = `
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          pointer-events: none;
+          background: linear-gradient(
+            118deg,
+            rgba(255,255,255,0.55) 0%,
+            rgba(255,255,255,0.12) 35%,
+            rgba(255,255,255,0) 52%,
+            rgba(120,180,255,0.08) 100%
+          );
+          opacity: ${isDark ? 0.5 : 0.65};
+        `;
+        preview.appendChild(sheen);
+
+        const row = document.createElement("div");
+        row.style.cssText = `
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          position: relative;
+          z-index: 1;
+          min-width: 0;
+        `;
+
         const icon = document.createElement("span");
         icon.style.cssText = `
           display: inline-flex;
           align-items: center;
-          opacity: 0.7;
+          opacity: ${isDark ? 0.75 : 0.65};
+          flex-shrink: 0;
         `;
         icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>`;
 
-        // 创建文本元素
         const text = document.createElement("span");
         text.textContent = label;
-        text.style.overflow = "hidden";
-        text.style.textOverflow = "ellipsis";
+        text.style.cssText = `
+          overflow: hidden;
+          text-overflow: ellipsis;
+          min-width: 0;
+        `;
 
-        preview.appendChild(icon);
-        preview.appendChild(text);
+        row.appendChild(icon);
+        row.appendChild(text);
+        preview.appendChild(row);
         document.body.appendChild(preview);
 
-        // 设置拖拽预览图像
         e.dataTransfer.setDragImage(
           preview,
           preview.offsetWidth / 2,
           preview.offsetHeight / 2,
         );
 
-        // 延迟移除预览元素
-        setTimeout(() => {
-          if (document.body.contains(preview)) {
-            document.body.removeChild(preview);
-          }
-        }, 100);
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            if (document.body.contains(preview)) {
+              document.body.removeChild(preview);
+            }
+          }, 0);
+        });
       };
 
       // 使用requestAnimationFrame确保在下一帧创建预览
@@ -321,12 +383,21 @@ const CustomTab = memo((props) => {
           minHeight: 30,
           py: 0,
           px: 1.2,
-          borderRadius: "8px 8px 0 0",
-          cursor: isDraggedOver ? "grab" : "pointer",
+          borderRadius: dragSessionActive ? "10px" : "8px 8px 0 0",
+          cursor: isDragSource ? "grabbing" : "pointer",
           userSelect: "none",
           color: "text.secondary",
-          transition:
-            "opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease",
+          transition: [
+            "opacity 0.36s cubic-bezier(0.32, 0.72, 0, 1)",
+            "transform 0.44s cubic-bezier(0.34, 1.45, 0.64, 1)",
+            "box-shadow 0.38s cubic-bezier(0.32, 0.72, 0, 1)",
+            "background-color 0.28s ease",
+            "color 0.22s ease",
+            "filter 0.34s ease",
+            "border-color 0.3s ease",
+            "backdrop-filter 0.34s ease",
+          ].join(", "),
+          willChange: "auto",
           "&:hover": {
             color: "text.primary",
             backgroundColor: (theme) =>
@@ -338,39 +409,86 @@ const CustomTab = memo((props) => {
             },
           },
 
-          // 拖拽悬停时的特殊样式（仅排序）
+          // 拖拽进行中：其余标签轻微收缩，突出中间「槽位」感
+          ...(dragSessionActive &&
+            !isDragSource &&
+            !isDraggedOver && {
+              transform: "scale(0.985)",
+              filter: "saturate(0.92) brightness(0.97)",
+            }),
+
+          // 原位占位：下沉的毛玻璃残影，与拖拽预览风格一致
+          ...(isDragSource && {
+            cursor: "grabbing",
+            opacity: 0.38,
+            transform: "scale(0.92) translateY(4px)",
+            WebkitBackdropFilter: "saturate(165%) blur(14px)",
+            backdropFilter: "saturate(165%) blur(14px)",
+            backgroundColor: (theme) =>
+              theme.palette.mode === "dark"
+                ? "rgba(36, 40, 52, 0.58)"
+                : "rgba(255, 255, 255, 0.5)",
+            border: (theme) =>
+              `1px solid ${
+                theme.palette.mode === "dark"
+                  ? "rgba(255,255,255,0.16)"
+                  : "rgba(255,255,255,0.72)"
+              }`,
+            boxShadow: (theme) =>
+              theme.palette.mode === "dark"
+                ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 16px 36px rgba(0,0,0,0.4), 0 0 0 1px rgba(100,170,255,0.14)"
+                : "inset 0 1px 0 rgba(255,255,255,0.9), 0 14px 32px rgba(0,0,0,0.11), 0 0 0 1px rgba(90,150,230,0.1)",
+            filter: "saturate(1.1)",
+            willChange: "transform, opacity, filter",
+          }),
+
+          // 悬停目标：微微浮起 + 液态玻璃高亮
           ...(isDraggedOver && {
             position: "relative",
-            // 排序操作的插入位置指示器
+            cursor: "pointer",
+            transform: "scale(1.03) translateY(-2px)",
+            WebkitBackdropFilter: "saturate(180%) blur(12px)",
+            backdropFilter: "saturate(180%) blur(12px)",
+            backgroundColor: (theme) =>
+              theme.palette.mode === "dark"
+                ? "rgba(80, 130, 200, 0.14)"
+                : "rgba(255, 255, 255, 0.72)",
+            boxShadow: (theme) =>
+              theme.palette.mode === "dark"
+                ? "inset 0 1px 0 rgba(255,255,255,0.18), 0 10px 28px rgba(0,0,0,0.32), 0 0 0 1px rgba(130,190,255,0.22)"
+                : "inset 0 1px 0 rgba(255,255,255,0.95), 0 12px 28px rgba(70,130,220,0.12), 0 0 0 1px rgba(120,170,240,0.2)",
+            filter: "saturate(1.08)",
+            zIndex: 2,
             ...(dragInsertPosition === "before" && {
               "&::before": {
                 content: '""',
                 position: "absolute",
-                left: -1,
-                top: "20%",
-                bottom: "20%",
-                width: 3,
-                backgroundColor: "primary.main",
-                borderRadius: 3,
+                left: 0,
+                top: "18%",
+                bottom: "18%",
+                width: 4,
+                borderRadius: 999,
                 zIndex: 1002,
+                background:
+                  "linear-gradient(180deg, rgba(164,210,255,0.95) 0%, rgba(66,165,245,1) 45%, rgba(124,77,255,0.92) 100%)",
                 animation:
-                  "indicatorPopIn 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards",
+                  "indicatorGlassIn 0.38s cubic-bezier(0.34, 1.45, 0.64, 1) forwards, indicatorGlowPulse 2.1s ease-in-out 0.12s infinite",
               },
             }),
-
             ...(dragInsertPosition === "after" && {
               "&::after": {
                 content: '""',
                 position: "absolute",
-                right: -1,
-                top: "20%",
-                bottom: "20%",
-                width: 3,
-                backgroundColor: "primary.main",
-                borderRadius: 3,
+                right: 0,
+                top: "18%",
+                bottom: "18%",
+                width: 4,
+                borderRadius: 999,
                 zIndex: 1002,
+                background:
+                  "linear-gradient(180deg, rgba(164,210,255,0.95) 0%, rgba(66,165,245,1) 45%, rgba(124,77,255,0.92) 100%)",
                 animation:
-                  "indicatorPopIn 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards",
+                  "indicatorGlassIn 0.38s cubic-bezier(0.34, 1.45, 0.64, 1) forwards, indicatorGlowPulse 2.1s ease-in-out 0.12s infinite",
               },
             }),
           }),
@@ -389,6 +507,12 @@ const CustomTab = memo((props) => {
             "& .tab-close-icon": {
               opacity: 0.72,
             },
+            ...(isDragSource && {
+              transform: "scale(0.92) translateY(4px)",
+            }),
+            ...(isDraggedOver && {
+              transform: "scale(1.03) translateY(-2px)",
+            }),
           },
         }}
       />
@@ -416,6 +540,8 @@ CustomTab.propTypes = {
   statusTooltip: PropTypes.string,
   isDraggedOver: PropTypes.bool,
   dragInsertPosition: PropTypes.oneOf(["before", "after", null]),
+  isDragSource: PropTypes.bool,
+  dragSessionActive: PropTypes.bool,
 };
 
 export default CustomTab;
