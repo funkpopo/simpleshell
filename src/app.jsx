@@ -2373,14 +2373,6 @@ function AppContent() {
       dispatch(actions.setDraggedTab(index));
       // 设置一些拖动时的数据
       e.dataTransfer.effectAllowed = "move";
-
-      // 使拖动的元素半透明并稍微缩小
-      if (e.currentTarget) {
-        e.currentTarget.style.opacity = "0.4";
-        e.currentTarget.style.transform = "scale(0.95)";
-        e.currentTarget.style.transition =
-          "opacity 0.2s ease, transform 0.2s ease";
-      }
     },
     [tabs, dispatch],
   );
@@ -2569,27 +2561,14 @@ function AppContent() {
       // 执行排序
       reorderTab(sourceIndex, targetIndex, position);
       cleanupDragState();
-
-      // 恢复透明度和缩放
-      if (e.currentTarget) {
-        e.currentTarget.style.opacity = "1";
-        e.currentTarget.style.transform = "scale(1)";
-      }
     },
     [draggedTabIndex, dragInsertPosition, cleanupDragState, reorderTab],
   );
 
   // 处理拖动结束（无论是否成功放置）
-  const handleDragEnd = useCallback(
-    (e) => {
-      if (e.currentTarget) {
-        e.currentTarget.style.opacity = "1";
-        e.currentTarget.style.transform = "scale(1)";
-      }
-      cleanupDragState();
-    },
-    [cleanupDragState],
-  );
+  const handleDragEnd = useCallback(() => {
+    cleanupDragState();
+  }, [cleanupDragState]);
 
   // 切换资源监控侧边栏
   const toggleResourceMonitor = useCallback(() => {
@@ -3458,6 +3437,10 @@ function AppContent() {
                         selected={currentTab === index}
                         index={index}
                         tabId={tab.id}
+                        isDragSource={
+                          draggedTabIndex !== null && draggedTabIndex === index
+                        }
+                        dragSessionActive={draggedTabIndex !== null}
                         isDraggedOver={
                           draggedTabIndex !== null &&
                           dragOverTabIndex === index &&
