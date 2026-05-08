@@ -130,23 +130,36 @@ export class RendererTerminalIOMailbox {
     }, TERMINAL_IO_DEFAULTS.ackFlushDelayMs);
   }
 
+  measureByteLength(data) {
+    if (!data) {
+      return 0;
+    }
+
+    if (this.textEncoder) {
+      return this.textEncoder.encode(data).length;
+    }
+
+    try {
+      return new Blob([data]).size;
+    } catch {
+      return data.length;
+    }
+  }
+
   handleDrain(data) {
-    if (!this.term || !data) {
+    if (!data) {
       return;
     }
 
     const processIdForAck = this.processId;
-    const byteLength = (() => {
-      if (this.textEncoder) {
-        return this.textEncoder.encode(data).length;
-      }
+    const byteLength = this.measureByteLength(data);
 
-      try {
-        return new Blob([data]).size;
-      } catch {
-        return data.length;
+    if (!this.term) {
+      if (byteLength > 0) {
+        this.queueOutputAck(processIdForAck, byteLength);
       }
-    })();
+      return;
+    }
 
     const startTime =
       typeof performance !== "undefined" &&
@@ -237,14 +250,23 @@ export class RendererTerminalIOMailbox {
     }
     this.unsubscribe = null;
 
-    this.flushOutputAck();
     this.clearOutputQueue();
+    this.flushOutputAck();
     this.resetResizeState();
     this.processId = null;
   }
 
   clearOutputQueue() {
+    const processIdForAck = this.processId;
+    const queuedBytes = this.writeQueue.getQueuedByteLength((chunk) =>
+      this.measureByteLength(chunk),
+    );
+
     this.writeQueue.clear();
+
+    if (queuedBytes > 0) {
+      this.queueOutputAck(processIdForAck, queuedBytes);
+    }
   }
 
   sendInput(input) {

@@ -178,6 +178,25 @@ export class TerminalWriteQueue {
   }
 
   /**
+   * 获取当前队列中待写入数据的实际字节数。
+   * queuedBytes 为字符串长度，只用于调度阈值；背压 ACK 需要真实 UTF-8 字节数。
+   */
+  getQueuedByteLength(measureByteLength) {
+    if (this.queuedChunks.length === 0) {
+      return 0;
+    }
+
+    if (typeof measureByteLength !== "function") {
+      return this.queuedBytes;
+    }
+
+    return this.queuedChunks.reduce(
+      (total, chunk) => total + measureByteLength(chunk),
+      0,
+    );
+  }
+
+  /**
    * 获取统计信息
    * @returns {Object} 统计对象
    */
