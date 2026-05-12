@@ -24,10 +24,12 @@ const MasterPasswordOverlay = React.memo(
     const { t } = useTranslation();
     const [password, setPassword] = React.useState("");
     const inputRef = React.useRef(null);
+    const lastAutoSubmittedPasswordRef = React.useRef("");
 
     React.useEffect(() => {
       if (!open) {
         setPassword("");
+        lastAutoSubmittedPasswordRef.current = "";
         return;
       }
 
@@ -45,6 +47,26 @@ const MasterPasswordOverlay = React.memo(
 
       onUnlock(password);
     }, [isSubmitting, onUnlock, password]);
+
+    React.useEffect(() => {
+      if (
+        !open ||
+        loading ||
+        isSubmitting ||
+        !password ||
+        password === lastAutoSubmittedPasswordRef.current ||
+        typeof onUnlock !== "function"
+      ) {
+        return undefined;
+      }
+
+      const timer = window.setTimeout(() => {
+        lastAutoSubmittedPasswordRef.current = password;
+        onUnlock(password);
+      }, 650);
+
+      return () => window.clearTimeout(timer);
+    }, [isSubmitting, loading, onUnlock, open, password]);
 
     const handleClose = React.useCallback(() => {
       if (typeof onClose === "function") {
