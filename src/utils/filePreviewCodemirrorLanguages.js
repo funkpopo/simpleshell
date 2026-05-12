@@ -1,5 +1,5 @@
 /**
- * CodeMirror language ids for file preview — loaded on demand via dynamic import()
+ * CodeMirror language ids for file preview - loaded on demand via dynamic import()
  * so the main renderer chunk does not pull every @codemirror/lang-* package at startup.
  * Bundled by webpack into async chunks; safe for packaged Electron (no Node.js on user PC).
  */
@@ -61,7 +61,6 @@ export function getCodemirrorLanguageIdFromFilename(filename) {
     hpp: "cpp",
     hxx: "cpp",
     hh: "cpp",
-    cs: "java",
     php: "php",
     phtml: "php",
     php3: "php",
@@ -146,6 +145,8 @@ const loaders = {
   sql: () => import("@codemirror/lang-sql").then((m) => m.sql()),
 };
 
+const extensionCache = new Map();
+
 /**
  * @param {string|null} languageId
  * @returns {Promise<import('@codemirror/state').Extension|null>}
@@ -156,15 +157,22 @@ export async function loadCodemirrorLanguageExtension(languageId) {
   }
   const loader = loaders[languageId];
   if (!loader) {
-    return null;
+    throw new Error(`Unsupported CodeMirror language "${languageId}"`);
   }
-  try {
-    return await loader();
-  } catch (error) {
-    console.error(
-      `Failed to load CodeMirror language "${languageId}":`,
-      error,
+
+  if (!extensionCache.has(languageId)) {
+    extensionCache.set(
+      languageId,
+      loader().catch((error) => {
+        extensionCache.delete(languageId);
+        throw new Error(
+          `Failed to load CodeMirror language "${languageId}": ${
+            error?.message || "unknown error"
+          }`,
+        );
+      }),
     );
-    return null;
   }
+
+  return extensionCache.get(languageId);
 }

@@ -581,6 +581,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [codemirrorLangExtensions, setCodemirrorLangExtensions] = useState(
     [],
   );
+  const [syntaxHighlightState, setSyntaxHighlightState] = useState({
+    languageId: null,
+    loading: false,
+    error: null,
+  });
 
   // PDF相关状态
   const [numPages, setNumPages] = useState(null);
@@ -733,18 +738,57 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     let cancelled = false;
     if (!open || !isTextPreview || !file?.name) {
       setCodemirrorLangExtensions([]);
+      setSyntaxHighlightState({
+        languageId: null,
+        loading: false,
+        error: null,
+      });
       return;
     }
     const languageId = getCodemirrorLanguageIdFromFilename(file.name);
     if (!languageId) {
       setCodemirrorLangExtensions([]);
+      setSyntaxHighlightState({
+        languageId: null,
+        loading: false,
+        error: null,
+      });
       return;
     }
-    loadCodemirrorLanguageExtension(languageId).then((ext) => {
-      if (!cancelled) {
-        setCodemirrorLangExtensions(ext ? [ext] : []);
-      }
+
+    setCodemirrorLangExtensions([]);
+    setSyntaxHighlightState({
+      languageId,
+      loading: true,
+      error: null,
     });
+
+    loadCodemirrorLanguageExtension(languageId)
+      .then((ext) => {
+        if (cancelled) {
+          return;
+        }
+
+        setCodemirrorLangExtensions([ext]);
+        setSyntaxHighlightState({
+          languageId,
+          loading: false,
+          error: null,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setCodemirrorLangExtensions([]);
+        setSyntaxHighlightState({
+          languageId,
+          loading: false,
+          error: error?.message || "语法高亮加载失败",
+        });
+      });
+
     return () => {
       cancelled = true;
     };
@@ -2098,7 +2142,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 }}
               >
                 <CodeMirror
-                  key={`diff-base-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}-${codemirrorLangExtensions.length}`}
+                  key={`diff-base-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}-${syntaxHighlightState.languageId || "plain"}`}
                   value={snapshotDiffPaneData.base.value}
                   height="100%"
                   basicSetup={false}
@@ -2139,7 +2183,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 }}
               >
                 <CodeMirror
-                  key={`diff-current-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}-${codemirrorLangExtensions.length}`}
+                  key={`diff-current-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}-${syntaxHighlightState.languageId || "plain"}`}
                   value={snapshotDiffPaneData.current.value}
                   height="100%"
                   basicSetup={false}
@@ -2219,7 +2263,28 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           }}
         >
           <Box sx={boxSx}>
-            {pendingRestoreSnapshot ? (
+            {syntaxHighlightState.error ? (
+              <Box sx={{ p: 2, color: "error.main" }}>
+                <Typography variant="body1">
+                  {syntaxHighlightState.error}
+                </Typography>
+              </Box>
+            ) : syntaxHighlightState.loading ? (
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flex: 1,
+                  gap: 1.5,
+                }}
+              >
+                <CircularProgress size={24} />
+                <Typography variant="body2" color="text.secondary">
+                  正在加载 {syntaxHighlightState.languageId} 语法高亮...
+                </Typography>
+              </Box>
+            ) : pendingRestoreSnapshot ? (
               renderSnapshotDiffView()
             ) : (
               <CodeMirror
@@ -2470,6 +2535,20 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   variant="outlined"
                 />
               ) : null}
+              {isTextPreview && syntaxHighlightState.languageId ? (
+                <Chip
+                  size="small"
+                  color={syntaxHighlightState.error ? "error" : "info"}
+                  label={
+                    syntaxHighlightState.error
+                      ? "语法高亮加载失败"
+                      : syntaxHighlightState.loading
+                        ? "语法高亮加载中"
+                        : `${syntaxHighlightState.languageId} 高亮`
+                  }
+                  variant={syntaxHighlightState.loading ? "outlined" : "filled"}
+                />
+              ) : null}
               {isTextPreview ? (
                 <Chip
                   size="small"
@@ -2518,7 +2597,12 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                     variant={isEditing ? "contained" : "outlined"}
                     startIcon={isEditing ? <VisibilityIcon /> : <EditIcon />}
                     onClick={toggleEditMode}
-                    disabled={loading || savingFile}
+                    disabled={
+                      loading ||
+                      savingFile ||
+                      syntaxHighlightState.loading ||
+                      Boolean(syntaxHighlightState.error)
+                    }
                   >
                     {isEditing ? "切换到预览" : "切换到编辑"}
                   </Button>
@@ -2527,7 +2611,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                     variant="contained"
                     startIcon={<SaveIcon />}
                     onClick={handleSaveFile}
-                    disabled={!isEditing || !modified || savingFile || loading}
+                    disabled={
+                      !isEditing ||
+                      !modified ||
+                      savingFile ||
+                      loading ||
+                      syntaxHighlightState.loading ||
+                      Boolean(syntaxHighlightState.error)
+                    }
                   >
                     {savingFile ? "保存中..." : "保存"}
                   </Button>
