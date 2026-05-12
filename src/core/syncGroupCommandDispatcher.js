@@ -4,8 +4,9 @@ import { findGroupByTab } from "./syncInputGroups";
  * 分组命令分发器：统一负责将命令同步到分组内所有终端
  * @param {string} tabId - 当前终端Tab的ID
  * @param {string} command - 需要分发的命令（不带回车）
+ * @param {{ execute?: boolean }} options - execute 为 false 时只输入命令，不发送回车
  */
-export function dispatchCommandToGroup(tabId, command) {
+export function dispatchCommandToGroup(tabId, command, options = {}) {
   if (!window.terminalAPI || !window.terminalAPI.sendToProcess) {
     console.error("window.terminalAPI.sendToProcess not available");
     return;
@@ -24,8 +25,8 @@ export function dispatchCommandToGroup(tabId, command) {
   members.forEach((targetTabId) => {
     const pid = window.processCache[targetTabId];
     if (pid) {
-      // 构造完整命令（包含回车）
-      const commandToSend = command + "\r";
+      const shouldExecute = options.execute !== false;
+      const commandToSend = shouldExecute ? command + "\r" : command;
 
       // 标记这是来自快捷命令窗口的输入，避免在WebTerminal中重复处理
       if (window.webTerminalRefs && window.webTerminalRefs[targetTabId]) {

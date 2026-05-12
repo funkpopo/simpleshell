@@ -421,7 +421,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
             id: `cmd-${Date.now()}`,
             name: editedCommand.split(" ")[0] || "Command",
             command: editedCommand,
-            description: `从历史记录编辑的命令`,
             category: result.data.categories?.[0]?.id || "",
             params: [],
             tags: [],

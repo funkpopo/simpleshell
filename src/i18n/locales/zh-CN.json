@@ -352,6 +352,7 @@
       "edit": "编辑",
       "delete": "删除",
       "sendCommand": "发送命令",
+      "sendAndExecute": "发送并执行",
       "copyCommand": "复制命令",
       "totalCommands": "共 {{count}} 条命令",
       "commandSent": "已发送命令：{{command}}",
