@@ -1756,13 +1756,15 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             justifyContent="space-between"
             spacing={1}
           >
-            <Typography variant="subtitle2">已保存版本</Typography>
+            <Typography variant="subtitle2">
+              {t("filePreview.savedVersions")}
+            </Typography>
             <Button
               size="small"
               onClick={refreshSnapshots}
               disabled={loadingSnapshots || creatingSnapshot}
             >
-              刷新
+              {t("common.refresh")}
             </Button>
           </Stack>
         </Box>
@@ -2038,27 +2040,36 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             justifyContent="space-between"
           >
             <Box>
-              <Typography variant="subtitle2">版本差异</Typography>
+              <Typography variant="subtitle2">
+                {t("filePreview.versionDiff")}
+              </Typography>
               <Typography variant="caption" color="text.secondary">
-                {formatSnapshotDate(pendingRestoreSnapshot.createdAt)}
-                的已保存版本与当前内容对比
+                {t("filePreview.diffDescription", {
+                  date: formatSnapshotDate(pendingRestoreSnapshot.createdAt),
+                })}
               </Typography>
             </Box>
             <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
               <Chip
                 size="small"
                 variant="outlined"
-                label={`变更 ${diffSummary.changed}`}
+                label={t("filePreview.changedCount", {
+                  count: diffSummary.changed,
+                })}
               />
               <Chip
                 size="small"
                 variant="outlined"
-                label={`新增 ${diffSummary.added}`}
+                label={t("filePreview.addedCount", {
+                  count: diffSummary.added,
+                })}
               />
               <Chip
                 size="small"
                 variant="outlined"
-                label={`删除 ${diffSummary.removed}`}
+                label={t("filePreview.removedCount", {
+                  count: diffSummary.removed,
+                })}
               />
             </Stack>
           </Stack>
@@ -2375,7 +2386,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             }}
           >
             <ButtonGroup size="small" variant="outlined">
-              <Tooltip title="上一页">
+              <Tooltip title={t("filePreview.previousPage")}>
                 <span>
                   <IconButton
                     onClick={goToPrevPage}
@@ -2386,7 +2397,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   </IconButton>
                 </span>
               </Tooltip>
-              <Tooltip title="下一页">
+              <Tooltip title={t("filePreview.nextPage")}>
                 <span>
                   <IconButton
                     onClick={goToNextPage}
@@ -2400,11 +2411,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             </ButtonGroup>
 
             <Typography variant="body2" sx={{ mx: 2 }}>
-              第 {pageNumber} 页，共 {numPages || 0} 页
+              {t("filePreview.pageStatus", {
+                page: pageNumber,
+                total: numPages || 0,
+              })}
             </Typography>
 
             <ButtonGroup size="small" variant="outlined">
-              <Tooltip title="放大">
+              <Tooltip title={t("filePreview.zoomIn")}>
                 <IconButton
                   onClick={zoomIn}
                   disabled={scale >= 3.0}
@@ -2413,7 +2427,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   <ZoomInIcon />
                 </IconButton>
               </Tooltip>
-              <Tooltip title="缩小">
+              <Tooltip title={t("filePreview.zoomOut")}>
                 <IconButton
                   onClick={zoomOut}
                   disabled={scale <= 0.5}
@@ -2631,17 +2645,19 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 onClick={handleDownload}
                 disabled={loading || savingFile}
               >
-                下载
+                {t("filePreview.download")}
               </Button>
             </Stack>
 
             {isTextPreview ? (
               <FormControl size="small" sx={{ minWidth: 140 }}>
-                <InputLabel id="font-select-label">字体</InputLabel>
+                <InputLabel id="font-select-label">
+                  {t("filePreview.font")}
+                </InputLabel>
                 <Select
                   labelId="font-select-label"
                   value={editorFont}
-                  label="字体"
+                  label={t("filePreview.font")}
                   onChange={handleFontChange}
                 >
                   {fontOptions.map((option) => (
@@ -2694,7 +2710,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           >
             <CircularProgress size={40} />
             <Typography variant="body1" sx={{ ml: 2 }}>
-              正在保存文件...
+              {t("filePreview.savingFile")}
             </Typography>
           </Box>
         ) : (
@@ -2710,14 +2726,16 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             sx={{ mr: "auto" }}
           >
             <Typography variant="caption" color="text.secondary">
-              已选中版本：{formatSnapshotDate(pendingRestoreSnapshot.createdAt)}
+              {t("filePreview.selectedVersion", {
+                date: formatSnapshotDate(pendingRestoreSnapshot.createdAt),
+              })}
             </Typography>
             <Button
               size="small"
               onClick={handleClearSnapshotSelection}
               disabled={Boolean(restoringSnapshotId) || loadingSelectedSnapshot}
             >
-              取消选择
+              {t("filePreview.clearSelection")}
             </Button>
           </Stack>
         ) : (
@@ -2735,14 +2753,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             }
           >
             {restoringSnapshotId
-              ? "回退中..."
+              ? t("filePreview.restoring")
               : loadingSelectedSnapshot
-                ? "加载对比中..."
-                : "回退到该版本"}
+                ? t("filePreview.loadingDiff")
+                : t("filePreview.restoreVersion")}
           </Button>
         ) : null}
         <Button onClick={handleClose} disabled={savingFile}>
-          关闭
+          {t("common.close")}
         </Button>
       </DialogActions>
 
@@ -2756,10 +2774,10 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>还有未保存的修改</DialogTitle>
+        <DialogTitle>{t("filePreview.unsavedTitle")}</DialogTitle>
         <DialogContent dividers>
           <Typography variant="body2" color="text.secondary">
-            当前文件仍有未保存内容。你可以先保存，或者直接关闭并放弃这些修改。
+            {t("filePreview.unsavedMessage")}
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -2767,14 +2785,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             onClick={() => setShowCloseConfirm(false)}
             disabled={savingFile}
           >
-            取消
+            {t("common.cancel")}
           </Button>
           <Button
             onClick={handleDiscardAndClose}
             color="inherit"
             disabled={savingFile}
           >
-            放弃修改
+            {t("filePreview.discardChanges")}
           </Button>
           <Button
             onClick={handleSaveAndClose}
@@ -2782,7 +2800,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             disabled={savingFile}
             startIcon={<SaveIcon />}
           >
-            {savingFile ? "保存中..." : "保存后关闭"}
+            {savingFile ? t("filePreview.saving") : t("filePreview.saveAndClose")}
           </Button>
         </DialogActions>
       </Dialog>

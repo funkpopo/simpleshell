@@ -6684,7 +6684,7 @@ const FileManager = memo(
             <ListItemIcon>
               <CreateNewFolderIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>创建文件夹</ListItemText>
+            <ListItemText>{t("fileManager.createFolder")}</ListItemText>
             <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
               Ctrl+Shift+N
             </Typography>
@@ -6694,7 +6694,7 @@ const FileManager = memo(
             <ListItemIcon>
               <NoteAddIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>创建文件</ListItemText>
+            <ListItemText>{t("fileManager.createFile")}</ListItemText>
             <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
               Ctrl+N
             </Typography>
@@ -6706,7 +6706,7 @@ const FileManager = memo(
             <ListItemIcon>
               <UploadFileIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>上传文件至当前文件夹</ListItemText>
+            <ListItemText>{t("fileManager.uploadFileToCurrentFolder")}</ListItemText>
             <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
               Ctrl+U
             </Typography>
@@ -6716,7 +6716,7 @@ const FileManager = memo(
             <ListItemIcon>
               <CreateNewFolderIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>上传文件夹至当前文件夹</ListItemText>
+            <ListItemText>{t("fileManager.uploadFolderToCurrentFolder")}</ListItemText>
             <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
               Ctrl+Shift+U
             </Typography>
@@ -6728,7 +6728,7 @@ const FileManager = memo(
             <ListItemIcon>
               <RefreshIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>刷新目录</ListItemText>
+            <ListItemText>{t("fileManager.refreshDirectory")}</ListItemText>
             <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
               F5
             </Typography>
@@ -6743,7 +6743,7 @@ const FileManager = memo(
             fullWidth
           >
             <Box component="form" onSubmit={handleRenameSubmit}>
-              <DialogTitle>编辑文件/文件夹</DialogTitle>
+              <DialogTitle>{t("fileManager.editFileOrFolder")}</DialogTitle>
               <DialogContent dividers>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
                   {renameDialogError ? (
@@ -6751,7 +6751,7 @@ const FileManager = memo(
                   ) : null}
                   <TextField
                     fullWidth
-                    label="新名称"
+                    label={t("fileManager.newName")}
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     autoFocus
@@ -6802,7 +6802,7 @@ const FileManager = memo(
                   <Box sx={{ display: "flex", gap: 2 }}>
                     <TextField
                       fullWidth
-                      label="用户"
+                      label={t("fileManager.owner")}
                       value={permDialogOwner}
                       onChange={(e) => setPermDialogOwner(e.target.value)}
                       variant="outlined"
@@ -6810,7 +6810,7 @@ const FileManager = memo(
                     />
                     <TextField
                       fullWidth
-                      label="用户组"
+                      label={t("fileManager.group")}
                       value={permDialogGroup}
                       onChange={(e) => setPermDialogGroup(e.target.value)}
                       variant="outlined"

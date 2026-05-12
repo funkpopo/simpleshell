@@ -10,8 +10,10 @@ import {
   FormGroup,
   Alert,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 
 const FilePermissionEditor = ({ permissions = "644", onChange }) => {
+  const { t } = useTranslation();
   const [octalValue, setOctalValue] = useState(permissions);
   const [permissionBits, setPermissionBits] = useState({
     ownerRead: false,
@@ -110,34 +112,34 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
   // 获取权限说明 - 使用useMemo优化性能
   const description = useMemo(() => {
     const descriptions = {
-      0: "无权限",
-      1: "执行",
-      2: "写入",
-      3: "写入+执行",
-      4: "读取",
-      5: "读取+执行",
-      6: "读取+写入",
-      7: "读取+写入+执行",
+      0: t("filePermission.permissions.none"),
+      1: t("filePermission.permissions.execute"),
+      2: t("filePermission.permissions.write"),
+      3: t("filePermission.permissions.writeExecute"),
+      4: t("filePermission.permissions.read"),
+      5: t("filePermission.permissions.readExecute"),
+      6: t("filePermission.permissions.readWrite"),
+      7: t("filePermission.permissions.readWriteExecute"),
     };
 
     const octalStr = String(octalValue).padStart(3, "0");
     return {
-      owner: descriptions[octalStr[0]] || "无效",
-      group: descriptions[octalStr[1]] || "无效",
-      other: descriptions[octalStr[2]] || "无效",
+      owner: descriptions[octalStr[0]] || t("filePermission.permissions.invalid"),
+      group: descriptions[octalStr[1]] || t("filePermission.permissions.invalid"),
+      other: descriptions[octalStr[2]] || t("filePermission.permissions.invalid"),
     };
-  }, [octalValue]);
+  }, [octalValue, t]);
 
   return (
     <Box sx={{ width: "100%" }}>
       <Typography variant="subtitle2" sx={{ mb: 2 }}>
-        文件权限设置
+        {t("filePermission.title")}
       </Typography>
 
       {/* 八进制输入框 */}
       <Box sx={{ mb: 3 }}>
         <TextField
-          label="八进制权限值"
+          label={t("filePermission.octalLabel")}
           value={octalValue}
           onChange={handleOctalChange}
           size="small"
@@ -145,7 +147,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
             pattern: "[0-7]{3}",
             maxLength: 3,
           }}
-          helperText="输入三位八进制数字 (000-777)"
+          helperText={t("filePermission.octalHelper")}
           error={
             octalValue.length > 0 &&
             (octalValue.length !== 3 || !/^[0-7]{3}$/.test(octalValue))
@@ -159,7 +161,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
       <Grid container spacing={2}>
         <Grid item xs={4}>
           <Typography variant="subtitle2" align="center" sx={{ mb: 1 }}>
-            所有者 (Owner)
+            {t("filePermission.owner")}
           </Typography>
           <FormGroup>
             <FormControlLabel
@@ -170,7 +172,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
                   size="small"
                 />
               }
-              label="读取 (r)"
+              label={t("filePermission.read")}
             />
             <FormControlLabel
               control={
@@ -180,7 +182,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
                   size="small"
                 />
               }
-              label="写入 (w)"
+              label={t("filePermission.write")}
             />
             <FormControlLabel
               control={
@@ -190,14 +192,14 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
                   size="small"
                 />
               }
-              label="执行 (x)"
+              label={t("filePermission.execute")}
             />
           </FormGroup>
         </Grid>
 
         <Grid item xs={4}>
           <Typography variant="subtitle2" align="center" sx={{ mb: 1 }}>
-            组 (Group)
+            {t("filePermission.group")}
           </Typography>
           <FormGroup>
             <FormControlLabel
@@ -208,7 +210,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
                   size="small"
                 />
               }
-              label="读取 (r)"
+              label={t("filePermission.read")}
             />
             <FormControlLabel
               control={
@@ -218,7 +220,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
                   size="small"
                 />
               }
-              label="写入 (w)"
+              label={t("filePermission.write")}
             />
             <FormControlLabel
               control={
@@ -228,14 +230,14 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
                   size="small"
                 />
               }
-              label="执行 (x)"
+              label={t("filePermission.execute")}
             />
           </FormGroup>
         </Grid>
 
         <Grid item xs={4}>
           <Typography variant="subtitle2" align="center" sx={{ mb: 1 }}>
-            其他 (Other)
+            {t("filePermission.other")}
           </Typography>
           <FormGroup>
             <FormControlLabel
@@ -246,7 +248,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
                   size="small"
                 />
               }
-              label="读取 (r)"
+              label={t("filePermission.read")}
             />
             <FormControlLabel
               control={
@@ -256,7 +258,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
                   size="small"
                 />
               }
-              label="写入 (w)"
+              label={t("filePermission.write")}
             />
             <FormControlLabel
               control={
@@ -266,7 +268,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
                   size="small"
                 />
               }
-              label="执行 (x)"
+              label={t("filePermission.execute")}
             />
           </FormGroup>
         </Grid>
@@ -277,17 +279,23 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
       {/* 权限说明 */}
       <Box sx={{ mt: 2 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          权限说明:
+          {t("filePermission.description")}:
         </Typography>
         <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          <Typography variant="caption">所有者: {description.owner}</Typography>
-          <Typography variant="caption">组: {description.group}</Typography>
-          <Typography variant="caption">其他: {description.other}</Typography>
+          <Typography variant="caption">
+            {t("filePermission.ownerShort")}: {description.owner}
+          </Typography>
+          <Typography variant="caption">
+            {t("filePermission.groupShort")}: {description.group}
+          </Typography>
+          <Typography variant="caption">
+            {t("filePermission.otherShort")}: {description.other}
+          </Typography>
         </Box>
 
         {octalValue.length === 3 && (
           <Alert severity="info" sx={{ mt: 2 }}>
-            当前权限: {octalValue} ({description.owner} / {description.group} /{" "}
+            {t("filePermission.current")}: {octalValue} ({description.owner} / {description.group} /{" "}
             {description.other})
           </Alert>
         )}

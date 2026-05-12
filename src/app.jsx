@@ -1751,7 +1751,7 @@ function AppContent() {
         unlocked: nextStatus?.unlocked !== false,
         requiresUnlock: nextStatus?.requiresUnlock === true,
       });
-      showInfo(t("menu.lockAppSuccess", "应用已锁定"));
+      showInfo(t("menu.lockAppSuccess"));
     } catch {
       showError(t("masterPassword.unlockFailed"));
     }
@@ -3309,7 +3309,7 @@ function AppContent() {
               >
                 <AppsIcon />
               </IconButton>
-              <Tooltip title={t("menu.lockApp", "锁定应用")}>
+              <Tooltip title={t("menu.lockApp")}>
                 <IconButton
                   color="inherit"
                   size="small"

@@ -7,6 +7,7 @@ import AlertTitle from "@mui/material/AlertTitle";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import { useTheme } from "@mui/material/styles";
+import { useTranslation } from "react-i18next";
 
 // 全局错误日志系统
 class GlobalErrorLogger {
@@ -228,6 +229,7 @@ class GlobalErrorBoundary extends React.Component {
 const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
   const theme = useTheme();
   const [showDetails, setShowDetails] = React.useState(false);
+  const { t } = useTranslation();
   const recentErrors = errorLogger.getRecentErrors();
 
   return (
@@ -252,12 +254,12 @@ const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
         }}
         icon={<ErrorOutlineIcon />}
       >
-        <AlertTitle>应用程序遇到严重错误</AlertTitle>
+        <AlertTitle>{t("errorBoundary.appTitle")}</AlertTitle>
         <Typography variant="body2" sx={{ mb: 2 }}>
-          SimpleShell 遇到了无法恢复的错误。您可以尝试重启应用程序来解决此问题。
+          {t("errorBoundary.appMessage")}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          如果问题持续存在，请联系技术支持并提供错误详情。
+          {t("errorBoundary.supportMessage")}
         </Typography>
       </Alert>
 
@@ -269,14 +271,16 @@ const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
           onClick={onRestart}
           size="large"
         >
-          重启应用
+          {t("errorBoundary.restartApp")}
         </Button>
         <Button
           variant="outlined"
           onClick={() => setShowDetails(!showDetails)}
           size="large"
         >
-          {showDetails ? "隐藏详情" : "显示详情"}
+          {showDetails
+            ? t("errorBoundary.hideDetails")
+            : t("errorBoundary.showDetails")}
         </Button>
       </Box>
 
@@ -294,13 +298,13 @@ const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
           }}
         >
           <Typography variant="h6" sx={{ mb: 2 }}>
-            错误详情
+            {t("errorBoundary.errorDetails")}
           </Typography>
 
           {error && (
             <Box sx={{ mb: 3 }}>
               <Typography variant="subtitle2" color="error" sx={{ mb: 1 }}>
-                当前错误：
+                {t("errorBoundary.currentError")}:
               </Typography>
               <Typography
                 variant="body2"
@@ -323,7 +327,9 @@ const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
           {recentErrors.length > 0 && (
             <Box>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                最近的错误记录 ({recentErrors.length} 条)：
+                {t("errorBoundary.recentErrors", {
+                  count: recentErrors.length,
+                })}
               </Typography>
               {recentErrors.slice(0, 5).map((errorEntry, index) => (
                 <Box
@@ -366,9 +372,11 @@ const ErrorFallback = ({
   error,
   onRetry,
   retryCount,
-  componentName = "组件",
+  componentName,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
+  const displayComponentName = componentName || t("errorBoundary.component");
 
   return (
     <Box
@@ -393,13 +401,15 @@ const ErrorFallback = ({
         }}
         icon={<ErrorOutlineIcon />}
       >
-        <AlertTitle>组件加载失败</AlertTitle>
+        <AlertTitle>{t("errorBoundary.componentTitle")}</AlertTitle>
         <Typography variant="body2" sx={{ mb: 1 }}>
-          {componentName}加载时发生错误，请尝试重新加载。
+          {t("errorBoundary.componentMessage", {
+            componentName: displayComponentName,
+          })}
         </Typography>
         {retryCount > 0 && (
           <Typography variant="caption" color="text.secondary">
-            已重试 {retryCount} 次
+            {t("errorBoundary.retryCount", { count: retryCount })}
           </Typography>
         )}
       </Alert>
@@ -411,7 +421,7 @@ const ErrorFallback = ({
         onClick={onRetry}
         sx={{ mt: 1 }}
       >
-        重新加载
+        {t("errorBoundary.reload")}
       </Button>
 
       {process.env.NODE_ENV === "development" && error && (

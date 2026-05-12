@@ -12,6 +12,7 @@ import PasteIcon from "@mui/icons-material/ContentPaste";
 import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SearchIcon from "@mui/icons-material/Search";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
+import { useTranslation } from "react-i18next";
 
 const WebTerminalContextMenu = ({
   contextMenu,
@@ -25,6 +26,7 @@ const WebTerminalContextMenu = ({
   onClear,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   return (
     <Menu
@@ -48,7 +50,7 @@ const WebTerminalContextMenu = ({
         <ListItemIcon>
           <ContentCopyIcon fontSize="small" />
         </ListItemIcon>
-        <ListItemText>复制</ListItemText>
+        <ListItemText>{t("webTerminal.contextMenu.copy")}</ListItemText>
         <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
           Ctrl+;
         </Typography>
@@ -57,16 +59,16 @@ const WebTerminalContextMenu = ({
         <ListItemIcon>
           <PasteIcon fontSize="small" />
         </ListItemIcon>
-        <ListItemText>粘贴</ListItemText>
+        <ListItemText>{t("webTerminal.contextMenu.paste")}</ListItemText>
         <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-          Ctrl+&apos; / 中键
+          {t("webTerminal.contextMenu.pasteShortcut")}
         </Typography>
       </MenuItem>
       <MenuItem onClick={onSendToAI} disabled={!selectedText}>
         <ListItemIcon>
           <SmartToyIcon fontSize="small" />
         </ListItemIcon>
-        <ListItemText>发送到AI助手</ListItemText>
+        <ListItemText>{t("webTerminal.contextMenu.sendToAI")}</ListItemText>
       </MenuItem>
       <Divider />
       {isActive && (
@@ -74,7 +76,7 @@ const WebTerminalContextMenu = ({
           <ListItemIcon>
             <SearchIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText>搜索</ListItemText>
+          <ListItemText>{t("webTerminal.contextMenu.search")}</ListItemText>
           <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
             Ctrl+/
           </Typography>
@@ -85,7 +87,7 @@ const WebTerminalContextMenu = ({
         <ListItemIcon>
           <ClearAllIcon fontSize="small" />
         </ListItemIcon>
-        <ListItemText>清空</ListItemText>
+        <ListItemText>{t("webTerminal.contextMenu.clear")}</ListItemText>
         <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
           Ctrl+L
         </Typography>

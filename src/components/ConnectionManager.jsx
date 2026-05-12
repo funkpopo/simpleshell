@@ -2056,7 +2056,7 @@ const ConnectionManager = memo(
             <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
               <TextField
                 inputRef={searchInputRef}
-                placeholder="搜索..."
+                placeholder={t("connectionManager.search")}
                 variant="outlined"
                 size="small"
                 fullWidth
@@ -2336,7 +2336,7 @@ const ConnectionManager = memo(
                   }}
                 >
                   <TextField
-                    label="名称"
+                    label={t("common.name")}
                     name="name"
                     value={formData.name}
                     onChange={handleFormChange}
@@ -2348,11 +2348,11 @@ const ConnectionManager = memo(
                   {dialogType === "connection" && (
                     <>
                       <FormControl fullWidth size="small">
-                        <InputLabel>协议</InputLabel>
+                        <InputLabel>{t("connectionManager.protocol")}</InputLabel>
                         <Select
                           name="protocol"
                           value={formData.protocol || "ssh"}
-                          label="协议"
+                          label={t("connectionManager.protocol")}
                           onChange={handleFormChange}
                         >
                           <MenuItem value="ssh">SSH</MenuItem>
@@ -2361,7 +2361,7 @@ const ConnectionManager = memo(
                       </FormControl>
 
                       <TextField
-                        label="主机地址"
+                        label={t("connectionManager.hostAddress")}
                         name="host"
                         value={formData.host}
                         onChange={handleFormChange}
@@ -2371,7 +2371,7 @@ const ConnectionManager = memo(
                       />
 
                       <TextField
-                        label="端口"
+                        label={t("connectionManager.port")}
                         name="port"
                         type="number"
                         value={formData.port}
@@ -2384,7 +2384,7 @@ const ConnectionManager = memo(
                       />
 
                       <TextField
-                        label="用户名"
+                        label={t("connectionManager.username")}
                         name="username"
                         value={formData.username}
                         onChange={handleFormChange}
@@ -2393,7 +2393,7 @@ const ConnectionManager = memo(
                       />
 
                       <TextField
-                        label="密码"
+                        label={t("connectionManager.password")}
                         name="password"
                         type="password"
                         value={formData.password}
@@ -2408,15 +2408,19 @@ const ConnectionManager = memo(
 
                       {formData.protocol === "ssh" && (
                         <FormControl fullWidth size="small" sx={{ mt: 1 }}>
-                          <InputLabel>认证方式</InputLabel>
+                          <InputLabel>{t("connectionManager.authType")}</InputLabel>
                           <Select
                             name="authType"
                             value={formData.authType || "password"}
-                            label="认证方式"
+                            label={t("connectionManager.authType")}
                             onChange={handleFormChange}
                           >
-                            <MenuItem value="password">密码认证</MenuItem>
-                            <MenuItem value="privateKey">密钥认证</MenuItem>
+                            <MenuItem value="password">
+                              {t("connectionManager.passwordAuth")}
+                            </MenuItem>
+                            <MenuItem value="privateKey">
+                              {t("connectionManager.privateKeyAuth")}
+                            </MenuItem>
                           </Select>
                         </FormControl>
                       )}
@@ -2425,7 +2429,7 @@ const ConnectionManager = memo(
                         formData.authType === "privateKey" && (
                           <Box sx={{ display: "flex", mt: 1 }}>
                             <TextField
-                              label="私钥路径"
+                              label={t("connectionManager.privateKeyPath")}
                               name="privateKeyPath"
                               value={formData.privateKeyPath}
                               onChange={handleFormChange}
@@ -2459,68 +2463,70 @@ const ConnectionManager = memo(
                                 }
                               }}
                             >
-                              浏览...
+                              {t("connectionManager.browse")}
                             </Button>
                           </Box>
                         )}
 
                       <FormControl fullWidth size="small">
-                        <InputLabel>分组</InputLabel>
+                        <InputLabel>{t("connectionManager.group")}</InputLabel>
                         <Select
                           name="parentGroup"
                           value={formData.parentGroup || ""}
-                          label="分组"
+                          label={t("connectionManager.group")}
                           onChange={handleFormChange}
                         >
                           <MenuItem value="">
-                            <em>不分组</em>
+                            <em>{t("connectionManager.noGroup")}</em>
                           </MenuItem>
                           {groupOptions}
                         </Select>
                       </FormControl>
 
                       <FormControl fullWidth size="small">
-                        <InputLabel>类型</InputLabel>
+                        <InputLabel>{t("connectionManager.type")}</InputLabel>
                         <Select
                           name="connectionType"
                           value={formData.connectionType || ""}
-                          label="类型"
+                          label={t("connectionManager.type")}
                           onChange={handleFormChange}
                         >
                           <MenuItem value="">
-                            <em>无</em>
+                            <em>{t("common.none")}</em>
                           </MenuItem>
                           <MenuItem value="VPS">VPS</MenuItem>
                           <MenuItem value="NAS">NAS</MenuItem>
-                          <MenuItem value="BareMetal">裸金属</MenuItem>
-                          <MenuItem value="Other">其他</MenuItem>
+                          <MenuItem value="BareMetal">
+                            {t("connectionManager.bareMetal")}
+                          </MenuItem>
+                          <MenuItem value="Other">{t("common.other")}</MenuItem>
                         </Select>
                       </FormControl>
 
                       <FormControl fullWidth size="small">
-                        <InputLabel>操作系统</InputLabel>
+                        <InputLabel>{t("connectionManager.os")}</InputLabel>
                         <Select
                           name="os"
                           value={formData.os || ""}
-                          label="操作系统"
+                          label={t("connectionManager.os")}
                           onChange={handleFormChange}
                         >
                           <MenuItem value="">
-                            <em>无</em>
+                            <em>{t("common.none")}</em>
                           </MenuItem>
                           <MenuItem value="Linux">Linux</MenuItem>
                           <MenuItem value="Windows">Windows</MenuItem>
                           <MenuItem value="macOS">macOS</MenuItem>
-                          <MenuItem value="Other">其他</MenuItem>
+                          <MenuItem value="Other">{t("common.other")}</MenuItem>
                         </Select>
                       </FormControl>
 
                       <FormControl fullWidth size="small">
-                        <InputLabel>国家/地区</InputLabel>
+                        <InputLabel>{t("connectionManager.countryRegion")}</InputLabel>
                         <Select
                           name="country"
                           value={formData.country || ""}
-                          label="国家/地区"
+                          label={t("connectionManager.countryRegion")}
                           onChange={handleFormChange}
                           MenuProps={{
                             PaperProps: {
@@ -2531,7 +2537,7 @@ const ConnectionManager = memo(
                           }}
                         >
                           <MenuItem value="">
-                            <em>无</em>
+                            <em>{t("common.none")}</em>
                           </MenuItem>
                           {countryOptions}
                         </Select>
@@ -2540,7 +2546,7 @@ const ConnectionManager = memo(
                       {/* 代理配置分割线 */}
                       <Divider sx={{ my: 1 }}>
                         <Typography variant="caption" color="text.secondary">
-                          代理配置 (可选)
+                          {t("connectionManager.proxyConfig")}
                         </Typography>
                       </Divider>
 
@@ -2558,7 +2564,7 @@ const ConnectionManager = memo(
                             size="small"
                           />
                         }
-                        label="启用代理"
+                        label={t("connectionManager.enableProxy")}
                       />
 
                       {/* 代理配置表单 */}
@@ -2577,7 +2583,7 @@ const ConnectionManager = memo(
                                 size="small"
                               />
                             }
-                            label="使用系统默认代理配置"
+                            label={t("connectionManager.useSystemProxy")}
                           />
 
                           {!formData.proxyUseDefault && (
@@ -2596,11 +2602,11 @@ const ConnectionManager = memo(
                                   size="small"
                                   sx={{ minWidth: 100 }}
                                 >
-                                  <InputLabel>类型</InputLabel>
+                                  <InputLabel>{t("connectionManager.type")}</InputLabel>
                                   <Select
                                     name="proxyType"
                                     value={formData.proxyType}
-                                    label="类型"
+                                    label={t("connectionManager.type")}
                                     onChange={handleFormChange}
                                   >
                                     <MenuItem value="http">HTTP</MenuItem>
@@ -2610,7 +2616,7 @@ const ConnectionManager = memo(
                                   </Select>
                                 </FormControl>
                                 <TextField
-                                  label="代理主机"
+                                  label={t("connectionManager.proxyHost")}
                                   name="proxyHost"
                                   value={formData.proxyHost}
                                   onChange={handleFormChange}
@@ -2619,7 +2625,7 @@ const ConnectionManager = memo(
                                   placeholder="127.0.0.1"
                                 />
                                 <TextField
-                                  label="端口"
+                                  label={t("connectionManager.proxyPort")}
                                   name="proxyPort"
                                   type="number"
                                   value={formData.proxyPort}
@@ -2632,7 +2638,7 @@ const ConnectionManager = memo(
 
                               <Box sx={{ display: "flex", gap: 1 }}>
                                 <TextField
-                                  label="用户名 (可选)"
+                                  label={t("connectionManager.proxyUsername")}
                                   name="proxyUsername"
                                   value={formData.proxyUsername}
                                   onChange={handleFormChange}
@@ -2640,7 +2646,7 @@ const ConnectionManager = memo(
                                   sx={{ flexGrow: 1 }}
                                 />
                                 <TextField
-                                  label="密码 (可选)"
+                                  label={t("connectionManager.proxyPassword")}
                                   name="proxyPassword"
                                   type="password"
                                   value={formData.proxyPassword}
@@ -2658,9 +2664,9 @@ const ConnectionManager = memo(
                 </Box>
               </DialogContent>
               <DialogActions>
-                <Button onClick={handleDialogClose}>取消</Button>
+                <Button onClick={handleDialogClose}>{t("common.cancel")}</Button>
                 <Button onClick={handleSave} variant="contained">
-                  保存
+                  {t("common.save")}
                 </Button>
               </DialogActions>
             </Dialog>
@@ -2671,29 +2677,33 @@ const ConnectionManager = memo(
               onClose={handleCancelDelete}
               maxWidth="xs"
             >
-              <DialogTitle>确认删除</DialogTitle>
+              <DialogTitle>{t("connectionManager.confirmDelete")}</DialogTitle>
               <DialogContent>
                 <Typography>
                   {deleteItem?.item?.type === "group"
-                    ? `确定要删除分组 "${deleteItem?.item?.name}" 吗？删除分组将同时删除组内的所有连接项。`
-                    : `确定要删除连接 "${deleteItem?.item?.name}" 吗？`}
+                    ? t("connectionManager.deleteGroupConfirm", {
+                        name: deleteItem?.item?.name,
+                      })
+                    : t("connectionManager.deleteConnectionConfirm", {
+                        name: deleteItem?.item?.name,
+                      })}
                 </Typography>
                 <Typography
                   variant="body2"
                   color="text.secondary"
                   sx={{ mt: 1 }}
                 >
-                  此操作无法撤销。
+                  {t("connectionManager.cannotUndo")}
                 </Typography>
               </DialogContent>
               <DialogActions>
-                <Button onClick={handleCancelDelete}>取消</Button>
+                <Button onClick={handleCancelDelete}>{t("common.cancel")}</Button>
                 <Button
                   onClick={handleConfirmDelete}
                   variant="contained"
                   color="error"
                 >
-                  删除
+                  {t("common.delete")}
                 </Button>
               </DialogActions>
             </Dialog>
