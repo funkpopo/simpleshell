@@ -1073,6 +1073,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   cancelDownload: () => ipcRenderer.invoke("app:cancelDownload"),
   hasDownloadedInstaller: () =>
     ipcRenderer.invoke("app:hasDownloadedInstaller"),
+  getGpuInfo: () => ipcRenderer.invoke("app:getGpuInfo"),
 
   // 新增: 通知主进程编辑器模式变化的API
   notifyEditorModeChange: (processId, isEditorMode) =>

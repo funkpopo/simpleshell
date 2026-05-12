@@ -644,6 +644,9 @@ function AppContent() {
               normalizeSidebarPosition(settings.sidebarPosition),
             );
           }
+          // 暴露硬件加速标志给 globalTransferStore 等高频更新模块
+          window.__hardwareAccelerationEnabled =
+            settings?.performance?.hardwareAcceleration !== false;
         }
       } catch {
         // 如果加载失败，尝试从 localStorage 恢复作为备选
@@ -3058,7 +3061,13 @@ function AppContent() {
         dnd,
         transferBarMode: newTransferBarMode,
         sidebarPosition: newSidebarPosition,
+        performance: perf,
       } = event.detail;
+
+      // 同步硬件加速标志到 globalTransferStore（不需重启即可影响 RAF 节流路径）
+      if (perf && perf.hardwareAcceleration !== undefined) {
+        window.__hardwareAccelerationEnabled = perf.hardwareAcceleration !== false;
+      }
 
       // React 19: 所有状态更新会自动批处理，提高性能
       // 应用主题设置
@@ -3173,6 +3182,10 @@ function AppContent() {
                 normalizeSidebarPosition(settings.sidebarPosition),
               );
             }
+
+            // 暴露硬件加速标志给 globalTransferStore 等高频更新模块
+            window.__hardwareAccelerationEnabled =
+              settings?.performance?.hardwareAcceleration !== false;
           }
         }
       } catch {

@@ -30,16 +30,37 @@ const generateTransferId = () =>
 const generateHistoryId = () =>
   `history_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
-const notify = () => {
-  // 不再清除快照缓存，让 getSnapshot 通过比较来决定是否返回新值
-  // 这样可以避免不必要的重新渲染
+// 当硬件加速开启时，把高频的 progress 通知合并到每个动画帧一次，
+// 避免 SFTP worker 的进度事件直接淹没 React 渲染队列；关闭时回退到同步。
+let notifyScheduled = false;
+const isHardwareAccelerationEnabled = () => {
+  if (typeof window === "undefined") return true;
+  return window.__hardwareAccelerationEnabled !== false;
+};
 
+// 同步派发所有 listener
+const flushNotify = () => {
+  notifyScheduled = false;
   for (const listener of listeners) {
     try {
       listener();
     } catch (error) {
       console.error("globalTransferStore: listener execution failed", error);
     }
+  }
+};
+
+const notify = () => {
+  if (!isHardwareAccelerationEnabled()) {
+    flushNotify();
+    return;
+  }
+  if (notifyScheduled) return;
+  notifyScheduled = true;
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(flushNotify);
+  } else {
+    setTimeout(flushNotify, 16);
   }
 };
 

@@ -30,7 +30,7 @@ import TuneIcon from "@mui/icons-material/Tune";
 import ImageIcon from "@mui/icons-material/Image";
 import MemoryIcon from "@mui/icons-material/Memory";
 import CachedIcon from "@mui/icons-material/Cached";
-import BoltIcon from "@mui/icons-material/Bolt";
+import DisplaySettingsIcon from "@mui/icons-material/DisplaySettings";
 import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../i18n/i18n";
 import { SettingsSkeleton } from "./SkeletonLoader.jsx";
@@ -171,7 +171,10 @@ const Settings = memo(({ open, onClose }) => {
   const [imageSupported, setImageSupported] = React.useState(true);
   const [cacheEnabled, setCacheEnabled] = React.useState(true);
   const [prefetchEnabled, setPrefetchEnabled] = React.useState(true);
-  const [terminalWebglEnabled, setTerminalWebglEnabled] = React.useState(true);
+  const [hardwareAccelerationEnabled, setHardwareAccelerationEnabled] =
+    React.useState(true);
+  const [gpuInfo, setGpuInfo] = React.useState(null);
+  const [gpuInfoLoading, setGpuInfoLoading] = React.useState(false);
 
   // DnD settings
   const [dndEnabled, setDndEnabled] = React.useState(true);
@@ -229,6 +232,7 @@ const Settings = memo(({ open, onClose }) => {
               cacheEnabled: true,
               prefetchEnabled: true,
               webglEnabled: true,
+              hardwareAcceleration: true,
             };
             // DnD settings
             const dnd = settings.dnd || {};
@@ -242,7 +246,9 @@ const Settings = memo(({ open, onClose }) => {
             setImageSupported(performanceSettings.imageSupported !== false);
             setCacheEnabled(performanceSettings.cacheEnabled !== false);
             setPrefetchEnabled(performanceSettings.prefetchEnabled !== false);
-            setTerminalWebglEnabled(performanceSettings.webglEnabled !== false);
+            const hardwareAcceleration =
+              performanceSettings.hardwareAcceleration !== false;
+            setHardwareAccelerationEnabled(hardwareAcceleration);
 
             // 保存原始设置用于比较
             setOriginalPerformanceSettings(performanceSettings);
@@ -286,6 +292,28 @@ const Settings = memo(({ open, onClose }) => {
     if (open) {
       loadSettings();
     }
+  }, [open]);
+
+  // 加载 GPU 信息（用于验证集显/独显是否生效）
+  React.useEffect(() => {
+    if (!open) return;
+    if (!window.terminalAPI?.getGpuInfo) return;
+    let cancelled = false;
+    setGpuInfoLoading(true);
+    window.terminalAPI
+      .getGpuInfo()
+      .then((info) => {
+        if (!cancelled) setGpuInfo(info || null);
+      })
+      .catch(() => {
+        if (!cancelled) setGpuInfo(null);
+      })
+      .finally(() => {
+        if (!cancelled) setGpuInfoLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   // Handle language change
@@ -338,15 +366,19 @@ const Settings = memo(({ open, onClose }) => {
       imageSupported,
       cacheEnabled,
       prefetchEnabled,
-      webglEnabled: terminalWebglEnabled,
+      webglEnabled: hardwareAccelerationEnabled,
+      hardwareAcceleration: hardwareAccelerationEnabled,
       ...newSettings,
     };
 
-    // 图像支持的变更需要重启
+    // 图像支持或硬件加速变更需要重启
     const needsRestartForImage =
       current.imageSupported !== originalPerformanceSettings.imageSupported;
+    const needsRestartForGpu =
+      current.hardwareAcceleration !==
+      (originalPerformanceSettings.hardwareAcceleration !== false);
 
-    return needsRestartForImage;
+    return needsRestartForImage || needsRestartForGpu;
   };
 
   // Handle performance settings change
@@ -371,8 +403,8 @@ const Settings = memo(({ open, onClose }) => {
           window.terminalAPI.updatePrefetchSettings({ enabled: value });
         }
         break;
-      case "webglEnabled":
-        setTerminalWebglEnabled(value);
+      case "hardwareAcceleration":
+        setHardwareAccelerationEnabled(value);
         break;
     }
 
@@ -447,14 +479,18 @@ const Settings = memo(({ open, onClose }) => {
           terminalFontWeight,
           terminalScrollbackLines: Math.min(
             500000,
-            Math.max(1000, Math.floor(Number(terminalScrollbackLines)) || 50000),
+            Math.max(
+              1000,
+              Math.floor(Number(terminalScrollbackLines)) || 50000,
+            ),
           ),
           darkMode,
           performance: {
             imageSupported,
             cacheEnabled,
             prefetchEnabled,
-            webglEnabled: terminalWebglEnabled,
+            webglEnabled: hardwareAccelerationEnabled,
+            hardwareAcceleration: hardwareAccelerationEnabled,
           },
           dnd: {
             enabled: dndEnabled,
@@ -510,7 +546,8 @@ const Settings = memo(({ open, onClose }) => {
               imageSupported,
               cacheEnabled,
               prefetchEnabled,
-              webglEnabled: terminalWebglEnabled,
+              webglEnabled: hardwareAccelerationEnabled,
+              hardwareAcceleration: hardwareAccelerationEnabled,
             },
             dnd: {
               enabled: dndEnabled,
@@ -951,6 +988,179 @@ const Settings = memo(({ open, onClose }) => {
               )}
 
               <Grid container spacing={2}>
+                {/* 硬件加速 (全局 GPU 开关) */}
+                <Grid
+                  size={{
+                    xs: 12,
+                    md: 6,
+                  }}
+                >
+                  <Card variant="outlined" sx={{ height: "100%" }}>
+                    <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                          mb: 1,
+                        }}
+                      >
+                        <DisplaySettingsIcon sx={{ color: "info.main" }} />
+                        <Typography variant="subtitle1" component="div">
+                          {t("settings.hardwareAcceleration", "硬件加速")}
+                        </Typography>
+                        {hardwareAccelerationEnabled !==
+                          (originalPerformanceSettings.hardwareAcceleration !==
+                            false) && (
+                          <Chip
+                            label={t("settings.needsRestart", "需重启")}
+                            size="small"
+                            color="warning"
+                          />
+                        )}
+                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={hardwareAccelerationEnabled}
+                            onChange={(e) =>
+                              handlePerformanceChange(
+                                "hardwareAcceleration",
+                                e.target.checked,
+                              )
+                            }
+                            color="primary"
+                          />
+                        }
+                        label={t(
+                          "settings.enableHardwareAcceleration",
+                          "启用 GPU 硬件加速",
+                        )}
+                      />
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mt: 0.5 }}
+                      >
+                        {t(
+                          "settings.hardwareAccelerationDescription",
+                          "开启后使用集成显卡或独立显卡渲染，窗口锁定 60Hz 刷新率，传输进度条等组件以每帧合并方式更新；关闭后回退到软件渲染并停用 WebGL，能耗更低但视觉流畅度下降。",
+                        )}
+                      </Typography>
+
+                      {/* GPU 信息 */}
+                      <Box
+                        sx={{
+                          mt: 1.5,
+                          p: 1.25,
+                          borderRadius: 1,
+                          bgcolor: (theme) =>
+                            theme.palette.mode === "dark"
+                              ? "rgba(255,255,255,0.04)"
+                              : "rgba(0,0,0,0.03)",
+                          fontFamily: "monospace",
+                          fontSize: 12,
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mb: 0.5 }}
+                        >
+                          {t("settings.gpuInfo", "当前 GPU")}
+                        </Typography>
+                        {gpuInfoLoading && (
+                          <Typography variant="body2" color="text.secondary">
+                            {t("settings.gpuInfoLoading", "正在检测…")}
+                          </Typography>
+                        )}
+                        {!gpuInfoLoading && !gpuInfo && (
+                          <Typography variant="body2" color="text.secondary">
+                            {t("settings.gpuInfoUnavailable", "GPU 信息不可用")}
+                          </Typography>
+                        )}
+                        {!gpuInfoLoading && gpuInfo && (
+                          <Box>
+                            <Box>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                component="span"
+                              >
+                                {t("settings.gpuRenderer", "渲染器")}:{" "}
+                              </Typography>
+                              <Typography
+                                variant="caption"
+                                component="span"
+                                sx={{ wordBreak: "break-all" }}
+                              >
+                                {gpuInfo.displayRenderer ||
+                                  gpuInfo.activeGpu?.deviceString ||
+                                  t("settings.gpuUnknown", "未知")}
+                              </Typography>
+                            </Box>
+                            {gpuInfo.displayVendor && (
+                              <Box>
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  component="span"
+                                >
+                                  {t("settings.gpuVendor", "厂商")}:{" "}
+                                </Typography>
+                                <Typography variant="caption" component="span">
+                                  {gpuInfo.displayVendor}
+                                </Typography>
+                              </Box>
+                            )}
+                            {gpuInfo.activeGpu &&
+                              (gpuInfo.activeGpu.vendorId ||
+                                gpuInfo.activeGpu.deviceId) && (
+                                <Box>
+                                  <Typography
+                                    variant="caption"
+                                    color="text.secondary"
+                                    component="span"
+                                  >
+                                    {t("settings.gpuDeviceId", "设备 ID")}:{" "}
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    component="span"
+                                  >
+                                    {gpuInfo.activeGpu.vendorId || "?"}/
+                                    {gpuInfo.activeGpu.deviceId || "?"}
+                                  </Typography>
+                                </Box>
+                              )}
+                            <Box sx={{ mt: 0.5 }}>
+                              {gpuInfo.softwareRendering ? (
+                                <Chip
+                                  size="small"
+                                  color="warning"
+                                  label={t(
+                                    "settings.gpuSoftwareFallback",
+                                    "软件渲染",
+                                  )}
+                                />
+                              ) : (
+                                <Chip
+                                  size="small"
+                                  color="success"
+                                  label={t(
+                                    "settings.gpuHardwareActive",
+                                    "硬件加速生效",
+                                  )}
+                                />
+                              )}
+                            </Box>
+                          </Box>
+                        )}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
                 {/* 图像支持 */}
                 <Grid
                   size={{
@@ -1001,60 +1211,6 @@ const Settings = memo(({ open, onClose }) => {
                         {t(
                           "settings.imageDescription",
                           "支持在终端中显示Sixel和iTerm图像协议",
-                        )}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                <Grid
-                  size={{
-                    xs: 12,
-                    sm: 6,
-                  }}
-                >
-                  <Card variant="outlined" sx={{ height: "100%" }}>
-                    <CardContent>
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", mb: 1 }}
-                      >
-                        <BoltIcon sx={{ mr: 1, color: "warning.main" }} />
-                        <Typography variant="h6" component="div">
-                          {t("settings.webglRenderer", "WebGL 渲染")}
-                        </Typography>
-                        <Chip
-                          label={t("settings.realTime", "实时生效")}
-                          size="small"
-                          color="success"
-                          sx={{ ml: 1 }}
-                        />
-                      </Box>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={terminalWebglEnabled}
-                            onChange={(e) =>
-                              handlePerformanceChange(
-                                "webglEnabled",
-                                e.target.checked,
-                              )
-                            }
-                            color="primary"
-                          />
-                        }
-                        label={t(
-                          "settings.enableWebglRenderer",
-                          "启用 WebGL 渲染器",
-                        )}
-                      />
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ mt: 1 }}
-                      >
-                        {t(
-                          "settings.webglDescription",
-                          "使用 GPU 加速的渲染器提升长文本滚动性能",
                         )}
                       </Typography>
                     </CardContent>

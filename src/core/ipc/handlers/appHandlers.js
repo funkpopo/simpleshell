@@ -7,6 +7,14 @@ const DEFAULT_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 const CONFIRMABLE_EXTERNAL_PROTOCOLS = new Set(["mailto:"]);
 const MAX_EXTERNAL_URL_LENGTH = 2048;
 
+const toHexId = (n) =>
+  typeof n === "number" && Number.isFinite(n)
+    ? `0x${n.toString(16).padStart(4, "0")}`
+    : null;
+
+const normalizeGpuText = (value) =>
+  typeof value === "string" && value.trim() ? value.trim() : null;
+
 /**
  * 应用级别的IPC处理器
  */
@@ -66,6 +74,11 @@ class AppHandlers {
         category: "app",
         handler: this.hasDownloadedInstaller.bind(this),
       },
+      {
+        channel: "app:getGpuInfo",
+        category: "app",
+        handler: this.getGpuInfo.bind(this),
+      },
     ];
   }
 
@@ -79,6 +92,51 @@ class AppHandlers {
     } catch (error) {
       logToFile(`Error getting app version: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
+    }
+  }
+
+  async getGpuInfo() {
+    try {
+      const hardwareAccelerationEnabled =
+        global.__hardwareAccelerationEnabled !== false;
+      const info = await app.getGPUInfo("complete");
+      const aux = info && info.auxAttributes ? info.auxAttributes : {};
+      const devices = Array.isArray(info && info.gpuDevice)
+        ? info.gpuDevice
+        : [];
+      const activeDevice =
+        devices.find((d) => d && d.active) || devices[0] || {};
+      const vendorId = toHexId(activeDevice.vendorId);
+      const deviceId = toHexId(activeDevice.deviceId);
+
+      return {
+        success: true,
+        hardwareAccelerationEnabled,
+        displayRenderer: normalizeGpuText(activeDevice.deviceString),
+        displayVendor: normalizeGpuText(activeDevice.vendorString),
+        glRenderer: aux.glRenderer || null,
+        glVendor: aux.glVendor || null,
+        glVersion: aux.glVersion || null,
+        softwareRendering:
+          aux.softwareRendering === true || aux.glRenderer === "SwiftShader",
+        gpuCompositing: aux.gpuCompositing !== false,
+        activeGpu: {
+          vendorId,
+          deviceId,
+          vendorString: normalizeGpuText(activeDevice.vendorString),
+          deviceString: normalizeGpuText(activeDevice.deviceString),
+          driverVendor: activeDevice.driverVendor || null,
+          driverVersion: activeDevice.driverVersion || null,
+        },
+      };
+    } catch (error) {
+      logToFile(`Error getting GPU info: ${error.message}`, "ERROR");
+      return {
+        success: false,
+        error: error.message,
+        hardwareAccelerationEnabled:
+          global.__hardwareAccelerationEnabled !== false,
+      };
     }
   }
 
