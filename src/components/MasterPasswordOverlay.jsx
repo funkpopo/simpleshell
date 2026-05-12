@@ -127,7 +127,7 @@ const MasterPasswordOverlay = React.memo(
           }}
         >
           <IconButton
-            aria-label={t("common.close", "关闭")}
+            aria-label={t("common.close")}
             size="small"
             onClick={handleClose}
             sx={{

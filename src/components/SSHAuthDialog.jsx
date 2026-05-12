@@ -215,17 +215,17 @@ const SSHAuthDialog = ({
               color="error"
               sx={{ fontWeight: 500, mb: 0.5 }}
             >
-              {t("sshAuth.authFailed", "认证失败")}
+              {t("sshAuth.authFailed")}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {errorMessage || t("sshAuth.pleaseRetry", "请重新输入凭据")}
+              {errorMessage || t("sshAuth.pleaseRetry")}
             </Typography>
           </Box>
         )}
 
         {/* 主机信息 */}
         <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-          {t("sshAuth.host", "主机")}:
+          {t("sshAuth.host")}:
         </Typography>
         <Typography variant="body2" sx={{ mb: 1.5, fontFamily: "monospace" }}>
           {host}:{port || 22} {serverVersion && `[${serverVersion}]`}
@@ -239,16 +239,13 @@ const SSHAuthDialog = ({
             {fingerprintChanged
               ? t(
                   "sshAuth.fingerprintWarning",
-                  "服务器指纹已更改，请确认是否为预期更改。",
                 )
               : showFirstConnectionNotice
                 ? t(
                     "sshAuth.firstFingerprintNotice",
-                    "首次连接该服务器，请确认主机指纹后继续。",
                   )
                 : t(
                     "sshAuth.fingerprintConfirmNotice",
-                    "请确认主机指纹是否可信。",
                   )}
           </Alert>
         )}
@@ -257,7 +254,6 @@ const SSHAuthDialog = ({
           <Typography variant="body2" color="warning.main" sx={{ mb: 1 }}>
             {t(
               "sshAuth.fingerprintWarning",
-              "服务器指纹已更改，请确认是否为预期更改。",
             )}
           </Typography>
         )}
@@ -272,7 +268,7 @@ const SSHAuthDialog = ({
               {fingerprintChanged && (
                 <Chip
                   icon={<WarningAmberIcon />}
-                  label={t("sshAuth.changed", "已更改")}
+                  label={t("sshAuth.changed")}
                   size="small"
                   color="warning"
                   sx={{
@@ -300,7 +296,7 @@ const SSHAuthDialog = ({
                   color="text.secondary"
                   sx={{ display: "block", mb: 0.25 }}
                 >
-                  {t("sshAuth.previousFingerprint", "Previous")}:
+                  {t("sshAuth.previousFingerprint")}:
                 </Typography>
                 <Typography
                   variant="caption"
@@ -329,7 +325,7 @@ const SSHAuthDialog = ({
       {authData?.requireCredentials !== false && (
         <Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-            {t("sshAuth.username", "用户")}:(<u>U</u>)
+            {t("sshAuth.username")}:(<u>U</u>)
           </Typography>
           <TextField
             inputRef={usernameRef}
@@ -338,7 +334,7 @@ const SSHAuthDialog = ({
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={t("sshAuth.enterUsername", "请输入用户名")}
+            placeholder={t("sshAuth.enterUsername")}
             InputProps={{
               endAdornment: (
                 <InputAdornment position="end">
@@ -364,7 +360,7 @@ const SSHAuthDialog = ({
               component="legend"
               sx={{ mb: 1, color: "text.secondary", fontSize: "0.875rem" }}
             >
-              {t("sshAuth.trustScopeLabel", "信任范围")}
+              {t("sshAuth.trustScopeLabel")}
             </FormLabel>
             <RadioGroup
               value={hostTrustMode}
@@ -373,12 +369,12 @@ const SSHAuthDialog = ({
               <FormControlLabel
                 value="session"
                 control={<Radio size="small" />}
-                label={t("sshAuth.trustSession", "本次会话信任")}
+                label={t("sshAuth.trustSession")}
               />
               <FormControlLabel
                 value="permanent"
                 control={<Radio size="small" />}
-                label={t("sshAuth.trustPermanent", "永久信任")}
+                label={t("sshAuth.trustPermanent")}
               />
             </RadioGroup>
           </FormControl>
@@ -386,11 +382,9 @@ const SSHAuthDialog = ({
             {hostTrustMode === "session"
               ? t(
                   "sshAuth.trustSessionHint",
-                  "仅当前运行有效，重启应用后需要再次确认。",
                 )
               : t(
                   "sshAuth.trustPermanentHint",
-                  "将写入已知主机列表，后续连接不再提示。",
                 )}
           </Typography>
         </Box>
@@ -413,8 +407,8 @@ const SSHAuthDialog = ({
             "& .MuiTab-root": { minHeight: 36, py: 0 },
           }}
         >
-          <Tab label={t("sshAuth.password", "密码")} />
-          <Tab label={t("sshAuth.publicKey", "公钥")} />
+          <Tab label={t("sshAuth.password")} />
+          <Tab label={t("sshAuth.publicKey")} />
         </Tabs>
 
         <Box sx={{ pt: 2 }}>
@@ -425,7 +419,7 @@ const SSHAuthDialog = ({
                 color="text.secondary"
                 sx={{ mb: 0.5 }}
               >
-                {t("sshAuth.password", "密码")}:(<u>P</u>)
+                {t("sshAuth.password")}:(<u>P</u>)
               </Typography>
               <TextField
                 inputRef={passwordRef}
@@ -435,7 +429,7 @@ const SSHAuthDialog = ({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={t("sshAuth.enterPassword", "请输入密码")}
+                placeholder={t("sshAuth.enterPassword")}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
@@ -469,7 +463,7 @@ const SSHAuthDialog = ({
                 color="text.secondary"
                 sx={{ mb: 0.5 }}
               >
-                {t("sshAuth.privateKeyPath", "私钥路径")}:
+                {t("sshAuth.privateKeyPath")}:
               </Typography>
               <Box sx={{ display: "flex", gap: 1 }}>
                 <TextField
@@ -478,7 +472,7 @@ const SSHAuthDialog = ({
                   value={privateKeyPath}
                   onChange={(e) => setPrivateKeyPath(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={t("sshAuth.selectKeyFile", "选择私钥文件")}
+                  placeholder={t("sshAuth.selectKeyFile")}
                   sx={{
                     "& .MuiOutlinedInput-root": {
                       borderRadius: 1,
@@ -491,7 +485,7 @@ const SSHAuthDialog = ({
                   onClick={handleSelectKeyFile}
                   sx={{ whiteSpace: "nowrap" }}
                 >
-                  {t("sshAuth.browse", "浏览...")}
+                  {t("sshAuth.browse")}
                 </Button>
               </Box>
             </Box>
@@ -504,7 +498,7 @@ const SSHAuthDialog = ({
   // 计算标题
   const getTitle = () => {
     if (step === "hostVerify" && authData?.requireCredentials === false) {
-      return t("sshAuth.fingerprintTitle", "主机指纹确认");
+      return t("sshAuth.fingerprintTitle");
     }
 
     if (step === "credentials" && username) {
@@ -512,9 +506,9 @@ const SSHAuthDialog = ({
         username.length > 1
           ? username[0] + "*".repeat(Math.min(username.length - 1, 3))
           : username;
-      return `${t("sshAuth.login", "登录")}：${displayUsername}`;
+      return `${t("sshAuth.login")}: ${displayUsername}`;
     }
-    return t("sshAuth.login", "登录");
+    return t("sshAuth.login");
   };
 
   return (
@@ -564,7 +558,7 @@ const SSHAuthDialog = ({
             }
             label={
               <Typography variant="body2">
-                {t("sshAuth.autoLoginNext", "下次自动登录")}(<u>A</u>)
+                {t("sshAuth.autoLoginNext")}(<u>A</u>)
               </Typography>
             }
           />
@@ -575,7 +569,7 @@ const SSHAuthDialog = ({
         sx={{ px: 3, py: 1.5, borderTop: `1px solid ${theme.palette.divider}` }}
       >
         <Button variant="outlined" onClick={handleCancel} sx={{ minWidth: 80 }}>
-          {t("sshAuth.cancel", "取消")}
+          {t("sshAuth.cancel")}
         </Button>
         <Button
           variant="contained"
@@ -595,8 +589,8 @@ const SSHAuthDialog = ({
           sx={{ minWidth: 80 }}
         >
           {step === "hostVerify" && authData?.requireCredentials === false
-            ? t("sshAuth.confirmAndConnect", "确认并连接")
-            : t("sshAuth.continue", "继续")}
+            ? t("sshAuth.confirmAndConnect")
+            : t("sshAuth.continue")}
         </Button>
       </DialogActions>
     </Dialog>

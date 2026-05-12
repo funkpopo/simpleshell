@@ -7,6 +7,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
+import { useTranslation } from "react-i18next";
 
 const WebTerminalSearchOverlay = ({
   isActive,
@@ -21,6 +22,7 @@ const WebTerminalSearchOverlay = ({
   onSearchPrevious,
 }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   if (!isActive && !showSearchBar) {
     return null;
@@ -28,7 +30,7 @@ const WebTerminalSearchOverlay = ({
 
   if (!showSearchBar) {
     return (
-      <Tooltip title="打开搜索 (Ctrl+/)">
+      <Tooltip title={t("webTerminal.search.open")}>
         <IconButton
           size="small"
           className="search-icon-btn"
@@ -64,7 +66,7 @@ const WebTerminalSearchOverlay = ({
         className="search-input"
         value={searchTerm}
         onChange={(event) => onSearchTermChange(event.target.value)}
-        placeholder="搜索..."
+        placeholder={t("webTerminal.search.placeholder")}
         autoFocus
         onKeyDown={(event) => {
           if (event.key === "Enter") {
@@ -92,13 +94,13 @@ const WebTerminalSearchOverlay = ({
           }}
         >
           {noMatchFound
-            ? "无匹配结果"
+            ? t("webTerminal.search.noMatches")
             : searchResults.count > 0
               ? `${searchResults.current}/${searchResults.count}`
               : ""}
         </div>
       )}
-      <Tooltip title="查找上一个 (Ctrl+,)">
+      <Tooltip title={t("webTerminal.search.previous")}>
         <span>
           <IconButton
             size="small"
@@ -110,7 +112,7 @@ const WebTerminalSearchOverlay = ({
           </IconButton>
         </span>
       </Tooltip>
-      <Tooltip title="查找下一个 (Ctrl+.)">
+      <Tooltip title={t("webTerminal.search.next")}>
         <span>
           <IconButton
             size="small"
@@ -122,7 +124,7 @@ const WebTerminalSearchOverlay = ({
           </IconButton>
         </span>
       </Tooltip>
-      <Tooltip title="关闭搜索 (Ctrl+/ 或 Esc)">
+      <Tooltip title={t("webTerminal.search.close")}>
         <IconButton
           size="small"
           onClick={onCloseSearch}

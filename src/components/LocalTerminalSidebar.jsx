@@ -303,7 +303,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       if (!terminal) {
         setSnackbar({
           open: true,
-          message: t("localTerminal.noTerminalSelected", "请选择一个终端"),
+          message: t("localTerminal.noTerminalSelected"),
           severity: "warning",
         });
         return;

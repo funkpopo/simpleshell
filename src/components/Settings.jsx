@@ -662,15 +662,19 @@ const Settings = memo(({ open, onClose }) => {
 
                   <Box sx={{ mb: 0 }}>
                     <Typography variant="subtitle2" gutterBottom>
-                      文件传输显示
+                      {t("settings.transferDisplay")}
                     </Typography>
                     <FormControl fullWidth variant="outlined" size="small">
                       <Select
                         value={transferBarMode}
                         onChange={(e) => setTransferBarMode(e.target.value)}
                       >
-                        <MenuItem value="bottom">底部栏模式</MenuItem>
-                        <MenuItem value="sidebar">侧边栏模式</MenuItem>
+                        <MenuItem value="bottom">
+                          {t("settings.transferDisplayBottom")}
+                        </MenuItem>
+                        <MenuItem value="sidebar">
+                          {t("settings.transferDisplaySidebar")}
+                        </MenuItem>
                       </Select>
                     </FormControl>
                   </Box>
@@ -843,17 +847,19 @@ const Settings = memo(({ open, onClose }) => {
 
             <Box sx={{ ...sectionCardSx, mt: 2.25 }}>
               <Box sx={sectionTitleRowSx}>
-                <Typography variant="subtitle1">终端与日志</Typography>
+                <Typography variant="subtitle1">
+                  {t("settings.terminalAndLogs")}
+                </Typography>
               </Box>
 
               <Grid container spacing={2} sx={{ mb: 1 }}>
                 <Grid size={{ xs: 12, md: 6 }}>
                   <FormControl fullWidth variant="outlined" size="small">
-                    <InputLabel>终端字体族</InputLabel>
+                    <InputLabel>{t("settings.terminalFontFamily")}</InputLabel>
                     <Select
                       value={terminalFont}
                       onChange={handleTerminalFontChange}
-                      label="终端字体族"
+                      label={t("settings.terminalFontFamily")}
                     >
                       {terminalFonts.map((font) => (
                         <MenuItem key={font.value} value={font.value}>
@@ -868,7 +874,7 @@ const Settings = memo(({ open, onClose }) => {
                 <Grid size={{ xs: 12, md: 6 }}>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                     <Typography variant="body2" sx={{ minWidth: 60 }}>
-                      粗细
+                      {t("settings.fontWeight")}
                     </Typography>
                     <Slider
                       value={terminalFontWeight}
@@ -896,8 +902,8 @@ const Settings = memo(({ open, onClose }) => {
                     fullWidth
                     size="small"
                     type="number"
-                    label="终端回滚行数"
-                    helperText="1000–500000；与性能监控中的缓冲占用统计一致"
+                    label={t("settings.terminalScrollbackLines")}
+                    helperText={t("settings.terminalScrollbackHelper")}
                     value={terminalScrollbackLines}
                     onChange={(e) => {
                       const v = parseInt(e.target.value, 10);
@@ -912,7 +918,7 @@ const Settings = memo(({ open, onClose }) => {
               <Grid container spacing={2}>
                 <Grid size={{ xs: 12, md: 6 }}>
                   <Typography variant="body2" gutterBottom>
-                    终端字体大小
+                    {t("settings.terminalFontSizeLabel")}
                   </Typography>
                   <Box sx={{ px: 1 }}>
                     <Slider
@@ -970,7 +976,7 @@ const Settings = memo(({ open, onClose }) => {
               <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
                 <TuneIcon sx={{ mr: 1, color: "primary.main" }} />
                 <Typography variant="subtitle1">
-                  {t("settings.performanceSettings", "性能设置")}
+                  {t("settings.performanceSettings")}
                 </Typography>
               </Box>
 
@@ -978,12 +984,9 @@ const Settings = memo(({ open, onClose }) => {
               {needsRestart && (
                 <Alert severity="warning" sx={{ mb: 2 }}>
                   <AlertTitle>
-                    {t("settings.restartRequired", "需要重启")}
+                    {t("settings.restartRequired")}
                   </AlertTitle>
-                  {t(
-                    "settings.restartMessage",
-                    "某些性能设置需要重启应用程序才能生效。保存设置后请重启应用。",
-                  )}
+                  {t("settings.restartMessage")}
                 </Alert>
               )}
 
@@ -1007,13 +1010,13 @@ const Settings = memo(({ open, onClose }) => {
                       >
                         <DisplaySettingsIcon sx={{ color: "info.main" }} />
                         <Typography variant="subtitle1" component="div">
-                          {t("settings.hardwareAcceleration", "硬件加速")}
+                          {t("settings.hardwareAcceleration")}
                         </Typography>
                         {hardwareAccelerationEnabled !==
                           (originalPerformanceSettings.hardwareAcceleration !==
                             false) && (
                           <Chip
-                            label={t("settings.needsRestart", "需重启")}
+                            label={t("settings.needsRestart")}
                             size="small"
                             color="warning"
                           />
@@ -1032,20 +1035,14 @@ const Settings = memo(({ open, onClose }) => {
                             color="primary"
                           />
                         }
-                        label={t(
-                          "settings.enableHardwareAcceleration",
-                          "启用 GPU 硬件加速",
-                        )}
+                        label={t("settings.enableHardwareAcceleration")}
                       />
                       <Typography
                         variant="body2"
                         color="text.secondary"
                         sx={{ mt: 0.5 }}
                       >
-                        {t(
-                          "settings.hardwareAccelerationDescription",
-                          "开启后使用集成显卡或独立显卡渲染，窗口锁定 60Hz 刷新率，传输进度条等组件以每帧合并方式更新；关闭后回退到软件渲染并停用 WebGL，能耗更低但视觉流畅度下降。",
-                        )}
+                        {t("settings.hardwareAccelerationDescription")}
                       </Typography>
 
                       {/* GPU 信息 */}
@@ -1067,16 +1064,16 @@ const Settings = memo(({ open, onClose }) => {
                           color="text.secondary"
                           sx={{ display: "block", mb: 0.5 }}
                         >
-                          {t("settings.gpuInfo", "当前 GPU")}
+                          {t("settings.gpuInfo")}
                         </Typography>
                         {gpuInfoLoading && (
                           <Typography variant="body2" color="text.secondary">
-                            {t("settings.gpuInfoLoading", "正在检测…")}
+                            {t("settings.gpuInfoLoading")}
                           </Typography>
                         )}
                         {!gpuInfoLoading && !gpuInfo && (
                           <Typography variant="body2" color="text.secondary">
-                            {t("settings.gpuInfoUnavailable", "GPU 信息不可用")}
+                            {t("settings.gpuInfoUnavailable")}
                           </Typography>
                         )}
                         {!gpuInfoLoading && gpuInfo && (
@@ -1087,7 +1084,7 @@ const Settings = memo(({ open, onClose }) => {
                                 color="text.secondary"
                                 component="span"
                               >
-                                {t("settings.gpuRenderer", "渲染器")}:{" "}
+                                {t("settings.gpuRenderer")}:{" "}
                               </Typography>
                               <Typography
                                 variant="caption"
@@ -1096,7 +1093,7 @@ const Settings = memo(({ open, onClose }) => {
                               >
                                 {gpuInfo.displayRenderer ||
                                   gpuInfo.activeGpu?.deviceString ||
-                                  t("settings.gpuUnknown", "未知")}
+                                  t("settings.gpuUnknown")}
                               </Typography>
                             </Box>
                             {gpuInfo.displayVendor && (
@@ -1106,7 +1103,7 @@ const Settings = memo(({ open, onClose }) => {
                                   color="text.secondary"
                                   component="span"
                                 >
-                                  {t("settings.gpuVendor", "厂商")}:{" "}
+                                  {t("settings.gpuVendor")}:{" "}
                                 </Typography>
                                 <Typography variant="caption" component="span">
                                   {gpuInfo.displayVendor}
@@ -1122,7 +1119,7 @@ const Settings = memo(({ open, onClose }) => {
                                     color="text.secondary"
                                     component="span"
                                   >
-                                    {t("settings.gpuDeviceId", "设备 ID")}:{" "}
+                                    {t("settings.gpuDeviceId")}:{" "}
                                   </Typography>
                                   <Typography
                                     variant="caption"
@@ -1140,7 +1137,6 @@ const Settings = memo(({ open, onClose }) => {
                                   color="warning"
                                   label={t(
                                     "settings.gpuSoftwareFallback",
-                                    "软件渲染",
                                   )}
                                 />
                               ) : (
@@ -1149,7 +1145,6 @@ const Settings = memo(({ open, onClose }) => {
                                   color="success"
                                   label={t(
                                     "settings.gpuHardwareActive",
-                                    "硬件加速生效",
                                   )}
                                 />
                               )}
@@ -1175,13 +1170,13 @@ const Settings = memo(({ open, onClose }) => {
                       >
                         <ImageIcon sx={{ mr: 1, color: "primary.main" }} />
                         <Typography variant="h6" component="div">
-                          {t("settings.imageSupport", "图像支持")}
+                          {t("settings.imageSupport")}
                         </Typography>
                         {needsRestart &&
                           imageSupported !==
                             originalPerformanceSettings.imageSupported && (
                             <Chip
-                              label={t("settings.needsRestart", "需重启")}
+                              label={t("settings.needsRestart")}
                               size="small"
                               color="warning"
                               sx={{ ml: 1 }}
@@ -1201,7 +1196,7 @@ const Settings = memo(({ open, onClose }) => {
                             color="primary"
                           />
                         }
-                        label={t("settings.enableImageSupport", "启用图像支持")}
+                        label={t("settings.enableImageSupport")}
                       />
                       <Typography
                         variant="body2"
@@ -1210,7 +1205,6 @@ const Settings = memo(({ open, onClose }) => {
                       >
                         {t(
                           "settings.imageDescription",
-                          "支持在终端中显示Sixel和iTerm图像协议",
                         )}
                       </Typography>
                     </CardContent>
@@ -1231,10 +1225,10 @@ const Settings = memo(({ open, onClose }) => {
                       >
                         <MemoryIcon sx={{ mr: 1, color: "success.main" }} />
                         <Typography variant="h6" component="div">
-                          {t("settings.smartCache", "智能缓存")}
+                          {t("settings.smartCache")}
                         </Typography>
                         <Chip
-                          label={t("settings.realTime", "实时生效")}
+                          label={t("settings.realTime")}
                           size="small"
                           color="success"
                           sx={{ ml: 1 }}
@@ -1253,7 +1247,7 @@ const Settings = memo(({ open, onClose }) => {
                             color="primary"
                           />
                         }
-                        label={t("settings.enableCache", "启用多级缓存")}
+                        label={t("settings.enableCache")}
                       />
                       <Typography
                         variant="body2"
@@ -1262,7 +1256,6 @@ const Settings = memo(({ open, onClose }) => {
                       >
                         {t(
                           "settings.cacheDescription",
-                          "L1/L2缓存提升文件列表加载速度40-60%",
                         )}
                       </Typography>
                     </CardContent>
@@ -1283,10 +1276,10 @@ const Settings = memo(({ open, onClose }) => {
                       >
                         <CachedIcon sx={{ mr: 1, color: "success.main" }} />
                         <Typography variant="h6" component="div">
-                          {t("settings.smartPrefetch", "智能预取")}
+                          {t("settings.smartPrefetch")}
                         </Typography>
                         <Chip
-                          label={t("settings.realTime", "实时生效")}
+                          label={t("settings.realTime")}
                           size="small"
                           color="success"
                           sx={{ ml: 1 }}
@@ -1305,7 +1298,7 @@ const Settings = memo(({ open, onClose }) => {
                             color="primary"
                           />
                         }
-                        label={t("settings.enablePrefetch", "启用预测性预取")}
+                        label={t("settings.enablePrefetch")}
                       />
                       <Typography
                         variant="body2"
@@ -1314,7 +1307,6 @@ const Settings = memo(({ open, onClose }) => {
                       >
                         {t(
                           "settings.prefetchDescription",
-                          "基于访问模式智能预加载数据，减少等待时间",
                         )}
                       </Typography>
                     </CardContent>

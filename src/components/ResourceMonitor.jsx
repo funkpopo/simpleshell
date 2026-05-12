@@ -366,7 +366,11 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 {/* 系统信息卡片 */}
                 <Paper elevation={2} sx={{ borderRadius: 1 }}>
                   <AccordionHeader
-                    title={systemInfo.isLocal ? "本地系统" : "远程系统"}
+                    title={
+                      systemInfo.isLocal
+                        ? t("resourceMonitor.localSystem")
+                        : t("resourceMonitor.remoteSystem")
+                    }
                     icon={
                       <ComputerIcon sx={{ color: theme.palette.primary.main }} />
                     }
@@ -376,20 +380,24 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                   <Collapse in={expanded.system} timeout="auto" unmountOnExit>
                     <Box sx={{ px: 1.25, pb: 1.25, pt: 0 }}>
                       <Typography variant="body2" gutterBottom>
-                        <strong>操作系统:</strong> {systemInfo.os.type}
-                        {systemInfo.os.distro && systemInfo.os.distro !== "未知"
+                        <strong>{t("resourceMonitor.operatingSystem")}:</strong>{" "}
+                        {systemInfo.os.type}
+                        {systemInfo.os.distro &&
+                        systemInfo.os.distro !== t("resourceMonitor.unknown")
                           ? ` (${systemInfo.os.distro})`
                           : ""}
                         {systemInfo.os.version &&
-                        systemInfo.os.version !== "未知"
+                        systemInfo.os.version !== t("resourceMonitor.unknown")
                           ? ` ${systemInfo.os.version}`
                           : ""}
                       </Typography>
                       <Typography variant="body2" gutterBottom>
-                        <strong>主机名:</strong> {systemInfo.os.hostname}
+                        <strong>{t("resourceMonitor.hostname")}:</strong>{" "}
+                        {systemInfo.os.hostname}
                       </Typography>
                       <Typography variant="body2" gutterBottom>
-                        <strong>平台:</strong> {systemInfo.os.platform}
+                        <strong>{t("resourceMonitor.platform")}:</strong>{" "}
+                        {systemInfo.os.platform}
                       </Typography>
                     </Box>
                   </Collapse>
@@ -493,7 +501,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 {/* 进程列表卡片 */}
                 <Paper elevation={2} sx={{ borderRadius: 1 }}>
                   <AccordionHeader
-                    title="进程"
+                    title={t("resourceMonitor.processes")}
                     icon={
                       <Memory sx={{ color: theme.palette.secondary.main }} />
                     }
