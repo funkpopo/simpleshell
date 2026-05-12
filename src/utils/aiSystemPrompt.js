@@ -306,6 +306,76 @@ export function generateSystemPrompt(options = {}) {
   }
 }
 
+export function generateMemoryContext(memory, language = "zh-CN") {
+  if (!memory) {
+    return "";
+  }
+
+  const isZhCN = language === "zh-CN" || language.startsWith("zh");
+
+  if (isZhCN) {
+    return `[历史对话记忆 - ${memory.timestamp}]
+摘要：${memory.summary}
+关键点：${memory.keyPoints?.join("、") || "无"}
+${memory.pendingTasks?.length ? `待处理：${memory.pendingTasks.join("、")}` : ""}
+
+`;
+  }
+
+  return `[Conversation Memory - ${memory.timestamp}]
+Summary: ${memory.summary}
+Key points: ${memory.keyPoints?.join(", ") || "None"}
+${memory.pendingTasks?.length ? `Pending tasks: ${memory.pendingTasks.join(", ")}` : ""}
+
+`;
+}
+
+export function generateMemorySummaryPrompt(messages, language = "zh-CN") {
+  const isZhCN = language === "zh-CN" || language.startsWith("zh");
+  const conversationText = messages
+    .map((message) => {
+      const role = message.role === "user" ? (isZhCN ? "用户" : "User") : "AI";
+      return `${role}: ${message.content}`;
+    })
+    .join("\n\n");
+
+  if (isZhCN) {
+    return `请对以下对话历史进行摘要，提取关键信息：
+1. 用户的主要意图和需求
+2. 已完成的操作和结果
+3. 重要的上下文信息（如文件路径、配置等）
+4. 未完成的任务或待处理事项
+
+请以JSON格式返回（不要包含markdown代码块标记），并保持以下字段名不变：
+{
+  "summary": "对话摘要",
+  "keyPoints": ["关键点1", "关键点2"],
+  "pendingTasks": ["待处理任务"],
+  "context": { "重要上下文键值对": "值" }
+}
+
+对话历史：
+${conversationText}`;
+  }
+
+  return `Summarize the following conversation history and extract the key information:
+1. The user's main intent and requirements
+2. Completed actions and results
+3. Important context such as file paths, configuration, and decisions
+4. Unfinished or pending tasks
+
+Return JSON only without markdown code fences, and keep these field names unchanged:
+{
+  "summary": "conversation summary",
+  "keyPoints": ["key point 1", "key point 2"],
+  "pendingTasks": ["pending task"],
+  "context": { "important context key": "value" }
+}
+
+Conversation history:
+${conversationText}`;
+}
+
 function generateZhCNPrompt(connectionInfo) {
   const connectionContext = connectionInfo
     ? `当前连接: ${connectionInfo.host || "未知主机"} (${connectionInfo.type || "SSH"})`
@@ -464,6 +534,8 @@ export default {
   RISK_LEVELS,
   assessCommandRisk,
   generateSystemPrompt,
+  generateMemoryContext,
+  generateMemorySummaryPrompt,
   parseCommandsFromResponse,
   requiresConfirmation,
   setCustomRiskRules,

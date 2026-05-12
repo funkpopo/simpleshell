@@ -12,6 +12,75 @@ const {
   checkSshPreflight,
 } = require("../../connection/ssh-retry-helper");
 
+function isZhLanguage(language) {
+  return String(language || "zh-CN")
+    .toLowerCase()
+    .startsWith("zh");
+}
+
+function getTerminalLanguage(config) {
+  return config?.language || "zh-CN";
+}
+
+function getTerminalText(config, key, params = {}) {
+  const isZh = isZhLanguage(getTerminalLanguage(config));
+  const messages = {
+    reconnectRecoveryStarted: isZh
+      ? "连接已恢复，正在重建终端会话..."
+      : "Connection recovered. Rebuilding terminal session...",
+    reconnectRecoverySucceeded: isZh
+      ? "终端会话已自动恢复"
+      : "Terminal session restored automatically",
+    reconnectRecoveryFailedDefault: isZh
+      ? "自动恢复终端会话失败，请检查网络后手动重连。"
+      : "Failed to restore the terminal session automatically. Check the network and reconnect manually.",
+    reconnectRecoveryFailedHint: isZh
+      ? "底层连接已恢复，但终端会话恢复失败，可点击“手动重连”。"
+      : "The underlying connection recovered, but the terminal session restore failed. You can use Manual Reconnect.",
+    sshDisconnected: isZh ? "SSH连接已断开" : "SSH connection disconnected",
+    telnetClosed: isZh ? "Telnet连接已关闭" : "Telnet connection closed",
+    telnetTimeout: isZh ? "Telnet连接超时" : "Telnet connection timed out",
+  };
+
+  if (key === "reconnectRecoveryFailed") {
+    return isZh
+      ? `自动恢复终端会话失败: ${params.message}。请点击手动重连。`
+      : `Failed to restore terminal session automatically: ${params.message}. Use Manual Reconnect.`;
+  }
+
+  if (key === "droppedBytesWarning") {
+    return isZh
+      ? `输出过快，已丢弃 ${params.dropped} 字节（请适当降低输出速率）`
+      : `Output is too fast. Dropped ${params.dropped} bytes. Please reduce the output rate.`;
+  }
+
+  if (key === "sshConnected") {
+    return isZh
+      ? `${params.host} SSH连接已建立`
+      : `${params.host} SSH connection established`;
+  }
+
+  if (key === "sshConnectedReused") {
+    return isZh
+      ? `${params.host} SSH连接已建立（复用现有连接）`
+      : `${params.host} SSH connection established (reused existing connection)`;
+  }
+
+  if (key === "telnetError") {
+    return isZh
+      ? `Telnet连接错误: ${params.message}`
+      : `Telnet connection error: ${params.message}`;
+  }
+
+  if (key === "telnetConnectedReused") {
+    return isZh
+      ? `${params.host} Telnet连接已建立（复用现有连接）`
+      : `${params.host} Telnet connection established (reused existing connection)`;
+  }
+
+  return messages[key] || key;
+}
+
 /**
  * SSH/Telnet连接相关的IPC处理器
  * 这是一个高风险模块，涉及多个全局状态的管理
@@ -759,7 +828,7 @@ class SSHHandlers {
     this.reconnectingShells.add(connectionKey);
     this._emitProcessOutput(
       processId,
-      `\r\n\x1b[36m*** 连接已恢复，正在重建终端会话... ***\x1b[0m\r\n`,
+      `\r\n\x1b[36m*** ${getTerminalText(sshConfig, "reconnectRecoveryStarted")} ***\x1b[0m\r\n`,
     );
 
     try {
@@ -791,7 +860,7 @@ class SSHHandlers {
 
       this._emitProcessOutput(
         processId,
-        `\r\n\x1b[32m*** 终端会话已自动恢复 ***\x1b[0m\r\n`,
+        `\r\n\x1b[32m*** ${getTerminalText(sshConfig, "reconnectRecoverySucceeded")} ***\x1b[0m\r\n`,
       );
 
       this._emitTerminalSessionEvent("terminal:session-restored", {
@@ -804,7 +873,8 @@ class SSHHandlers {
       });
     } catch (error) {
       const message =
-        error?.message || "自动恢复终端会话失败，请检查网络后手动重连。";
+        error?.message ||
+        getTerminalText(sshConfig, "reconnectRecoveryFailedDefault");
       const mainWindow = this._getMainWindow();
       if (tabId && mainWindow && !mainWindow.isDestroyed()) {
         const connectionStatus = {
@@ -830,7 +900,9 @@ class SSHHandlers {
       );
       this._emitProcessOutput(
         processId,
-        `\r\n\x1b[31m*** 自动恢复终端会话失败: ${message}。请点击手动重连。 ***\x1b[0m\r\n`,
+        `\r\n\x1b[31m*** ${getTerminalText(sshConfig, "reconnectRecoveryFailed", {
+          message,
+        })} ***\x1b[0m\r\n`,
       );
 
       this._emitTerminalSessionEvent("terminal:session-restore-failed", {
@@ -841,7 +913,7 @@ class SSHHandlers {
         port: sshConfig.port || 22,
         username: sshConfig.username,
         error: message,
-        hint: "底层连接已恢复，但终端会话恢复失败，可点击“手动重连”。",
+        hint: getTerminalText(sshConfig, "reconnectRecoveryFailedHint"),
       });
     } finally {
       this.reconnectingShells.delete(connectionKey);
@@ -894,7 +966,9 @@ class SSHHandlers {
       const dropped = droppedBytes;
       droppedBytes = 0;
       emitOutput(
-        `\r\n\x1b[33m*** 输出过快，已丢弃 ${dropped} 字节（请适当降低输出速率） ***\x1b[0m\r\n`,
+        `\r\n\x1b[33m*** ${getTerminalText(sshConfig, "droppedBytesWarning", {
+          dropped,
+        })} ***\x1b[0m\r\n`,
         { trackBackpressure: false },
       );
     };
@@ -1088,7 +1162,9 @@ class SSHHandlers {
         mainWindow &&
         !mainWindow.isDestroyed()
       ) {
-        emitOutput(`\r\n\x1b[33m*** SSH连接已断开 ***\x1b[0m\r\n`);
+        emitOutput(
+          `\r\n\x1b[33m*** ${getTerminalText(sshConfig, "sshDisconnected")} ***\x1b[0m\r\n`,
+        );
       }
 
       // 清理SFTP传输
@@ -1197,7 +1273,9 @@ class SSHHandlers {
       if (mainWindow && !mainWindow.isDestroyed()) {
         this._emitProcessOutput(
           processId,
-          `\r\n*** Telnet连接错误: ${err.message} ***\r\n`,
+          `\r\n*** ${getTerminalText(telnetConfig, "telnetError", {
+            message: err.message,
+          })} ***\r\n`,
         );
         mainWindow.webContents.send(`process:exit:${processId}`, {
           code: 1,
@@ -1216,7 +1294,10 @@ class SSHHandlers {
       logToFile(`Telnet connection ended for processId ${processId}`, "INFO");
 
       if (mainWindow && !mainWindow.isDestroyed()) {
-        this._emitProcessOutput(processId, `\r\n*** Telnet连接已关闭 ***\r\n`);
+        this._emitProcessOutput(
+          processId,
+          `\r\n*** ${getTerminalText(telnetConfig, "telnetClosed")} ***\r\n`,
+        );
         mainWindow.webContents.send(`process:exit:${processId}`, {
           code: 0,
           signal: null,
@@ -1234,7 +1315,10 @@ class SSHHandlers {
       logToFile(`Telnet connection timeout for processId ${processId}`, "WARN");
 
       if (mainWindow && !mainWindow.isDestroyed()) {
-        this._emitProcessOutput(processId, `\r\n*** Telnet连接超时 ***\r\n`);
+        this._emitProcessOutput(
+          processId,
+          `\r\n*** ${getTerminalText(telnetConfig, "telnetTimeout")} ***\r\n`,
+        );
       }
     });
   }
@@ -1443,7 +1527,11 @@ class SSHHandlers {
           if (mainWindow && !mainWindow.isDestroyed()) {
             this._emitProcessOutput(
               processId,
-              `\r\n*** ${connectionConfig.host} SSH连接已建立（复用现有连接） ***\r\n`,
+              `\r\n*** ${getTerminalText(
+                connectionConfig,
+                "sshConnectedReused",
+                { host: connectionConfig.host },
+              )} ***\r\n`,
             );
           }
 
@@ -1725,7 +1813,9 @@ class SSHHandlers {
         if (mainWindow && !mainWindow.isDestroyed()) {
           this._emitProcessOutput(
             processId,
-            `\r\n*** ${sshConfig.host} SSH连接已建立 ***\r\n`,
+            `\r\n*** ${getTerminalText(sshConfig, "sshConnected", {
+              host: sshConfig.host,
+            })} ***\r\n`,
           );
         }
 
@@ -1753,6 +1843,7 @@ class SSHHandlers {
               processId,
               `\r\n${buildReconnectWaitMessage(
                 reconnectManager?.config || DEFAULT_SSH_RETRY_CONFIG,
+                getTerminalLanguage(sshConfig),
               )}\r\n`,
             );
           }
@@ -1849,6 +1940,7 @@ class SSHHandlers {
             processId,
             `\r\n${buildReconnectTimeoutMessage(
               reconnectManager?.config || DEFAULT_SSH_RETRY_CONFIG,
+              getTerminalLanguage(sshConfig),
             )}\r\n`,
           );
         }
@@ -1912,7 +2004,11 @@ class SSHHandlers {
         if (mainWindow && !mainWindow.isDestroyed()) {
           this._emitProcessOutput(
             processId,
-            `\r\n*** ${telnetConfig.host} Telnet连接已建立（复用现有连接） ***\r\n`,
+            `\r\n*** ${getTerminalText(
+              telnetConfig,
+              "telnetConnectedReused",
+              { host: telnetConfig.host },
+            )} ***\r\n`,
           );
         }
 

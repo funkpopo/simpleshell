@@ -287,6 +287,18 @@
         "previous": "查找上一个 (Ctrl+,)",
         "next": "查找下一个 (Ctrl+.)",
         "close": "关闭搜索 (Ctrl+/ 或 Esc)"
+      },
+      "runtime": {
+        "connecting": "正在连接到 {{host}}...",
+        "reconnecting": "正在重新连接到 {{host}} ...",
+        "connectionCancelled": "已取消连接",
+        "connectionFailed": "连接失败: {{error}}",
+        "reconnectFailed": "重连失败: {{error}}",
+        "unknownError": "未知错误",
+        "newConnectionEstablished": "已建立新连接",
+        "noProcessId": "未能获取进程 ID",
+        "welcome": "欢迎使用 WebTerminal!",
+        "helpHint": "输入 \"help\" 查看可用命令。"
       }
     },
     "connectionManager": {
@@ -541,6 +553,7 @@
       "inputPlaceholder": "输入消息...",
       "startConversation": "开始对话，提出你的问题",
       "thinking": "思考中...",
+      "thinkingProcess": "思考过程",
       "copyMessage": "复制消息",
       "clearChat": "清空对话",
       "settings": "设置",
@@ -573,6 +586,9 @@
         "critical": "可能导致系统不可用或不可恢复"
       },
       "contextWarning": "上下文容量警告：点击生成记忆摘要",
+      "contextCapacityWarning": "上下文容量警告：点击生成记忆摘要",
+      "memoryGenerating": "记忆生成中...",
+      "emptyApiResponse": "API 返回内容为空",
       "compressing": "正在生成记忆摘要...",
       "compressSuccess": "记忆已保存",
       "compressFailed": "记忆生成失败"

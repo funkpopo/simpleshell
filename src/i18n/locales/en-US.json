@@ -287,6 +287,18 @@
         "previous": "Find previous (Ctrl+,)",
         "next": "Find next (Ctrl+.)",
         "close": "Close search (Ctrl+/ or Esc)"
+      },
+      "runtime": {
+        "connecting": "Connecting to {{host}}...",
+        "reconnecting": "Reconnecting to {{host}} ...",
+        "connectionCancelled": "Connection cancelled",
+        "connectionFailed": "Connection failed: {{error}}",
+        "reconnectFailed": "Reconnect failed: {{error}}",
+        "unknownError": "Unknown error",
+        "newConnectionEstablished": "New connection established",
+        "noProcessId": "Could not get process ID",
+        "welcome": "Welcome to WebTerminal!",
+        "helpHint": "Type \"help\" for available commands."
       }
     },
     "connectionManager": {
@@ -541,6 +553,7 @@
       "inputPlaceholder": "Type a message...",
       "startConversation": "Start a conversation, ask your question",
       "thinking": "Thinking...",
+      "thinkingProcess": "Thinking Process",
       "copyMessage": "Copy message",
       "clearChat": "Clear chat",
       "settings": "Settings",
@@ -573,6 +586,9 @@
         "critical": "May cause system unavailability or irrecoverable state"
       },
       "contextWarning": "Context capacity warning: Click to generate memory summary",
+      "contextCapacityWarning": "Context capacity warning: Click to generate memory summary",
+      "memoryGenerating": "Generating memory...",
+      "emptyApiResponse": "API returned empty content",
       "compressing": "Generating memory summary...",
       "compressSuccess": "Memory saved",
       "compressFailed": "Memory generation failed"

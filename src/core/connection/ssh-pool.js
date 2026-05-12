@@ -876,6 +876,9 @@ class SSHPool extends BaseConnectionPool {
   ) {
     const { processSSHPrivateKey } = require("../utils/ssh-utils");
     const processedConfig = processSSHPrivateKey(sshConfig);
+    const isZh = String(sshConfig?.language || "zh-CN")
+      .toLowerCase()
+      .startsWith("zh");
 
     let errorMessage = err.message;
     let isProxyError = false;
@@ -910,7 +913,9 @@ class SSHPool extends BaseConnectionPool {
         errorMessage.includes("ECONNREFUSED") ||
         errorMessage.includes("timeout")
       ) {
-        errorMessage = `代理连接失败: ${errorMessage}. 请检查代理配置或代理状态`;
+        errorMessage = isZh
+          ? `代理连接失败: ${errorMessage}. 请检查代理配置或代理状态`
+          : `Proxy connection failed: ${errorMessage}. Check proxy configuration or proxy status`;
         isProxyError = true;
       }
     }
@@ -921,13 +926,19 @@ class SSHPool extends BaseConnectionPool {
       if (
         errorMessage.includes("All configured authentication methods failed")
       ) {
-        errorMessage = `SSH认证失败: 所有认证方式均失败，请检查用户名、密码或私钥文件`;
+        errorMessage = isZh
+          ? "SSH认证失败: 所有认证方式均失败，请检查用户名、密码或私钥文件"
+          : "SSH authentication failed: all authentication methods failed. Check username, password, or private key file";
 
         // 如果配置了私钥路径但没有私钥内容，提供具体提示
         if (sshConfig.privateKeyPath && !processedConfig.privateKey) {
-          errorMessage += `. 私钥文件路径 ${sanitizePathForLog(
-            sshConfig.privateKeyPath,
-          )} 可能无法读取`;
+          errorMessage += isZh
+            ? `. 私钥文件路径 ${sanitizePathForLog(
+                sshConfig.privateKeyPath,
+              )} 可能无法读取`
+            : `. Private key file path ${sanitizePathForLog(
+                sshConfig.privateKeyPath,
+              )} may not be readable`;
         }
       } else if (
         lowerError.includes("host denied") ||
@@ -935,17 +946,24 @@ class SSHPool extends BaseConnectionPool {
         lowerError.includes("host key verification") ||
         lowerError.includes("fingerprint")
       ) {
-        errorMessage =
-          "SSH主机指纹校验失败: 服务器主机密钥与本地记录不匹配，连接已被阻止";
+        errorMessage = isZh
+          ? "SSH主机指纹校验失败: 服务器主机密钥与本地记录不匹配，连接已被阻止"
+          : "SSH host fingerprint verification failed: server host key does not match the local record, connection blocked";
       } else if (errorMessage.includes("connect ECONNREFUSED")) {
-        errorMessage = `连接被拒绝: 无法连接到 ${sshConfig.host}:${sshConfig.port || 22}${usingProxy ? " (通过代理)" : ""}`;
+        errorMessage = isZh
+          ? `连接被拒绝: 无法连接到 ${sshConfig.host}:${sshConfig.port || 22}${usingProxy ? " (通过代理)" : ""}`
+          : `Connection refused: cannot connect to ${sshConfig.host}:${sshConfig.port || 22}${usingProxy ? " (through proxy)" : ""}`;
       } else if (errorMessage.includes("getaddrinfo ENOTFOUND")) {
-        errorMessage = `主机不存在: 无法解析主机名 ${sshConfig.host}`;
+        errorMessage = isZh
+          ? `主机不存在: 无法解析主机名 ${sshConfig.host}`
+          : `Host not found: cannot resolve hostname ${sshConfig.host}`;
       } else if (
         errorMessage.includes("ETIMEDOUT") ||
         errorMessage.includes("timeout")
       ) {
-        errorMessage = `连接超时: ${sshConfig.host}:${sshConfig.port || 22}`;
+        errorMessage = isZh
+          ? `连接超时: ${sshConfig.host}:${sshConfig.port || 22}`
+          : `Connection timed out: ${sshConfig.host}:${sshConfig.port || 22}`;
       }
     }
 

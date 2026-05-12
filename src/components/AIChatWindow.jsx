@@ -45,6 +45,8 @@ import { styled } from "@mui/material/styles";
 import ReactMarkdown from "react-markdown";
 import {
   generateSystemPrompt,
+  generateMemoryContext,
+  generateMemorySummaryPrompt,
   parseCommandsFromResponse,
   setCustomRiskRules,
 } from "../utils/aiSystemPrompt";
@@ -117,6 +119,7 @@ const estimateTokens = (text) => {
 
 // Token使用扇形图组件
 const TokenUsageChart = ({ used, max, onCompressClick, isCompressing }) => {
+  const { t } = useTranslation();
   const percentage = Math.min((used / max) * 100, 100);
   const angle = (percentage / 100) * 360;
   const radius = 12;
@@ -142,7 +145,9 @@ const TokenUsageChart = ({ used, max, onCompressClick, isCompressing }) => {
     percentage > 90 ? "#f44336" : percentage > 70 ? "#ff9800" : "#4caf50";
 
   const tooltipContent = isWarning
-    ? `${used.toLocaleString()} / ${max.toLocaleString()} tokens\n上下文容量警告：点击生成记忆摘要`
+    ? `${used.toLocaleString()} / ${max.toLocaleString()} tokens\n${t(
+        "ai.contextCapacityWarning",
+      )}`
     : `${used.toLocaleString()} / ${max.toLocaleString()} tokens`;
 
   const handleClick = () => {
@@ -159,7 +164,7 @@ const TokenUsageChart = ({ used, max, onCompressClick, isCompressing }) => {
           color="text.secondary"
           sx={{ fontSize: "0.7rem" }}
         >
-          记忆生成中...
+          {t("ai.memoryGenerating")}
         </Typography>
         <CircularProgress size={16} thickness={4} />
       </Box>
@@ -289,6 +294,7 @@ const MessageBubble = styled(Paper)(({ theme, isUser }) => ({
 
 // 思考内容组件
 const ThinkContent = ({ content, isExpanded, onToggle }) => {
+  const { t } = useTranslation();
   return (
     <Box
       sx={{
@@ -302,7 +308,7 @@ const ThinkContent = ({ content, isExpanded, onToggle }) => {
     >
       <Box display="flex" alignItems="center" justifyContent="space-between">
         <Typography variant="caption" color="text.secondary">
-          思考内容
+          {t("ai.thinkingProcess")}
         </Typography>
         {isExpanded ? (
           <ExpandLessIcon fontSize="small" />
@@ -681,13 +687,7 @@ const AIChatWindow = ({
 
       // 如果有记忆，注入到系统提示词开头
       if (memory) {
-        const memoryContext = `[历史对话记忆 - ${memory.timestamp}]
-摘要：${memory.summary}
-关键点：${memory.keyPoints?.join("、") || "无"}
-${memory.pendingTasks?.length ? `待处理：${memory.pendingTasks.join("、")}` : ""}
-
-`;
-        systemPrompt = memoryContext + systemPrompt;
+        systemPrompt = generateMemoryContext(memory, i18n.language) + systemPrompt;
       }
 
       // 构建消息列表，包含系统提示词
@@ -898,26 +898,7 @@ ${memory.pendingTasks?.length ? `待处理：${memory.pendingTasks.join("、")}`
 
   // 生成记忆摘要
   const generateMemory = async (msgs, api) => {
-    const conversationText = msgs
-      .map((m) => `${m.role === "user" ? "用户" : "AI"}: ${m.content}`)
-      .join("\n\n");
-
-    const prompt = `请对以下对话历史进行摘要，提取关键信息：
-1. 用户的主要意图和需求
-2. 已完成的操作和结果
-3. 重要的上下文信息（如文件路径、配置等）
-4. 未完成的任务或待处理事项
-
-请以JSON格式返回（不要包含markdown代码块标记）：
-{
-  "summary": "对话摘要",
-  "keyPoints": ["关键点1", "关键点2"],
-  "pendingTasks": ["待处理任务"],
-  "context": { "重要上下文键值对" }
-}
-
-对话历史：
-${conversationText}`;
+    const prompt = generateMemorySummaryPrompt(msgs, i18n.language);
 
     const response = await window.terminalAPI.sendAPIRequest(
       {
@@ -943,7 +924,7 @@ ${conversationText}`;
       (response.choices && response.choices[0]?.message?.content);
 
     if (!responseContent) {
-      throw new Error("API返回内容为空");
+      throw new Error(t("ai.emptyApiResponse"));
     }
 
     // 尝试解析JSON，处理可能的markdown代码块
