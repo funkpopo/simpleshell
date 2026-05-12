@@ -156,6 +156,9 @@ const WebTerminal = ({
   const lifecycleEventManager = useEventManager(); // 生命周期重资源单独管理
   // 添加内容更新标志，用于跟踪终端内容是否有更新
   const [contentUpdated, setContentUpdated] = useState(false);
+  const contentUpdatedStateRef = useRef(false);
+  const contentUpdateFrameRef = useRef(null);
+  const contentUpdateFrameTypeRef = useRef(null);
   const [webglRendererEnabled, setWebglRendererEnabled] = useState(true);
   const [, setPerformanceStats] = useState(null);
 
@@ -171,6 +174,10 @@ const WebTerminal = ({
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
+
+  useEffect(() => {
+    contentUpdatedStateRef.current = contentUpdated;
+  }, [contentUpdated]);
 
   // 当前 tab 变为激活状态时，强制让终端获得键盘焦点
   useEffect(() => {
@@ -481,6 +488,37 @@ const WebTerminal = ({
 
   // 优化：使用ref追踪内容更新状态，避免频繁的React状态更新
   const contentUpdatedRef = useRef(false);
+  const markTerminalContentUpdated = useCallback(() => {
+    contentUpdatedRef.current = true;
+
+    if (
+      contentUpdatedStateRef.current ||
+      contentUpdateFrameRef.current !== null
+    ) {
+      return;
+    }
+
+    if (typeof requestAnimationFrame === "function") {
+      contentUpdateFrameTypeRef.current = "raf";
+      contentUpdateFrameRef.current = requestAnimationFrame(() => {
+        contentUpdateFrameRef.current = null;
+        contentUpdateFrameTypeRef.current = null;
+        if (!contentUpdatedStateRef.current) {
+          setContentUpdated(true);
+        }
+      });
+      return;
+    }
+
+    contentUpdateFrameTypeRef.current = "timeout";
+    contentUpdateFrameRef.current = setTimeout(() => {
+      contentUpdateFrameRef.current = null;
+      contentUpdateFrameTypeRef.current = null;
+      if (!contentUpdatedStateRef.current) {
+        setContentUpdated(true);
+      }
+    }, 16);
+  }, []);
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState(null);
@@ -1367,7 +1405,12 @@ const WebTerminal = ({
             ) {
               const fn = getSuggestionsRef.current;
               if (typeof fn === "function") {
-                fn(currentInputBuffer);
+                const inputSnapshot = currentInputBuffer;
+                setTimeout(() => {
+                  if (getSuggestionsRef.current === fn) {
+                    fn(inputSnapshot);
+                  }
+                }, 16);
               }
             }
             if (currentInputBuffer.length === 0) {
@@ -1606,7 +1649,12 @@ const WebTerminal = ({
           ) {
             const fn = getSuggestionsRef.current;
             if (typeof fn === "function") {
-              fn(currentInputBuffer);
+              const inputSnapshot = currentInputBuffer;
+              setTimeout(() => {
+                if (getSuggestionsRef.current === fn) {
+                  fn(inputSnapshot);
+                }
+              }, 16);
             }
           }
         }
@@ -1976,8 +2024,7 @@ const WebTerminal = ({
         if (scrollbackUsageTrackerRef.current) {
           scrollbackUsageTrackerRef.current.addData(data);
         }
-        contentUpdatedRef.current = true;
-        setContentUpdated(true);
+        markTerminalContentUpdated();
       };
       const writeCompleteHandler = ({ data, duration }) => {
         if (performanceMonitorRef.current) {
@@ -3339,6 +3386,19 @@ const WebTerminal = ({
           terminalIOMailboxRef.current = null;
         }
 
+        if (contentUpdateFrameRef.current !== null) {
+          if (
+            contentUpdateFrameTypeRef.current === "raf" &&
+            typeof cancelAnimationFrame === "function"
+          ) {
+            cancelAnimationFrame(contentUpdateFrameRef.current);
+          } else {
+            clearTimeout(contentUpdateFrameRef.current);
+          }
+          contentUpdateFrameRef.current = null;
+          contentUpdateFrameTypeRef.current = null;
+        }
+
         // 清理终端事件监听器
         terminalDisposables.forEach((disposable) => {
           try {
@@ -3372,6 +3432,7 @@ const WebTerminal = ({
     scheduleHighlightRefresh,
     attachTerminalToContainer,
     recoverTerminalAfterActivation,
+    markTerminalContentUpdated,
   ]);
 
   // 设置模拟终端（用于无法使用IPC API时的回退）
@@ -4478,13 +4539,15 @@ const WebTerminal = ({
       {/* 命令建议组件 */}
       <CommandSuggestion
         suggestions={suggestions}
-        visible={shouldDisplayCommandSuggestions({
-          showSuggestions,
-          suggestions,
-          currentInput,
-          inEditorMode,
-          isCommandExecuting,
-        })}
+        visible={
+          shouldDisplayCommandSuggestions({
+            showSuggestions,
+            suggestions,
+            currentInput,
+            inEditorMode,
+            isCommandExecuting,
+          }) && Boolean(cursorPosition)
+        }
         position={cursorPosition}
         onSelectSuggestion={handleSuggestionSelect}
         onClose={closeSuggestions}

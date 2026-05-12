@@ -4,10 +4,33 @@ import terminalIOMailboxProtocol from "./terminalIOMailboxProtocol.js";
 const { TERMINAL_IO_DEFAULTS, TERMINAL_IO_MESSAGE_TYPES } =
   terminalIOMailboxProtocol;
 
+const MAX_TERMINAL_WRITE_CHARS = 32 * 1024;
+
 const normalizeGeometry = (cols, rows) => ({
   cols: Math.max(1, Math.floor(Number(cols) || 1)),
   rows: Math.max(1, Math.floor(Number(rows) || 1)),
 });
+
+const splitTerminalWriteChunks = (data) => {
+  if (!data) {
+    return [];
+  }
+
+  const dataStr = typeof data === "string" ? data : data.toString();
+  if (dataStr.length <= MAX_TERMINAL_WRITE_CHARS) {
+    return [dataStr];
+  }
+
+  const chunks = [];
+  for (
+    let index = 0;
+    index < dataStr.length;
+    index += MAX_TERMINAL_WRITE_CHARS
+  ) {
+    chunks.push(dataStr.slice(index, index + MAX_TERMINAL_WRITE_CHARS));
+  }
+  return chunks;
+};
 
 export class RendererTerminalIOMailbox {
   constructor(options = {}) {
@@ -27,6 +50,11 @@ export class RendererTerminalIOMailbox {
     this.pendingResize = null;
     this.lastResize = null;
     this.resizeTimer = null;
+    this.pendingWriteChunks = [];
+    this.pendingWriteBytes = 0;
+    this.activeWrite = null;
+    this.writeEpoch = 0;
+    this.destroyed = false;
 
     this.writeQueue = new TerminalWriteQueue({
       dispatchThresholdBytes: TERMINAL_IO_DEFAULTS.outputDispatchThresholdBytes,
@@ -39,6 +67,7 @@ export class RendererTerminalIOMailbox {
 
   setTerm(term) {
     this.term = term || null;
+    this.pumpTerminalWrites();
   }
 
   updateHandlers(handlers = {}) {
@@ -152,22 +181,78 @@ export class RendererTerminalIOMailbox {
     }
 
     const processIdForAck = this.processId;
-    const byteLength = this.measureByteLength(data);
+    const chunks = splitTerminalWriteChunks(data);
+    if (chunks.length === 0) {
+      return;
+    }
 
     if (!this.term) {
+      const byteLength = chunks.reduce(
+        (total, chunk) => total + this.measureByteLength(chunk),
+        0,
+      );
       if (byteLength > 0) {
         this.queueOutputAck(processIdForAck, byteLength);
       }
       return;
     }
 
+    for (const chunk of chunks) {
+      const byteLength = this.measureByteLength(chunk);
+      if (byteLength <= 0) {
+        continue;
+      }
+      this.pendingWriteChunks.push({
+        data: chunk,
+        byteLength,
+        processId: processIdForAck,
+      });
+      this.pendingWriteBytes += byteLength;
+    }
+
+    this.pumpTerminalWrites();
+  }
+
+  pumpTerminalWrites() {
+    if (
+      this.destroyed ||
+      this.activeWrite !== null ||
+      !this.term ||
+      this.pendingWriteChunks.length === 0
+    ) {
+      return;
+    }
+
+    const nextWrite = this.pendingWriteChunks.shift();
+    this.pendingWriteBytes = Math.max(
+      0,
+      this.pendingWriteBytes - nextWrite.byteLength,
+    );
+
+    const epoch = this.writeEpoch;
     const startTime =
       typeof performance !== "undefined" &&
       typeof performance.now === "function"
         ? performance.now()
         : Date.now();
+    this.activeWrite = {
+      ...nextWrite,
+      epoch,
+      startTime,
+    };
 
     const onWriteComplete = () => {
+      const completedWrite = this.activeWrite;
+      if (
+        !completedWrite ||
+        completedWrite.epoch !== epoch ||
+        completedWrite.data !== nextWrite.data
+      ) {
+        return;
+      }
+
+      this.activeWrite = null;
+
       const endTime =
         typeof performance !== "undefined" &&
         typeof performance.now === "function"
@@ -176,23 +261,29 @@ export class RendererTerminalIOMailbox {
 
       if (typeof this.onWriteComplete === "function") {
         this.onWriteComplete({
-          data,
-          byteLength,
-          duration: endTime - startTime,
-          processId: processIdForAck,
+          data: completedWrite.data,
+          byteLength: completedWrite.byteLength,
+          duration: endTime - completedWrite.startTime,
+          processId: completedWrite.processId,
         });
       }
 
-      if (byteLength > 0) {
-        this.queueOutputAck(processIdForAck, byteLength);
+      if (completedWrite.byteLength > 0) {
+        this.queueOutputAck(
+          completedWrite.processId,
+          completedWrite.byteLength,
+        );
       }
+
+      this.pumpTerminalWrites();
     };
 
     try {
-      this.term.write(data, onWriteComplete);
+      this.term.write(nextWrite.data, onWriteComplete);
     } catch {
-      this.term.write(data);
-      onWriteComplete();
+      this.activeWrite = null;
+      this.queueOutputAck(nextWrite.processId, nextWrite.byteLength);
+      this.pumpTerminalWrites();
     }
   }
 
@@ -261,11 +352,23 @@ export class RendererTerminalIOMailbox {
     const queuedBytes = this.writeQueue.getQueuedByteLength((chunk) =>
       this.measureByteLength(chunk),
     );
+    const pendingWriteBytes = this.pendingWriteBytes;
+    const activeWrite = this.activeWrite;
 
     this.writeQueue.clear();
+    this.pendingWriteChunks = [];
+    this.pendingWriteBytes = 0;
+    this.activeWrite = null;
+    this.writeEpoch += 1;
 
-    if (queuedBytes > 0) {
-      this.queueOutputAck(processIdForAck, queuedBytes);
+    const activeWriteBytes =
+      activeWrite && activeWrite.processId === processIdForAck
+        ? activeWrite.byteLength
+        : 0;
+    const bytesToAck = queuedBytes + pendingWriteBytes + activeWriteBytes;
+
+    if (bytesToAck > 0) {
+      this.queueOutputAck(processIdForAck, bytesToAck);
     }
   }
 
@@ -361,6 +464,7 @@ export class RendererTerminalIOMailbox {
   }
 
   destroy() {
+    this.destroyed = true;
     this.detachProcess();
     this.writeQueue.destroy();
     this.onOutput = null;

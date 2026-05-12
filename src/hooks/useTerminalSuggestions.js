@@ -7,6 +7,36 @@ import {
   shouldRequestCommandSuggestions,
 } from "../modules/terminal/commandSuggestionState.js";
 
+const waitForTerminalLayoutFrame = () =>
+  new Promise((resolve) => {
+    if (typeof requestAnimationFrame !== "function") {
+      resolve();
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(resolve);
+    });
+  });
+
+const isUsableRect = (rect) =>
+  rect &&
+  Number.isFinite(rect.left) &&
+  Number.isFinite(rect.top) &&
+  Number.isFinite(rect.width) &&
+  Number.isFinite(rect.height) &&
+  rect.width > 0 &&
+  rect.height > 0;
+
+const isPointInsideRect = (x, y, rect) =>
+  Number.isFinite(x) &&
+  Number.isFinite(y) &&
+  isUsableRect(rect) &&
+  x >= rect.left &&
+  x <= rect.right &&
+  y >= rect.top &&
+  y <= rect.bottom;
+
 export const useTerminalSuggestions = ({
   tabId,
   termRef,
@@ -30,6 +60,7 @@ export const useTerminalSuggestions = ({
   const suggestionsHiddenByEscRef = useRef(false);
   const suggestionSelectedRef = useRef(false);
   const getSuggestionsRef = useRef(null);
+  const suggestionRequestIdRef = useRef(0);
 
   useEffect(() => {
     suggestionsSuppressedRef.current = suggestionsSuppressedUntilEnter;
@@ -39,101 +70,93 @@ export const useTerminalSuggestions = ({
     suggestionsHiddenByEscRef.current = suggestionsHiddenByEsc;
   }, [suggestionsHiddenByEsc]);
 
-  const updateCursorPosition = useCallback(() => {
-    if (!termRef.current || !terminalRef.current) {
-      setCursorPosition({ x: 0, y: 0 });
-      return;
-    }
-
-    try {
-      const term = termRef.current;
-      const container = terminalRef.current;
-      const suggestionHeight = Math.min(
-        (suggestions?.length || 0) * 28 + 28,
-        300,
-      );
-
-      const cursorElement = term.element?.querySelector(".xterm-cursor");
-      if (cursorElement) {
-        const cursorRect = cursorElement.getBoundingClientRect();
-        if (cursorRect.width > 0 && cursorRect.height > 0) {
-          const containerRect = container.getBoundingClientRect();
-          const gap = 20;
-          const showAbove =
-            cursorRect.bottom + suggestionHeight + gap > containerRect.bottom &&
-            cursorRect.top - suggestionHeight - gap >= containerRect.top;
-
-          setCursorPosition({
-            x: cursorRect.left,
-            y: cursorRect.top,
-            cursorHeight: cursorRect.height || 18,
-            cursorBottom:
-              cursorRect.bottom || cursorRect.top + (cursorRect.height || 18),
-            showAbove,
-          });
-          return;
-        }
+  const updateCursorPosition = useCallback(
+    (suggestionCount = suggestions?.length || 0) => {
+      if (!termRef.current || !terminalRef.current) {
+        setCursorPosition(null);
+        return null;
       }
 
-      const metrics = getCharacterMetricsCss(term);
-      if (metrics) {
-        const cursorX = term.buffer.active.cursorX;
-        const cursorY = term.buffer.active.cursorY;
-        const screen =
-          term.element?.querySelector(".xterm-viewport") ||
-          term.element?.querySelector(".xterm-screen") ||
-          container;
-        const screenRect = screen.getBoundingClientRect();
-        const terminalPadding = 8;
-        const absoluteX =
-          screenRect.left + cursorX * metrics.charWidth + terminalPadding;
-        const absoluteY =
-          screenRect.top + cursorY * metrics.charHeight + terminalPadding;
-        const containerRect = container.getBoundingClientRect();
-        const gap = 20;
-        const showAbove =
-          absoluteY + suggestionHeight + gap > containerRect.bottom &&
-          absoluteY - suggestionHeight - gap >= containerRect.top;
-
-        setCursorPosition({
-          x: absoluteX,
-          y: absoluteY,
-          cursorHeight: metrics.charHeight || 18,
-          cursorBottom: absoluteY + (metrics.charHeight || 18),
-          showAbove,
-        });
-        return;
-      }
-
-      const containerRect = container.getBoundingClientRect();
-      setCursorPosition({
-        x: containerRect.left + 20,
-        y: containerRect.top + 20,
-        cursorHeight: 18,
-        cursorBottom: containerRect.top + 38,
-      });
-    } catch {
       try {
-        const containerRect = terminalRef.current.getBoundingClientRect();
-        setCursorPosition({
-          x: containerRect.left + 50,
-          y: containerRect.top + 50,
-          cursorHeight: 18,
-          cursorBottom: containerRect.top + 68,
-        });
+        const term = termRef.current;
+        const container = terminalRef.current;
+        const suggestionHeight = Math.min(suggestionCount * 28 + 28, 300);
+        const containerRect = container.getBoundingClientRect();
+        if (!isUsableRect(containerRect)) {
+          setCursorPosition(null);
+          return null;
+        }
+
+        const cursorElement = term.element?.querySelector(".xterm-cursor");
+        if (cursorElement) {
+          const cursorRect = cursorElement.getBoundingClientRect();
+          if (
+            isUsableRect(cursorRect) &&
+            isPointInsideRect(cursorRect.left, cursorRect.top, containerRect)
+          ) {
+            const gap = 20;
+            const nextPosition = {
+              x: cursorRect.left,
+              y: cursorRect.top,
+              cursorHeight: cursorRect.height || 18,
+              cursorBottom:
+                cursorRect.bottom || cursorRect.top + (cursorRect.height || 18),
+              showAbove:
+                cursorRect.bottom + suggestionHeight + gap >
+                  containerRect.bottom &&
+                cursorRect.top - suggestionHeight - gap >= containerRect.top,
+            };
+
+            setCursorPosition(nextPosition);
+            return nextPosition;
+          }
+        }
+
+        const metrics = getCharacterMetricsCss(term);
+        if (metrics) {
+          const cursorX = term.buffer.active.cursorX;
+          const cursorY = term.buffer.active.cursorY;
+          const screen =
+            term.element?.querySelector(".xterm-screen") ||
+            term.element?.querySelector(".xterm-viewport") ||
+            container;
+          const screenRect = screen.getBoundingClientRect();
+          const absoluteX = screenRect.left + cursorX * metrics.charWidth;
+          const absoluteY = screenRect.top + cursorY * metrics.charHeight;
+          if (!isPointInsideRect(absoluteX, absoluteY, containerRect)) {
+            setCursorPosition(null);
+            return null;
+          }
+
+          const gap = 20;
+          const nextPosition = {
+            x: absoluteX,
+            y: absoluteY,
+            cursorHeight: metrics.charHeight || 18,
+            cursorBottom: absoluteY + (metrics.charHeight || 18),
+            showAbove:
+              absoluteY + suggestionHeight + gap > containerRect.bottom &&
+              absoluteY - suggestionHeight - gap >= containerRect.top,
+          };
+
+          setCursorPosition(nextPosition);
+          return nextPosition;
+        }
+
+        setCursorPosition(null);
+        return null;
       } catch {
-        setCursorPosition({
-          x: 100,
-          y: 100,
-          cursorHeight: 18,
-          cursorBottom: 118,
-        });
+        setCursorPosition(null);
+        return null;
       }
-    }
-  }, [suggestions?.length, termRef, terminalRef]);
+    },
+    [suggestions?.length, termRef, terminalRef],
+  );
 
   const getSuggestions = useCallback(
     async (input) => {
+      const requestId = suggestionRequestIdRef.current + 1;
+      suggestionRequestIdRef.current = requestId;
       if (!input || input.trim() === "" || inEditorMode || isCommandExecuting) {
         setSuggestions([]);
         setShowSuggestions(false);
@@ -164,6 +187,9 @@ export const useTerminalSuggestions = ({
           const commandSuggestions = response?.success
             ? response.suggestions
             : [];
+          if (requestId !== suggestionRequestIdRef.current) {
+            return;
+          }
 
           if (commandSuggestions && commandSuggestions.length > 0) {
             const filteredSuggestions = commandSuggestions
@@ -190,11 +216,22 @@ export const useTerminalSuggestions = ({
               .slice(0, 10);
 
             if (filteredSuggestions.length > 0) {
+              await waitForTerminalLayoutFrame();
+              if (requestId !== suggestionRequestIdRef.current) {
+                return;
+              }
+
+              const nextPosition = updateCursorPosition(
+                filteredSuggestions.length,
+              );
+              if (!nextPosition) {
+                setSuggestions([]);
+                setShowSuggestions(false);
+                return;
+              }
+
               setSuggestions(filteredSuggestions);
-              updateCursorPosition();
-              requestAnimationFrame(() => {
-                setShowSuggestions(true);
-              });
+              setShowSuggestions(true);
             } else {
               setSuggestions([]);
               setShowSuggestions(false);
@@ -249,6 +286,7 @@ export const useTerminalSuggestions = ({
 
   const handleSuggestionSelect = useCallback(
     (suggestion) => {
+      suggestionRequestIdRef.current += 1;
       if (!suggestion || !termRef.current || !processCache[tabId]) {
         setShowSuggestions(false);
         return;
@@ -284,6 +322,7 @@ export const useTerminalSuggestions = ({
   );
 
   const closeSuggestions = useCallback(() => {
+    suggestionRequestIdRef.current += 1;
     setShowSuggestions(false);
     setSuggestions([]);
     setSuggestionsSuppressedUntilEnter(true);
