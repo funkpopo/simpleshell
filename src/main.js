@@ -4,10 +4,18 @@
  */
 const { app, BrowserWindow, dialog, shell } = require("electron");
 const { logToFile } = require("./core/utils/logger");
-const { AppInitializer, AppCleanup, ipcSetup } = require("./core/app");
+const {
+  AppInitializer,
+  AppCleanup,
+  ipcSetup,
+  bootstrapHardwareAcceleration,
+} = require("./core/app");
 const aiWorkerManager = require("./core/workers/aiWorkerManager");
 const { createWindow } = require("./core/window/windowManager");
 const setupIPC = require("./core/ipc/setupIPC");
+
+// 在 whenReady 之前根据用户配置决定是否禁用硬件加速
+bootstrapHardwareAcceleration(app);
 
 // 单实例锁
 const gotTheLock = app.requestSingleInstanceLock();

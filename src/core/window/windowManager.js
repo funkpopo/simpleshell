@@ -101,6 +101,16 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
     emitWindowState();
+
+    // 硬件加速开启时显式锁定 60Hz，避免高刷新率显示器把渲染推到 144Hz+
+    // 造成不必要的 GPU/CPU 开销；关闭时不调用，沿用系统默认。
+    if (global.__hardwareAccelerationEnabled !== false) {
+      try {
+        mainWindow.webContents.setFrameRate(60);
+      } catch {
+        /* intentionally ignored — older Electron / unsupported */
+      }
+    }
   });
 
   mainWindow.loadURL(webpackEntry);

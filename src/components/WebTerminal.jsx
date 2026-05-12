@@ -225,7 +225,10 @@ const WebTerminal = ({
       try {
         if (window.terminalAPI?.loadUISettings) {
           const settings = await window.terminalAPI.loadUISettings();
-          const enabled = settings?.performance?.webglEnabled !== false;
+          const hardwareOn =
+            settings?.performance?.hardwareAcceleration !== false;
+          const enabled =
+            hardwareOn && settings?.performance?.webglEnabled !== false;
           if (isActive) {
             webglRendererEnabledRef.current = enabled;
             setWebglRendererEnabled(enabled);
@@ -1831,7 +1834,10 @@ const WebTerminal = ({
     try {
       if (window.terminalAPI?.loadUISettings) {
         const settings = await window.terminalAPI.loadUISettings();
-        const enabled = settings?.performance?.webglEnabled !== false;
+        const hardwareOn =
+          settings?.performance?.hardwareAcceleration !== false;
+        const enabled =
+          hardwareOn && settings?.performance?.webglEnabled !== false;
         webglRendererEnabledRef.current = enabled;
         setWebglRendererEnabled(enabled);
         const rawScroll = Number(settings.terminalScrollbackLines);
@@ -1922,9 +1928,14 @@ const WebTerminal = ({
 
       if (
         performance &&
-        Object.prototype.hasOwnProperty.call(performance, "webglEnabled")
+        (Object.prototype.hasOwnProperty.call(performance, "webglEnabled") ||
+          Object.prototype.hasOwnProperty.call(
+            performance,
+            "hardwareAcceleration",
+          ))
       ) {
-        const enabled = performance.webglEnabled !== false;
+        const hardwareOn = performance.hardwareAcceleration !== false;
+        const enabled = hardwareOn && performance.webglEnabled !== false;
         webglRendererEnabledRef.current = enabled;
         setWebglRendererEnabled(enabled);
         if (termRef.current) {
