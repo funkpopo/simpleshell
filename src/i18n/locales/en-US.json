@@ -352,6 +352,7 @@
       "edit": "Edit",
       "delete": "Delete",
       "sendCommand": "Send Command",
+      "sendAndExecute": "Send and Execute",
       "copyCommand": "Copy Command",
       "totalCommands": "{{count}} commands total",
       "commandSent": "Command sent: {{command}}",

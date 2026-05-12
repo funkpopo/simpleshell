@@ -2940,11 +2940,11 @@ function AppContent() {
 
   // 添加发送快捷命令到终端的函数
   const handleSendCommand = useCallback(
-    (command) => {
+    (command, options = {}) => {
       const panelTab = getCurrentPanelTab();
 
       if (panelTab && panelTab.type === "ssh") {
-        dispatchCommandToGroup(panelTab.id, command);
+        dispatchCommandToGroup(panelTab.id, command, options);
         return { success: true };
       } else if (panelTab) {
         console.warn("Current tab is not SSH:", panelTab.type);
