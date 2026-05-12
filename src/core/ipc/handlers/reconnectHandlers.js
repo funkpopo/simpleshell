@@ -8,8 +8,30 @@ let boundConnectionPool = null;
 let boundReconnectionManager = null;
 const recentReconnectTerminalEvents = new Map();
 
-const DEFAULT_RECONNECT_HINT = "请检查代理/VPN和网络后重试，可点击“手动重连”。";
 const DUPLICATE_TERMINAL_EVENT_TTL_MS = 3000;
+
+function isZhLanguage(language) {
+  return String(language || "zh-CN")
+    .toLowerCase()
+    .startsWith("zh");
+}
+
+function getSessionLanguage(reconnectionManager, sessionId) {
+  if (!reconnectionManager || !sessionId) {
+    return "zh-CN";
+  }
+  const session =
+    reconnectionManager.sessions?.get?.(sessionId) ||
+    reconnectionManager.getSessionStatus?.(sessionId);
+  return session?.config?.language || "zh-CN";
+}
+
+function getDefaultReconnectHint(language) {
+  if (!isZhLanguage(language)) {
+    return "Check proxy/VPN/network and try again. You can use Manual Reconnect.";
+  }
+  return "请检查代理/VPN和网络后重试，可点击“手动重连”。";
+}
 
 function resolveMaxAttempts(reconnectionManager, sessionId, fallback = null) {
   if (Number.isFinite(fallback)) {
@@ -304,7 +326,11 @@ function registerReconnectHandlers(connectionPool) {
           maxAttempts: maxRetries,
           error,
         },
-        { hint: DEFAULT_RECONNECT_HINT },
+        {
+          hint: getDefaultReconnectHint(
+            getSessionLanguage(boundReconnectionManager, sessionId),
+          ),
+        },
       );
       if (shouldSkipDuplicateTerminalEvent("reconnect-failed", payload)) {
         logToFile(
@@ -338,7 +364,13 @@ function registerReconnectHandlers(connectionPool) {
       effectiveMaxRetries,
       windowExpiresAt,
     }) => {
-      const finalError = error || reason || "自动重连已放弃";
+      const language = getSessionLanguage(boundReconnectionManager, sessionId);
+      const finalError =
+        error ||
+        reason ||
+        (isZhLanguage(language)
+          ? "自动重连已放弃"
+          : "Automatic reconnect abandoned");
       const payload = normalizeReconnectPayload(
         boundReconnectionManager,
         {
@@ -351,7 +383,7 @@ function registerReconnectHandlers(connectionPool) {
           error: finalError,
           reason,
         },
-        { hint: DEFAULT_RECONNECT_HINT },
+        { hint: getDefaultReconnectHint(language) },
       );
       if (shouldSkipDuplicateTerminalEvent("reconnect-abandoned", payload)) {
         logToFile(

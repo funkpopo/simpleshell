@@ -2948,13 +2948,13 @@ function AppContent() {
         return { success: true };
       } else if (panelTab) {
         console.warn("Current tab is not SSH:", panelTab.type);
-        return { success: false, error: "当前标签页不是SSH连接" };
+        return { success: false, error: t("commandHistory.notSshTab") };
       } else {
         console.warn("No panel tab found");
-        return { success: false, error: "请先建立SSH连接" };
+        return { success: false, error: t("commandHistory.noSshConnection") };
       }
     },
-    [getCurrentPanelTab],
+    [getCurrentPanelTab, t],
   );
 
   // 计算右侧面板的当前标签页信息

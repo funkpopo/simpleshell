@@ -206,10 +206,17 @@ function isRetryWindowExpired(windowStartedAt, retryConfig) {
   return Number.isFinite(remaining) && remaining <= 0;
 }
 
-function formatRetryWindowLabel(durationMs) {
+function isZhLanguage(language) {
+  return String(language || "zh-CN")
+    .toLowerCase()
+    .startsWith("zh");
+}
+
+function formatRetryWindowLabel(durationMs, language = "zh-CN") {
   const normalizedMs = Number(durationMs || 0);
+  const isZh = isZhLanguage(language);
   if (!Number.isFinite(normalizedMs) || normalizedMs <= 0) {
-    return "0秒";
+    return isZh ? "0秒" : "0s";
   }
 
   if (normalizedMs < 60_000) {
@@ -217,24 +224,38 @@ function formatRetryWindowLabel(durationMs) {
     const rendered = Number.isInteger(seconds)
       ? String(seconds)
       : seconds.toFixed(1).replace(/\.0$/, "");
-    return `${rendered}秒`;
+    return isZh ? `${rendered}秒` : `${rendered}s`;
   }
 
   const minutes = normalizedMs / 60_000;
   const rendered = Number.isInteger(minutes)
     ? String(minutes)
     : minutes.toFixed(1).replace(/\.0$/, "");
-  return `${rendered}分钟`;
+  return isZh ? `${rendered}分钟` : `${rendered}m`;
 }
 
-function buildReconnectTimeoutMessage(retryConfig) {
+function buildReconnectTimeoutMessage(retryConfig, language = "zh-CN") {
   const resolvedRetryConfig = buildSshRetryConfig(retryConfig);
-  return `自动重连超时（${formatRetryWindowLabel(resolvedRetryConfig.totalTimeCapMs)}），请检查代理/VPN/网络后手动重连。`;
+  const duration = formatRetryWindowLabel(
+    resolvedRetryConfig.totalTimeCapMs,
+    language,
+  );
+  if (!isZhLanguage(language)) {
+    return `Automatic reconnect timed out (${duration}). Check proxy/VPN/network and reconnect manually.`;
+  }
+  return `自动重连超时（${duration}），请检查代理/VPN/网络后手动重连。`;
 }
 
-function buildReconnectWaitMessage(retryConfig) {
+function buildReconnectWaitMessage(retryConfig, language = "zh-CN") {
   const resolvedRetryConfig = buildSshRetryConfig(retryConfig);
-  return `连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多${formatRetryWindowLabel(resolvedRetryConfig.totalTimeCapMs)}）...`;
+  const duration = formatRetryWindowLabel(
+    resolvedRetryConfig.totalTimeCapMs,
+    language,
+  );
+  if (!isZhLanguage(language)) {
+    return `Connection is not ready. Waiting for proxy/VPN/network recovery and retrying automatically (up to ${duration})...`;
+  }
+  return `连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多${duration}）...`;
 }
 
 function sleep(ms) {
@@ -620,7 +641,11 @@ async function createManagedSshConnection(sshConfig, options = {}) {
     };
 
     timeoutId = setTimeout(() => {
-      const error = new Error("连接超时");
+      const error = new Error(
+        isZhLanguage(processedConfig?.language)
+          ? "连接超时"
+          : "Connection timed out",
+      );
       error.code = "ETIMEDOUT";
       cleanup();
       finishReject(error);
@@ -645,7 +670,13 @@ async function createManagedSshConnection(sshConfig, options = {}) {
         return;
       }
       cleanup();
-      finishReject(new Error("连接已关闭"));
+      finishReject(
+        new Error(
+          isZhLanguage(processedConfig?.language)
+            ? "连接已关闭"
+            : "Connection closed",
+        ),
+      );
     };
 
     ssh.on("ready", onReady);

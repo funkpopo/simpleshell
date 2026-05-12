@@ -58,6 +58,7 @@ import {
   processMultilineInput,
   shouldChunkInputPayload,
 } from "../modules/terminal/controller/terminalInput.js";
+import { useTranslation } from "react-i18next";
 
 const getTerminalConfigSignature = (config) => {
   if (!config) return "__NO_CONFIG__";
@@ -72,6 +73,7 @@ const getTerminalConfigSignature = (config) => {
     config.authType || "",
     config.privateKeyPath || "",
     config.splitReconnect ? "1" : "0",
+    config.language || "",
   ].join("|");
 };
 
@@ -152,6 +154,7 @@ const WebTerminal = ({
   const terminalIOMailboxRef = useRef(null);
 
   const theme = useTheme();
+  const { t, i18n } = useTranslation();
   const eventManager = useEventManager(); // 使用统一的事件管理器
   const lifecycleEventManager = useEventManager(); // 生命周期重资源单独管理
   // 添加内容更新标志，用于跟踪终端内容是否有更新
@@ -2505,13 +2508,25 @@ const WebTerminal = ({
 
         // 如果有SSH配置，则优先使用SSH连接
         if (sshConfig && window.terminalAPI) {
+          const localizedSshConfig = {
+            ...sshConfig,
+            language: i18n.language,
+          };
           // 检查是否是拆分重连模式
-          if (sshConfig.splitReconnect) {
+          if (localizedSshConfig.splitReconnect) {
             // 拆分重连模式：显示重连信息
-            term.writeln(`正在重新连接到 ${sshConfig.host} ...`);
+            term.writeln(
+              t("webTerminal.runtime.reconnecting", {
+                host: localizedSshConfig.host,
+              }),
+            );
           } else {
             // 正常连接模式
-            term.writeln(`正在连接到 ${sshConfig.host}...`);
+            term.writeln(
+              t("webTerminal.runtime.connecting", {
+                host: localizedSshConfig.host,
+              }),
+            );
           }
 
           const formatConnectionError = (error) => {
@@ -2522,12 +2537,17 @@ const WebTerminal = ({
             const isCancelled =
               /cancel(l)?ed/i.test(rawMessage) || rawMessage.includes("取消");
             if (isCancelled) {
-              return "\r\n已取消连接";
+              return `\r\n${t("webTerminal.runtime.connectionCancelled")}`;
             }
-            const fallbackMessage = rawMessage || "未知错误";
-            return sshConfig.splitReconnect
-              ? `\r\n重连失败: ${fallbackMessage}`
-              : `\r\n连接失败: ${fallbackMessage}`;
+            const fallbackMessage =
+              rawMessage || t("webTerminal.runtime.unknownError");
+            return localizedSshConfig.splitReconnect
+              ? `\r\n${t("webTerminal.runtime.reconnectFailed", {
+                  error: fallbackMessage,
+                })}`
+              : `\r\n${t("webTerminal.runtime.connectionFailed", {
+                  error: fallbackMessage,
+                })}`;
           };
 
           const normalizeConnectResult = (result) => {
@@ -2547,9 +2567,9 @@ const WebTerminal = ({
           try {
             // 根据协议类型选择连接方式
             const connectPromise =
-              sshConfig.protocol === "telnet"
-                ? window.terminalAPI.startTelnet(sshConfig)
-                : window.terminalAPI.startSSH(sshConfig);
+              localizedSshConfig.protocol === "telnet"
+                ? window.terminalAPI.startTelnet(localizedSshConfig)
+                : window.terminalAPI.startSSH(localizedSshConfig);
 
             // 启动连接
             connectPromise
@@ -2576,8 +2596,8 @@ const WebTerminal = ({
                     detail: {
                       terminalId: tabId,
                       processId,
-                      protocol: sshConfig.protocol || "ssh",
-                      splitReconnect: sshConfig.splitReconnect || false,
+                      protocol: localizedSshConfig.protocol || "ssh",
+                      splitReconnect: localizedSshConfig.splitReconnect || false,
                     },
                   });
 
@@ -2620,7 +2640,7 @@ const WebTerminal = ({
                   );
 
                   // 拆分重连模式需要更快的resize响应
-                  const resizeDelays = sshConfig.splitReconnect
+                  const resizeDelays = localizedSshConfig.splitReconnect
                     ? [200, 500, 1000]
                     : [1000, 2000];
 
@@ -2640,8 +2660,10 @@ const WebTerminal = ({
                   });
 
                   // 拆分重连成功后的额外处理
-                  if (sshConfig.splitReconnect) {
-                    term.writeln(`\r\n已建立新连接`);
+                  if (localizedSshConfig.splitReconnect) {
+                    term.writeln(
+                      `\r\n${t("webTerminal.runtime.newConnectionEstablished")}`,
+                    );
 
                     // 强制触发终端内容刷新
                     eventManager.setTimeout(() => {
@@ -2651,9 +2673,13 @@ const WebTerminal = ({
                     }, 300);
                   }
                 } else {
-                  const errorMsg = sshConfig.splitReconnect
-                    ? `重连失败: 未能获取进程ID`
-                    : `连接失败: 未能获取进程ID`;
+                  const errorMsg = localizedSshConfig.splitReconnect
+                    ? t("webTerminal.runtime.reconnectFailed", {
+                        error: t("webTerminal.runtime.noProcessId"),
+                      })
+                    : t("webTerminal.runtime.connectionFailed", {
+                        error: t("webTerminal.runtime.noProcessId"),
+                      });
                   term.writeln(errorMsg);
                 }
               })
@@ -2666,8 +2692,8 @@ const WebTerminal = ({
         }
         // 使用模拟终端
         else {
-          term.writeln("Welcome to WebTerminal!");
-          term.writeln('Type "help" for available commands.');
+          term.writeln(t("webTerminal.runtime.welcome"));
+          term.writeln(t("webTerminal.runtime.helpHint"));
           term.writeln("");
           term.write("$ ");
 

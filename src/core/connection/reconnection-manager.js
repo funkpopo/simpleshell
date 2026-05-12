@@ -29,6 +29,19 @@ const FAILURE_PATTERN_GUARD = {
   maxConsecutive: 3, // 同类连续失败达到3次则停止自动重连
 };
 
+function isZhLanguage(language) {
+  return String(language || "zh-CN")
+    .toLowerCase()
+    .startsWith("zh");
+}
+
+function buildMaxRetriesMessage(maxRetries, language) {
+  if (!isZhLanguage(language)) {
+    return `Reached the maximum retry count (${maxRetries}). Check proxy/VPN/network and reconnect manually.`;
+  }
+  return `达到最大重试次数（${maxRetries}次），请检查代理/VPN/网络后手动重连。`;
+}
+
 class ReconnectionManager extends EventEmitter {
   constructor(config = {}) {
     super();
@@ -447,38 +460,57 @@ class ReconnectionManager extends EventEmitter {
   formatReconnectErrorForUser(error, config) {
     const msg = String(error?.message || "");
     const code = String(error?.code || "");
-    const host = config?.host || "目标主机";
+    const isZh = isZhLanguage(config?.language);
+    const host = config?.host || (isZh ? "目标主机" : "target host");
     const port = config?.port || 22;
 
     // 这一类属于开发/内部异常，不应直接暴露给用户
     if (msg.includes("is not a function") || msg.includes("undefined")) {
-      return "连接发生异常并已断开，自动重连失败。请重试连接，或查看日志获取详细信息。";
+      return isZh
+        ? "连接发生异常并已断开，自动重连失败。请重试连接，或查看日志获取详细信息。"
+        : "The connection failed due to an internal error and automatic reconnect failed. Retry the connection or check logs for details.";
     }
 
     // SSH2 常见错误映射
     if (msg.includes("All configured authentication methods failed")) {
-      return "SSH 认证失败：请检查用户名/密码/私钥与权限设置。";
+      return isZh
+        ? "SSH 认证失败：请检查用户名/密码/私钥与权限设置。"
+        : "SSH authentication failed. Check username, password, private key, and permission settings.";
     }
     if (code === "EPROXYUNAVAILABLE" || msg.includes("proxy")) {
-      return "代理不可用：请检查本地代理/VPN是否已启动，并确认代理地址与端口可访问。";
+      return isZh
+        ? "代理不可用：请检查本地代理/VPN是否已启动，并确认代理地址与端口可访问。"
+        : "Proxy unavailable. Check whether the local proxy/VPN is running and whether the proxy address and port are reachable.";
     }
     if (code === "ECONNREFUSED" || msg.includes("connect ECONNREFUSED")) {
-      return `连接被拒绝：无法连接到 ${host}:${port}。请检查端口、服务状态与防火墙。`;
+      return isZh
+        ? `连接被拒绝：无法连接到 ${host}:${port}。请检查端口、服务状态与防火墙。`
+        : `Connection refused: cannot connect to ${host}:${port}. Check the port, service status, and firewall.`;
     }
     if (code === "ENOTFOUND" || msg.includes("getaddrinfo ENOTFOUND")) {
-      return `主机名无法解析：${host}。请检查主机名/DNS/网络。`;
+      return isZh
+        ? `主机名无法解析：${host}。请检查主机名/DNS/网络。`
+        : `Hostname could not be resolved: ${host}. Check hostname, DNS, and network.`;
     }
     if (code === "ETIMEDOUT" || msg.toLowerCase().includes("timeout")) {
-      return `连接超时：${host}:${port}。请检查网络质量或服务器负载。`;
+      return isZh
+        ? `连接超时：${host}:${port}。请检查网络质量或服务器负载。`
+        : `Connection timed out: ${host}:${port}. Check network quality or server load.`;
     }
     if (code === "ECONNRESET" || msg.includes("ECONNRESET")) {
-      return "连接被远端重置：网络不稳定或服务器主动断开。";
+      return isZh
+        ? "连接被远端重置：网络不稳定或服务器主动断开。"
+        : "Connection reset by remote host. The network may be unstable or the server disconnected.";
     }
     if (code === "EPIPE" || msg.includes("EPIPE")) {
-      return "连接管道已关闭：网络不稳定或会话被中止。";
+      return isZh
+        ? "连接管道已关闭：网络不稳定或会话被中止。"
+        : "Connection pipe closed. The network may be unstable or the session was interrupted.";
     }
 
-    return "连接已断开，自动重连失败，请重新连接。";
+    return isZh
+      ? "连接已断开，自动重连失败，请重新连接。"
+      : "Connection disconnected and automatic reconnect failed. Please reconnect.";
   }
 
   _shouldStopReconnectByFailurePattern(
@@ -594,7 +626,10 @@ class ReconnectionManager extends EventEmitter {
       );
       this.emit("reconnectFailed", {
         sessionId: session.id,
-        error: buildReconnectTimeoutMessage(this.config),
+        error: buildReconnectTimeoutMessage(
+          this.config,
+          session?.config?.language,
+        ),
         attempts: session.retryCount,
         maxRetries,
         ...strategyFields,
@@ -608,7 +643,7 @@ class ReconnectionManager extends EventEmitter {
       this.abandonReconnection(session, `达到最大重试次数(${maxRetries}次)`);
       this.emit("reconnectFailed", {
         sessionId: session.id,
-        error: `达到最大重试次数（${maxRetries}次），请检查代理/VPN/网络后手动重连。`,
+        error: buildMaxRetriesMessage(maxRetries, session?.config?.language),
         attempts: session.retryCount,
         maxRetries,
         ...strategyFields,
@@ -764,7 +799,10 @@ class ReconnectionManager extends EventEmitter {
       );
       this.emit("reconnectFailed", {
         sessionId: session.id,
-        error: buildReconnectTimeoutMessage(this.config),
+        error: buildReconnectTimeoutMessage(
+          this.config,
+          session?.config?.language,
+        ),
         attempts: session.retryCount,
         maxRetries,
         ...strategyFields,
@@ -778,7 +816,7 @@ class ReconnectionManager extends EventEmitter {
       this.abandonReconnection(session, `达到最大重试次数(${maxRetries}次)`);
       this.emit("reconnectFailed", {
         sessionId: session.id,
-        error: `达到最大重试次数（${maxRetries}次），请检查代理/VPN/网络后手动重连。`,
+        error: buildMaxRetriesMessage(maxRetries, session?.config?.language),
         attempts: session.retryCount,
         maxRetries,
         ...strategyFields,
@@ -1380,12 +1418,28 @@ class ReconnectionManager extends EventEmitter {
       };
 
       const onFailed = ({ sessionId: sid, error }) => {
-        if (sid === sessionId) finishReject(new Error(error || "自动重连失败"));
+        if (sid === sessionId) {
+          finishReject(
+            new Error(
+              error ||
+                (isZhLanguage(session?.config?.language)
+                  ? "自动重连失败"
+                  : "Automatic reconnect failed"),
+            ),
+          );
+        }
       };
 
       const onAbandoned = ({ sessionId: sid, reason }) => {
         if (sid === sessionId)
-          finishReject(new Error(reason || "自动重连已放弃"));
+          finishReject(
+            new Error(
+              reason ||
+                (isZhLanguage(session?.config?.language)
+                  ? "自动重连已放弃"
+                  : "Automatic reconnect abandoned"),
+            ),
+          );
       };
 
       this.on("reconnectSuccess", onSuccess);
@@ -1395,7 +1449,12 @@ class ReconnectionManager extends EventEmitter {
       if (Number.isFinite(effectiveTimeout) && effectiveTimeout > 0) {
         timeoutId = setTimeout(() => {
           finishReject(
-            new Error(buildReconnectTimeoutMessage(this.config)),
+            new Error(
+              buildReconnectTimeoutMessage(
+                this.config,
+                session?.config?.language,
+              ),
+            ),
           );
         }, effectiveTimeout);
       }
