@@ -25,7 +25,7 @@ import {
   Alert,
   Checkbox,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import SearchIcon from "@mui/icons-material/Search";
@@ -37,6 +37,7 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SelectAllIcon from "@mui/icons-material/SelectAll";
 import { useTranslation } from "react-i18next";
+import { sidebarContentSx, sidebarListItemButtonSx } from "./sidebarItemStyles";
 
 // 虚拟化历史记录项组件
 const HistoryItem = React.memo(
@@ -60,8 +61,8 @@ const HistoryItem = React.memo(
       contextMenuTargetCommand &&
       contextMenuTargetCommand.command === item.command &&
       contextMenuTargetCommand.timestamp === item.timestamp;
-    const contextMenuTargetBg = alpha(theme.palette.primary.main, 0.18);
-    const contextMenuTargetHoverBg = alpha(theme.palette.primary.main, 0.24);
+    const isHighlighted =
+      (selectMode && selectedCommands.has(item.command)) || isContextMenuTarget;
 
     return (
       <div style={style}>
@@ -83,21 +84,7 @@ const HistoryItem = React.memo(
             }
             sx={{
               minHeight: 48,
-              bgcolor:
-                selectMode && selectedCommands.has(item.command)
-                  ? "action.selected"
-                  : isContextMenuTarget
-                    ? contextMenuTargetBg
-                  : "transparent",
-              borderLeft: isContextMenuTarget
-                ? `4px solid ${theme.palette.primary.main}`
-                : "4px solid transparent",
-              borderRadius: 0,
-              "&:hover": {
-                bgcolor: isContextMenuTarget
-                  ? contextMenuTargetHoverBg
-                  : "action.hover",
-              },
+              ...sidebarListItemButtonSx(theme, isHighlighted),
             }}
           >
             {selectMode && (
@@ -657,21 +644,16 @@ function CommandHistory({ open, onClose, onSendCommand }) {
         onMouseDown={focusSidebarRoot}
         elevation={4}
         sx={{
-          width: open ? 300 : 0,
+          width: 300,
           height: "100vh",
           overflow: "hidden",
-          transition: theme.transitions.create("width", {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
           borderLeft: `1px solid ${theme.palette.divider}`,
           display: "flex",
           flexDirection: "column",
           borderRadius: 0,
         }}
       >
-        {open && (
-          <>
+        <Box sx={sidebarContentSx(theme, open)}>
             {/* 标题栏 */}
             <Box
               sx={{
@@ -881,8 +863,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                 {searchTerm && ` / ${history.length} 总计`}
               </Typography>
             </Box>
-          </>
-        )}
+        </Box>
       </Paper>
 
       {/* 上下文菜单 */}

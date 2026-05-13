@@ -20,6 +20,7 @@ import Collapse from "@mui/material/Collapse";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import Memory from "@mui/icons-material/Memory"; // For Processes icon
+import { sidebarContentSx, sidebarListItemButtonSx } from "./sidebarItemStyles";
 
 /** 进程表内紧凑用量：数字对齐 + 底部分档色细条，比粗进度条更易扫读 */
 const CompactUsageMetric = memo(({ value, theme }) => {
@@ -96,10 +97,7 @@ const AccordionHeader = ({ title, icon, expanded, onClick }) => {
         py: 0.5,
         px: 1.25,
         minHeight: 32,
-        borderLeft: `3px solid ${theme.palette.primary.main}`,
-        "&:hover": {
-          backgroundColor: theme.palette.action.hover,
-        },
+        ...sidebarListItemButtonSx(theme, expanded),
       }}
     >
       <Box sx={{ display: "flex", alignItems: "center", "& .MuiSvgIcon-root": { fontSize: 18 } }}>
@@ -267,13 +265,9 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
   return (
     <Paper
       sx={{
-        width: open ? 300 : 0,
+        width: 300,
         height: "100%",
         overflow: "hidden",
-        transition: theme.transitions.create("width", {
-          easing: theme.transitions.easing.sharp,
-          duration: theme.transitions.duration.enteringScreen,
-        }),
         borderLeft: `1px solid ${theme.palette.divider}`,
         display: "flex",
         flexDirection: "column",
@@ -281,8 +275,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
       }}
       elevation={4}
     >
-      {open && (
-        <>
+      <Box sx={sidebarContentSx(theme, open)}>
           <Box
             sx={{
               display: "flex",
@@ -701,8 +694,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
               </Box>
             ) : null}
           </Box>
-        </>
-      )}
+      </Box>
     </Paper>
   );
 });

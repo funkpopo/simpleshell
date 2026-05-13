@@ -30,7 +30,7 @@ import {
   Snackbar,
   Alert,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import AddIcon from "@mui/icons-material/Add";
@@ -45,6 +45,12 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import CategoryIcon from "@mui/icons-material/Category";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useTranslation } from "react-i18next";
+import {
+  getSidebarItemSelectedBg,
+  getSidebarItemSurfaceBg,
+  sidebarContentSx,
+  sidebarListItemButtonSx,
+} from "./sidebarItemStyles";
 
 const COMMAND_ITEM_HEIGHT = 48;
 
@@ -111,9 +117,6 @@ const CommandItem = React.memo(
     if (!cmd) return null;
     const isContextMenuTarget =
       contextMenuTargetType === "command" && contextMenuTargetId === cmd.id;
-    const contextMenuTargetBg = alpha(theme.palette.primary.main, 0.18);
-    const contextMenuTargetHoverBg = alpha(theme.palette.primary.main, 0.24);
-
     return (
       <div style={{ ...style, width: "100%" }}>
         <ListItem
@@ -147,17 +150,7 @@ const CommandItem = React.memo(
               flex: 1,
               alignSelf: "stretch",
               boxSizing: "border-box",
-              backgroundColor: isContextMenuTarget
-                ? contextMenuTargetBg
-                : "transparent",
-              borderLeft: isContextMenuTarget
-                ? `4px solid ${theme.palette.primary.main}`
-                : "4px solid transparent",
-              "&:hover": {
-                backgroundColor: isContextMenuTarget
-                  ? contextMenuTargetHoverBg
-                  : theme.palette.action.hover,
-              },
+              ...sidebarListItemButtonSx(theme, isContextMenuTarget),
             }}
           >
             <ListItemText
@@ -844,15 +837,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
         {commandsByCategory.map((category) => {
           const isCategoryContextMenuTarget =
             dialogType === "category" && menuTargetId === category.id;
-          const categoryContextMenuTargetBg = alpha(
-            theme.palette.primary.main,
-            0.18,
-          );
-          const categoryContextMenuTargetHoverBg = alpha(
-            theme.palette.primary.main,
-            0.24,
-          );
-
           return (
           <Box key={category.id} sx={{ mb: 1 }}>
             <ListItem
@@ -875,28 +859,17 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                   }
                 }}
                 sx={{
-                  borderLeft:
-                    isCategoryContextMenuTarget
-                      ? `4px solid ${theme.palette.primary.main}`
-                      : "4px solid transparent",
-                  backgroundColor:
-                    isCategoryContextMenuTarget
-                      ? categoryContextMenuTargetBg
-                      : theme.palette.mode === "dark"
-                        ? "rgba(255, 255, 255, 0.08)"
-                        : "rgba(0, 0, 0, 0.04)",
+                  ...sidebarListItemButtonSx(
+                    theme,
+                    isCategoryContextMenuTarget,
+                  ),
+                  backgroundColor: isCategoryContextMenuTarget
+                    ? getSidebarItemSelectedBg(theme)
+                    : getSidebarItemSurfaceBg(theme),
                   borderRadius: 1,
                   px: 2,
                   py: 1.5,
                   minHeight: 60,
-                  "&:hover": {
-                    backgroundColor:
-                      isCategoryContextMenuTarget
-                        ? categoryContextMenuTargetHoverBg
-                        : theme.palette.mode === "dark"
-                          ? "rgba(255, 255, 255, 0.12)"
-                          : "rgba(0, 0, 0, 0.08)",
-                  },
                 }}
               >
                 <ListItemIcon sx={{ minWidth: 36 }}>
@@ -959,15 +932,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                 {category.commands.map((cmd) => {
                   const isCommandContextMenuTarget =
                     dialogType === "command" && menuTargetId === cmd.id;
-                  const commandContextMenuTargetBg = alpha(
-                    theme.palette.primary.main,
-                    0.18,
-                  );
-                  const commandContextMenuTargetHoverBg = alpha(
-                    theme.palette.primary.main,
-                    0.24,
-                  );
-
                   return (
                   <ListItem
                     key={cmd.id}
@@ -1005,21 +969,13 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                         flex: 1,
                         alignSelf: "stretch",
                         boxSizing: "border-box",
-                        borderLeft:
-                          isCommandContextMenuTarget
-                            ? `4px solid ${theme.palette.primary.main}`
-                            : "4px solid transparent",
-                        backgroundColor:
-                          isCommandContextMenuTarget
-                            ? commandContextMenuTargetBg
-                            : theme.palette.mode === "dark"
-                              ? "rgba(255, 255, 255, 0.02)"
-                              : "rgba(0, 0, 0, 0.02)",
-                        "&:hover": {
-                          backgroundColor: isCommandContextMenuTarget
-                            ? commandContextMenuTargetHoverBg
-                            : theme.palette.action.hover,
-                        },
+                        ...sidebarListItemButtonSx(
+                          theme,
+                          isCommandContextMenuTarget,
+                        ),
+                        backgroundColor: isCommandContextMenuTarget
+                          ? getSidebarItemSelectedBg(theme)
+                          : getSidebarItemSurfaceBg(theme),
                       }}
                     >
                       <ListItemText
@@ -1266,13 +1222,9 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       tabIndex={-1}
       onMouseDown={focusSidebarRoot}
       sx={{
-        width: open ? 300 : 0,
+        width: 300,
         height: "100%",
         overflow: "hidden",
-        transition: theme.transitions.create("width", {
-          easing: theme.transitions.easing.sharp,
-          duration: theme.transitions.duration.enteringScreen,
-        }),
         borderLeft: `1px solid ${theme.palette.divider}`,
         display: "flex",
         flexDirection: "column",
@@ -1280,8 +1232,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       }}
       elevation={4}
     >
-      {open && (
-        <>
+      <Box sx={sidebarContentSx(theme, open)}>
           {/* 标题栏 */}
           <Box
             sx={{
@@ -1485,8 +1436,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
               {notification.message}
             </Alert>
           </Snackbar>
-        </>
-      )}
+      </Box>
     </Paper>
   );
 }

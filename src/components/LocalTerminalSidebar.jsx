@@ -39,6 +39,7 @@ import { GrArchlinux } from "react-icons/gr";
 import { SiAlpinelinux } from "react-icons/si";
 import { useTranslation } from "react-i18next";
 import useAutoCleanup from "../hooks/useAutoCleanup";
+import { sidebarContentSx } from "./sidebarItemStyles";
 
 const AUTO_REFRESH_COOLDOWN_MS = 2000;
 
@@ -537,8 +538,6 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     );
   }, [theme]);
 
-  if (!open) return null;
-
   return (
     <Paper
       ref={sidebarRef}
@@ -549,11 +548,13 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       sx={{
         width: 300,
         height: "100%",
+        overflow: "hidden",
         display: "flex",
         flexDirection: "column",
         borderRadius: 0,
       }}
     >
+      <Box sx={sidebarContentSx(theme, open)}>
       {/* 头部 */}
       <Box
         sx={{
@@ -709,6 +710,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+      </Box>
     </Paper>
   );
 };

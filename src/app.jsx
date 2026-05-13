@@ -96,6 +96,30 @@ import TransferSidebar from "./components/TransferSidebar.jsx";
 import TransferSidebarButton from "./components/TransferSidebarButton.jsx";
 import { useNotification } from "./contexts/NotificationContext.jsx";
 
+const SIDEBAR_TRANSITION_MS = 250;
+const SIDEBAR_UNMOUNT_DELAY_MS = SIDEBAR_TRANSITION_MS + 40;
+
+function useDelayedPresence(open, delay = SIDEBAR_UNMOUNT_DELAY_MS) {
+  const [present, setPresent] = React.useState(open);
+
+  React.useEffect(() => {
+    if (open) {
+      setPresent(true);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setPresent(false);
+    }, delay);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [open, delay]);
+
+  return open || present;
+}
+
 const resolveConnectionPort = (connection) => {
   if (!connection) return null;
   const parsed = Number(connection.port);
@@ -1206,6 +1230,16 @@ function AppContent() {
   // ============ 保持本地状态(不在 reducer 中)============
   const [localTerminalSidebarOpen, setLocalTerminalSidebarOpen] =
     React.useState(false);
+  const resourceMonitorPresent = useDelayedPresence(resourceMonitorOpen);
+  const connectionManagerPresent = useDelayedPresence(connectionManagerOpen);
+  const fileManagerPresent = useDelayedPresence(fileManagerOpen);
+  const shortcutCommandsPresent = useDelayedPresence(shortcutCommandsOpen);
+  const commandHistoryPresent = useDelayedPresence(commandHistoryOpen);
+  const ipAddressQueryPresent = useDelayedPresence(ipAddressQueryOpen);
+  const securityToolsPresent = useDelayedPresence(securityToolsOpen);
+  const localTerminalSidebarPresent = useDelayedPresence(
+    localTerminalSidebarOpen,
+  );
   const [prevTabsLength, setPrevTabsLength] = React.useState(tabs.length);
   const [transferFloatOpen, setTransferFloatOpen] = React.useState(false);
   const [transferFloatInitialTransfer, setTransferFloatInitialTransfer] =
@@ -1425,7 +1459,10 @@ function AppContent() {
     const getSidebarWidth = () => {
       if (resourceMonitorOpen && lastOpenedSidebar === "resource") {
         return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
-      } else if (connectionManagerOpen && lastOpenedSidebar === "connection") {
+      } else if (
+        connectionManagerOpen &&
+        lastOpenedSidebar === "connection"
+      ) {
         return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
       } else if (fileManagerOpen && lastOpenedSidebar === "file") {
         return SIDEBAR_WIDTHS.FILE_MANAGER;
@@ -1443,16 +1480,6 @@ function AppContent() {
       ) {
         return SIDEBAR_WIDTHS.LOCAL_TERMINAL_SIDEBAR;
       }
-      // Fallback if lastOpenedSidebar isn't set but one is open
-      if (resourceMonitorOpen) return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
-      else if (connectionManagerOpen) return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
-      else if (fileManagerOpen) return SIDEBAR_WIDTHS.FILE_MANAGER;
-      else if (shortcutCommandsOpen) return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
-      else if (commandHistoryOpen) return SIDEBAR_WIDTHS.COMMAND_HISTORY;
-      else if (ipAddressQueryOpen) return SIDEBAR_WIDTHS.IP_ADDRESS_QUERY;
-      else if (securityToolsOpen) return SIDEBAR_WIDTHS.SECURITY_TOOLS;
-      else if (localTerminalSidebarOpen)
-        return SIDEBAR_WIDTHS.LOCAL_TERMINAL_SIDEBAR;
       return 0;
     };
 
@@ -3855,7 +3882,12 @@ function AppContent() {
                   }px`,
                   height: "100%",
                   position: "relative",
-                  transition: "width 0.25s ease-out",
+                  willChange: "width",
+                  transition: (theme) =>
+                    theme.transitions.create("width", {
+                      easing: theme.transitions.easing.sharp,
+                      duration: theme.transitions.duration.enteringScreen,
+                    }),
                   overflow: "hidden",
                 }}
               >
@@ -3870,7 +3902,7 @@ function AppContent() {
                     display: "flex",
                   }}
                 >
-                  {resourceMonitorOpen && (
+                  {resourceMonitorPresent && (
                     <ResourceMonitor
                       open={resourceMonitorOpen}
                       onClose={handleCloseResourceMonitor}
@@ -3890,7 +3922,7 @@ function AppContent() {
                     display: "flex",
                   }}
                 >
-                  {connectionManagerOpen && (
+                  {connectionManagerPresent && (
                     <ConnectionManager
                       open={connectionManagerOpen}
                       onClose={handleCloseConnectionManager}
@@ -3912,7 +3944,7 @@ function AppContent() {
                     display: "flex",
                   }}
                 >
-                  {fileManagerOpen && (
+                  {fileManagerPresent && (
                     <FileManager
                       key={fileManagerProps.tabId || "file-manager-empty"}
                       open={fileManagerOpen}
@@ -3939,7 +3971,7 @@ function AppContent() {
                     display: "flex",
                   }}
                 >
-                  {shortcutCommandsOpen && (
+                  {shortcutCommandsPresent && (
                     <ShortcutCommands
                       open={shortcutCommandsOpen}
                       onClose={handleCloseShortcutCommands}
@@ -3959,7 +3991,7 @@ function AppContent() {
                     display: "flex",
                   }}
                 >
-                  {commandHistoryOpen && (
+                  {commandHistoryPresent && (
                     <CommandHistory
                       open={commandHistoryOpen}
                       onClose={handleCloseCommandHistory}
@@ -3981,7 +4013,7 @@ function AppContent() {
                     display: "flex",
                   }}
                 >
-                  {ipAddressQueryOpen && (
+                  {ipAddressQueryPresent && (
                     <IPAddressQuery
                       open={ipAddressQueryOpen}
                       onClose={handleCloseIpAddressQuery}
@@ -4000,7 +4032,7 @@ function AppContent() {
                     display: "flex",
                   }}
                 >
-                  {securityToolsOpen && (
+                  {securityToolsPresent && (
                     <SecurityTools
                       open={securityToolsOpen}
                       onClose={() =>
@@ -4021,7 +4053,7 @@ function AppContent() {
                     display: "flex",
                   }}
                 >
-                  {localTerminalSidebarOpen && (
+                  {localTerminalSidebarPresent && (
                     <LocalTerminalSidebar
                       open={localTerminalSidebarOpen}
                       onClose={handleCloseLocalTerminalSidebar}

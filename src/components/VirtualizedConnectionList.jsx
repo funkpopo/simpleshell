@@ -25,6 +25,7 @@ import {
   ExpandMore as ExpandMoreIcon,
   DragIndicator as DragIndicatorIcon,
 } from "@mui/icons-material";
+import { sidebarListItemSx } from "./sidebarItemStyles";
 
 // Matches ConnectionManager.jsx row markers for native contextmenu retarget focus
 const CONNECTION_MANAGER_ITEM_DATA_ATTR = "data-connection-manager-item";
@@ -104,10 +105,7 @@ const ConnectionItem = memo(
           disablePadding
           onContextMenu={handleRowContextMenu}
           sx={{
-            bgcolor: isSelected ? "action.selected" : "transparent",
-            borderLeft: isSelected
-              ? `3px solid ${theme.palette.primary.main}`
-              : "3px solid transparent",
+            ...sidebarListItemSx(theme, isSelected),
             opacity: isDragging ? 0.5 : 1,
           }}
         >
@@ -119,9 +117,7 @@ const ConnectionItem = memo(
             sx={{
               pl: `${paddingLeft}px`,
               minHeight: 36,
-              "&:hover": {
-                backgroundColor: "action.hover",
-              },
+              "&:hover": { backgroundColor: "transparent" },
             }}
           >
             {/* Drag handle for reordering */}
