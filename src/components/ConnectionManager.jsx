@@ -394,6 +394,7 @@ const ConnectionListItem = memo(function ConnectionListItem({
   onOpenRowContextMenu,
   onOpen,
   dragDisabled,
+  isContextMenuTarget = false,
 }) {
   const containerId = parentGroup
     ? getGroupContainerId(parentGroup.id)
@@ -469,6 +470,12 @@ const ConnectionListItem = memo(function ConnectionListItem({
       sx={{
         pl: parentGroup ? 1.5 : 0.5,
         minHeight: "32px",
+        borderLeft: isContextMenuTarget
+          ? `3px solid ${theme.palette.primary.main}`
+          : "3px solid transparent",
+        backgroundColor: isContextMenuTarget
+          ? theme.palette.action.selected
+          : "transparent",
         "&:hover": {
           backgroundColor:
             theme.palette.mode === "dark"
@@ -593,6 +600,7 @@ const GroupListItem = memo(function GroupListItem({
   onOpenGroupRowContextMenu,
   onOpenConnectionRowContextMenu,
   onOpenConnection,
+  contextMenuTarget = null,
 }) {
   const containerId = getGroupContainerId(group.id);
 
@@ -629,6 +637,8 @@ const GroupListItem = memo(function GroupListItem({
   };
 
   const shouldShowChildren = group.expanded || (isOver && !dragDisabled);
+  const isContextMenuTarget =
+    contextMenuTarget?.kind === "group" && contextMenuTarget.group?.id === group.id;
 
   return (
     <React.Fragment>
@@ -639,6 +649,12 @@ const GroupListItem = memo(function GroupListItem({
         sx={{
           pl: 0.5,
           minHeight: "32px",
+          borderLeft: isContextMenuTarget
+            ? `3px solid ${theme.palette.primary.main}`
+            : "3px solid transparent",
+          backgroundColor: isContextMenuTarget
+            ? theme.palette.action.selected
+            : "transparent",
           "&:hover": {
             backgroundColor:
               theme.palette.mode === "dark"
@@ -761,6 +777,10 @@ const GroupListItem = memo(function GroupListItem({
                   onOpenRowContextMenu={onOpenConnectionRowContextMenu}
                   onOpen={onOpenConnection}
                   dragDisabled={dragDisabled}
+                  isContextMenuTarget={
+                    contextMenuTarget?.kind === "connection" &&
+                    contextMenuTarget.connection?.id === item.id
+                  }
                 />
               ))}
             {(!group.items || group.items.length === 0) && (
@@ -1933,6 +1953,7 @@ const ConnectionManager = memo(
                   openConnectionContextMenuFromEvent
                 }
                 onOpenConnection={handleOpenConnection}
+                contextMenuTarget={connectionListContextMenu}
               />
             ) : (
               <ConnectionListItem
@@ -1943,6 +1964,10 @@ const ConnectionManager = memo(
                 onOpenRowContextMenu={openConnectionContextMenuFromEvent}
                 onOpen={handleOpenConnection}
                 dragDisabled={dragDisabled}
+                isContextMenuTarget={
+                  connectionListContextMenu?.kind === "connection" &&
+                  connectionListContextMenu.connection?.id === item.id
+                }
               />
             ),
           )}
@@ -2105,7 +2130,13 @@ const ConnectionManager = memo(
                 <VirtualizedConnectionList
                   className="connection-manager-virtualized-list"
                   connections={filteredItems}
-                  selectedItem={null}
+                  selectedItem={
+                    connectionListContextMenu?.kind === "connection"
+                      ? connectionListContextMenu.connection
+                      : connectionListContextMenu?.kind === "group"
+                        ? connectionListContextMenu.group
+                        : null
+                  }
                   onToggleGroup={handleToggleGroup}
                   onSelectConnection={handleOpenConnection}
                   onDoubleClick={handleOpenConnection}

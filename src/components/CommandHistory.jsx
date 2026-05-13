@@ -25,7 +25,7 @@ import {
   Alert,
   Checkbox,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import SearchIcon from "@mui/icons-material/Search";
@@ -46,6 +46,7 @@ const HistoryItem = React.memo(
     filteredHistory,
     selectMode,
     selectedCommands,
+    contextMenuTargetCommand,
     toggleCommandSelection,
     handleSendCommand,
     handleMenuOpen,
@@ -54,6 +55,13 @@ const HistoryItem = React.memo(
     const theme = useTheme();
     const item = filteredHistory[index];
     if (!item) return null;
+    const isContextMenuTarget =
+      !selectMode &&
+      contextMenuTargetCommand &&
+      contextMenuTargetCommand.command === item.command &&
+      contextMenuTargetCommand.timestamp === item.timestamp;
+    const contextMenuTargetBg = alpha(theme.palette.primary.main, 0.18);
+    const contextMenuTargetHoverBg = alpha(theme.palette.primary.main, 0.24);
 
     return (
       <div style={style}>
@@ -65,6 +73,8 @@ const HistoryItem = React.memo(
           }}
         >
           <ListItemButton
+            data-command-history-item="true"
+            data-command-history-index={index}
             onContextMenu={(event) => handleMenuOpen(event, item)}
             onClick={() =>
               selectMode
@@ -76,8 +86,18 @@ const HistoryItem = React.memo(
               bgcolor:
                 selectMode && selectedCommands.has(item.command)
                   ? "action.selected"
+                  : isContextMenuTarget
+                    ? contextMenuTargetBg
                   : "transparent",
+              borderLeft: isContextMenuTarget
+                ? `4px solid ${theme.palette.primary.main}`
+                : "4px solid transparent",
               borderRadius: 0,
+              "&:hover": {
+                bgcolor: isContextMenuTarget
+                  ? contextMenuTargetHoverBg
+                  : "action.hover",
+              },
             }}
           >
             {selectMode && (
@@ -141,6 +161,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   const [containerHeight, setContainerHeight] = useState(400);
   const sidebarRootRef = useRef(null);
   const containerRef = useRef(null);
+  const contextMenuRetargetingRef = useRef(false);
 
   const focusSidebarRoot = (event) => {
     if (!(event.target instanceof Element)) {
@@ -331,6 +352,87 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     setMenuTargetCommand(null);
   }, []);
 
+  useEffect(() => {
+    if (!open || !contextMenu) {
+      return undefined;
+    }
+
+    const getHistoryItemFromPoint = (event) => {
+      const root = sidebarRootRef.current;
+      if (!root) {
+        return null;
+      }
+
+      const rawTarget = event.target;
+      if (
+        rawTarget instanceof Element &&
+        (rawTarget.closest('[data-command-history-context-menu="true"]') ||
+          rawTarget.closest('[role="menu"]'))
+      ) {
+        return null;
+      }
+
+      if (rawTarget instanceof Element && root.contains(rawTarget)) {
+        return rawTarget.closest('[data-command-history-item="true"]');
+      }
+
+      const elementsAtPoint =
+        typeof document.elementsFromPoint === "function"
+          ? document.elementsFromPoint(event.clientX, event.clientY)
+          : [];
+
+      const element = elementsAtPoint.find(
+        (candidate) =>
+          root.contains(candidate) &&
+          !candidate.closest('[data-command-history-context-menu="true"]') &&
+          !candidate.closest('[role="menu"]'),
+      );
+
+      return element?.closest?.('[data-command-history-item="true"]') || null;
+    };
+
+    const handleContextMenuRetarget = (event) => {
+      if (contextMenuRetargetingRef.current || selectMode) {
+        return;
+      }
+
+      const itemElement = getHistoryItemFromPoint(event);
+      if (!itemElement) {
+        return;
+      }
+
+      const itemIndex = Number(itemElement.dataset.commandHistoryIndex);
+      const item = Number.isInteger(itemIndex)
+        ? filteredHistory[itemIndex]
+        : null;
+      if (!item) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      contextMenuRetargetingRef.current = true;
+      setMenuTargetCommand(item);
+      setContextMenu({
+        mouseX: event.clientX,
+        mouseY: event.clientY,
+      });
+      queueMicrotask(() => {
+        contextMenuRetargetingRef.current = false;
+      });
+    };
+
+    document.addEventListener("contextmenu", handleContextMenuRetarget, true);
+    return () => {
+      document.removeEventListener(
+        "contextmenu",
+        handleContextMenuRetarget,
+        true,
+      );
+    };
+  }, [contextMenu, filteredHistory, open, selectMode]);
+
   // 处理发送命令
   const handleSendCommand = useCallback((command) => {
     if (!command) {
@@ -370,6 +472,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       filteredHistory,
       selectMode,
       selectedCommands,
+      contextMenuTargetCommand: menuTargetCommand,
       toggleCommandSelection,
       handleSendCommand,
       handleMenuOpen,
@@ -383,6 +486,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       handleSendCommand,
       handleMenuOpen,
       formatTime,
+      menuTargetCommand,
     ],
   );
 
@@ -794,6 +898,9 @@ function CommandHistory({ open, onClose, onSendCommand }) {
         transitionDuration={0}
         disableAutoFocusItem
         disableScrollLock
+        PaperProps={{
+          "data-command-history-context-menu": "true",
+        }}
       >
         <MenuItem onClick={() => handleSendCommand(menuTargetCommand?.command)}>
           <SendIcon sx={{ mr: 1 }} />
