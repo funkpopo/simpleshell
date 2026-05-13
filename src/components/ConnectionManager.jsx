@@ -2171,6 +2171,7 @@ const ConnectionManager = memo(
               }
               transitionDuration={0}
               disableAutoFocusItem
+              disableScrollLock
               PaperProps={{
                 "data-connection-manager-context-menu": "true",
               }}
