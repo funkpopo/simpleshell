@@ -23,6 +23,7 @@ import HistoryIcon from "@mui/icons-material/History";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 import Collapse from "@mui/material/Collapse";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import { sidebarContentSx } from "./sidebarItemStyles";
 // Common IP utilities (supports IPv4/IPv6 + private detection)
 // Use require for reliable CJS interop in both renderer and main bundles
 const ipUtils = require("../utils/ip");
@@ -406,13 +407,9 @@ const IPAddressQuery = memo(({ open, onClose }) => {
   return (
     <Paper
       sx={{
-        width: open ? 300 : 0,
+        width: 300,
         height: "100%",
         overflow: "hidden",
-        transition: theme.transitions.create("width", {
-          easing: theme.transitions.easing.sharp,
-          duration: theme.transitions.duration.enteringScreen,
-        }),
         borderLeft: `1px solid ${theme.palette.divider}`,
         display: "flex",
         flexDirection: "column",
@@ -420,8 +417,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
       }}
       elevation={4}
     >
-      {open && (
-        <>
+      <Box sx={sidebarContentSx(theme, open)}>
           <Box
             sx={{
               display: "flex",
@@ -599,8 +595,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
               </Box>
             </Collapse>
           </Box>
-        </>
-      )}
+      </Box>
     </Paper>
   );
 });

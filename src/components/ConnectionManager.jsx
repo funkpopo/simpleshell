@@ -69,6 +69,7 @@ import { useTranslation } from "react-i18next";
 import { useNotification } from "../contexts/NotificationContext";
 import { ConnectionManagerSkeleton } from "./SkeletonLoader.jsx";
 import VirtualizedConnectionList from "./VirtualizedConnectionList.jsx";
+import { sidebarContentSx, sidebarListItemSx } from "./sidebarItemStyles";
 
 const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
 
@@ -470,18 +471,7 @@ const ConnectionListItem = memo(function ConnectionListItem({
       sx={{
         pl: parentGroup ? 1.5 : 0.5,
         minHeight: "32px",
-        borderLeft: isContextMenuTarget
-          ? `3px solid ${theme.palette.primary.main}`
-          : "3px solid transparent",
-        backgroundColor: isContextMenuTarget
-          ? theme.palette.action.selected
-          : "transparent",
-        "&:hover": {
-          backgroundColor:
-            theme.palette.mode === "dark"
-              ? alpha(theme.palette.primary.main, 0.15)
-              : alpha(theme.palette.primary.main, 0.12),
-        },
+        ...sidebarListItemSx(theme, isContextMenuTarget),
         ...(isDragging
           ? {
               background:
@@ -649,18 +639,7 @@ const GroupListItem = memo(function GroupListItem({
         sx={{
           pl: 0.5,
           minHeight: "32px",
-          borderLeft: isContextMenuTarget
-            ? `3px solid ${theme.palette.primary.main}`
-            : "3px solid transparent",
-          backgroundColor: isContextMenuTarget
-            ? theme.palette.action.selected
-            : "transparent",
-          "&:hover": {
-            backgroundColor:
-              theme.palette.mode === "dark"
-                ? alpha(theme.palette.primary.main, 0.15)
-                : alpha(theme.palette.primary.main, 0.12),
-          },
+          ...sidebarListItemSx(theme, isContextMenuTarget),
           ...(isDragging
             ? {
                 background:
@@ -2006,13 +1985,9 @@ const ConnectionManager = memo(
         tabIndex={-1}
         onMouseDown={focusSidebarRoot}
         sx={{
-          width: open ? 300 : 0,
+          width: 300,
           height: "100%",
           overflow: "hidden",
-          transition: theme.transitions.create("width", {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
           borderLeft: `1px solid ${theme.palette.divider}`,
           display: "flex",
           flexDirection: "column",
@@ -2020,8 +1995,7 @@ const ConnectionManager = memo(
         }}
         elevation={4}
       >
-        {open && (
-          <>
+        <Box sx={sidebarContentSx(theme, open)}>
             {/* 头部 */}
             <Box
               sx={{
@@ -2739,8 +2713,7 @@ const ConnectionManager = memo(
                 </Button>
               </DialogActions>
             </Dialog>
-          </>
-        )}
+        </Box>
       </Paper>
     );
   },

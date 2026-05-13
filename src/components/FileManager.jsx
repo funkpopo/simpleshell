@@ -66,6 +66,7 @@ import {
 import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
+import { sidebarContentSx } from "./sidebarItemStyles";
 
 const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
 
@@ -6157,14 +6158,9 @@ const FileManager = memo(
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         sx={{
-          width: open ? 300 : 0,
+          width: 300,
           height: "100%",
           overflow: "hidden",
-          transition: (theme) =>
-            theme.transitions.create("width", {
-              easing: theme.transitions.easing.sharp,
-              duration: theme.transitions.duration.enteringScreen,
-            }),
           borderLeft: `1px solid ${theme.palette.divider}`,
           display: "flex",
           flexDirection: "column",
@@ -6180,6 +6176,7 @@ const FileManager = memo(
         elevation={4}
         tabIndex={0} // 使得Paper元素可以接收键盘事件
       >
+        <Box sx={sidebarContentSx(theme, open)}>
         <Box
           sx={{
             display: "flex",
@@ -6494,6 +6491,7 @@ const FileManager = memo(
           ) : (
             renderFileList()
           )}
+        </Box>
         </Box>
 
         <Menu
