@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import { List } from "react-window";
 import {
@@ -33,7 +33,6 @@ import SendIcon from "@mui/icons-material/Send";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import HistoryIcon from "@mui/icons-material/History";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SelectAllIcon from "@mui/icons-material/SelectAll";
@@ -66,6 +65,7 @@ const HistoryItem = React.memo(
           }}
         >
           <ListItemButton
+            onContextMenu={(event) => handleMenuOpen(event, item)}
             onClick={() =>
               selectMode
                 ? toggleCommandSelection(item.command)
@@ -122,16 +122,6 @@ const HistoryItem = React.memo(
                 </Typography>
               }
             />
-
-            {!selectMode && (
-              <IconButton
-                size="small"
-                onClick={(e) => handleMenuOpen(e, item)}
-                sx={{ ml: 1 }}
-              >
-                <MoreVertIcon />
-              </IconButton>
-            )}
           </ListItemButton>
         </ListItem>
       </div>
@@ -209,9 +199,9 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   const [editedCommand, setEditedCommand] = useState("");
 
   // 菜单状态
-  const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
   const [menuTargetCommand, setMenuTargetCommand] = useState(null);
-  const menuOpen = Boolean(menuAnchorEl);
+  const menuOpen = Boolean(contextMenu);
 
   // 通知状态
   const [notification, setNotification] = useState({
@@ -285,13 +275,13 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   }, [open]);
 
   // 显示通知
-  const showNotification = (message, severity = "success") => {
+  const showNotification = useCallback((message, severity = "success") => {
     setNotification({
       open: true,
       message,
       severity,
     });
-  };
+  }, []);
 
   // 关闭通知
   const handleCloseNotification = () => {
@@ -299,9 +289,9 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   };
 
   // 处理搜索输入变化
-  const handleSearchChange = (event) => {
+  const handleSearchChange = useCallback((event) => {
     setSearchTerm(event.target.value);
-  };
+  }, []);
 
   // 获取过滤后的历史记录
   const filteredHistory = useMemo(() => {
@@ -315,27 +305,38 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   }, [history, searchTerm]);
 
   // 格式化时间
-  const formatTime = (timestamp) => {
+  const formatTime = useCallback((timestamp) => {
     if (!timestamp) return "";
     const date = new Date(timestamp);
     return date.toLocaleString();
-  };
+  }, []);
 
   // 处理菜单打开
-  const handleMenuOpen = (event, command) => {
+  const handleMenuOpen = useCallback((event, command) => {
+    event.preventDefault();
     event.stopPropagation();
-    setMenuAnchorEl(event.currentTarget);
+    if (selectMode) {
+      return;
+    }
     setMenuTargetCommand(command);
-  };
+    setContextMenu({
+      mouseX: event.clientX,
+      mouseY: event.clientY,
+    });
+  }, [selectMode]);
 
   // 处理菜单关闭
-  const handleMenuClose = () => {
-    setMenuAnchorEl(null);
+  const handleMenuClose = useCallback(() => {
+    setContextMenu(null);
     setMenuTargetCommand(null);
-  };
+  }, []);
 
   // 处理发送命令
-  const handleSendCommand = (command) => {
+  const handleSendCommand = useCallback((command) => {
+    if (!command) {
+      handleMenuClose();
+      return;
+    }
     // 需要tabId，假设通过props.currentTabId传递
     if (onSendCommand) {
       const result = onSendCommand(command);
@@ -348,18 +349,20 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       showNotification(t("commandHistory.sendCommandHandlerMissing"), "error");
     }
     handleMenuClose();
-  };
+  }, [handleMenuClose, onSendCommand, showNotification, t]);
 
   // 选择/取消选择命令
-  const toggleCommandSelection = (command) => {
-    const newSelected = new Set(selectedCommands);
-    if (newSelected.has(command)) {
-      newSelected.delete(command);
-    } else {
-      newSelected.add(command);
-    }
-    setSelectedCommands(newSelected);
-  };
+  const toggleCommandSelection = useCallback((command) => {
+    setSelectedCommands((previous) => {
+      const nextSelected = new Set(previous);
+      if (nextSelected.has(command)) {
+        nextSelected.delete(command);
+      } else {
+        nextSelected.add(command);
+      }
+      return nextSelected;
+    });
+  }, []);
 
   // 虚拟化列表的数据
   const listItemData = useMemo(
@@ -385,6 +388,10 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
   // 复制命令到剪贴板
   const handleCopyCommand = async (command) => {
+    if (!command) {
+      handleMenuClose();
+      return;
+    }
     try {
       await window.clipboardAPI.writeText(command);
       showNotification(t("commandHistory.commandCopied"));
@@ -396,6 +403,10 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
   // 编辑命令
   const handleEditCommand = (historyItem) => {
+    if (!historyItem) {
+      handleMenuClose();
+      return;
+    }
     setCurrentCommand(historyItem);
     setEditedCommand(historyItem.command);
     setEditDialogOpen(true);
@@ -453,6 +464,10 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
   // 删除单个历史记录
   const handleDeleteCommand = async (command) => {
+    if (!command) {
+      handleMenuClose();
+      return;
+    }
     try {
       if (window.terminalAPI?.deleteCommandHistory) {
         const result = await window.terminalAPI.deleteCommandHistory(command);
@@ -768,11 +783,17 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
       {/* 上下文菜单 */}
       <Menu
-        anchorEl={menuAnchorEl}
         open={menuOpen}
         onClose={handleMenuClose}
-        transformOrigin={{ horizontal: "right", vertical: "top" }}
-        anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          contextMenu
+            ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
+            : undefined
+        }
+        transitionDuration={0}
+        disableAutoFocusItem
+        disableScrollLock
       >
         <MenuItem onClick={() => handleSendCommand(menuTargetCommand?.command)}>
           <SendIcon sx={{ mr: 1 }} />

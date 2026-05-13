@@ -6508,6 +6508,7 @@ const FileManager = memo(
           }
           transitionDuration={0}
           disableAutoFocusItem
+          disableScrollLock
         >
           {contextMenu !== null && [
             // 下载操作：支持单选和多选
@@ -6679,6 +6680,9 @@ const FileManager = memo(
               ? { top: blankContextMenu.mouseY, left: blankContextMenu.mouseX }
               : undefined
           }
+          transitionDuration={0}
+          disableAutoFocusItem
+          disableScrollLock
         >
           <MenuItem onClick={handleCreateFolder}>
             <ListItemIcon>

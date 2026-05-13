@@ -286,9 +286,9 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   const [currentCategory, setCurrentCategory] = useState(null);
 
   // 菜单状态
-  const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
   const [menuTargetId, setMenuTargetId] = useState(null);
-  const menuOpen = Boolean(menuAnchorEl);
+  const menuOpen = Boolean(contextMenu);
 
   // 添加通知状态
   const [notification, setNotification] = useState({
@@ -395,14 +395,17 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   const handleMenuOpen = (event, id, type) => {
     event.preventDefault();
     event.stopPropagation();
-    setMenuAnchorEl(event.currentTarget);
+    setContextMenu({
+      mouseX: event.clientX,
+      mouseY: event.clientY,
+    });
     setMenuTargetId(id);
     setDialogType(type);
   };
 
   // 处理菜单关闭
   const handleMenuClose = () => {
-    setMenuAnchorEl(null);
+    setContextMenu(null);
     setMenuTargetId(null);
   };
 
@@ -1039,17 +1042,17 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   // 渲染菜单
   const renderMenu = () => (
     <Menu
-      anchorEl={menuAnchorEl}
       open={menuOpen}
       onClose={handleMenuClose}
-      anchorOrigin={{
-        vertical: "bottom",
-        horizontal: "right",
-      }}
-      transformOrigin={{
-        vertical: "top",
-        horizontal: "right",
-      }}
+      anchorReference="anchorPosition"
+      anchorPosition={
+        contextMenu
+          ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
+          : undefined
+      }
+      transitionDuration={0}
+      disableAutoFocusItem
+      disableScrollLock
     >
       {dialogType === "command" && (
         <div>
