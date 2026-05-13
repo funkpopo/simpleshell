@@ -30,7 +30,7 @@ import {
   Snackbar,
   Alert,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import AddIcon from "@mui/icons-material/Add";
@@ -101,12 +101,18 @@ const CommandItem = React.memo(
     handleSendCommand,
     handleCopyCommand,
     handleMenuOpen,
+    contextMenuTargetId,
+    contextMenuTargetType,
   }) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const cmd = commands[index];
 
     if (!cmd) return null;
+    const isContextMenuTarget =
+      contextMenuTargetType === "command" && contextMenuTargetId === cmd.id;
+    const contextMenuTargetBg = alpha(theme.palette.primary.main, 0.18);
+    const contextMenuTargetHoverBg = alpha(theme.palette.primary.main, 0.24);
 
     return (
       <div style={{ ...style, width: "100%" }}>
@@ -124,6 +130,9 @@ const CommandItem = React.memo(
         >
           <ListItemButton
             disableGutters
+            data-shortcut-menu-target="true"
+            data-shortcut-menu-id={cmd.id}
+            data-shortcut-menu-type="command"
             onClick={() => handleSendCommand(cmd.command, { execute: false })}
             onContextMenu={(e) => handleMenuOpen(e, cmd.id, "command")}
             sx={{
@@ -138,8 +147,16 @@ const CommandItem = React.memo(
               flex: 1,
               alignSelf: "stretch",
               boxSizing: "border-box",
+              backgroundColor: isContextMenuTarget
+                ? contextMenuTargetBg
+                : "transparent",
+              borderLeft: isContextMenuTarget
+                ? `4px solid ${theme.palette.primary.main}`
+                : "4px solid transparent",
               "&:hover": {
-                backgroundColor: theme.palette.action.hover,
+                backgroundColor: isContextMenuTarget
+                  ? contextMenuTargetHoverBg
+                  : theme.palette.action.hover,
               },
             }}
           >
@@ -226,6 +243,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   const [containerHeight, setContainerHeight] = useState(400);
   const sidebarRootRef = useRef(null);
   const containerRef = useRef(null);
+  const contextMenuRetargetingRef = useRef(false);
 
   const focusSidebarRoot = (event) => {
     if (!(event.target instanceof Element)) {
@@ -408,6 +426,85 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     setContextMenu(null);
     setMenuTargetId(null);
   };
+
+  useEffect(() => {
+    if (!open || !contextMenu) {
+      return undefined;
+    }
+
+    const getShortcutMenuTargetFromPoint = (event) => {
+      const root = sidebarRootRef.current;
+      if (!root) {
+        return null;
+      }
+
+      const rawTarget = event.target;
+      if (
+        rawTarget instanceof Element &&
+        (rawTarget.closest('[data-shortcut-commands-context-menu="true"]') ||
+          rawTarget.closest('[role="menu"]'))
+      ) {
+        return null;
+      }
+
+      if (rawTarget instanceof Element && root.contains(rawTarget)) {
+        return rawTarget.closest("[data-shortcut-menu-target]");
+      }
+
+      const elementsAtPoint =
+        typeof document.elementsFromPoint === "function"
+          ? document.elementsFromPoint(event.clientX, event.clientY)
+          : [];
+
+      const element = elementsAtPoint.find(
+        (candidate) =>
+          root.contains(candidate) &&
+          !candidate.closest('[data-shortcut-commands-context-menu="true"]') &&
+          !candidate.closest('[role="menu"]'),
+      );
+
+      return element?.closest?.("[data-shortcut-menu-target]") || null;
+    };
+
+    const handleContextMenuRetarget = (event) => {
+      if (contextMenuRetargetingRef.current) {
+        return;
+      }
+
+      const targetElement = getShortcutMenuTargetFromPoint(event);
+      const targetId = targetElement?.dataset.shortcutMenuId;
+      const targetType = targetElement?.dataset.shortcutMenuType;
+      if (!targetId || !targetType) {
+        return;
+      }
+      if (targetType === "category" && targetId === "uncategorized") {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      contextMenuRetargetingRef.current = true;
+      setContextMenu({
+        mouseX: event.clientX,
+        mouseY: event.clientY,
+      });
+      setMenuTargetId(targetId);
+      setDialogType(targetType);
+      queueMicrotask(() => {
+        contextMenuRetargetingRef.current = false;
+      });
+    };
+
+    document.addEventListener("contextmenu", handleContextMenuRetarget, true);
+    return () => {
+      document.removeEventListener(
+        "contextmenu",
+        handleContextMenuRetarget,
+        true,
+      );
+    };
+  }, [contextMenu, open]);
 
   // 处理添加命令
   const handleAddCommand = () => {
@@ -615,8 +712,17 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       handleSendCommand,
       handleCopyCommand,
       handleMenuOpen,
+      contextMenuTargetId: menuTargetId,
+      contextMenuTargetType: dialogType,
     }),
-    [filteredCommands, handleSendCommand, handleCopyCommand, handleMenuOpen],
+    [
+      filteredCommands,
+      handleSendCommand,
+      handleCopyCommand,
+      handleMenuOpen,
+      menuTargetId,
+      dialogType,
+    ],
   );
 
   // 获取按分类分组的命令
@@ -735,7 +841,19 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
     return (
       <List sx={{ width: "100%", p: 0, overflowX: "hidden" }} dense={false}>
-        {commandsByCategory.map((category) => (
+        {commandsByCategory.map((category) => {
+          const isCategoryContextMenuTarget =
+            dialogType === "category" && menuTargetId === category.id;
+          const categoryContextMenuTargetBg = alpha(
+            theme.palette.primary.main,
+            0.18,
+          );
+          const categoryContextMenuTargetHoverBg = alpha(
+            theme.palette.primary.main,
+            0.24,
+          );
+
+          return (
           <Box key={category.id} sx={{ mb: 1 }}>
             <ListItem
               disablePadding
@@ -747,21 +865,37 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
               }}
             >
               <ListItemButton
+                data-shortcut-menu-target="true"
+                data-shortcut-menu-id={category.id}
+                data-shortcut-menu-type="category"
                 onClick={() => toggleCategoryExpand(category.id)}
+                onContextMenu={(e) => {
+                  if (category.id !== "uncategorized") {
+                    handleMenuOpen(e, category.id, "category");
+                  }
+                }}
                 sx={{
+                  borderLeft:
+                    isCategoryContextMenuTarget
+                      ? `4px solid ${theme.palette.primary.main}`
+                      : "4px solid transparent",
                   backgroundColor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(255, 255, 255, 0.08)"
-                      : "rgba(0, 0, 0, 0.04)",
+                    isCategoryContextMenuTarget
+                      ? categoryContextMenuTargetBg
+                      : theme.palette.mode === "dark"
+                        ? "rgba(255, 255, 255, 0.08)"
+                        : "rgba(0, 0, 0, 0.04)",
                   borderRadius: 1,
                   px: 2,
                   py: 1.5,
                   minHeight: 60,
                   "&:hover": {
                     backgroundColor:
-                      theme.palette.mode === "dark"
-                        ? "rgba(255, 255, 255, 0.12)"
-                        : "rgba(0, 0, 0, 0.08)",
+                      isCategoryContextMenuTarget
+                        ? categoryContextMenuTargetHoverBg
+                        : theme.palette.mode === "dark"
+                          ? "rgba(255, 255, 255, 0.12)"
+                          : "rgba(0, 0, 0, 0.08)",
                   },
                 }}
               >
@@ -822,7 +956,19 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                   overflowX: "hidden",
                 }}
               >
-                {category.commands.map((cmd) => (
+                {category.commands.map((cmd) => {
+                  const isCommandContextMenuTarget =
+                    dialogType === "command" && menuTargetId === cmd.id;
+                  const commandContextMenuTargetBg = alpha(
+                    theme.palette.primary.main,
+                    0.18,
+                  );
+                  const commandContextMenuTargetHoverBg = alpha(
+                    theme.palette.primary.main,
+                    0.24,
+                  );
+
+                  return (
                   <ListItem
                     key={cmd.id}
                     disablePadding
@@ -838,6 +984,9 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                   >
                     <ListItemButton
                       disableGutters
+                      data-shortcut-menu-target="true"
+                      data-shortcut-menu-id={cmd.id}
+                      data-shortcut-menu-type="command"
                       onClick={() =>
                         handleSendCommand(cmd.command, { execute: false })
                       }
@@ -856,12 +1005,20 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                         flex: 1,
                         alignSelf: "stretch",
                         boxSizing: "border-box",
+                        borderLeft:
+                          isCommandContextMenuTarget
+                            ? `4px solid ${theme.palette.primary.main}`
+                            : "4px solid transparent",
                         backgroundColor:
-                          theme.palette.mode === "dark"
-                            ? "rgba(255, 255, 255, 0.02)"
-                            : "rgba(0, 0, 0, 0.02)",
+                          isCommandContextMenuTarget
+                            ? commandContextMenuTargetBg
+                            : theme.palette.mode === "dark"
+                              ? "rgba(255, 255, 255, 0.02)"
+                              : "rgba(0, 0, 0, 0.02)",
                         "&:hover": {
-                          backgroundColor: theme.palette.action.hover,
+                          backgroundColor: isCommandContextMenuTarget
+                            ? commandContextMenuTargetHoverBg
+                            : theme.palette.action.hover,
                         },
                       }}
                     >
@@ -927,12 +1084,14 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                         </Tooltip>
                       </Box>
                     </ListItemButton>
-                  </ListItem>
-                ))}
+                    </ListItem>
+                  );
+                })}
               </Box>
             </Collapse>
           </Box>
-        ))}
+          );
+        })}
       </List>
     );
   };
@@ -1053,6 +1212,9 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       transitionDuration={0}
       disableAutoFocusItem
       disableScrollLock
+      PaperProps={{
+        "data-shortcut-commands-context-menu": "true",
+      }}
     >
       {dialogType === "command" && (
         <div>
