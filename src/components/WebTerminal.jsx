@@ -33,7 +33,6 @@ import {
 import {
   TERMINAL_RESIZE_QUERY_REGEX,
   ensureSharedTerminalStyles,
-  getCharacterMetricsCss,
   isCtrlLeftMouseClick,
   searchBarStyles,
   syncTerminalLinkCtrlState,
@@ -43,7 +42,6 @@ import {
   clearGeometryFor,
   disposablesCache,
   fitAddonCache,
-  forceResizeTerminal,
   processCache,
   registerTerminalIOMailbox,
   sendResizeIfNeeded,
@@ -173,6 +171,16 @@ const WebTerminal = ({
   const inputQueueDrainHandleTypeRef = useRef(null);
   const webglRendererEnabledRef = useRef(true);
   const isActiveRef = useRef(isActive);
+  const layoutSyncFrameRef = useRef(null);
+  const pendingLayoutSyncReasonRef = useRef(null);
+  const scheduleTerminalLayoutSyncRef = useRef(() => {});
+  const scheduleTerminalRedrawRef = useRef(() => {});
+  const lastLayoutGeometryRef = useRef({
+    width: 0,
+    height: 0,
+    cols: 0,
+    rows: 0,
+  });
 
   useEffect(() => {
     isActiveRef.current = isActive;
@@ -250,7 +258,7 @@ const WebTerminal = ({
   }, []);
 
   const {
-    scheduleHighlightRefresh,
+    scheduleTerminalRedraw,
     tryEnableWebglRenderer,
     disableWebglRenderer,
     resetRenderState,
@@ -261,6 +269,10 @@ const WebTerminal = ({
     setWebglRendererEnabled,
     performanceMonitorRef,
   });
+
+  useEffect(() => {
+    scheduleTerminalRedrawRef.current = scheduleTerminalRedraw;
+  }, [scheduleTerminalRedraw]);
 
   const sendInputToProcess = useCallback((processId, input) => {
     if (
@@ -669,6 +681,119 @@ const WebTerminal = ({
     return false;
   }, [attachTerminalToContainer]);
 
+  const isTerminalContainerVisible = useCallback((container) => {
+    if (!container || typeof window === "undefined") {
+      return false;
+    }
+
+    let current = container;
+    while (current) {
+      const style = window.getComputedStyle(current);
+      if (
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        current.getAttribute("aria-hidden") === "true"
+      ) {
+        return false;
+      }
+      current = current.parentElement;
+    }
+
+    const rect = container.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }, []);
+
+  const syncTerminalLayoutNow = useCallback(
+    (reason = "layout") => {
+      const term = termRef.current;
+      const fitAddon = fitAddonRef.current;
+      const container = terminalRef.current;
+
+      if (!term || !fitAddon || !isTerminalContainerVisible(container)) {
+        return false;
+      }
+
+      try {
+        attachTerminalToContainer(term);
+
+        const rect = container.getBoundingClientRect();
+        const previous = lastLayoutGeometryRef.current;
+        const sizeChanged =
+          Math.abs(rect.width - previous.width) > 0.5 ||
+          Math.abs(rect.height - previous.height) > 0.5;
+
+        if (sizeChanged && term.element) {
+          term.element.style.width = `${rect.width}px`;
+          term.element.style.height = `${rect.height}px`;
+        }
+
+        fitAddon.fit();
+
+        const colsChanged = term.cols !== previous.cols;
+        const rowsChanged = term.rows !== previous.rows;
+
+        lastLayoutGeometryRef.current = {
+          width: rect.width,
+          height: rect.height,
+          cols: term.cols,
+          rows: term.rows,
+        };
+
+        const processId = processCache[tabId];
+        const forceResizeMessage = String(reason).includes("force");
+        if (processId && (colsChanged || rowsChanged || forceResizeMessage)) {
+          sendResizeIfNeeded(processId, tabId, term.cols, term.rows);
+        }
+
+        if (!term.__webglEnabled && typeof term.refresh === "function") {
+          scheduleTerminalRedrawRef.current(term, { force: sizeChanged });
+        }
+
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [
+      attachTerminalToContainer,
+      isTerminalContainerVisible,
+      tabId,
+    ],
+  );
+
+  const scheduleTerminalLayoutSync = useCallback(
+    (reason = "layout", options = {}) => {
+      pendingLayoutSyncReasonRef.current = reason;
+
+      if (layoutSyncFrameRef.current !== null && !options.immediate) {
+        return;
+      }
+
+      const run = () => {
+        layoutSyncFrameRef.current = null;
+        const pendingReason = pendingLayoutSyncReasonRef.current || reason;
+        pendingLayoutSyncReasonRef.current = null;
+        syncTerminalLayoutNow(pendingReason);
+      };
+
+      if (options.immediate || typeof requestAnimationFrame !== "function") {
+        if (layoutSyncFrameRef.current !== null) {
+          cancelAnimationFrame(layoutSyncFrameRef.current);
+          layoutSyncFrameRef.current = null;
+        }
+        run();
+        return;
+      }
+
+      layoutSyncFrameRef.current = requestAnimationFrame(run);
+    },
+    [syncTerminalLayoutNow],
+  );
+
+  useEffect(() => {
+    scheduleTerminalLayoutSyncRef.current = scheduleTerminalLayoutSync;
+  }, [scheduleTerminalLayoutSync]);
+
   const recoverTerminalAfterActivation = useCallback(
     ({ resize = true, refocus = true, refreshSuggestions = true } = {}) => {
       if (
@@ -684,14 +809,8 @@ const WebTerminal = ({
       try {
         attachTerminalToContainer(termRef.current);
 
-        if (resize && fitAddonRef.current) {
-          forceResizeTerminal(
-            termRef.current,
-            terminalRef.current,
-            processCache[tabId],
-            tabId,
-            fitAddonRef.current,
-          );
+        if (resize) {
+          scheduleTerminalLayoutSyncRef.current("activation");
         }
 
         recoverTerminalInteractionStateRef.current({
@@ -704,7 +823,7 @@ const WebTerminal = ({
         return false;
       }
     },
-    [attachTerminalToContainer, tabId],
+    [attachTerminalToContainer],
   );
 
   const applyPromptTrackingState = useCallback((nextState = {}) => {
@@ -843,7 +962,7 @@ const WebTerminal = ({
       }
 
       updateCursorPosition();
-      scheduleHighlightRefresh(term);
+      scheduleTerminalRedraw(term);
 
       const promptReady =
         promptTrackingStateRef.current.promptReady &&
@@ -871,7 +990,7 @@ const WebTerminal = ({
       focusTerminalInput,
       getSuggestions,
       isCommandExecuting,
-      scheduleHighlightRefresh,
+      scheduleTerminalRedraw,
       setShowSuggestions,
       setSuggestions,
       suggestionsHiddenByEsc,
@@ -886,184 +1005,6 @@ const WebTerminal = ({
     recoverTerminalInteractionStateRef.current =
       recoverTerminalInteractionState;
   }, [recoverTerminalInteractionState]);
-
-  // 优化的选择元素调整函数 - 避免重复高亮
-  const adjustSelectionElements = () => {
-    if (!termRef.current) return;
-
-    try {
-      // 获取终端DOM元素
-      const terminalElement = termRef.current.element;
-      if (!terminalElement) return;
-
-      if (searchTerm) {
-        const selectionElements = terminalElement.querySelectorAll(
-          ".xterm-selection div",
-        );
-        selectionElements.forEach((elem) => {
-          elem.style.transform = "";
-          elem.style.willChange = "";
-          elem.style.width = "";
-        });
-        return;
-      }
-
-      // 获取所有选择相关元素
-      const selectionElements = terminalElement.querySelectorAll(
-        ".xterm-selection div",
-      );
-
-      // 如果没有选择元素，直接返回
-      if (selectionElements.length === 0) return;
-
-      // 彻底处理重复的选择元素
-      if (selectionElements.length > 1) {
-        // 保留第一个元素，彻底隐藏其他重复元素
-        selectionElements.forEach((elem, index) => {
-          if (index > 0) {
-            // 使用多种方式彻底隐藏重复元素
-            elem.style.display = "none";
-            elem.style.opacity = "0";
-            elem.style.visibility = "hidden";
-            elem.style.pointerEvents = "none";
-            // 添加标记类以便CSS规则识别
-            elem.classList.add("xterm-selection-duplicate");
-          } else {
-            // 确保第一个元素完全可见
-            elem.style.display = "";
-            elem.style.opacity = "1";
-            elem.style.visibility = "visible";
-            elem.classList.remove("xterm-selection-duplicate");
-          }
-        });
-      }
-
-      // 同时检查是否有多个选择容器
-      const allSelectionContainers =
-        terminalElement.querySelectorAll(".xterm-selection");
-      if (allSelectionContainers.length > 1) {
-        allSelectionContainers.forEach((container, index) => {
-          if (index > 0) {
-            container.style.display = "none";
-            container.style.opacity = "0";
-            container.style.visibility = "hidden";
-          }
-        });
-      }
-
-      // 只对第一个（主要的）选择元素进行调整
-      const primaryElement = selectionElements[0];
-      if (!primaryElement) return;
-
-      // 获取字符度量信息
-      const metrics = getCharacterMetricsCss(termRef.current);
-      if (!metrics) return;
-
-      // 获取选择元素的当前位置
-      const computedStyle = window.getComputedStyle(primaryElement);
-      const currentLeft = parseFloat(computedStyle.left) || 0;
-      const currentTop = parseFloat(computedStyle.top) || 0;
-      const currentWidth = parseFloat(computedStyle.width) || 0;
-
-      // 计算需要的偏移量
-      const leftOffset =
-        (currentLeft - metrics.screenOffset.x) % metrics.charWidth;
-      const topOffset =
-        (currentTop - metrics.screenOffset.y) % metrics.charHeight;
-
-      // 计算更精确的调整值
-      let adjustX = 0;
-      let adjustY = 0;
-
-      // 判断是否需要调整X轴
-      if (Math.abs(leftOffset) > 0.5) {
-        // 如果偏移接近字符宽度，则对齐到下一个字符位置
-        if (Math.abs(metrics.charWidth - leftOffset) < 1.5) {
-          adjustX = metrics.charWidth - leftOffset;
-        } else {
-          // 否则对齐到当前字符位置
-          adjustX = -leftOffset;
-        }
-      }
-
-      // 判断是否需要调整Y轴
-      if (Math.abs(topOffset) > 0.5) {
-        // 如果偏移接近字符高度，则对齐到下一行
-        if (Math.abs(metrics.charHeight - topOffset) < 1.5) {
-          adjustY = metrics.charHeight - topOffset;
-        } else {
-          // 否则对齐到当前行
-          adjustY = -topOffset;
-        }
-      }
-
-      // 仅在需要调整时应用变换
-      if (Math.abs(adjustX) > 0.5 || Math.abs(adjustY) > 0.5) {
-        primaryElement.style.transform = `translate(${adjustX}px, ${adjustY}px)`;
-        primaryElement.style.willChange = "transform";
-      } else {
-        // 如果不需要调整，清除变换
-        primaryElement.style.transform = "";
-        primaryElement.style.willChange = "";
-      }
-
-      // 确保选择元素的宽度是字符宽度的整数倍
-      if (currentWidth > 0) {
-        const widthInChars = Math.round(currentWidth / metrics.charWidth);
-        const idealWidth = widthInChars * metrics.charWidth;
-        const widthDifference = idealWidth - currentWidth;
-
-        // 如果宽度差异较大，应用宽度调整
-        if (Math.abs(widthDifference) > 1) {
-          primaryElement.style.width = `${idealWidth}px`;
-        }
-      }
-    } catch {
-      // 选择元素调整失败，简化的回退处理 - 清理所有transform
-      const selectionElements = document.querySelectorAll(
-        ".xterm .xterm-selection div",
-      );
-      selectionElements.forEach((elem) => {
-        elem.style.transform = "";
-        elem.style.willChange = "";
-        elem.style.opacity = "";
-      });
-    }
-  };
-
-  // 简化的选择监控 - 只在选择完成后进行调整
-  const lastSelectionAdjustmentRef = useRef(0);
-  const scheduleSelectionAdjustment = () => {
-    // 节流：防止过于频繁的调整
-    const now = Date.now();
-    if (now - lastSelectionAdjustmentRef.current < 100) {
-      return; // 100ms内不重复调整
-    }
-    lastSelectionAdjustmentRef.current = now;
-
-    // 使用EventManager管理定时器
-    eventManager.setTimeout(() => {
-      requestAnimationFrame(adjustSelectionElements);
-    }, 100); // 适当延迟以减少调整频率
-  };
-
-  // 添加选择事件监听，确保在用户通过键盘选择时也能调整选择区域
-  const handleSelectionChange = () => {
-    const selection = window.getSelection();
-    if (selection && selection.toString().length > 0) {
-      // 只有当选择发生在终端内部时才进行调整
-      const isInTerminal =
-        selection.anchorNode &&
-        termRef.current &&
-        termRef.current.element &&
-        (termRef.current.element.contains(selection.anchorNode) ||
-          termRef.current.element.contains(selection.focusNode));
-
-      if (isInTerminal) {
-        scheduleSelectionAdjustment();
-      }
-    }
-  };
 
   // 添加鼠标中键粘贴功能
   const handleMouseDown = (e) => {
@@ -1086,58 +1027,14 @@ const WebTerminal = ({
       });
     }
 
-    // 在mousedown时记录选择开始，帮助确保选择行为的准确性
-    if (e.button === 0 && termRef.current) {
-      // 左键点击 - 标记选择开始
-      const isTextSelection =
-        e.target &&
-        (e.target.closest(".xterm-screen") ||
-          e.target.closest(".terminal-container"));
-
-      // 如果是在终端内容区点击，准备进行选择操作
-      if (isTextSelection) {
-        // 立即调整一次，确保初始选择状态正确
-        setTimeout(() => {
-          adjustSelectionElements();
-        }, 0);
-      }
-    }
   };
 
-  // 简化的鼠标事件处理 - 减少频繁调整
   const handleMouseMove = (e) => {
     syncTerminalLinkCtrlState(termRef.current, e.ctrlKey);
-
-    // 检测是否正在进行选择操作
-    if (e.buttons === 1) {
-      // 左键按下
-      const isTextSelection = window.getSelection()?.toString()?.length > 0;
-      if (isTextSelection && termRef.current) {
-        // 延迟调整选择，避免频繁调整影响性能
-        // 不需要做任何操作，将在mouseup时进行调整
-      }
-    }
   };
 
   const handleMouseUp = (e) => {
     syncTerminalLinkCtrlState(termRef.current, e.ctrlKey);
-
-    // 鼠标释放时进行一次性选择区域调整
-    if (termRef.current) {
-      const selection = window.getSelection?.();
-      const hasSelection = selection && selection.toString().length > 0;
-
-      // 只有当确实存在选中文本时才进行调整
-      if (hasSelection) {
-        // 使用调度函数进行延迟调整
-        scheduleSelectionAdjustment();
-
-        // 额外添加一个延时调整，处理某些浏览器选择完成后的渲染延迟
-        setTimeout(() => {
-          adjustSelectionElements();
-        }, 150);
-      }
-    }
   };
 
   // 定义检测用户输入命令的函数，用于监控特殊命令执行
@@ -1296,7 +1193,7 @@ const WebTerminal = ({
       }
 
       // 输入阶段只触发渲染层刷新，避免通过额外写入污染终端缓冲区
-      scheduleHighlightRefresh(term);
+      scheduleTerminalRedraw(term);
 
       // 检查是否正在处理外部命令
       let shouldSkipSendToProcess = false;
@@ -1576,22 +1473,8 @@ const WebTerminal = ({
           // 检查这一行是否包含常见的全屏应用命令
           if (FULLSCREEN_COMMAND_REGEX.test(lastLine)) {
             // 使用EventManager管理延迟序列触发终端大小调整
-            const delayTimes = [200, 500, 1000, 1500];
-            delayTimes.forEach((delay) => {
-              eventManager.setTimeout(() => {
-                if (terminalRef.current && fitAddonRef.current) {
-                  // 强制设置内容已更新，确保调整生效
-                  setContentUpdated(true);
-                  forceResizeTerminal(
-                    term,
-                    terminalRef.current,
-                    processId,
-                    tabId,
-                    fitAddonRef.current,
-                  );
-                }
-              }, delay);
-            });
+            setContentUpdated(true);
+            scheduleTerminalLayoutSyncRef.current("fullscreen-command");
           }
         } catch {
           // 忽略任何错误，不影响正常功能
@@ -1768,7 +1651,7 @@ const WebTerminal = ({
     }
 
     const onWriteParsedDisposable = term.onWriteParsed(() => {
-      scheduleHighlightRefresh(term);
+      scheduleTerminalRedrawRef.current(term);
       syncPromptState();
     });
 
@@ -1971,32 +1854,7 @@ const WebTerminal = ({
 
         // 使用EventManager管理定时器
         eventManager.setTimeout(() => {
-          if (fitAddonRef.current) {
-            fitAddonRef.current.fit();
-
-            // Canvas 渲染器需要手动刷新
-            const cachedTerminal = terminalCache[tabId];
-            if (
-              cachedTerminal &&
-              !cachedTerminal.__webglEnabled &&
-              typeof cachedTerminal.refresh === "function"
-            ) {
-              cachedTerminal.refresh(0, cachedTerminal.rows - 1);
-            }
-
-            // 同步到后端进程
-            const processId = processCache[tabId];
-            if (processId) {
-              if (cachedTerminal) {
-                sendResizeIfNeeded(
-                  processId,
-                  tabId,
-                  cachedTerminal.cols,
-                  cachedTerminal.rows,
-                );
-              }
-            }
-          }
+          scheduleTerminalLayoutSyncRef.current("theme-updated");
         }, 100);
       }
     };
@@ -2017,6 +1875,7 @@ const WebTerminal = ({
     // 为重资源初始化流程使用独立 EventManager，避免与轻量监听互相干扰
     const eventManager = lifecycleEventManager;
     eventManager.reset();
+    let lifecycleActive = true;
 
     // 添加全局样式
     const styleElement = ensureSharedTerminalStyles();
@@ -2049,7 +1908,7 @@ const WebTerminal = ({
           inEditorModeRef.current,
         );
         clearPendingWrappedInputRefresh(term);
-        scheduleHighlightRefresh(term, { force: forceRefresh });
+        scheduleTerminalRedrawRef.current(term, { force: forceRefresh });
       };
 
       if (!terminalIOMailboxRef.current) {
@@ -2131,15 +1990,7 @@ const WebTerminal = ({
 
         // 如果标签页不活跃，避免立即触发resize以减少性能影响
         if (isActiveRef.current) {
-          // 使用EventManager管理确保适配容器大小
-          eventManager.setTimeout(() => {
-            fitAddon.fit();
-
-            // Canvas 渲染器需要手动刷新
-            if (!term.__webglEnabled && typeof term.refresh === "function") {
-              term.refresh(0, term.rows - 1);
-            }
-          }, 0);
+          scheduleTerminalLayoutSyncRef.current("terminal-reused");
         }
         // 复用分支也要重建/重绑 mailbox，否则主 effect 清理后回到这里会丢失输出订阅
         ensureTerminalMailbox(term);
@@ -2183,7 +2034,7 @@ const WebTerminal = ({
           copyOnSelect: false,
           selectionScrollSpeed: 5,
           fastScrollModifier: "shift",
-          letterSpacing: 0.3, // 轻微增加字符间距
+          letterSpacing: 0,
           lineHeight: 1.0, // 优化行高，提高可读性
           macOptionIsMeta: false,
           macOptionClickForcesSelection: false,
@@ -2201,20 +2052,7 @@ const WebTerminal = ({
             if (scrollbackUsageTrackerRef.current) {
               scrollbackUsageTrackerRef.current.maxLines = scrollLines;
             }
-            // 使用EventManager管理应用字体设置后自动调整大小
-            eventManager.setTimeout(() => {
-              if (fitAddon) {
-                fitAddon.fit();
-
-                // Canvas 渲染器需要手动刷新
-                if (
-                  !term.__webglEnabled &&
-                  typeof term.refresh === "function"
-                ) {
-                  term.refresh(0, term.rows - 1);
-                }
-              }
-            }, 0);
+            scheduleTerminalLayoutSyncRef.current("font-settings");
           } catch {
             // Failed to apply font settings
           }
@@ -2496,15 +2334,7 @@ const WebTerminal = ({
           disableWebglRenderer(term);
         }
 
-        // 使用EventManager管理确保适配容器大小
-        eventManager.setTimeout(() => {
-          fitAddon.fit();
-
-          // Canvas 渲染器需要手动刷新
-          if (!term.__webglEnabled && typeof term.refresh === "function") {
-            term.refresh(0, term.rows - 1);
-          }
-        }, 0);
+        scheduleTerminalLayoutSyncRef.current("terminal-created");
 
         // 如果有SSH配置，则优先使用SSH连接
         if (sshConfig && window.terminalAPI) {
@@ -2574,6 +2404,10 @@ const WebTerminal = ({
             // 启动连接
             connectPromise
               .then((result) => {
+                if (!lifecycleActive && terminalCache[tabId] !== term) {
+                  return;
+                }
+
                 const { processId, error } = normalizeConnectResult(result);
                 if (error) {
                   term.writeln(formatConnectionError(error));
@@ -2626,6 +2460,7 @@ const WebTerminal = ({
                   terminalDisposables.length = 0;
 
                   // 设置数据接收监听
+                  ensureTerminalMailbox(term);
                   setupDataListener(processId, term);
 
                   // 设置命令边界检测与提示符状态同步
@@ -2640,24 +2475,7 @@ const WebTerminal = ({
                   );
 
                   // 拆分重连模式需要更快的resize响应
-                  const resizeDelays = localizedSshConfig.splitReconnect
-                    ? [200, 500, 1000]
-                    : [1000, 2000];
-
-                  // 使用EventManager管理连接成功后多次尝试同步终端大小
-                  resizeDelays.forEach((delay) => {
-                    eventManager.setTimeout(() => {
-                      if (terminalRef.current && fitAddonRef.current) {
-                        forceResizeTerminal(
-                          term,
-                          terminalRef.current,
-                          processId,
-                          tabId,
-                          fitAddonRef.current,
-                        );
-                      }
-                    }, delay);
-                  });
+                  scheduleTerminalLayoutSyncRef.current("connection-ready");
 
                   // 拆分重连成功后的额外处理
                   if (localizedSshConfig.splitReconnect) {
@@ -2684,6 +2502,9 @@ const WebTerminal = ({
                 }
               })
               .catch((error) => {
+                if (!lifecycleActive && terminalCache[tabId] !== term) {
+                  return;
+                }
                 term.writeln(formatConnectionError(error));
               });
           } catch (error) {
@@ -3036,15 +2857,6 @@ const WebTerminal = ({
         );
       }
 
-      // 添加选择变化事件监听
-      if (document.onselectionchange !== undefined) {
-        eventManager.addEventListener(
-          document,
-          "selectionchange",
-          handleSelectionChange,
-        );
-      }
-
       // 使用EventManager添加右键菜单事件监听
       if (terminalRef.current) {
         eventManager.addEventListener(
@@ -3056,95 +2868,7 @@ const WebTerminal = ({
 
       // 处理窗口调整大小
       const handleResize = () => {
-        if (!fitAddon) return;
-
-        try {
-          // 强制重新计算DOM大小
-          if (terminalRef.current) {
-            const container = terminalRef.current;
-            const currentWidth = container.clientWidth;
-            const currentHeight = container.clientHeight;
-
-            // 确保终端完全填充容器
-            if (term && term.element) {
-              term.element.style.width = `${currentWidth}px`;
-              term.element.style.height = `${currentHeight}px`;
-
-              // 添加强制重排的代码
-              term.element.getBoundingClientRect();
-            }
-          }
-
-          // 适配终端大小
-          fitAddon.fit();
-
-          // Canvas 渲染器需要手动刷新
-          if (!term.__webglEnabled && typeof term.refresh === "function") {
-            term.refresh(0, term.rows - 1);
-          }
-
-          // 使用requestAnimationFrame进行二次检查，确保在下一帧进行适配检查
-          requestAnimationFrame(() => {
-            if (terminalRef.current && term && term.element) {
-              const container = terminalRef.current;
-              const currentWidth = container.clientWidth;
-              const currentHeight = container.clientHeight;
-              const elemWidth = term.element.clientWidth;
-              const elemHeight = term.element.clientHeight;
-
-              if (
-                Math.abs(elemWidth - currentWidth) > 5 ||
-                Math.abs(elemHeight - currentHeight) > 5
-              ) {
-                fitAddon.fit();
-
-                // Canvas 渲染器需要手动刷新
-                if (
-                  !term.__webglEnabled &&
-                  typeof term.refresh === "function"
-                ) {
-                  term.refresh(0, term.rows - 1);
-                }
-              }
-            }
-          });
-
-          // 记录调整后的大小信息
-          if (terminalRef.current) {
-            // logTerminalSize("调整后", term, terminalRef.current);
-          }
-
-          // 获取当前终端的大小
-          // 直接获取fit后的实际尺寸而非options中的值
-          const dimensions = {
-            cols: term.cols,
-            rows: term.rows,
-          };
-
-          const processId = processCache[tabId];
-          if (processId) {
-            sendResizeIfNeeded(
-              processId,
-              tabId,
-              dimensions.cols,
-              dimensions.rows,
-            );
-
-            eventManager.setTimeout(() => {
-              if (terminalRef.current && term && processCache[tabId]) {
-                sendResizeIfNeeded(
-                  processCache[tabId],
-                  tabId,
-                  term.cols,
-                  term.rows,
-                );
-                setContentUpdated(false);
-              }
-            }, 300);
-          }
-        } catch {
-          // Error resizing terminal
-        }
+        scheduleTerminalLayoutSyncRef.current("resize");
       };
 
       // 立即调整大小
@@ -3161,14 +2885,14 @@ const WebTerminal = ({
 
             // 提高阈值到10px，减少微小变化触发的resize
             if (
-              Math.abs(width - currentWidth) > 10 ||
-              Math.abs(height - currentHeight) > 10
+              Math.abs(width - currentWidth) > 1 ||
+              Math.abs(height - currentHeight) > 1
             ) {
-              handleResize();
+              scheduleTerminalLayoutSyncRef.current("container-resize");
             }
           }
         },
-        { debounceTime: 100 }, // 优化防抖时间到100ms，减少频繁调用
+        { debounceTime: 16 },
       );
 
       // 使用EventManager管理window resize事件作为备用
@@ -3182,23 +2906,7 @@ const WebTerminal = ({
           fitAddonRef.current &&
           termRef.current
         ) {
-          // 侧边栏变化时立即触发resize，无需防抖
-          setTimeout(() => {
-            forceResizeTerminal(
-              termRef.current,
-              terminalRef.current,
-              processCache[tabId],
-              tabId,
-              fitAddonRef.current,
-            );
-          }, 10);
-
-          // 添加一个短延迟的二次调整确保完全适配
-          setTimeout(() => {
-            if (terminalRef.current && fitAddonRef.current && termRef.current) {
-              handleResize();
-            }
-          }, 60);
+          scheduleTerminalLayoutSyncRef.current("sidebar");
         }
       };
 
@@ -3215,7 +2923,7 @@ const WebTerminal = ({
           termRef.current &&
           isElementVisible(terminalRef.current)
         ) {
-          handleResize();
+          scheduleTerminalLayoutSyncRef.current("visibility");
           scheduleActivationRecovery({ delays: [60, 180] });
         }
       }, 50);
@@ -3225,36 +2933,6 @@ const WebTerminal = ({
         "visibilitychange",
         handleTerminalVisibilityChange,
       );
-
-      const attributeObserver =
-        typeof MutationObserver === "function"
-          ? new MutationObserver(() => {
-              if (
-                terminalRef.current &&
-                termRef.current &&
-                fitAddonRef.current &&
-                isElementVisible(terminalRef.current)
-              ) {
-                eventManager.setTimeout(() => {
-                  forceResizeTerminal(
-                    termRef.current,
-                    terminalRef.current,
-                    processCache[tabId],
-                    tabId,
-                    fitAddonRef.current,
-                  );
-                }, 0);
-              }
-            })
-          : null;
-
-      if (attributeObserver && terminalRef.current) {
-        attributeObserver.observe(terminalRef.current, {
-          attributes: true,
-          attributeFilter: ["style", "class", "hidden", "aria-hidden"],
-        });
-        eventManager.addObserver(attributeObserver);
-      }
 
       const intersectionObserver =
         typeof IntersectionObserver === "function"
@@ -3266,15 +2944,7 @@ const WebTerminal = ({
                   termRef.current &&
                   fitAddonRef.current
                 ) {
-                  eventManager.setTimeout(() => {
-                    forceResizeTerminal(
-                      termRef.current,
-                      terminalRef.current,
-                      processCache[tabId],
-                      tabId,
-                      fitAddonRef.current,
-                    );
-                  }, 16);
+                  scheduleTerminalLayoutSyncRef.current("intersection");
                 }
               });
             })
@@ -3288,37 +2958,7 @@ const WebTerminal = ({
       termRef.current = term;
       fitAddonRef.current = fitAddon;
 
-      // 同步终端大小
-      const syncTerminalSize = () => {
-        if (fitAddonRef.current) {
-          try {
-            // 先调用fit
-            fitAddonRef.current.fit();
-
-            // Canvas 渲染器需要手动刷新
-            if (!term.__webglEnabled && typeof term.refresh === "function") {
-              term.refresh(0, term.rows - 1);
-            }
-
-            // 获取实际尺寸
-            const cols = term.cols;
-            const rows = term.rows;
-            const processId = processCache[tabId];
-
-            if (processId) {
-              sendResizeIfNeeded(processId, tabId, cols, rows);
-            }
-          } catch {
-            /* intentionally ignored */
-          }
-        }
-      };
-
-      // 立即同步一次
-      syncTerminalSize();
-
-      // 使用EventManager管理延迟同步，确保布局稳定后大小正确
-      eventManager.setTimeout(syncTerminalSize, 100);
+      scheduleTerminalLayoutSyncRef.current("initial", { immediate: true });
 
       // 添加一个新的辅助函数，确保终端在被激活时调整大小
       const ensureTerminalSizeOnVisibilityChange = () => {
@@ -3335,13 +2975,7 @@ const WebTerminal = ({
           ) {
             // 使用EventManager管理延迟执行强制调整大小
             eventManager.setTimeout(() => {
-              forceResizeTerminal(
-                termRef.current,
-                terminalRef.current,
-                processCache[tabId],
-                tabId,
-                fitAddonRef.current,
-              );
+              scheduleTerminalLayoutSyncRef.current("content-visible");
               // 重置内容更新标志
               setContentUpdated(false);
             }, 10);
@@ -3405,6 +3039,16 @@ const WebTerminal = ({
 
       // EventManager会自动清理所有事件监听器、定时器和观察者
       return () => {
+        lifecycleActive = false;
+
+        if (layoutSyncFrameRef.current !== null) {
+          if (typeof cancelAnimationFrame === "function") {
+            cancelAnimationFrame(layoutSyncFrameRef.current);
+          }
+          layoutSyncFrameRef.current = null;
+        }
+        pendingLayoutSyncReasonRef.current = null;
+
         // 清理性能监控器
         if (performanceMonitorRef.current) {
           performanceMonitorRef.current.destroy();
@@ -3466,7 +3110,6 @@ const WebTerminal = ({
     lifecycleEventManager,
     tryEnableWebglRenderer,
     disableWebglRenderer,
-    scheduleHighlightRefresh,
     attachTerminalToContainer,
     recoverTerminalAfterActivation,
     markTerminalContentUpdated,
@@ -3702,24 +3345,8 @@ const WebTerminal = ({
       return;
     }
 
-    scheduleHighlightRefresh(termRef.current);
-  }, [contentUpdated, scheduleHighlightRefresh]);
-
-  useEffect(() => {
-    const terminalElement = termRef.current?.element;
-    if (!terminalElement?.classList) {
-      return undefined;
-    }
-
-    terminalElement.classList.toggle(
-      "xterm-search-selection-hidden",
-      Boolean(searchTerm),
-    );
-
-    return () => {
-      terminalElement.classList.remove("xterm-search-selection-hidden");
-    };
-  }, [searchAddonVersion, searchTerm]);
+    scheduleTerminalRedraw(termRef.current);
+  }, [contentUpdated, scheduleTerminalRedraw]);
 
   // 设置数据监听器的函数，处理终端输出
   const setupDataListener = (processId, term) => {
@@ -3773,24 +3400,8 @@ const WebTerminal = ({
         // 检测终端大小查询回复
         TERMINAL_RESIZE_QUERY_REGEX.test(dataStr)
       ) {
-        // 使用EventManager管理一系列延迟执行，以适应不同应用的启动速度
-        const delayTimes = [100, 300, 600, 1000];
-
-        delayTimes.forEach((delay) => {
-          eventManager.setTimeout(() => {
-            if (terminalRef.current && fitAddonRef.current) {
-              // 强制设置内容已更新，确保调整生效
-              setContentUpdated(true);
-              forceResizeTerminal(
-                term,
-                terminalRef.current,
-                processId,
-                tabId,
-                fitAddonRef.current,
-              );
-            }
-          }, delay);
-        });
+        setContentUpdated(true);
+        scheduleTerminalLayoutSyncRef.current("terminal-control-sequence");
       }
     };
 
@@ -3802,32 +3413,7 @@ const WebTerminal = ({
       mailbox.attachProcess(processId);
     }
 
-    // 同步终端大小
-    const syncTerminalSize = () => {
-      if (fitAddonRef.current) {
-        try {
-          fitAddonRef.current.fit();
-
-          // Canvas 渲染器需要手动刷新
-          if (!term.__webglEnabled && typeof term.refresh === "function") {
-            term.refresh(0, term.rows - 1);
-          }
-
-          const processId = processCache[tabId];
-          if (processId) {
-            sendResizeIfNeeded(processId, tabId, term.cols, term.rows);
-          }
-        } catch {
-          // 终端大小适配失败
-        }
-      }
-    };
-
-    // 立即同步一次
-    syncTerminalSize();
-
-    // 使用EventManager管理延迟同步，确保布局稳定后大小正确
-    eventManager.setTimeout(syncTerminalSize, 100);
+    scheduleTerminalLayoutSyncRef.current("data-listener");
 
     // 使用EventManager管理定期检查终端可见性的定时器
     // 优化：移除此重复的定时器，主useEffect中已有相同功能
@@ -3916,39 +3502,10 @@ const WebTerminal = ({
           return;
         }
 
-        try {
-          fitAddonRef.current.fit();
-
-          if (
-            !termRef.current.__webglEnabled &&
-            typeof termRef.current.refresh === "function"
-          ) {
-            termRef.current.refresh(0, termRef.current.rows - 1);
-          }
-
-          const activeProcessId = processIdFromEvent || processCache[tabId];
-          if (terminalIOMailboxRef.current?.requestResize) {
-            terminalIOMailboxRef.current.requestResize(
-              termRef.current.cols,
-              termRef.current.rows,
-              {
-                force: true,
-                immediate: true,
-              },
-            );
-          } else if (activeProcessId) {
-            sendResizeIfNeeded(
-              activeProcessId,
-              tabId,
-              termRef.current.cols,
-              termRef.current.rows,
-            );
-          }
-
-          updateCursorPosition();
-        } catch {
-          /* intentionally ignored */
-        }
+        scheduleTerminalLayoutSyncRef.current("session-restored", {
+          immediate: true,
+        });
+        updateCursorPosition();
       };
 
       const focusTerminal = () => {
@@ -3994,7 +3551,7 @@ const WebTerminal = ({
       if (termRef.current) {
         clearPendingWrappedInputRefresh(termRef.current);
         syncPromptTrackingFromTerminal(termRef.current);
-        scheduleHighlightRefresh(termRef.current);
+        scheduleTerminalRedraw(termRef.current);
         updateCursorPosition();
       }
       setContentUpdated(true);
@@ -4041,7 +3598,7 @@ const WebTerminal = ({
   }, [
     eventManager,
     resetPromptTracking,
-    scheduleHighlightRefresh,
+    scheduleTerminalRedraw,
     setCurrentInput,
     setShowSuggestions,
     setSuggestions,
@@ -4056,201 +3613,13 @@ const WebTerminal = ({
 
   // 添加标签切换监听器
   useEffect(() => {
-    // 创建一个用于监听标签切换事件的处理函数
     const handleTabChanged = (event) => {
-      // 检查是否是当前终端所在的标签被激活
       if (event.detail && event.detail.tabId === tabId) {
-        // 标签激活时设置内容已更新，确保调整生效
         setContentUpdated(true);
-
-        // 如果是强制刷新（如拆分后），立即触发多次resize
-        if (event.detail.forceRefresh) {
-          const executeResize = () => {
-            if (terminalRef.current && fitAddonRef.current && termRef.current) {
-              forceResizeTerminal(
-                termRef.current,
-                terminalRef.current,
-                processCache[tabId],
-                tabId,
-                fitAddonRef.current,
-              );
-            }
-          };
-
-          // 立即执行一次
-          executeResize();
-
-          // 针对拆分操作的特殊处理
-          if (event.detail.splitOperation) {
-            // 拆分操作需要更积极的刷新策略
-            const delayTimes = event.detail.finalRefresh
-              ? [100, 250, 500] // 最终刷新使用更长的间隔
-              : event.detail.retryAttempt
-                ? [100, 200, 400] // 重试时使用渐进式延迟
-                : [25, 75, 150, 300, 500, 750]; // 初始拆分使用密集刷新
-
-            delayTimes.forEach((delay) => {
-              eventManager.setTimeout(() => {
-                // 在每次重试前检查终端状态
-                if (
-                  terminalRef.current &&
-                  fitAddonRef.current &&
-                  termRef.current
-                ) {
-                  const container = terminalRef.current;
-                  const termElement = termRef.current.element;
-
-                  // 检查容器是否可见且有正确的尺寸
-                  if (
-                    container &&
-                    container.offsetWidth > 0 &&
-                    container.offsetHeight > 0
-                  ) {
-                    executeResize();
-
-                    // 特殊处理：强制刷新终端内容显示
-                    if (termRef.current.refresh) {
-                      setTimeout(() => {
-                        if (termRef.current && termRef.current.refresh) {
-                          termRef.current.refresh(0, termRef.current.rows - 1);
-
-                          // 强制触发重绘
-                          if (termRef.current.focus) {
-                            termRef.current.focus();
-                            setTimeout(() => termRef.current.blur(), 10);
-                          }
-                        }
-                      }, 25);
-                    }
-
-                    // 额外的DOM刷新
-                    if (termElement) {
-                      termElement.style.opacity = "0.99";
-                      setTimeout(() => {
-                        if (termElement) termElement.style.opacity = "1";
-                      }, 10);
-                    }
-                  } else {
-                    // 如果容器不可见，尝试重新显示
-                    if (container) {
-                      container.style.display = "block";
-                      container.style.visibility = "visible";
-                      container.style.opacity = "1";
-                    }
-                  }
-                }
-              }, delay);
-            });
-          } else {
-            // 常规强制刷新的重试机制
-            const delayTimes = event.detail.retryAttempt
-              ? [100, 200, 400]
-              : [50, 150, 300, 500, 800];
-            delayTimes.forEach((delay) => {
-              eventManager.setTimeout(() => {
-                // 在每次重试前检查终端状态
-                if (
-                  terminalRef.current &&
-                  fitAddonRef.current &&
-                  termRef.current
-                ) {
-                  const container = terminalRef.current;
-
-                  // 检查容器是否可见且有正确的尺寸
-                  if (
-                    container &&
-                    container.offsetWidth > 0 &&
-                    container.offsetHeight > 0
-                  ) {
-                    executeResize();
-
-                    // 额外的终端内容刷新
-                    if (termRef.current.refresh) {
-                      setTimeout(() => {
-                        if (termRef.current && termRef.current.refresh) {
-                          termRef.current.refresh(0, termRef.current.rows - 1);
-                        }
-                      }, 50);
-                    }
-                  }
-                }
-              }, delay);
-            });
-          }
-
-          // 最后一次验证和修复
-          setTimeout(
-            () => {
-              if (
-                terminalRef.current &&
-                fitAddonRef.current &&
-                termRef.current
-              ) {
-                const container = terminalRef.current;
-                const termElement = termRef.current.element;
-
-                // 如果终端仍然没有正确显示，进行最后的修复尝试
-                if (
-                  container &&
-                  (!termElement || termElement.offsetWidth === 0)
-                ) {
-                  // 强制重新适配
-                  fitAddonRef.current.fit();
-
-                  // 触发内容刷新
-                  if (termRef.current.refresh) {
-                    termRef.current.refresh(0, termRef.current.rows - 1);
-                  }
-
-                  // 同步到后端
-                  const processId = processCache[tabId];
-                  if (processId) {
-                    sendResizeIfNeeded(
-                      processId,
-                      tabId,
-                      termRef.current.cols,
-                      termRef.current.rows,
-                    );
-                  }
-                }
-              }
-            },
-            event.detail.splitOperation ? 1200 : 1000,
-          );
-        } else {
-          // 正常的标签切换处理
-          eventManager.setTimeout(() => {
-            if (terminalRef.current && fitAddonRef.current && termRef.current) {
-              forceResizeTerminal(
-                termRef.current,
-                terminalRef.current,
-                processCache[tabId],
-                tabId,
-                fitAddonRef.current,
-              );
-            }
-          }, 10);
-
-          // 使用EventManager管理多次尝试调整，以处理某些特殊情况
-          const delayTimes = [50, 150, 300];
-          delayTimes.forEach((delay) => {
-            eventManager.setTimeout(() => {
-              if (
-                terminalRef.current &&
-                fitAddonRef.current &&
-                termRef.current
-              ) {
-                forceResizeTerminal(
-                  termRef.current,
-                  terminalRef.current,
-                  processCache[tabId],
-                  tabId,
-                  fitAddonRef.current,
-                );
-              }
-            }, delay);
-          });
-        }
+        scheduleTerminalLayoutSyncRef.current(
+          event.detail.forceRefresh ? "tab-force-refresh" : "tab-activated",
+          { immediate: event.detail.forceRefresh },
+        );
       }
     };
 
@@ -4265,55 +3634,10 @@ const WebTerminal = ({
         fitAddonRef.current &&
         termRef.current
       ) {
-        // 设置内容已更新标志
         setContentUpdated(true);
-
-        // 延迟执行resize，确保DOM布局已经完成
-        const resizeDelay = layoutType === "split" ? 200 : 100;
-
-        setTimeout(() => {
-          if (terminalRef.current && fitAddonRef.current && termRef.current) {
-            // 强制重新计算容器尺寸
-            const container = terminalRef.current;
-            const currentWidth = container.clientWidth;
-            const currentHeight = container.clientHeight;
-
-            // 确保终端完全填充容器
-            if (termRef.current.element) {
-              termRef.current.element.style.width = `${currentWidth}px`;
-              termRef.current.element.style.height = `${currentHeight}px`;
-
-              // 强制重排
-              termRef.current.element.getBoundingClientRect();
-            }
-
-            // 执行尺寸适配
-            fitAddonRef.current.fit();
-
-            // 同步到后端进程
-            const processId = processCache[tabId];
-            if (processId) {
-              sendResizeIfNeeded(
-                processId,
-                tabId,
-                termRef.current.cols,
-                termRef.current.rows,
-              );
-            }
-
-            // 如果是拆分操作，额外进行多次resize确保显示正确
-            if (layoutType === "split") {
-              const additionalDelays = [100, 300, 500];
-              additionalDelays.forEach((delay) => {
-                eventManager.setTimeout(() => {
-                  if (fitAddonRef.current && termRef.current) {
-                    fitAddonRef.current.fit();
-                  }
-                }, delay);
-              });
-            }
-          }
-        }, resizeDelay);
+        scheduleTerminalLayoutSyncRef.current(
+          `terminal-resize:${layoutType || "default"}`,
+        );
       }
     };
 
@@ -4328,179 +3652,11 @@ const WebTerminal = ({
         fitAddonRef.current &&
         termRef.current
       ) {
-        // 设置内容已更新标志
         setContentUpdated(true);
-
-        // 强制刷新终端显示
-        const executeForceRefresh = () => {
-          if (terminalRef.current && fitAddonRef.current && termRef.current) {
-            // 强制重新计算容器尺寸
-            const container = terminalRef.current;
-            const currentWidth = container.clientWidth;
-            const currentHeight = container.clientHeight;
-
-            // 确保终端完全填充容器
-            if (termRef.current.element) {
-              termRef.current.element.style.width = `${currentWidth}px`;
-              termRef.current.element.style.height = `${currentHeight}px`;
-
-              // 强制重排
-              termRef.current.element.getBoundingClientRect();
-            }
-
-            // 执行尺寸适配
-            fitAddonRef.current.fit();
-
-            // 同步到后端进程
-            const processId = processCache[tabId];
-            if (processId) {
-              sendResizeIfNeeded(
-                processId,
-                tabId,
-                termRef.current.cols,
-                termRef.current.rows,
-              );
-            }
-
-            // 强制刷新终端内容显示
-            if (termRef.current.refresh) {
-              termRef.current.refresh(0, termRef.current.rows - 1);
-            }
-
-            // 特殊处理拆分重连后的情况
-            if (
-              layoutType === "post-split-reconnect" ||
-              layoutType === "post-split" ||
-              layoutType === "post-split-retry"
-            ) {
-              // 额外的重绘和聚焦操作
-              setTimeout(() => {
-                if (termRef.current && termRef.current.element) {
-                  // 强制DOM重绘
-                  const element = termRef.current.element;
-                  element.style.transform = "translateZ(0)";
-                  element.offsetHeight; // 触发重排
-                  element.style.transform = "";
-
-                  // 尝试聚焦和失焦以触发渲染
-                  if (termRef.current.focus && termRef.current.blur) {
-                    termRef.current.focus();
-                    setTimeout(() => {
-                      if (termRef.current && termRef.current.blur) {
-                        termRef.current.blur();
-                      }
-                    }, 50);
-                  }
-
-                  // 拆分重连模式下的特殊处理
-                  if (layoutType === "post-split-reconnect") {
-                    // 检查当前组件的SSH配置中是否有拆分重连标记
-                    if (sshConfig && sshConfig.splitReconnect) {
-                      // 强制刷新终端内容
-                      if (termRef.current.refresh) {
-                        termRef.current.refresh(0, termRef.current.rows - 1);
-                      }
-
-                      // 触发窗口resize确保布局正确
-                      window.dispatchEvent(new Event("resize"));
-                    }
-                  }
-                }
-              }, 100);
-            }
-          }
-        };
-
-        // 立即执行一次
-        executeForceRefresh();
-
-        // 针对拆分重连的特殊情况，使用更密集的重试策略
-        if (
-          layoutType === "post-split-reconnect" ||
-          layoutType === "post-split" ||
-          layoutType === "post-split-retry"
-        ) {
-          const retryDelays =
-            layoutType === "post-split-reconnect"
-              ? [50, 150, 300, 500, 800, 1200] // 重连模式使用更密集的重试
-              : layoutType === "post-split-retry"
-                ? [100, 300, 600] // 重试时使用更长间隔
-                : [50, 150, 300, 500, 800]; // 初始拆分时密集重试
-
-          retryDelays.forEach((delay) => {
-            eventManager.setTimeout(() => {
-              if (
-                terminalRef.current &&
-                fitAddonRef.current &&
-                termRef.current
-              ) {
-                const container = terminalRef.current;
-
-                // 检查容器是否正确显示
-                if (
-                  container &&
-                  container.offsetWidth > 0 &&
-                  container.offsetHeight > 0
-                ) {
-                  executeForceRefresh();
-
-                  // 拆分重连模式的额外验证
-                  if (layoutType === "post-split-reconnect") {
-                    const processId = processCache[tabId];
-                    if (processId) {
-                      // 验证SSH连接是否正常
-                      setTimeout(() => {
-                        if (termRef.current && termRef.current.refresh) {
-                          termRef.current.refresh(0, termRef.current.rows - 1);
-                        }
-                      }, 100);
-                    }
-                  }
-                } else {
-                  // 容器不可见，尝试修复
-                  if (container) {
-                    container.style.display = "flex";
-                    container.style.visibility = "visible";
-                    container.style.opacity = "1";
-
-                    // 修复后再次执行刷新
-                    setTimeout(() => {
-                      executeForceRefresh();
-                    }, 50);
-                  }
-                }
-              }
-            }, delay);
-          });
-
-          // 最终保险措施（拆分重连模式下延长验证时间）
-          const finalCheckDelay =
-            layoutType === "post-split-reconnect" ? 2000 : 1500;
-          setTimeout(() => {
-            if (terminalRef.current && fitAddonRef.current && termRef.current) {
-              const termElement = termRef.current.element;
-
-              // 最后检查：如果仍然有问题，进行强制修复
-              if (
-                !termElement ||
-                termElement.offsetWidth === 0 ||
-                termElement.offsetHeight === 0
-              ) {
-                // 强制重新创建终端显示
-                if (fitAddonRef.current && termRef.current) {
-                  fitAddonRef.current.fit();
-
-                  if (termRef.current.refresh) {
-                    termRef.current.refresh(0, termRef.current.rows - 1);
-                  }
-
-                  // 强制触发窗口resize事件
-                  window.dispatchEvent(new Event("resize"));
-                }
-              }
-            }
-          }, finalCheckDelay);
-        }
+        scheduleTerminalLayoutSyncRef.current(
+          `terminal-force-refresh:${layoutType || "default"}`,
+          { immediate: true },
+        );
       }
     };
 
@@ -4526,7 +3682,7 @@ const WebTerminal = ({
       removeTerminalResizeListener();
       removeTerminalForceRefreshListener();
     };
-  }, [tabId, eventManager]);
+  }, [eventManager, tabId]);
 
   return (
     <Box
