@@ -11,8 +11,8 @@ export const useTerminalRender = ({
   setWebglRendererEnabled,
   performanceMonitorRef,
 }) => {
-  const highlightRefreshFrameRef = useRef(null);
-  const lastHighlightRefreshRef = useRef(0);
+  const terminalRedrawFrameRef = useRef(null);
+  const lastTerminalRedrawRef = useRef(0);
 
   const detachWebglCanvasHandlers = useCallback((termInstance) => {
     const handlers = termInstance?.__webglHandlers;
@@ -168,7 +168,7 @@ export const useTerminalRender = ({
     ],
   );
 
-  const scheduleHighlightRefresh = useCallback(
+  const scheduleTerminalRedraw = useCallback(
     (termInstance, options = {}) => {
       if (!termInstance || typeof termInstance.refresh !== "function") {
         return;
@@ -182,13 +182,13 @@ export const useTerminalRender = ({
       }
 
       const now = Date.now();
-      const timeSinceLastRefresh = now - lastHighlightRefreshRef.current;
+      const timeSinceLastRefresh = now - lastTerminalRedrawRef.current;
 
       if (
-        highlightRefreshFrameRef.current &&
+        terminalRedrawFrameRef.current &&
         typeof cancelAnimationFrame === "function"
       ) {
-        cancelAnimationFrame(highlightRefreshFrameRef.current);
+        cancelAnimationFrame(terminalRedrawFrameRef.current);
       }
 
       if (typeof requestAnimationFrame !== "function") {
@@ -201,16 +201,16 @@ export const useTerminalRender = ({
             performanceMonitorRef.current.recordRender(duration);
           }
 
-          lastHighlightRefreshRef.current = now;
+          lastTerminalRedrawRef.current = now;
         }
-        highlightRefreshFrameRef.current = null;
+        terminalRedrawFrameRef.current = null;
         return;
       }
 
-      highlightRefreshFrameRef.current = requestAnimationFrame(() => {
-        highlightRefreshFrameRef.current = null;
+      terminalRedrawFrameRef.current = requestAnimationFrame(() => {
+        terminalRedrawFrameRef.current = null;
         const currentTime = Date.now();
-        if (currentTime - lastHighlightRefreshRef.current >= minIntervalMs) {
+        if (currentTime - lastTerminalRedrawRef.current >= minIntervalMs) {
           const startTime = performance.now();
           termInstance.refresh(0, termInstance.rows - 1);
           const duration = performance.now() - startTime;
@@ -219,7 +219,7 @@ export const useTerminalRender = ({
             performanceMonitorRef.current.recordRender(duration);
           }
 
-          lastHighlightRefreshRef.current = currentTime;
+          lastTerminalRedrawRef.current = currentTime;
         }
       });
     },
@@ -228,12 +228,12 @@ export const useTerminalRender = ({
 
   const resetRenderState = useCallback(() => {
     if (
-      highlightRefreshFrameRef.current &&
+      terminalRedrawFrameRef.current &&
       typeof cancelAnimationFrame === "function"
     ) {
-      cancelAnimationFrame(highlightRefreshFrameRef.current);
+      cancelAnimationFrame(terminalRedrawFrameRef.current);
     }
-    highlightRefreshFrameRef.current = null;
+    terminalRedrawFrameRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -264,7 +264,7 @@ export const useTerminalRender = ({
   return {
     disableWebglRenderer,
     tryEnableWebglRenderer,
-    scheduleHighlightRefresh,
+    scheduleTerminalRedraw,
     resetRenderState,
   };
 };

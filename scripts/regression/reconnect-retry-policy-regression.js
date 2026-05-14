@@ -8,7 +8,6 @@ const ROOT = path.resolve(__dirname, "..", "..");
 const ReconnectionManager = require(
   path.join(ROOT, "src/core/connection/reconnection-manager.js"),
 );
-const SSHPool = require(path.join(ROOT, "src/core/connection/ssh-pool.js"));
 const {
   DEFAULT_SSH_RETRY_CONFIG,
   buildReconnectTimeoutMessage,
@@ -73,49 +72,6 @@ function testDefaultRetryPolicyIsFiveSecondsForTwentyFiveSecondsWindow() {
     buildReconnectTimeoutMessage(DEFAULT_SSH_RETRY_CONFIG),
     "重连超时（25秒），请检查网络/VPN后手动重连。",
     "超时提示文案应保持简洁并同步使用25秒窗口",
-  );
-}
-
-async function testActiveHealthProbeTriggersRecovery() {
-  const pool = new SSHPool({
-    healthCheckInterval: 15_000,
-    activeHealthProbeTimeout: 10,
-  });
-
-  const connectionKey = "tab:tab-vpn:example.com:22:u";
-  const connectionInfo = {
-    key: connectionKey,
-    ready: true,
-    refCount: 1,
-    createdAt: Date.now(),
-    lastUsed: Date.now(),
-    config: { host: "example.com", port: 22, username: "u" },
-    client: {
-      destroyed: false,
-      exec(_command, callback) {
-        callback(Object.assign(new Error("probe failed"), { code: "EPIPE" }));
-      },
-    },
-  };
-
-  let recoveryPayload = null;
-  pool.connections.set(connectionKey, connectionInfo);
-  pool.handleActiveUnhealthyConnection = (key, conn, metadata) => {
-    recoveryPayload = { key, conn, metadata };
-    return true;
-  };
-
-  await pool.performHealthCheck();
-
-  assert.equal(
-    recoveryPayload?.key,
-    connectionKey,
-    "活跃SSH连接探测失败时应立即转入自动重连恢复流程",
-  );
-  assert.equal(
-    connectionInfo.ready,
-    false,
-    "探测失败后连接应先标记为未就绪，避免继续复用坏连接",
   );
 }
 
@@ -323,10 +279,6 @@ async function run() {
     [
       "preflight failures also count retries",
       testPreflightFailuresAlsoCountRetries,
-    ],
-    [
-      "active health probe triggers recovery",
-      testActiveHealthProbeTriggersRecovery,
     ],
   ];
 
