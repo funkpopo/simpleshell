@@ -12,6 +12,8 @@ import CloseIcon from "@mui/icons-material/Close";
 import { alpha } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 
+const AUTO_UNLOCK_DELAY_MS = 300;
+
 const MasterPasswordOverlay = React.memo(
   ({
     open,
@@ -63,7 +65,7 @@ const MasterPasswordOverlay = React.memo(
       const timer = window.setTimeout(() => {
         lastAutoSubmittedPasswordRef.current = password;
         onUnlock(password);
-      }, 650);
+      }, AUTO_UNLOCK_DELAY_MS);
 
       return () => window.clearTimeout(timer);
     }, [isSubmitting, loading, onUnlock, open, password]);
