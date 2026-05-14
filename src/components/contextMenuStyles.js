@@ -49,7 +49,7 @@ export const getWebTerminalContextMenuPaperSx = (theme) => {
     border: `1px solid ${
       isDark ? "rgba(255,255,255,0.16)" : "rgba(20,24,32,0.12)"
     }`,
-    bgcolor: isDark ? "rgba(26, 28, 34, 0.72)" : "rgba(255,255,255,0.72)",
+    bgcolor: isDark ? "rgba(26, 28, 34, 0.58)" : "rgba(255,255,255,0.62)",
     color: "text.primary",
     backdropFilter: "blur(16px) saturate(150%)",
     WebkitBackdropFilter: "blur(16px) saturate(150%)",
