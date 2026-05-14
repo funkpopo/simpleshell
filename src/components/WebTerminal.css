@@ -8,7 +8,7 @@
 .xterm {
   height: 100% !important;
   width: 100% !important;
-  padding: 8px;
+  padding: 0;
   font-feature-settings:
     "liga" 1,
     "calt" 1;
@@ -80,43 +80,21 @@
   border-radius: 1px;
 }
 
-/* 选择高亮优化 */
 .xterm-selection {
   opacity: 1 !important;
-  z-index: 10 !important;
-  transition:
-    transform 0.05s ease,
-    opacity 0.1s ease;
+  pointer-events: none !important;
 }
 
 .xterm-selection div {
-  background: linear-gradient(
-    to bottom,
-    rgba(100, 150, 255, 0.25),
-    rgba(100, 150, 255, 0.35)
-  ) !important;
-  border-radius: 2px;
-  box-shadow: 0 0 3px rgba(100, 150, 255, 0.2);
+  background-color: rgba(100, 150, 255, 0.34) !important;
 }
 
-/* 深色主题选择优化 */
 .dark-theme .xterm-selection div {
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 170, 0.25),
-    rgba(255, 255, 170, 0.35)
-  ) !important;
-  box-shadow: 0 0 3px rgba(255, 255, 170, 0.2);
+  background-color: rgba(255, 223, 0, 0.32) !important;
 }
 
-/* 浅色主题选择优化 */
 .light-theme .xterm-selection div {
-  background: linear-gradient(
-    to bottom,
-    rgba(0, 120, 215, 0.25),
-    rgba(0, 120, 215, 0.35)
-  ) !important;
-  box-shadow: 0 0 3px rgba(0, 120, 215, 0.2);
+  background-color: rgba(0, 120, 215, 0.28) !important;
 }
 
 /* 链接样式优化 */

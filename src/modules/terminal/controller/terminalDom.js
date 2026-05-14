@@ -49,67 +49,24 @@ export const terminalStyles = `
   position: relative;
 }
 
-/* 增强版选中高亮样式 */
 .xterm-selection {
   opacity: 1 !important;
-  z-index: 10 !important;
   pointer-events: none !important;
-  position: absolute !important;
 }
 
-/* 默认隐藏所有选择div */
 .xterm .xterm-selection div {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
   pointer-events: none !important;
-  position: absolute !important;
   box-sizing: border-box !important;
+  background-color: rgba(88, 166, 255, 0.34) !important;
 }
 
-/* 仅显示第一个选择容器中的第一个div */
-.xterm .xterm-selection:first-of-type div:first-child {
-  display: block !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-  will-change: transform, width, height !important;
-  transition: transform 0.05s ease, opacity 0.1s ease !important;
-  box-sizing: border-box !important;
-  border-radius: 2px !important;
-}
-
-/* 彻底隐藏任何额外的选择容器 */
-.xterm-selection:not(:first-of-type) {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-}
-
-/* 标记为重复的选择元素彻底隐藏 */
-.xterm-selection-duplicate {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-
-/* 选择高亮颜色 - 增强可见度 */
-.xterm .xterm-selection div {
-  background: linear-gradient(to bottom, rgba(88, 166, 255, 0.28), rgba(88, 166, 255, 0.38)) !important;
-  box-shadow: 0 0 4px rgba(88, 166, 255, 0.3) !important;
-}
-
-/* 深色主题下的选择高亮 - 使用更亮的颜色 */
 .dark-theme .xterm .xterm-selection div {
-  background: linear-gradient(to bottom, rgba(255, 223, 0, 0.25), rgba(255, 223, 0, 0.35)) !important;
-  box-shadow: 0 0 4px rgba(255, 223, 0, 0.25) !important;
+  background-color: rgba(255, 223, 0, 0.32) !important;
 }
 
-/* 浅色主题下的选择高亮 - 使用更深的蓝色 */
 .light-theme .xterm .xterm-selection div,
 body:not(.dark-theme) .xterm .xterm-selection div {
-  background: linear-gradient(to bottom, rgba(9, 105, 218, 0.25), rgba(9, 105, 218, 0.35)) !important;
-  box-shadow: 0 0 4px rgba(9, 105, 218, 0.3) !important;
+  background-color: rgba(9, 105, 218, 0.28) !important;
 }
 
 /* 搜索结果高亮 */
@@ -126,14 +83,6 @@ body:not(.dark-theme) .xterm .xterm-selection div {
 
 .xterm-decoration-overview-ruler {
   border-radius: 999px !important;
-}
-
-/* 搜索模式下隐藏 selection 叠层，避免与 active decoration 叠加后出现范围偏移 */
-.xterm.xterm-search-selection-hidden .xterm-selection,
-.xterm.xterm-search-selection-hidden .xterm-selection div {
-  opacity: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
 }
 
 /* 深色主题下的搜索高亮：使用偏冷色，避免压住浅色终端文字 */
