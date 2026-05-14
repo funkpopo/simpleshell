@@ -1257,6 +1257,8 @@ function AppContent() {
   /** AI 当前 API 是否可达（false 包含未配置/不可达） */
   const [aiApiReachable, setAiApiReachable] = React.useState(false);
   const aiApiProbeTokenRef = React.useRef(0);
+  const aiPanelOpen =
+    aiChatStatus === "minimized" || aiChatStatus === "visible";
 
   const tabsRef = useRef(null);
   const [hasTabOverflow, setHasTabOverflow] = React.useState(false);
@@ -2799,8 +2801,6 @@ function AppContent() {
   }, [aiChatStatus]);
 
   React.useEffect(() => {
-    const aiPanelOpen =
-      aiChatStatus === "minimized" || aiChatStatus === "visible";
     if (
       !aiPanelOpen ||
       !window.terminalAPI?.fetchModels ||
@@ -4261,7 +4261,7 @@ function AppContent() {
                 {/* AI助手按钮 */}
                 <SidebarTooltip
                   title={
-                    aiApiReachable === false
+                    aiPanelOpen && aiApiReachable === false
                       ? t("sidebar.aiApiUnreachable")
                       : t("sidebar.ai")
                   }
@@ -4286,8 +4286,7 @@ function AppContent() {
                     }}
                   >
                     <AIIcon />
-                    {(aiChatStatus === "minimized" ||
-                      aiChatStatus === "visible") && (
+                    {aiPanelOpen && (
                       <Box
                         sx={{
                           position: "absolute",
