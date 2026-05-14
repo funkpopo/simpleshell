@@ -241,9 +241,9 @@ function buildReconnectTimeoutMessage(retryConfig, language = "zh-CN") {
     language,
   );
   if (!isZhLanguage(language)) {
-    return `Automatic reconnect timed out (${duration}). Check proxy/VPN/network and reconnect manually.`;
+    return `Reconnect timed out (${duration}). Check network/VPN and reconnect manually.`;
   }
-  return `自动重连超时（${duration}），请检查代理/VPN/网络后手动重连。`;
+  return `重连超时（${duration}），请检查网络/VPN后手动重连。`;
 }
 
 function buildReconnectWaitMessage(retryConfig, language = "zh-CN") {
@@ -253,9 +253,9 @@ function buildReconnectWaitMessage(retryConfig, language = "zh-CN") {
     language,
   );
   if (!isZhLanguage(language)) {
-    return `Connection is not ready. Waiting for proxy/VPN/network recovery and retrying automatically (up to ${duration})...`;
+    return `Reconnecting, waiting up to ${duration} for network/VPN...`;
   }
-  return `连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多${duration}）...`;
+  return `正在重连，最多等待网络/VPN ${duration}...`;
 }
 
 function sleep(ms) {

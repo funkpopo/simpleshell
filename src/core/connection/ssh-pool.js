@@ -40,7 +40,7 @@ class SSHPool extends BaseConnectionPool {
       protocolType: "SSH",
       maxConnections: config.maxConnections || 50,
       idleTimeout: config.idleTimeout || 30 * 60 * 1000, // 30分钟
-      healthCheckInterval: config.healthCheckInterval || 5 * 60 * 1000, // 5分钟
+      healthCheckInterval: config.healthCheckInterval || 15 * 1000, // 15秒，及时发现VPN/路由切换后的半开连接
       connectionTimeout: config.connectionTimeout || 15 * 1000, // 15秒
     });
 
@@ -56,6 +56,10 @@ class SSHPool extends BaseConnectionPool {
 
     // 初始化重连管理器
     this.reconnectionManager = new ReconnectionManager();
+
+    this.activeHealthProbeTimeout =
+      Number(config.activeHealthProbeTimeout) || 3000;
+    this.activeHealthProbes = new Set();
   }
 
   /**
@@ -516,6 +520,93 @@ class SSHPool extends BaseConnectionPool {
       connectionInfo.client &&
       !connectionInfo.client.destroyed
     );
+  }
+
+  async _probeActiveConnection(key, connectionInfo) {
+    if (!key || !connectionInfo?.client || this.activeHealthProbes.has(key)) {
+      return true;
+    }
+
+    const client = connectionInfo.client;
+    if (!connectionInfo.ready || client.destroyed) {
+      return false;
+    }
+
+    this.activeHealthProbes.add(key);
+    try {
+      return await new Promise((resolve) => {
+        let finished = false;
+        let streamRef = null;
+        const finish = (ok) => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timeoutId);
+          if (!ok && streamRef && typeof streamRef.destroy === "function") {
+            try {
+              streamRef.destroy();
+            } catch {
+              /* intentionally ignored */
+            }
+          }
+          resolve(ok);
+        };
+
+        const timeoutId = setTimeout(
+          () => finish(false),
+          this.activeHealthProbeTimeout,
+        );
+
+        try {
+          client.exec("true", (err, stream) => {
+            if (err) {
+              finish(false);
+              return;
+            }
+
+            streamRef = stream;
+            stream.once("close", (code) => finish(code === 0));
+            stream.once("error", () => finish(false));
+          });
+        } catch {
+          finish(false);
+        }
+      });
+    } finally {
+      this.activeHealthProbes.delete(key);
+    }
+  }
+
+  async performHealthCheck() {
+    const activeConnections = Array.from(this.connections.entries()).filter(
+      ([key, conn]) =>
+        conn?.refCount > 0 || this.isConnectionReferencedByTabs(key),
+    );
+
+    if (activeConnections.length === 0) {
+      return super.performHealthCheck();
+    }
+
+    for (const [key, conn] of activeConnections) {
+      if (!this.isConnectionHealthy(conn)) {
+        this.handleActiveUnhealthyConnection(key, conn, {
+          reason: CLOSE_REASON.HEALTH,
+          checkedAt: Date.now(),
+        });
+        continue;
+      }
+
+      const ok = await this._probeActiveConnection(key, conn);
+      if (!ok) {
+        this._logInfo(`主动健康探测失败，转入自动重连: ${key}`);
+        conn.ready = false;
+        this.handleActiveUnhealthyConnection(key, conn, {
+          reason: CLOSE_REASON.HEALTH,
+          checkedAt: Date.now(),
+        });
+      }
+    }
+
+    super.performHealthCheck();
   }
 
   /**
