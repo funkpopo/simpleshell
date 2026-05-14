@@ -31,6 +31,7 @@ import {
   Alert,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import { compactContextMenuPaperSx } from "./contextMenuStyles";
 import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import AddIcon from "@mui/icons-material/Add";
@@ -1170,6 +1171,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       disableScrollLock
       PaperProps={{
         "data-shortcut-commands-context-menu": "true",
+        sx: compactContextMenuPaperSx,
       }}
     >
       {dialogType === "command" && (

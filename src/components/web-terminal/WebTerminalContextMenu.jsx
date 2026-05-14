@@ -13,6 +13,7 @@ import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SearchIcon from "@mui/icons-material/Search";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
 import { useTranslation } from "react-i18next";
+import { getWebTerminalContextMenuPaperSx } from "../contextMenuStyles";
 
 const WebTerminalContextMenu = ({
   contextMenu,
@@ -39,11 +40,7 @@ const WebTerminalContextMenu = ({
           : undefined
       }
       PaperProps={{
-        sx: {
-          boxShadow: theme.shadows[8],
-          bgcolor: "background.paper",
-          color: "text.primary",
-        },
+        sx: getWebTerminalContextMenuPaperSx(theme),
       }}
     >
       <MenuItem onClick={onCopy} disabled={!selectedText}>

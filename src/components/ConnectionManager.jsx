@@ -35,6 +35,7 @@ import {
   Divider,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import { compactContextMenuPaperSx } from "./contextMenuStyles";
 import ComputerIcon from "@mui/icons-material/Computer";
 import FolderIcon from "@mui/icons-material/Folder";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
@@ -2179,6 +2180,7 @@ const ConnectionManager = memo(
               disableScrollLock
               PaperProps={{
                 "data-connection-manager-context-menu": "true",
+                sx: compactContextMenuPaperSx,
               }}
             >
               {connectionListContextMenu?.kind === "connection" && (

@@ -38,6 +38,7 @@ import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SelectAllIcon from "@mui/icons-material/SelectAll";
 import { useTranslation } from "react-i18next";
 import { sidebarContentSx, sidebarListItemButtonSx } from "./sidebarItemStyles";
+import { compactContextMenuPaperSx } from "./contextMenuStyles";
 
 // 虚拟化历史记录项组件
 const HistoryItem = React.memo(
@@ -881,6 +882,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
         disableScrollLock
         PaperProps={{
           "data-command-history-context-menu": "true",
+          sx: compactContextMenuPaperSx,
         }}
       >
         <MenuItem onClick={() => handleSendCommand(menuTargetCommand?.command)}>

@@ -33,6 +33,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import { alpha } from "@mui/material/styles";
 import { FileManagerSkeleton } from "./SkeletonLoader.jsx";
+import { compactContextMenuPaperSx } from "./contextMenuStyles";
 import FolderIcon from "@mui/icons-material/Folder";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
@@ -6498,7 +6499,10 @@ const FileManager = memo(
           open={contextMenu !== null && !menuItems.isDeleting}
           onClose={handleContextMenuClose}
           anchorReference="anchorPosition"
-          PaperProps={{ "data-file-manager-context-menu": "true" }}
+          PaperProps={{
+            "data-file-manager-context-menu": "true",
+            sx: compactContextMenuPaperSx,
+          }}
           anchorPosition={
             contextMenu !== null
               ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
@@ -6672,7 +6676,10 @@ const FileManager = memo(
           open={blankContextMenu !== null && !menuItems.isDeleting}
           onClose={handleBlankContextMenuClose}
           anchorReference="anchorPosition"
-          PaperProps={{ "data-file-manager-context-menu": "true" }}
+          PaperProps={{
+            "data-file-manager-context-menu": "true",
+            sx: compactContextMenuPaperSx,
+          }}
           anchorPosition={
             blankContextMenu !== null
               ? { top: blankContextMenu.mouseY, left: blankContextMenu.mouseX }
