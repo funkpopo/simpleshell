@@ -1283,14 +1283,6 @@ function AppContent() {
   const reconnectStatusColor = getReconnectStatusColor(
     contextMenuReconnectStatus?.state,
   );
-  const reconnectCountdownSeconds = getReconnectCountdownSeconds(
-    contextMenuReconnectStatus?.nextRetryAt,
-    reconnectNow,
-  );
-  const reconnectWindowSeconds = getReconnectCountdownSeconds(
-    contextMenuReconnectStatus?.windowExpiresAt,
-    reconnectNow,
-  );
   const reconnectFailureReasonLabel = getReconnectFailureReasonLabel(
     t,
     contextMenuReconnectStatus?.failureReason,
@@ -1459,10 +1451,7 @@ function AppContent() {
     const getSidebarWidth = () => {
       if (resourceMonitorOpen && lastOpenedSidebar === "resource") {
         return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
-      } else if (
-        connectionManagerOpen &&
-        lastOpenedSidebar === "connection"
-      ) {
+      } else if (connectionManagerOpen && lastOpenedSidebar === "connection") {
         return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
       } else if (fileManagerOpen && lastOpenedSidebar === "file") {
         return SIDEBAR_WIDTHS.FILE_MANAGER;
@@ -2744,7 +2733,10 @@ function AppContent() {
   };
 
   const probeAiApiStatus = useCallback(async () => {
-    if (!window.terminalAPI?.fetchModels || !window.terminalAPI?.loadAISettings) {
+    if (
+      !window.terminalAPI?.fetchModels ||
+      !window.terminalAPI?.loadAISettings
+    ) {
       return;
     }
     const probeToken = ++aiApiProbeTokenRef.current;
@@ -3093,7 +3085,8 @@ function AppContent() {
 
       // 同步硬件加速标志到 globalTransferStore（不需重启即可影响 RAF 节流路径）
       if (perf && perf.hardwareAcceleration !== undefined) {
-        window.__hardwareAccelerationEnabled = perf.hardwareAcceleration !== false;
+        window.__hardwareAccelerationEnabled =
+          perf.hardwareAcceleration !== false;
       }
 
       // React 19: 所有状态更新会自动批处理，提高性能
@@ -3602,17 +3595,6 @@ function AppContent() {
                       })}
                     </Typography>
                   )}
-                {Number.isFinite(reconnectCountdownSeconds) &&
-                  reconnectCountdownSeconds > 0 && (
-                    <Typography
-                      variant="caption"
-                      sx={{ color: "text.secondary", display: "block" }}
-                    >
-                      {t("tabMenu.nextRetryIn", {
-                        seconds: reconnectCountdownSeconds,
-                      })}
-                    </Typography>
-                  )}
                 {reconnectFailureReasonLabel && (
                   <Typography
                     variant="caption"
@@ -3623,17 +3605,6 @@ function AppContent() {
                     })}
                   </Typography>
                 )}
-                {Number.isFinite(reconnectWindowSeconds) &&
-                  reconnectWindowSeconds > 0 && (
-                    <Typography
-                      variant="caption"
-                      sx={{ color: "text.secondary", display: "block" }}
-                    >
-                      {t("tabMenu.retryWindowRemaining", {
-                        seconds: reconnectWindowSeconds,
-                      })}
-                    </Typography>
-                  )}
                 {contextMenuReconnectStatus?.error && (
                   <Typography
                     variant="caption"
@@ -3646,21 +3617,6 @@ function AppContent() {
                   >
                     {t("tabMenu.lastError", {
                       error: contextMenuReconnectStatus.error,
-                    })}
-                  </Typography>
-                )}
-                {contextMenuReconnectStatus?.hint && (
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: "text.secondary",
-                      display: "block",
-                      mt: 0.5,
-                      wordBreak: "break-word",
-                    }}
-                  >
-                    {t("tabMenu.reconnectHint", {
-                      hint: contextMenuReconnectStatus.hint,
                     })}
                   </Typography>
                 )}

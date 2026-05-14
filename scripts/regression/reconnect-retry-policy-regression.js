@@ -5,10 +5,10 @@ const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 
-const ReconnectionManager = require(path.join(
-  ROOT,
-  "src/core/connection/reconnection-manager.js",
-));
+const ReconnectionManager = require(
+  path.join(ROOT, "src/core/connection/reconnection-manager.js"),
+);
+const SSHPool = require(path.join(ROOT, "src/core/connection/ssh-pool.js"));
 const {
   DEFAULT_SSH_RETRY_CONFIG,
   buildReconnectTimeoutMessage,
@@ -66,13 +66,56 @@ function testDefaultRetryPolicyIsFiveSecondsForTwentyFiveSecondsWindow() {
   );
   assert.equal(
     buildReconnectWaitMessage(DEFAULT_SSH_RETRY_CONFIG),
-    "连接未就绪，正在等待代理/VPN/网络恢复并自动重试（最多25秒）...",
-    "等待提示文案应同步使用25秒窗口",
+    "正在重连，最多等待网络/VPN 25秒...",
+    "等待提示文案应保持简洁并同步使用25秒窗口",
   );
   assert.equal(
     buildReconnectTimeoutMessage(DEFAULT_SSH_RETRY_CONFIG),
-    "自动重连超时（25秒），请检查代理/VPN/网络后手动重连。",
-    "超时提示文案应同步使用25秒窗口",
+    "重连超时（25秒），请检查网络/VPN后手动重连。",
+    "超时提示文案应保持简洁并同步使用25秒窗口",
+  );
+}
+
+async function testActiveHealthProbeTriggersRecovery() {
+  const pool = new SSHPool({
+    healthCheckInterval: 15_000,
+    activeHealthProbeTimeout: 10,
+  });
+
+  const connectionKey = "tab:tab-vpn:example.com:22:u";
+  const connectionInfo = {
+    key: connectionKey,
+    ready: true,
+    refCount: 1,
+    createdAt: Date.now(),
+    lastUsed: Date.now(),
+    config: { host: "example.com", port: 22, username: "u" },
+    client: {
+      destroyed: false,
+      exec(_command, callback) {
+        callback(Object.assign(new Error("probe failed"), { code: "EPIPE" }));
+      },
+    },
+  };
+
+  let recoveryPayload = null;
+  pool.connections.set(connectionKey, connectionInfo);
+  pool.handleActiveUnhealthyConnection = (key, conn, metadata) => {
+    recoveryPayload = { key, conn, metadata };
+    return true;
+  };
+
+  await pool.performHealthCheck();
+
+  assert.equal(
+    recoveryPayload?.key,
+    connectionKey,
+    "活跃SSH连接探测失败时应立即转入自动重连恢复流程",
+  );
+  assert.equal(
+    connectionInfo.ready,
+    false,
+    "探测失败后连接应先标记为未就绪，避免继续复用坏连接",
   );
 }
 
@@ -152,11 +195,7 @@ async function testReconnectRunsFiveRetriesAfterFailures() {
 
   await failureEvent;
 
-  assert.equal(
-    reconnectScheduledCount,
-    5,
-    "连续失败时应完整调度5次自动重连",
-  );
+  assert.equal(reconnectScheduledCount, 5, "连续失败时应完整调度5次自动重连");
   assert.deepEqual(
     scheduledAttempts,
     [0, 1, 2, 3, 4],
@@ -260,16 +299,8 @@ async function testPreflightFailuresAlsoCountRetries() {
     [0, 1, 2, 3, 4],
     "预检连续失败时，等待中的已重试次数也应逐步累积",
   );
-  assert.equal(
-    reconnectStartedCount,
-    5,
-    "预检连续失败时也应记为5次已执行重试",
-  );
-  assert.equal(
-    failurePayload.attempts,
-    5,
-    "最终失败时应显示已重试5次",
-  );
+  assert.equal(reconnectStartedCount, 5, "预检连续失败时也应记为5次已执行重试");
+  assert.equal(failurePayload.attempts, 5, "最终失败时应显示已重试5次");
   assert.equal(
     failurePayload.failureReason,
     "proxy-unavailable",
@@ -292,6 +323,10 @@ async function run() {
     [
       "preflight failures also count retries",
       testPreflightFailuresAlsoCountRetries,
+    ],
+    [
+      "active health probe triggers recovery",
+      testActiveHealthProbeTriggersRecovery,
     ],
   ];
 

@@ -26,26 +26,26 @@ function getTerminalText(config, key, params = {}) {
   const isZh = isZhLanguage(getTerminalLanguage(config));
   const messages = {
     reconnectRecoveryStarted: isZh
-      ? "连接已恢复，正在重建终端会话..."
-      : "Connection recovered. Rebuilding terminal session...",
-    reconnectRecoverySucceeded: isZh
-      ? "终端会话已自动恢复"
-      : "Terminal session restored automatically",
+      ? "正在恢复终端..."
+      : "Restoring terminal...",
+    reconnectRecoverySucceeded: isZh ? "终端已恢复" : "Terminal restored",
     reconnectRecoveryFailedDefault: isZh
-      ? "自动恢复终端会话失败，请检查网络后手动重连。"
-      : "Failed to restore the terminal session automatically. Check the network and reconnect manually.",
+      ? "终端恢复失败，请手动重连。"
+      : "Terminal restore failed. Reconnect manually.",
     reconnectRecoveryFailedHint: isZh
-      ? "底层连接已恢复，但终端会话恢复失败，可点击“手动重连”。"
-      : "The underlying connection recovered, but the terminal session restore failed. You can use Manual Reconnect.",
-    sshDisconnected: isZh ? "SSH连接已断开" : "SSH connection disconnected",
+      ? "连接已恢复，但终端恢复失败。"
+      : "Connection recovered, but terminal restore failed.",
+    sshDisconnected: isZh
+      ? "SSH已断开，正在重连"
+      : "SSH disconnected, reconnecting",
     telnetClosed: isZh ? "Telnet连接已关闭" : "Telnet connection closed",
     telnetTimeout: isZh ? "Telnet连接超时" : "Telnet connection timed out",
   };
 
   if (key === "reconnectRecoveryFailed") {
     return isZh
-      ? `自动恢复终端会话失败: ${params.message}。请点击手动重连。`
-      : `Failed to restore terminal session automatically: ${params.message}. Use Manual Reconnect.`;
+      ? `终端恢复失败: ${params.message}`
+      : `Terminal restore failed: ${params.message}`;
   }
 
   if (key === "droppedBytesWarning") {
@@ -55,15 +55,11 @@ function getTerminalText(config, key, params = {}) {
   }
 
   if (key === "sshConnected") {
-    return isZh
-      ? `${params.host} SSH连接已建立`
-      : `${params.host} SSH connection established`;
+    return isZh ? `${params.host} 已连接` : `${params.host} connected`;
   }
 
   if (key === "sshConnectedReused") {
-    return isZh
-      ? `${params.host} SSH连接已建立（复用现有连接）`
-      : `${params.host} SSH connection established (reused existing connection)`;
+    return isZh ? `${params.host} 已连接` : `${params.host} connected`;
   }
 
   if (key === "telnetError") {
@@ -900,9 +896,13 @@ class SSHHandlers {
       );
       this._emitProcessOutput(
         processId,
-        `\r\n\x1b[31m*** ${getTerminalText(sshConfig, "reconnectRecoveryFailed", {
-          message,
-        })} ***\x1b[0m\r\n`,
+        `\r\n\x1b[31m*** ${getTerminalText(
+          sshConfig,
+          "reconnectRecoveryFailed",
+          {
+            message,
+          },
+        )} ***\x1b[0m\r\n`,
       );
 
       this._emitTerminalSessionEvent("terminal:session-restore-failed", {
@@ -2004,11 +2004,9 @@ class SSHHandlers {
         if (mainWindow && !mainWindow.isDestroyed()) {
           this._emitProcessOutput(
             processId,
-            `\r\n*** ${getTerminalText(
-              telnetConfig,
-              "telnetConnectedReused",
-              { host: telnetConfig.host },
-            )} ***\r\n`,
+            `\r\n*** ${getTerminalText(telnetConfig, "telnetConnectedReused", {
+              host: telnetConfig.host,
+            })} ***\r\n`,
           );
         }
 
