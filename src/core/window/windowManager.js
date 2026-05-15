@@ -1,6 +1,15 @@
-const { BrowserWindow, session } = require("electron");
+const { BrowserWindow, screen, session } = require("electron");
 const path = require("path");
 const configService = require("../../services/configService");
+const { IPC_EVENT_CHANNELS } = require("../ipc/schema/channels");
+
+const DEFAULT_WINDOW_BOUNDS = Object.freeze({
+  width: 1200,
+  height: 800,
+});
+
+const MIN_VISIBLE_PIXELS = 80;
+const WINDOW_BOUNDS_SAVE_DELAY_MS = 500;
 
 /**
  * 获取主窗口实例
@@ -43,6 +52,125 @@ function getStartupBackgroundColor() {
   }
 }
 
+function normalizeBounds(bounds) {
+  if (!bounds || typeof bounds !== "object") {
+    return null;
+  }
+
+  const x = Math.round(Number(bounds.x));
+  const y = Math.round(Number(bounds.y));
+  const width = Math.round(Number(bounds.width));
+  const height = Math.round(Number(bounds.height));
+
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width < 400 ||
+    height < 300
+  ) {
+    return null;
+  }
+
+  return { x, y, width, height };
+}
+
+function intersectsEnough(rect, displayBounds) {
+  const left = Math.max(rect.x, displayBounds.x);
+  const top = Math.max(rect.y, displayBounds.y);
+  const right = Math.min(
+    rect.x + rect.width,
+    displayBounds.x + displayBounds.width,
+  );
+  const bottom = Math.min(
+    rect.y + rect.height,
+    displayBounds.y + displayBounds.height,
+  );
+
+  return (
+    right - left >= MIN_VISIBLE_PIXELS && bottom - top >= MIN_VISIBLE_PIXELS
+  );
+}
+
+function getRestoredWindowState() {
+  try {
+    const uiSettings = configService.loadUISettings();
+    const saved = uiSettings.windowBounds || {};
+    const bounds = normalizeBounds(saved.bounds);
+    const displays = screen.getAllDisplays();
+    const isVisible =
+      bounds &&
+      displays.some((display) => intersectsEnough(bounds, display.workArea));
+
+    return {
+      bounds: isVisible ? bounds : { ...DEFAULT_WINDOW_BOUNDS },
+      maximized: saved.maximized === true,
+      fullScreen: saved.fullScreen === true,
+    };
+  } catch {
+    return {
+      bounds: { ...DEFAULT_WINDOW_BOUNDS },
+      maximized: false,
+      fullScreen: false,
+    };
+  }
+}
+
+function persistWindowState(mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  try {
+    const uiSettings = configService.loadUISettings();
+    const bounds =
+      mainWindow.isMaximized() || mainWindow.isFullScreen()
+        ? mainWindow.getNormalBounds()
+        : mainWindow.getBounds();
+
+    configService.saveUISettings({
+      ...uiSettings,
+      windowBounds: {
+        bounds,
+        maximized: mainWindow.isMaximized(),
+        fullScreen: mainWindow.isFullScreen(),
+        updatedAt: Date.now(),
+      },
+    });
+  } catch {
+    /* best-effort window state persistence */
+  }
+}
+
+function registerWindowStatePersistence(mainWindow) {
+  let saveTimer = null;
+
+  const scheduleSave = () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+    }
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      persistWindowState(mainWindow);
+    }, WINDOW_BOUNDS_SAVE_DELAY_MS);
+  };
+
+  mainWindow.on("resize", scheduleSave);
+  mainWindow.on("move", scheduleSave);
+  mainWindow.on("maximize", scheduleSave);
+  mainWindow.on("unmaximize", scheduleSave);
+  mainWindow.on("enter-full-screen", scheduleSave);
+  mainWindow.on("leave-full-screen", scheduleSave);
+  mainWindow.on("close", () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    persistWindowState(mainWindow);
+  });
+}
+
 /**
  * 创建主窗口
  * @param {Object} options - 窗口配置选项
@@ -59,10 +187,10 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
   }
 
   const backgroundColor = getStartupBackgroundColor();
+  const restoredWindowState = getRestoredWindowState();
 
   const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    ...restoredWindowState.bounds,
     frame: false,
     show: false,
     backgroundColor,
@@ -86,7 +214,7 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
 
   const emitWindowState = () => {
     if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send("window:state", {
+      mainWindow.webContents.send(IPC_EVENT_CHANNELS.WINDOW_STATE, {
         isMaximized: mainWindow.isMaximized(),
         isFullScreen: mainWindow.isFullScreen(),
       });
@@ -97,8 +225,15 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
   mainWindow.on("unmaximize", emitWindowState);
   mainWindow.on("enter-full-screen", emitWindowState);
   mainWindow.on("leave-full-screen", emitWindowState);
+  registerWindowStatePersistence(mainWindow);
 
   mainWindow.once("ready-to-show", () => {
+    if (restoredWindowState.fullScreen) {
+      mainWindow.setFullScreen(true);
+    } else if (restoredWindowState.maximized) {
+      mainWindow.maximize();
+    }
+
     mainWindow.show();
     emitWindowState();
 

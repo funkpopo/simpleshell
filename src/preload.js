@@ -3,6 +3,10 @@
 
 const { contextBridge, ipcRenderer, clipboard, webUtils } = require("electron");
 const {
+  IPC_EVENT_CHANNELS,
+  IPC_REQUEST_CHANNELS,
+} = require("./core/ipc/schema/channels");
+const {
   TERMINAL_IO_MAILBOX_CHANNEL,
   TERMINAL_IO_MESSAGE_TYPES,
   getTerminalIOMailboxOutputChannel,
@@ -1052,18 +1056,25 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   reloadWindow: () => ipcRenderer.invoke("app:reloadWindow"),
 
   // 窗口控制API
-  minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
-  toggleMaximizeWindow: () => ipcRenderer.invoke("window:toggleMaximize"),
-  closeWindow: () => ipcRenderer.invoke("window:close"),
-  getWindowState: () => ipcRenderer.invoke("window:getState"),
+  minimizeWindow: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_MINIMIZE),
+  toggleMaximizeWindow: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_TOGGLE_MAXIMIZE),
+  closeWindow: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_CLOSE),
+  getWindowState: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_GET_STATE),
   onWindowStateChange: (callback) => {
     if (typeof callback !== "function") {
       return () => {};
     }
 
     const wrappedCallback = (_event, state) => callback(state);
-    ipcRenderer.on("window:state", wrappedCallback);
-    return () => ipcRenderer.removeListener("window:state", wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.WINDOW_STATE, wrappedCallback);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_EVENT_CHANNELS.WINDOW_STATE,
+        wrappedCallback,
+      );
   },
 
   // 更新相关API

@@ -54,6 +54,7 @@ transfernative/**/target/
 *.pdb
 
 .claude/
+docs/
 
 CLAUDE.md
 AGENTS.md
