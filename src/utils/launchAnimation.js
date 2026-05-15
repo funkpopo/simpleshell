@@ -6,6 +6,19 @@ import { Zoom } from "@mui/material";
  * @returns {Object} 包含 TransitionComponent 和 TransitionProps 的对象
  */
 export const createAnchoredTransition = (anchorEl) => {
+  const prefersReducedMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+
+  if (prefersReducedMotion) {
+    return {
+      TransitionComponent: Zoom,
+      TransitionProps: {
+        timeout: 0,
+      },
+    };
+  }
+
   if (!anchorEl) {
     return {
       TransitionComponent: Zoom,

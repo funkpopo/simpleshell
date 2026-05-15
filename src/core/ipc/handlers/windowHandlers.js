@@ -1,4 +1,5 @@
 const { getPrimaryWindow } = require("../../window/windowManager");
+const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * 窗口控制相关的IPC处理器
@@ -10,22 +11,22 @@ class WindowHandlers {
   getHandlers() {
     return [
       {
-        channel: "window:minimize",
+        channel: IPC_REQUEST_CHANNELS.WINDOW_MINIMIZE,
         category: "window",
         handler: this.minimize.bind(this),
       },
       {
-        channel: "window:toggleMaximize",
+        channel: IPC_REQUEST_CHANNELS.WINDOW_TOGGLE_MAXIMIZE,
         category: "window",
         handler: this.toggleMaximize.bind(this),
       },
       {
-        channel: "window:close",
+        channel: IPC_REQUEST_CHANNELS.WINDOW_CLOSE,
         category: "window",
         handler: this.close.bind(this),
       },
       {
-        channel: "window:getState",
+        channel: IPC_REQUEST_CHANNELS.WINDOW_GET_STATE,
         category: "window",
         handler: this.getState.bind(this),
       },

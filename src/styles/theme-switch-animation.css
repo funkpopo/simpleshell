@@ -126,3 +126,26 @@ body.theme-switching .MuiSvgIcon-root {
   user-select: none;
   -webkit-user-select: none;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-switch-overlay.animating,
+  .theme-button-pulse {
+    animation: none !important;
+  }
+
+  body.theme-switching,
+  body.theme-switching .MuiPaper-root,
+  body.theme-switching .MuiAppBar-root,
+  body.theme-switching .MuiDrawer-paper,
+  body.theme-switching .MuiCard-root,
+  body.theme-switching .MuiDialog-paper,
+  body.theme-switching .MuiMenu-paper,
+  body.theme-switching .MuiToolbar-root,
+  body.theme-switching .MuiTypography-root,
+  body.theme-switching .MuiListItemText-root,
+  body.theme-switching .MuiButton-root,
+  body.theme-switching .MuiIconButton-root,
+  body.theme-switching .MuiSvgIcon-root {
+    transition: none !important;
+  }
+}

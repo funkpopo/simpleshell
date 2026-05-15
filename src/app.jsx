@@ -1726,11 +1726,28 @@ function AppContent() {
 
   const handleTopBarInteraction = useCallback(
     (event) => {
-      if (!open) {
-        return;
-      }
       const target = event.target;
       if (!(target instanceof Element)) {
+        return;
+      }
+
+      const isInteractiveTarget = Boolean(
+        target.closest(
+          'button,[role="button"],input,textarea,select,a,[contenteditable="true"],.MuiTabs-root,.MuiMenu-root,#menu-appbar',
+        ),
+      );
+
+      if (
+        event.button === 0 &&
+        event.detail === 2 &&
+        !isInteractiveTarget &&
+        window.terminalAPI?.toggleMaximizeWindow
+      ) {
+        window.terminalAPI.toggleMaximizeWindow();
+        return;
+      }
+
+      if (!open) {
         return;
       }
       if (target.closest("#menu-appbar")) {

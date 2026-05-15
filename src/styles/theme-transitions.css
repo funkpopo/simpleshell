@@ -15,3 +15,10 @@
 .no-transition {
   transition: none !important;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-transition *,
+  .no-transition {
+    transition: none !important;
+  }
+}

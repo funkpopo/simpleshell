@@ -161,6 +161,24 @@ class ConfigService {
         },
         performance: { type: "object", default: {} },
         externalEditor: { type: "object", default: {} },
+        windowBounds: {
+          type: "object",
+          default: {},
+          properties: {
+            bounds: {
+              type: "object",
+              properties: {
+                x: { type: "number" },
+                y: { type: "number" },
+                width: { type: "number", minimum: 400 },
+                height: { type: "number", minimum: 300 },
+              },
+            },
+            maximized: { type: "boolean", default: false },
+            fullScreen: { type: "boolean", default: false },
+            updatedAt: { type: "number" },
+          },
+        },
       },
       default: {},
     });
@@ -295,6 +313,7 @@ class ConfigService {
         terminalFontSize: 14,
         performance: {},
         externalEditor: {},
+        windowBounds: {},
       },
       aiSettings: {
         configs: [],
@@ -934,6 +953,7 @@ class ConfigService {
       terminalFontSize: 14,
       performance: {},
       externalEditor: {},
+      windowBounds: {},
     };
   }
 

@@ -1,5 +1,6 @@
 const { logToFile } = require("../utils/logger");
 const { ipcMain: electronIpcMain } = require("electron");
+const { finishTrace, startTrace } = require("./ipcTrace");
 
 function isStandardResponse(result) {
   return result && typeof result === "object" && "success" in result;
@@ -26,9 +27,10 @@ function failure(error) {
 }
 
 function wrapIpcHandler(handler, options = {}) {
-  const { logPerformance = false, channelName } = options;
+  const { logPerformance = false, channelName, category } = options;
   return async (event, ...args) => {
     const start = Date.now();
+    const trace = startTrace(channelName, args, { category });
     try {
       const result = await handler(event, ...args);
       if (logPerformance) {
@@ -41,12 +43,20 @@ function wrapIpcHandler(handler, options = {}) {
         }
       }
       // Pass-through if already standardized. Otherwise, preserve existing shape.
-      if (isStandardResponse(result)) return result;
+      if (isStandardResponse(result)) {
+        finishTrace(trace, {
+          success: result.success !== false,
+          error: result.error,
+        });
+        return result;
+      }
+      finishTrace(trace, { success: true });
       return result;
     } catch (err) {
       const message = serializeError(err);
       const ch = channelName || "<unknown>";
       logToFile(`Error in IPC handler ${ch}: ${message}`, "ERROR");
+      finishTrace(trace, { success: false, error: message });
       return failure(message);
     }
   };

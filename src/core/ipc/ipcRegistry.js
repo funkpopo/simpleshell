@@ -1,6 +1,7 @@
 const { ipcMain } = require("electron");
 const { logToFile } = require("../utils/logger");
 const { wrapIpcHandler } = require("./ipcResponse");
+const { finishTrace, startTrace } = require("./ipcTrace");
 
 class IPCRegistry {
   constructor() {
@@ -23,6 +24,7 @@ class IPCRegistry {
     const wrappedHandler = wrapIpcHandler(handler, {
       logPerformance: options.logPerformance,
       channelName: channel,
+      category,
     });
 
     // 注册处理器
@@ -71,13 +73,16 @@ class IPCRegistry {
     }
 
     const wrappedHandler = (event, ...args) => {
+      const trace = startTrace(channel, args, { category });
       try {
         handler(event, ...args);
+        finishTrace(trace, { success: true });
       } catch (error) {
         logToFile(
           `Error in IPC listener ${channel}: ${error.message}`,
           "ERROR",
         );
+        finishTrace(trace, { success: false, error: error.message });
       }
     };
 
@@ -113,7 +118,7 @@ class IPCRegistry {
 
     // 移除IPC处理器
     if (handlerInfo.type === "listener") {
-      ipcMain.removeAllListeners(channel);
+      ipcMain.removeListener(channel, handlerInfo.handler);
     } else {
       ipcMain.removeHandler(channel);
     }
@@ -167,7 +172,7 @@ class IPCRegistry {
     for (const [channel, handlerInfo] of this.handlers) {
       try {
         if (handlerInfo.type === "listener") {
-          ipcMain.removeAllListeners(channel);
+          ipcMain.removeListener(channel, handlerInfo.handler);
         } else {
           ipcMain.removeHandler(channel);
         }
