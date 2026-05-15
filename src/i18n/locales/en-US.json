@@ -374,6 +374,7 @@
       "other": "Other",
       "loading": "Loading...",
       "refresh": "Refresh",
+      "copiedToClipboard": "Copied to clipboard",
       "operationFailed": "Operation failed",
       "submitFailed": "Submit failed",
       "skeleton": {

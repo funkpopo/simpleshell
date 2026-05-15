@@ -839,214 +839,216 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
           const isCategoryContextMenuTarget =
             dialogType === "category" && menuTargetId === category.id;
           return (
-          <Box key={category.id} sx={{ mb: 1 }}>
-            <ListItem
-              disablePadding
-              sx={{
-                mx: 0.5,
-                borderRadius: 1,
-                overflow: "hidden",
-                minHeight: 60,
-              }}
-            >
-              <ListItemButton
-                data-shortcut-menu-target="true"
-                data-shortcut-menu-id={category.id}
-                data-shortcut-menu-type="category"
-                onClick={() => toggleCategoryExpand(category.id)}
-                onContextMenu={(e) => {
-                  if (category.id !== "uncategorized") {
-                    handleMenuOpen(e, category.id, "category");
-                  }
-                }}
+            <Box key={category.id} sx={{ mb: 1 }}>
+              <ListItem
+                disablePadding
                 sx={{
-                  ...sidebarListItemButtonSx(
-                    theme,
-                    isCategoryContextMenuTarget,
-                  ),
-                  backgroundColor: isCategoryContextMenuTarget
-                    ? getSidebarItemSelectedBg(theme)
-                    : getSidebarItemSurfaceBg(theme),
+                  mx: 0.5,
                   borderRadius: 1,
-                  px: 2,
-                  py: 1.5,
+                  overflow: "hidden",
                   minHeight: 60,
                 }}
               >
-                <ListItemIcon sx={{ minWidth: 36 }}>
-                  <FolderIcon sx={{ color: category.color, fontSize: 20 }} />
-                </ListItemIcon>
-                <ListItemText
-                  primary={
-                    <Typography variant="subtitle2" fontWeight="medium">
-                      {category.name}
-                    </Typography>
-                  }
-                  secondary={
-                    <Typography variant="caption" color="text.secondary">
-                      {category.commands.length}{" "}
-                      {t("shortcutCommands.commands")}
-                    </Typography>
-                  }
-                />
-                {expandedCategories[category.id] ? (
-                  <ExpandLessIcon sx={{ color: "text.secondary" }} />
-                ) : (
-                  <ExpandMoreIcon sx={{ color: "text.secondary" }} />
-                )}
-                {category.id !== "uncategorized" && (
-                  <IconButton
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
+                <ListItemButton
+                  data-shortcut-menu-target="true"
+                  data-shortcut-menu-id={category.id}
+                  data-shortcut-menu-type="category"
+                  onClick={() => toggleCategoryExpand(category.id)}
+                  onContextMenu={(e) => {
+                    if (category.id !== "uncategorized") {
                       handleMenuOpen(e, category.id, "category");
-                    }}
-                    sx={{
-                      ml: 1,
-                      opacity: 0.7,
-                      "&:hover": {
-                        opacity: 1,
-                        backgroundColor: "rgba(255, 255, 255, 0.1)",
-                      },
-                    }}
-                  >
-                    <MoreVertIcon fontSize="small" />
-                  </IconButton>
-                )}
-              </ListItemButton>
-            </ListItem>
-            <Collapse
-              in={expandedCategories[category.id] || false}
-              timeout="auto"
-              unmountOnExit
-            >
-              <Box
-                sx={{
-                  ml: 1.5,
-                  mr: 0.5,
-                  mt: 0.5,
-                  width: "calc(100% - 16px)",
-                  boxSizing: "border-box",
-                  overflowX: "hidden",
-                }}
-              >
-                {category.commands.map((cmd) => {
-                  const isCommandContextMenuTarget =
-                    dialogType === "command" && menuTargetId === cmd.id;
-                  return (
-                  <ListItem
-                    key={cmd.id}
-                    disablePadding
-                    sx={{
-                      display: "flex",
-                      mb: 0.5,
-                      borderRadius: 1,
-                      overflow: "hidden",
-                      minHeight: COMMAND_ITEM_HEIGHT,
-                      width: "100%",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    <ListItemButton
-                      disableGutters
-                      data-shortcut-menu-target="true"
-                      data-shortcut-menu-id={cmd.id}
-                      data-shortcut-menu-type="command"
-                      onClick={() =>
-                        handleSendCommand(cmd.command, { execute: false })
-                      }
-                      onContextMenu={(e) =>
-                        handleMenuOpen(e, cmd.id, "command")
-                      }
+                    }
+                  }}
+                  sx={{
+                    ...sidebarListItemButtonSx(
+                      theme,
+                      isCategoryContextMenuTarget,
+                    ),
+                    backgroundColor: isCategoryContextMenuTarget
+                      ? getSidebarItemSelectedBg(theme)
+                      : getSidebarItemSurfaceBg(theme),
+                    borderRadius: 1,
+                    px: 2,
+                    py: 1.5,
+                    minHeight: 60,
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    <FolderIcon sx={{ color: category.color, fontSize: 20 }} />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={
+                      <Typography variant="subtitle2" fontWeight="medium">
+                        {category.name}
+                      </Typography>
+                    }
+                    secondary={
+                      <Typography variant="caption" color="text.secondary">
+                        {category.commands.length}{" "}
+                        {t("shortcutCommands.commands")}
+                      </Typography>
+                    }
+                  />
+                  {expandedCategories[category.id] ? (
+                    <ExpandLessIcon sx={{ color: "text.secondary" }} />
+                  ) : (
+                    <ExpandMoreIcon sx={{ color: "text.secondary" }} />
+                  )}
+                  {category.id !== "uncategorized" && (
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMenuOpen(e, category.id, "category");
+                      }}
                       sx={{
-                        pl: 1,
-                        pr: 6.75,
-                        minHeight: COMMAND_ITEM_HEIGHT,
-                        borderRadius: 1,
-                        position: "relative",
-                        py: 0.55,
-                        width: "100%",
-                        maxWidth: "100%",
-                        flex: 1,
-                        alignSelf: "stretch",
-                        boxSizing: "border-box",
-                        ...sidebarListItemButtonSx(
-                          theme,
-                          isCommandContextMenuTarget,
-                        ),
-                        backgroundColor: isCommandContextMenuTarget
-                          ? getSidebarItemSelectedBg(theme)
-                          : getSidebarItemSurfaceBg(theme),
+                        ml: 1,
+                        opacity: 0.7,
+                        "&:hover": {
+                          opacity: 1,
+                          backgroundColor: "rgba(255, 255, 255, 0.1)",
+                        },
                       }}
                     >
-                      <ListItemText
-                        sx={{
-                          flex: 1,
-                          minWidth: 0,
-                          mr: 0,
-                        }}
-                        primary={<CommandContent cmd={cmd} dense />}
-                      />
-                      <Box
+                      <MoreVertIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                </ListItemButton>
+              </ListItem>
+              <Collapse
+                in={expandedCategories[category.id] || false}
+                timeout="auto"
+                unmountOnExit
+              >
+                <Box
+                  sx={{
+                    ml: 1.5,
+                    mr: 0.5,
+                    mt: 0.5,
+                    width: "calc(100% - 16px)",
+                    boxSizing: "border-box",
+                    overflowX: "hidden",
+                  }}
+                >
+                  {category.commands.map((cmd) => {
+                    const isCommandContextMenuTarget =
+                      dialogType === "command" && menuTargetId === cmd.id;
+                    return (
+                      <ListItem
+                        key={cmd.id}
+                        disablePadding
                         sx={{
                           display: "flex",
-                          gap: 0.25,
-                          position: "absolute",
-                          right: 2,
-                          top: "50%",
-                          transform: "translateY(-50%)",
-                          flexShrink: 0,
+                          mb: 0.5,
+                          borderRadius: 1,
+                          overflow: "hidden",
+                          minHeight: COMMAND_ITEM_HEIGHT,
+                          width: "100%",
+                          boxSizing: "border-box",
                         }}
                       >
-                        <Tooltip title={t("shortcutCommands.sendAndExecute")}>
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSendCommand(cmd.command);
-                            }}
+                        <ListItemButton
+                          disableGutters
+                          data-shortcut-menu-target="true"
+                          data-shortcut-menu-id={cmd.id}
+                          data-shortcut-menu-type="command"
+                          onClick={() =>
+                            handleSendCommand(cmd.command, { execute: false })
+                          }
+                          onContextMenu={(e) =>
+                            handleMenuOpen(e, cmd.id, "command")
+                          }
+                          sx={{
+                            pl: 1,
+                            pr: 6.75,
+                            minHeight: COMMAND_ITEM_HEIGHT,
+                            borderRadius: 1,
+                            position: "relative",
+                            py: 0.55,
+                            width: "100%",
+                            maxWidth: "100%",
+                            flex: 1,
+                            alignSelf: "stretch",
+                            boxSizing: "border-box",
+                            ...sidebarListItemButtonSx(
+                              theme,
+                              isCommandContextMenuTarget,
+                            ),
+                            backgroundColor: isCommandContextMenuTarget
+                              ? getSidebarItemSelectedBg(theme)
+                              : getSidebarItemSurfaceBg(theme),
+                          }}
+                        >
+                          <ListItemText
                             sx={{
-                              width: 24,
-                              height: 24,
-                              color: "primary.main",
-                              bgcolor: "transparent",
-                              "&:hover": {
-                                bgcolor: "action.hover",
-                              },
+                              flex: 1,
+                              minWidth: 0,
+                              mr: 0,
+                            }}
+                            primary={<CommandContent cmd={cmd} dense />}
+                          />
+                          <Box
+                            sx={{
+                              display: "flex",
+                              gap: 0.25,
+                              position: "absolute",
+                              right: 2,
+                              top: "50%",
+                              transform: "translateY(-50%)",
+                              flexShrink: 0,
                             }}
                           >
-                            <SendIcon sx={{ fontSize: 15 }} />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title={t("shortcutCommands.copyCommand")}>
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCopyCommand(cmd.command);
-                            }}
-                            sx={{
-                              width: 24,
-                              height: 24,
-                              color: "text.secondary",
-                              bgcolor: "transparent",
-                              "&:hover": {
-                                color: "text.primary",
-                                bgcolor: "action.hover",
-                              },
-                            }}
-                          >
-                            <ContentCopyIcon sx={{ fontSize: 15 }} />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </ListItemButton>
-                    </ListItem>
-                  );
-                })}
-              </Box>
-            </Collapse>
-          </Box>
+                            <Tooltip
+                              title={t("shortcutCommands.sendAndExecute")}
+                            >
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSendCommand(cmd.command);
+                                }}
+                                sx={{
+                                  width: 24,
+                                  height: 24,
+                                  color: "primary.main",
+                                  bgcolor: "transparent",
+                                  "&:hover": {
+                                    bgcolor: "action.hover",
+                                  },
+                                }}
+                              >
+                                <SendIcon sx={{ fontSize: 15 }} />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title={t("shortcutCommands.copyCommand")}>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopyCommand(cmd.command);
+                                }}
+                                sx={{
+                                  width: 24,
+                                  height: 24,
+                                  color: "text.secondary",
+                                  bgcolor: "transparent",
+                                  "&:hover": {
+                                    color: "text.primary",
+                                    bgcolor: "action.hover",
+                                  },
+                                }}
+                              >
+                                <ContentCopyIcon sx={{ fontSize: 15 }} />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </ListItemButton>
+                      </ListItem>
+                    );
+                  })}
+                </Box>
+              </Collapse>
+            </Box>
           );
         })}
       </List>
@@ -1235,209 +1237,185 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       elevation={4}
     >
       <Box sx={sidebarContentSx(theme, open)}>
-          {/* 标题栏 */}
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              px: 1.25,
-              py: 0.75,
-              minHeight: 44,
-              flexShrink: 0,
-              borderBottom: `1px solid ${theme.palette.divider}`,
-            }}
-          >
-            <Typography variant="subtitle1" fontWeight="medium">
-              {t("shortcutCommands.title")}
-            </Typography>
-            <Box>
-              <Tooltip title={t("shortcutCommands.addCommand")}>
-                <IconButton
-                  onClick={handleAddCommand}
-                  size="small"
-                  sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-                >
-                  <AddIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+        {/* 标题栏 */}
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            px: 1.25,
+            py: 0.75,
+            minHeight: 44,
+            flexShrink: 0,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Typography variant="subtitle1" fontWeight="medium">
+            {t("shortcutCommands.title")}
+          </Typography>
+          <Box>
+            <Tooltip title={t("shortcutCommands.addCommand")}>
               <IconButton
-                onClick={onClose}
+                onClick={handleAddCommand}
                 size="small"
                 sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
               >
-                <CloseIcon fontSize="small" />
+                <AddIcon fontSize="small" />
               </IconButton>
-            </Box>
-          </Box>
-
-          {/* 搜索框 */}
-          <Box
-            sx={{ p: 1, borderBottom: `1px solid ${theme.palette.divider}` }}
-          >
-            <TextField
-              inputRef={searchInputRef}
-              placeholder={t("shortcutCommands.search")}
-              variant="outlined"
+            </Tooltip>
+            <IconButton
+              onClick={onClose}
               size="small"
-              fullWidth
-              value={searchTerm}
-              onChange={handleSearchChange}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon />
-                  </InputAdornment>
-                ),
-                endAdornment: searchTerm && (
-                  <InputAdornment position="end">
-                    <IconButton size="small" onClick={() => setSearchTerm("")}>
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  borderRadius: 2,
-                },
-              }}
+              sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        </Box>
+
+        {/* 搜索框 */}
+        <Box sx={{ p: 1, borderBottom: `1px solid ${theme.palette.divider}` }}>
+          <TextField
+            inputRef={searchInputRef}
+            placeholder={t("shortcutCommands.search")}
+            variant="outlined"
+            size="small"
+            fullWidth
+            value={searchTerm}
+            onChange={handleSearchChange}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+              endAdornment: searchTerm && (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={() => setSearchTerm("")}>
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 2,
+              },
+            }}
+          />
+        </Box>
+
+        {/* 标签页 */}
+        <Box sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}>
+          <Tabs
+            value={tabValue}
+            onChange={handleTabChange}
+            variant="fullWidth"
+            sx={{ minHeight: 40 }}
+          >
+            <Tab
+              label={t("shortcutCommands.allCommands")}
+              id="commands-tab-0"
+              aria-controls="commands-tabpanel-0"
+              sx={{ minHeight: 40, py: 0 }}
             />
-          </Box>
+            <Tab
+              label={t("shortcutCommands.categories")}
+              id="commands-tab-1"
+              aria-controls="commands-tabpanel-1"
+              sx={{ minHeight: 40, py: 0 }}
+            />
+          </Tabs>
+        </Box>
 
-          {/* 标签页 */}
-          <Box sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}>
-            <Tabs
-              value={tabValue}
-              onChange={handleTabChange}
-              variant="fullWidth"
-              sx={{ minHeight: 40 }}
-            >
-              <Tab
-                label={t("shortcutCommands.allCommands")}
-                id="commands-tab-0"
-                aria-controls="commands-tabpanel-0"
-                sx={{ minHeight: 40, py: 0 }}
-              />
-              <Tab
-                label={t("shortcutCommands.categories")}
-                id="commands-tab-1"
-                aria-controls="commands-tabpanel-1"
-                sx={{ minHeight: 40, py: 0 }}
-              />
-            </Tabs>
-          </Box>
-
-          {/* 内容区域 */}
-          <Box
-            ref={containerRef}
-            sx={{
-              flexGrow: 1,
-              overflow: "auto",
-              bgcolor:
-                theme.palette.mode === "dark" ? "background.paper" : "grey.50",
-              "&::-webkit-scrollbar": {
-                width: "8px",
-              },
-              "&::-webkit-scrollbar-thumb": {
-                backgroundColor:
-                  theme.palette.mode === "dark"
-                    ? "rgba(255,255,255,0.3)"
-                    : "rgba(0,0,0,0.3)",
-                borderRadius: "4px",
-                "&:hover": {
-                  backgroundColor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(255,255,255,0.5)"
-                      : "rgba(0,0,0,0.5)",
-                },
-              },
-              "&::-webkit-scrollbar-track": {
-                backgroundColor:
-                  theme.palette.mode === "dark"
-                    ? "rgba(255,255,255,0.05)"
-                    : "rgba(0,0,0,0.05)",
-                borderRadius: "4px",
-              },
-            }}
+        {/* 内容区域 */}
+        <Box
+          ref={containerRef}
+          className="app-scrollbar"
+          sx={{
+            flexGrow: 1,
+            overflow: "auto",
+            bgcolor:
+              theme.palette.mode === "dark" ? "background.paper" : "grey.50",
+          }}
+        >
+          <div
+            role="tabpanel"
+            hidden={tabValue !== 0}
+            id="commands-tabpanel-0"
+            aria-labelledby="commands-tab-0"
           >
-            <div
-              role="tabpanel"
-              hidden={tabValue !== 0}
-              id="commands-tabpanel-0"
-              aria-labelledby="commands-tab-0"
-            >
-              {tabValue === 0 && renderCommandList()}
-            </div>
-            <div
-              role="tabpanel"
-              hidden={tabValue !== 1}
-              id="commands-tabpanel-1"
-              aria-labelledby="commands-tab-1"
-            >
-              {tabValue === 1 && (
-                <Box>
-                  <Box sx={{ p: 1, textAlign: "right" }}>
-                    <Button
-                      startIcon={<CategoryIcon />}
-                      size="small"
-                      onClick={handleAddCategory}
-                    >
-                      {t("shortcutCommands.addCategory")}
-                    </Button>
-                  </Box>
-                  {renderCategoriesView()}
+            {tabValue === 0 && renderCommandList()}
+          </div>
+          <div
+            role="tabpanel"
+            hidden={tabValue !== 1}
+            id="commands-tabpanel-1"
+            aria-labelledby="commands-tab-1"
+          >
+            {tabValue === 1 && (
+              <Box>
+                <Box sx={{ p: 1, textAlign: "right" }}>
+                  <Button
+                    startIcon={<CategoryIcon />}
+                    size="small"
+                    onClick={handleAddCategory}
+                  >
+                    {t("shortcutCommands.addCategory")}
+                  </Button>
                 </Box>
-              )}
-            </div>
-          </Box>
+                {renderCategoriesView()}
+              </Box>
+            )}
+          </div>
+        </Box>
 
-          {/* 底部操作区 */}
-          <Box
-            sx={{
-              p: 1,
-              borderTop: `1px solid ${theme.palette.divider}`,
-              display: "flex",
-              justifyContent: "flex-end",
-            }}
+        {/* 底部操作区 */}
+        <Box
+          sx={{
+            p: 1,
+            borderTop: `1px solid ${theme.palette.divider}`,
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+        >
+          <Typography
+            variant="caption"
+            color="textSecondary"
+            sx={{ flexGrow: 1, alignSelf: "center" }}
           >
-            <Typography
-              variant="caption"
-              color="textSecondary"
-              sx={{ flexGrow: 1, alignSelf: "center" }}
-            >
-              {loading
-                ? t("shortcutCommands.loading")
-                : commands.length > 0
-                  ? t("shortcutCommands.totalCommands", {
-                      count: commands.length,
-                    })
-                  : ""}
-            </Typography>
-          </Box>
+            {loading
+              ? t("shortcutCommands.loading")
+              : commands.length > 0
+                ? t("shortcutCommands.totalCommands", {
+                    count: commands.length,
+                  })
+                : ""}
+          </Typography>
+        </Box>
 
-          {/* 对话框 */}
-          {renderCommandDialog()}
-          {renderCategoryDialog()}
+        {/* 对话框 */}
+        {renderCommandDialog()}
+        {renderCategoryDialog()}
 
-          {/* 菜单 */}
-          {renderMenu()}
+        {/* 菜单 */}
+        {renderMenu()}
 
-          {/* 添加通知组件 */}
-          <Snackbar
-            open={notification.open}
-            autoHideDuration={3000}
+        {/* 添加通知组件 */}
+        <Snackbar
+          open={notification.open}
+          autoHideDuration={3000}
+          onClose={handleCloseNotification}
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        >
+          <Alert
             onClose={handleCloseNotification}
-            anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+            severity={notification.severity}
+            sx={{ width: "100%" }}
           >
-            <Alert
-              onClose={handleCloseNotification}
-              severity={notification.severity}
-              sx={{ width: "100%" }}
-            >
-              {notification.message}
-            </Alert>
-          </Snackbar>
+            {notification.message}
+          </Alert>
+        </Snackbar>
       </Box>
     </Paper>
   );

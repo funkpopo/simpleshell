@@ -31,6 +31,7 @@ const directoryWatchEventWrappers = new WeakMap();
 const directoryWatchEventListeners = new Set();
 const listFilesTokensByTab = new Map();
 const listFilesTabByToken = new Map();
+const clipboardWriteSuccessListeners = new Set();
 
 const DEFAULT_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 const RESTRICTED_EXTERNAL_PROTOCOLS = new Set(["mailto:"]);
@@ -553,6 +554,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   saveMemory: (memory) => ipcRenderer.invoke("memory:save", memory),
   loadMemory: () => ipcRenderer.invoke("memory:load"),
   deleteMemory: () => ipcRenderer.invoke("memory:delete"),
+  getMemoryDiagnostics: () => ipcRenderer.invoke("memory:getDiagnostics"),
 
   // 添加事件监听器注册方法
   on: (channel, callback) => {
@@ -1260,6 +1262,31 @@ contextBridge.exposeInMainWorld("clipboardAPI", {
   readText: async () => clipboard.readText(),
   writeText: async (text) => {
     clipboard.writeText(String(text ?? ""));
+    for (const listener of clipboardWriteSuccessListeners) {
+      try {
+        listener({ timestamp: Date.now() });
+      } catch {
+        // Ignore renderer notification listener failures.
+      }
+    }
+    try {
+      window.dispatchEvent(
+        new CustomEvent("simpleshell:clipboard-write-success", {
+          detail: { timestamp: Date.now() },
+        }),
+      );
+    } catch {
+      // Notification is best-effort; the clipboard write already succeeded.
+    }
     return true;
+  },
+  onWriteSuccess: (callback) => {
+    if (typeof callback !== "function") {
+      return () => {};
+    }
+    clipboardWriteSuccessListeners.add(callback);
+    return () => {
+      clipboardWriteSuccessListeners.delete(callback);
+    };
   },
 });

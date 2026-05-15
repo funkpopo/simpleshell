@@ -374,6 +374,7 @@
       "other": "其他",
       "loading": "加载中...",
       "refresh": "刷新",
+      "copiedToClipboard": "已复制到剪贴板",
       "operationFailed": "操作失败",
       "submitFailed": "提交失败",
       "skeleton": {

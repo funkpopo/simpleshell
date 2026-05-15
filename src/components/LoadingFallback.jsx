@@ -31,6 +31,9 @@ const LoadingFallback = ({
         color="primary"
         sx={{
           animation: "pulse 1.5s ease-in-out infinite",
+          "@media (prefers-reduced-motion: reduce)": {
+            animation: "none",
+          },
           "@keyframes pulse": {
             "0%": {
               opacity: 1,

@@ -2,6 +2,12 @@ const path = require("path");
 const fs = require("fs").promises;
 const { app } = require("electron");
 const { logToFile } = require("../../utils/logger");
+const fileCache = require("../../utils/fileCache");
+const {
+  mainProcessResourceManager,
+} = require("../../utils/mainProcessResourceManager");
+const processManager = require("../../process/processManager");
+const aiWorkerManager = require("../../workers/aiWorkerManager");
 
 /**
  * 记忆文件相关的IPC处理器
@@ -31,6 +37,11 @@ class MemoryHandlers {
         channel: "memory:delete",
         category: "memory",
         handler: this.deleteMemory.bind(this),
+      },
+      {
+        channel: "memory:getDiagnostics",
+        category: "memory",
+        handler: this.getDiagnostics.bind(this),
       },
     ];
   }
@@ -67,6 +78,43 @@ class MemoryHandlers {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  async getDiagnostics() {
+    try {
+      const processEntries = Array.from(processManager.getProcessMap()).map(
+        ([id, proc]) => ({
+          id,
+          type: proc?.type || "unknown",
+          ready: proc?.ready === true,
+          hasStream: Boolean(proc?.stream),
+          hasConnectionInfo: Boolean(proc?.connectionInfo),
+          tabId: proc?.config?.tabId || null,
+        }),
+      );
+
+      return {
+        success: true,
+        timestamp: Date.now(),
+        process: {
+          pid: process.pid,
+          platform: process.platform,
+          arch: process.arch,
+          uptimeSeconds: Math.round(process.uptime()),
+          memoryUsage: process.memoryUsage(),
+        },
+        resources: mainProcessResourceManager.getStats(),
+        terminalProcesses: {
+          count: processManager.getProcessCount(),
+          entries: processEntries,
+        },
+        fileCache: fileCache.getCacheStats(),
+        aiWorker: aiWorkerManager.getDiagnostics(),
+      };
+    } catch (error) {
+      logToFile(`Memory diagnostics failed: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
     }
   }
 }

@@ -378,17 +378,13 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
       {/* 文件列表展开区域 */}
       <Collapse in={expanded} timeout="auto" unmountOnExit>
         <Box
+          className="app-scrollbar"
           sx={{
             mt: 1,
             pt: 1,
             borderTop: `1px dashed ${theme.palette.divider}`,
             maxHeight: 200,
             overflowY: "auto",
-            "&::-webkit-scrollbar": { width: 4 },
-            "&::-webkit-scrollbar-thumb": {
-              backgroundColor: theme.palette.divider,
-              borderRadius: 2,
-            },
           }}
         >
           {hasFileList ? (
@@ -655,23 +651,11 @@ const TransferSidebar = memo(
 
         {/* 内容区域 */}
         <Box
+          className="app-scrollbar"
           sx={{
             flex: 1,
             overflowY: "auto",
             overflowX: "hidden",
-            "&::-webkit-scrollbar": {
-              width: 6,
-            },
-            "&::-webkit-scrollbar-track": {
-              backgroundColor: "transparent",
-            },
-            "&::-webkit-scrollbar-thumb": {
-              backgroundColor: theme.palette.divider,
-              borderRadius: 3,
-            },
-            "&::-webkit-scrollbar-thumb:hover": {
-              backgroundColor: theme.palette.action.disabled,
-            },
           }}
         >
           {/* 活跃传输 */}

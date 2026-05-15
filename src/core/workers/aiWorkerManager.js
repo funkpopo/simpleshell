@@ -410,6 +410,15 @@ function deleteStreamSession(sessionId) {
   streamSessions.delete(sessionId);
 }
 
+function getDiagnostics() {
+  return {
+    hasWorker: Boolean(aiWorker),
+    pendingRequests: aiRequestMap.size,
+    streamSessions: streamSessions.size,
+    hasCurrentSession: Boolean(currentSessionId),
+  };
+}
+
 module.exports = {
   createAIWorker,
   getAIWorker,
@@ -423,4 +432,5 @@ module.exports = {
   getCurrentSessionId,
   clearCurrentSessionId,
   deleteStreamSession,
+  getDiagnostics,
 };
