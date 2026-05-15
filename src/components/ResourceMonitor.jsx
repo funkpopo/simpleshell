@@ -77,8 +77,10 @@ CompactUsageMetric.propTypes = {
   theme: PropTypes.shape({
     palette: PropTypes.shape({
       error: PropTypes.shape({ main: PropTypes.string.isRequired }).isRequired,
-      warning: PropTypes.shape({ main: PropTypes.string.isRequired }).isRequired,
-      success: PropTypes.shape({ main: PropTypes.string.isRequired }).isRequired,
+      warning: PropTypes.shape({ main: PropTypes.string.isRequired })
+        .isRequired,
+      success: PropTypes.shape({ main: PropTypes.string.isRequired })
+        .isRequired,
     }).isRequired,
   }).isRequired,
 };
@@ -100,7 +102,13 @@ const AccordionHeader = ({ title, icon, expanded, onClick }) => {
         ...sidebarListItemButtonSx(theme, expanded),
       }}
     >
-      <Box sx={{ display: "flex", alignItems: "center", "& .MuiSvgIcon-root": { fontSize: 18 } }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          "& .MuiSvgIcon-root": { fontSize: 18 },
+        }}
+      >
         {icon}
       </Box>
       <Typography
@@ -276,424 +284,411 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
       elevation={4}
     >
       <Box sx={sidebarContentSx(theme, open)}>
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              px: 1.25,
-              py: 0.5,
-              minHeight: SIDEBAR_TITLE_BAR_HEIGHT,
-              flexShrink: 0,
-              borderBottom: `1px solid ${theme.palette.divider}`,
-            }}
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            px: 1.25,
+            py: 0.5,
+            minHeight: SIDEBAR_TITLE_BAR_HEIGHT,
+            flexShrink: 0,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Typography
+            variant="subtitle2"
+            fontWeight={600}
+            sx={{ fontSize: "0.8125rem", lineHeight: 1.2 }}
           >
-            <Typography
-              variant="subtitle2"
-              fontWeight={600}
-              sx={{ fontSize: "0.8125rem", lineHeight: 1.2 }}
-            >
-              系统资源监控
-            </Typography>
-            <Box>
-              <Tooltip title={t("common.refresh")} placement="top">
-                <IconButton
-                  size="small"
-                  onClick={handleRefresh}
-                  disabled={loading}
-                  sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-                >
-                  <RefreshIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+            系统资源监控
+          </Typography>
+          <Box>
+            <Tooltip title={t("common.refresh")} placement="top">
               <IconButton
                 size="small"
-                onClick={onClose}
+                onClick={handleRefresh}
+                disabled={loading}
                 sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
               >
-                <CloseIcon fontSize="small" />
+                <RefreshIcon fontSize="small" />
               </IconButton>
-            </Box>
+            </Tooltip>
+            <IconButton
+              size="small"
+              onClick={onClose}
+              sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
           </Box>
+        </Box>
 
-          <Box
-            sx={{
-              flexGrow: 1,
-              overflow: "auto",
-              p: 1.5,
-              height: `calc(100% - ${SIDEBAR_TITLE_BAR_HEIGHT}px)`,
-            }}
-          >
-            {loading && !error && !systemInfo ? (
-              <Box
-                sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: "100%",
-                  width: "100%",
-                  gap: 1.5,
-                  py: 4,
-                }}
-              >
-                <CircularProgress size={24} />
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  align="center"
-                >
-                  {t("resourceMonitor.loading")}
-                </Typography>
-              </Box>
-            ) : null}
+        <Box
+          sx={{
+            flexGrow: 1,
+            overflow: "auto",
+            p: 1.5,
+            height: `calc(100% - ${SIDEBAR_TITLE_BAR_HEIGHT}px)`,
+          }}
+        >
+          {loading && !error && !systemInfo ? (
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                width: "100%",
+                gap: 1.5,
+                py: 4,
+              }}
+            >
+              <CircularProgress size={24} />
+              <Typography variant="body2" color="text.secondary" align="center">
+                {t("resourceMonitor.loading")}
+              </Typography>
+            </Box>
+          ) : null}
 
-            {error ? (
-              <Box sx={{ py: 2 }}>
-                <Typography color="error" align="center">
-                  {error}
-                </Typography>
-              </Box>
-            ) : systemInfo ? (
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-                {/* 系统信息卡片 */}
-                <Paper elevation={2} sx={{ borderRadius: 1 }}>
-                  <AccordionHeader
-                    title={
-                      systemInfo.isLocal
-                        ? t("resourceMonitor.localSystem")
-                        : t("resourceMonitor.remoteSystem")
-                    }
-                    icon={
-                      <ComputerIcon sx={{ color: theme.palette.primary.main }} />
-                    }
-                    expanded={expanded.system}
-                    onClick={handleExpansion("system")}
-                  />
-                  <Collapse in={expanded.system} timeout="auto" unmountOnExit>
-                    <Box sx={{ px: 1.25, pb: 1.25, pt: 0 }}>
-                      <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.operatingSystem")}:</strong>{" "}
-                        {systemInfo.os.type}
-                        {systemInfo.os.distro &&
-                        systemInfo.os.distro !== t("resourceMonitor.unknown")
-                          ? ` (${systemInfo.os.distro})`
-                          : ""}
-                        {systemInfo.os.version &&
-                        systemInfo.os.version !== t("resourceMonitor.unknown")
-                          ? ` ${systemInfo.os.version}`
-                          : ""}
+          {error ? (
+            <Box sx={{ py: 2 }}>
+              <Typography color="error" align="center">
+                {error}
+              </Typography>
+            </Box>
+          ) : systemInfo ? (
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+              {/* 系统信息卡片 */}
+              <Paper elevation={2} sx={{ borderRadius: 1 }}>
+                <AccordionHeader
+                  title={
+                    systemInfo.isLocal
+                      ? t("resourceMonitor.localSystem")
+                      : t("resourceMonitor.remoteSystem")
+                  }
+                  icon={
+                    <ComputerIcon sx={{ color: theme.palette.primary.main }} />
+                  }
+                  expanded={expanded.system}
+                  onClick={handleExpansion("system")}
+                />
+                <Collapse in={expanded.system} timeout="auto" unmountOnExit>
+                  <Box sx={{ px: 1.25, pb: 1.25, pt: 0 }}>
+                    <Typography variant="body2" gutterBottom>
+                      <strong>{t("resourceMonitor.operatingSystem")}:</strong>{" "}
+                      {systemInfo.os.type}
+                      {systemInfo.os.distro &&
+                      systemInfo.os.distro !== t("resourceMonitor.unknown")
+                        ? ` (${systemInfo.os.distro})`
+                        : ""}
+                      {systemInfo.os.version &&
+                      systemInfo.os.version !== t("resourceMonitor.unknown")
+                        ? ` ${systemInfo.os.version}`
+                        : ""}
+                    </Typography>
+                    <Typography variant="body2" gutterBottom>
+                      <strong>{t("resourceMonitor.hostname")}:</strong>{" "}
+                      {systemInfo.os.hostname}
+                    </Typography>
+                    <Typography variant="body2" gutterBottom>
+                      <strong>{t("resourceMonitor.platform")}:</strong>{" "}
+                      {systemInfo.os.platform}
+                    </Typography>
+                  </Box>
+                </Collapse>
+              </Paper>
+
+              {/* CPU信息卡片 */}
+              <Paper elevation={2} sx={{ borderRadius: 1 }}>
+                <AccordionHeader
+                  title={t("resourceMonitor.cpu")}
+                  icon={
+                    <MemoryIcon sx={{ color: theme.palette.warning.main }} />
+                  }
+                  expanded={expanded.cpu}
+                  onClick={handleExpansion("cpu")}
+                />
+                <Collapse in={expanded.cpu} timeout="auto" unmountOnExit>
+                  <Box sx={{ px: 1.25, pb: 1.25, pt: 0 }}>
+                    <Typography variant="body2" gutterBottom>
+                      <strong>{t("resourceMonitor.cpuModel")}:</strong>{" "}
+                      {systemInfo.cpu.model}
+                    </Typography>
+                    <Typography variant="body2" gutterBottom>
+                      <strong>{t("resourceMonitor.cpuCores")}:</strong>{" "}
+                      {systemInfo.cpu.cores}
+                    </Typography>
+                    <Box sx={{ mt: 1, mb: 0.5 }}>
+                      <Typography variant="body2">
+                        <strong>{t("resourceMonitor.usage")}:</strong>{" "}
+                        {systemInfo.cpu.usage}%
                       </Typography>
-                      <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.hostname")}:</strong>{" "}
-                        {systemInfo.os.hostname}
-                      </Typography>
-                      <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.platform")}:</strong>{" "}
-                        {systemInfo.os.platform}
-                      </Typography>
+                      <LinearProgress
+                        variant="determinate"
+                        value={systemInfo.cpu.usage}
+                        sx={{
+                          mt: 1,
+                          height: 8,
+                          borderRadius: 1,
+                          "& .MuiLinearProgress-bar": {
+                            background:
+                              systemInfo.cpu.usage > 80
+                                ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
+                                : systemInfo.cpu.usage > 50
+                                  ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
+                                  : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
+                          },
+                        }}
+                      />
                     </Box>
-                  </Collapse>
-                </Paper>
+                  </Box>
+                </Collapse>
+              </Paper>
 
-                {/* CPU信息卡片 */}
-                <Paper elevation={2} sx={{ borderRadius: 1 }}>
-                  <AccordionHeader
-                    title={t("resourceMonitor.cpu")}
-                    icon={
-                      <MemoryIcon sx={{ color: theme.palette.warning.main }} />
-                    }
-                    expanded={expanded.cpu}
-                    onClick={handleExpansion("cpu")}
-                  />
-                  <Collapse in={expanded.cpu} timeout="auto" unmountOnExit>
-                    <Box sx={{ px: 1.25, pb: 1.25, pt: 0 }}>
-                      <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.cpuModel")}:</strong>{" "}
-                        {systemInfo.cpu.model}
-                      </Typography>
-                      <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.cpuCores")}:</strong>{" "}
-                        {systemInfo.cpu.cores}
-                      </Typography>
-                      <Box sx={{ mt: 1, mb: 0.5 }}>
-                        <Typography variant="body2">
-                          <strong>{t("resourceMonitor.usage")}:</strong>{" "}
-                          {systemInfo.cpu.usage}%
-                        </Typography>
-                        <LinearProgress
-                          variant="determinate"
-                          value={systemInfo.cpu.usage}
-                          sx={{
-                            mt: 1,
-                            height: 8,
-                            borderRadius: 1,
-                            "& .MuiLinearProgress-bar": {
-                              background:
-                                systemInfo.cpu.usage > 80
-                                  ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
-                                  : systemInfo.cpu.usage > 50
-                                    ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
-                                    : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
-                            },
-                          }}
-                        />
-                      </Box>
+              {/* 内存信息卡片 */}
+              <Paper elevation={2} sx={{ borderRadius: 1 }}>
+                <AccordionHeader
+                  title={t("resourceMonitor.memory")}
+                  icon={<StorageIcon sx={{ color: theme.palette.info.main }} />}
+                  expanded={expanded.memory}
+                  onClick={handleExpansion("memory")}
+                />
+                <Collapse in={expanded.memory} timeout="auto" unmountOnExit>
+                  <Box sx={{ px: 1.25, pb: 1.25, pt: 0 }}>
+                    <Typography variant="body2" gutterBottom>
+                      <strong>{t("resourceMonitor.totalMemory")}:</strong>
+                      {formatFileSize(systemInfo.memory.total)}
+                    </Typography>
+                    <Typography variant="body2" gutterBottom>
+                      <strong>{t("resourceMonitor.usedMemory")}:</strong>
+                      {formatFileSize(systemInfo.memory.used)} (
+                      {systemInfo.memory.usagePercent}%)
+                    </Typography>
+                    <Typography variant="body2" gutterBottom>
+                      <strong>{t("resourceMonitor.freeMemory")}:</strong>
+                      {formatFileSize(systemInfo.memory.free)}
+                    </Typography>
+                    <Box sx={{ mt: 1, mb: 0.5 }}>
+                      <LinearProgress
+                        variant="determinate"
+                        value={systemInfo.memory.usagePercent}
+                        sx={{
+                          mt: 1,
+                          height: 8,
+                          borderRadius: 1,
+                          "& .MuiLinearProgress-bar": {
+                            background:
+                              systemInfo.memory.usagePercent > 80
+                                ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
+                                : systemInfo.memory.usagePercent > 50
+                                  ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
+                                  : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
+                          },
+                        }}
+                      />
                     </Box>
-                  </Collapse>
-                </Paper>
+                  </Box>
+                </Collapse>
+              </Paper>
 
-                {/* 内存信息卡片 */}
-                <Paper elevation={2} sx={{ borderRadius: 1 }}>
-                  <AccordionHeader
-                    title={t("resourceMonitor.memory")}
-                    icon={
-                      <StorageIcon sx={{ color: theme.palette.info.main }} />
-                    }
-                    expanded={expanded.memory}
-                    onClick={handleExpansion("memory")}
-                  />
-                  <Collapse in={expanded.memory} timeout="auto" unmountOnExit>
-                    <Box sx={{ px: 1.25, pb: 1.25, pt: 0 }}>
-                      <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.totalMemory")}:</strong>
-                        {formatFileSize(systemInfo.memory.total)}
-                      </Typography>
-                      <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.usedMemory")}:</strong>
-                        {formatFileSize(systemInfo.memory.used)} (
-                        {systemInfo.memory.usagePercent}%)
-                      </Typography>
-                      <Typography variant="body2" gutterBottom>
-                        <strong>{t("resourceMonitor.freeMemory")}:</strong>
-                        {formatFileSize(systemInfo.memory.free)}
-                      </Typography>
-                      <Box sx={{ mt: 1, mb: 0.5 }}>
-                        <LinearProgress
-                          variant="determinate"
-                          value={systemInfo.memory.usagePercent}
-                          sx={{
-                            mt: 1,
-                            height: 8,
-                            borderRadius: 1,
-                            "& .MuiLinearProgress-bar": {
-                              background:
-                                systemInfo.memory.usagePercent > 80
-                                  ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
-                                  : systemInfo.memory.usagePercent > 50
-                                    ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
-                                    : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
-                            },
-                          }}
-                        />
-                      </Box>
-                    </Box>
-                  </Collapse>
-                </Paper>
-
-                {/* 进程列表卡片 */}
-                <Paper elevation={2} sx={{ borderRadius: 1 }}>
-                  <AccordionHeader
-                    title={t("resourceMonitor.processes")}
-                    icon={
-                      <Memory sx={{ color: theme.palette.secondary.main }} />
-                    }
-                    expanded={expanded.processes}
-                    onClick={handleExpansion("processes")}
-                  />
-                  <Collapse
-                    in={expanded.processes}
-                    timeout="auto"
-                    unmountOnExit
+              {/* 进程列表卡片 */}
+              <Paper elevation={2} sx={{ borderRadius: 1 }}>
+                <AccordionHeader
+                  title={t("resourceMonitor.processes")}
+                  icon={<Memory sx={{ color: theme.palette.secondary.main }} />}
+                  expanded={expanded.processes}
+                  onClick={handleExpansion("processes")}
+                />
+                <Collapse in={expanded.processes} timeout="auto" unmountOnExit>
+                  <Box
+                    className="app-scrollbar"
+                    sx={{
+                      px: 1.25,
+                      pb: 1.25,
+                      pt: 0,
+                      maxHeight: "min(380px, 42vh)",
+                      overflowY: "auto",
+                    }}
                   >
-                    <Box
-                      sx={{
-                        px: 1.25,
-                        pb: 1.25,
-                        pt: 0,
-                        maxHeight: "min(380px, 42vh)",
-                        overflowY: "auto",
-                      }}
-                    >
-                      {processError ? (
-                        <Typography color="error" align="center">
-                          {processError}
-                        </Typography>
-                      ) : processes.length === 0 ? (
-                        <Box
+                    {processError ? (
+                      <Typography color="error" align="center">
+                        {processError}
+                      </Typography>
+                    ) : processes.length === 0 ? (
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "center",
+                          py: 2,
+                        }}
+                      >
+                        <CircularProgress size={24} />
+                      </Box>
+                    ) : (
+                      <List dense disablePadding sx={{ pb: 0.25 }}>
+                        <ListItem
+                          divider
                           sx={{
-                            display: "flex",
-                            justifyContent: "center",
-                            py: 2,
+                            position: "sticky",
+                            top: 0,
+                            zIndex: 2,
+                            py: 0.18,
+                            px: 0.7,
+                            bgcolor: "background.paper",
+                            borderBottom: `1px solid ${theme.palette.divider}`,
                           }}
                         >
-                          <CircularProgress size={24} />
-                        </Box>
-                      ) : (
-                        <List dense disablePadding sx={{ pb: 0.25 }}>
+                          <Box
+                            display="flex"
+                            width="100%"
+                            alignItems="center"
+                            gap={0.5}
+                          >
+                            <Box sx={{ flex: "0 0 40px" }}>
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  fontWeight: 700,
+                                  fontSize: "0.7rem",
+                                  color: "text.secondary",
+                                  letterSpacing: "0.02em",
+                                }}
+                              >
+                                PID
+                              </Typography>
+                            </Box>
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  fontWeight: 700,
+                                  fontSize: "0.7rem",
+                                  color: "text.secondary",
+                                }}
+                              >
+                                {t("resourceMonitor.processName")}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ flex: "0 0 52px", textAlign: "right" }}>
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  fontWeight: 700,
+                                  fontSize: "0.7rem",
+                                  color: "text.secondary",
+                                }}
+                              >
+                                {t("resourceMonitor.cpuShort")}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ flex: "0 0 52px", textAlign: "right" }}>
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  fontWeight: 700,
+                                  fontSize: "0.7rem",
+                                  color: "text.secondary",
+                                }}
+                              >
+                                {t("resourceMonitor.memoryShort")}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </ListItem>
+                        {processes.slice(0, 50).map((p, idx) => (
                           <ListItem
+                            key={p.pid}
                             divider
                             sx={{
-                              position: "sticky",
-                              top: 0,
-                              zIndex: 2,
-                              py: 0.18,
+                              py: 0.12,
                               px: 0.7,
-                              bgcolor: "background.paper",
-                              borderBottom: `1px solid ${theme.palette.divider}`,
+                              alignItems: "center",
+                              borderRadius: 1,
+                              "&:hover": { bgcolor: "action.hover" },
                             }}
                           >
                             <Box
                               display="flex"
                               width="100%"
                               alignItems="center"
-                              gap={0.5}
+                              gap={0.4}
                             >
                               <Box sx={{ flex: "0 0 40px" }}>
                                 <Typography
                                   variant="caption"
                                   sx={{
-                                    fontWeight: 700,
-                                    fontSize: "0.7rem",
+                                    fontVariantNumeric: "tabular-nums",
+                                    fontSize: "0.68rem",
                                     color: "text.secondary",
-                                    letterSpacing: "0.02em",
+                                    fontFamily: "ui-monospace, monospace",
                                   }}
                                 >
-                                  PID
+                                  {p.pid}
                                 </Typography>
                               </Box>
-                              <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Typography
-                                  variant="caption"
-                                  sx={{
-                                    fontWeight: 700,
-                                    fontSize: "0.7rem",
-                                    color: "text.secondary",
-                                  }}
+                              <Box sx={{ flex: 1, minWidth: 0, pr: 0.25 }}>
+                                <Tooltip
+                                  title={`${p.name} (PID: ${p.pid})`}
+                                  placement="top-start"
+                                  enterDelay={400}
                                 >
-                                  {t("resourceMonitor.processName")}
-                                </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    noWrap
+                                    sx={{
+                                      fontSize: "0.78rem",
+                                      lineHeight: 0.98,
+                                      fontWeight: 650,
+                                      color: "text.primary",
+                                      display: "block",
+                                      maxWidth: "100%",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {p.name}
+                                  </Typography>
+                                </Tooltip>
                               </Box>
-                              <Box sx={{ flex: "0 0 52px", textAlign: "right" }}>
-                                <Typography
-                                  variant="caption"
-                                  sx={{
-                                    fontWeight: 700,
-                                    fontSize: "0.7rem",
-                                    color: "text.secondary",
-                                  }}
-                                >
-                                  {t("resourceMonitor.cpuShort")}
-                                </Typography>
+                              <Box sx={{ flex: "0 0 52px" }}>
+                                <CompactUsageMetric
+                                  value={p.cpu}
+                                  theme={theme}
+                                />
                               </Box>
-                              <Box sx={{ flex: "0 0 52px", textAlign: "right" }}>
-                                <Typography
-                                  variant="caption"
-                                  sx={{
-                                    fontWeight: 700,
-                                    fontSize: "0.7rem",
-                                    color: "text.secondary",
-                                  }}
-                                >
-                                  {t("resourceMonitor.memoryShort")}
-                                </Typography>
+                              <Box sx={{ flex: "0 0 52px" }}>
+                                <CompactUsageMetric
+                                  value={p.memory}
+                                  theme={theme}
+                                />
                               </Box>
                             </Box>
                           </ListItem>
-                          {processes.slice(0, 50).map((p, idx) => (
-                            <ListItem
-                              key={p.pid}
-                              divider
-                              sx={{
-                                py: 0.12,
-                                px: 0.7,
-                                alignItems: "center",
-                                borderRadius: 1,
-                                "&:hover": { bgcolor: "action.hover" },
-                              }}
-                            >
-                              <Box
-                                display="flex"
-                                width="100%"
-                                alignItems="center"
-                                gap={0.4}
-                              >
-                                <Box sx={{ flex: "0 0 40px" }}>
-                                  <Typography
-                                    variant="caption"
-                                    sx={{
-                                      fontVariantNumeric: "tabular-nums",
-                                      fontSize: "0.68rem",
-                                      color: "text.secondary",
-                                      fontFamily: "ui-monospace, monospace",
-                                    }}
-                                  >
-                                    {p.pid}
-                                  </Typography>
-                                </Box>
-                                <Box sx={{ flex: 1, minWidth: 0, pr: 0.25 }}>
-                                  <Tooltip
-                                    title={`${p.name} (PID: ${p.pid})`}
-                                    placement="top-start"
-                                    enterDelay={400}
-                                  >
-                                    <Typography
-                                      variant="caption"
-                                      noWrap
-                                      sx={{
-                                        fontSize: "0.78rem",
-                                        lineHeight: 0.98,
-                                        fontWeight: 650,
-                                        color: "text.primary",
-                                        display: "block",
-                                        maxWidth: "100%",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      {p.name}
-                                    </Typography>
-                                  </Tooltip>
-                                </Box>
-                                <Box sx={{ flex: "0 0 52px" }}>
-                                  <CompactUsageMetric
-                                    value={p.cpu}
-                                    theme={theme}
-                                  />
-                                </Box>
-                                <Box sx={{ flex: "0 0 52px" }}>
-                                  <CompactUsageMetric
-                                    value={p.memory}
-                                    theme={theme}
-                                  />
-                                </Box>
-                              </Box>
-                            </ListItem>
-                          ))}
-                        </List>
-                      )}
-                    </Box>
-                  </Collapse>
-                </Paper>
+                        ))}
+                      </List>
+                    )}
+                  </Box>
+                </Collapse>
+              </Paper>
 
-                {/* 系统信息提示 */}
-                <Box sx={{ mt: 1 }}>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    align="center"
-                    display="block"
-                  >
-                    {systemInfo.isLocal
-                      ? "显示本地系统信息"
-                      : "显示远程系统信息"}
-                    • 每5秒自动刷新
-                  </Typography>
-                </Box>
+              {/* 系统信息提示 */}
+              <Box sx={{ mt: 1 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  align="center"
+                  display="block"
+                >
+                  {systemInfo.isLocal ? "显示本地系统信息" : "显示远程系统信息"}
+                  • 每5秒自动刷新
+                </Typography>
               </Box>
-            ) : null}
-          </Box>
+            </Box>
+          ) : null}
+        </Box>
       </Box>
     </Paper>
   );

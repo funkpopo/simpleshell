@@ -13,11 +13,29 @@ body {
   height: 100%;
   /* Base font size will be controlled by Settings */
   font-size: 14px; /* Default size, will be overridden by JS */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #root {
   width: 100%;
   height: 100%;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.xterm,
+.xterm *,
+.cm-editor,
+.cm-editor *,
+.ai-message-content,
+.ai-message-content *,
+.file-preview-content,
+.file-preview-content *,
+.user-select-text {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* 确保MUI容器正确工作 */

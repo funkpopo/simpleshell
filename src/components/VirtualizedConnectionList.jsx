@@ -467,22 +467,10 @@ const VirtualizedConnectionList = ({
     return (
       <Box
         ref={containerRef}
-        className={className}
+        className={["app-scrollbar", className].filter(Boolean).join(" ")}
         sx={{
           height: height === "100%" ? "100%" : height,
           overflow: "auto",
-          "&::-webkit-scrollbar": { width: 8 },
-          "&::-webkit-scrollbar-track": {
-            backgroundColor: theme.palette.action.hover,
-            borderRadius: 4,
-          },
-          "&::-webkit-scrollbar-thumb": {
-            backgroundColor: theme.palette.action.disabled,
-            borderRadius: 4,
-            "&:hover": {
-              backgroundColor: theme.palette.action.focus,
-            },
-          },
         }}
       >
         {flattenedItems.map((item, index) => (
@@ -501,23 +489,9 @@ const VirtualizedConnectionList = ({
   return (
     <Box
       ref={containerRef}
-      className={className}
+      className={["app-scrollbar", className].filter(Boolean).join(" ")}
       sx={{
         height: height === "100%" ? "100%" : height,
-        "& .react-window-list": {
-          "&::-webkit-scrollbar": { width: 8 },
-          "&::-webkit-scrollbar-track": {
-            backgroundColor: theme.palette.action.hover,
-            borderRadius: 4,
-          },
-          "&::-webkit-scrollbar-thumb": {
-            backgroundColor: theme.palette.action.disabled,
-            borderRadius: 4,
-            "&:hover": {
-              backgroundColor: theme.palette.action.focus,
-            },
-          },
-        },
       }}
     >
       {actualHeight > 0 && (

@@ -2,6 +2,10 @@ const path = require("path");
 const fs = require("fs");
 
 module.exports = {
+  devtool:
+    process.env.NODE_ENV === "development"
+      ? "eval-cheap-module-source-map"
+      : false,
   entry: {
     index: "./src/main.js",
     "workers/ai-worker": "./src/workers/ai-worker.js",

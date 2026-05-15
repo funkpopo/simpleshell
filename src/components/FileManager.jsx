@@ -3830,54 +3830,11 @@ const FileManager = memo(
 
       return (
         <Box
+          className="app-scrollbar"
           sx={{
             height: "100%",
             width: "100%",
             overflow: "auto",
-            "&::-webkit-scrollbar": {
-              width: 10,
-            },
-            "&::-webkit-scrollbar-track": {
-              backgroundColor:
-                theme.palette.mode === "dark"
-                  ? alpha(theme.palette.action.hover, 0.3)
-                  : alpha(theme.palette.action.hover, 0.5),
-              borderRadius: 5,
-              margin: "4px",
-            },
-            "&::-webkit-scrollbar-thumb": {
-              backgroundColor:
-                theme.palette.mode === "dark"
-                  ? alpha(theme.palette.action.disabled, 0.8)
-                  : theme.palette.action.disabled,
-              borderRadius: 5,
-              transition: "background-color 0.2s ease",
-              "&:hover": {
-                backgroundColor: theme.palette.action.focus,
-              },
-            },
-            "& .file-manager-virtualized-list::-webkit-scrollbar": {
-              width: 10,
-            },
-            "& .file-manager-virtualized-list::-webkit-scrollbar-track": {
-              backgroundColor:
-                theme.palette.mode === "dark"
-                  ? alpha(theme.palette.action.hover, 0.3)
-                  : alpha(theme.palette.action.hover, 0.5),
-              borderRadius: 5,
-              margin: "4px",
-            },
-            "& .file-manager-virtualized-list::-webkit-scrollbar-thumb": {
-              backgroundColor:
-                theme.palette.mode === "dark"
-                  ? alpha(theme.palette.action.disabled, 0.8)
-                  : theme.palette.action.disabled,
-              borderRadius: 5,
-              transition: "background-color 0.2s ease",
-            },
-            "& .file-manager-virtualized-list::-webkit-scrollbar-thumb:hover": {
-              backgroundColor: theme.palette.action.focus,
-            },
           }}
           onContextMenu={handleBlankContextMenu}
           onClick={handleBlankClick}
@@ -6178,321 +6135,321 @@ const FileManager = memo(
         tabIndex={0} // 使得Paper元素可以接收键盘事件
       >
         <Box sx={sidebarContentSx(theme, open)}>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            px: 1.5,
-            py: 1.25,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-            flexShrink: 0,
-            backgroundColor:
-              theme.palette.mode === "dark"
-                ? alpha(theme.palette.background.paper, 0.8)
-                : theme.palette.background.default,
-          }}
-        >
-          <Typography
-            variant="subtitle1"
-            sx={{ flexGrow: 1 }}
-            fontWeight="medium"
-          >
-            {tabName
-              ? `${t("fileManager.title")} - ${tabName}`
-              : t("fileManager.title")}
-          </Typography>
-          <IconButton
-            size="small"
-            onClick={handleClose}
-            edge="end"
-            disabled={isClosing} // 禁用关闭按钮当正在关闭时
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Box>
-
-        <Box
-          sx={{
-            px: 1.5,
-            py: 1,
-            display: "flex",
-            flexDirection: "column",
-            borderBottom: `1px solid ${theme.palette.divider}`,
-            gap: 0.5,
-            flexShrink: 0,
-            backgroundColor: theme.palette.background.paper,
-          }}
-        >
           <Box
             sx={{
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
-              minWidth: 0,
-              gap: 1,
+              px: 1.5,
+              py: 1.25,
+              borderBottom: `1px solid ${theme.palette.divider}`,
+              flexShrink: 0,
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? alpha(theme.palette.background.paper, 0.8)
+                  : theme.palette.background.default,
             }}
           >
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Tooltip title={t("fileManager.back")}>
-                <span>
-                  <IconButton
-                    size="small"
-                    onClick={handleHistoryBack}
-                    disabled={historyIndex <= 0}
-                  >
-                    <ArrowBackIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-
-              <Tooltip title={t("fileManager.nextPath")}>
-                <span>
-                  <IconButton
-                    size="small"
-                    onClick={handleGoToNextPath}
-                    disabled={historyIndex >= pathHistory.length - 1}
-                  >
-                    <ArrowForwardIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-
-              <Tooltip title={t("fileManager.upLevel")}>
-                <span>
-                  <IconButton
-                    size="small"
-                    onClick={handleGoUp}
-                    disabled={!currentPath || currentPath === "/"}
-                  >
-                    <ArrowUpwardIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-
-              <Tooltip title={t("fileManager.home")}>
-                <IconButton size="small" onClick={handleGoHome}>
-                  <HomeIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-
-              <Tooltip title={t("fileManager.refresh")}>
-                <IconButton size="small" onClick={handleRefresh}>
-                  <RefreshIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-
-            <Box
-              component="span"
-              sx={{
-                minWidth: 0,
-                fontSize: "0.75rem",
-                color: theme.palette.text.secondary,
-                opacity: 0.8,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                textAlign: "right",
-              }}
+            <Typography
+              variant="subtitle1"
+              sx={{ flexGrow: 1 }}
+              fontWeight="medium"
             >
-              {t("fileManager.statusBar.lastRefresh", {
-                time: formatLastRefreshTime(lastRefreshTime),
-              })}
-            </Box>
+              {tabName
+                ? `${t("fileManager.title")} - ${tabName}`
+                : t("fileManager.title")}
+            </Typography>
+            <IconButton
+              size="small"
+              onClick={handleClose}
+              edge="end"
+              disabled={isClosing} // 禁用关闭按钮当正在关闭时
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
           </Box>
 
           <Box
             sx={{
+              px: 1.5,
+              py: 1,
               display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              minWidth: 0,
-              gap: 1,
+              flexDirection: "column",
+              borderBottom: `1px solid ${theme.palette.divider}`,
+              gap: 0.5,
+              flexShrink: 0,
+              backgroundColor: theme.palette.background.paper,
             }}
           >
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Tooltip
-                title={`${t("fileManager.createFile")} / ${t("fileManager.createFolder")}`}
-              >
-                <IconButton size="small" onClick={handleCreateMenuOpen}>
-                  <NoteAddIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-
-              <Tooltip title={t("fileManager.upload")}>
-                <IconButton size="small" onClick={handleUploadMenuOpen}>
-                  <UploadFileIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-
             <Box
               sx={{
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "flex-end",
-                flex: 1,
-                gap: 0.5,
+                justifyContent: "space-between",
                 minWidth: 0,
+                gap: 1,
               }}
             >
-              {showSearch && (
-                <TextField
-                  inputRef={searchInputRef}
-                  size="small"
-                  placeholder={t("fileManager.search")}
-                  value={searchTerm}
-                  onChange={handleSearchChange}
-                  variant="outlined"
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchIcon fontSize="small" />
-                      </InputAdornment>
-                    ),
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          size="small"
-                          onClick={() => {
-                            if (searchTerm) {
-                              setSearchTerm("");
-                              return;
-                            }
-                            setShowSearch(false);
-                          }}
-                          edge="end"
-                        >
-                          <ClearIcon fontSize="small" />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{
-                    flex: 1,
-                    minWidth: 0,
-                    ...getSearchFieldMotionSx(theme, {
-                      borderRadius: 1.5,
-                      backgroundColor:
-                        theme.palette.mode === "dark"
-                          ? alpha(theme.palette.background.default, 0.5)
-                          : theme.palette.background.default,
-                      hoverBackgroundColor: theme.palette.background.paper,
-                      focusedBackgroundColor: theme.palette.background.paper,
-                    }),
-                  }}
-                />
-              )}
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <Tooltip title={t("fileManager.back")}>
+                  <span>
+                    <IconButton
+                      size="small"
+                      onClick={handleHistoryBack}
+                      disabled={historyIndex <= 0}
+                    >
+                      <ArrowBackIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
 
-              {!showSearch && (
-                <Tooltip title={t("fileManager.search")}>
-                  <IconButton size="small" onClick={toggleSearch}>
-                    <SearchIcon fontSize="small" />
+                <Tooltip title={t("fileManager.nextPath")}>
+                  <span>
+                    <IconButton
+                      size="small"
+                      onClick={handleGoToNextPath}
+                      disabled={historyIndex >= pathHistory.length - 1}
+                    >
+                      <ArrowForwardIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+
+                <Tooltip title={t("fileManager.upLevel")}>
+                  <span>
+                    <IconButton
+                      size="small"
+                      onClick={handleGoUp}
+                      disabled={!currentPath || currentPath === "/"}
+                    >
+                      <ArrowUpwardIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+
+                <Tooltip title={t("fileManager.home")}>
+                  <IconButton size="small" onClick={handleGoHome}>
+                    <HomeIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
-              )}
 
-              <Tooltip title={t("fileManager.sort")}>
-                <IconButton size="small" onClick={handleSortMenuOpen}>
-                  {sortMode === "time" ? (
-                    <AccessTimeIcon fontSize="small" />
-                  ) : (
-                    <SortByAlphaIcon fontSize="small" />
-                  )}
-                </IconButton>
-              </Tooltip>
+                <Tooltip title={t("fileManager.refresh")}>
+                  <IconButton size="small" onClick={handleRefresh}>
+                    <RefreshIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+
+              <Box
+                component="span"
+                sx={{
+                  minWidth: 0,
+                  fontSize: "0.75rem",
+                  color: theme.palette.text.secondary,
+                  opacity: 0.8,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  textAlign: "right",
+                }}
+              >
+                {t("fileManager.statusBar.lastRefresh", {
+                  time: formatLastRefreshTime(lastRefreshTime),
+                })}
+              </Box>
             </Box>
-          </Box>
-        </Box>
 
-        <Box
-          sx={{
-            px: 1.5,
-            py: 0.75,
-            overflow: "hidden",
-            borderBottom: `1px solid ${theme.palette.divider}`,
-            zIndex: 1,
-            flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            gap: 0.75,
-            backgroundColor: theme.palette.background.paper,
-          }}
-        >
-          <TextField
-            size="small"
-            variant="outlined"
-            value={pathInput}
-            onChange={handlePathInputChange}
-            onKeyDown={handlePathInputSubmit}
-            placeholder={t("fileManager.enterPath")}
-            InputProps={{
-              style: { fontSize: "1.0rem" },
-              startAdornment: (
-                <InputAdornment position="start">
-                  <FolderIcon color="action" fontSize="small" />
-                </InputAdornment>
-              ),
-            }}
-            sx={{
-              flex: 1,
-              minWidth: 0,
-              "& .MuiOutlinedInput-root": {
-                borderRadius: 1.5,
-                "& fieldset": {
-                  borderColor: theme.palette.divider,
-                },
-                "&:hover fieldset": {
-                  borderColor: theme.palette.primary.main,
-                },
-                "&.Mui-focused fieldset": {
-                  borderColor: theme.palette.primary.main,
-                },
-              },
-            }}
-          />
-        </Box>
-
-        <Box
-          sx={{
-            flexGrow: 1,
-            overflow: "auto",
-            marginTop: 0, // 确保没有额外的边距
-            display: "flex",
-            flexDirection: "column",
-            height: 0, // 确保flex布局正常工作
-            position: "relative", // 创建新的定位上下文
-          }}
-          onContextMenu={handleBlankContextMenu} // 添加空白区域右键菜单
-        >
-          {connectionLoading ? (
             <Box
               sx={{
                 display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
                 alignItems: "center",
-                height: "100%",
-                width: "100%",
-                gap: 1.5,
-                px: 2,
+                justifyContent: "space-between",
+                minWidth: 0,
+                gap: 1,
               }}
             >
-              <CircularProgress size={24} />
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ textAlign: "center" }}
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <Tooltip
+                  title={`${t("fileManager.createFile")} / ${t("fileManager.createFolder")}`}
+                >
+                  <IconButton size="small" onClick={handleCreateMenuOpen}>
+                    <NoteAddIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+
+                <Tooltip title={t("fileManager.upload")}>
+                  <IconButton size="small" onClick={handleUploadMenuOpen}>
+                    <UploadFileIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  flex: 1,
+                  gap: 0.5,
+                  minWidth: 0,
+                }}
               >
-                {connectionLoadingMessage || t("fileManager.loading")}
-              </Typography>
+                {showSearch && (
+                  <TextField
+                    inputRef={searchInputRef}
+                    size="small"
+                    placeholder={t("fileManager.search")}
+                    value={searchTerm}
+                    onChange={handleSearchChange}
+                    variant="outlined"
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon fontSize="small" />
+                        </InputAdornment>
+                      ),
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              if (searchTerm) {
+                                setSearchTerm("");
+                                return;
+                              }
+                              setShowSearch(false);
+                            }}
+                            edge="end"
+                          >
+                            <ClearIcon fontSize="small" />
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    }}
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      ...getSearchFieldMotionSx(theme, {
+                        borderRadius: 1.5,
+                        backgroundColor:
+                          theme.palette.mode === "dark"
+                            ? alpha(theme.palette.background.default, 0.5)
+                            : theme.palette.background.default,
+                        hoverBackgroundColor: theme.palette.background.paper,
+                        focusedBackgroundColor: theme.palette.background.paper,
+                      }),
+                    }}
+                  />
+                )}
+
+                {!showSearch && (
+                  <Tooltip title={t("fileManager.search")}>
+                    <IconButton size="small" onClick={toggleSearch}>
+                      <SearchIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+
+                <Tooltip title={t("fileManager.sort")}>
+                  <IconButton size="small" onClick={handleSortMenuOpen}>
+                    {sortMode === "time" ? (
+                      <AccessTimeIcon fontSize="small" />
+                    ) : (
+                      <SortByAlphaIcon fontSize="small" />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              </Box>
             </Box>
-          ) : loading ? (
-            <FileManagerSkeleton />
-          ) : (
-            renderFileList()
-          )}
-        </Box>
+          </Box>
+
+          <Box
+            sx={{
+              px: 1.5,
+              py: 0.75,
+              overflow: "hidden",
+              borderBottom: `1px solid ${theme.palette.divider}`,
+              zIndex: 1,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 0.75,
+              backgroundColor: theme.palette.background.paper,
+            }}
+          >
+            <TextField
+              size="small"
+              variant="outlined"
+              value={pathInput}
+              onChange={handlePathInputChange}
+              onKeyDown={handlePathInputSubmit}
+              placeholder={t("fileManager.enterPath")}
+              InputProps={{
+                style: { fontSize: "1.0rem" },
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <FolderIcon color="action" fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 1.5,
+                  "& fieldset": {
+                    borderColor: theme.palette.divider,
+                  },
+                  "&:hover fieldset": {
+                    borderColor: theme.palette.primary.main,
+                  },
+                  "&.Mui-focused fieldset": {
+                    borderColor: theme.palette.primary.main,
+                  },
+                },
+              }}
+            />
+          </Box>
+
+          <Box
+            sx={{
+              flexGrow: 1,
+              overflow: "auto",
+              marginTop: 0, // 确保没有额外的边距
+              display: "flex",
+              flexDirection: "column",
+              height: 0, // 确保flex布局正常工作
+              position: "relative", // 创建新的定位上下文
+            }}
+            onContextMenu={handleBlankContextMenu} // 添加空白区域右键菜单
+          >
+            {connectionLoading ? (
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  height: "100%",
+                  width: "100%",
+                  gap: 1.5,
+                  px: 2,
+                }}
+              >
+                <CircularProgress size={24} />
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ textAlign: "center" }}
+                >
+                  {connectionLoadingMessage || t("fileManager.loading")}
+                </Typography>
+              </Box>
+            ) : loading ? (
+              <FileManagerSkeleton />
+            ) : (
+              renderFileList()
+            )}
+          </Box>
         </Box>
 
         <Menu
@@ -6715,7 +6672,9 @@ const FileManager = memo(
             <ListItemIcon>
               <UploadFileIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>{t("fileManager.uploadFileToCurrentFolder")}</ListItemText>
+            <ListItemText>
+              {t("fileManager.uploadFileToCurrentFolder")}
+            </ListItemText>
             <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
               Ctrl+U
             </Typography>
@@ -6725,7 +6684,9 @@ const FileManager = memo(
             <ListItemIcon>
               <CreateNewFolderIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>{t("fileManager.uploadFolderToCurrentFolder")}</ListItemText>
+            <ListItemText>
+              {t("fileManager.uploadFolderToCurrentFolder")}
+            </ListItemText>
             <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
               Ctrl+Shift+U
             </Typography>

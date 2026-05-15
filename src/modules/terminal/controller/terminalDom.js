@@ -216,17 +216,18 @@ body:not(.light-theme) .search-input:focus {
 .dark-theme .search-button,
 body:not(.light-theme) .search-button {
   color: white !important;
-  cursor: pointer;
+  cursor: default;
   margin-left: 2px;
   opacity: 0.7;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.12s ease,
+    opacity 0.12s ease;
   border-radius: 4px;
 }
 .dark-theme .search-button:hover,
 body:not(.light-theme) .search-button:hover {
   background-color: rgba(88, 166, 255, 0.2) !important;
   opacity: 1;
-  transform: scale(1.05);
 }
 .dark-theme .search-button:disabled,
 body:not(.light-theme) .search-button:disabled {
@@ -237,17 +238,19 @@ body:not(.light-theme) .search-button:disabled {
 /* 浅色主题按钮样式 */
 .light-theme .search-button {
   color: rgba(0, 0, 0, 0.7) !important;
-  cursor: pointer;
+  cursor: default;
   margin-left: 2px;
   opacity: 0.8;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease,
+    opacity 0.12s ease;
   border-radius: 4px;
 }
 .light-theme .search-button:hover {
   background-color: rgba(88, 166, 255, 0.15) !important;
   color: rgba(0, 0, 0, 0.9) !important;
   opacity: 1;
-  transform: scale(1.05);
 }
 .light-theme .search-button:disabled {
   opacity: 0.3 !important;
@@ -261,7 +264,11 @@ body:not(.light-theme) .search-icon-btn {
   right: 15px;
   z-index: 9;
   border-radius: 6px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    opacity 0.12s ease;
   opacity: 0.8;
   backdrop-filter: blur(5px);
   color: rgba(255, 255, 255, 0.7);
@@ -271,7 +278,6 @@ body:not(.light-theme) .search-icon-btn {
 .dark-theme .search-icon-btn:hover,
 body:not(.light-theme) .search-icon-btn:hover {
   opacity: 1;
-  transform: scale(1.05);
   color: white;
   background: linear-gradient(to bottom, rgba(88, 166, 255, 0.25), rgba(88, 166, 255, 0.2));
   border-color: rgba(88, 166, 255, 0.4);
@@ -284,7 +290,11 @@ body:not(.light-theme) .search-icon-btn:hover {
   right: 15px;
   z-index: 9;
   border-radius: 6px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    opacity 0.12s ease;
   opacity: 0.8;
   backdrop-filter: blur(5px);
   color: rgba(0, 0, 0, 0.7);
@@ -293,7 +303,6 @@ body:not(.light-theme) .search-icon-btn:hover {
 }
 .light-theme .search-icon-btn:hover {
   opacity: 1;
-  transform: scale(1.05);
   color: rgba(0, 0, 0, 0.9);
   background: linear-gradient(to bottom, rgba(255, 255, 255, 0.95), rgba(248, 249, 250, 0.95));
   border-color: rgba(88, 166, 255, 0.5);
