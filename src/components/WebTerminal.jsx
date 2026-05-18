@@ -742,7 +742,10 @@ const WebTerminal = ({
         const processId = processCache[tabId];
         const forceResizeMessage = String(reason).includes("force");
         if (processId && (colsChanged || rowsChanged || forceResizeMessage)) {
-          sendResizeIfNeeded(processId, tabId, term.cols, term.rows);
+          sendResizeIfNeeded(processId, tabId, term.cols, term.rows, {
+            force: forceResizeMessage,
+            immediate: forceResizeMessage,
+          });
         }
 
         if (!term.__webglEnabled && typeof term.refresh === "function") {
@@ -754,11 +757,7 @@ const WebTerminal = ({
         return false;
       }
     },
-    [
-      attachTerminalToContainer,
-      isTerminalContainerVisible,
-      tabId,
-    ],
+    [attachTerminalToContainer, isTerminalContainerVisible, tabId],
   );
 
   const scheduleTerminalLayoutSync = useCallback(
@@ -793,6 +792,18 @@ const WebTerminal = ({
   useEffect(() => {
     scheduleTerminalLayoutSyncRef.current = scheduleTerminalLayoutSync;
   }, [scheduleTerminalLayoutSync]);
+
+  const hasMeaningfulLayoutGeometryChange = useCallback(
+    (width, height, threshold = 1) => {
+      const previous = lastLayoutGeometryRef.current;
+
+      return (
+        Math.abs(width - previous.width) > threshold ||
+        Math.abs(height - previous.height) > threshold
+      );
+    },
+    [],
+  );
 
   const recoverTerminalAfterActivation = useCallback(
     ({ resize = true, refocus = true, refreshSuggestions = true } = {}) => {
@@ -1026,7 +1037,6 @@ const WebTerminal = ({
         handlePasteText(text);
       });
     }
-
   };
 
   const handleMouseMove = (e) => {
@@ -1109,6 +1119,9 @@ const WebTerminal = ({
           clearPendingWrappedInputRefresh(term);
           applyPromptTrackingState({ promptReady: false });
           setInEditorMode(true);
+          scheduleTerminalLayoutSyncRef.current("alternate-buffer-force", {
+            immediate: true,
+          });
 
           // 通知主进程编辑器模式状态变更
           if (processId && window.terminalAPI?.notifyEditorModeChange) {
@@ -1474,7 +1487,7 @@ const WebTerminal = ({
           if (FULLSCREEN_COMMAND_REGEX.test(lastLine)) {
             // 使用EventManager管理延迟序列触发终端大小调整
             setContentUpdated(true);
-            scheduleTerminalLayoutSyncRef.current("fullscreen-command");
+            scheduleTerminalLayoutSyncRef.current("fullscreen-command-force");
           }
         } catch {
           // 忽略任何错误，不影响正常功能
@@ -2431,7 +2444,8 @@ const WebTerminal = ({
                       terminalId: tabId,
                       processId,
                       protocol: localizedSshConfig.protocol || "ssh",
-                      splitReconnect: localizedSshConfig.splitReconnect || false,
+                      splitReconnect:
+                        localizedSshConfig.splitReconnect || false,
                     },
                   });
 
@@ -2878,18 +2892,19 @@ const WebTerminal = ({
       const resizeObserver = createResizeObserver(
         terminalRef.current,
         ({ width, height }) => {
-          // 只有当尺寸确实发生变化时才触发resize
-          if (termRef.current && termRef.current.element) {
-            const currentWidth = termRef.current.element.clientWidth;
-            const currentHeight = termRef.current.element.clientHeight;
+          if (
+            !terminalRef.current ||
+            !termRef.current ||
+            !fitAddonRef.current ||
+            !isTerminalContainerVisible(terminalRef.current)
+          ) {
+            return;
+          }
 
-            // 提高阈值到10px，减少微小变化触发的resize
-            if (
-              Math.abs(width - currentWidth) > 1 ||
-              Math.abs(height - currentHeight) > 1
-            ) {
-              scheduleTerminalLayoutSyncRef.current("container-resize");
-            }
+          // 不和 xterm DOM 当前像素尺寸比较。xterm 元素会通过 CSS 自动撑开，
+          // 但这不代表 fitAddon 已经重新计算过 cols/rows。
+          if (hasMeaningfulLayoutGeometryChange(width, height)) {
+            scheduleTerminalLayoutSyncRef.current("container-resize");
           }
         },
         { debounceTime: 16 },
@@ -3111,6 +3126,8 @@ const WebTerminal = ({
     tryEnableWebglRenderer,
     disableWebglRenderer,
     attachTerminalToContainer,
+    hasMeaningfulLayoutGeometryChange,
+    isTerminalContainerVisible,
     recoverTerminalAfterActivation,
     markTerminalContentUpdated,
   ]);
@@ -3401,7 +3418,9 @@ const WebTerminal = ({
         TERMINAL_RESIZE_QUERY_REGEX.test(dataStr)
       ) {
         setContentUpdated(true);
-        scheduleTerminalLayoutSyncRef.current("terminal-control-sequence");
+        scheduleTerminalLayoutSyncRef.current(
+          "terminal-control-sequence-force",
+        );
       }
     };
 

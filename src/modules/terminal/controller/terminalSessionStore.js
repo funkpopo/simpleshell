@@ -13,10 +13,16 @@ export const clearGeometryFor = (processId, tabId) => {
   }
 };
 
-export const sendResizeIfNeeded = (processId, tabId, cols, rows) => {
+export const sendResizeIfNeeded = (
+  processId,
+  tabId,
+  cols,
+  rows,
+  options = {},
+) => {
   const mailbox = terminalIOMailboxCache[tabId];
   if (mailbox?.requestResize) {
-    return mailbox.requestResize(cols, rows);
+    return mailbox.requestResize(cols, rows, options);
   }
 
   if (!window.terminalAPI?.resizeTerminal) {
