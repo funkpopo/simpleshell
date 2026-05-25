@@ -1110,6 +1110,7 @@ const ConnectionManager = memo(
 
     // 打开添加连接对话框
     const handleAddConnection = useCallback((parentGroupId = null) => {
+      setSelectedItem(null);
       setDialogType("connection");
       setDialogMode("add");
       setFormData({
@@ -1139,6 +1140,7 @@ const ConnectionManager = memo(
 
     // 打开添加组对话框
     const handleAddGroup = useCallback(() => {
+      setSelectedItem(null);
       setDialogType("group");
       setDialogMode("add");
       setFormData({
@@ -1496,7 +1498,10 @@ const ConnectionManager = memo(
 
       // 处理连接保存
       const connectionData = {
-        id: selectedItem?.id || `conn_${Date.now()}`,
+        id:
+          dialogMode === "add"
+            ? `conn_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+            : selectedItem?.id || `conn_${Date.now()}`,
         type: "connection",
         name: formData.name,
         host: formData.host,
