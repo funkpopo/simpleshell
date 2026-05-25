@@ -2281,7 +2281,7 @@ dependencies = [
 
 [[package]]
 name = "transfer-sidecar"
-version = "0.4.23"
+version = "0.4.24"
 dependencies = [
  "base64",
  "bytes",
