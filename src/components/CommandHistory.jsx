@@ -43,8 +43,40 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SelectAllIcon from "@mui/icons-material/SelectAll";
 import { useTranslation } from "react-i18next";
-import { sidebarContentSx, sidebarListItemButtonSx } from "./sidebarItemStyles";
+import {
+  getSidebarItemSelectedBg,
+  sidebarContentSx,
+  sidebarListItemButtonSx,
+} from "./sidebarItemStyles";
 import { compactContextMenuPaperSx } from "./contextMenuStyles";
+
+const HISTORY_ITEM_HEIGHT = 48;
+
+const HistoryCommandContent = React.memo(({ command }) => {
+  if (!command) return null;
+
+  return (
+    <Typography
+      variant="body2"
+      component="div"
+      sx={{
+        color: "text.primary",
+        fontFamily:
+          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        fontSize: "0.82rem",
+        fontWeight: 500,
+        lineHeight: 1.35,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+    >
+      {command}
+    </Typography>
+  );
+});
+
+HistoryCommandContent.displayName = "HistoryCommandContent";
 
 // 虚拟化历史记录项组件
 const HistoryItem = React.memo(
@@ -57,8 +89,8 @@ const HistoryItem = React.memo(
     contextMenuTargetCommand,
     toggleCommandSelection,
     handleSendCommand,
+    handleCopyCommand,
     handleMenuOpen,
-    formatTime,
   }) => {
     const theme = useTheme();
     const item = filteredHistory[index];
@@ -72,15 +104,21 @@ const HistoryItem = React.memo(
       (selectMode && selectedCommands.has(item.command)) || isContextMenuTarget;
 
     return (
-      <div style={style}>
+      <div style={{ ...style, width: "100%" }}>
         <ListItem
           disablePadding
           sx={{
-            borderBottom: `1px solid ${theme.palette.divider}`,
+            display: "flex",
+            mb: 0.5,
+            borderRadius: 1,
             overflow: "hidden",
+            minHeight: HISTORY_ITEM_HEIGHT,
+            width: "100%",
+            boxSizing: "border-box",
           }}
         >
           <ListItemButton
+            disableGutters
             data-command-history-item="true"
             data-command-history-index={index}
             onContextMenu={(event) => handleMenuOpen(event, item)}
@@ -90,8 +128,21 @@ const HistoryItem = React.memo(
                 : handleSendCommand(item.command)
             }
             sx={{
-              minHeight: 48,
+              pl: selectMode ? 0.5 : 1,
+              pr: selectMode ? 1 : 6.75,
+              minHeight: HISTORY_ITEM_HEIGHT,
+              borderRadius: 1,
+              position: "relative",
+              py: 0.55,
+              width: "100%",
+              maxWidth: "100%",
+              flex: 1,
+              alignSelf: "stretch",
+              boxSizing: "border-box",
               ...sidebarListItemButtonSx(theme, isHighlighted),
+              backgroundColor: isHighlighted
+                ? getSidebarItemSelectedBg(theme)
+                : "transparent",
             }}
           >
             {selectMode && (
@@ -105,37 +156,64 @@ const HistoryItem = React.memo(
             )}
 
             <ListItemText
-              primary={
-                <Box
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                mr: 0,
+              }}
+              primary={<HistoryCommandContent command={item.command} />}
+            />
+            {!selectMode && (
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: 0.25,
+                  position: "absolute",
+                  right: 2,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  flexShrink: 0,
+                }}
+              >
+                <IconButton
+                  size="small"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleSendCommand(item.command);
+                  }}
                   sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1,
+                    width: 26,
+                    height: 26,
+                    color: "primary.main",
+                    bgcolor: "transparent",
+                    "&:hover": {
+                      bgcolor: "action.hover",
+                    },
                   }}
                 >
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      flex: 1,
-                      wordBreak: "break-all",
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                      lineHeight: "1.2em",
-                      maxHeight: "2.4em",
-                    }}
-                  >
-                    {item.command}
-                  </Typography>
-                </Box>
-              }
-              secondary={
-                <Typography variant="caption" color="text.secondary">
-                  {formatTime(item.timestamp)}
-                </Typography>
-              }
-            />
+                  <SendIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+                <IconButton
+                  size="small"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void handleCopyCommand(item.command);
+                  }}
+                  sx={{
+                    width: 26,
+                    height: 26,
+                    color: "text.secondary",
+                    bgcolor: "transparent",
+                    "&:hover": {
+                      color: "text.primary",
+                      bgcolor: "action.hover",
+                    },
+                  }}
+                >
+                  <ContentCopyIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Box>
+            )}
           </ListItemButton>
         </ListItem>
       </div>
@@ -319,13 +397,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     );
   }, [history, searchTerm]);
 
-  // 格式化时间
-  const formatTime = useCallback((timestamp) => {
-    if (!timestamp) return "";
-    const date = new Date(timestamp);
-    return date.toLocaleString();
-  }, []);
-
   // 处理菜单打开
   const handleMenuOpen = useCallback(
     (event, command) => {
@@ -469,6 +540,23 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     });
   }, []);
 
+  // 复制命令到剪贴板
+  const handleCopyCommand = useCallback(
+    async (command) => {
+      if (!command) {
+        handleMenuClose();
+        return;
+      }
+      try {
+        await window.clipboardAPI.writeText(command);
+      } catch {
+        showNotification(t("commandHistory.copyFailed"), "error");
+      }
+      handleMenuClose();
+    },
+    [handleMenuClose, showNotification, t],
+  );
+
   // 虚拟化列表的数据
   const listItemData = useMemo(
     () => ({
@@ -478,8 +566,8 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       contextMenuTargetCommand: menuTargetCommand,
       toggleCommandSelection,
       handleSendCommand,
+      handleCopyCommand,
       handleMenuOpen,
-      formatTime,
     }),
     [
       filteredHistory,
@@ -487,25 +575,11 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       selectedCommands,
       toggleCommandSelection,
       handleSendCommand,
+      handleCopyCommand,
       handleMenuOpen,
-      formatTime,
       menuTargetCommand,
     ],
   );
-
-  // 复制命令到剪贴板
-  const handleCopyCommand = async (command) => {
-    if (!command) {
-      handleMenuClose();
-      return;
-    }
-    try {
-      await window.clipboardAPI.writeText(command);
-    } catch {
-      showNotification(t("commandHistory.copyFailed"), "error");
-    }
-    handleMenuClose();
-  };
 
   // 编辑命令
   const handleEditCommand = (historyItem) => {
@@ -809,13 +883,13 @@ function CommandHistory({ open, onClose, onSendCommand }) {
               // 对于少量数据，使用传统渲染以避免虚拟化开销
               <Box
                 className="app-scrollbar app-scrollbar-compact"
-                sx={{ height: "100%", overflow: "auto" }}
+                sx={{ height: "100%", overflow: "visible" }}
               >
                 {filteredHistory.map((item, index) => (
                   <HistoryItem
                     key={`${item.command}-${item.timestamp}-${index}`}
                     index={index}
-                    style={{ height: 48 }}
+                    style={{ height: HISTORY_ITEM_HEIGHT }}
                     {...listItemData}
                   />
                 ))}
@@ -827,7 +901,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                   className="app-scrollbar app-scrollbar-compact"
                   style={{ height: containerHeight, width: "100%" }}
                   rowCount={filteredHistory.length}
-                  rowHeight={48}
+                  rowHeight={HISTORY_ITEM_HEIGHT}
                   rowProps={listItemData}
                   overscanCount={15}
                   rowComponent={HistoryItem}
@@ -877,25 +951,21 @@ function CommandHistory({ open, onClose, onSendCommand }) {
           sx: compactContextMenuPaperSx,
         }}
       >
-        <MenuItem onClick={() => handleSendCommand(menuTargetCommand?.command)}>
-          <SendIcon sx={{ mr: 1 }} />
-          {t("commandHistory.sendCommand")}
-        </MenuItem>
-        <MenuItem onClick={() => handleCopyCommand(menuTargetCommand?.command)}>
-          <ContentCopyIcon sx={{ mr: 1 }} />
-          {t("commandHistory.copyCommand")}
-        </MenuItem>
         <MenuItem onClick={() => handleEditCommand(menuTargetCommand)}>
-          <EditIcon sx={{ mr: 1 }} />
-          {t("commandHistory.editCommand")}
+          <ListItemIcon>
+            <EditIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t("commandHistory.editCommand")}</ListItemText>
         </MenuItem>
         <Divider />
         <MenuItem
           onClick={() => handleDeleteCommand(menuTargetCommand?.command)}
           sx={{ color: "error.main" }}
         >
-          <DeleteIcon sx={{ mr: 1 }} />
-          {t("commandHistory.deleteCommand")}
+          <ListItemIcon sx={{ color: "inherit" }}>
+            <DeleteIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t("commandHistory.deleteCommand")}</ListItemText>
         </MenuItem>
       </Menu>
 

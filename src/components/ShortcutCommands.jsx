@@ -780,8 +780,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
             width: "100%",
             p: 0,
             overflowX: "hidden",
-            height: "100%",
-            overflow: "auto",
+            overflowY: "visible",
           }}
         >
           {filteredCommands.map((cmd) => (
