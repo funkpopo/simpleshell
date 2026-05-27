@@ -240,7 +240,10 @@ function registerRendererCrashHandlers(mainWindow) {
     }
 
     const message = `Renderer process gone: ${reason} (exitCode=${details.exitCode ?? "unknown"})`;
-    logToFile(message, reason === "crashed" || reason === "oom" ? "ERROR" : "WARN");
+    logToFile(
+      message,
+      reason === "crashed" || reason === "oom" ? "ERROR" : "WARN",
+    );
     recordCrashMarker(null, {
       module: "renderer",
       processType: "renderer",
@@ -287,6 +290,7 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
     ...restoredWindowState.bounds,
     frame: false,
     show: false,
+    title: "SimpleShell",
     backgroundColor,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     webPreferences: {
