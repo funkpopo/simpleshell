@@ -7,6 +7,7 @@ const MENU_ACTIONS = Object.freeze({
   CHECK_FOR_UPDATES: "check-for-updates",
   OPEN_LOG_DIRECTORY: "open-log-directory",
   EXPORT_DIAGNOSTICS: "export-diagnostics",
+  FEEDBACK_ISSUE: "feedback-issue",
 });
 
 function sendMenuAction(action) {
@@ -40,6 +41,10 @@ function buildAppMenuItems() {
     {
       label: "Export Diagnostics",
       click: () => sendMenuAction(MENU_ACTIONS.EXPORT_DIAGNOSTICS),
+    },
+    {
+      label: "Feedback Issue",
+      click: () => sendMenuAction(MENU_ACTIONS.FEEDBACK_ISSUE),
     },
     { type: "separator" },
   ];

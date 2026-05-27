@@ -52,8 +52,11 @@ const errorI18nKeys = {
  */
 export function detectErrorType(error) {
   const errorMessage =
-    typeof error === "string" ? error : error?.message || error?.code || "";
-  const errorCode = typeof error === "object" ? error?.code : null;
+    typeof error === "string"
+      ? error
+      : error?.message || error?.code || error?.errorCode || "";
+  const errorCode =
+    typeof error === "object" ? error?.code || error?.errorCode : null;
   const lowerMessage = errorMessage.toLowerCase();
 
   // 优先检查错误代码
@@ -131,6 +134,114 @@ export function detectErrorType(error) {
   return null;
 }
 
+export function classifyErrorForNotification(error) {
+  const explicitCategory =
+    typeof error === "object" && typeof error?.category === "string"
+      ? error.category
+      : typeof error === "object" && typeof error?.level === "string"
+        ? error.level
+        : "";
+  const explicitAction =
+    typeof error === "object" && typeof error?.action === "string"
+      ? error.action
+      : "";
+  const retryable = typeof error === "object" && error?.retryable === true;
+  const errorType = detectErrorType(error);
+  const message =
+    typeof error === "string" ? error : error?.message || error?.error || "";
+  const lowerMessage = String(message || "").toLowerCase();
+  const kind =
+    typeof error === "object" && typeof error?.errorKind === "string"
+      ? error.errorKind
+      : "";
+
+  if (
+    explicitCategory === "fatal" ||
+    explicitAction === "fatal" ||
+    lowerMessage.includes("renderer process gone") ||
+    lowerMessage.includes("uncaughtexception")
+  ) {
+    return {
+      category: "fatal",
+      label: i18n.t("errors.classification.fatal"),
+      severity: "error",
+      persistent: true,
+      showFeedback: true,
+      showDiagnostics: true,
+    };
+  }
+
+  if (
+    retryable ||
+    explicitCategory === "retry" ||
+    explicitAction === "retry" ||
+    [
+      ErrorType.CONNECTION_REFUSED,
+      ErrorType.CONNECTION_TIMEOUT,
+      ErrorType.HOST_UNREACHABLE,
+      ErrorType.CONNECTION_RESET,
+      ErrorType.NETWORK_UNREACHABLE,
+      ErrorType.OPERATION_TIMEOUT,
+    ].includes(errorType)
+  ) {
+    return {
+      category: "retry",
+      label: i18n.t("errors.classification.retry"),
+      severity: "warning",
+      persistent: false,
+      showFeedback: false,
+      showDiagnostics: true,
+    };
+  }
+
+  if (
+    explicitCategory === "recoverable" ||
+    explicitAction === "recover" ||
+    [
+      ErrorType.AUTH_FAILED,
+      ErrorType.KEY_ERROR,
+      ErrorType.PERMISSION_DENIED,
+      ErrorType.FILE_NOT_FOUND,
+      ErrorType.HOST_NOT_FOUND,
+    ].includes(errorType)
+  ) {
+    return {
+      category: "recoverable",
+      label: i18n.t("errors.classification.recoverable"),
+      severity: "warning",
+      persistent: false,
+      showFeedback: false,
+      showDiagnostics: false,
+    };
+  }
+
+  if (
+    explicitCategory === "feedback" ||
+    explicitAction === "feedback" ||
+    kind === "internal" ||
+    lowerMessage.includes("sidecar") ||
+    lowerMessage.includes("invalid json")
+  ) {
+    return {
+      category: "feedback",
+      label: i18n.t("errors.classification.feedback"),
+      severity: "error",
+      persistent: true,
+      showFeedback: true,
+      showDiagnostics: true,
+    };
+  }
+
+  return {
+    category: "feedback",
+    label: i18n.t("errors.classification.feedback"),
+    severity: "error",
+    persistent: true,
+    showFeedback: true,
+    showDiagnostics: true,
+  };
+}
+
 /**
  * 翻译错误信息为用户友好的格式
  * @param {Error|string} error - 错误对象或错误消息
@@ -149,7 +260,7 @@ export function translateError(error) {
       message: i18n.t(`${i18nKey}.message`),
       solutions: i18n.t(`${i18nKey}.solutions`, { returnObjects: true }),
       action: i18n.t(`${i18nKey}.action`),
-      severity: i18n.t(`${i18nKey}.severity`),
+      severity: classifyErrorForNotification(error).severity,
       originalError: originalMessage,
       errorType,
     };

@@ -13,6 +13,7 @@ use std::cmp::min;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::panic;
 use std::process;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -150,8 +151,9 @@ impl client::Handler for AcceptAnyServerKey {
 
 #[tokio::main]
 async fn main() {
+    install_panic_hook();
     if let Err(error) = run().await {
-        eprintln!("{error}");
+        eprintln!("{}", structured_stderr_error(&error, None));
         process::exit(1);
     }
 }
@@ -215,10 +217,22 @@ async fn run_sftp_request() -> Result<(), String> {
         .await
         .map_err(|error| format!("failed to read stdin: {error}"))?;
 
-    let envelope: SftpEnvelope = serde_json::from_str(payload.trim())
-        .map_err(|error| format!("failed to parse request: {error}"))?;
+    let envelope: SftpEnvelope = match serde_json::from_str(payload.trim()) {
+        Ok(value) => value,
+        Err(error) => {
+            emit_error_result(None, "native-sidecar", &format!("failed to parse request: {error}"))?;
+            return Ok(());
+        }
+    };
+    let operation = envelope.request.operation.clone();
 
-    let (sftp, handle) = connect_sftp(&envelope.config).await?;
+    let (sftp, handle) = match connect_sftp(&envelope.config).await {
+        Ok(value) => value,
+        Err(error) => {
+            emit_error_result(Some(&operation), "native-sidecar", &error)?;
+            return Ok(());
+        }
+    };
     let result = execute_request(&sftp, &envelope.request).await;
 
     let close_result = sftp.close().await.map_err(|error| error.to_string());
@@ -228,15 +242,15 @@ async fn run_sftp_request() -> Result<(), String> {
 
     if let Err(error) = close_result {
         if result.is_ok() {
-            emit_result(json!({
-                "success": false,
-                "error": error,
-            }))?;
+            emit_error_result(Some(&operation), "native-sidecar", &error)?;
             return Ok(());
         }
     }
 
-    emit_result(result?)?;
+    match result {
+        Ok(value) => emit_result(value)?,
+        Err(error) => emit_error_result(Some(&operation), "native-sidecar", &error)?,
+    }
     Ok(())
 }
 
@@ -248,17 +262,31 @@ async fn run_sftp_watch() -> Result<(), String> {
         .await
         .map_err(|error| format!("failed to read stdin: {error}"))?;
 
-    let envelope: SftpEnvelope = serde_json::from_str(payload.trim())
-        .map_err(|error| format!("failed to parse request: {error}"))?;
+    let envelope: SftpEnvelope = match serde_json::from_str(payload.trim()) {
+        Ok(value) => value,
+        Err(error) => {
+            emit_watch_error(None, "native-sidecar", &format!("failed to parse request: {error}"))?;
+            return Ok(());
+        }
+    };
+    let operation = envelope.request.operation.clone();
 
     if envelope.request.operation != "watchDirectory" {
-        return Err(format!(
-            "unsupported watch operation: {}",
-            envelope.request.operation
-        ));
+        emit_watch_error(
+            Some(&operation),
+            "native-sidecar",
+            &format!("unsupported watch operation: {}", envelope.request.operation),
+        )?;
+        return Ok(());
     }
 
-    let (sftp, handle) = connect_sftp(&envelope.config).await?;
+    let (sftp, handle) = match connect_sftp(&envelope.config).await {
+        Ok(value) => value,
+        Err(error) => {
+            emit_watch_error(Some(&operation), "native-sidecar", &error)?;
+            return Ok(());
+        }
+    };
     let watch_result = watch_directory(&sftp, &envelope.request).await;
 
     let close_result = sftp.close().await.map_err(|error| error.to_string());
@@ -266,8 +294,13 @@ async fn run_sftp_watch() -> Result<(), String> {
         .disconnect(Disconnect::ByApplication, "", "English")
         .await;
 
-    watch_result?;
-    close_result?;
+    if let Err(error) = watch_result {
+        emit_watch_error(Some(&operation), "native-sidecar", &error)?;
+        return Ok(());
+    }
+    if let Err(error) = close_result {
+        emit_watch_error(Some(&operation), "native-sidecar", &error)?;
+    }
     Ok(())
 }
 
@@ -1274,6 +1307,10 @@ fn emit_result(result: serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
+fn emit_error_result(operation: Option<&str>, module: &str, message: &str) -> Result<(), String> {
+    emit_result(structured_error_value(operation, module, message))
+}
+
 fn emit_watch_event(event: &str, payload: serde_json::Value) -> Result<(), String> {
     println!(
         "{}",
@@ -1285,6 +1322,193 @@ fn emit_watch_event(event: &str, payload: serde_json::Value) -> Result<(), Strin
         .map_err(|error| format!("failed to serialize watch event: {error}"))?
     );
     Ok(())
+}
+
+fn emit_watch_error(operation: Option<&str>, module: &str, message: &str) -> Result<(), String> {
+    emit_watch_event("error", structured_error_value(operation, module, message))
+}
+
+fn structured_error_value(
+    operation: Option<&str>,
+    module: &str,
+    message: &str,
+) -> serde_json::Value {
+    let classification = classify_error(message);
+    json!({
+        "success": false,
+        "error": message,
+        "message": message,
+        "errorCode": classification.error_code,
+        "errorKind": classification.error_kind,
+        "retryable": classification.retryable,
+        "module": module,
+        "operation": operation.unwrap_or("unknown"),
+        "sidecarVersion": env!("CARGO_PKG_VERSION"),
+        "platform": env::consts::OS,
+        "arch": env::consts::ARCH,
+        "timestamp": current_timestamp_ms(),
+    })
+}
+
+fn structured_stderr_error(message: &str, operation: Option<&str>) -> String {
+    serde_json::to_string(&structured_error_value(
+        operation,
+        "native-sidecar",
+        message,
+    ))
+    .unwrap_or_else(|_| message.to_string())
+}
+
+struct ErrorClassification {
+    error_code: &'static str,
+    error_kind: &'static str,
+    retryable: bool,
+}
+
+fn classify_error(message: &str) -> ErrorClassification {
+    let lower = message.to_ascii_lowercase();
+
+    if lower.contains("failed to parse request")
+        || lower.contains("is required")
+        || lower.contains("invalid base64")
+        || lower.contains("invalid permissions")
+        || lower.contains("invalid numeric id")
+        || lower.contains("segment offset")
+        || lower.contains("segment length")
+    {
+        return ErrorClassification {
+            error_code: "NATIVE_SFTP_INVALID_REQUEST",
+            error_kind: "validation",
+            retryable: false,
+        };
+    }
+
+    if lower.contains("unsupported") {
+        return ErrorClassification {
+            error_code: "NATIVE_SFTP_UNSUPPORTED_OPERATION",
+            error_kind: "unsupported",
+            retryable: false,
+        };
+    }
+
+    if lower.contains("authentication failed")
+        || lower.contains("public key authentication")
+        || lower.contains("password authentication")
+        || lower.contains("missing ssh credentials")
+        || lower.contains("decode private key")
+    {
+        return ErrorClassification {
+            error_code: "NATIVE_SFTP_AUTH_FAILED",
+            error_kind: "authentication",
+            retryable: false,
+        };
+    }
+
+    if lower.contains("permission denied") || lower.contains("access denied") {
+        return ErrorClassification {
+            error_code: "NATIVE_SFTP_PERMISSION_DENIED",
+            error_kind: "permission",
+            retryable: false,
+        };
+    }
+
+    if lower.contains("no such file")
+        || lower.contains("not found")
+        || lower.contains("path exists and is not a directory")
+    {
+        return ErrorClassification {
+            error_code: "NATIVE_SFTP_NOT_FOUND",
+            error_kind: "notFound",
+            retryable: false,
+        };
+    }
+
+    if lower.contains("timed out") || lower.contains("timeout") {
+        return ErrorClassification {
+            error_code: "NATIVE_SFTP_TIMEOUT",
+            error_kind: "timeout",
+            retryable: true,
+        };
+    }
+
+    if lower.contains("failed to connect")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("connection closed")
+        || lower.contains("network")
+        || lower.contains("channel")
+        || lower.contains("subsystem")
+    {
+        return ErrorClassification {
+            error_code: "NATIVE_SFTP_NETWORK",
+            error_kind: "network",
+            retryable: true,
+        };
+    }
+
+    if lower.contains("upload")
+        || lower.contains("download")
+        || lower.contains("read")
+        || lower.contains("write")
+        || lower.contains("flush")
+        || lower.contains("shutdown")
+    {
+        return ErrorClassification {
+            error_code: "NATIVE_SFTP_TRANSFER_FAILED",
+            error_kind: "transfer",
+            retryable: true,
+        };
+    }
+
+    ErrorClassification {
+        error_code: "NATIVE_SFTP_INTERNAL",
+        error_kind: "internal",
+        retryable: false,
+    }
+}
+
+fn install_panic_hook() {
+    panic::set_hook(Box::new(|info| {
+        let message = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|value| value.to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "native sidecar panic".to_string());
+        let location = info
+            .location()
+            .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+            .unwrap_or_else(|| "unknown".to_string());
+        let payload = json!({
+            "schemaVersion": 1,
+            "generatedAt": current_timestamp_ms(),
+            "module": "native-sidecar",
+            "processType": "native-sidecar",
+            "type": "panic",
+            "reason": message,
+            "location": location,
+            "sidecarVersion": env!("CARGO_PKG_VERSION"),
+            "platform": env::consts::OS,
+            "arch": env::consts::ARCH,
+            "pid": process::id(),
+        });
+
+        if let Ok(dir) = env::var("SIMPLESHELL_SIDECAR_CRASH_DIR") {
+            let path = PathBuf::from(dir).join(format!(
+                "native-sidecar-panic.{}.{}.json",
+                current_timestamp_ms(),
+                process::id()
+            ));
+            if let Some(parent) = path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if let Ok(content) = serde_json::to_string_pretty(&payload) {
+                let _ = fs::write(path, content);
+            }
+        }
+
+        eprintln!("{}", payload);
+    }));
 }
 
 fn scan_folder(root: &Path, relative_base: &str) -> Result<ScanResult, String> {

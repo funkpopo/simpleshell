@@ -148,6 +148,30 @@
           "logs": "日志",
           "aiMemory": "AI 记忆"
         }
+      },
+      "feedback": {
+        "title": "错误报告与反馈",
+        "localCrashCaptureOn": "本地崩溃采集已启用",
+        "localCrashCaptureOff": "本地崩溃采集不可用",
+        "description": "错误报告默认关闭。开启后，应用只在本机保存崩溃标记和诊断摘要；只有在你确认反馈问题时，诊断摘要才会填入 GitHub Issue 页面。",
+        "enable": "启用错误报告辅助",
+        "enableHelper": "允许 SimpleShell 收集本机崩溃标记，并在反馈时自动整理诊断摘要。",
+        "includeDiagnostics": "反馈时附带诊断摘要",
+        "includeDiagnosticsHelper": "包含版本、平台、GPU、更新状态、sidecar 版本、最近错误日志和崩溃记录摘要。",
+        "crashDirectory": "崩溃记录目录",
+        "copyPackage": "复制诊断包",
+        "copyPackageFailed": "复制诊断包失败",
+        "packageCopied": "诊断包已复制到剪贴板",
+        "dialogUnavailable": "消息确认对话框不可用",
+        "cancel": "取消",
+        "openIssue": "反馈问题",
+        "confirmTitle": "反馈问题",
+        "confirmMessage": "将打开 GitHub Issue 页面",
+        "confirmDetail": "诊断摘要会自动填入 Issue 内容。请在浏览器中确认内容，删除不想公开的信息后再提交。",
+        "defaultTitle": "SimpleShell 问题反馈",
+        "openIssueFailed": "打开问题反馈失败",
+        "issueOpened": "已打开 GitHub Issue 页面",
+        "saveFailed": "保存错误报告设置失败"
       }
     },
     "masterPassword": {
@@ -178,6 +202,7 @@
       "checkForUpdates": "检查更新",
       "openLogs": "打开日志目录",
       "exportDiagnostics": "导出诊断包",
+      "feedback": "反馈问题",
       "exit": "退出",
       "lockApp": "锁定应用",
       "lockAppSuccess": "应用已锁定"
@@ -1142,9 +1167,29 @@
       "componentTitle": "组件加载失败",
       "componentMessage": "{{componentName}}加载时发生错误，请尝试重新加载。",
       "retryCount": "已重试 {{count}} 次",
-      "reload": "重新加载"
+      "reload": "重新加载",
+      "exportDiagnostics": "导出诊断包",
+      "copyDiagnostics": "复制诊断包",
+      "feedback": "反馈问题",
+      "diagnosticsExported": "诊断包已导出",
+      "diagnosticsCopied": "诊断包已复制到剪贴板",
+      "feedbackOpened": "已打开反馈页面",
+      "actionFailed": "操作失败"
+    },
+    "errorNotification": {
+      "showSolutions": "查看建议",
+      "hideSolutions": "收起建议",
+      "copyDiagnosticSummary": "复制诊断摘要",
+      "feedback": "反馈问题",
+      "solutions": "处理建议"
     },
     "errors": {
+      "classification": {
+        "fatal": "致命错误",
+        "retry": "可重试错误",
+        "recoverable": "可恢复错误",
+        "feedback": "需要反馈"
+      },
       "ECONNREFUSED": {
         "title": "无法连接到服务器",
         "message": "连接被服务器拒绝，可能的原因：\n• 服务器未运行或SSH服务未启动\n• 端口号配置错误\n• 防火墙阻止了连接",

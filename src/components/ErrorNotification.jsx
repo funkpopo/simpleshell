@@ -5,7 +5,11 @@ import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
 import Collapse from "@mui/material/Collapse";
 import Box from "@mui/material/Box";
-import { translateError } from "../utils/errorTranslator";
+import { useTranslation } from "react-i18next";
+import {
+  classifyErrorForNotification,
+  translateError,
+} from "../utils/errorTranslator";
 
 /**
  * 错误通知组件
@@ -13,7 +17,9 @@ import { translateError } from "../utils/errorTranslator";
  * 显示在左下角，提供简洁的用户友好错误信息和解决方案
  */
 const ErrorNotification = ({ error, open, onClose }) => {
+  const { t } = useTranslation();
   const [showDetails, setShowDetails] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
 
   // 不对展开/收起状态做“持久化”：
   // - error 变化（例如切换到其他标签页触发了不同错误）时，重置为收起
@@ -26,10 +32,58 @@ const ErrorNotification = ({ error, open, onClose }) => {
 
   // 使用新的错误翻译器
   const translatedError = translateError(error);
+  const classification = classifyErrorForNotification(error);
 
   // 红色通知(error)不自动关闭，橙色通知(warning)自动关闭
-  const isErrorSeverity = translatedError.severity === "error";
+  const isErrorSeverity =
+    classification.persistent || classification.severity === "error";
   const autoHideDuration = isErrorSeverity ? null : showDetails ? null : 6000;
+
+  const handleCopyDiagnosticSummary = async () => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      await window.terminalAPI?.copyDiagnosticSummary?.({
+        source: "error-notification",
+        title: translatedError.title,
+        description: translatedError.originalError,
+      });
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleOpenFeedbackIssue = async () => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      const confirmation = await window.dialogAPI?.showMessageBox?.({
+        type: "info",
+        buttons: [
+          t("settings.feedback.cancel"),
+          t("settings.feedback.openIssue"),
+        ],
+        defaultId: 1,
+        cancelId: 0,
+        title: t("settings.feedback.confirmTitle"),
+        message: t("settings.feedback.confirmMessage"),
+        detail: t("settings.feedback.confirmDetail"),
+        noLink: true,
+      });
+
+      if (confirmation?.response !== 1) {
+        return;
+      }
+
+      await window.terminalAPI?.openFeedbackIssue?.({
+        source: "error-notification",
+        title: translatedError.title,
+        description: translatedError.originalError,
+      });
+    } finally {
+      setActionBusy(false);
+    }
+  };
 
   return (
     <Snackbar
@@ -44,7 +98,7 @@ const ErrorNotification = ({ error, open, onClose }) => {
       }}
     >
       <Alert
-        severity={translatedError.severity}
+        severity={classification.severity || translatedError.severity}
         variant="filled"
         onClose={onClose}
         sx={{
@@ -62,6 +116,21 @@ const ErrorNotification = ({ error, open, onClose }) => {
             {translatedError.title}
           </Typography>
 
+          <Typography
+            variant="caption"
+            sx={{
+              display: "inline-flex",
+              mb: 0.75,
+              px: 0.75,
+              py: 0.25,
+              borderRadius: 1,
+              bgcolor: "rgba(255,255,255,0.16)",
+              fontWeight: 600,
+            }}
+          >
+            {classification.label}
+          </Typography>
+
           {/* 错误描述 */}
           <Typography
             variant="body2"
@@ -71,23 +140,67 @@ const ErrorNotification = ({ error, open, onClose }) => {
           </Typography>
 
           {/* 解决方案展开/收起 */}
-          <Button
-            size="small"
-            onClick={() => setShowDetails(!showDetails)}
-            sx={{
-              color: "inherit",
-              p: 0,
-              minWidth: "auto",
-              fontSize: "0.75rem",
-              textTransform: "none",
-              "&:hover": {
-                backgroundColor: "transparent",
-                textDecoration: "underline",
-              },
-            }}
-          >
-            {showDetails ? "隐藏解决方案" : "查看解决方案"}
-          </Button>
+          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+            <Button
+              size="small"
+              onClick={() => setShowDetails(!showDetails)}
+              sx={{
+                color: "inherit",
+                p: 0,
+                minWidth: "auto",
+                fontSize: "0.75rem",
+                textTransform: "none",
+                "&:hover": {
+                  backgroundColor: "transparent",
+                  textDecoration: "underline",
+                },
+              }}
+            >
+              {showDetails
+                ? t("errorNotification.hideSolutions")
+                : t("errorNotification.showSolutions")}
+            </Button>
+            {classification.showDiagnostics && (
+              <Button
+                size="small"
+                disabled={actionBusy}
+                onClick={handleCopyDiagnosticSummary}
+                sx={{
+                  color: "inherit",
+                  p: 0,
+                  minWidth: "auto",
+                  fontSize: "0.75rem",
+                  textTransform: "none",
+                  "&:hover": {
+                    backgroundColor: "transparent",
+                    textDecoration: "underline",
+                  },
+                }}
+              >
+                {t("errorNotification.copyDiagnosticSummary")}
+              </Button>
+            )}
+            {classification.showFeedback && (
+              <Button
+                size="small"
+                disabled={actionBusy}
+                onClick={handleOpenFeedbackIssue}
+                sx={{
+                  color: "inherit",
+                  p: 0,
+                  minWidth: "auto",
+                  fontSize: "0.75rem",
+                  textTransform: "none",
+                  "&:hover": {
+                    backgroundColor: "transparent",
+                    textDecoration: "underline",
+                  },
+                }}
+              >
+                {t("errorNotification.feedback")}
+              </Button>
+            )}
+          </Box>
 
           {/* 解决方案详情 */}
           <Collapse in={showDetails}>
@@ -102,7 +215,7 @@ const ErrorNotification = ({ error, open, onClose }) => {
                 variant="caption"
                 sx={{ fontWeight: 600, display: "block", mb: 0.5 }}
               >
-                解决方案：
+                {t("errorNotification.solutions")}:
               </Typography>
               {translatedError.solutions.map((solution, index) => (
                 <Typography

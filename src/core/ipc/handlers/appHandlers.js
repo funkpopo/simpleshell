@@ -1,7 +1,12 @@
-const { app, BrowserWindow, shell, dialog } = require("electron");
+const { app, BrowserWindow, shell, dialog, clipboard } = require("electron");
 const { logToFile } = require("../../utils/logger");
 const { getLogDirectory } = require("../../utils/appPaths");
-const { exportDiagnosticPackage } = require("../../utils/diagnostics");
+const {
+  buildDiagnosticPayload,
+  buildDiagnosticSummary,
+  buildFeedbackIssueUrl,
+  exportDiagnosticPackage,
+} = require("../../utils/diagnostics");
 const updateService = require("../../update/updateService");
 
 const DEFAULT_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
@@ -89,6 +94,27 @@ class AppHandlers {
         channel: "app:exportDiagnostics",
         category: "app",
         handler: this.exportDiagnostics.bind(this),
+      },
+      {
+        channel: "app:copyDiagnosticSummary",
+        category: "app",
+        handler: this.copyDiagnosticSummary.bind(this),
+      },
+      {
+        channel: "app:copyDiagnosticPackage",
+        category: "app",
+        handler: this.copyDiagnosticPackage.bind(this),
+      },
+      {
+        channel: "app:openFeedbackIssue",
+        category: "app",
+        handler: this.openFeedbackIssue.bind(this),
+      },
+      {
+        // Backward-compatible alias for a previously misspelled renderer IPC channel.
+        channel: "app:openFeedbacklssue",
+        category: "app",
+        handler: this.openFeedbackIssue.bind(this),
       },
     ];
   }
@@ -404,6 +430,71 @@ class AppHandlers {
       return result;
     } catch (error) {
       logToFile(`Error exporting diagnostics: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async copyDiagnosticSummary(event, context = null) {
+    try {
+      void event;
+      const payload = await buildDiagnosticPayload(app, {
+        updateService,
+        context,
+      });
+      const summary = buildDiagnosticSummary(payload);
+      clipboard.writeText(summary);
+      logToFile("Diagnostic summary copied to clipboard", "INFO");
+      return {
+        success: true,
+        summary,
+        generatedAt: payload.generatedAt,
+      };
+    } catch (error) {
+      logToFile(`Error copying diagnostic summary: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async copyDiagnosticPackage(event, context = null) {
+    try {
+      void event;
+      const payload = await buildDiagnosticPayload(app, {
+        updateService,
+        context,
+      });
+      const serialized = JSON.stringify(payload, null, 2);
+      clipboard.writeText(serialized);
+      logToFile("Diagnostic package copied to clipboard", "INFO");
+      return {
+        success: true,
+        generatedAt: payload.generatedAt,
+        bytes: Buffer.byteLength(serialized, "utf8"),
+      };
+    } catch (error) {
+      logToFile(`Error copying diagnostic package: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async openFeedbackIssue(event, context = null) {
+    try {
+      void event;
+      const payload = await buildDiagnosticPayload(app, {
+        updateService,
+        context,
+      });
+      const summary = buildDiagnosticSummary(payload);
+      const issueUrl = buildFeedbackIssueUrl(payload, summary);
+      await shell.openExternal(issueUrl);
+      logToFile("Feedback issue URL opened", "INFO");
+      return {
+        success: true,
+        url: issueUrl,
+        summary,
+        generatedAt: payload.generatedAt,
+      };
+    } catch (error) {
+      logToFile(`Error opening feedback issue: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }
