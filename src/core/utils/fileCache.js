@@ -1,13 +1,22 @@
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
 const { v4: uuidv4 } = require("uuid");
+const { getTempDirectory } = require("./appPaths");
+
+const DEFAULT_CACHE_SETTINGS = Object.freeze({
+  enabled: true,
+  maxAgeMs: 60 * 60 * 1000,
+  maxTotalBytes: 512 * 1024 * 1024,
+  cleanupIntervalMs: 30 * 60 * 1000,
+});
 
 class FileCache {
   constructor() {
     this.cacheDir = null;
     this.activeCaches = new Map(); // 跟踪活跃的缓存文件
     this.logToFile = null;
+    this.settings = { ...DEFAULT_CACHE_SETTINGS };
+    this.cleanupTimer = null;
   }
 
   init(logToFile, app = null) {
@@ -20,61 +29,12 @@ class FileCache {
   }
 
   getCacheDirectory(app) {
-    const candidates = [];
-
-    if (process.env.NODE_ENV === "development") {
-      candidates.push(path.join(process.cwd(), "temp"));
-    } else {
-      if (app && typeof app.getPath === "function") {
-        try {
-          const exeTemp = path.join(path.dirname(app.getPath("exe")), "temp");
-          candidates.push(exeTemp);
-        } catch (error) {
-          this.logToFile(
-            `Failed to resolve exe temp directory: ${error.message}`,
-            "WARN",
-          );
-        }
-
-        try {
-          const appTemp = path.join(
-            app.getPath("temp"),
-            "simpleshell",
-            "cache",
-          );
-          if (!candidates.includes(appTemp)) {
-            candidates.push(appTemp);
-          }
-        } catch (error) {
-          this.logToFile(
-            `Failed to resolve app temp directory: ${error.message}`,
-            "WARN",
-          );
-        }
-      }
-
-      const systemTemp = path.join(os.tmpdir(), "simpleshell", "cache");
-      if (!candidates.includes(systemTemp)) {
-        candidates.push(systemTemp);
-      }
+    const cacheDir = path.join(getTempDirectory(app), "cache");
+    if (!fs.existsSync(cacheDir)) {
+      fs.mkdirSync(cacheDir, { recursive: true });
+      this.logToFile(`Created cache directory: ${cacheDir}`, "INFO");
     }
-
-    for (const candidate of candidates) {
-      try {
-        if (!fs.existsSync(candidate)) {
-          fs.mkdirSync(candidate, { recursive: true });
-          this.logToFile(`Created cache directory: ${candidate}`, "INFO");
-        }
-        return candidate;
-      } catch (error) {
-        this.logToFile(
-          `Failed to prepare cache directory ${candidate}: ${error.message}`,
-          "WARN",
-        );
-      }
-    }
-
-    throw new Error("Failed to initialize cache directory");
+    return cacheDir;
   }
 
   generateCacheFileName(originalFileName) {
@@ -86,8 +46,16 @@ class FileCache {
 
   async cacheFile(originalFileName, data, tabId) {
     try {
+      if (!this.settings.enabled) {
+        throw new Error("File cache is disabled");
+      }
+
       const cacheFileName = this.generateCacheFileName(originalFileName);
       const cacheFilePath = path.join(this.cacheDir, cacheFileName);
+      const bytes =
+        Buffer.isBuffer(data) || typeof data === "string"
+          ? Buffer.byteLength(data)
+          : Number(data?.byteLength) || 0;
 
       // 写入文件
       await fs.promises.writeFile(cacheFilePath, data);
@@ -98,6 +66,7 @@ class FileCache {
         originalName: originalFileName,
         tabId: tabId,
         createdAt: Date.now(),
+        bytes,
       };
 
       this.activeCaches.set(cacheFilePath, cacheInfo);
@@ -248,6 +217,71 @@ class FileCache {
     return cleanedCount;
   }
 
+  async enforceSizeLimit() {
+    const maxTotalBytes = Number(this.settings.maxTotalBytes);
+    if (!Number.isFinite(maxTotalBytes) || maxTotalBytes <= 0) {
+      return 0;
+    }
+
+    const entries = Array.from(this.activeCaches.entries())
+      .map(([filePath, info]) => ({
+        filePath,
+        createdAt: Number(info.createdAt) || 0,
+        bytes: Number(info.bytes) || 0,
+      }))
+      .sort((left, right) => left.createdAt - right.createdAt);
+    let totalBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+    let cleanedCount = 0;
+
+    for (const entry of entries) {
+      if (totalBytes <= maxTotalBytes) {
+        break;
+      }
+      const success = await this.cleanupCacheFile(entry.filePath);
+      if (success) {
+        totalBytes -= entry.bytes;
+        cleanedCount += 1;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      this.logToFile(
+        `Cleaned up ${cleanedCount} cache files to enforce size limit`,
+        "INFO",
+      );
+    }
+
+    return cleanedCount;
+  }
+
+  updateSettings(settings = {}) {
+    if (!settings || typeof settings !== "object") {
+      return false;
+    }
+
+    const nextSettings = { ...this.settings };
+    if (typeof settings.enabled === "boolean") {
+      nextSettings.enabled = settings.enabled;
+    }
+    for (const key of ["maxAgeMs", "maxTotalBytes", "cleanupIntervalMs"]) {
+      if (settings[key] !== undefined) {
+        const value = Number(settings[key]);
+        if (Number.isFinite(value) && value > 0) {
+          nextSettings[key] = value;
+        }
+      }
+    }
+
+    this.settings = nextSettings;
+    this.startPeriodicCleanup();
+
+    if (!this.settings.enabled) {
+      void this.clearCacheDirectory({ recreate: true });
+    }
+
+    return true;
+  }
+
   getCacheStats() {
     return {
       totalFiles: this.activeCaches.size,
@@ -261,26 +295,33 @@ class FileCache {
     };
   }
 
-  startPeriodicCleanup(intervalMs = 1800000, maxAgeMs = 3600000) {
+  startPeriodicCleanup(intervalMs, maxAgeMs) {
     // 如果已经有清理定时器在运行，先清理它
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
     }
 
-    // 默认30分钟清理一次，1小时过期
+    const cleanupIntervalMs =
+      Number(intervalMs) || this.settings.cleanupIntervalMs;
+    const cleanupMaxAgeMs = Number(maxAgeMs) || this.settings.maxAgeMs;
+
     this.cleanupTimer = setInterval(async () => {
       try {
-        await this.cleanupExpiredCaches(maxAgeMs);
+        await this.cleanupExpiredCaches(cleanupMaxAgeMs);
+        await this.enforceSizeLimit();
       } catch (error) {
         this.logToFile(
           `Error during periodic cache cleanup: ${error.message}`,
           "ERROR",
         );
       }
-    }, intervalMs);
+    }, cleanupIntervalMs);
+    if (typeof this.cleanupTimer.unref === "function") {
+      this.cleanupTimer.unref();
+    }
 
     this.logToFile(
-      `Started periodic cache cleanup (interval: ${intervalMs}ms, maxAge: ${maxAgeMs}ms)`,
+      `Started periodic cache cleanup (interval: ${cleanupIntervalMs}ms, maxAge: ${cleanupMaxAgeMs}ms)`,
       "INFO",
     );
   }

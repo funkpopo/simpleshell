@@ -1,6 +1,8 @@
 /* eslint-disable no-console */
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const net = require("node:net");
+const os = require("node:os");
 const { EventEmitter } = require("node:events");
 const { generateKeyPairSync } = require("node:crypto");
 const { Server } = require("ssh2");
@@ -196,9 +198,18 @@ async function startHttpConnectProxy(port = 0) {
   };
 }
 
-function installElectronMock() {
+function installElectronMock(options = {}) {
   const electronPath = require.resolve("electron");
   const previous = require.cache[electronPath];
+  const mockApp = options.app || {
+    isPackaged: false,
+    getPath() {
+      return ROOT;
+    },
+    getAppPath() {
+      return ROOT;
+    },
+  };
 
   const sentMessages = [];
   const mockWindow = {
@@ -229,6 +240,7 @@ function installElectronMock() {
       BrowserWindow: {
         getAllWindows: () => [mockWindow],
       },
+      app: mockApp,
       ipcMain,
     },
   };
@@ -251,10 +263,33 @@ function clearRequire(modulePath) {
   delete require.cache[resolved];
 }
 
+function injectMock(modulePath, exportsValue, mockedModules) {
+  const id = require.resolve(modulePath);
+  mockedModules.push({ id, previous: require.cache[id] });
+  require.cache[id] = {
+    id,
+    filename: id,
+    loaded: true,
+    exports: exportsValue,
+  };
+}
+
+function restoreMockedModules(mockedModules) {
+  for (const { id, previous } of mockedModules) {
+    if (previous) {
+      require.cache[id] = previous;
+    } else {
+      delete require.cache[id];
+    }
+  }
+}
+
 async function testAandProxyRecovery() {
   const SSHPool = require(path.join(ROOT, "src/core/connection/ssh-pool"));
   const sshServer = await startSshServer();
   let proxyServer = null;
+  let proxyStartTimer = null;
+  let pendingProxyStart = null;
   const pool = new SSHPool({
     connectionTimeout: 5000,
     healthCheckInterval: 120000,
@@ -263,6 +298,7 @@ async function testAandProxyRecovery() {
   pool.initialize();
 
   // 加快自动重连节奏，避免脚本等待过久
+  pool.reconnectionManager.config.maxRetries = 10;
   pool.reconnectionManager.config.initialDelay = 50;
   pool.reconnectionManager.config.maxDelay = 200;
   pool.reconnectionManager.config.jitter = 0;
@@ -359,9 +395,17 @@ async function testAandProxyRecovery() {
     );
 
     // 延迟启动代理，验证自动恢复
-    setTimeout(() => {
-      void startHttpConnectProxy(unavailableProxyPort).then((srv) => {
-        proxyServer = srv;
+    proxyStartTimer = setTimeout(() => {
+      proxyStartTimer = null;
+      pendingProxyStart = startHttpConnectProxy(unavailableProxyPort).then(
+        (srv) => {
+          pendingProxyStart = null;
+          proxyServer = srv;
+          return srv;
+        },
+      );
+      pendingProxyStart.catch(() => {
+        pendingProxyStart = null;
       });
     }, 300);
 
@@ -370,6 +414,10 @@ async function testAandProxyRecovery() {
       12000,
       "代理恢复后自动重连超时",
     );
+
+    if (pendingProxyStart) {
+      await pendingProxyStart;
+    }
 
     const recovered = pool.connections.get(unstableConn.key);
     assert.ok(recovered, "自动重连后连接应仍在池中");
@@ -380,6 +428,19 @@ async function testAandProxyRecovery() {
 
     return true;
   } finally {
+    if (proxyStartTimer) {
+      clearTimeout(proxyStartTimer);
+      proxyStartTimer = null;
+    }
+    if (pendingProxyStart) {
+      try {
+        const srv = await pendingProxyStart;
+        await srv.close();
+      } catch {
+        // ignore
+      }
+      pendingProxyStart = null;
+    }
     try {
       await pool.shutdown();
     } catch {
@@ -1320,6 +1381,220 @@ async function testD2AppQuitReleasesAllResources() {
   }
 }
 
+async function testEConfigBackedLocalDataClearKeepsAIMemoryOutOfConfig() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "simpleshell-todo-"));
+  const runtimeDir = path.join(tempRoot, "runtime");
+  const logDir = path.join(runtimeDir, "log");
+  const tempDir = path.join(runtimeDir, "temp");
+  fs.mkdirSync(logDir, { recursive: true });
+  fs.mkdirSync(tempDir, { recursive: true });
+
+  const activeLogFile = path.join(logDir, "app.log");
+  const oldLogFile = path.join(logDir, "old.log");
+  const memoryFile = path.join(tempDir, "mem.json");
+  fs.writeFileSync(activeLogFile, "active log content", "utf8");
+  fs.writeFileSync(oldLogFile, "old log content", "utf8");
+  fs.writeFileSync(
+    memoryFile,
+    JSON.stringify({ summary: "keep-in-temp" }),
+    "utf8",
+  );
+
+  const settingsHandlersPath = path.join(
+    ROOT,
+    "src/core/ipc/handlers/settingsHandlers",
+  );
+  const configServicePath = path.join(ROOT, "src/services/configService");
+  const commandHistoryPath = path.join(
+    ROOT,
+    "src/modules/terminal/command-history",
+  );
+  const loggerPath = path.join(ROOT, "src/core/utils/logger");
+  const fileCachePath = path.join(ROOT, "src/core/utils/fileCache");
+  const fileSnapshotStorePath = path.join(
+    ROOT,
+    "src/core/utils/fileSnapshotStore",
+  );
+
+  const electronMock = installElectronMock({
+    app: {
+      isPackaged: true,
+      getPath(name) {
+        assert.equal(name, "exe", "生产路径解析只应读取 exe 路径");
+        return path.join(runtimeDir, "SimpleShell.exe");
+      },
+      getAppPath() {
+        return runtimeDir;
+      },
+    },
+  });
+  const mockedModules = [];
+
+  let configClearSections = null;
+  let commandHistoryInitialized = null;
+  let cacheClearOptions = null;
+  let snapshotClearOptions = null;
+  const logMessages = [];
+
+  injectMock(
+    configServicePath,
+    {
+      clearLocalConfigData(options) {
+        configClearSections = [...(options?.sections || [])];
+        assert.equal(
+          configClearSections.includes("aiMemory"),
+          false,
+          "AI 记忆不应作为 config.json 分项写入或清理",
+        );
+        return { success: true, sections: configClearSections };
+      },
+    },
+    mockedModules,
+  );
+  injectMock(
+    commandHistoryPath,
+    {
+      initialize(history) {
+        commandHistoryInitialized = history;
+      },
+    },
+    mockedModules,
+  );
+  injectMock(
+    loggerPath,
+    {
+      getLogDirectoryPath() {
+        return logDir;
+      },
+      getLogFilePath() {
+        return activeLogFile;
+      },
+      logToFile(message, level) {
+        logMessages.push({ message, level });
+      },
+      updateLogConfig() {},
+    },
+    mockedModules,
+  );
+  injectMock(
+    fileCachePath,
+    {
+      async clearCacheDirectory(options) {
+        cacheClearOptions = { ...options };
+        return true;
+      },
+    },
+    mockedModules,
+  );
+  injectMock(
+    fileSnapshotStorePath,
+    {
+      async clearAllSnapshots(options) {
+        snapshotClearOptions = { ...options };
+        return true;
+      },
+    },
+    mockedModules,
+  );
+
+  clearRequire(settingsHandlersPath);
+
+  try {
+    const SettingsHandlers = require(settingsHandlersPath);
+    const handlers = new SettingsHandlers();
+    const result = await handlers.clearLocalData(null, {
+      sections: [
+        "connections",
+        "credentials",
+        "commandHistory",
+        "shortcutCommands",
+        "uiSettings",
+        "aiSettings",
+        "cache",
+        "snapshots",
+        "logs",
+        "aiMemory",
+      ],
+    });
+
+    assert.equal(result.success, true, "清除本机数据应成功");
+    assert.deepEqual(
+      configClearSections,
+      [
+        "connections",
+        "credentials",
+        "commandHistory",
+        "shortcutCommands",
+        "uiSettings",
+        "aiSettings",
+      ],
+      "只有配置类分项应写入 configService.clearLocalConfigData",
+    );
+    assert.deepEqual(commandHistoryInitialized, [], "命令历史运行时状态应清空");
+    assert.deepEqual(
+      cacheClearOptions,
+      { recreate: true },
+      "文件缓存目录清理后应重建",
+    );
+    assert.deepEqual(
+      snapshotClearOptions,
+      { recreate: true },
+      "文件快照目录清理后应重建",
+    );
+    assert.equal(
+      fs.existsSync(memoryFile),
+      false,
+      "AI 记忆应删除 temp/mem.json",
+    );
+    assert.equal(
+      fs.readFileSync(activeLogFile, "utf8"),
+      "",
+      "当前日志文件应被截断",
+    );
+    assert.equal(fs.existsSync(oldLogFile), false, "旧日志文件应被删除");
+    assert.equal(result.runtime.aiMemoryCleared, true);
+    assert.equal(result.runtime.cacheCleared, true);
+    assert.equal(result.runtime.snapshotsCleared, true);
+    assert.ok(
+      result.runtime.logFilesCleared >= 2,
+      "日志清理应覆盖当前日志和历史日志",
+    );
+    assert.ok(
+      electronMock.sentMessages.some(
+        ({ channel, payload }) =>
+          channel === "settings:localDataCleared" &&
+          payload?.sections?.includes("aiMemory"),
+      ),
+      "清理完成后应广播 settings:localDataCleared",
+    );
+    assert.ok(
+      electronMock.sentMessages.some(
+        ({ channel }) => channel === "connections-changed",
+      ),
+      "清理连接/凭据/AI 设置后应广播 connections-changed",
+    );
+    assert.ok(
+      electronMock.sentMessages.some(
+        ({ channel, payload }) =>
+          channel === "command-history:changed" &&
+          payload?.reason === "clear-local-data",
+      ),
+      "清理命令历史后应广播 command-history:changed",
+    );
+    assert.ok(
+      logMessages.some(({ message }) => message.includes("Local data cleared")),
+      "清理操作应写入审计日志",
+    );
+
+    return true;
+  } finally {
+    clearRequire(settingsHandlersPath);
+    restoreMockedModules(mockedModules);
+    electronMock.restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 async function run() {
   const results = [];
   const tasks = [
@@ -1357,6 +1632,11 @@ async function run() {
       id: "D2",
       name: "D. app quit 后连接、SFTP会话、定时器全部释放",
       fn: testD2AppQuitReleasesAllResources,
+    },
+    {
+      id: "E1",
+      name: "E. 清除本机数据覆盖 config.json 分项、运行时目录和 temp/mem.json AI 记忆",
+      fn: testEConfigBackedLocalDataClearKeepsAIMemoryOutOfConfig,
     },
   ];
 

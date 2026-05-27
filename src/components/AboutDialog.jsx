@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useState } from "react";
+import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 import { styled } from "@mui/material/styles";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -252,7 +252,11 @@ const normalizeSafeMarkdownHref = (href) => {
   return urlObj.toString();
 };
 
-const AboutDialog = memo(function AboutDialog({ open, onClose }) {
+const AboutDialog = memo(function AboutDialog({
+  open,
+  onClose,
+  checkUpdateSignal = 0,
+}) {
   const { t } = useTranslation();
   const { showError } = useNotification();
   const [checkingForUpdate, setCheckingForUpdate] = useState(false);
@@ -263,6 +267,7 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState("");
+  const lastHandledCheckUpdateSignalRef = useRef(0);
 
   const downloadedInstallerMatchesUpdate = doesInstallerMatchUpdate(
     downloadedInstallerInfo,
@@ -429,6 +434,19 @@ const AboutDialog = memo(function AboutDialog({ open, onClose }) {
       setCheckingForUpdate(false);
     }
   }, [downloadedInstallerInfo, t]);
+
+  useEffect(() => {
+    if (!open || !checkUpdateSignal) {
+      return;
+    }
+
+    if (lastHandledCheckUpdateSignalRef.current === checkUpdateSignal) {
+      return;
+    }
+
+    lastHandledCheckUpdateSignalRef.current = checkUpdateSignal;
+    void handleCheckForUpdate();
+  }, [checkUpdateSignal, handleCheckForUpdate, open]);
 
   // Download update
   const downloadUpdate = useCallback(async () => {
@@ -865,6 +883,7 @@ AboutDialog.displayName = "AboutDialog";
 AboutDialog.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
+  checkUpdateSignal: PropTypes.number,
 };
 
 export default AboutDialog;

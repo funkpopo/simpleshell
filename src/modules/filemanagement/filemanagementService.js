@@ -12,6 +12,7 @@ const {
 } = require("../../core/utils/nativeTransferSidecar");
 const { processSSHPrivateKeyAsync } = require("../../core/utils/ssh-utils");
 const nativeSftpClient = require("../../core/utils/nativeSftpClient");
+const { getTempDirectory } = require("../../core/utils/appPaths");
 const { logToFile } = require("../../core/utils/logger");
 const connectionManager = require("../connection");
 const TransferProcessPool = require("./transferProcessPool");
@@ -369,7 +370,7 @@ class FilemanagementService {
       throw new Error("Upload entry has no localPath or buffer");
     }
 
-    const tempRoot = path.join(os.tmpdir(), "simpleshell-upload-buffer");
+    const tempRoot = path.join(getTempDirectory(app), "upload-buffer");
     const transferDir = path.join(tempRoot, transferKey);
     await fsp.mkdir(transferDir, { recursive: true });
     this._throwIfTransferCancelled(transferKey);

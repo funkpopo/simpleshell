@@ -1,0 +1,166 @@
+name: Release
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  js-quality:
+    name: JS quality
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build native sidecar
+        run: npm run prepare:native-sidecar
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Regression tests
+        run: npm test
+
+      - name: Release metadata check
+        run: npm run release:check
+
+  rust-sidecar:
+    name: Rust sidecar (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+          - ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build sidecar
+        run: cargo build --release --manifest-path transfernative/transfer-sidecar/Cargo.toml
+
+      - name: Test sidecar
+        run: cargo test --manifest-path transfernative/transfer-sidecar/Cargo.toml
+
+  package:
+    name: Package (${{ matrix.os }})
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - js-quality
+      - rust-sidecar
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+          - ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fakeroot rpm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build native sidecar
+        run: npm run prepare:native-sidecar
+
+      - name: Make installers
+        run: npm run make
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: simpleshell-${{ matrix.os }}
+          path: |
+            out/make/**
+          if-no-files-found: error
+
+  release-assets:
+    name: Publish Release assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: out/release-assets
+          pattern: simpleshell-*
+
+      - name: Generate unified checksums
+        run: node scripts/generate-checksums.js out/release-assets
+
+      - name: Upload workflow release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: simpleshell-release-assets
+          path: |
+            out/release-assets/**
+          if-no-files-found: error
+
+      - name: Upload GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            out/release-assets/**

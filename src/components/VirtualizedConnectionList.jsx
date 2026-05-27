@@ -309,7 +309,6 @@ const VirtualizedConnectionList = ({
   emptyMessage = "No connections",
   className,
 }) => {
-  const theme = useTheme();
   const { addResizeObserver } = useAutoCleanup();
   const containerRef = useRef(null);
   const listRef = useRef(null);

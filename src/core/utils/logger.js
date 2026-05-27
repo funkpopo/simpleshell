@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const zlib = require("zlib");
+const { getConfigPath, getLogDirectory } = require("./appPaths");
 
 let logFile = null;
 let appInstance = null;
@@ -34,41 +35,27 @@ let lastSizeCheckAt = 0;
 const SIZE_CHECK_FLUSH_INTERVAL = 10;
 const SIZE_CHECK_MIN_INTERVAL_MS = 5000;
 
-function detectEnvironment(electronApp) {
-  if (electronApp && typeof electronApp.isPackaged === "boolean") {
-    return electronApp.isPackaged ? "production" : "development";
-  }
-  if (process.env.NODE_ENV === "development") return "development";
-  if (process.env.NODE_ENV === "production") return "production";
-  if (__dirname.includes("node_modules") || __dirname.includes(".webpack")) {
-    return "production";
-  }
-  return "development";
-}
-
-function getLogDirectory(electronApp) {
-  const environment = detectEnvironment(electronApp);
-  if (environment === "development") {
-    return path.join(process.cwd(), "log");
-  }
-  return path.join(path.dirname(process.execPath), "log");
+function getLoggerEnvironment(electronApp) {
+  return electronApp && electronApp.isPackaged ? "production" : "development";
 }
 
 function loadLogConfig() {
+  if (!appInstance) {
+    return logConfig;
+  }
+
   try {
-    const configPath = appInstance
-      ? appInstance.isPackaged
-        ? path.join(path.dirname(process.execPath), "config.json")
-        : path.join(process.cwd(), "config.json")
-      : path.join(process.cwd(), "config.json");
+    const configPath = getConfigPath(appInstance);
     if (fs.existsSync(configPath)) {
       const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
       if (config.logSettings) {
         logConfig = { ...DEFAULT_LOG_CONFIG, ...config.logSettings };
       }
     }
-  } catch {
-    /* intentionally ignored */
+  } catch (error) {
+    console.warn(
+      `Failed to load log settings from config.json: ${error.message}`,
+    );
   }
   return logConfig;
 }
@@ -118,9 +105,11 @@ async function flushQueue() {
       const batch = writeQueue;
       writeQueue = [];
       const data = batch.join("");
-      fs.appendFileSync(logFile || "app_emergency.log", data);
-    } catch {
-      /* intentionally ignored */
+      if (logFile) {
+        fs.appendFileSync(logFile, data);
+      }
+    } catch (error) {
+      console.error(`Failed to flush log queue: ${error.message}`);
     }
   } finally {
     isFlushing = false;
@@ -270,10 +259,11 @@ function cleanupOldLogEntries() {
 
 function initLogger(electronApp) {
   appInstance = electronApp;
-  const environment = detectEnvironment(electronApp);
+  const environment = getLoggerEnvironment(electronApp);
   loadLogConfig();
   flushesSinceSizeCheck = 0;
   lastSizeCheckAt = 0;
+
   try {
     const logDir = getLogDirectory(electronApp);
     if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
@@ -286,40 +276,10 @@ function initLogger(electronApp) {
       true,
     );
     startFlushTimer();
-  } catch {
-    try {
-      const electronLogDir = electronApp.getPath("logs");
-      if (!fs.existsSync(electronLogDir))
-        fs.mkdirSync(electronLogDir, { recursive: true });
-      logFile = path.join(electronLogDir, "app.log");
-      logToFileInternal(
-        `Logger initialized with Electron default path (fallback level 1): ${logFile}`,
-        "WARN",
-        true,
-      );
-      startFlushTimer();
-    } catch {
-      try {
-        const fallbackLogDir = path.join(__dirname, "..", "..", "..", "logs");
-        if (!fs.existsSync(fallbackLogDir))
-          fs.mkdirSync(fallbackLogDir, { recursive: true });
-        logFile = path.join(fallbackLogDir, "app_fallback.log");
-        logToFileInternal(
-          `Logger initialized with __dirname-based path (fallback level 2): ${logFile}`,
-          "WARN",
-          true,
-        );
-        startFlushTimer();
-      } catch {
-        logFile = "app_emergency.log";
-        logToFileInternal(
-          `Logger initialized with emergency path in current working directory (fallback level 3): ${logFile}`,
-          "ERROR",
-          true,
-        );
-        startFlushTimer();
-      }
-    }
+  } catch (error) {
+    logFile = null;
+    console.error(`Logger initialization failed: ${error.message}`);
+    throw error;
   }
 }
 
@@ -337,11 +297,7 @@ function logToFileInternal(message, type = "INFO", isInitialization = false) {
     if (logFile) {
       enqueue(logEntry);
     } else {
-      try {
-        fs.appendFileSync("app_init_error.log", logEntry);
-      } catch {
-        /* intentionally ignored */
-      }
+      console.error(logEntry.trimEnd());
     }
   } catch {
     /* intentionally ignored */
@@ -368,6 +324,14 @@ function updateLogConfig(newConfig) {
     return true;
   }
   return false;
+}
+
+function getLogDirectoryPath() {
+  return appInstance ? getLogDirectory(appInstance) : null;
+}
+
+function getLogFilePath() {
+  return logFile;
 }
 
 function extractRotationIndex(fileName, nameWithoutExt, ext) {
@@ -434,8 +398,9 @@ module.exports = {
   logWarn,
   logError,
   logDebug,
-  logFile,
   getLogConfig,
+  getLogDirectoryPath,
+  getLogFilePath,
   updateLogConfig,
   cleanupOldLogEntries,
 };

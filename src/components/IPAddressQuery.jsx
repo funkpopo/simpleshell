@@ -28,17 +28,15 @@ import { sidebarContentSx } from "./sidebarItemStyles";
 // Use require for reliable CJS interop in both renderer and main bundles
 const ipUtils = require("../utils/ip");
 
-// My IP TTL cache (session-scoped)
-const MY_IP_CACHE_KEY = "ipQuery:myIpCache";
-const MY_IP_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
-
-// In-memory LRU + TTL (browser session); complements main-process cache after IPC
+// In-memory LRU + TTL; persisted records are stored in config.json via UI settings.
 const CLIENT_IP_MEMORY_MAX = 64;
 const CLIENT_IP_MEMORY_TTL_MS = 10 * 60 * 1000;
 const clientIpMemoryCache = new Map();
 
 function normalizeClientCacheKey(ip) {
-  return ip && String(ip).trim() ? String(ip).trim().toLowerCase() : "__MY_IP__";
+  return ip && String(ip).trim()
+    ? String(ip).trim().toLowerCase()
+    : "__MY_IP__";
 }
 
 function getClientIpMemoryCached(ipKey) {
@@ -66,6 +64,46 @@ function setClientIpMemoryCached(ipKey, result) {
   }
 }
 
+function normalizeIpQueryHistory(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry) => entry && typeof entry === "object")
+    .map((entry) => ({
+      id: entry.id || Date.now(),
+      ip: typeof entry.ip === "string" ? entry.ip : "",
+      locationText:
+        typeof entry.locationText === "string" ? entry.locationText : "",
+      latitude: entry.latitude,
+      longitude: entry.longitude,
+      time: Number.isFinite(Number(entry.time))
+        ? Number(entry.time)
+        : Date.now(),
+    }))
+    .slice(0, 20);
+}
+
+async function saveIpQueryHistoryToConfig(history) {
+  if (
+    !window.terminalAPI?.loadUISettings ||
+    !window.terminalAPI?.saveUISettings
+  ) {
+    return;
+  }
+
+  const settings = await window.terminalAPI.loadUISettings();
+  const currentSettings =
+    settings && typeof settings === "object" && !settings.success
+      ? settings
+      : {};
+  await window.terminalAPI.saveUISettings({
+    ...currentSettings,
+    ipQueryHistory: normalizeIpQueryHistory(history),
+  });
+}
+
 // IP地址查询组件
 const IPAddressQuery = memo(({ open, onClose }) => {
   const theme = useTheme();
@@ -74,26 +112,34 @@ const IPAddressQuery = memo(({ open, onClose }) => {
   const [ipInfo, setIpInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [history, setHistory] = useState(() => {
-    try {
-      const cached = sessionStorage.getItem("ipQueryHistory");
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [history, setHistory] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const requestIdRef = useRef(0);
   const debounceTimerRef = useRef(null);
 
-  // 同步会话级缓存
   useEffect(() => {
-    try {
-      sessionStorage.setItem("ipQueryHistory", JSON.stringify(history));
-    } catch {
-      /* intentionally ignored */
+    if (!open || !window.terminalAPI?.loadUISettings) {
+      return undefined;
     }
-  }, [history]);
+
+    let cancelled = false;
+    window.terminalAPI
+      .loadUISettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setHistory(normalizeIpQueryHistory(settings?.ipQueryHistory));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHistory([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   // 查询IP信息
   const fetchIPInfo = async (ip = "") => {
@@ -147,20 +193,10 @@ const IPAddressQuery = memo(({ open, onClose }) => {
                 ),
             );
             const next = [entry, ...deduped];
-            return next.slice(0, 20);
+            const normalizedNext = next.slice(0, 20);
+            void saveIpQueryHistoryToConfig(normalizedNext).catch(() => {});
+            return normalizedNext;
           });
-
-          // Cache "my IP" result with TTL when querying own IP
-          if (!ip || !ip.trim()) {
-            try {
-              sessionStorage.setItem(
-                MY_IP_CACHE_KEY,
-                JSON.stringify({ ts: Date.now(), result }),
-              );
-            } catch {
-              /* intentionally ignored */
-            }
-          }
         } else {
           throw new Error(result.msg || t("ipAddressQuery.networkError"));
         }
@@ -199,23 +235,18 @@ const IPAddressQuery = memo(({ open, onClose }) => {
     fetchIPInfo();
   }, []);
 
+  const handleClearHistory = useCallback(() => {
+    setHistory([]);
+    void saveIpQueryHistoryToConfig([]).catch(() => {});
+  }, []);
+
   // 当侧边栏打开时自动查询本机IP
   useEffect(() => {
     if (open && !ipInfo && !loading && !error) {
-      // Use TTL cache for auto my-IP query
-      try {
-        const cachedStr = sessionStorage.getItem(MY_IP_CACHE_KEY);
-        if (cachedStr) {
-          const cache = JSON.parse(cachedStr);
-          if (cache && cache.ts && cache.result) {
-            if (Date.now() - cache.ts < MY_IP_CACHE_TTL_MS) {
-              setIpInfo(cache.result);
-              return; // serve from cache, skip network
-            }
-          }
-        }
-      } catch {
-        /* intentionally ignored */
+      const memHit = getClientIpMemoryCached(normalizeClientCacheKey(""));
+      if (memHit && memHit.ret === "ok") {
+        setIpInfo(memHit);
+        return;
       }
 
       handleQueryMyIP();
@@ -418,183 +449,182 @@ const IPAddressQuery = memo(({ open, onClose }) => {
       elevation={4}
     >
       <Box sx={sidebarContentSx(theme, open)}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            px: 1.25,
+            py: 0.75,
+            minHeight: 44,
+            flexShrink: 0,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Typography variant="subtitle1" fontWeight="medium">
+            {t("ipAddressQuery.title")}
+          </Typography>
+          <Box>
+            <IconButton
+              size="small"
+              onClick={onClose}
+              sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        </Box>
+
+        <Box
+          sx={{
+            p: 2,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <TextField
+            fullWidth
+            size="small"
+            variant="outlined"
+            label={t("ipAddressQuery.ipAddress")}
+            placeholder={t("ipAddressQuery.inputPlaceholder")}
+            value={ipAddress}
+            onChange={(e) => setIpAddress(e.target.value)}
+            onKeyDown={handleKeyDown}
+            sx={{ mb: 1 }}
+          />
+          <Box sx={{ display: "flex", gap: 1 }}>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleQuery}
+              disabled={loading}
+              sx={{ flex: 1 }}
+            >
+              {loading ? (
+                <CircularProgress size={24} color="inherit" />
+              ) : (
+                t("ipAddressQuery.queryButton")
+              )}
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={handleQueryMyIP}
+              disabled={loading}
+              sx={{ flex: 1 }}
+            >
+              {t("ipAddressQuery.queryYourIP")}
+            </Button>
+          </Box>
+        </Box>
+
+        <Box
+          sx={{
+            flexGrow: 1,
+            overflow: "auto",
+          }}
+        >
+          {renderResult()}
+        </Box>
+        <Box
+          sx={{
+            borderTop: `1px solid ${theme.palette.divider}`,
+            p: 1.5,
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+          }}
+        >
           <Box
             sx={{
               display: "flex",
-              justifyContent: "space-between",
               alignItems: "center",
-              px: 1.25,
-              py: 0.75,
-              minHeight: 44,
-              flexShrink: 0,
-              borderBottom: `1px solid ${theme.palette.divider}`,
+              justifyContent: "space-between",
             }}
           >
-            <Typography variant="subtitle1" fontWeight="medium">
-              {t("ipAddressQuery.title")}
-            </Typography>
-            <Box>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <HistoryIcon fontSize="small" color="action" />
+              <Typography variant="subtitle2">
+                {t("ipAddressQuery.historyTitle")}
+              </Typography>
+            </Box>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
               <IconButton
                 size="small"
-                onClick={onClose}
-                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+                onClick={() => setHistoryOpen((v) => !v)}
+                aria-expanded={historyOpen}
+                aria-label={t("ipAddressQuery.toggleHistory")}
               >
-                <CloseIcon fontSize="small" />
+                <ExpandMoreIcon
+                  fontSize="small"
+                  sx={{
+                    transform: historyOpen ? "rotate(0deg)" : "rotate(180deg)",
+                    transition: theme.transitions.create("transform", {
+                      duration: theme.transitions.duration.shortest,
+                    }),
+                  }}
+                />
+              </IconButton>
+              <IconButton
+                size="small"
+                onClick={handleClearHistory}
+                disabled={history.length === 0 || loading}
+                aria-label={t("ipAddressQuery.clearHistory")}
+              >
+                <DeleteSweepIcon fontSize="small" />
               </IconButton>
             </Box>
           </Box>
-
-          <Box
-            sx={{
-              p: 2,
-              borderBottom: `1px solid ${theme.palette.divider}`,
-            }}
-          >
-            <TextField
-              fullWidth
-              size="small"
-              variant="outlined"
-              label={t("ipAddressQuery.ipAddress")}
-              placeholder={t("ipAddressQuery.inputPlaceholder")}
-              value={ipAddress}
-              onChange={(e) => setIpAddress(e.target.value)}
-              onKeyDown={handleKeyDown}
-              sx={{ mb: 1 }}
-            />
-            <Box sx={{ display: "flex", gap: 1 }}>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={handleQuery}
-                disabled={loading}
-                sx={{ flex: 1 }}
-              >
-                {loading ? (
-                  <CircularProgress size={24} color="inherit" />
-                ) : (
-                  t("ipAddressQuery.queryButton")
-                )}
-              </Button>
-              <Button
-                variant="outlined"
-                onClick={handleQueryMyIP}
-                disabled={loading}
-                sx={{ flex: 1 }}
-              >
-                {t("ipAddressQuery.queryYourIP")}
-              </Button>
-            </Box>
-          </Box>
-
-          <Box
-            sx={{
-              flexGrow: 1,
-              overflow: "auto",
-            }}
-          >
-            {renderResult()}
-          </Box>
-          <Box
-            sx={{
-              borderTop: `1px solid ${theme.palette.divider}`,
-              p: 1.5,
-              display: "flex",
-              flexDirection: "column",
-              gap: 1,
-            }}
-          >
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <HistoryIcon fontSize="small" color="action" />
-                <Typography variant="subtitle2">
-                  {t("ipAddressQuery.historyTitle")}
+          <Collapse in={historyOpen} timeout="auto" unmountOnExit>
+            <Box sx={{ maxHeight: 160, overflow: "auto" }}>
+              {history.length === 0 ? (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ px: 1, py: 0.5 }}
+                >
+                  {t("ipAddressQuery.noHistory")}
                 </Typography>
-              </Box>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <IconButton
-                  size="small"
-                  onClick={() => setHistoryOpen((v) => !v)}
-                  aria-expanded={historyOpen}
-                  aria-label={t("ipAddressQuery.toggleHistory")}
-                >
-                  <ExpandMoreIcon
-                    fontSize="small"
-                    sx={{
-                      transform: historyOpen
-                        ? "rotate(0deg)"
-                        : "rotate(180deg)",
-                      transition: theme.transitions.create("transform", {
-                        duration: theme.transitions.duration.shortest,
-                      }),
-                    }}
-                  />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => setHistory([])}
-                  disabled={history.length === 0 || loading}
-                >
-                  <DeleteSweepIcon fontSize="small" />
-                </IconButton>
-              </Box>
-            </Box>
-            <Collapse in={historyOpen} timeout="auto" unmountOnExit>
-              <Box sx={{ maxHeight: 160, overflow: "auto" }}>
-                {history.length === 0 ? (
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ px: 1, py: 0.5 }}
-                  >
-                    {t("ipAddressQuery.noHistory")}
-                  </Typography>
-                ) : (
-                  <List dense disablePadding>
-                    {history.map((h) => (
-                      <React.Fragment key={h.id}>
-                        <ListItem disableGutters disablePadding>
-                          <ListItemButton
-                            disabled={loading}
-                            onClick={() => fetchIPInfo(h.ip)}
-                            disableRipple
-                            sx={{
-                              minHeight: 44,
-                              py: 0.75,
-                              px: 1,
-                              alignItems: "flex-start",
-                              borderRadius: 1,
-                              overflow: "hidden",
+              ) : (
+                <List dense disablePadding>
+                  {history.map((h) => (
+                    <React.Fragment key={h.id}>
+                      <ListItem disableGutters disablePadding>
+                        <ListItemButton
+                          disabled={loading}
+                          onClick={() => fetchIPInfo(h.ip)}
+                          disableRipple
+                          sx={{
+                            minHeight: 44,
+                            py: 0.75,
+                            px: 1,
+                            alignItems: "flex-start",
+                            borderRadius: 1,
+                            overflow: "hidden",
+                          }}
+                        >
+                          <ListItemText
+                            primaryTypographyProps={{
+                              variant: "body2",
+                              noWrap: true,
                             }}
-                          >
-                            <ListItemText
-                              primaryTypographyProps={{
-                                variant: "body2",
-                                noWrap: true,
-                              }}
-                              secondaryTypographyProps={{
-                                variant: "caption",
-                                color: "text.secondary",
-                                noWrap: true,
-                              }}
-                              primary={h.ip || t("ipAddressQuery.myIp")}
-                              secondary={`${h.locationText || ""} ${new Date(h.time).toLocaleTimeString()}`}
-                            />
-                          </ListItemButton>
-                        </ListItem>
-                        <Divider component="li" />
-                      </React.Fragment>
-                    ))}
-                  </List>
-                )}
-              </Box>
-            </Collapse>
-          </Box>
+                            secondaryTypographyProps={{
+                              variant: "caption",
+                              color: "text.secondary",
+                              noWrap: true,
+                            }}
+                            primary={h.ip || t("ipAddressQuery.myIp")}
+                            secondary={`${h.locationText || ""} ${new Date(h.time).toLocaleTimeString()}`}
+                          />
+                        </ListItemButton>
+                      </ListItem>
+                      <Divider component="li" />
+                    </React.Fragment>
+                  ))}
+                </List>
+              )}
+            </Box>
+          </Collapse>
+        </Box>
       </Box>
     </Paper>
   );

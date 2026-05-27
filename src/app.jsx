@@ -37,6 +37,8 @@ import Paper from "@mui/material/Paper";
 import HistoryIcon from "@mui/icons-material/History";
 import InfoIcon from "@mui/icons-material/Info";
 import ExitToAppIcon from "@mui/icons-material/ExitToApp";
+import BugReportIcon from "@mui/icons-material/BugReport";
+import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import PublicIcon from "@mui/icons-material/Public";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import ComputerIcon from "@mui/icons-material/Computer";
@@ -512,6 +514,7 @@ function AppContent() {
   const [sshAuthConnectionConfig, setSshAuthConnectionConfig] =
     React.useState(null);
   const sshAuthRequestIdRef = React.useRef(null);
+  const [aboutUpdateCheckSignal, setAboutUpdateCheckSignal] = React.useState(0);
 
   // 监听主进程的错误事件
   React.useEffect(() => {
@@ -719,11 +722,7 @@ function AppContent() {
             settings?.performance?.hardwareAcceleration !== false;
         }
       } catch {
-        // 如果加载失败，尝试从 localStorage 恢复作为备选
-        const fallbackTheme = localStorage.getItem("terminalDarkMode");
-        if (fallbackTheme !== null) {
-          dispatch(actions.setDarkMode(fallbackTheme === "true"));
-        }
+        window.__hardwareAccelerationEnabled = true;
       } finally {
         dispatch(actions.setThemeLoading(false));
       }
@@ -1915,6 +1914,81 @@ function AppContent() {
     dispatch(actions.setSettingsDialogOpen(false));
   }, [dispatch]);
 
+  const handleCheckForUpdates = useCallback(() => {
+    dispatch(actions.setAnchorEl(null));
+    dispatch(actions.setAboutDialogOpen(true));
+    setAboutUpdateCheckSignal((value) => value + 1);
+  }, [dispatch]);
+
+  const handleOpenLogDirectory = useCallback(async () => {
+    dispatch(actions.setAnchorEl(null));
+    try {
+      const result = await window.terminalAPI?.openLogDirectory?.();
+      if (result?.success === false) {
+        throw new Error(result.error || t("settings.openLogDirectoryFailed"));
+      }
+      showSuccess(t("settings.logDirectoryOpened"));
+    } catch (error) {
+      showError(error?.message || t("settings.openLogDirectoryFailed"));
+    }
+  }, [dispatch, showError, showSuccess, t]);
+
+  const handleExportDiagnostics = useCallback(async () => {
+    dispatch(actions.setAnchorEl(null));
+    try {
+      const result = await window.terminalAPI?.exportDiagnostics?.();
+      if (result?.success === false) {
+        throw new Error(result.error || t("settings.exportDiagnosticsFailed"));
+      }
+      showSuccess(
+        t("settings.diagnosticsExported", {
+          path: result?.filePath || "",
+        }),
+      );
+    } catch (error) {
+      showError(error?.message || t("settings.exportDiagnosticsFailed"));
+    }
+  }, [dispatch, showError, showSuccess, t]);
+
+  const handleSystemMenuAction = useCallback(
+    (payload) => {
+      const action = payload?.action;
+      if (action === "about") {
+        handleOpenAbout();
+        return;
+      }
+      if (action === "settings") {
+        handleOpenSettings();
+        return;
+      }
+      if (action === "check-for-updates") {
+        handleCheckForUpdates();
+        return;
+      }
+      if (action === "open-log-directory") {
+        void handleOpenLogDirectory();
+        return;
+      }
+      if (action === "export-diagnostics") {
+        void handleExportDiagnostics();
+      }
+    },
+    [
+      handleCheckForUpdates,
+      handleExportDiagnostics,
+      handleOpenAbout,
+      handleOpenLogDirectory,
+      handleOpenSettings,
+    ],
+  );
+
+  React.useEffect(() => {
+    if (!window.terminalAPI?.onMenuAction) {
+      return undefined;
+    }
+    return window.terminalAPI.onMenuAction(handleSystemMenuAction);
+  }, [handleSystemMenuAction]);
+
   // 处理应用退出
   const handleExit = useCallback(() => {
     if (window.terminalAPI && window.terminalAPI.closeApp) {
@@ -1989,15 +2063,11 @@ function AppContent() {
 
           await window.terminalAPI.saveUISettings(updatedSettings);
         }
-
-        // 同时更新 localStorage 作为备选（向后兼容）
-        localStorage.setItem("terminalDarkMode", newDarkMode.toString());
-      } catch {
-        // 如果保存失败，至少更新 localStorage
-        localStorage.setItem("terminalDarkMode", (!darkMode).toString());
+      } catch (error) {
+        showError(error?.message || t("settings.saveError"));
       }
     },
-    [darkMode, dispatch],
+    [darkMode, dispatch, showError, t],
   );
 
   const handleToggleSidebarPosition = useCallback(async () => {
@@ -3506,6 +3576,18 @@ function AppContent() {
                   <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
                   {t("menu.settings")}
                 </MenuItem>
+                <MenuItem onClick={handleCheckForUpdates}>
+                  <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
+                  {t("menu.checkForUpdates")}
+                </MenuItem>
+                <MenuItem onClick={handleOpenLogDirectory}>
+                  <FolderOpenIcon fontSize="small" sx={{ mr: 1 }} />
+                  {t("menu.openLogs")}
+                </MenuItem>
+                <MenuItem onClick={handleExportDiagnostics}>
+                  <BugReportIcon fontSize="small" sx={{ mr: 1 }} />
+                  {t("menu.exportDiagnostics")}
+                </MenuItem>
                 <MenuItem onClick={handleOpenAbout}>
                   <InfoIcon fontSize="small" sx={{ mr: 1 }} />
                   {t("menu.about")}
@@ -4518,7 +4600,11 @@ function AppContent() {
       )}
 
       {/* 关于对话框 */}
-      <AboutDialog open={aboutDialogOpen} onClose={handleCloseAbout} />
+      <AboutDialog
+        open={aboutDialogOpen}
+        onClose={handleCloseAbout}
+        checkUpdateSignal={aboutUpdateCheckSignal}
+      />
 
       {/* SSH 认证对话框 */}
       <SSHAuthDialog

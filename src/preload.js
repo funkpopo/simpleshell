@@ -16,6 +16,7 @@ const {
 const topConnectionsChangedWrappers = new WeakMap();
 const connectionsChangedWrappers = new WeakMap();
 const commandHistoryChangedWrappers = new WeakMap();
+const localDataClearedWrappers = new WeakMap();
 const streamWrappersByChannel = {
   "stream-chunk": new WeakMap(),
   "stream-end": new WeakMap(),
@@ -599,11 +600,25 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 获取应用版本
   getAppVersion: () => ipcRenderer.invoke("app:getVersion"),
 
+  onMenuAction: (callback) => {
+    if (typeof callback !== "function") {
+      return () => {};
+    }
+    const wrapped = (_event, payload) => callback(payload);
+    ipcRenderer.on("app:menu-action", wrapped);
+    return () => {
+      ipcRenderer.removeListener("app:menu-action", wrapped);
+    };
+  },
+
   // 关闭应用
   closeApp: () => ipcRenderer.invoke("app:close"),
 
   // 检查更新
   checkForUpdate: () => ipcRenderer.invoke("app:checkForUpdate"),
+
+  openLogDirectory: () => ipcRenderer.invoke("app:openLogDirectory"),
+  exportDiagnostics: () => ipcRenderer.invoke("app:exportDiagnostics"),
 
   // 文件管理相关API
   listFiles: async (tabId, path, options) => {
@@ -1042,6 +1057,26 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   unlockCredentialStore: (masterPassword) =>
     ipcRenderer.invoke("settings:unlockCredentialStore", masterPassword),
   lockCredentialStore: () => ipcRenderer.invoke("settings:lockCredentialStore"),
+  clearLocalData: (options) =>
+    ipcRenderer.invoke("settings:clearLocalData", options),
+  onLocalDataCleared: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_event, payload) => callback(payload);
+    localDataClearedWrappers.set(callback, wrappedCallback);
+    ipcRenderer.on("settings:localDataCleared", wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener("settings:localDataCleared", wrappedCallback);
+      localDataClearedWrappers.delete(callback);
+    };
+  },
+  offLocalDataCleared: (callback) => {
+    if (!callback) return;
+    const wrappedCallback = localDataClearedWrappers.get(callback);
+    if (wrappedCallback) {
+      ipcRenderer.removeListener("settings:localDataCleared", wrappedCallback);
+      localDataClearedWrappers.delete(callback);
+    }
+  },
 
   // 日志设置相关API
   loadLogSettings: () => ipcRenderer.invoke("settings:loadLogSettings"),

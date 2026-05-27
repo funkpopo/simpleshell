@@ -1,9 +1,13 @@
 node_modules
-package-lock.json
 dist
 out
+.cache/
+coverage/
 .DS_Store
 *.log*
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
 log
 .editorconfig
 .eslintrc.cjs
@@ -23,8 +27,10 @@ todo.md
 
 # 配置文件
 config.json
-temp
-temp/*
+config.json.tmp-*
+config-backups/
+diagnostics/
+temp/
 
 # vscode
 .vscode
@@ -46,11 +52,23 @@ transfernative/bin/*
 !transfernative/bin/README.md
 transfernative/**/target/
 
+# Release metadata generated next to packaged artifacts.
+SHA256SUMS
+release-manifest.json
+
 # 其他常见构建/打包产物（保险兜底）
 *.asar
+*.blockmap
+*.nupkg
 *.exe
 *.msi
 *.dmg
+*.pkg
+*.AppImage
+*.deb
+*.rpm
+*.snap
+*.zip
 *.pdb
 
 .claude/

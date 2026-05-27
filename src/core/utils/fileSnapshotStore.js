@@ -1,9 +1,10 @@
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
 const crypto = require("crypto");
+const { getTempDirectory } = require("./appPaths");
 
 const DEFAULT_MAX_SNAPSHOTS_PER_FILE = 50;
+const DEFAULT_SNAPSHOT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 class FileSnapshotStore {
   constructor() {
@@ -22,51 +23,9 @@ class FileSnapshotStore {
   }
 
   getSnapshotRoot(app) {
-    const candidates = [];
-
-    if (process.env.NODE_ENV === "development") {
-      candidates.push(path.join(process.cwd(), "temp", "snapshots"));
-    } else {
-      if (app && typeof app.getPath === "function") {
-        try {
-          candidates.push(
-            path.join(path.dirname(app.getPath("exe")), "temp", "snapshots"),
-          );
-        } catch (error) {
-          this.logToFile(
-            `Failed to resolve exe snapshot directory: ${error.message}`,
-            "WARN",
-          );
-        }
-
-        try {
-          candidates.push(
-            path.join(app.getPath("temp"), "simpleshell", "snapshots"),
-          );
-        } catch (error) {
-          this.logToFile(
-            `Failed to resolve app snapshot directory: ${error.message}`,
-            "WARN",
-          );
-        }
-      }
-
-      candidates.push(path.join(os.tmpdir(), "simpleshell", "snapshots"));
-    }
-
-    for (const candidate of candidates) {
-      try {
-        fs.mkdirSync(candidate, { recursive: true });
-        return candidate;
-      } catch (error) {
-        this.logToFile(
-          `Failed to prepare snapshot directory ${candidate}: ${error.message}`,
-          "WARN",
-        );
-      }
-    }
-
-    throw new Error("Failed to initialize snapshot directory");
+    const snapshotRoot = path.join(getTempDirectory(app), "snapshots");
+    fs.mkdirSync(snapshotRoot, { recursive: true });
+    return snapshotRoot;
   }
 
   ensureInitialized() {
@@ -361,6 +320,43 @@ class FileSnapshotStore {
       );
       return false;
     }
+  }
+
+  async cleanupExpiredSnapshots(maxAgeMs = DEFAULT_SNAPSHOT_MAX_AGE_MS) {
+    if (!this.snapshotRoot || !fs.existsSync(this.snapshotRoot)) {
+      return 0;
+    }
+
+    const cutoff = Date.now() - maxAgeMs;
+    const entries = await fs.promises.readdir(this.snapshotRoot, {
+      withFileTypes: true,
+    });
+    let cleanedCount = 0;
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const dirPath = path.join(this.snapshotRoot, entry.name);
+      const stats = await fs.promises.stat(dirPath);
+      if (stats.mtimeMs >= cutoff) {
+        continue;
+      }
+
+      await fs.promises.rm(dirPath, { recursive: true, force: true });
+      this.indexCache.delete(dirPath);
+      cleanedCount += 1;
+    }
+
+    if (cleanedCount > 0) {
+      this.logToFile(
+        `Cleaned up ${cleanedCount} expired snapshot directories`,
+        "INFO",
+      );
+    }
+
+    return cleanedCount;
   }
 }
 

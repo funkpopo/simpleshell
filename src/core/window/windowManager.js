@@ -1,7 +1,8 @@
-const { BrowserWindow, screen, session } = require("electron");
+const { BrowserWindow, screen, session, shell } = require("electron");
 const path = require("path");
 const configService = require("../../services/configService");
 const { IPC_EVENT_CHANNELS } = require("../ipc/schema/channels");
+const { logToFile } = require("../utils/logger");
 
 const DEFAULT_WINDOW_BOUNDS = Object.freeze({
   width: 1200,
@@ -10,6 +11,7 @@ const DEFAULT_WINDOW_BOUNDS = Object.freeze({
 
 const MIN_VISIBLE_PIXELS = 80;
 const WINDOW_BOUNDS_SAVE_DELAY_MS = 500;
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
 /**
  * 获取主窗口实例
@@ -171,6 +173,64 @@ function registerWindowStatePersistence(mainWindow) {
   });
 }
 
+function getExpectedRendererOrigin(webpackEntry) {
+  try {
+    return new URL(webpackEntry).origin;
+  } catch {
+    return "file://";
+  }
+}
+
+function isAllowedExternalUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    return ALLOWED_EXTERNAL_PROTOCOLS.has(url.protocol.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function registerSessionSecurityHandlers() {
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      logToFile(`Denied renderer permission request: ${permission}`, "WARN");
+      callback(false);
+    },
+  );
+}
+
+function registerWindowSecurityHandlers(mainWindow, webpackEntry) {
+  const expectedOrigin = getExpectedRendererOrigin(webpackEntry);
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedExternalUrl(url)) {
+      void shell.openExternal(url).catch((error) => {
+        logToFile(
+          `Blocked window.open target failed to open: ${error.message}`,
+          "ERROR",
+        );
+      });
+    } else {
+      logToFile(`Blocked renderer window.open target: ${url}`, "WARN");
+    }
+    return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    let targetOrigin = null;
+    try {
+      targetOrigin = new URL(url).origin;
+    } catch {
+      targetOrigin = null;
+    }
+
+    if (targetOrigin !== expectedOrigin) {
+      event.preventDefault();
+      logToFile(`Blocked renderer navigation to ${url}`, "WARN");
+    }
+  });
+}
+
 /**
  * 创建主窗口
  * @param {Object} options - 窗口配置选项
@@ -211,6 +271,8 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
   });
 
   mainWindow.setMenuBarVisibility(false);
+  registerSessionSecurityHandlers();
+  registerWindowSecurityHandlers(mainWindow, webpackEntry);
 
   const emitWindowState = () => {
     if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {

@@ -1,6 +1,7 @@
 const { app, BrowserWindow, shell, dialog } = require("electron");
-const { execFile } = require("child_process");
 const { logToFile } = require("../../utils/logger");
+const { getLogDirectory } = require("../../utils/appPaths");
+const { exportDiagnosticPackage } = require("../../utils/diagnostics");
 const updateService = require("../../update/updateService");
 
 const DEFAULT_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
@@ -78,6 +79,16 @@ class AppHandlers {
         channel: "app:getGpuInfo",
         category: "app",
         handler: this.getGpuInfo.bind(this),
+      },
+      {
+        channel: "app:openLogDirectory",
+        category: "app",
+        handler: this.openLogDirectory.bind(this),
+      },
+      {
+        channel: "app:exportDiagnostics",
+        category: "app",
+        handler: this.exportDiagnostics.bind(this),
       },
     ];
   }
@@ -272,32 +283,16 @@ class AppHandlers {
 
       logToFile(`Attempting to open external URL: ${normalizedUrl}`, "INFO");
 
-      // shell.openExternal 在生产环境可能挂起，添加超时和回退机制
       const TIMEOUT_MS = 5000;
-      let opened = false;
-
-      try {
-        await Promise.race([
-          shell.openExternal(normalizedUrl).then(() => {
-            opened = true;
-          }),
-          new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error("shell.openExternal timed out")),
-              TIMEOUT_MS,
-            ),
+      await Promise.race([
+        shell.openExternal(normalizedUrl),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("shell.openExternal timed out")),
+            TIMEOUT_MS,
           ),
-        ]);
-      } catch (shellError) {
-        logToFile(
-          `shell.openExternal failed: ${shellError.message}, trying fallback`,
-          "WARN",
-        );
-      }
-
-      if (!opened) {
-        await this._openExternalFallback(normalizedUrl);
-      }
+        ),
+      ]);
 
       logToFile(`Opened external URL: ${normalizedUrl}`, "INFO");
       return { success: true };
@@ -305,45 +300,6 @@ class AppHandlers {
       logToFile(`Error opening external URL: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
-  }
-
-  /**
-   * 使用系统命令打开外部链接（回退方案）
-   */
-  _openExternalFallback(url) {
-    return new Promise((resolve, reject) => {
-      let cmd;
-      let args;
-
-      if (process.platform === "win32") {
-        // explorer.exe 可安全打开 URL，不会像 cmd.exe /c start 那样误解析 & 等特殊字符
-        cmd = "explorer.exe";
-        args = [url];
-      } else if (process.platform === "darwin") {
-        cmd = "open";
-        args = [url];
-      } else {
-        cmd = "xdg-open";
-        args = [url];
-      }
-
-      execFile(cmd, args, { timeout: 5000 }, (error) => {
-        if (error && process.platform === "win32") {
-          // explorer.exe 委托给已有进程时返回退出码 1，属于正常行为
-          logToFile(
-            `Opened external URL via fallback (explorer exit code: ${error.code}): ${url}`,
-            "INFO",
-          );
-          resolve();
-        } else if (error) {
-          logToFile(`Fallback open failed: ${error.message}`, "ERROR");
-          reject(error);
-        } else {
-          logToFile(`Opened external URL via fallback: ${url}`, "INFO");
-          resolve();
-        }
-      });
-    });
   }
 
   async checkForUpdate() {
@@ -424,6 +380,31 @@ class AppHandlers {
         "ERROR",
       );
       return { available: false };
+    }
+  }
+
+  async openLogDirectory() {
+    try {
+      const logDir = getLogDirectory(app);
+      const errorMessage = await shell.openPath(logDir);
+      if (errorMessage) {
+        throw new Error(errorMessage);
+      }
+      return { success: true, path: logDir };
+    } catch (error) {
+      logToFile(`Error opening log directory: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async exportDiagnostics() {
+    try {
+      const result = await exportDiagnosticPackage(app, { updateService });
+      logToFile(`Diagnostics exported: ${result.filePath}`, "INFO");
+      return result;
+    } catch (error) {
+      logToFile(`Error exporting diagnostics: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
     }
   }
 }

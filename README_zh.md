@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/版本-0.1.12-blue" alt="版本">
+  <img src="https://img.shields.io/badge/版本-0.4.24-blue" alt="版本">
   <img src="https://img.shields.io/badge/许可证-Apache%202.0-green" alt="许可证">
   <img src="https://img.shields.io/badge/平台-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="平台">
 </p>

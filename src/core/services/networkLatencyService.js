@@ -346,18 +346,16 @@ class NetworkLatencyService extends EventEmitter {
 
         return null;
       } finally {
-        if (this.serviceGeneration !== checkGeneration) {
-          return;
-        }
+        if (this.serviceGeneration === checkGeneration) {
+          if (this.latencyData.get(tabId) === currentData) {
+            currentData.checkPromise = null;
+            currentData.nextCheckAt = nowMs() + this.checkInterval;
+          }
 
-        if (this.latencyData.get(tabId) === currentData) {
-          currentData.checkPromise = null;
-          currentData.nextCheckAt = nowMs() + this.checkInterval;
-        }
-
-        this.activeCheckCount = Math.max(0, this.activeCheckCount - 1);
-        if (this.isRunning) {
-          void this._runDueChecks();
+          this.activeCheckCount = Math.max(0, this.activeCheckCount - 1);
+          if (this.isRunning) {
+            void this._runDueChecks();
+          }
         }
       }
     })();
