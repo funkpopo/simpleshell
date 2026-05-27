@@ -1,30 +1,11 @@
 const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
 const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
+const { buildErrorResponse } = require("../../utils/errorResponse");
 const processManager = require("../../process/processManager");
 const path = require("path");
 const fs = require("fs");
 const { shell } = require("electron");
-
-function buildErrorResponse(error, fallbackMessage = "Operation failed") {
-  const fallback =
-    fallbackMessage && fallbackMessage !== "Operation failed"
-      ? fallbackMessage
-      : null;
-  const message = fallback || error?.message || String(error || fallbackMessage);
-  return {
-    success: false,
-    error: message,
-    message,
-    errorCode: error?.errorCode || error?.code || null,
-    code: error?.code || error?.errorCode || null,
-    errorKind: error?.errorKind || null,
-    retryable: error?.retryable === true,
-    module: error?.module || null,
-    operation: error?.operation || null,
-    raw: error?.raw || null,
-  };
-}
 
 /**
  * 文件操作相关的IPC处理器
@@ -282,15 +263,19 @@ class FileHandlers {
         // Fire-and-forget chunk producer
         Promise.resolve()
           .then(async () => {
-            const result = await nativeSftpClient.listFiles(tabId, requestedPath, {
-              onSpawn: (child) => {
-                this.activeDirectoryReads.set(token, {
-                  tabId: String(tabId),
-                  token,
-                  child,
-                });
+            const result = await nativeSftpClient.listFiles(
+              tabId,
+              requestedPath,
+              {
+                onSpawn: (child) => {
+                  this.activeDirectoryReads.set(token, {
+                    tabId: String(tabId),
+                    token,
+                    child,
+                  });
+                },
               },
-            });
+            );
 
             const send = (payload) => {
               try {
@@ -375,7 +360,11 @@ class FileHandlers {
 
   async copyFile(event, tabId, sourcePath, targetPath) {
     try {
-      const result = await nativeSftpClient.copyFile(tabId, sourcePath, targetPath);
+      const result = await nativeSftpClient.copyFile(
+        tabId,
+        sourcePath,
+        targetPath,
+      );
       return result;
     } catch (error) {
       logToFile(`Error copying file: ${error.message}`, "ERROR");
@@ -541,7 +530,10 @@ class FileHandlers {
 
   async getAbsolutePath(event, tabId, relativePath) {
     try {
-      const result = await nativeSftpClient.getAbsolutePath(tabId, relativePath);
+      const result = await nativeSftpClient.getAbsolutePath(
+        tabId,
+        relativePath,
+      );
       return result;
     } catch (error) {
       logToFile(`Error getting absolute path: ${error.message}`, "ERROR");

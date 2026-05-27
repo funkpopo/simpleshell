@@ -1195,6 +1195,7 @@
       "hideSolutions": "收起建议",
       "copyDiagnosticSummary": "复制诊断摘要",
       "feedback": "反馈问题",
+      "reloadWindow": "重新加载窗口",
       "solutions": "处理建议"
     },
     "errors": {
@@ -1203,6 +1204,44 @@
         "retry": "可重试错误",
         "recoverable": "可恢复错误",
         "feedback": "需要反馈"
+      },
+      "classified": {
+        "recoverable": {
+          "title": "需要修正后继续",
+          "message": "{{message}}",
+          "solutions": [
+            "检查当前输入、路径、权限或连接配置。",
+            "按提示修正后重新执行该操作。"
+          ],
+          "action": "修正后继续"
+        },
+        "retry": {
+          "title": "需要重试",
+          "message": "{{message}}",
+          "solutions": [
+            "检查网络、代理、远端服务或更新源状态。",
+            "连接恢复稳定后重新执行该操作。"
+          ],
+          "action": "重试"
+        },
+        "feedback": {
+          "title": "需要反馈问题",
+          "message": "{{message}}",
+          "solutions": [
+            "复制诊断摘要并保留触发问题的操作信息。",
+            "如果问题重复出现，请带诊断信息反馈。"
+          ],
+          "action": "反馈问题"
+        },
+        "fatal": {
+          "title": "致命错误",
+          "message": "{{message}}",
+          "solutions": [
+            "重新加载窗口或重启应用以恢复运行环境。",
+            "如果问题重复出现，请先复制诊断摘要再反馈。"
+          ],
+          "action": "重新加载或重启"
+        }
       },
       "ECONNREFUSED": {
         "title": "无法连接到服务器",

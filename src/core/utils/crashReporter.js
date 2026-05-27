@@ -6,6 +6,7 @@ const { crashReporter } = require("electron");
 const configService = require("../../services/configService");
 const { getConfigPath, getCrashReportDirectory } = require("./appPaths");
 const { redactSensitiveText } = require("./log-sanitizer");
+const { buildErrorResponse } = require("./errorResponse");
 
 const ERROR_REPORTING_CONFIG_KEY = "errorReporting";
 const MAX_RECENT_CRASH_RECORDS = 12;
@@ -38,7 +39,9 @@ function readErrorReportingSettingsFromDisk(app) {
     }
 
     const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    return normalizeErrorReportingSettings(config?.[ERROR_REPORTING_CONFIG_KEY]);
+    return normalizeErrorReportingSettings(
+      config?.[ERROR_REPORTING_CONFIG_KEY],
+    );
   } catch {
     return normalizeErrorReportingSettings();
   }
@@ -157,6 +160,11 @@ function recordCrashMarker(app, details = {}) {
   try {
     const crashDir = ensureCrashReportDirectory(app || crashReporterApp);
     const now = new Date();
+    const classified = buildErrorResponse(details.error || details.message, {
+      module: details.module || "unknown",
+      operation: details.operation || null,
+      type: details.type || "runtime-error",
+    });
     const marker = {
       schemaVersion: 1,
       generatedAt: now.toISOString(),
@@ -182,6 +190,14 @@ function recordCrashMarker(app, details = {}) {
       signal: details.signal || null,
       operation: details.operation || null,
       error: normalizeSerializableError(details.error || details.message),
+      errorCategory: classified.errorCategory,
+      errorAction: classified.errorAction,
+      errorSeverity: classified.errorSeverity,
+      errorClassification: classified.errorClassification,
+      retryable: classified.retryable,
+      reportable: classified.reportable,
+      userRecoverable: classified.userRecoverable,
+      fatal: classified.fatal,
       extra: details.extra || null,
     };
     const fileName = `crash-marker.${formatTimestampForFile(now)}.${process.pid}.json`;
@@ -207,6 +223,14 @@ function readCrashMarker(filePath) {
       exitCode: payload.exitCode ?? null,
       signal: payload.signal || null,
       error: payload.error || null,
+      errorCategory: payload.errorCategory || null,
+      errorAction: payload.errorAction || null,
+      errorSeverity: payload.errorSeverity || null,
+      errorClassification: payload.errorClassification || null,
+      retryable: payload.retryable === true,
+      reportable: payload.reportable === true,
+      userRecoverable: payload.userRecoverable === true,
+      fatal: payload.fatal === true,
     };
   } catch {
     return null;

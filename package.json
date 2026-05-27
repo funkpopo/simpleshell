@@ -13,7 +13,7 @@
     "publish": "npm run prepare:native-sidecar && electron-forge publish",
     "lint": "eslint src scripts webpack.main.config.js webpack.renderer.config.js webpack.rules.js forge.config.js eslint.config.js",
     "format:check": "prettier --check .",
-    "test": "node scripts/regression/todo-regression.js && node scripts/regression/update-service-regression.js",
+    "test": "node scripts/regression/error-classification-regression.js && node scripts/regression/todo-regression.js && node scripts/regression/update-service-regression.js",
     "release:check": "node scripts/release-check.js",
     "release:checksums": "node scripts/generate-checksums.js out"
   },

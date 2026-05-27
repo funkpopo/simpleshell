@@ -12,8 +12,7 @@ const { getCrashReporterDiagnostics } = require("./crashReporter");
 
 const MAX_LOG_LINES = 400;
 const SIDECAR_VERSION_TIMEOUT_MS = 3000;
-const FEEDBACK_ISSUE_URL =
-  "https://github.com/funkpopo/simpleshell/issues/new";
+const FEEDBACK_ISSUE_URL = "https://github.com/funkpopo/simpleshell/issues/new";
 
 function safeReadRecentLogLines(logFilePath) {
   if (!logFilePath || !fs.existsSync(logFilePath)) {
@@ -123,7 +122,9 @@ function pickRecentErrorLines(lines, maxLines = 12) {
   }
 
   return lines
-    .filter((line) => /\[(ERROR|WARN)\]/i.test(line) || /error|failed/i.test(line))
+    .filter(
+      (line) => /\[(ERROR|WARN)\]/i.test(line) || /error|failed/i.test(line),
+    )
     .slice(-maxLines);
 }
 
@@ -166,14 +167,40 @@ function buildDiagnosticSummary(payload) {
       lines.push(`Description: ${payload.context.description}`);
     }
     if (payload.context.source) lines.push(`Source: ${payload.context.source}`);
+    if (payload.context.errorCategory) {
+      lines.push(`Error category: ${payload.context.errorCategory}`);
+    }
+    if (payload.context.errorAction) {
+      lines.push(`Error action: ${payload.context.errorAction}`);
+    }
+    if (payload.context.errorCode) {
+      lines.push(`Error code: ${payload.context.errorCode}`);
+    }
+    if (payload.context.classificationReason) {
+      lines.push(
+        `Classification reason: ${payload.context.classificationReason}`,
+      );
+    }
+  }
+
+  if (payload?.update?.lastUpdateError) {
+    const lastUpdateError = payload.update.lastUpdateError;
+    lines.push("", "## Last update error");
+    lines.push(
+      `Stage: ${lastUpdateError.stage || "unknown"}, category: ${lastUpdateError.errorCategory || "unknown"}, action: ${lastUpdateError.errorAction || "unknown"}`,
+    );
+    if (lastUpdateError.message) {
+      lines.push(`Message: ${lastUpdateError.message}`);
+    }
   }
 
   if (crashRecords.length > 0) {
     lines.push("", "## Recent crash records");
     crashRecords.forEach((record) => {
       const marker = record.marker || {};
+      const category = marker.errorCategory ? ` [${marker.errorCategory}]` : "";
       lines.push(
-        `- ${marker.generatedAt || new Date(record.mtimeMs).toISOString()} ${marker.module || record.kind}: ${marker.reason || marker.error?.message || record.name}`,
+        `- ${marker.generatedAt || new Date(record.mtimeMs).toISOString()}${category} ${marker.module || record.kind}: ${marker.reason || marker.error?.message || record.name}`,
       );
     });
   }
@@ -193,7 +220,10 @@ function buildDiagnosticSummary(payload) {
   return lines.join("\n");
 }
 
-function buildFeedbackIssueUrl(payload, summary = buildDiagnosticSummary(payload)) {
+function buildFeedbackIssueUrl(
+  payload,
+  summary = buildDiagnosticSummary(payload),
+) {
   const titleBase = payload?.context?.title || "Problem report";
   const title = `[Bug] ${titleBase}`.slice(0, 180);
   const body = [
@@ -241,6 +271,22 @@ async function buildDiagnosticPayload(
             source:
               typeof context.source === "string"
                 ? redactSensitiveText(context.source).slice(0, 80)
+                : "",
+            errorCategory:
+              typeof context.errorCategory === "string"
+                ? redactSensitiveText(context.errorCategory).slice(0, 40)
+                : "",
+            errorAction:
+              typeof context.errorAction === "string"
+                ? redactSensitiveText(context.errorAction).slice(0, 40)
+                : "",
+            errorCode:
+              typeof context.errorCode === "string"
+                ? redactSensitiveText(context.errorCode).slice(0, 80)
+                : "",
+            classificationReason:
+              typeof context.classificationReason === "string"
+                ? redactSensitiveText(context.classificationReason).slice(0, 80)
                 : "",
           }
         : null,

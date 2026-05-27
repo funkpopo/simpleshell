@@ -1,21 +1,17 @@
 const { logToFile } = require("../utils/logger");
 const { ipcMain: electronIpcMain } = require("electron");
 const { finishTrace, startTrace } = require("./ipcTrace");
+const {
+  buildErrorResponse,
+  normalizeErrorMessage,
+} = require("../utils/errorResponse");
 
 function isStandardResponse(result) {
   return result && typeof result === "object" && "success" in result;
 }
 
 function serializeError(error) {
-  if (!error) return "Unknown error";
-  if (typeof error === "string") return error;
-  if (error instanceof Error) return error.message || String(error);
-  if (typeof error === "object") return error.message || JSON.stringify(error);
-  try {
-    return String(error);
-  } catch {
-    return "Unknown error";
-  }
+  return normalizeErrorMessage(error);
 }
 
 function success(data) {
@@ -23,7 +19,26 @@ function success(data) {
 }
 
 function failure(error) {
-  return { success: false, error: serializeError(error) };
+  return buildErrorResponse(error);
+}
+
+function normalizeFailureResponse(result, options = {}) {
+  if (!isStandardResponse(result) || result.success !== false) {
+    return result;
+  }
+
+  if (result.errorClassification && result.errorCategory) {
+    return result;
+  }
+
+  return {
+    ...result,
+    ...buildErrorResponse(result, {
+      message: result.message || result.error,
+      module: result.module || options.category || null,
+      operation: result.operation || options.channelName || null,
+    }),
+  };
 }
 
 function wrapIpcHandler(handler, options = {}) {
@@ -44,11 +59,15 @@ function wrapIpcHandler(handler, options = {}) {
       }
       // Pass-through if already standardized. Otherwise, preserve existing shape.
       if (isStandardResponse(result)) {
-        finishTrace(trace, {
-          success: result.success !== false,
-          error: result.error,
+        const normalizedResult = normalizeFailureResponse(result, {
+          channelName,
+          category,
         });
-        return result;
+        finishTrace(trace, {
+          success: normalizedResult.success !== false,
+          error: normalizedResult.error,
+        });
+        return normalizedResult;
       }
       finishTrace(trace, { success: true });
       return result;
@@ -57,7 +76,10 @@ function wrapIpcHandler(handler, options = {}) {
       const ch = channelName || "<unknown>";
       logToFile(`Error in IPC handler ${ch}: ${message}`, "ERROR");
       finishTrace(trace, { success: false, error: message });
-      return failure(message);
+      return buildErrorResponse(err, {
+        module: category || "ipc",
+        operation: ch,
+      });
     }
   };
 }

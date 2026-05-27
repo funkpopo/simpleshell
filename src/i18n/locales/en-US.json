@@ -1195,6 +1195,7 @@
       "hideSolutions": "Hide suggestions",
       "copyDiagnosticSummary": "Copy diagnostic summary",
       "feedback": "Report issue",
+      "reloadWindow": "Reload window",
       "solutions": "Suggestions"
     },
     "errors": {
@@ -1203,6 +1204,44 @@
         "retry": "Retry needed",
         "recoverable": "Recoverable error",
         "feedback": "Feedback needed"
+      },
+      "classified": {
+        "recoverable": {
+          "title": "Action needed",
+          "message": "{{message}}",
+          "solutions": [
+            "Review the current input, path, permission, or connection setting.",
+            "Apply the correction and run the operation again."
+          ],
+          "action": "Correct and continue"
+        },
+        "retry": {
+          "title": "Retry needed",
+          "message": "{{message}}",
+          "solutions": [
+            "Check the network, proxy, remote service, or update source status.",
+            "Run the operation again after the connection is stable."
+          ],
+          "action": "Retry"
+        },
+        "feedback": {
+          "title": "Feedback needed",
+          "message": "{{message}}",
+          "solutions": [
+            "Copy the diagnostic summary and keep the triggering operation details.",
+            "Report the issue with diagnostics if it happens again."
+          ],
+          "action": "Report issue"
+        },
+        "fatal": {
+          "title": "Fatal error",
+          "message": "{{message}}",
+          "solutions": [
+            "Reload the window or restart the application to restore the runtime.",
+            "Copy the diagnostic summary before reporting if it happens again."
+          ],
+          "action": "Reload or restart"
+        }
       },
       "ECONNREFUSED": {
         "title": "Cannot Connect to Server",
