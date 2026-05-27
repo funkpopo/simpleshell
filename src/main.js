@@ -19,6 +19,12 @@ const aiWorkerManager = require("./core/workers/aiWorkerManager");
 const { createWindow } = require("./core/window/windowManager");
 const setupIPC = require("./core/ipc/setupIPC");
 
+const PRODUCT_NAME = "SimpleShell";
+
+if (typeof app.setName === "function") {
+  app.setName(PRODUCT_NAME);
+}
+
 // 在 whenReady 之前根据用户配置决定是否禁用硬件加速
 bootstrapHardwareAcceleration(app);
 
@@ -49,7 +55,10 @@ app.on("child-process-gone", (_event, details = {}) => {
   const type = details.type || "child";
   const reason = details.reason || "unknown";
   const message = `Child process gone: ${type} ${reason} (pid=${details.pid || "unknown"}, exitCode=${details.exitCode ?? "unknown"})`;
-  logToFile(message, reason === "crashed" || reason === "oom" ? "ERROR" : "WARN");
+  logToFile(
+    message,
+    reason === "crashed" || reason === "oom" ? "ERROR" : "WARN",
+  );
   recordCrashMarker(app, {
     module: "electron-child",
     processType: type,

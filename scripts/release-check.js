@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 const fs = require("fs");
 const path = require("path");
 
@@ -13,6 +12,21 @@ const cargoPath = path.join(
 const readmePath = path.join(projectRoot, "README.md");
 const readmeZhPath = path.join(projectRoot, "README_zh.md");
 const forgeConfigPath = path.join(projectRoot, "forge.config.js");
+const mainPath = path.join(projectRoot, "src", "main.js");
+const windowManagerPath = path.join(
+  projectRoot,
+  "src",
+  "core",
+  "window",
+  "windowManager.js",
+);
+const indexHtmlPath = path.join(projectRoot, "src", "index.html");
+const releaseWorkflowPath = path.join(
+  projectRoot,
+  ".github",
+  "workflows",
+  "release.yml",
+);
 const entitlementsPath = path.join(projectRoot, "entitlements.plist");
 const logoIcoPath = path.join(projectRoot, "src", "assets", "logo.ico");
 const logoPngPath = path.join(projectRoot, "src", "assets", "SimpleShell.png");
@@ -99,8 +113,16 @@ function main() {
 
   requireText(readmePath, `version-${version}-blue`);
   requireText(readmeZhPath, `版本-${version}-blue`);
+  requireText(readmePath, '<h1 align="center">SimpleShell</h1>');
+  requireText(readmeZhPath, '<h1 align="center">SimpleShell</h1>');
   requireText(forgeConfigPath, 'PRODUCT_NAME = "SimpleShell"');
   requireText(forgeConfigPath, 'APP_BUNDLE_ID = "com.funkpopo.simpleshell"');
+  requireText(forgeConfigPath, "setupExe: `${PRODUCT_NAME}-Setup.exe`");
+  requireText(mainPath, 'const PRODUCT_NAME = "SimpleShell";');
+  requireText(mainPath, "app.setName(PRODUCT_NAME)");
+  requireText(windowManagerPath, 'title: "SimpleShell"');
+  requireText(indexHtmlPath, "<title>SimpleShell</title>");
+  requireText(releaseWorkflowPath, "name: SimpleShell ${{ github.ref_name }}");
   requireText(forgeConfigPath, "win32metadata");
   requireText(forgeConfigPath, "osxSign");
   requireText(forgeConfigPath, "osxNotarize");

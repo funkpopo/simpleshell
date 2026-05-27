@@ -101,6 +101,8 @@ import { useNotification } from "./contexts/NotificationContext.jsx";
 
 const SIDEBAR_TRANSITION_MS = 250;
 const SIDEBAR_UNMOUNT_DELAY_MS = SIDEBAR_TRANSITION_MS + 40;
+const UPDATE_REMINDER_STORAGE_KEY = "simpleshell.update.remindAt";
+const UPDATE_REMINDER_DELAY_MS = 4 * 60 * 60 * 1000;
 
 function useDelayedPresence(open, delay = SIDEBAR_UNMOUNT_DELAY_MS) {
   const [present, setPresent] = React.useState(open);
@@ -516,6 +518,16 @@ function AppContent() {
     React.useState(null);
   const sshAuthRequestIdRef = React.useRef(null);
   const [aboutUpdateCheckSignal, setAboutUpdateCheckSignal] = React.useState(0);
+  const [updateReminderAt, setUpdateReminderAt] = React.useState(() => {
+    try {
+      const storedValue = Number(
+        window.localStorage?.getItem(UPDATE_REMINDER_STORAGE_KEY),
+      );
+      return Number.isFinite(storedValue) && storedValue > 0 ? storedValue : 0;
+    } catch {
+      return 0;
+    }
+  });
 
   // 监听主进程的错误事件
   React.useEffect(() => {
@@ -1920,6 +1932,50 @@ function AppContent() {
     dispatch(actions.setAboutDialogOpen(true));
     setAboutUpdateCheckSignal((value) => value + 1);
   }, [dispatch]);
+
+  const handleRemindUpdateLater = useCallback(() => {
+    const reminderAt = Date.now() + UPDATE_REMINDER_DELAY_MS;
+
+    try {
+      window.localStorage?.setItem(
+        UPDATE_REMINDER_STORAGE_KEY,
+        String(reminderAt),
+      );
+    } catch {
+      // Local reminder persistence is best-effort.
+    }
+
+    setUpdateReminderAt(reminderAt);
+    dispatch(actions.setAboutDialogOpen(false));
+    showInfo(
+      t("update.reminderScheduled", {
+        hours: Math.round(UPDATE_REMINDER_DELAY_MS / 60 / 60 / 1000),
+      }),
+    );
+  }, [dispatch, showInfo, t]);
+
+  React.useEffect(() => {
+    if (!updateReminderAt) {
+      return undefined;
+    }
+
+    const delay = Math.max(updateReminderAt - Date.now(), 0);
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage?.removeItem(UPDATE_REMINDER_STORAGE_KEY);
+      } catch {
+        // Ignore reminder persistence cleanup failures.
+      }
+
+      setUpdateReminderAt(0);
+      showInfo(t("update.reminderDue"));
+      handleCheckForUpdates();
+    }, delay);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [handleCheckForUpdates, showInfo, t, updateReminderAt]);
 
   const handleOpenLogDirectory = useCallback(async () => {
     dispatch(actions.setAnchorEl(null));
@@ -4648,6 +4704,7 @@ function AppContent() {
         open={aboutDialogOpen}
         onClose={handleCloseAbout}
         checkUpdateSignal={aboutUpdateCheckSignal}
+        onRemindLater={handleRemindUpdateLater}
       />
 
       {/* SSH 认证对话框 */}

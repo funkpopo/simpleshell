@@ -23,6 +23,8 @@ import {
   Update as UpdateIcon,
   Check as CheckIcon,
   Cancel as CancelIcon,
+  Replay as ReplayIcon,
+  Schedule as ScheduleIcon,
 } from "@mui/icons-material";
 
 // 自定义磨砂玻璃效果的Dialog组件
@@ -212,6 +214,44 @@ const normalizeVersionString = (value) => {
   return value.trim().replace(/^v/i, "");
 };
 
+const formatBytes = (value) => {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  const precision = size >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${size.toFixed(precision)} ${units[unitIndex]}`;
+};
+
+const formatDateTime = (value, locale) => {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(locale || undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+};
+
 const doesInstallerMatchUpdate = (installerInfo, nextUpdateInfo) => {
   const installerVersion = normalizeVersionString(
     installerInfo?.installerVersion,
@@ -256,8 +296,9 @@ const AboutDialog = memo(function AboutDialog({
   open,
   onClose,
   checkUpdateSignal = 0,
+  onRemindLater,
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { showError } = useNotification();
   const [checkingForUpdate, setCheckingForUpdate] = useState(false);
   const [appVersion, setAppVersion] = useState("1.0.0");
@@ -265,6 +306,11 @@ const AboutDialog = memo(function AboutDialog({
   const [downloadedInstallerInfo, setDownloadedInstallerInfo] = useState(null);
   const [updateStatus, setUpdateStatus] = useState("idle"); // idle, checking, available, downloading, downloaded, installing, error, upToDate
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadDetails, setDownloadDetails] = useState({
+    downloaded: 0,
+    total: 0,
+    speedBytesPerSecond: 0,
+  });
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState("");
   const lastHandledCheckUpdateSignalRef = useRef(0);
@@ -286,6 +332,36 @@ const AboutDialog = memo(function AboutDialog({
     updateStatus !== "downloading" &&
     updateStatus !== "installing" &&
     (!updateInfo?.hasUpdate || downloadedInstallerMatchesUpdate);
+  const updateVersion =
+    updateInfo?.latestVersion ||
+    downloadedInstallerInfo?.installerVersion ||
+    "";
+  const downloadSizeText = formatBytes(
+    updateInfo?.downloadSize || downloadedInstallerInfo?.size,
+  );
+  const releaseDateText = formatDateTime(
+    updateInfo?.publishedAt || downloadedInstallerInfo?.publishedAt,
+    i18n.language,
+  );
+  const downloadedText = formatBytes(downloadDetails.downloaded);
+  const totalDownloadText = formatBytes(
+    downloadDetails.total || updateInfo?.downloadSize || 0,
+  );
+  const downloadSpeedText = formatBytes(downloadDetails.speedBytesPerSecond);
+  const updateSeverity =
+    updateInfo?.severity || downloadedInstallerInfo?.severity || "normal";
+  const shouldShowSecurityChip =
+    updateInfo?.isSecurityUpdate === true ||
+    downloadedInstallerInfo?.isSecurityUpdate === true;
+  const shouldShowImportantChip =
+    !shouldShowSecurityChip &&
+    (updateInfo?.isImportantUpdate === true ||
+      downloadedInstallerInfo?.isImportantUpdate === true ||
+      updateSeverity === "important");
+  const lastUpdateError = downloadedInstallerInfo?.lastError;
+  const shouldShowFailureProtectionNotice = Boolean(
+    lastUpdateError?.message && downloadedInstallerInfo?.available,
+  );
 
   // Get app version
   useEffect(() => {
@@ -358,8 +434,19 @@ const AboutDialog = memo(function AboutDialog({
         try {
           const result = await window.terminalAPI.getDownloadProgress();
           if (result.success) {
-            const { progress, isDownloading: downloading } = result.progress;
+            const {
+              progress,
+              isDownloading: downloading,
+              downloaded,
+              total,
+              speedBytesPerSecond,
+            } = result.progress;
             setDownloadProgress(progress);
+            setDownloadDetails({
+              downloaded: downloaded || 0,
+              total: total || 0,
+              speedBytesPerSecond: speedBytesPerSecond || 0,
+            });
             if (!downloading) {
               setIsDownloading(false);
               if (progress === 100) {
@@ -457,6 +544,11 @@ const AboutDialog = memo(function AboutDialog({
 
     setIsDownloading(true);
     setDownloadProgress(0);
+    setDownloadDetails({
+      downloaded: 0,
+      total: updateInfo?.downloadSize || 0,
+      speedBytesPerSecond: 0,
+    });
     setError("");
     setUpdateStatus("downloading");
 
@@ -471,12 +563,22 @@ const AboutDialog = memo(function AboutDialog({
         );
         setUpdateStatus("downloaded");
       } else {
-        setError(result.error || t("update.errors.downloadFailed"));
-        setUpdateStatus("error");
+        const message = result.error || t("update.errors.downloadFailed");
+        if (/cancelled/i.test(message)) {
+          setUpdateStatus("available");
+        } else {
+          setError(message);
+          setUpdateStatus("error");
+        }
       }
     } catch (err) {
-      setError(err.message || t("update.errors.downloadFailed"));
-      setUpdateStatus("error");
+      const message = err.message || t("update.errors.downloadFailed");
+      if (/cancelled/i.test(message)) {
+        setUpdateStatus("available");
+      } else {
+        setError(message);
+        setUpdateStatus("error");
+      }
     } finally {
       setIsDownloading(false);
     }
@@ -498,11 +600,21 @@ const AboutDialog = memo(function AboutDialog({
       if (!result.success) {
         setError(result.error || t("update.errors.installationFailed"));
         setUpdateStatus("error");
+        const installerResult =
+          await window.terminalAPI.hasDownloadedInstaller?.();
+        setDownloadedInstallerInfo(
+          installerResult?.available ? installerResult : null,
+        );
       }
       // 成功安装后应用会自动退出并重启
     } catch (err) {
       setError(err.message || t("update.errors.installationFailed"));
       setUpdateStatus("error");
+      const installerResult =
+        await window.terminalAPI.hasDownloadedInstaller?.();
+      setDownloadedInstallerInfo(
+        installerResult?.available ? installerResult : null,
+      );
     }
   }, [canInstallDownloadedUpdate, t]);
 
@@ -512,11 +624,101 @@ const AboutDialog = memo(function AboutDialog({
       await window.terminalAPI.cancelDownload();
       setIsDownloading(false);
       setDownloadProgress(0);
+      setDownloadDetails({
+        downloaded: 0,
+        total: updateInfo?.downloadSize || 0,
+        speedBytesPerSecond: 0,
+      });
       setUpdateStatus("available");
     } catch (err) {
       console.error("Failed to cancel download:", err);
     }
-  }, []);
+  }, [updateInfo]);
+
+  const renderUpdateMetadata = () => {
+    if (!updateInfo?.hasUpdate && !downloadedInstallerInfo?.available) {
+      return null;
+    }
+
+    const metadataItems = [
+      updateVersion
+        ? {
+            label: t("update.newVersion"),
+            value: `v${updateVersion}`,
+          }
+        : null,
+      downloadSizeText
+        ? {
+            label: t("update.downloadSize"),
+            value: downloadSizeText,
+          }
+        : null,
+      releaseDateText
+        ? {
+            label: t("update.releaseDate"),
+            value: releaseDateText,
+          }
+        : null,
+    ].filter(Boolean);
+
+    return (
+      <Box sx={{ mt: 1.25 }}>
+        <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap">
+          {shouldShowSecurityChip ? (
+            <Chip
+              label={t("update.securityUpdate")}
+              color="error"
+              size="small"
+            />
+          ) : null}
+          {shouldShowImportantChip ? (
+            <Chip
+              label={t("update.importantUpdate")}
+              color="warning"
+              size="small"
+            />
+          ) : null}
+          {downloadedInstallerInfo?.available ? (
+            <Chip
+              label={t("update.packageKept")}
+              color="success"
+              size="small"
+              variant="outlined"
+            />
+          ) : null}
+        </Box>
+
+        {metadataItems.length > 0 ? (
+          <Box
+            sx={{
+              mt: 1,
+              display: "grid",
+              gridTemplateColumns: {
+                xs: "1fr",
+                sm: "repeat(3, minmax(0, 1fr))",
+              },
+              gap: 1,
+            }}
+          >
+            {metadataItems.map((item) => (
+              <Box key={item.label}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block" }}
+                >
+                  {item.label}
+                </Typography>
+                <Typography variant="body2" sx={{ wordBreak: "break-word" }}>
+                  {item.value}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        ) : null}
+      </Box>
+    );
+  };
 
   // 渲染更新状态内容
   const renderUpdateContent = () => {
@@ -566,10 +768,15 @@ const AboutDialog = memo(function AboutDialog({
                 size="small"
               />
             </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mt: 1 }}
+            >
               {t("update.currentVersion")}: {updateInfo?.currentVersion} →{" "}
               {updateInfo?.latestVersion}
             </Typography>
+            {renderUpdateMetadata()}
           </Box>
         );
         break;
@@ -607,12 +814,23 @@ const AboutDialog = memo(function AboutDialog({
             <Typography
               variant="caption"
               color="text.secondary"
-              sx={{ mt: 0.75 }}
+              sx={{ display: "block", mt: 0.75 }}
             >
-              {t("update.downloadProgress", {
-                percent: Math.round(downloadProgress),
-              })}
+              {downloadedText && totalDownloadText
+                ? t("update.downloadBytes", {
+                    downloaded: downloadedText,
+                    total: totalDownloadText,
+                  })
+                : t("update.downloadProgress", {
+                    percent: Math.round(downloadProgress),
+                  })}
+              {downloadSpeedText
+                ? ` · ${t("update.downloadSpeed", {
+                    speed: `${downloadSpeedText}/s`,
+                  })}`
+                : ""}
             </Typography>
+            {renderUpdateMetadata()}
           </Box>
         );
         break;
@@ -626,6 +844,14 @@ const AboutDialog = memo(function AboutDialog({
                 {t("update.downloadComplete")}
               </Typography>
             </Box>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mt: 1 }}
+            >
+              {t("update.installRestartHint")}
+            </Typography>
+            {renderUpdateMetadata()}
           </Box>
         );
         break;
@@ -652,6 +878,17 @@ const AboutDialog = memo(function AboutDialog({
             {error}
           </Alert>
         ) : null}
+        {shouldShowFailureProtectionNotice ? (
+          <Alert severity="warning" variant="outlined" sx={{ mt: 1, mb: 1 }}>
+            {t("update.failureProtection", {
+              error: lastUpdateError.message,
+              logPath:
+                downloadedInstallerInfo?.installerLogPath ||
+                lastUpdateError.installerLogPath ||
+                t("common.none"),
+            })}
+          </Alert>
+        ) : null}
         {primaryContent}
         {shouldShowDownloadedInstallerNotice ? (
           <Box sx={updatePanelSx}>
@@ -661,11 +898,16 @@ const AboutDialog = memo(function AboutDialog({
                 {t("update.readyToInstall")}
               </Typography>
             </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mt: 1 }}
+            >
               {t("update.currentVersion")}:{" "}
               {downloadedInstallerInfo?.currentVersion || appVersion} →{" "}
               {downloadedInstallerInfo?.installerVersion}
             </Typography>
+            {renderUpdateMetadata()}
           </Box>
         ) : null}
       </>
@@ -674,15 +916,29 @@ const AboutDialog = memo(function AboutDialog({
 
   // 渲染更新按钮
   const renderUpdateButtons = () => {
-    const installButton =
-      canInstallDownloadedUpdate && updateStatus !== "downloaded" ? (
+    const installButton = canInstallDownloadedUpdate ? (
+      <Button
+        variant="contained"
+        onClick={installUpdate}
+        color="primary"
+        disabled={updateStatus === "installing"}
+        startIcon={<UpdateIcon />}
+      >
+        {t("update.installAndRestart")}
+      </Button>
+    ) : null;
+
+    const remindLaterButton =
+      updateInfo?.hasUpdate && typeof onRemindLater === "function" ? (
         <Button
-          variant="contained"
-          onClick={installUpdate}
-          color="primary"
-          startIcon={<UpdateIcon />}
+          variant="text"
+          onClick={onRemindLater}
+          disabled={
+            updateStatus === "installing" || updateStatus === "checking"
+          }
+          startIcon={<ScheduleIcon />}
         >
-          {t("update.installNow")}
+          {t("update.remindLater")}
         </Button>
       ) : null;
 
@@ -699,9 +955,22 @@ const AboutDialog = memo(function AboutDialog({
                 checkingForUpdate ? <CircularProgress size={16} /> : null
               }
             >
-              {t("about.checkUpdateButton")}
+              {updateStatus === "error"
+                ? t("update.retryCheck")
+                : t("about.checkUpdateButton")}
             </Button>
+            {updateInfo?.hasUpdate ? (
+              <Button
+                variant={canInstallDownloadedUpdate ? "outlined" : "contained"}
+                onClick={downloadUpdate}
+                disabled={isDownloading}
+                startIcon={<ReplayIcon />}
+              >
+                {t("update.retryDownload")}
+              </Button>
+            ) : null}
             {installButton}
+            {remindLaterButton}
           </>
         );
 
@@ -714,14 +983,17 @@ const AboutDialog = memo(function AboutDialog({
 
       case "available":
         return (
-          <Button
-            variant="contained"
-            onClick={downloadUpdate}
-            disabled={isDownloading}
-            startIcon={<DownloadIcon />}
-          >
-            {t("update.download")}
-          </Button>
+          <>
+            <Button
+              variant="contained"
+              onClick={downloadUpdate}
+              disabled={isDownloading}
+              startIcon={<DownloadIcon />}
+            >
+              {t("update.download")}
+            </Button>
+            {remindLaterButton}
+          </>
         );
 
       case "downloading":
@@ -737,15 +1009,10 @@ const AboutDialog = memo(function AboutDialog({
 
       case "downloaded":
         return (
-          <Button
-            variant="contained"
-            onClick={installUpdate}
-            color="primary"
-            disabled={!canInstallDownloadedUpdate}
-            startIcon={<UpdateIcon />}
-          >
-            {t("update.installNow")}
-          </Button>
+          <>
+            {installButton}
+            {remindLaterButton}
+          </>
         );
 
       case "installing":
@@ -884,6 +1151,7 @@ AboutDialog.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   checkUpdateSignal: PropTypes.number,
+  onRemindLater: PropTypes.func,
 };
 
 export default AboutDialog;

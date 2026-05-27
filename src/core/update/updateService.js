@@ -10,6 +10,13 @@ const { getTempDirectory } = require("../utils/appPaths");
 const DOWNLOAD_CONNECTION_TIMEOUT = 30000;
 const DOWNLOAD_DATA_TIMEOUT = 60000;
 const MAX_REDIRECTS = 5;
+const PRODUCT_NAME = "SimpleShell";
+const UPDATE_CHECK_URL =
+  "https://api.github.com/repos/funkpopo/simpleshell/releases/latest";
+const INSTALLER_META_FILE = "latest-installer-meta.json";
+const UPDATE_ERROR_FILE = "latest-update-error.json";
+const INSTALLER_LOG_FILE = "latest-install.log";
+const INSTALLER_SCRIPT_FILE = "install-and-restart.cmd";
 const TRUSTED_DOWNLOAD_HOSTS = new Set([
   "github.com",
   "objects.githubusercontent.com",
@@ -17,25 +24,95 @@ const TRUSTED_DOWNLOAD_HOSTS = new Set([
   "release-assets.githubusercontent.com",
 ]);
 const VERSION_TOKEN_REGEX = /v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i;
+const SECURITY_UPDATE_REGEX =
+  /\b(security|secure|cve-\d{4}-\d+|vulnerability|漏洞|安全|修复安全)\b/i;
+const IMPORTANT_UPDATE_REGEX =
+  /\b(critical|important|breaking|urgent|high priority|重要|紧急|关键|破坏性)\b/i;
+
+function toPowerShellString(value) {
+  return `'${String(value ?? "").replace(/'/g, "''")}'`;
+}
+
+function normalizeVersionInput(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^v/i, "");
+}
+
+function parseSemanticVersion(value) {
+  const normalized = normalizeVersionInput(value);
+  const match = normalized.match(
+    /^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?$/,
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    major: Number.parseInt(match[1] || "0", 10),
+    minor: Number.parseInt(match[2] || "0", 10),
+    patch: Number.parseInt(match[3] || "0", 10),
+    prerelease: match[4] ? match[4].split(".") : [],
+  };
+}
+
+function comparePrereleaseIdentifiers(left, right) {
+  const leftIsNumeric = /^\d+$/.test(left);
+  const rightIsNumeric = /^\d+$/.test(right);
+
+  if (leftIsNumeric && rightIsNumeric) {
+    const leftNumber = Number.parseInt(left, 10);
+    const rightNumber = Number.parseInt(right, 10);
+    if (leftNumber > rightNumber) return 1;
+    if (leftNumber < rightNumber) return -1;
+    return 0;
+  }
+
+  if (leftIsNumeric) return -1;
+  if (rightIsNumeric) return 1;
+
+  return left.localeCompare(right, "en", { sensitivity: "case" });
+}
 
 class UpdateService {
-  constructor() {
-    this.tempDir = path.join(getTempDirectory(app), "updates");
-    this.installerMetaPath = path.join(
-      this.tempDir,
-      "latest-installer-meta.json",
-    );
-    this.currentVersion = app.getVersion();
-    this.updateCheckUrl =
-      "https://api.github.com/repos/funkpopo/simpleshell/releases/latest";
+  constructor(options = {}) {
+    this.app = options.app || app;
+    this.dialog = options.dialog || dialog;
+    this.shell = options.shell || shell;
+    this.net = options.net || net;
+    this.session = options.session || session;
+    this.spawn = options.spawn || spawn;
+    this.execFile = options.execFile || execFile;
+    this.platform = options.platform || process.platform;
+    this.productName = options.productName || PRODUCT_NAME;
+    this.tempDir =
+      options.tempDir || path.join(getTempDirectory(this.app), "updates");
+    this.installerMetaPath = path.join(this.tempDir, INSTALLER_META_FILE);
+    this.updateErrorPath = path.join(this.tempDir, UPDATE_ERROR_FILE);
+    this.installerLogPath = path.join(this.tempDir, INSTALLER_LOG_FILE);
+    this.installerScriptPath = path.join(this.tempDir, INSTALLER_SCRIPT_FILE);
+    this.currentVersion =
+      options.currentVersion ||
+      (typeof this.app.getVersion === "function"
+        ? this.app.getVersion()
+        : "0.0.0");
+    this.updateCheckUrl = options.updateCheckUrl || UPDATE_CHECK_URL;
     this.isDownloading = false;
     this.downloadProgress = 0;
+    this.downloadStats = {
+      downloaded: 0,
+      total: 0,
+      progress: 0,
+      speedBytesPerSecond: 0,
+      startedAt: null,
+      updatedAt: null,
+    };
     this.currentRequest = null;
+    this.downloadCancelRequested = false;
     this.latestReleaseAsset = null;
     this.lastDownloadedInstaller = null;
-
-    // 启动时清空更新目录中的安装包与元数据，避免残留 setup.exe 持续堆积。
-    void this.clearInstallerTempDir();
+    this.lastUpdateError = null;
   }
 
   /**
@@ -45,7 +122,7 @@ class UpdateService {
    */
   async resolveSystemProxy(url) {
     try {
-      const proxyUrl = await session.defaultSession.resolveProxy(url);
+      const proxyUrl = await this.session.defaultSession.resolveProxy(url);
       logToFile(`Resolved proxy for ${url}: ${proxyUrl}`, "INFO");
       if (proxyUrl === "DIRECT") {
         return null;
@@ -82,10 +159,10 @@ class UpdateService {
       };
 
       if (proxyUrl) {
-        requestOptions.session = session.defaultSession;
+        requestOptions.session = this.session.defaultSession;
       }
 
-      const request = net.request(requestOptions);
+      const request = this.net.request(requestOptions);
 
       if (options.headers) {
         for (const [key, value] of Object.entries(options.headers)) {
@@ -142,7 +219,14 @@ class UpdateService {
       return false;
     }
 
-    if (normalizedFileName === path.basename(this.installerMetaPath)) {
+    const controlledFiles = new Set([
+      path.basename(this.installerMetaPath),
+      path.basename(this.updateErrorPath),
+      path.basename(this.installerLogPath),
+      path.basename(this.installerScriptPath),
+    ]);
+
+    if (controlledFiles.has(normalizedFileName)) {
       return true;
     }
 
@@ -178,6 +262,61 @@ class UpdateService {
     }
   }
 
+  normalizeAssetSize(asset) {
+    const size = Number(asset?.size);
+    return Number.isFinite(size) && size > 0 ? size : 0;
+  }
+
+  getReleaseText(releaseData, asset = null) {
+    return [
+      releaseData?.name,
+      releaseData?.tag_name,
+      releaseData?.body,
+      asset?.name,
+    ]
+      .filter((value) => typeof value === "string" && value.trim())
+      .join("\n");
+  }
+
+  classifyRelease(releaseData, asset = null) {
+    const text = this.getReleaseText(releaseData, asset);
+    const isSecurityUpdate = SECURITY_UPDATE_REGEX.test(text);
+    const isImportantUpdate =
+      isSecurityUpdate || IMPORTANT_UPDATE_REGEX.test(text);
+
+    return {
+      isSecurityUpdate,
+      isImportantUpdate,
+      severity: isSecurityUpdate
+        ? "security"
+        : isImportantUpdate
+          ? "important"
+          : "normal",
+    };
+  }
+
+  buildLatestReleaseAsset(releaseData, latestVersion, targetAsset) {
+    if (!targetAsset) {
+      return null;
+    }
+
+    const downloadUrl = targetAsset.browser_download_url || "";
+    const expectedSha256 = this.extractExpectedSha256(targetAsset);
+    const classification = this.classifyRelease(releaseData, targetAsset);
+
+    return {
+      name: targetAsset.name,
+      downloadUrl,
+      expectedSha256,
+      version: latestVersion,
+      size: this.normalizeAssetSize(targetAsset),
+      publishedAt: releaseData.published_at || null,
+      releaseName: releaseData.name || `${this.productName} v${latestVersion}`,
+      releaseUrl: releaseData.html_url || null,
+      ...classification,
+    };
+  }
+
   /**
    * 检查更新
    */
@@ -198,31 +337,38 @@ class UpdateService {
       }
 
       const releaseData = JSON.parse(body.toString());
-      const latestVersion = releaseData.tag_name.replace(/^v/, "");
+      const latestVersion = normalizeVersionInput(releaseData.tag_name);
+      if (!latestVersion) {
+        throw new Error("Release metadata is missing tag_name");
+      }
       const hasUpdate =
         this.compareVersions(latestVersion, this.currentVersion) > 0;
       const targetAsset = this.getDownloadAsset(releaseData.assets);
-      const downloadUrl = targetAsset ? targetAsset.browser_download_url : null;
-      const expectedSha256 = this.extractExpectedSha256(targetAsset);
+      const latestReleaseAsset = this.buildLatestReleaseAsset(
+        releaseData,
+        latestVersion,
+        targetAsset,
+      );
 
       this.latestReleaseAsset =
-        hasUpdate && targetAsset
-          ? {
-              name: targetAsset.name,
-              downloadUrl,
-              expectedSha256,
-              version: latestVersion,
-            }
-          : null;
+        hasUpdate && latestReleaseAsset ? latestReleaseAsset : null;
 
       const updateInfo = {
         hasUpdate,
         currentVersion: this.currentVersion,
         latestVersion,
         releaseNotes: releaseData.body || "",
-        downloadUrl,
+        downloadUrl: latestReleaseAsset?.downloadUrl || null,
+        downloadSize: latestReleaseAsset?.size || 0,
+        assetName: latestReleaseAsset?.name || null,
+        expectedSha256: latestReleaseAsset?.expectedSha256 || null,
         publishedAt: releaseData.published_at,
-        releaseName: releaseData.name || `Version ${latestVersion}`,
+        releaseName:
+          releaseData.name || `${this.productName} v${latestVersion}`,
+        releaseUrl: releaseData.html_url || null,
+        isSecurityUpdate: latestReleaseAsset?.isSecurityUpdate === true,
+        isImportantUpdate: latestReleaseAsset?.isImportantUpdate === true,
+        severity: latestReleaseAsset?.severity || "normal",
       };
 
       logToFile(
@@ -245,30 +391,33 @@ class UpdateService {
   getDownloadAsset(assets) {
     if (!Array.isArray(assets)) return null;
 
-    const platform = process.platform;
+    const normalizedAssets = assets.filter(
+      (asset) =>
+        asset &&
+        typeof asset.name === "string" &&
+        typeof asset.browser_download_url === "string",
+    );
+    const findByExtension = (...extensions) =>
+      normalizedAssets.find((asset) => {
+        const name = asset.name.toLowerCase();
+        return extensions.some((extension) => name.endsWith(extension));
+      }) || null;
+
+    const platform = this.platform;
 
     if (platform === "win32") {
       return (
-        assets.find((asset) => asset.name.toLowerCase().endsWith(".exe")) ||
-        null
+        normalizedAssets.find((asset) => /setup.*\.exe$/i.test(asset.name)) ||
+        findByExtension(".exe")
       );
     }
 
     if (platform === "darwin") {
-      return (
-        assets.find((asset) => asset.name.toLowerCase().endsWith(".dmg")) ||
-        null
-      );
+      return findByExtension(".dmg", ".zip");
     }
 
     if (platform === "linux") {
-      return (
-        assets.find((asset) =>
-          asset.name.toLowerCase().endsWith(".appimage"),
-        ) ||
-        assets.find((asset) => asset.name.toLowerCase().endsWith(".deb")) ||
-        null
-      );
+      return findByExtension(".appimage", ".deb", ".rpm");
     }
 
     return null;
@@ -293,16 +442,16 @@ class UpdateService {
    * @returns {Set<string>}
    */
   getAllowedInstallerExtensions() {
-    if (process.platform === "win32") {
+    if (this.platform === "win32") {
       return new Set([".exe"]);
     }
 
-    if (process.platform === "darwin") {
-      return new Set([".dmg"]);
+    if (this.platform === "darwin") {
+      return new Set([".dmg", ".zip"]);
     }
 
-    if (process.platform === "linux") {
-      return new Set([".appimage", ".deb"]);
+    if (this.platform === "linux") {
+      return new Set([".appimage", ".deb", ".rpm"]);
     }
 
     return new Set();
@@ -446,12 +595,21 @@ class UpdateService {
     }
 
     this.isDownloading = true;
+    this.downloadCancelRequested = false;
     this.downloadProgress = 0;
+    this.downloadStats = {
+      downloaded: 0,
+      total: 0,
+      progress: 0,
+      speedBytesPerSecond: 0,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
     this.currentRequest = null;
 
     try {
       await this.ensureTempDir();
-      await this.clearInstallerTempDir();
+      const previousInstaller = await this.loadInstallerMeta();
 
       const asset = await this.getLatestReleaseAsset();
       const downloadUrl = this.validateAndNormalizeDownloadUrl(
@@ -485,16 +643,38 @@ class UpdateService {
         version: asset.version || null,
         downloadedAt: new Date().toISOString(),
         sourceUrl: finalUrl,
+        size: buffer.length,
+        assetName: asset.name || null,
+        releaseName: asset.releaseName || null,
+        publishedAt: asset.publishedAt || null,
+        releaseUrl: asset.releaseUrl || null,
+        isSecurityUpdate: asset.isSecurityUpdate === true,
+        isImportantUpdate: asset.isImportantUpdate === true,
+        severity: asset.severity || "normal",
+        status: "downloaded",
       };
 
       this.lastDownloadedInstaller = installerMeta;
       await this.saveInstallerMeta(installerMeta);
+      await this.clearUpdateError();
+      await this.cleanupReplacedInstaller(previousInstaller, installerMeta);
 
       this.downloadProgress = 100;
+      this.downloadStats = {
+        ...this.downloadStats,
+        downloaded: buffer.length,
+        total: buffer.length,
+        progress: 100,
+        updatedAt: new Date().toISOString(),
+      };
       logToFile(`Download completed: ${filePath}`, "INFO");
-      return filePath;
+      return installerMeta;
     } catch (error) {
       logToFile(`Download error: ${error.message}`, "ERROR");
+      await this.recordUpdateError(
+        this.downloadCancelRequested ? "download-cancelled" : "download",
+        error,
+      );
       throw error;
     } finally {
       this.isDownloading = false;
@@ -530,6 +710,10 @@ class UpdateService {
         if (settled) return;
         settled = true;
         cleanup();
+        if (this.downloadCancelRequested) {
+          reject(new Error("Download cancelled"));
+          return;
+        }
         reject(error);
       };
 
@@ -549,10 +733,10 @@ class UpdateService {
         }, DOWNLOAD_DATA_TIMEOUT);
       };
 
-      const request = net.request({
+      const request = this.net.request({
         url: requestUrl,
         method: "GET",
-        session: session.defaultSession,
+        session: this.session.defaultSession,
       });
       this.currentRequest = request;
       request.setHeader("User-Agent", "SimpleShell-UpdateDownloader");
@@ -614,6 +798,7 @@ class UpdateService {
         const totalSize =
           Number.parseInt(response.headers["content-length"], 10) || 0;
         let downloadedSize = 0;
+        const startedAt = Date.now();
         const chunks = [];
 
         response.on("data", (chunk) => {
@@ -622,13 +807,22 @@ class UpdateService {
           downloadedSize += chunk.length;
           this.downloadProgress =
             totalSize > 0 ? (downloadedSize / totalSize) * 100 : 0;
+          const elapsedSeconds = Math.max((Date.now() - startedAt) / 1000, 1);
+          const progressData = {
+            downloaded: downloadedSize,
+            total: totalSize,
+            progress: this.downloadProgress,
+            speedBytesPerSecond: Math.round(downloadedSize / elapsedSeconds),
+          };
+          this.downloadStats = {
+            ...progressData,
+            startedAt:
+              this.downloadStats.startedAt || new Date(startedAt).toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
 
           if (onProgress) {
-            onProgress({
-              downloaded: downloadedSize,
-              total: totalSize,
-              progress: this.downloadProgress,
-            });
+            onProgress(progressData);
           }
         });
 
@@ -715,6 +909,126 @@ class UpdateService {
     );
   }
 
+  async saveInstallerStatus(status, extra = {}) {
+    const meta = await this.loadInstallerMeta();
+    if (!meta) {
+      return null;
+    }
+
+    const nextMeta = {
+      ...meta,
+      ...extra,
+      status,
+      updatedAt: new Date().toISOString(),
+    };
+    this.lastDownloadedInstaller = nextMeta;
+    await this.saveInstallerMeta(nextMeta);
+    return nextMeta;
+  }
+
+  async cleanupReplacedInstaller(previousMeta, nextMeta) {
+    if (!previousMeta?.filePath || !nextMeta?.filePath) {
+      return;
+    }
+
+    const previousPath = path.resolve(previousMeta.filePath);
+    const nextPath = path.resolve(nextMeta.filePath);
+    if (previousPath === nextPath) {
+      return;
+    }
+
+    try {
+      this.assertPathInTempDir(previousPath);
+      await this.cleanupInstallerFile(previousPath);
+    } catch (error) {
+      logToFile(
+        `Failed to cleanup replaced update package: ${error.message}`,
+        "WARN",
+      );
+    }
+  }
+
+  async recordUpdateError(stage, error, extra = {}) {
+    const message = error?.message || String(error || "Unknown update error");
+    const payload = {
+      stage,
+      message,
+      stack: error?.stack || null,
+      currentVersion: this.currentVersion,
+      timestamp: new Date().toISOString(),
+      installerLogPath: this.installerLogPath,
+      ...extra,
+    };
+
+    this.lastUpdateError = payload;
+
+    try {
+      await this.ensureTempDir();
+      await fsp.writeFile(
+        this.updateErrorPath,
+        `${JSON.stringify(payload, null, 2)}\n`,
+        "utf8",
+      );
+    } catch (writeError) {
+      logToFile(
+        `Failed to persist update error metadata: ${writeError.message}`,
+        "WARN",
+      );
+    }
+
+    return payload;
+  }
+
+  async clearUpdateError() {
+    this.lastUpdateError = null;
+
+    try {
+      await fsp.unlink(this.updateErrorPath);
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        logToFile(`Failed to clear update error: ${error.message}`, "WARN");
+      }
+    }
+  }
+
+  async loadUpdateError() {
+    if (this.lastUpdateError) {
+      return this.lastUpdateError;
+    }
+
+    try {
+      const raw = await fsp.readFile(this.updateErrorPath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed.message !== "string") {
+        return null;
+      }
+      this.lastUpdateError = parsed;
+      return parsed;
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        logToFile(
+          `Failed to load installer metadata: ${error.message}`,
+          "WARN",
+        );
+      }
+      return null;
+    }
+  }
+
+  async appendInstallerLog(message) {
+    try {
+      await this.ensureTempDir();
+      const timestamp = new Date().toISOString();
+      await fsp.appendFile(
+        this.installerLogPath,
+        `[${timestamp}] ${message}\n`,
+        "utf8",
+      );
+    } catch (error) {
+      logToFile(`Failed to append installer log: ${error.message}`, "WARN");
+    }
+  }
+
   /**
    * 读取最近一次下载的安装包元数据
    * @returns {Promise<object|null>}
@@ -755,7 +1069,13 @@ class UpdateService {
       this.assertPathInTempDir(meta.filePath);
       this.lastDownloadedInstaller = meta;
       return meta;
-    } catch {
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        logToFile(
+          `Failed to load installer metadata: ${error.message}`,
+          "WARN",
+        );
+      }
       return null;
     }
   }
@@ -837,6 +1157,27 @@ class UpdateService {
   async cleanupInstallerArtifacts(filePath) {
     await this.cleanupInstallerFile(filePath);
     await this.cleanupInstallerMetaFile();
+    await this.clearUpdateError();
+    await this.cleanupInstallerRuntimeFiles();
+  }
+
+  async cleanupInstallerRuntimeFiles() {
+    const runtimeFiles = [this.installerScriptPath, this.installerLogPath];
+
+    for (const runtimeFile of runtimeFiles) {
+      try {
+        this.assertPathInTempDir(runtimeFile);
+        await fsp.unlink(runtimeFile);
+        logToFile(`Cleaned up update runtime file: ${runtimeFile}`, "INFO");
+      } catch (error) {
+        if (error?.code !== "ENOENT") {
+          logToFile(
+            `Failed to cleanup update runtime file: ${error.message}`,
+            "WARN",
+          );
+        }
+      }
+    }
   }
 
   /**
@@ -958,12 +1299,12 @@ class UpdateService {
 
   /**
    * 安装前执行路径与哈希校验
-   * @returns {Promise<{filePath: string, fileExt: string, installerVersion: string}>}
+   * @returns {Promise<{meta: object, filePath: string, fileExt: string, installerVersion: string}>}
    */
   async verifyInstallerBeforeInstall() {
-    const { filePath, fileExt, installerVersion } =
+    const { meta, filePath, fileExt, installerVersion } =
       await this.assertDownloadedInstallerReady();
-    return { filePath, fileExt, installerVersion };
+    return { meta, filePath, fileExt, installerVersion };
   }
 
   /**
@@ -971,18 +1312,28 @@ class UpdateService {
    */
   async installUpdate() {
     try {
-      const { filePath, fileExt, installerVersion } =
+      const { meta, filePath, fileExt, installerVersion } =
         await this.verifyInstallerBeforeInstall();
       logToFile(`Installing update from trusted file: ${filePath}`, "INFO");
+      await this.appendInstallerLog(
+        `Starting installation for ${this.productName} ${installerVersion}: ${filePath}`,
+      );
+      await this.saveInstallerStatus("installing", {
+        installStartedAt: new Date().toISOString(),
+        installerLogPath: this.installerLogPath,
+      });
 
-      const platform = process.platform;
+      const platform = this.platform;
       if (platform === "win32" && fileExt === ".exe") {
-        await this.installWindowsUpdate(filePath);
-      } else if (platform === "darwin" && fileExt === ".dmg") {
+        await this.installWindowsUpdate(filePath, meta);
+      } else if (
+        platform === "darwin" &&
+        (fileExt === ".dmg" || fileExt === ".zip")
+      ) {
         await this.installMacUpdate(filePath);
       } else if (
         platform === "linux" &&
-        (fileExt === ".appimage" || fileExt === ".deb")
+        (fileExt === ".appimage" || fileExt === ".deb" || fileExt === ".rpm")
       ) {
         await this.installLinuxUpdate(filePath);
       } else {
@@ -995,11 +1346,36 @@ class UpdateService {
         `Update installer launched for version ${installerVersion}`,
         "INFO",
       );
+      await this.saveInstallerStatus("install-launched", {
+        installLaunchedAt: new Date().toISOString(),
+        installerLogPath: this.installerLogPath,
+      });
+      await this.clearUpdateError();
 
-      return { success: true };
+      return {
+        success: true,
+        installerVersion,
+        installerLogPath: this.installerLogPath,
+        restartRequired:
+          platform !== "linux" || fileExt === ".deb" || fileExt === ".rpm",
+      };
     } catch (error) {
       logToFile(`Installation error: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      await this.appendInstallerLog(`Installation failed: ${error.message}`);
+      const errorInfo = await this.recordUpdateError("install", error, {
+        installerLogPath: this.installerLogPath,
+      });
+      await this.saveInstallerStatus("install-failed", {
+        installFailedAt: new Date().toISOString(),
+        installerLogPath: this.installerLogPath,
+        lastError: errorInfo,
+      }).catch(() => null);
+      return {
+        success: false,
+        error: error.message,
+        installerLogPath: this.installerLogPath,
+        canRetry: true,
+      };
     }
   }
 
@@ -1007,17 +1383,34 @@ class UpdateService {
    * Windows更新安装
    */
   async installWindowsUpdate(filePath) {
-    return new Promise((resolve, reject) => {
-      logToFile(`Starting Windows installer: ${filePath}`, "INFO");
+    const executablePath = this.resolveCurrentExecutablePath();
+    const scriptContent = this.buildWindowsInstallScript(
+      filePath,
+      executablePath,
+    );
+    await fsp.writeFile(this.installerScriptPath, scriptContent, "utf8");
 
-      const installer = spawn(filePath, ["/S"], {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: false,
-      });
+    return new Promise((resolve, reject) => {
+      logToFile(
+        `Starting Windows update helper: ${this.installerScriptPath}`,
+        "INFO",
+      );
+
+      const installer = this.spawn(
+        "cmd.exe",
+        ["/c", this.installerScriptPath],
+        {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: true,
+        },
+      );
 
       installer.on("error", (error) => {
-        logToFile(`Windows installer spawn error: ${error.message}`, "ERROR");
+        logToFile(
+          `Windows update helper spawn error: ${error.message}`,
+          "ERROR",
+        );
         reject(error);
       });
 
@@ -1030,9 +1423,68 @@ class UpdateService {
 
       setTimeout(() => {
         logToFile("Force exiting application for update installation", "INFO");
-        app.exit(0);
+        if (typeof this.app.exit === "function") {
+          this.app.exit(0);
+        } else if (typeof this.app.quit === "function") {
+          this.app.quit();
+        }
       }, 500);
     });
+  }
+
+  resolveCurrentExecutablePath() {
+    try {
+      if (typeof this.app.getPath === "function") {
+        const exePath = this.app.getPath("exe");
+        if (exePath) {
+          return exePath;
+        }
+      }
+    } catch {
+      // Fall back to the Node/Electron executable path below.
+    }
+
+    return process.execPath;
+  }
+
+  buildWindowsInstallScript(installerPath, executablePath) {
+    const psInstaller = toPowerShellString(installerPath);
+    const psExecutable = toPowerShellString(executablePath);
+    const psLog = toPowerShellString(this.installerLogPath);
+
+    const powershell = [
+      "$ErrorActionPreference = 'Stop'",
+      `$log = ${psLog}`,
+      "function Write-UpdateLog($message) {",
+      "  $stamp = (Get-Date).ToUniversalTime().ToString('o')",
+      '  Add-Content -LiteralPath $log -Encoding UTF8 -Value "[$stamp] $message"',
+      "}",
+      `Write-UpdateLog 'Helper started for ${this.productName}'`,
+      "Start-Sleep -Seconds 1",
+      `$installer = ${psInstaller}`,
+      `$exe = ${psExecutable}`,
+      'Write-UpdateLog "Launching installer: $installer"',
+      "$process = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru",
+      "$exitCode = [int]$process.ExitCode",
+      'Write-UpdateLog "Installer exit code: $exitCode"',
+      "if ($exitCode -ne 0) { exit $exitCode }",
+      "Start-Sleep -Seconds 2",
+      "if (Test-Path -LiteralPath $exe) {",
+      '  Write-UpdateLog "Restarting application: $exe"',
+      "  Start-Process -FilePath $exe | Out-Null",
+      "} else {",
+      '  Write-UpdateLog "Application executable not found for restart: $exe"',
+      "}",
+      "exit 0",
+    ].join("; ");
+
+    return [
+      "@echo off",
+      "setlocal",
+      `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ${JSON.stringify(powershell)}`,
+      "exit /b %ERRORLEVEL%",
+      "",
+    ].join("\r\n");
   }
 
   /**
@@ -1055,14 +1507,14 @@ class UpdateService {
    */
   async installMacUpdate(filePath) {
     return new Promise((resolve, reject) => {
-      execFile("open", [filePath], (error) => {
+      this.execFile("open", [filePath], (error) => {
         if (error) {
           logToFile(`macOS installer error: ${error.message}`, "ERROR");
           reject(error);
         } else {
           logToFile("macOS DMG opened successfully", "INFO");
           resolve();
-          dialog.showMessageBox({
+          this.dialog.showMessageBox({
             type: "info",
             title: "Update Ready",
             message:
@@ -1081,8 +1533,8 @@ class UpdateService {
     const fileExt = path.extname(filePath).toLowerCase();
 
     if (fileExt === ".appimage") {
-      shell.showItemInFolder(filePath);
-      dialog.showMessageBox({
+      this.shell.showItemInFolder(filePath);
+      this.dialog.showMessageBox({
         type: "info",
         title: "Update Ready",
         message:
@@ -1094,7 +1546,7 @@ class UpdateService {
 
     if (fileExt === ".deb") {
       await new Promise((resolve, reject) => {
-        const installer = spawn("pkexec", ["dpkg", "-i", filePath], {
+        const installer = this.spawn("pkexec", ["dpkg", "-i", filePath], {
           stdio: "ignore",
         });
 
@@ -1112,6 +1564,29 @@ class UpdateService {
           }
         });
       });
+      return;
+    }
+
+    if (fileExt === ".rpm") {
+      await new Promise((resolve, reject) => {
+        const installer = this.spawn("pkexec", ["rpm", "-U", filePath], {
+          stdio: "ignore",
+        });
+
+        installer.on("error", (error) => {
+          logToFile(`RPM installer error: ${error.message}`, "ERROR");
+          reject(error);
+        });
+
+        installer.on("close", (code) => {
+          if (code === 0) {
+            logToFile("RPM package installed successfully", "INFO");
+            resolve();
+          } else {
+            reject(new Error(`RPM installer exited with code ${code}`));
+          }
+        });
+      });
     }
   }
 
@@ -1119,16 +1594,43 @@ class UpdateService {
    * 版本比较
    */
   compareVersions(version1, version2) {
-    const v1Parts = version1.split(".").map((n) => Number.parseInt(n, 10));
-    const v2Parts = version2.split(".").map((n) => Number.parseInt(n, 10));
+    const parsed1 = parseSemanticVersion(version1);
+    const parsed2 = parseSemanticVersion(version2);
 
-    const maxLength = Math.max(v1Parts.length, v2Parts.length);
-    for (let i = 0; i < maxLength; i += 1) {
-      const v1Part = v1Parts[i] || 0;
-      const v2Part = v2Parts[i] || 0;
+    if (!parsed1 || !parsed2) {
+      const normalized1 = normalizeVersionInput(version1);
+      const normalized2 = normalizeVersionInput(version2);
+      return normalized1.localeCompare(normalized2, "en", {
+        numeric: true,
+        sensitivity: "case",
+      });
+    }
 
-      if (v1Part > v2Part) return 1;
-      if (v1Part < v2Part) return -1;
+    for (const key of ["major", "minor", "patch"]) {
+      if (parsed1[key] > parsed2[key]) return 1;
+      if (parsed1[key] < parsed2[key]) return -1;
+    }
+
+    if (parsed1.prerelease.length === 0 && parsed2.prerelease.length > 0) {
+      return 1;
+    }
+    if (parsed1.prerelease.length > 0 && parsed2.prerelease.length === 0) {
+      return -1;
+    }
+
+    const maxPrereleaseLength = Math.max(
+      parsed1.prerelease.length,
+      parsed2.prerelease.length,
+    );
+    for (let i = 0; i < maxPrereleaseLength; i += 1) {
+      const left = parsed1.prerelease[i];
+      const right = parsed2.prerelease[i];
+      if (left === undefined && right !== undefined) return -1;
+      if (left !== undefined && right === undefined) return 1;
+
+      const prereleaseResult = comparePrereleaseIdentifiers(left, right);
+      if (prereleaseResult > 0) return 1;
+      if (prereleaseResult < 0) return -1;
     }
 
     return 0;
@@ -1139,18 +1641,40 @@ class UpdateService {
    * @returns {Promise<{available: boolean}>}
    */
   async hasDownloadedInstaller() {
+    const lastError = await this.loadUpdateError();
+
     try {
-      const { installerVersion } = await this.assertDownloadedInstallerReady({
-        cleanupInvalidArtifacts: true,
-      });
+      const { meta, installerVersion, filePath, actualSha256 } =
+        await this.assertDownloadedInstallerReady({
+          cleanupInvalidArtifacts: true,
+        });
 
       return {
         available: true,
         installerVersion,
         currentVersion: this.currentVersion,
+        fileName: path.basename(filePath),
+        size: meta.size || 0,
+        sha256: actualSha256,
+        expectedSha256: meta.expectedSha256 || null,
+        downloadedAt: meta.downloadedAt || null,
+        publishedAt: meta.publishedAt || null,
+        releaseName: meta.releaseName || null,
+        assetName: meta.assetName || null,
+        isSecurityUpdate: meta.isSecurityUpdate === true,
+        isImportantUpdate: meta.isImportantUpdate === true,
+        severity: meta.severity || "normal",
+        status: meta.status || "downloaded",
+        installerLogPath: meta.installerLogPath || this.installerLogPath,
+        lastError,
       };
-    } catch {
-      return { available: false };
+    } catch (error) {
+      return {
+        available: false,
+        currentVersion: this.currentVersion,
+        lastError,
+        error: error.message,
+      };
     }
   }
 
@@ -1161,6 +1685,7 @@ class UpdateService {
     return {
       isDownloading: this.isDownloading,
       progress: this.downloadProgress,
+      ...this.downloadStats,
     };
   }
 
@@ -1171,11 +1696,19 @@ class UpdateService {
       updateCheckUrl: this.updateCheckUrl,
       isDownloading: this.isDownloading,
       downloadProgress: this.downloadProgress,
+      downloadStats: this.downloadStats,
+      lastUpdateError: this.lastUpdateError,
+      updateErrorPath: this.updateErrorPath,
+      installerLogPath: this.installerLogPath,
       latestReleaseAsset: this.latestReleaseAsset
         ? {
             name: this.latestReleaseAsset.name,
             expectedSha256: this.latestReleaseAsset.expectedSha256,
             version: this.latestReleaseAsset.version,
+            size: this.latestReleaseAsset.size,
+            publishedAt: this.latestReleaseAsset.publishedAt,
+            releaseName: this.latestReleaseAsset.releaseName,
+            severity: this.latestReleaseAsset.severity,
             host: this.latestReleaseAsset.downloadUrl
               ? new URL(this.latestReleaseAsset.downloadUrl).hostname
               : null,
@@ -1187,6 +1720,8 @@ class UpdateService {
             expectedSha256: this.lastDownloadedInstaller.expectedSha256,
             version: this.lastDownloadedInstaller.version,
             downloadedAt: this.lastDownloadedInstaller.downloadedAt,
+            status: this.lastDownloadedInstaller.status,
+            installerLogPath: this.lastDownloadedInstaller.installerLogPath,
           }
         : null,
     };
@@ -1196,6 +1731,7 @@ class UpdateService {
    * 取消下载
    */
   cancelDownload() {
+    this.downloadCancelRequested = true;
     if (this.currentRequest) {
       try {
         this.currentRequest.abort();
@@ -1206,8 +1742,16 @@ class UpdateService {
     }
     this.isDownloading = false;
     this.downloadProgress = 0;
+    this.downloadStats = {
+      ...this.downloadStats,
+      progress: 0,
+      updatedAt: new Date().toISOString(),
+    };
     logToFile("Download cancelled", "INFO");
   }
 }
 
-module.exports = new UpdateService();
+const updateService = new UpdateService();
+
+module.exports = updateService;
+module.exports.UpdateService = UpdateService;

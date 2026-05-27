@@ -8,6 +8,7 @@ const connectionManager = require("../../modules/connection");
 const commandHistoryService = require("../../modules/terminal/command-history");
 const processManager = require("../process/processManager");
 const { safeSendToRenderer } = require("../window/windowManager");
+const updateService = require("../update/updateService");
 
 /**
  * 应用初始化模块
@@ -188,6 +189,21 @@ class AppInitializer {
   }
 
   /**
+   * 清理已被当前版本消费的更新安装包
+   */
+  async cleanupConsumedUpdateInstaller() {
+    try {
+      await updateService.cleanupConsumedInstaller();
+      logToFile("Consumed update installer cleanup completed", "INFO");
+    } catch (error) {
+      logToFile(
+        `Consumed update installer cleanup failed: ${error.message}`,
+        "WARN",
+      );
+    }
+  }
+
+  /**
    * 执行所有初始化
    */
   async initialize(dialog, shell) {
@@ -200,6 +216,7 @@ class AppInitializer {
     this.initializeFileCache();
     this.initializeConnectionManager();
     this.initializeCommandHistoryService();
+    await this.cleanupConsumedUpdateInstaller();
 
     logToFile("Application initialization complete", "INFO");
   }

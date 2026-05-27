@@ -347,11 +347,12 @@ class AppHandlers {
         }
       };
 
-      const filePath = await updateService.downloadUpdate(onProgress);
+      const installer = await updateService.downloadUpdate(onProgress);
 
       return {
         success: true,
-        filePath,
+        filePath: installer?.filePath || "",
+        installer,
         message: "Download completed successfully",
       };
     } catch (error) {
