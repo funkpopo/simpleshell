@@ -7,12 +7,10 @@ const {
 } = require("../utils/mainProcessResourceManager");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
-const fileCache = require("../utils/fileCache");
-const fileSnapshotStore = require("../utils/fileSnapshotStore");
+const runtimeFileLifecycle = require("../utils/runtimeFileLifecycle");
 const configService = require("../../services/configService");
 const commandHistoryService = require("../../modules/terminal/command-history");
 const filemanagementService = require("../../modules/filemanagement/filemanagementService");
-const externalEditorManager = require("../../modules/sftp/externalEditorManager");
 
 /**
  * 应用清理模块
@@ -47,26 +45,6 @@ class AppCleanup {
     } catch (error) {
       if (error.code !== "ENOENT") {
         logToFile(`记忆文件清理失败: ${error.message}`, "ERROR");
-      }
-    }
-  }
-
-  /**
-   * 清理外部编辑器管理器
-   */
-  async cleanupExternalEditorManager() {
-    if (
-      externalEditorManager &&
-      typeof externalEditorManager.cleanup === "function"
-    ) {
-      try {
-        await externalEditorManager.cleanup();
-        logToFile("External editor manager cleaned up", "INFO");
-      } catch (error) {
-        logToFile(
-          `External editor manager cleanup failed: ${error.message}`,
-          "ERROR",
-        );
       }
     }
   }
@@ -264,45 +242,32 @@ class AppCleanup {
   }
 
   /**
-   * 清理缓存文件
+   * 清理运行时文件生命周期资源
    */
-  async cleanupCacheFiles() {
-    try {
-      const cleanedCount = await fileCache.cleanupAllCaches();
-      logToFile(`Cleaned up ${cleanedCount} cache files on app quit`, "INFO");
-    } catch (error) {
-      logToFile(
-        `Failed to cleanup cache files on quit: ${error.message}`,
-        "ERROR",
-      );
-    }
+  async cleanupRuntimeFiles() {
+    const resources = ["file-cache", "file-snapshots", "external-editor-temp"];
+    const result = {};
 
-    try {
-      const cleared = await fileCache.clearCacheDirectory();
-      if (cleared) {
+    for (const resource of resources) {
+      try {
+        result[resource] = await runtimeFileLifecycle.clearResource(resource, {
+          includeActive: true,
+          reason: "app-quit",
+        });
+      } catch (error) {
+        result[resource] = false;
         logToFile(
-          `Cleared temp directory on app quit: ${fileCache.cacheDir}`,
-          "INFO",
+          `Failed to clear runtime file resource ${resource}: ${error.message}`,
+          "ERROR",
         );
       }
-    } catch (error) {
-      logToFile(
-        `Failed to clear temp directory on quit: ${error.message}`,
-        "ERROR",
-      );
     }
 
-    try {
-      const cleared = await fileSnapshotStore.clearAllSnapshots();
-      if (cleared) {
-        logToFile(
-          `Cleared snapshot directory on app quit: ${fileSnapshotStore.snapshotRoot}`,
-          "INFO",
-        );
-      }
-    } catch (error) {
-      logToFile(`Failed to clear snapshots on quit: ${error.message}`, "ERROR");
-    }
+    runtimeFileLifecycle.stopPeriodicCleanup();
+    logToFile(
+      `Runtime file cleanup on app quit: ${JSON.stringify(result)}`,
+      "INFO",
+    );
   }
 
   /**
@@ -376,11 +341,10 @@ class AppCleanup {
     }
 
     await this.cleanupMemoryFile();
-    await this.cleanupExternalEditorManager();
     await this.cleanupAllProcesses();
     await this.cleanupGlobalSftpResources();
     this.cleanupConnectionManager();
-    await this.cleanupCacheFiles();
+    await this.cleanupRuntimeFiles();
     this.saveCommandHistory();
     this.saveLastConnections();
 

@@ -578,9 +578,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const shouldRestoreTextEditorScrollRef = useRef(false);
   const syncedContentRef = useRef(null);
 
-  const [codemirrorLangExtensions, setCodemirrorLangExtensions] = useState(
-    [],
-  );
+  const [codemirrorLangExtensions, setCodemirrorLangExtensions] = useState([]);
   const [syntaxHighlightState, setSyntaxHighlightState] = useState({
     languageId: null,
     loading: false,
@@ -1675,10 +1673,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     if (
       cacheFilePath &&
       window.terminalAPI &&
-      window.terminalAPI.cleanupFileCache
+      window.terminalAPI.releaseRuntimeFilePath
     ) {
       try {
-        await window.terminalAPI.cleanupFileCache(cacheFilePath);
+        await window.terminalAPI.releaseRuntimeFilePath(
+          "file-cache",
+          cacheFilePath,
+          { reason: "file-preview-close" },
+        );
         setCacheFilePath(null);
       } catch (error) {
         console.error("Failed to cleanup cache file:", error);
@@ -2800,7 +2802,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             disabled={savingFile}
             startIcon={<SaveIcon />}
           >
-            {savingFile ? t("filePreview.saving") : t("filePreview.saveAndClose")}
+            {savingFile
+              ? t("filePreview.saving")
+              : t("filePreview.saveAndClose")}
           </Button>
         </DialogActions>
       </Dialog>

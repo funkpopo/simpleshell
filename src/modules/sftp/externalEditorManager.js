@@ -2,10 +2,12 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 const nativeSftpClient = require("../../core/utils/nativeSftpClient");
+const runtimeFileLifecycle = require("../../core/utils/runtimeFileLifecycle");
 
 const FILE_PLACEHOLDER = "%FILE%";
 const DEFAULT_DEBOUNCE_MS = 700;
 const RETRYABLE_ERRORS = new Set(["EBUSY", "EPERM", "EACCES"]);
+const LIFECYCLE_RESOURCE_NAME = "external-editor-temp";
 
 let electronApp = null;
 let logToFile = (message, level = "INFO") => {
@@ -138,25 +140,33 @@ async function removeDirIfEmpty(dirPath) {
   }
 }
 
-async function removeDirectoryRecursive(dirPath) {
-  if (!dirPath) {
-    return;
+async function getPathSize(targetPath) {
+  let stats;
+  try {
+    stats = await fs.promises.stat(targetPath);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return 0;
+    }
+    throw error;
   }
 
-  try {
-    if (fs.promises.rm) {
-      await fs.promises.rm(dirPath, { recursive: true, force: true });
-    } else {
-      await fs.promises.rmdir(dirPath, { recursive: true });
-    }
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      logToFile(
-        `Failed to remove directory ${dirPath}: ${error.message}`,
-        "WARN",
-      );
-    }
+  if (stats.isFile()) {
+    return stats.size;
   }
+
+  if (!stats.isDirectory()) {
+    return 0;
+  }
+
+  const entries = await fs.promises.readdir(targetPath, {
+    withFileTypes: true,
+  });
+  let total = 0;
+  for (const entry of entries) {
+    total += await getPathSize(path.join(targetPath, entry.name));
+  }
+  return total;
 }
 
 function getWatcherKey(tabId, remotePath) {
@@ -237,7 +247,11 @@ function prepareExternalEditorCommand(command, quotedPath) {
 }
 
 async function downloadFile(tabId, remotePath, localPath) {
-  const result = await nativeSftpClient.downloadFile(tabId, remotePath, localPath);
+  const result = await nativeSftpClient.downloadFile(
+    tabId,
+    remotePath,
+    localPath,
+  );
   if (!result?.success) {
     throw new Error(result?.error || "Download failed");
   }
@@ -299,6 +313,32 @@ function attachWatcher(entry) {
   };
   fs.watchFile(entry.localPath, { interval: 500 }, handler);
   entry.unwatch = () => fs.unwatchFile(entry.localPath, handler);
+}
+
+function detachWatcher(entry) {
+  if (!entry) {
+    return;
+  }
+
+  if (entry.debounceTimer) {
+    clearTimeout(entry.debounceTimer);
+  }
+
+  if (entry.unwatch) {
+    entry.unwatch();
+  }
+
+  entry.debounceTimer = null;
+  entry.unwatch = null;
+  entry.child = null;
+}
+
+function detachAllWatchers() {
+  const entries = Array.from(watchers.values());
+  watchers.clear();
+  for (const entry of entries) {
+    detachWatcher(entry);
+  }
 }
 
 function scheduleUpload(entry) {
@@ -469,6 +509,12 @@ async function openFileInExternalEditor(tabId, remotePath) {
   watchers.set(key, entry);
   attachWatcher(entry);
 
+  await runtimeFileLifecycle.sweepResource(LIFECYCLE_RESOURCE_NAME, {
+    expired: false,
+    size: true,
+    reason: "external-editor-open",
+  });
+
   await launchExternalEditor(entry, command);
 
   emitSyncEvent("opened", {
@@ -484,17 +530,7 @@ async function openFileInExternalEditor(tabId, remotePath) {
 async function cleanupWatcher(entry) {
   if (!entry) return;
 
-  if (entry.debounceTimer) {
-    clearTimeout(entry.debounceTimer);
-  }
-
-  if (entry.unwatch) {
-    entry.unwatch();
-  }
-
-  entry.debounceTimer = null;
-  entry.unwatch = null;
-  entry.child = null;
+  detachWatcher(entry);
 
   if (entry.localPath) {
     try {
@@ -530,25 +566,170 @@ async function cleanupWatcher(entry) {
   }
 }
 
-async function cleanup() {
-  const entries = Array.from(watchers.values());
-  watchers.clear();
+async function collectLifecycleEntries() {
+  const externalRoot = getExternalEditRoot();
+  if (!fs.existsSync(externalRoot)) {
+    return [];
+  }
 
-  await Promise.all(entries.map((entry) => cleanupWatcher(entry)));
+  const activeByBaseDir = new Map();
+  for (const entry of watchers.values()) {
+    if (!entry?.baseDir) {
+      continue;
+    }
+    const resolvedBaseDir = path.resolve(entry.baseDir);
+    const active = activeByBaseDir.get(resolvedBaseDir) || {
+      paths: new Set(),
+      bytes: 0,
+      createdAtMs: Date.now(),
+      mtimeMs: Date.now(),
+    };
 
+    if (entry.localPath) {
+      const resolvedLocalPath = path.resolve(entry.localPath);
+      active.paths.add(resolvedLocalPath);
+      try {
+        const stats = await fs.promises.stat(resolvedLocalPath);
+        active.bytes += stats.size;
+        active.createdAtMs = Math.min(
+          active.createdAtMs,
+          stats.birthtimeMs || stats.ctimeMs || stats.mtimeMs,
+        );
+        active.mtimeMs = Math.max(active.mtimeMs, stats.mtimeMs);
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          logToFile(
+            `Failed to stat external editor temp file ${resolvedLocalPath}: ${error.message}`,
+            "WARN",
+          );
+        }
+      }
+    }
+
+    activeByBaseDir.set(resolvedBaseDir, active);
+  }
+
+  const entries = await fs.promises.readdir(externalRoot, {
+    withFileTypes: true,
+  });
+  const result = [];
+  const seenBaseDirs = new Set();
+
+  for (const entry of entries) {
+    const entryPath = path.join(externalRoot, entry.name);
+    const resolvedPath = path.resolve(entryPath);
+    seenBaseDirs.add(resolvedPath);
+
+    let stats;
+    try {
+      stats = await fs.promises.stat(entryPath);
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        logToFile(
+          `Failed to stat external editor temp path ${entryPath}: ${error.message}`,
+          "WARN",
+        );
+      }
+      continue;
+    }
+
+    const active = activeByBaseDir.get(resolvedPath);
+    result.push({
+      path: resolvedPath,
+      type: entry.isDirectory() ? "directory" : "file",
+      bytes: await getPathSize(entryPath),
+      createdAtMs:
+        active?.createdAtMs ||
+        stats.birthtimeMs ||
+        stats.ctimeMs ||
+        stats.mtimeMs,
+      mtimeMs: active?.mtimeMs || stats.mtimeMs,
+      active: Boolean(active),
+      metadata: active
+        ? {
+            activePaths: Array.from(active.paths),
+          }
+        : undefined,
+    });
+  }
+
+  for (const [baseDir, active] of activeByBaseDir.entries()) {
+    if (seenBaseDirs.has(baseDir) || !fs.existsSync(baseDir)) {
+      continue;
+    }
+    result.push({
+      path: baseDir,
+      type: "directory",
+      bytes: active.bytes,
+      createdAtMs: active.createdAtMs,
+      mtimeMs: active.mtimeMs,
+      active: true,
+      metadata: {
+        activePaths: Array.from(active.paths),
+      },
+    });
+  }
+
+  return result;
+}
+
+async function removeLifecycleEntry(entry) {
+  const targetPath = path.resolve(entry.path);
+  const matchingEntries = Array.from(watchers.entries()).filter(
+    ([, watcher]) =>
+      watcher?.baseDir &&
+      (path.resolve(watcher.baseDir) === targetPath ||
+        path.resolve(watcher.localPath || "") === targetPath),
+  );
+
+  for (const [key, watcher] of matchingEntries) {
+    watchers.delete(key);
+    await cleanupWatcher(watcher);
+  }
+
+  try {
+    await fs.promises.rm(targetPath, {
+      recursive: entry.type === "directory",
+      force: true,
+    });
+    logToFile(`Removed external editor temp path ${targetPath}`, "INFO");
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      logToFile(
+        `Failed to remove external editor temp path ${targetPath}: ${error.message}`,
+        "WARN",
+      );
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function afterLifecycleClear() {
   const externalRoot = getExternalEditRoot();
   const isPackaged =
     typeof electronApp.isPackaged === "boolean"
       ? electronApp.isPackaged
       : process.env.NODE_ENV !== "development";
 
-  await removeDirectoryRecursive(externalRoot);
-
   if (!isPackaged) {
-    await removeDirectoryRecursive(getDevelopmentTempRoot());
+    await removeDirIfEmpty(getDevelopmentTempRoot());
   } else {
     await removeDirIfEmpty(path.dirname(externalRoot));
   }
+}
+
+function registerLifecycleResource() {
+  runtimeFileLifecycle.registerResource(LIFECYCLE_RESOURCE_NAME, {
+    rootPath: getExternalEditRoot,
+    collectEntries: collectLifecycleEntries,
+    removeEntry: removeLifecycleEntry,
+    onBeforeClear: () => {
+      detachAllWatchers();
+    },
+    onClear: afterLifecycleClear,
+  });
 }
 
 function init({
@@ -567,10 +748,12 @@ function init({
   void core;
   shellModule = shell;
   sendToRenderer = send;
+  runtimeFileLifecycle.init(logToFile);
+  registerLifecycleResource();
 }
 
 module.exports = {
   init,
   openFileInExternalEditor,
-  cleanup,
+  LIFECYCLE_RESOURCE_NAME,
 };

@@ -25,6 +25,7 @@ const ConnectionHandlers = require("../ipc/handlers/connectionHandlers");
 const SshKeyHandlers = require("../ipc/handlers/sshKeyHandlers");
 const MemoryHandlers = require("../ipc/handlers/memoryHandlers");
 const ExternalEditorHandlers = require("../ipc/handlers/externalEditorHandlers");
+const RuntimeFileHandlers = require("../ipc/handlers/runtimeFileHandlers");
 const TerminalIOMailboxManager = require("../terminal/terminalIOMailboxManager");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
@@ -455,6 +456,24 @@ class IPCSetup {
   }
 
   /**
+   * 初始化运行时文件生命周期处理器
+   */
+  initializeRuntimeFileHandlers() {
+    try {
+      const runtimeFileHandlers = new RuntimeFileHandlers();
+      runtimeFileHandlers.getHandlers().forEach(({ channel, handler }) => {
+        safeHandle(ipcMain, channel, handler);
+      });
+      logToFile("Runtime file lifecycle handlers registered", "INFO");
+    } catch (error) {
+      logToFile(
+        `运行时文件生命周期处理器初始化失败: ${error.message}`,
+        "ERROR",
+      );
+    }
+  }
+
+  /**
    * 在应用启动时执行的初始化（在窗口创建前）
    */
   initializeBeforeWindow() {
@@ -473,6 +492,7 @@ class IPCSetup {
     this.initializeSshKeyHandlers();
     this.initializeMemoryHandlers();
     this.initializeExternalEditorHandlers();
+    this.initializeRuntimeFileHandlers();
   }
 
   /**

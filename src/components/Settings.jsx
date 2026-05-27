@@ -184,6 +184,10 @@ const Settings = memo(({ open, onClose }) => {
       label: t("settings.localData.options.snapshots"),
     },
     {
+      value: "externalEditorTemp",
+      label: t("settings.localData.options.externalEditorTemp"),
+    },
+    {
       value: "logs",
       label: t("settings.localData.options.logs"),
     },
@@ -341,8 +345,7 @@ const Settings = memo(({ open, onClose }) => {
         }
 
         if (window.terminalAPI?.getErrorReportingSettings) {
-          const response =
-            await window.terminalAPI.getErrorReportingSettings();
+          const response = await window.terminalAPI.getErrorReportingSettings();
           if (response?.success !== false) {
             const settings = response?.settings || {};
             setErrorReportingEnabled(settings.enabled === true);
@@ -617,8 +620,10 @@ const Settings = memo(({ open, onClose }) => {
       case "cacheEnabled":
         setCacheEnabled(value);
         // 缓存设置可以实时生效
-        if (window.terminalAPI?.updateCacheSettings) {
-          window.terminalAPI.updateCacheSettings({ enabled: value });
+        if (window.terminalAPI?.configureRuntimeFileResource) {
+          window.terminalAPI.configureRuntimeFileResource("file-cache", {
+            enabled: value,
+          });
         }
         break;
       case "prefetchEnabled":
@@ -753,9 +758,7 @@ const Settings = memo(({ open, onClose }) => {
             errorReportingEnabled && includeDiagnosticsInFeedback,
         });
         if (response?.success === false) {
-          throw new Error(
-            response.error || t("settings.feedback.saveFailed"),
-          );
+          throw new Error(response.error || t("settings.feedback.saveFailed"));
         }
         setCrashReporterStatus(response?.crashReporter || null);
       }
@@ -1246,9 +1249,7 @@ const Settings = memo(({ open, onClose }) => {
                 </Box>
                 <Chip
                   size="small"
-                  color={
-                    crashReporterStatus?.started ? "success" : "warning"
-                  }
+                  color={crashReporterStatus?.started ? "success" : "warning"}
                   variant="outlined"
                   label={
                     crashReporterStatus?.started

@@ -4,6 +4,7 @@ const configService = require("../../services/configService");
 const externalEditorManager = require("../../modules/sftp/externalEditorManager");
 const fileCache = require("../utils/fileCache");
 const fileSnapshotStore = require("../utils/fileSnapshotStore");
+const runtimeFileLifecycle = require("../utils/runtimeFileLifecycle");
 const connectionManager = require("../../modules/connection");
 const commandHistoryService = require("../../modules/terminal/command-history");
 const processManager = require("../process/processManager");
@@ -101,9 +102,31 @@ class AppInitializer {
    */
   initializeFileCache() {
     fileCache.init(logToFile, this.app);
-    fileCache.startPeriodicCleanup();
     fileSnapshotStore.init(logToFile, this.app);
-    logToFile("File cache initialized", "INFO");
+    logToFile("Runtime file stores initialized", "INFO");
+  }
+
+  /**
+   * 恢复清理上次异常退出遗留的运行时文件，并启动统一周期清理
+   */
+  async initializeRuntimeFileLifecycle() {
+    try {
+      const recoveryResult = await runtimeFileLifecycle.recoverFromPreviousExit(
+        {
+          recreate: true,
+        },
+      );
+      runtimeFileLifecycle.startPeriodicCleanup();
+      logToFile(
+        `Runtime file lifecycle initialized: ${JSON.stringify(recoveryResult)}`,
+        "INFO",
+      );
+    } catch (error) {
+      logToFile(
+        `Runtime file lifecycle initialization failed: ${error.message}`,
+        "ERROR",
+      );
+    }
   }
 
   /**
@@ -214,6 +237,7 @@ class AppInitializer {
     this.initializeSftpTransfer(dialog, shell);
     this.initializeExternalEditorManager(shell);
     this.initializeFileCache();
+    await this.initializeRuntimeFileLifecycle();
     this.initializeConnectionManager();
     this.initializeCommandHistoryService();
     await this.cleanupConsumedUpdateInstaller();
