@@ -4,6 +4,7 @@ const configService = require("../../services/configService");
 const { IPC_EVENT_CHANNELS } = require("../ipc/schema/channels");
 const { logToFile } = require("../utils/logger");
 const { recordCrashMarker } = require("../utils/crashReporter");
+const { buildErrorEvent } = require("../utils/errorResponse");
 
 const DEFAULT_WINDOW_BOUNDS = Object.freeze({
   width: 1200,
@@ -255,15 +256,13 @@ function registerRendererCrashHandlers(mainWindow) {
     });
 
     if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send("app:error", {
-        type: "rendererCrash",
-        level: "fatal",
-        category: "fatal",
-        module: "renderer",
-        message,
-        action: "feedback",
-        timestamp: Date.now(),
-      });
+      mainWindow.webContents.send(
+        "app:error",
+        buildErrorEvent(new Error(message), {
+          type: "rendererCrash",
+          module: "renderer",
+        }),
+      );
     }
   });
 }

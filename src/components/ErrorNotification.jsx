@@ -47,6 +47,10 @@ const ErrorNotification = ({ error, open, onClose }) => {
         source: "error-notification",
         title: translatedError.title,
         description: translatedError.originalError,
+        errorCategory: classification.category,
+        errorAction: classification.action,
+        errorCode: classification.code || translatedError.errorType || null,
+        classificationReason: classification.reason || null,
       });
     } finally {
       setActionBusy(false);
@@ -79,7 +83,21 @@ const ErrorNotification = ({ error, open, onClose }) => {
         source: "error-notification",
         title: translatedError.title,
         description: translatedError.originalError,
+        errorCategory: classification.category,
+        errorAction: classification.action,
+        errorCode: classification.code || translatedError.errorType || null,
+        classificationReason: classification.reason || null,
       });
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleReloadWindow = async () => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      await window.terminalAPI?.reloadWindow?.();
     } finally {
       setActionBusy(false);
     }
@@ -198,6 +216,26 @@ const ErrorNotification = ({ error, open, onClose }) => {
                 }}
               >
                 {t("errorNotification.feedback")}
+              </Button>
+            )}
+            {classification.fatal && (
+              <Button
+                size="small"
+                disabled={actionBusy}
+                onClick={handleReloadWindow}
+                sx={{
+                  color: "inherit",
+                  p: 0,
+                  minWidth: "auto",
+                  fontSize: "0.75rem",
+                  textTransform: "none",
+                  "&:hover": {
+                    backgroundColor: "transparent",
+                    textDecoration: "underline",
+                  },
+                }}
+              >
+                {t("errorNotification.reloadWindow")}
               </Button>
             )}
           </Box>

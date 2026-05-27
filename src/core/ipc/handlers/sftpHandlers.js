@@ -1,27 +1,7 @@
 const fileSnapshotStore = require("../../utils/fileSnapshotStore");
 const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
-
-function buildErrorResponse(error, fallbackMessage = "Operation failed") {
-  const fallback =
-    fallbackMessage && fallbackMessage !== "Operation failed"
-      ? fallbackMessage
-      : null;
-  const message =
-    fallback || error?.message || String(error || fallbackMessage);
-  return {
-    success: false,
-    error: message,
-    message,
-    errorCode: error?.errorCode || error?.code || null,
-    code: error?.code || error?.errorCode || null,
-    errorKind: error?.errorKind || null,
-    retryable: error?.retryable === true,
-    module: error?.module || null,
-    operation: error?.operation || null,
-    raw: error?.raw || null,
-  };
-}
+const { buildErrorResponse } = require("../../utils/errorResponse");
 
 /**
  * SFTP会话和队列相关的IPC处理器

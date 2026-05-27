@@ -5,28 +5,19 @@
  */
 
 import i18n from "../i18n/i18n";
+import errorClassification from "../shared/errorClassification";
+
+const {
+  ERROR_NOTIFICATION_LEVELS,
+  ERROR_TYPES: SharedErrorTypes,
+  classifyError,
+  detectErrorType: detectSharedErrorType,
+} = errorClassification;
 
 /**
  * 错误类型定义
  */
-export const ErrorType = {
-  // 网络连接错误
-  CONNECTION_REFUSED: "ECONNREFUSED",
-  CONNECTION_TIMEOUT: "ETIMEDOUT",
-  HOST_UNREACHABLE: "EHOSTUNREACH",
-  HOST_NOT_FOUND: "ENOTFOUND",
-  CONNECTION_RESET: "ECONNRESET",
-  NETWORK_UNREACHABLE: "ENETUNREACH",
-
-  // SSH认证错误
-  AUTH_FAILED: "AUTH_FAILED",
-  KEY_ERROR: "KEY_ERROR",
-
-  // 其他错误
-  PERMISSION_DENIED: "EACCES",
-  FILE_NOT_FOUND: "ENOENT",
-  OPERATION_TIMEOUT: "OPERATION_TIMEOUT",
-};
+export const ErrorType = SharedErrorTypes;
 
 /**
  * 错误信息映射键名(用于i18n)
@@ -51,194 +42,50 @@ const errorI18nKeys = {
  * @returns {string|null} - 错误类型或null
  */
 export function detectErrorType(error) {
-  const errorMessage =
-    typeof error === "string"
-      ? error
-      : error?.message || error?.code || error?.errorCode || "";
-  const errorCode =
-    typeof error === "object" ? error?.code || error?.errorCode : null;
-  const lowerMessage = errorMessage.toLowerCase();
-
-  // 优先检查错误代码
-  if (errorCode) {
-    if (Object.values(ErrorType).includes(errorCode)) {
-      return errorCode;
-    }
-  }
-
-  // 检查消息内容
-  if (
-    lowerMessage.includes("econnrefused") ||
-    lowerMessage.includes("connection refused")
-  ) {
-    return ErrorType.CONNECTION_REFUSED;
-  }
-  if (
-    lowerMessage.includes("etimedout") ||
-    lowerMessage.includes("timed out")
-  ) {
-    return ErrorType.CONNECTION_TIMEOUT;
-  }
-  if (
-    lowerMessage.includes("ehostunreach") ||
-    lowerMessage.includes("host unreachable")
-  ) {
-    return ErrorType.HOST_UNREACHABLE;
-  }
-  if (
-    lowerMessage.includes("enotfound") ||
-    lowerMessage.includes("getaddrinfo")
-  ) {
-    return ErrorType.HOST_NOT_FOUND;
-  }
-  if (
-    lowerMessage.includes("econnreset") ||
-    lowerMessage.includes("connection reset")
-  ) {
-    return ErrorType.CONNECTION_RESET;
-  }
-  if (
-    lowerMessage.includes("enetunreach") ||
-    lowerMessage.includes("network unreachable")
-  ) {
-    return ErrorType.NETWORK_UNREACHABLE;
-  }
-  if (
-    lowerMessage.includes("authentication failed") ||
-    lowerMessage.includes("auth fail")
-  ) {
-    return ErrorType.AUTH_FAILED;
-  }
-  if (
-    lowerMessage.includes("key") &&
-    (lowerMessage.includes("invalid") || lowerMessage.includes("error"))
-  ) {
-    return ErrorType.KEY_ERROR;
-  }
-  if (
-    lowerMessage.includes("eacces") ||
-    lowerMessage.includes("permission denied")
-  ) {
-    return ErrorType.PERMISSION_DENIED;
-  }
-  if (
-    lowerMessage.includes("enoent") ||
-    lowerMessage.includes("no such file")
-  ) {
-    return ErrorType.FILE_NOT_FOUND;
-  }
-  if (lowerMessage.includes("timeout") && !lowerMessage.includes("etimedout")) {
-    return ErrorType.OPERATION_TIMEOUT;
-  }
-
-  return null;
+  return detectSharedErrorType(error);
 }
 
 export function classifyErrorForNotification(error) {
-  const explicitCategory =
-    typeof error === "object" && typeof error?.category === "string"
-      ? error.category
-      : typeof error === "object" && typeof error?.level === "string"
-        ? error.level
-        : "";
-  const explicitAction =
-    typeof error === "object" && typeof error?.action === "string"
-      ? error.action
-      : "";
-  const retryable = typeof error === "object" && error?.retryable === true;
-  const errorType = detectErrorType(error);
-  const message =
-    typeof error === "string" ? error : error?.message || error?.error || "";
-  const lowerMessage = String(message || "").toLowerCase();
-  const kind =
-    typeof error === "object" && typeof error?.errorKind === "string"
-      ? error.errorKind
-      : "";
-
-  if (
-    explicitCategory === "fatal" ||
-    explicitAction === "fatal" ||
-    lowerMessage.includes("renderer process gone") ||
-    lowerMessage.includes("uncaughtexception")
-  ) {
-    return {
-      category: "fatal",
-      label: i18n.t("errors.classification.fatal"),
-      severity: "error",
-      persistent: true,
-      showFeedback: true,
-      showDiagnostics: true,
-    };
-  }
-
-  if (
-    retryable ||
-    explicitCategory === "retry" ||
-    explicitAction === "retry" ||
-    [
-      ErrorType.CONNECTION_REFUSED,
-      ErrorType.CONNECTION_TIMEOUT,
-      ErrorType.HOST_UNREACHABLE,
-      ErrorType.CONNECTION_RESET,
-      ErrorType.NETWORK_UNREACHABLE,
-      ErrorType.OPERATION_TIMEOUT,
-    ].includes(errorType)
-  ) {
-    return {
-      category: "retry",
-      label: i18n.t("errors.classification.retry"),
-      severity: "warning",
-      persistent: false,
-      showFeedback: false,
-      showDiagnostics: true,
-    };
-  }
-
-  if (
-    explicitCategory === "recoverable" ||
-    explicitAction === "recover" ||
-    [
-      ErrorType.AUTH_FAILED,
-      ErrorType.KEY_ERROR,
-      ErrorType.PERMISSION_DENIED,
-      ErrorType.FILE_NOT_FOUND,
-      ErrorType.HOST_NOT_FOUND,
-    ].includes(errorType)
-  ) {
-    return {
-      category: "recoverable",
-      label: i18n.t("errors.classification.recoverable"),
-      severity: "warning",
-      persistent: false,
-      showFeedback: false,
-      showDiagnostics: false,
-    };
-  }
-
-  if (
-    explicitCategory === "feedback" ||
-    explicitAction === "feedback" ||
-    kind === "internal" ||
-    lowerMessage.includes("sidecar") ||
-    lowerMessage.includes("invalid json")
-  ) {
-    return {
-      category: "feedback",
-      label: i18n.t("errors.classification.feedback"),
-      severity: "error",
-      persistent: true,
-      showFeedback: true,
-      showDiagnostics: true,
-    };
-  }
+  const explicit =
+    typeof error === "object" && error?.errorClassification
+      ? error.errorClassification
+      : null;
+  const classification = explicit || classifyError(error);
+  const category =
+    classification.category || ERROR_NOTIFICATION_LEVELS.FEEDBACK;
 
   return {
-    category: "feedback",
-    label: i18n.t("errors.classification.feedback"),
-    severity: "error",
-    persistent: true,
-    showFeedback: true,
-    showDiagnostics: true,
+    ...classification,
+    category,
+    label: i18n.t(`errors.classification.${category}`),
+    severity: classification.severity || "error",
+    persistent: classification.persistent === true,
+    showFeedback: classification.showFeedback === true,
+    showDiagnostics: classification.showDiagnostics === true,
+  };
+}
+
+function getClassifiedErrorTranslation(error, classification) {
+  const category =
+    classification.category || ERROR_NOTIFICATION_LEVELS.FEEDBACK;
+  const originalMessage =
+    typeof error === "string"
+      ? error
+      : error?.message || error?.error || error?.reason || "Unknown error";
+  const baseKey = `errors.classified.${category}`;
+
+  return {
+    title: i18n.t(`${baseKey}.title`),
+    message: i18n.t(`${baseKey}.message`, {
+      message: originalMessage,
+      code: classification.code || "",
+    }),
+    solutions: i18n.t(`${baseKey}.solutions`, { returnObjects: true }),
+    action: i18n.t(`${baseKey}.action`),
+    severity: classification.severity || "error",
+    originalError: originalMessage,
+    errorType: classification.code || "UNKNOWN",
+    classification,
   };
 }
 
@@ -249,8 +96,11 @@ export function classifyErrorForNotification(error) {
  */
 export function translateError(error) {
   const errorType = detectErrorType(error);
+  const classification = classifyErrorForNotification(error);
   const originalMessage =
-    typeof error === "string" ? error : error?.message || "未知错误";
+    typeof error === "string"
+      ? error
+      : error?.message || error?.error || "未知错误";
 
   if (errorType && errorI18nKeys[errorType]) {
     const i18nKey = errorI18nKeys[errorType];
@@ -260,22 +110,14 @@ export function translateError(error) {
       message: i18n.t(`${i18nKey}.message`),
       solutions: i18n.t(`${i18nKey}.solutions`, { returnObjects: true }),
       action: i18n.t(`${i18nKey}.action`),
-      severity: classifyErrorForNotification(error).severity,
+      severity: classification.severity,
       originalError: originalMessage,
       errorType,
+      classification,
     };
   }
 
-  // 如果无法识别错误类型，返回通用格式
-  return {
-    title: i18n.t("errors.UNKNOWN.title"),
-    message: originalMessage,
-    solutions: i18n.t("errors.UNKNOWN.solutions", { returnObjects: true }),
-    action: i18n.t("errors.UNKNOWN.action"),
-    severity: "error",
-    originalError: originalMessage,
-    errorType: "UNKNOWN",
-  };
+  return getClassifiedErrorTranslation(error, classification);
 }
 
 /**

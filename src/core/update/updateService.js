@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const { spawn, execFile } = require("child_process");
 const { logToFile } = require("../utils/logger");
 const { getTempDirectory } = require("../utils/appPaths");
+const { buildErrorResponse } = require("../utils/errorResponse");
 
 const DOWNLOAD_CONNECTION_TIMEOUT = 30000;
 const DOWNLOAD_DATA_TIMEOUT = 60000;
@@ -379,7 +380,10 @@ class UpdateService {
       return { success: true, updateInfo };
     } catch (error) {
       logToFile(`Error checking for updates: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, {
+        module: "update",
+        operation: "checkForUpdate",
+      });
     }
   }
 
@@ -950,9 +954,29 @@ class UpdateService {
 
   async recordUpdateError(stage, error, extra = {}) {
     const message = error?.message || String(error || "Unknown update error");
+    const classified = buildErrorResponse(error, {
+      module: "update",
+      operation: stage,
+      retryable:
+        stage === "download" ||
+        stage === "download-cancelled" ||
+        stage === "install",
+    });
     const payload = {
       stage,
       message,
+      technicalMessage: classified.technicalMessage || message,
+      errorCode: classified.errorCode,
+      code: classified.code,
+      errorKind: classified.errorKind,
+      errorCategory: classified.errorCategory,
+      errorAction: classified.errorAction,
+      errorSeverity: classified.errorSeverity,
+      errorClassification: classified.errorClassification,
+      retryable: classified.retryable,
+      reportable: classified.reportable,
+      userRecoverable: classified.userRecoverable,
+      fatal: classified.fatal,
       stack: error?.stack || null,
       currentVersion: this.currentVersion,
       timestamp: new Date().toISOString(),
@@ -1371,8 +1395,11 @@ class UpdateService {
         lastError: errorInfo,
       }).catch(() => null);
       return {
-        success: false,
-        error: error.message,
+        ...buildErrorResponse(error, {
+          module: "update",
+          operation: "installUpdate",
+          retryable: true,
+        }),
         installerLogPath: this.installerLogPath,
         canRetry: true,
       };
@@ -1669,11 +1696,28 @@ class UpdateService {
         lastError,
       };
     } catch (error) {
+      const classified = buildErrorResponse(error, {
+        module: "update",
+        operation: "hasDownloadedInstaller",
+      });
       return {
         available: false,
         currentVersion: this.currentVersion,
         lastError,
-        error: error.message,
+        error: classified.error,
+        message: classified.message,
+        technicalMessage: classified.technicalMessage,
+        errorCode: classified.errorCode,
+        code: classified.code,
+        errorKind: classified.errorKind,
+        errorCategory: classified.errorCategory,
+        errorAction: classified.errorAction,
+        errorSeverity: classified.errorSeverity,
+        errorClassification: classified.errorClassification,
+        retryable: classified.retryable,
+        reportable: classified.reportable,
+        userRecoverable: classified.userRecoverable,
+        fatal: classified.fatal,
       };
     }
   }

@@ -18,6 +18,7 @@ const {
 const aiWorkerManager = require("./core/workers/aiWorkerManager");
 const { createWindow } = require("./core/window/windowManager");
 const setupIPC = require("./core/ipc/setupIPC");
+const { buildErrorEvent } = require("./core/utils/errorResponse");
 
 const PRODUCT_NAME = "SimpleShell";
 
@@ -87,11 +88,13 @@ process.on("uncaughtException", (error) => {
   } = require("./core/window/windowManager");
   const mainWindow = getPrimaryWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
-    safeSendToRenderer("app:error", {
-      type: "uncaughtException",
-      message: error.message || String(error),
-      timestamp: Date.now(),
-    });
+    safeSendToRenderer(
+      "app:error",
+      buildErrorEvent(error, {
+        type: "uncaughtException",
+        module: "main",
+      }),
+    );
   }
 });
 
@@ -118,11 +121,14 @@ process.on("unhandledRejection", (reason) => {
   } = require("./core/window/windowManager");
   const mainWindow = getPrimaryWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
-    safeSendToRenderer("app:error", {
-      type: "unhandledRejection",
-      message: errorMessage || "未知Promise错误",
-      timestamp: Date.now(),
-    });
+    safeSendToRenderer(
+      "app:error",
+      buildErrorEvent(error, {
+        type: "unhandledRejection",
+        module: "main",
+        message: errorMessage || "未知Promise错误",
+      }),
+    );
   }
 });
 
