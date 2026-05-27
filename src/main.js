@@ -2,7 +2,7 @@
  * SimpleShell 主入口文件
  * 仅包含应用生命周期事件和模块初始化
  */
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, dialog, shell } = require("electron");
 const { logToFile } = require("./core/utils/logger");
 const {
   initializeCrashReporter,
@@ -12,8 +12,13 @@ const {
   AppInitializer,
   AppCleanup,
   ipcSetup,
+  attachDesktopWindowIntegration,
   bootstrapHardwareAcceleration,
+  handleSecondInstance,
+  handleSystemOpenFiles,
+  installDesktopIntegration,
   installSystemMenu,
+  showPrimaryWindow,
 } = require("./core/app");
 const aiWorkerManager = require("./core/workers/aiWorkerManager");
 const { createWindow } = require("./core/window/windowManager");
@@ -35,13 +40,8 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    const mainWindow = BrowserWindow.getAllWindows()[0];
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+  app.on("second-instance", (_event, commandLine = []) => {
+    handleSecondInstance(commandLine, { createWindow: createMainWindow });
   });
 }
 
@@ -142,6 +142,7 @@ function createMainWindow() {
     webpackEntry: MAIN_WINDOW_WEBPACK_ENTRY,
     onSetupIPC: setupIPC,
   });
+  attachDesktopWindowIntegration(mainWindow);
   installSystemMenu();
   return mainWindow;
 }
@@ -151,6 +152,7 @@ app.whenReady().then(async () => {
   // 初始化应用
   appInitializer = new AppInitializer(app);
   await appInitializer.initialize(dialog, shell);
+  installDesktopIntegration();
 
   // 初始化IPC（在窗口创建前）
   ipcSetup.initializeBeforeWindow();
@@ -166,21 +168,30 @@ app.whenReady().then(async () => {
 
 // 应用退出前清理
 appCleanup = new AppCleanup(app);
-app.on("before-quit", async (event) => {
-  await appCleanup.handleBeforeQuit(event, ipcSetup);
+app.on("before-quit", (event) => {
+  void appCleanup
+    .handleBeforeQuit(event, ipcSetup, {
+      beforeCleanup: () => aiWorkerManager.terminateAIWorker(),
+    })
+    .catch((error) => {
+      logToFile(`App quit cleanup failed: ${error.message}`, "ERROR");
+      app.quit();
+    });
 });
 
 // 关闭所有窗口时退出应用（macOS除外）
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
-    aiWorkerManager.terminateAIWorker();
     app.quit();
   }
 });
 
 // macOS激活应用
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createMainWindow();
-  }
+  showPrimaryWindow({ createWindow: createMainWindow });
+});
+
+app.on("open-file", (event, filePath) => {
+  event.preventDefault();
+  handleSystemOpenFiles([filePath], { createWindow: createMainWindow });
 });

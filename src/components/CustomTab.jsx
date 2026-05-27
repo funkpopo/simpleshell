@@ -161,9 +161,7 @@ const CustomTab = memo((props) => {
           font-weight: 600;
           letter-spacing: 0.01em;
           border: 1px solid ${
-            isDark
-              ? "rgba(255, 255, 255, 0.22)"
-              : "rgba(255, 255, 255, 0.85)"
+            isDark ? "rgba(255, 255, 255, 0.22)" : "rgba(255, 255, 255, 0.85)"
           };
           box-shadow:
             0 1px 0 rgba(255,255,255,0.35) inset,
@@ -445,7 +443,7 @@ const CustomTab = memo((props) => {
           // 悬停目标：微微浮起 + 液态玻璃高亮
           ...(isDraggedOver && {
             position: "relative",
-            cursor: "pointer",
+            cursor: "default",
             transform: "scale(1.03) translateY(-2px)",
             WebkitBackdropFilter: "saturate(180%) blur(12px)",
             backdropFilter: "saturate(180%) blur(12px)",

@@ -2085,6 +2085,37 @@ function AppContent() {
     return window.terminalAPI.onMenuAction(handleSystemMenuAction);
   }, [handleSystemMenuAction]);
 
+  const handleDesktopOpenFiles = useCallback(
+    (payload) => {
+      const filePaths = Array.isArray(payload?.filePaths)
+        ? payload.filePaths
+            .map((filePath) =>
+              typeof filePath === "string" ? filePath.trim() : "",
+            )
+            .filter(Boolean)
+        : [];
+
+      if (filePaths.length === 0) {
+        return;
+      }
+
+      showInfo(
+        t("app.openFilesReceived", {
+          count: filePaths.length,
+          firstPath: filePaths[0],
+        }),
+      );
+    },
+    [showInfo, t],
+  );
+
+  React.useEffect(() => {
+    if (!window.terminalAPI?.onOpenFiles) {
+      return undefined;
+    }
+    return window.terminalAPI.onOpenFiles(handleDesktopOpenFiles);
+  }, [handleDesktopOpenFiles]);
+
   // 处理应用退出
   const handleExit = useCallback(() => {
     if (window.terminalAPI && window.terminalAPI.closeApp) {

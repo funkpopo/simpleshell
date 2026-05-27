@@ -7,6 +7,56 @@ const path = require("path");
 const fs = require("fs");
 const { shell } = require("electron");
 
+const toPosixPath = (targetPath = "") => String(targetPath).replace(/\\/g, "/");
+
+const normalizeDroppedRemotePath = (remotePath) => {
+  const raw = String(remotePath ?? "").trim();
+  if (!raw || raw === "~") return ".";
+
+  const normalized = toPosixPath(raw);
+  if (normalized === "~") return ".";
+  if (normalized.startsWith("~/")) return `./${normalized.slice(2)}`;
+  return normalized;
+};
+
+const joinDroppedRemotePath = (basePath, childPath) => {
+  const base = normalizeDroppedRemotePath(basePath);
+  const child = toPosixPath(childPath || "").replace(/^\/+/, "");
+  if (!child) return base;
+  if (base === ".") return child;
+  return path.posix.join(base, child);
+};
+
+const normalizeDroppedRelativePath = (relativePath, name = "") => {
+  const normalized = toPosixPath(relativePath || name || "")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment && segment !== "." && segment !== "..")
+    .join("/");
+
+  return normalized || "unnamed-file";
+};
+
+const isDroppedRemoteNotFound = (errorLike = {}) => {
+  const errorCode = String(
+    errorLike.errorCode || errorLike.code || errorLike.raw?.errorCode || "",
+  ).toUpperCase();
+  const errorKind = String(
+    errorLike.errorKind || errorLike.kind || errorLike.raw?.errorKind || "",
+  ).toLowerCase();
+  const message = String(
+    errorLike.error || errorLike.message || errorLike.raw?.error || "",
+  ).toLowerCase();
+
+  return (
+    errorCode === "NATIVE_SFTP_NOT_FOUND" ||
+    errorKind === "notfound" ||
+    message.includes("no such file") ||
+    message.includes("not found") ||
+    message.includes("does not exist")
+  );
+};
+
 /**
  * 文件操作相关的IPC处理器
  */
@@ -142,6 +192,16 @@ class FileHandlers {
         channel: "uploadDroppedFiles",
         category: "file",
         handler: this.uploadDroppedFiles.bind(this),
+      },
+      {
+        channel: "validateDroppedItems",
+        category: "file",
+        handler: this.validateDroppedItems.bind(this),
+      },
+      {
+        channel: "checkDroppedUploadConflicts",
+        category: "file",
+        handler: this.checkDroppedUploadConflicts.bind(this),
       },
       {
         channel: "upload-folder",
@@ -559,6 +619,177 @@ class FileHandlers {
       logToFile(`Error showing item in folder: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
+  }
+
+  async validateDroppedItems(event, items) {
+    const sourceItems = Array.isArray(items) ? items : [];
+    const files = [];
+    const folders = [];
+    const rejected = [];
+
+    for (const item of sourceItems) {
+      const name =
+        typeof item?.name === "string" && item.name.trim()
+          ? item.name.trim()
+          : path.basename(String(item?.localPath || ""));
+      const localPath =
+        typeof item?.localPath === "string" ? item.localPath.trim() : "";
+      const relativePath = normalizeDroppedRelativePath(
+        item?.relativePath,
+        name,
+      );
+
+      if (!localPath) {
+        rejected.push({
+          name: name || relativePath,
+          relativePath,
+          reason: "missing-local-path",
+          message: "Dropped item has no verifiable local path",
+        });
+        continue;
+      }
+
+      try {
+        const resolvedPath = path.resolve(localPath);
+        const stats = fs.statSync(resolvedPath);
+        fs.accessSync(resolvedPath, fs.constants.R_OK);
+
+        const descriptor = {
+          name: name || path.basename(resolvedPath),
+          localPath: resolvedPath,
+          relativePath,
+          size: Number.isFinite(stats.size) ? stats.size : 0,
+          lastModified: Number.isFinite(stats.mtimeMs) ? stats.mtimeMs : 0,
+          isDirectory: stats.isDirectory(),
+          isFile: stats.isFile(),
+        };
+
+        if (descriptor.isFile) {
+          files.push(descriptor);
+          continue;
+        }
+
+        if (descriptor.isDirectory) {
+          folders.push(descriptor);
+          continue;
+        }
+
+        rejected.push({
+          name: descriptor.name,
+          localPath: resolvedPath,
+          relativePath,
+          reason: "unsupported-file-type",
+          message: "Dropped item is not a regular file or directory",
+        });
+      } catch (error) {
+        rejected.push({
+          name: name || relativePath,
+          localPath,
+          relativePath,
+          reason:
+            error?.code === "EACCES" || error?.code === "EPERM"
+              ? "permission-denied"
+              : "not-readable",
+          message: error?.message || "Dropped item is not readable",
+        });
+      }
+    }
+
+    return {
+      success: rejected.length === 0,
+      files,
+      folders,
+      rejected,
+      totalItems: sourceItems.length,
+    };
+  }
+
+  async checkDroppedUploadConflicts(event, tabId, targetFolder, uploadData) {
+    const processInfo = processManager.getProcess(tabId);
+    if (
+      !processInfo ||
+      !processInfo.config ||
+      !processInfo.process ||
+      processInfo.type !== "ssh2"
+    ) {
+      return { success: false, error: "无效或未就绪的SSH连接" };
+    }
+
+    const normalizedTarget = normalizeDroppedRemotePath(targetFolder);
+    const rawFiles = Array.isArray(uploadData?.files) ? uploadData.files : [];
+    const rawFolders = Array.isArray(uploadData?.folders)
+      ? uploadData.folders
+      : [];
+    const candidates = [];
+
+    for (const fileData of rawFiles) {
+      const relativePath = normalizeDroppedRelativePath(
+        fileData?.relativePath,
+        fileData?.name,
+      );
+      candidates.push({
+        type: "file",
+        name: path.posix.basename(relativePath),
+        relativePath,
+        remotePath: joinDroppedRemotePath(normalizedTarget, relativePath),
+      });
+    }
+
+    for (const folderPath of rawFolders) {
+      const relativePath = normalizeDroppedRelativePath(folderPath, folderPath);
+      candidates.push({
+        type: "directory",
+        name: path.posix.basename(relativePath),
+        relativePath,
+        remotePath: joinDroppedRemotePath(normalizedTarget, relativePath),
+      });
+    }
+
+    const dedupedCandidates = Array.from(
+      new Map(candidates.map((candidate) => [candidate.remotePath, candidate]))
+        .values(),
+    );
+    const conflicts = [];
+
+    for (const candidate of dedupedCandidates) {
+      try {
+        const result = await nativeSftpClient.getFilePermissions(
+          tabId,
+          candidate.remotePath,
+        );
+        if (result?.success) {
+          conflicts.push({
+            ...candidate,
+            mode: result.mode,
+            permissions: result.permissions,
+            isDirectory: result.stats?.isDirectory === true,
+          });
+        } else if (!isDroppedRemoteNotFound(result || {})) {
+          return {
+            success: false,
+            error:
+              result?.error ||
+              result?.message ||
+              "Failed to check remote path conflicts",
+          };
+        }
+      } catch (error) {
+        if (isDroppedRemoteNotFound(error)) {
+          continue;
+        }
+
+        return {
+          success: false,
+          error: error?.message || "Failed to check remote path conflicts",
+        };
+      }
+    }
+
+    return {
+      success: true,
+      hasConflicts: conflicts.length > 0,
+      conflicts,
+    };
   }
 
   async cancelTransfer(event, tabId, transferKey) {

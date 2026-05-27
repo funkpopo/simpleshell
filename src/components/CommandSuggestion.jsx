@@ -14,6 +14,7 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useConditionalWindowEvent } from "../hooks/useWindowEvent.js";
+import { shouldIgnoreCommandSuggestionKeyEvent } from "../modules/terminal/commandSuggestionState.js";
 import { resolveCommandSuggestionWindowPosition } from "../modules/terminal/commandSuggestionPosition.js";
 
 const COMMAND_FONT =
@@ -231,6 +232,10 @@ const CommandSuggestion = ({
 
     // 主要的键盘事件处理器
     const keyHandler = (e) => {
+      if (shouldIgnoreCommandSuggestionKeyEvent(e)) {
+        return;
+      }
+
       // 仅当通过方向键激活并有有效选中项时，才拦截 Enter/Delete
       if (e.key === "Enter" || e.key === "Delete") {
         const hasValidSelection =
@@ -336,7 +341,7 @@ const CommandSuggestion = ({
       if (selectedItem) {
         selectedItem.scrollIntoView({
           block: "nearest",
-          behavior: "smooth",
+          behavior: "auto",
         });
       }
     }
@@ -353,6 +358,10 @@ const CommandSuggestion = ({
     windowWidth: window.innerWidth,
     windowHeight: window.innerHeight,
   });
+
+  if (!windowPosition) {
+    return null;
+  }
 
   // 高亮匹配的文本
   const highlightMatch = (text, input) => {
@@ -401,6 +410,9 @@ const CommandSuggestion = ({
         // 添加过渡动画以平滑显示位置和尺寸变化
         transition:
           "left 0.1s ease-out, top 0.1s ease-out, width 0.2s ease-out",
+        "@media (prefers-reduced-motion: reduce)": {
+          transition: "none",
+        },
         // 确保窗口不会被其他元素遮挡
         "&::before": {
           content: '""',
@@ -449,7 +461,7 @@ const CommandSuggestion = ({
             onMouseEnter={() => handleMouseEnter(index)}
             sx={{
               padding: "4px 8px",
-              cursor: "pointer",
+              cursor: "default",
               height: "28px",
               minHeight: "28px",
               maxHeight: "28px",
@@ -466,7 +478,11 @@ const CommandSuggestion = ({
                 selectedIndex === index
                   ? `2px solid ${theme.palette.primary.main}`
                   : "2px solid transparent",
-              transition: "all 0.2s ease",
+              transition:
+                "background-color 0.12s ease, border-color 0.12s ease",
+              "@media (prefers-reduced-motion: reduce)": {
+                transition: "none",
+              },
             }}
           >
             <ListItemText

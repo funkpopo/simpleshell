@@ -368,13 +368,17 @@ class AppCleanup {
    * @param {Event} event - Electron事件对象
    * @param {Object} ipcSetup - IPC设置模块实例
    */
-  async handleBeforeQuit(event, ipcSetup) {
+  async handleBeforeQuit(event, ipcSetup, { beforeCleanup } = {}) {
     if (this.isQuitting) {
       return;
     }
 
     event.preventDefault();
     this.isQuitting = true;
+
+    if (typeof beforeCleanup === "function") {
+      await beforeCleanup();
+    }
 
     await this.performCleanup(ipcSetup);
     this.app.quit();

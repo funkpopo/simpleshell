@@ -168,6 +168,14 @@ class ConfigService {
         },
         performance: { type: "object", default: {} },
         externalEditor: { type: "object", default: {} },
+        desktopIntegration: {
+          type: "object",
+          default: {},
+          properties: {
+            trayEnabled: { type: "boolean", default: false },
+            closeToTray: { type: "boolean", default: false },
+          },
+        },
         ipQueryHistory: {
           type: "array",
           default: [],
@@ -377,6 +385,10 @@ class ConfigService {
         terminalFontSize: 14,
         performance: {},
         externalEditor: {},
+        desktopIntegration: {
+          trayEnabled: false,
+          closeToTray: false,
+        },
         ipQueryHistory: [],
         windowBounds: {},
       },
@@ -1187,6 +1199,10 @@ class ConfigService {
       terminalFontSize: 14,
       performance: {},
       externalEditor: {},
+      desktopIntegration: {
+        trayEnabled: false,
+        closeToTray: false,
+      },
       ipQueryHistory: [],
       windowBounds: {},
     };

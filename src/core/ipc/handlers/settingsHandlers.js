@@ -15,6 +15,9 @@ const {
   getErrorReportingStatus,
   saveErrorReportingSettings,
 } = require("../../utils/crashReporter");
+const {
+  applyDesktopIntegrationSettings,
+} = require("../../app/desktopIntegration");
 
 const LOCAL_DATA_SECTIONS = new Set([
   "connections",
@@ -235,7 +238,11 @@ class SettingsHandlers {
 
   async saveUISettings(event, settings) {
     try {
-      configService.saveUISettings(settings);
+      const saved = configService.saveUISettings(settings);
+      if (!saved) {
+        throw new Error("Failed to save UI settings");
+      }
+      applyDesktopIntegrationSettings(settings?.desktopIntegration || {});
       return { success: true };
     } catch (error) {
       logToFile(`Error saving UI settings: ${error.message}`, "ERROR");

@@ -42,10 +42,27 @@ const shouldDisplayCommandSuggestions = ({
   !inEditorMode &&
   !isCommandExecuting;
 
+const shouldIgnoreCommandSuggestionKeyEvent = (event = {}) =>
+  event?.isComposing === true ||
+  event?.keyCode === 229 ||
+  event?.key === "Process" ||
+  event?.key === "Unidentified" ||
+  event?.key === "Dead" ||
+  event?.key === "Shift" ||
+  event?.key === "AltGraph" ||
+  event?.key === "ModeChange" ||
+  event?.key === "Convert" ||
+  event?.key === "NonConvert" ||
+  event?.key === "HangulMode" ||
+  event?.key === "HanjaMode" ||
+  event?.key === "KanaMode" ||
+  event?.key === "KanjiMode";
+
 module.exports = {
   normalizeCommandSuggestionInput,
   shouldRequestCommandSuggestions,
   isSuggestionTrackingContext,
   shouldResumePromptTrackingOnInput,
   shouldDisplayCommandSuggestions,
+  shouldIgnoreCommandSuggestionKeyEvent,
 };
