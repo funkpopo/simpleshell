@@ -727,7 +727,8 @@ const GroupListItem = memo(function GroupListItem({
               ? alpha(theme.palette.primary.main, 0.2)
               : alpha(theme.palette.primary.main, 0.15)
             : "transparent",
-          transition: "all 0.2s ease",
+          transition:
+            "background-color 0.2s ease, max-height 0.2s ease, opacity 0.2s ease, margin 0.2s ease",
           maxHeight: shouldShowChildren ? "none" : "0px",
           opacity: shouldShowChildren ? 1 : 0,
           overflow: "hidden",

@@ -238,6 +238,8 @@ const Settings = memo(({ open, onClose }) => {
   const [dndEnabled, setDndEnabled] = React.useState(true);
   const [dndAutoScroll, setDndAutoScroll] = React.useState(true);
   const [dndCompactPreview, setDndCompactPreview] = React.useState(false);
+  const [trayEnabled, setTrayEnabled] = React.useState(false);
+  const [closeToTray, setCloseToTray] = React.useState(false);
 
   // 传输栏显示模式: "bottom" | "sidebar"
   const [transferBarMode, setTransferBarMode] = React.useState("bottom");
@@ -300,6 +302,12 @@ const Settings = memo(({ open, onClose }) => {
             setDndEnabled(dnd.enabled !== false);
             setDndAutoScroll(dnd.autoScroll !== false);
             setDndCompactPreview(dnd.compactDragPreview === true);
+            const desktopIntegration = settings.desktopIntegration || {};
+            setTrayEnabled(desktopIntegration.trayEnabled === true);
+            setCloseToTray(
+              desktopIntegration.trayEnabled === true &&
+                desktopIntegration.closeToTray === true,
+            );
 
             // 传输栏显示模式
             setTransferBarMode(settings.transferBarMode || "bottom");
@@ -727,6 +735,10 @@ const Settings = memo(({ open, onClose }) => {
             autoScroll: dndAutoScroll,
             compactDragPreview: dndCompactPreview,
           },
+          desktopIntegration: {
+            trayEnabled,
+            closeToTray: trayEnabled && closeToTray,
+          },
           transferBarMode,
           externalEditor: {
             enabled: externalEditorEnabled,
@@ -796,6 +808,10 @@ const Settings = memo(({ open, onClose }) => {
               enabled: dndEnabled,
               autoScroll: dndAutoScroll,
               compactDragPreview: dndCompactPreview,
+            },
+            desktopIntegration: {
+              trayEnabled,
+              closeToTray: trayEnabled && closeToTray,
             },
             transferBarMode,
             externalEditor: {
@@ -976,6 +992,48 @@ const Settings = memo(({ open, onClose }) => {
                       label={
                         <Typography variant="body2">
                           {t("settings.dnd.compactPreview")}
+                        </Typography>
+                      }
+                    />
+                  </Box>
+
+                  <Divider sx={{ my: 1.25 }} />
+
+                  <Typography variant="subtitle2" gutterBottom>
+                    {t("settings.desktopIntegration.title")}
+                  </Typography>
+                  <Box sx={{ display: "flex", flexDirection: "column", mb: 1 }}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={trayEnabled}
+                          onChange={(e) => {
+                            setTrayEnabled(e.target.checked);
+                            if (!e.target.checked) {
+                              setCloseToTray(false);
+                            }
+                          }}
+                          size="small"
+                        />
+                      }
+                      label={
+                        <Typography variant="body2">
+                          {t("settings.desktopIntegration.trayEnabled")}
+                        </Typography>
+                      }
+                    />
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={closeToTray}
+                          onChange={(e) => setCloseToTray(e.target.checked)}
+                          disabled={!trayEnabled}
+                          size="small"
+                        />
+                      }
+                      label={
+                        <Typography variant="body2">
+                          {t("settings.desktopIntegration.closeToTray")}
                         </Typography>
                       }
                     />

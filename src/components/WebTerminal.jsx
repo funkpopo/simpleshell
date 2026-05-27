@@ -23,6 +23,7 @@ import { isPromptReadyFromTerminal } from "../modules/terminal/promptDetection.j
 import {
   isSuggestionTrackingContext,
   shouldDisplayCommandSuggestions,
+  shouldIgnoreCommandSuggestionKeyEvent,
   shouldResumePromptTrackingOnInput,
 } from "../modules/terminal/commandSuggestionState.js";
 import { resetSessionRestoreInteractionState } from "../modules/terminal/sessionRestoreUI.js";
@@ -550,6 +551,7 @@ const WebTerminal = ({
   const lastExecutedCommandTimeRef = useRef(0);
   const lastExecutedCommandRef = useRef("");
   const pendingSystemShortcutRecoveryRef = useRef(false);
+  const imeCompositionActiveRef = useRef(false);
   const recoverTerminalInteractionStateRef = useRef(() => {});
   const promptTrackingStateRef = useRef(createPromptTrackingState());
   const pendingCommandBoundaryRef = useRef({
@@ -806,7 +808,7 @@ const WebTerminal = ({
   );
 
   const recoverTerminalAfterActivation = useCallback(
-    ({ resize = true, refocus = true, refreshSuggestions = true } = {}) => {
+    ({ resize = true, refocus = true, refreshSuggestions = false } = {}) => {
       if (
         !isActiveRef.current ||
         !termRef.current ||
@@ -826,7 +828,8 @@ const WebTerminal = ({
 
         recoverTerminalInteractionStateRef.current({
           refocus,
-          refreshSuggestions,
+          refreshSuggestions:
+            refreshSuggestions && !imeCompositionActiveRef.current,
         });
 
         return true;
@@ -953,7 +956,7 @@ const WebTerminal = ({
   );
 
   const recoverTerminalInteractionState = useCallback(
-    ({ refocus = true, refreshSuggestions = true } = {}) => {
+    ({ refocus = true, refreshSuggestions = false } = {}) => {
       const term = termRef.current;
       if (!term) {
         pendingSystemShortcutRecoveryRef.current = false;
@@ -979,19 +982,20 @@ const WebTerminal = ({
         promptTrackingStateRef.current.promptReady &&
         !promptTrackingStateRef.current.commandRunning;
 
-      if (
-        promptReady &&
-        refreshSuggestions &&
-        currentInput.trim() &&
-        !inEditorModeRef.current &&
-        !suggestionsHiddenByEsc &&
-        !suggestionsSuppressedUntilEnter &&
-        !isCommandExecuting
-      ) {
-        getSuggestions(currentInput);
-      } else if (!promptReady || !currentInput.trim()) {
-        setShowSuggestions(false);
-        setSuggestions([]);
+      if (refreshSuggestions && !imeCompositionActiveRef.current) {
+        if (
+          promptReady &&
+          currentInput.trim() &&
+          !inEditorModeRef.current &&
+          !suggestionsHiddenByEsc &&
+          !suggestionsSuppressedUntilEnter &&
+          !isCommandExecuting
+        ) {
+          getSuggestions(currentInput);
+        } else if (!promptReady || !currentInput.trim()) {
+          setShowSuggestions(false);
+          setSuggestions([]);
+        }
       }
 
       pendingSystemShortcutRecoveryRef.current = false;
@@ -2566,6 +2570,7 @@ const WebTerminal = ({
       const scheduleShortcutRecovery = ({
         delays = [0, 40, 120],
         refocus = true,
+        refreshSuggestions = false,
       } = {}) => {
         if (!pendingSystemShortcutRecoveryRef.current) {
           return;
@@ -2579,7 +2584,7 @@ const WebTerminal = ({
 
             recoverTerminalInteractionStateRef.current({
               refocus,
-              refreshSuggestions: true,
+              refreshSuggestions,
             });
           }, delay);
         });
@@ -2587,7 +2592,7 @@ const WebTerminal = ({
 
       const scheduleActivationRecovery = ({
         delays = [0, 60, 160],
-        refreshSuggestions = true,
+        refreshSuggestions = false,
       } = {}) => {
         delays.forEach((delay) => {
           eventManager.setTimeout(() => {
@@ -2607,6 +2612,17 @@ const WebTerminal = ({
       // 添加键盘快捷键支持
       const handleKeyDown = (e) => {
         syncTerminalLinkCtrlState(term, e.ctrlKey);
+
+        if (shouldIgnoreCommandSuggestionKeyEvent(e)) {
+          if (
+            shouldArmSystemShortcutRecovery(e, {
+              terminalFocused: isTerminalShortcutContext(e.target),
+            })
+          ) {
+            pendingSystemShortcutRecoveryRef.current = true;
+          }
+          return;
+        }
 
         if (
           shouldArmSystemShortcutRecovery(e, {
@@ -2784,6 +2800,13 @@ const WebTerminal = ({
           ".xterm-helper-textarea",
         );
         if (helperTextarea) {
+          eventManager.addEventListener(
+            helperTextarea,
+            "compositionstart",
+            () => {
+              imeCompositionActiveRef.current = true;
+            },
+          );
           eventManager.addEventListener(helperTextarea, "blur", () => {
             if (pendingSystemShortcutRecoveryRef.current) {
               scheduleShortcutRecovery({ delays: [20, 100, 220] });
@@ -2793,6 +2816,7 @@ const WebTerminal = ({
             helperTextarea,
             "compositionend",
             () => {
+              imeCompositionActiveRef.current = false;
               if (pendingSystemShortcutRecoveryRef.current) {
                 scheduleShortcutRecovery({ delays: [0, 40, 120] });
               }
@@ -2802,6 +2826,7 @@ const WebTerminal = ({
             helperTextarea,
             "compositioncancel",
             () => {
+              imeCompositionActiveRef.current = false;
               if (pendingSystemShortcutRecoveryRef.current) {
                 scheduleShortcutRecovery({ delays: [0, 40, 120] });
               }
@@ -3463,7 +3488,7 @@ const WebTerminal = ({
         recoverTerminalAfterActivation({
           resize: true,
           refocus: true,
-          refreshSuggestions: true,
+          refreshSuggestions: false,
         });
       }, delay),
     );
@@ -3482,7 +3507,7 @@ const WebTerminal = ({
         recoverTerminalAfterActivation({
           resize: true,
           refocus: true,
-          refreshSuggestions: true,
+          refreshSuggestions: false,
         });
       }, 120);
     };

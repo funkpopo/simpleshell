@@ -12,7 +12,6 @@ const {
 } = require("../../core/utils/nativeTransferSidecar");
 const { processSSHPrivateKeyAsync } = require("../../core/utils/ssh-utils");
 const nativeSftpClient = require("../../core/utils/nativeSftpClient");
-const { getTempDirectory } = require("../../core/utils/appPaths");
 const { logToFile } = require("../../core/utils/logger");
 const connectionManager = require("../connection");
 const TransferProcessPool = require("./transferProcessPool");
@@ -356,42 +355,16 @@ class FilemanagementService {
     return sshConfig;
   }
 
-  async _materializeUploadEntry(entry, transferKey, index) {
+  async _materializeUploadEntry(entry, transferKey) {
     this._throwIfTransferCancelled(transferKey);
 
-    if (entry?.localPath) {
-      return {
-        localPath: entry.localPath,
-        tempPath: null,
-      };
+    if (!entry?.localPath) {
+      throw new Error("Upload entry requires a validated localPath");
     }
 
-    if (!entry?.buffer) {
-      throw new Error("Upload entry has no localPath or buffer");
-    }
-
-    const tempRoot = path.join(getTempDirectory(app), "upload-buffer");
-    const transferDir = path.join(tempRoot, transferKey);
-    await fsp.mkdir(transferDir, { recursive: true });
-    this._throwIfTransferCancelled(transferKey);
-    const tempPath = path.join(
-      transferDir,
-      `${String(index).padStart(5, "0")}-${Date.now()}-${crypto.randomBytes(2).toString("hex")}.tmp`,
-    );
-    await fsp.writeFile(tempPath, entry.buffer);
-    this._throwIfTransferCancelled(transferKey);
     return {
-      localPath: tempPath,
-      tempPath,
+      localPath: entry.localPath,
     };
-  }
-
-  async _cleanupTempUploadSources(tempPaths = []) {
-    if (!Array.isArray(tempPaths) || tempPaths.length === 0) return;
-    const uniquePaths = Array.from(new Set(tempPaths.filter(Boolean)));
-    await Promise.allSettled(
-      uniquePaths.map((filePath) => fsp.rm(filePath, { force: true })),
-    );
   }
 
   getTransferRuntimeStats() {
@@ -3190,23 +3163,6 @@ class FilemanagementService {
     }
   }
 
-  _extractDroppedFileBuffer(fileData) {
-    if (!fileData) return null;
-    if (Buffer.isBuffer(fileData.data)) return fileData.data;
-
-    if (Array.isArray(fileData.chunks) && fileData.chunks.length > 0) {
-      const chunks = fileData.chunks.map((chunk) =>
-        Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk),
-      );
-      return Buffer.concat(chunks);
-    }
-
-    if (fileData.data) {
-      return Buffer.from(fileData.data);
-    }
-    return null;
-  }
-
   async _uploadEntries({
     event,
     tabId,
@@ -3291,8 +3247,6 @@ class FilemanagementService {
     const taskMetaMap = new Map();
     const taskTransferredBytes = new Map();
     const fileStateMap = new Map();
-    const tempUploadPaths = [];
-
     try {
       const directories = Array.isArray(remoteDirectories)
         ? [...remoteDirectories]
@@ -3320,11 +3274,7 @@ class FilemanagementService {
         const materialized = await this._materializeUploadEntry(
           entry,
           transferKey,
-          index,
         );
-        if (materialized.tempPath) {
-          tempUploadPaths.push(materialized.tempPath);
-        }
 
         const fileLabel =
           entry.relativePath ||
@@ -3709,8 +3659,6 @@ class FilemanagementService {
         };
       }
       throw error;
-    } finally {
-      await this._cleanupTempUploadSources(tempUploadPaths);
     }
   }
 
@@ -3797,26 +3745,22 @@ class FilemanagementService {
         const remotePath = this._joinRemotePath(normalizedTarget, relativePath);
         const fileName = path.posix.basename(relativePath);
 
-        if (fileData.localPath && fs.existsSync(fileData.localPath)) {
-          const stats = await fsp.stat(fileData.localPath);
-          entries.push({
-            localPath: fileData.localPath,
-            fileName,
-            relativePath,
-            remotePath,
-            size: Number.isFinite(stats.size) ? stats.size : 0,
-          });
-          continue;
+        if (!fileData.localPath) {
+          throw new Error(`拖放文件缺少可验证的本地路径: ${relativePath}`);
         }
 
-        const buffer = this._extractDroppedFileBuffer(fileData);
-        if (!buffer) continue;
+        const stats = await fsp.stat(fileData.localPath);
+        await fsp.access(fileData.localPath, fs.constants.R_OK);
+        if (!stats.isFile()) {
+          throw new Error(`拖放项目不是可上传的本地文件: ${relativePath}`);
+        }
+
         entries.push({
-          buffer,
+          localPath: fileData.localPath,
           fileName,
           relativePath,
           remotePath,
-          size: buffer.length,
+          size: Number.isFinite(stats.size) ? stats.size : 0,
         });
       }
 

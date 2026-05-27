@@ -39,6 +39,7 @@ const directoryWatchEventListeners = new Set();
 const listFilesTokensByTab = new Map();
 const listFilesTabByToken = new Map();
 const clipboardWriteSuccessListeners = new Set();
+const openFilesWrappers = new WeakMap();
 
 const DEFAULT_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 const RESTRICTED_EXTERNAL_PROTOCOLS = new Set(["mailto:"]);
@@ -625,6 +626,26 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       ipcRenderer.removeListener("app:menu-action", wrapped);
     };
   },
+  onOpenFiles: (callback) => {
+    if (typeof callback !== "function") {
+      return () => {};
+    }
+    const wrapped = (_event, payload) => callback(payload);
+    openFilesWrappers.set(callback, wrapped);
+    ipcRenderer.on("app:open-files", wrapped);
+    return () => {
+      ipcRenderer.removeListener("app:open-files", wrapped);
+      openFilesWrappers.delete(callback);
+    };
+  },
+  offOpenFiles: (callback) => {
+    const wrapped = callback && openFilesWrappers.get(callback);
+    if (!wrapped) {
+      return;
+    }
+    ipcRenderer.removeListener("app:open-files", wrapped);
+    openFilesWrappers.delete(callback);
+  },
 
   // 关闭应用
   closeApp: () => ipcRenderer.invoke("app:close"),
@@ -1059,6 +1080,15 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 文件系统辅助API
   checkPathExists: (path) => ipcRenderer.invoke("checkPathExists", path),
   showItemInFolder: (path) => ipcRenderer.invoke("showItemInFolder", path),
+  validateDroppedItems: (items) =>
+    ipcRenderer.invoke("validateDroppedItems", items),
+  checkDroppedUploadConflicts: (tabId, targetFolder, uploadData) =>
+    ipcRenderer.invoke(
+      "checkDroppedUploadConflicts",
+      tabId,
+      targetFolder,
+      uploadData,
+    ),
   getPathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file) || "";

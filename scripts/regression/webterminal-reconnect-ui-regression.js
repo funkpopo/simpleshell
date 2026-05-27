@@ -7,12 +7,9 @@ const {
   createSuggestionSuppressionContext,
   resetSessionRestoreInteractionState,
 } = require(path.join(ROOT, "src/modules/terminal/sessionRestoreUI.js"));
-const {
-  resolveCommandSuggestionWindowPosition,
-} = require(path.join(
-  ROOT,
-  "src/modules/terminal/commandSuggestionPosition.js",
-));
+const { resolveCommandSuggestionWindowPosition } = require(
+  path.join(ROOT, "src/modules/terminal/commandSuggestionPosition.js"),
+);
 
 function testSessionRestoreInteractionReset() {
   const calls = [];
@@ -24,8 +21,7 @@ function testSessionRestoreInteractionReset() {
     setShowSuggestions: (value) => calls.push(["showSuggestions", value]),
     setSuggestions: (value) => calls.push(["suggestions", value]),
     setCurrentInput: (value) => calls.push(["currentInput", value]),
-    setSuggestionsHiddenByEsc: (value) =>
-      calls.push(["hiddenByEsc", value]),
+    setSuggestionsHiddenByEsc: (value) => calls.push(["hiddenByEsc", value]),
     setSuggestionsSuppressedUntilEnter: (value) =>
       calls.push(["suppressedUntilEnter", value]),
     suggestionSelectedRef: selectedRef,
@@ -39,11 +35,7 @@ function testSessionRestoreInteractionReset() {
     ["hiddenByEsc", false],
     ["suppressedUntilEnter", false],
   ]);
-  assert.equal(
-    selectedRef.current,
-    false,
-    "恢复后不应保留旧的建议选中状态",
-  );
+  assert.equal(selectedRef.current, false, "恢复后不应保留旧的建议选中状态");
   assert.notStrictEqual(
     suppressionContextRef.current,
     previousContext,
@@ -134,6 +126,95 @@ function testSuggestionWindowShrinksAndClampsInsideContainer() {
   );
 }
 
+function createValidSuggestionPositionInput(overrides = {}) {
+  const hasOverride = (key) =>
+    Object.prototype.hasOwnProperty.call(overrides, key);
+
+  return {
+    position: hasOverride("position")
+      ? overrides.position && {
+          x: 260,
+          y: 140,
+          cursorHeight: 18,
+          cursorBottom: 158,
+          showAbove: false,
+          ...overrides.position,
+        }
+      : {
+          x: 260,
+          y: 140,
+          cursorHeight: 18,
+          cursorBottom: 158,
+          showAbove: false,
+        },
+    windowDimensions: hasOverride("windowDimensions")
+      ? overrides.windowDimensions && {
+          width: 260,
+          height: 180,
+          ...overrides.windowDimensions,
+        }
+      : {
+          width: 260,
+          height: 180,
+        },
+    terminalRect: hasOverride("terminalRect")
+      ? overrides.terminalRect && {
+          left: 100,
+          top: 80,
+          right: 620,
+          bottom: 420,
+          ...overrides.terminalRect,
+        }
+      : {
+          left: 100,
+          top: 80,
+          right: 620,
+          bottom: 420,
+        },
+    windowWidth: 1440,
+    windowHeight: 900,
+    ...Object.fromEntries(
+      Object.entries(overrides).filter(
+        ([key]) =>
+          key !== "position" &&
+          key !== "windowDimensions" &&
+          key !== "terminalRect",
+      ),
+    ),
+  };
+}
+
+function testSuggestionWindowRejectsIncompletePositionContext() {
+  const invalidInputs = [
+    {},
+    createValidSuggestionPositionInput({ position: null }),
+    createValidSuggestionPositionInput({ terminalRect: null }),
+    createValidSuggestionPositionInput({ windowDimensions: null }),
+    createValidSuggestionPositionInput({ position: { x: NaN } }),
+    createValidSuggestionPositionInput({ position: { y: undefined } }),
+    createValidSuggestionPositionInput({
+      position: { cursorHeight: undefined },
+    }),
+    createValidSuggestionPositionInput({
+      position: { cursorBottom: undefined },
+    }),
+    createValidSuggestionPositionInput({ terminalRect: { right: 100 } }),
+    createValidSuggestionPositionInput({ terminalRect: { bottom: 80 } }),
+    createValidSuggestionPositionInput({ windowWidth: 0 }),
+    createValidSuggestionPositionInput({ windowHeight: 0 }),
+    createValidSuggestionPositionInput({ windowDimensions: { width: 0 } }),
+    createValidSuggestionPositionInput({ windowDimensions: { height: 0 } }),
+  ];
+
+  invalidInputs.forEach((input, index) => {
+    assert.equal(
+      resolveCommandSuggestionWindowPosition(input),
+      null,
+      `invalid command suggestion position context should not produce fallback coordinates: ${index}`,
+    );
+  });
+}
+
 function run() {
   const tests = [
     ["session restore interaction reset", testSessionRestoreInteractionReset],
@@ -141,6 +222,10 @@ function run() {
     [
       "suggestion window shrinks and clamps inside container",
       testSuggestionWindowShrinksAndClampsInsideContainer,
+    ],
+    [
+      "suggestion window rejects incomplete position context",
+      testSuggestionWindowRejectsIncompletePositionContext,
     ],
   ];
 

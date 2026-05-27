@@ -1,59 +1,73 @@
-const DEFAULT_WIDTH = 200;
-const DEFAULT_HEIGHT = 100;
-const DEFAULT_CURSOR_HEIGHT = 18;
-const DEFAULT_FALLBACK_OFFSET = 50;
-const DEFAULT_FALLBACK_POSITION = 100;
 const CONTAINER_PADDING = 8;
 const CURSOR_GAP = 20;
 
 const isFiniteNumber = (value) =>
   typeof value === "number" && Number.isFinite(value);
 
-const sanitizeNumber = (value, fallback) =>
-  isFiniteNumber(value) ? value : fallback;
-
 const resolveCommandSuggestionWindowPosition = ({
-  position = { x: 0, y: 0, showAbove: false },
-  windowDimensions = { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT },
+  position = null,
+  windowDimensions = null,
   terminalRect = null,
   windowWidth = 0,
   windowHeight = 0,
 } = {}) => {
-  const viewportWidth = sanitizeNumber(windowWidth, 0) || 1024;
-  const viewportHeight = sanitizeNumber(windowHeight, 0) || 768;
-  const suggestionWidth = Math.max(
-    1,
-    sanitizeNumber(windowDimensions?.width, DEFAULT_WIDTH),
-  );
-  const suggestionHeight = Math.max(
-    1,
-    sanitizeNumber(windowDimensions?.height, DEFAULT_HEIGHT),
-  );
+  if (!position || !terminalRect) {
+    return null;
+  }
 
-  const fallbackLeft = terminalRect
-    ? terminalRect.left + DEFAULT_FALLBACK_OFFSET
-    : DEFAULT_FALLBACK_POSITION;
-  const fallbackTop = terminalRect
-    ? terminalRect.top + DEFAULT_FALLBACK_OFFSET
-    : DEFAULT_FALLBACK_POSITION;
+  if (
+    !isFiniteNumber(position.x) ||
+    !isFiniteNumber(position.y) ||
+    !isFiniteNumber(position.cursorHeight) ||
+    !isFiniteNumber(position.cursorBottom)
+  ) {
+    return null;
+  }
 
-  let left = sanitizeNumber(position?.x, fallbackLeft);
-  let top = sanitizeNumber(position?.y, fallbackTop);
+  if (
+    !isFiniteNumber(terminalRect.left) ||
+    !isFiniteNumber(terminalRect.top) ||
+    !isFiniteNumber(terminalRect.right) ||
+    !isFiniteNumber(terminalRect.bottom) ||
+    terminalRect.right <= terminalRect.left ||
+    terminalRect.bottom <= terminalRect.top
+  ) {
+    return null;
+  }
 
-  const bounds = terminalRect
-    ? {
-        left: terminalRect.left,
-        top: terminalRect.top,
-        right: terminalRect.right,
-        bottom: terminalRect.bottom,
-      }
-    : { left: 0, top: 0, right: viewportWidth, bottom: viewportHeight };
+  if (
+    !isFiniteNumber(windowWidth) ||
+    !isFiniteNumber(windowHeight) ||
+    windowWidth <= 0 ||
+    windowHeight <= 0 ||
+    !isFiniteNumber(windowDimensions?.width) ||
+    !isFiniteNumber(windowDimensions?.height) ||
+    windowDimensions.width <= 0 ||
+    windowDimensions.height <= 0
+  ) {
+    return null;
+  }
 
-  const cursorHeight = Math.max(
-    1,
-    sanitizeNumber(position?.cursorHeight, DEFAULT_CURSOR_HEIGHT),
-  );
-  const cursorBottom = sanitizeNumber(position?.cursorBottom, top + cursorHeight);
+  const viewportWidth = windowWidth;
+  const viewportHeight = windowHeight;
+  const suggestionWidth = Math.max(1, windowDimensions.width);
+  const suggestionHeight = Math.max(1, windowDimensions.height);
+
+  let left = position.x;
+  let top = position.y;
+
+  const bounds = {
+    left: Math.max(0, terminalRect.left),
+    top: Math.max(0, terminalRect.top),
+    right: Math.min(viewportWidth, terminalRect.right),
+    bottom: Math.min(viewportHeight, terminalRect.bottom),
+  };
+
+  if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
+    return null;
+  }
+
+  const cursorBottom = position.cursorBottom;
 
   const spaceBelow = Math.max(0, bounds.bottom - cursorBottom - CURSOR_GAP);
   const spaceAbove = Math.max(0, top - bounds.top - CURSOR_GAP);
@@ -106,7 +120,7 @@ const resolveCommandSuggestionWindowPosition = ({
 
   if (top > maxTopWithin) {
     if (!showAbove && isFiniteNumber(position?.y)) {
-      const flippedTop = sanitizeNumber(position?.y, fallbackTop) - height - CURSOR_GAP;
+      const flippedTop = position.y - height - CURSOR_GAP;
       top = Math.max(minTopWithin, Math.min(flippedTop, maxTopWithin));
     } else {
       top = Math.max(minTopWithin, maxTopWithin);

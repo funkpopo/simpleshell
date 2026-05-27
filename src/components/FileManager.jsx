@@ -290,9 +290,10 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
             px: 1.5,
             py: 0.5,
             borderRadius: 1,
-            transition: "all 0.15s ease-in-out",
+            transition:
+              "background-color 0.15s ease-in-out, border-color 0.15s ease-in-out",
             userSelect: "none",
-            cursor: "pointer",
+            cursor: "default",
             "&.Mui-selected": {
               backgroundColor: alpha(theme.palette.primary.main, 0.12),
               "&:hover": {
@@ -3883,9 +3884,10 @@ const FileManager = memo(
                         px: 1.5,
                         py: 0.5,
                         borderRadius: 1,
-                        transition: "all 0.15s ease-in-out",
+                        transition:
+                          "background-color 0.15s ease-in-out, border-color 0.15s ease-in-out",
                         userSelect: "none",
-                        cursor: "pointer",
+                        cursor: "default",
                         "&.Mui-selected": {
                           backgroundColor: alpha(
                             theme.palette.primary.main,
@@ -4276,12 +4278,128 @@ const FileManager = memo(
       }
     };
 
+    const getDroppedFileLocalPath = useCallback((file) => {
+      if (!file) return "";
+
+      if (window.terminalAPI?.getPathForFile) {
+        try {
+          const resolvedPath = window.terminalAPI.getPathForFile(file);
+          if (typeof resolvedPath === "string" && resolvedPath.trim()) {
+            return resolvedPath.trim();
+          }
+        } catch {
+          return "";
+        }
+      }
+
+      return "";
+    }, []);
+
+    const readDroppedFileEntry = useCallback((entry) => {
+      return new Promise((resolve) => {
+        if (!entry || typeof entry.file !== "function") {
+          resolve(null);
+          return;
+        }
+
+        try {
+          const maybePromise = entry.file(
+            (file) => resolve(file || null),
+            () => resolve(null),
+          );
+          if (maybePromise && typeof maybePromise.then === "function") {
+            maybePromise
+              .then((file) => resolve(file || null))
+              .catch(() => {
+                resolve(null);
+              });
+          }
+        } catch {
+          resolve(null);
+        }
+      });
+    }, []);
+
+    const getDropValidationMessage = useCallback(
+      (rejectedItem) => {
+        const name =
+          rejectedItem?.name ||
+          rejectedItem?.relativePath ||
+          rejectedItem?.localPath ||
+          t("fileManager.messages.unknownFile");
+
+        if (rejectedItem?.reason === "missing-local-path") {
+          return t("fileManager.errors.dragDropLocalPathRequired");
+        }
+
+        if (rejectedItem?.reason === "permission-denied") {
+          return t("fileManager.errors.dragDropPermissionDenied", { name });
+        }
+
+        if (rejectedItem?.reason === "unsupported-file-type") {
+          return t("fileManager.errors.dragDropUnsupportedItem", { name });
+        }
+
+        return t("fileManager.errors.dragDropValidationFailed", {
+          reason: rejectedItem?.message || t("fileManager.errors.unknownError"),
+        });
+      },
+      [t],
+    );
+
+    const confirmDroppedUploadConflicts = useCallback(
+      async (conflicts) => {
+        if (!Array.isArray(conflicts) || conflicts.length === 0) {
+          return true;
+        }
+
+        if (!window.dialogAPI?.showMessageBox) {
+          throw new Error(
+            t("fileManager.errors.dragDropConflictDialogUnavailable"),
+          );
+        }
+
+        const conflictItems = conflicts
+          .slice(0, 12)
+          .map((item) => item.remotePath || item.relativePath || item.name)
+          .filter(Boolean);
+        const remainingCount = Math.max(
+          0,
+          conflicts.length - conflictItems.length,
+        );
+        const detailItems =
+          remainingCount > 0
+            ? `${conflictItems.join("\n")}\n... +${remainingCount}`
+            : conflictItems.join("\n");
+
+        const confirmation = await window.dialogAPI.showMessageBox({
+          type: "warning",
+          buttons: [
+            t("fileManager.messages.dragDropConflictConfirm"),
+            t("fileManager.messages.dragDropConflictCancel"),
+          ],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+          title: t("fileManager.messages.dragDropConflictTitle"),
+          message: t("fileManager.messages.dragDropConflictMessage", {
+            count: conflicts.length,
+          }),
+          detail: t("fileManager.messages.dragDropConflictDetail", {
+            items: detailItems,
+          }),
+        });
+
+        return confirmation?.response === 0;
+      },
+      [t],
+    );
+
     // 处理拖拽的文件和文件夹
     const handleDroppedItems = useCallback(
       async (entries) => {
         setTransferCancelled(false);
 
-        // 确定目标路径
         let targetPath = currentPath;
         if (selectedFile && selectedFile.isDirectory) {
           if (currentPath === "/") {
@@ -4293,78 +4411,124 @@ const FileManager = memo(
           }
         }
 
-        // 收集所有文件信息
-        const allFiles = [];
-        const folderStructure = new Set();
+        if (
+          !window.terminalAPI?.uploadDroppedFiles ||
+          !window.terminalAPI?.validateDroppedItems ||
+          !window.terminalAPI?.checkDroppedUploadConflicts
+        ) {
+          setNotification({
+            message: t("fileManager.errors.dragDropNotSupported"),
+            severity: "error",
+          });
+          return;
+        }
 
-        // 递归读取文件夹内容
-        const readEntry = async (entry, path = "") => {
+        const droppedItems = [];
+        const addParentFolders = (relativePath, folders) => {
+          const parts = String(relativePath || "")
+            .replace(/\\/g, "/")
+            .split("/")
+            .filter(Boolean);
+
+          for (let index = 1; index < parts.length; index += 1) {
+            folders.add(parts.slice(0, index).join("/"));
+          }
+        };
+        const addFolderAndParents = (relativePath, folders) => {
+          const normalized = String(relativePath || "")
+            .replace(/\\/g, "/")
+            .replace(/\/+$/, "")
+            .split("/")
+            .filter(Boolean)
+            .join("/");
+
+          if (!normalized) {
+            return;
+          }
+
+          addParentFolders(normalized, folders);
+          folders.add(normalized);
+        };
+
+        const readEntry = async (entry, pathPrefix = "") => {
+          if (!entry) return;
+
           if (entry.isFile) {
-            return new Promise((resolve) => {
-              entry.file(
-                (file) => {
-                  const relativePath = path + file.name;
-                  allFiles.push({
-                    file: file,
-                    relativePath: relativePath,
-                  });
+            const file = await readDroppedFileEntry(entry);
+            if (!file) {
+              droppedItems.push({
+                name: entry.name || "",
+                relativePath: `${pathPrefix}${entry.name || "unnamed-file"}`,
+                localPath: "",
+              });
+              return;
+            }
 
-                  // 记录文件夹结构
-                  if (path) {
-                    const parts = path.split("/");
-                    for (let i = 1; i <= parts.length; i++) {
-                      const folderPath = parts.slice(0, i).join("/");
-                      if (folderPath) {
-                        folderStructure.add(folderPath.replace(/\/$/, ""));
-                      }
-                    }
+            droppedItems.push({
+              name: file.name || entry.name || "",
+              relativePath: `${pathPrefix}${file.name || entry.name || "unnamed-file"}`,
+              localPath: getDroppedFileLocalPath(file),
+              size: Number.isFinite(file.size) ? file.size : 0,
+              type: file.type || "",
+              lastModified: file.lastModified || 0,
+            });
+            return;
+          }
+
+          if (!entry.isDirectory || typeof entry.createReader !== "function") {
+            droppedItems.push({
+              name: entry.name || "",
+              relativePath: `${pathPrefix}${entry.name || "unsupported-item"}`,
+              localPath: "",
+            });
+            return;
+          }
+
+          const directoryName = entry.name || "folder";
+          const directoryPrefix = `${pathPrefix}${directoryName}/`;
+          const directoryRelativePath = directoryPrefix.replace(/\/$/, "");
+          const reader = entry.createReader();
+          const childEntries = [];
+          let directoryReadable = true;
+
+          await new Promise((resolve) => {
+            const readEntries = () => {
+              reader.readEntries(
+                (batch) => {
+                  if (!batch || batch.length === 0) {
+                    resolve();
+                    return;
                   }
-                  resolve();
+                  childEntries.push(...batch);
+                  readEntries();
                 },
                 () => {
-                  // Error reading file - silently skip
+                  directoryReadable = false;
                   resolve();
                 },
               );
-            });
-          } else if (entry.isDirectory) {
-            const dirPath = path + entry.name;
-            folderStructure.add(dirPath);
+            };
+            readEntries();
+          });
 
-            const reader = entry.createReader();
-            return new Promise((resolve) => {
-              const allEntries = [];
-              const readEntries = () => {
-                reader.readEntries(
-                  async (entries) => {
-                    if (entries.length === 0) {
-                      // 处理所有收集的条目
-                      for (const childEntry of allEntries) {
-                        await readEntry(childEntry, dirPath + "/");
-                      }
-                      resolve();
-                      return;
-                    }
-                    allEntries.push(...entries);
-                    readEntries();
-                  },
-                  () => {
-                    // Error reading directory - silently skip
-                    resolve();
-                  },
-                );
-              };
-              readEntries();
-            });
+          droppedItems.push({
+            name: directoryName,
+            relativePath: directoryRelativePath,
+            localPath: "",
+            isDirectory: true,
+            directoryReadable,
+          });
+
+          for (const childEntry of childEntries) {
+            await readEntry(childEntry, directoryPrefix);
           }
         };
 
-        // 读取所有拖拽的项目
         for (const entry of entries) {
           await readEntry(entry);
         }
 
-        if (allFiles.length === 0) {
+        if (droppedItems.length === 0) {
           setNotification({
             message: t("fileManager.errors.noFilesSelected"),
             severity: "warning",
@@ -4372,253 +4536,228 @@ const FileManager = memo(
           return;
         }
 
-        // 使用与右键菜单上传相同的逻辑
-        if (window.terminalAPI && window.terminalAPI.uploadDroppedFiles) {
-          const droppedDisplayName =
-            buildTransferDisplayName(
-              [
-                ...allFiles.map((item) =>
-                  getTopLevelTransferItemName(
-                    item.relativePath || item.file?.name,
-                  ),
-                ),
-                ...Array.from(folderStructure).map((folderPath) =>
-                  getTopLevelTransferItemName(folderPath),
-                ),
-              ],
-              "项目",
-            ) || t("fileManager.messages.preparingUpload");
-
-          // 创建新的传输任务 - 与 handleUploadFile 保持一致
-          const transferId = addTransferProgress({
-            type: "upload-multifile",
-            progress: 0,
-            fileName: droppedDisplayName,
-            transferredBytes: 0,
-            totalBytes: 0,
-            transferSpeed: 0,
-            remainingTime: 0,
-            currentFileIndex: 0,
-            totalFiles: allFiles.length,
+        const validation =
+          await window.terminalAPI.validateDroppedItems(droppedItems);
+        if (!validation?.success || validation.rejected?.length > 0) {
+          setNotification({
+            message: getDropValidationMessage(validation?.rejected?.[0]),
+            severity: "error",
           });
-          let didForegroundRefresh = false;
+          return;
+        }
 
-          try {
-            // 优先传递本地文件路径，避免把文件内容整体读入渲染进程并穿过 IPC。
-            const filesDataForUpload = [];
-            const foldersToCreate = Array.from(folderStructure).sort();
+        const foldersToCreateSet = new Set();
+        for (const item of validation.folders || []) {
+          addFolderAndParents(item.relativePath, foldersToCreateSet);
+        }
 
-            for (const item of allFiles) {
-              let localPath =
-                typeof item.file?.path === "string" ? item.file.path : "";
-              if (!localPath && window.terminalAPI?.getPathForFile) {
-                try {
-                  localPath =
-                    window.terminalAPI.getPathForFile(item.file) || "";
-                } catch {
-                  localPath = "";
-                }
+        const filesDataForUpload = (validation.files || []).map((item) => {
+          addParentFolders(item.relativePath, foldersToCreateSet);
+          return {
+            name: item.name,
+            relativePath: item.relativePath,
+            size: item.size,
+            lastModified: item.lastModified,
+            localPath: item.localPath,
+          };
+        });
+
+        const foldersToCreate = Array.from(foldersToCreateSet).sort();
+
+        if (filesDataForUpload.length === 0 && foldersToCreate.length === 0) {
+          setNotification({
+            message: t("fileManager.errors.noFilesSelected"),
+            severity: "warning",
+          });
+          return;
+        }
+
+        const uploadData = {
+          files: filesDataForUpload,
+          folders: foldersToCreate,
+        };
+        const conflictResult =
+          await window.terminalAPI.checkDroppedUploadConflicts(
+            tabId,
+            targetPath,
+            uploadData,
+          );
+        if (!conflictResult?.success) {
+          throw new Error(
+            t("fileManager.errors.dragDropValidationFailed", {
+              reason:
+                conflictResult?.error || t("fileManager.errors.unknownError"),
+            }),
+          );
+        }
+
+        if (conflictResult.hasConflicts) {
+          const confirmed = await confirmDroppedUploadConflicts(
+            conflictResult.conflicts,
+          );
+          if (!confirmed) {
+            setNotification({
+              message: t("fileManager.errors.dragDropConflictCancelled"),
+              severity: "warning",
+            });
+            return;
+          }
+        }
+
+        const droppedDisplayName =
+          buildTransferDisplayName(
+            [
+              ...filesDataForUpload.map((item) =>
+                getTopLevelTransferItemName(item.relativePath || item.name),
+              ),
+              ...foldersToCreate.map((folderPath) =>
+                getTopLevelTransferItemName(folderPath),
+              ),
+            ],
+            "项目",
+          ) || t("fileManager.messages.preparingUpload");
+
+        const transferId = addTransferProgress({
+          type: "upload-multifile",
+          progress: 0,
+          fileName: droppedDisplayName,
+          transferredBytes: 0,
+          totalBytes: filesDataForUpload.reduce(
+            (sum, item) => sum + Math.max(0, Number(item.size) || 0),
+            0,
+          ),
+          transferSpeed: 0,
+          remainingTime: 0,
+          currentFileIndex: 0,
+          totalFiles: Math.max(
+            1,
+            filesDataForUpload.length || foldersToCreate.length,
+          ),
+        });
+        let didForegroundRefresh = false;
+
+        try {
+          const result = await window.terminalAPI.uploadDroppedFiles(
+            tabId,
+            targetPath,
+            uploadData,
+            (
+              progress,
+              fileName,
+              transferredBytes,
+              totalBytes,
+              transferSpeed,
+              remainingTime,
+              currentFileIndex,
+              processedFiles,
+              totalFiles,
+              transferKey,
+              operationComplete,
+              fileList,
+            ) => {
+              const validProgress = Math.max(0, Math.min(100, progress || 0));
+              const validTransferredBytes = Math.max(0, transferredBytes || 0);
+              const validTotalBytes = Math.max(0, totalBytes || 0);
+              const validTransferSpeed = Math.max(0, transferSpeed || 0);
+              const validRemainingTime = Math.max(0, remainingTime || 0);
+              const validCurrentFileIndex = Math.max(0, currentFileIndex || 0);
+              const validProcessedFiles = Math.max(0, processedFiles || 0);
+              const validTotalFiles = Math.max(0, totalFiles || 0);
+
+              if (transferCancelled) {
+                return;
               }
-              if (localPath) {
-                filesDataForUpload.push({
-                  name: item.file.name,
-                  relativePath: item.relativePath,
-                  size: item.file.size,
-                  type: item.file.type,
-                  lastModified: item.file.lastModified,
-                  localPath,
-                });
-                continue;
-              }
 
-              // 少数无法解析为本地路径的场景再回退到内存传输。
-              const arrayBuffer = await item.file.arrayBuffer();
-              const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
-              const chunks = [];
-
-              if (arrayBuffer.byteLength > CHUNK_SIZE) {
-                // 大文件分块
-                for (
-                  let offset = 0;
-                  offset < arrayBuffer.byteLength;
-                  offset += CHUNK_SIZE
-                ) {
-                  const end = Math.min(
-                    offset + CHUNK_SIZE,
-                    arrayBuffer.byteLength,
-                  );
-                  const chunk = new Uint8Array(arrayBuffer.slice(offset, end));
-                  chunks.push(chunk);
-                }
-              } else {
-                // 小文件直接转换
-                chunks.push(new Uint8Array(arrayBuffer));
-              }
-
-              filesDataForUpload.push({
-                name: item.file.name,
-                relativePath: item.relativePath,
-                size: item.file.size,
-                type: item.file.type,
-                lastModified: item.file.lastModified,
-                chunks: chunks,
-                isChunked: chunks.length > 1,
-              });
-            }
-
-            // 调用主进程的上传方法，与 handleUploadFile 保持一致的进度处理
-            const result = await window.terminalAPI.uploadDroppedFiles(
-              tabId,
-              targetPath,
-              {
-                files: filesDataForUpload,
-                folders: foldersToCreate,
-              },
-              (
-                progress,
-                fileName,
-                transferredBytes,
-                totalBytes,
-                transferSpeed,
-                remainingTime,
-                currentFileIndex,
-                processedFiles,
-                totalFiles,
-                transferKey,
-                operationComplete,
-                fileList,
-              ) => {
-                // 与 handleUploadFile 保持一致的进度处理
-                const validProgress = Math.max(0, Math.min(100, progress || 0));
-                const validTransferredBytes = Math.max(
-                  0,
-                  transferredBytes || 0,
-                );
-                const validTotalBytes = Math.max(0, totalBytes || 0);
-                const validTransferSpeed = Math.max(0, transferSpeed || 0);
-                const validRemainingTime = Math.max(0, remainingTime || 0);
-                const validCurrentFileIndex = Math.max(
-                  0,
-                  currentFileIndex || 0,
-                );
-                const validProcessedFiles = Math.max(0, processedFiles || 0);
-                const validTotalFiles = Math.max(0, totalFiles || 0);
-
-                // 检查是否已取消
-                if (transferCancelled) {
-                  return;
-                }
-
-                // 更新传输进度
-                updateTransferProgress(transferId, {
-                  progress: validProgress,
-                  fileName: fileName || t("fileManager.messages.unknownFile"),
-                  transferredBytes: validTransferredBytes,
-                  totalBytes: validTotalBytes,
-                  transferSpeed: validTransferSpeed,
-                  remainingTime: validRemainingTime,
-                  currentFileIndex: validCurrentFileIndex,
-                  processedFiles: validProcessedFiles,
-                  totalFiles: validTotalFiles,
-                  transferKey: transferKey || "",
-                  isCompleted: operationComplete === true,
-                  fileList: fileList || null,
-                });
-              },
-            );
-
-            // 与 handleUploadFile 保持一致的结果处理
-            if (isUserCancellationError(result)) {
-              setTransferCancelled(true);
               updateTransferProgress(transferId, {
-                isCancelled: true,
-                cancelMessage: t("fileManager.errors.userCancelled"),
+                progress: validProgress,
+                fileName: fileName || t("fileManager.messages.unknownFile"),
+                transferredBytes: validTransferredBytes,
+                totalBytes: validTotalBytes,
+                transferSpeed: validTransferSpeed,
+                remainingTime: validRemainingTime,
+                currentFileIndex: validCurrentFileIndex,
+                processedFiles: validProcessedFiles,
+                totalFiles: validTotalFiles,
+                transferKey: transferKey || "",
+                isCompleted: operationComplete === true,
+                fileList: fileList || null,
               });
-            } else if (result?.success) {
-              // 标记传输完成
-              updateTransferProgress(transferId, {
-                progress: 100,
-                fileName:
-                  result.message || t("fileManager.messages.uploadComplete"),
-                isCompleted: true,
-                processedFiles: Math.max(
-                  0,
-                  result.successfulFiles ?? result.totalFiles ?? 0,
-                ),
-                currentFileIndex: Math.max(0, result.totalFiles || 0),
-                totalFiles: Math.max(0, result.totalFiles || 0),
-              });
+            },
+          );
 
-              // 传输完成后延迟移除
-              storeScheduleTransferCleanup(transferId, 3000);
-
-              // 切换到上传的目标路径
-              updateCurrentPath(targetPath);
-              setPathInput(targetPath);
-              await loadDirectory(targetPath, 0, true); // 强制刷新目标目录
-              didForegroundRefresh = true;
-
-              // 如果有警告信息（部分文件上传失败），显示给用户
-              if (result.partialSuccess && result.warning) {
-                setNotification({
-                  message: result.warning,
-                  severity: "warning",
-                });
-              } else {
-                // 显示成功通知
-                setNotification({
-                  message: t("fileManager.messages.uploadSuccess"),
-                  severity: "success",
-                });
-              }
-
-              // 上传没有前台刷新结果时，提交一次静默刷新同步列表
-              if (!didForegroundRefresh) {
-                refreshAfterUserActivity();
-              }
-            } else {
-              throw new Error(
-                result.error || t("fileManager.errors.uploadFailed"),
-              );
-            }
-          } catch (error) {
-            // Upload error - display in notification if not user cancellation
-
-            // 检查是否为用户取消操作
-            const isCancellation = isUserCancellationError(error);
-
-            // 更新传输进度为错误或取消
+          if (isUserCancellationError(result)) {
+            setTransferCancelled(true);
             updateTransferProgress(transferId, {
-              error: !isCancellation,
-              isCancelled: isCancellation,
-              errorMessage: error.message || error.toString(),
+              isCancelled: true,
+              cancelMessage: t("fileManager.errors.userCancelled"),
+            });
+          } else if (result?.success) {
+            updateTransferProgress(transferId, {
+              progress: 100,
+              fileName:
+                result.message || t("fileManager.messages.uploadComplete"),
+              isCompleted: true,
+              processedFiles: Math.max(
+                0,
+                result.uploadedCount ??
+                  result.successfulFiles ??
+                  result.totalFiles ??
+                  0,
+              ),
+              currentFileIndex: Math.max(0, result.totalFiles || 0),
+              totalFiles: Math.max(0, result.totalFiles || 0),
             });
 
-            if (!isCancellation) {
+            storeScheduleTransferCleanup(transferId, 3000);
+
+            updateCurrentPath(targetPath);
+            setPathInput(targetPath);
+            await loadDirectory(targetPath, 0, true);
+            didForegroundRefresh = true;
+
+            if (result.partialSuccess && result.warning) {
               setNotification({
-                message: error.message || t("fileManager.errors.uploadFailed"),
-                severity: "error",
+                message: result.warning,
+                severity: "warning",
+              });
+            } else {
+              setNotification({
+                message: t("fileManager.messages.uploadSuccess"),
+                severity: "success",
               });
             }
 
-            // 延迟移除错误的传输
-            addTimeout(() => {
-              removeTransferProgress(transferId);
-            }, 3000);
-
-            // 异常分支如果尚未前台刷新，提交静默刷新同步列表
             if (!didForegroundRefresh) {
               refreshAfterUserActivity();
             }
+          } else {
+            throw new Error(
+              result?.error || t("fileManager.errors.uploadFailed"),
+            );
           }
-        } else {
-          // 如果没有专门的拖拽上传API，显示错误
-          setNotification({
-            message:
-              t("fileManager.errors.dragDropNotSupported") ||
-              "拖拽上传功能暂不可用",
-            severity: "error",
+        } catch (error) {
+          const isCancellation = isUserCancellationError(error);
+
+          updateTransferProgress(transferId, {
+            error: !isCancellation,
+            isCancelled: isCancellation,
+            errorMessage: error.message || error.toString(),
           });
+
+          if (!isCancellation) {
+            setNotification({
+              message: error.message || t("fileManager.errors.uploadFailed"),
+              severity: "error",
+            });
+          }
+
+          addTimeout(() => {
+            removeTransferProgress(transferId);
+          }, 3000);
+
+          if (!didForegroundRefresh) {
+            refreshAfterUserActivity();
+          }
         }
       },
       [
@@ -4637,7 +4776,11 @@ const FileManager = memo(
         updateCurrentPath,
         setPathInput,
         loadDirectory,
-        setError,
+        storeScheduleTransferCleanup,
+        getDroppedFileLocalPath,
+        readDroppedFileEntry,
+        getDropValidationMessage,
+        confirmDroppedUploadConflicts,
       ],
     );
 
@@ -4646,7 +4789,6 @@ const FileManager = memo(
         e.preventDefault();
         e.stopPropagation();
 
-        // 重置拖拽状态
         setIsDragging(false);
         setDragCounter(0);
 
@@ -4658,42 +4800,56 @@ const FileManager = memo(
           return;
         }
 
-        // 获取拖拽的文件和文件夹
         const items = e.dataTransfer.items;
         if (!items || items.length === 0) return;
 
-        // 将 DataTransferItemList 转换为数组
         const itemsArray = Array.from(items);
-
-        // 收集所有的文件和文件夹
-        const filesAndFolders = [];
-
-        for (const item of itemsArray) {
-          if (item.kind === "file") {
-            const entry = item.webkitGetAsEntry
-              ? item.webkitGetAsEntry()
-              : item.getAsEntry?.();
-            if (entry) {
-              filesAndFolders.push(entry);
-            } else {
-              // 如果不支持 getAsEntry，回退到 getAsFile
-              const file = item.getAsFile();
-              if (file) {
-                filesAndFolders.push({
-                  isFile: true,
-                  isDirectory: false,
-                  file: () => Promise.resolve(file),
-                  name: file.name,
-                });
-              }
-            }
-          }
+        if (itemsArray.some((item) => item.kind === "string")) {
+          setNotification({
+            message: t("fileManager.errors.dragDropRemotePathUnsupported"),
+            severity: "warning",
+          });
+          return;
         }
 
-        if (filesAndFolders.length === 0) return;
+        const filesAndFolders = [];
+        const rejectedItems = [];
 
-        // 处理文件和文件夹上传
-        await handleDroppedItems(filesAndFolders);
+        for (const item of itemsArray) {
+          if (item.kind !== "file") {
+            rejectedItems.push(item);
+            continue;
+          }
+
+          const entry = item.webkitGetAsEntry?.();
+          if (entry) {
+            filesAndFolders.push(entry);
+            continue;
+          }
+
+          rejectedItems.push(item);
+        }
+
+        if (rejectedItems.length > 0 || filesAndFolders.length === 0) {
+          setNotification({
+            message: t("fileManager.errors.dragDropRemotePathUnsupported"),
+            severity: "warning",
+          });
+          return;
+        }
+
+        try {
+          await handleDroppedItems(filesAndFolders);
+        } catch (error) {
+          setNotification({
+            message:
+              error?.message ||
+              t("fileManager.errors.dragDropValidationFailed", {
+                reason: t("fileManager.errors.unknownError"),
+              }),
+            severity: "error",
+          });
+        }
       },
       [sshConnection, t, handleDroppedItems, setNotification],
     );
