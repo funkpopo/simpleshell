@@ -6,6 +6,26 @@ const path = require("path");
 const fs = require("fs");
 const { shell } = require("electron");
 
+function buildErrorResponse(error, fallbackMessage = "Operation failed") {
+  const fallback =
+    fallbackMessage && fallbackMessage !== "Operation failed"
+      ? fallbackMessage
+      : null;
+  const message = fallback || error?.message || String(error || fallbackMessage);
+  return {
+    success: false,
+    error: message,
+    message,
+    errorCode: error?.errorCode || error?.code || null,
+    code: error?.code || error?.errorCode || null,
+    errorKind: error?.errorKind || null,
+    retryable: error?.retryable === true,
+    module: error?.module || null,
+    operation: error?.operation || null,
+    raw: error?.raw || null,
+  };
+}
+
 /**
  * 文件操作相关的IPC处理器
  */
@@ -290,6 +310,11 @@ class FileHandlers {
                 items: [],
                 done: true,
                 error: result?.error || "listFiles failed",
+                errorCode: result?.errorCode || result?.code || null,
+                errorKind: result?.errorKind || null,
+                retryable: result?.retryable === true,
+                module: result?.module || null,
+                operation: result?.operation || null,
               });
               return;
             }
@@ -322,6 +347,11 @@ class FileHandlers {
                   items: [],
                   done: true,
                   error: err?.message || String(err),
+                  errorCode: err?.errorCode || err?.code || null,
+                  errorKind: err?.errorKind || null,
+                  retryable: err?.retryable === true,
+                  module: err?.module || null,
+                  operation: err?.operation || null,
                 });
               }
             } catch {
@@ -339,7 +369,7 @@ class FileHandlers {
       return result;
     } catch (error) {
       logToFile(`Error listing files: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to list files");
     }
   }
 
@@ -349,7 +379,7 @@ class FileHandlers {
       return result;
     } catch (error) {
       logToFile(`Error copying file: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to copy file");
     }
   }
 
@@ -381,7 +411,7 @@ class FileHandlers {
       return await nativeSftpClient.moveFile(tabId, sourcePath, targetPath);
     } catch (error) {
       logToFile(`Error moving file: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to move file");
     }
   }
 
@@ -413,7 +443,7 @@ class FileHandlers {
       return await nativeSftpClient.deleteFile(tabId, filePath, isDirectory);
     } catch (error) {
       logToFile(`Error deleting file: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to delete file");
     }
   }
 
@@ -423,7 +453,7 @@ class FileHandlers {
       return result;
     } catch (error) {
       logToFile(`Error creating folder: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to create folder");
     }
   }
 
@@ -433,7 +463,7 @@ class FileHandlers {
       return result;
     } catch (error) {
       logToFile(`Error creating file: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to create file");
     }
   }
 
@@ -464,7 +494,7 @@ class FileHandlers {
       return await nativeSftpClient.renameFile(tabId, oldPath, newPath);
     } catch (error) {
       logToFile(`Error renaming file: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to rename file");
     }
   }
 
@@ -481,7 +511,7 @@ class FileHandlers {
       return result;
     } catch (error) {
       logToFile(`Error downloading file: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to download file");
     }
   }
 
@@ -495,7 +525,7 @@ class FileHandlers {
       return result;
     } catch (error) {
       logToFile(`Error downloading folder: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to download folder");
     }
   }
 
@@ -505,7 +535,7 @@ class FileHandlers {
       return result;
     } catch (error) {
       logToFile(`Error getting file permissions: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to read permissions");
     }
   }
 
@@ -515,7 +545,7 @@ class FileHandlers {
       return result;
     } catch (error) {
       logToFile(`Error getting absolute path: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to resolve absolute path");
     }
   }
 
@@ -708,7 +738,7 @@ class FileHandlers {
       };
     } catch (error) {
       logToFile(`Error starting directory watch: ${error.message}`, "WARN");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to start directory watch");
     }
   }
 
@@ -747,7 +777,7 @@ class FileHandlers {
       };
     } catch (error) {
       logToFile(`Error stopping directory watch: ${error.message}`, "WARN");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to stop directory watch");
     }
   }
 
@@ -764,7 +794,7 @@ class FileHandlers {
       );
     } catch (error) {
       logToFile(`Set file permissions error: ${error.message}`, "ERROR");
-      return { success: false, error: `设置权限失败: ${error.message}` };
+      return buildErrorResponse(error, `设置权限失败: ${error.message}`);
     }
   }
 
@@ -773,7 +803,7 @@ class FileHandlers {
       return await nativeSftpClient.getFilePermissionsBatch(tabId, filePaths);
     } catch (error) {
       logToFile(`Batch get file permissions error: ${error.message}`, "ERROR");
-      return { success: false, error: `批量获取权限失败: ${error.message}` };
+      return buildErrorResponse(error, `批量获取权限失败: ${error.message}`);
     }
   }
 
@@ -787,7 +817,7 @@ class FileHandlers {
       );
     } catch (error) {
       logToFile(`Set file ownership error: ${error.message}`, "ERROR");
-      return { success: false, error: `设置所有者/组失败: ${error.message}` };
+      return buildErrorResponse(error, `设置所有者/组失败: ${error.message}`);
     }
   }
 
@@ -800,7 +830,7 @@ class FileHandlers {
       return await nativeSftpClient.createRemoteFolders(tabId, folderPath);
     } catch (error) {
       logToFile(`Error creating remote folders: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to create remote folders");
     }
   }
 
@@ -843,7 +873,7 @@ class FileHandlers {
           message: "用户已取消操作",
         };
       }
-      return { success: false, error: `上传文件失败: ${error.message}` };
+      return buildErrorResponse(error, `上传文件失败: ${error.message}`);
     }
   }
 
@@ -893,7 +923,7 @@ class FileHandlers {
           message: "用户已取消操作",
         };
       }
-      return { success: false, error: `上传文件失败: ${error.message}` };
+      return buildErrorResponse(error, `上传文件失败: ${error.message}`);
     }
   }
 
@@ -936,7 +966,7 @@ class FileHandlers {
           message: "用户已取消操作",
         };
       }
-      return { success: false, error: `上传文件夹失败: ${error.message}` };
+      return buildErrorResponse(error, `上传文件夹失败: ${error.message}`);
     }
   }
 

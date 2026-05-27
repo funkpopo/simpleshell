@@ -38,6 +38,7 @@ import HistoryIcon from "@mui/icons-material/History";
 import InfoIcon from "@mui/icons-material/Info";
 import ExitToAppIcon from "@mui/icons-material/ExitToApp";
 import BugReportIcon from "@mui/icons-material/BugReport";
+import FeedbackIcon from "@mui/icons-material/Feedback";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import PublicIcon from "@mui/icons-material/Public";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
@@ -1950,6 +1951,40 @@ function AppContent() {
     }
   }, [dispatch, showError, showSuccess, t]);
 
+  const handleOpenFeedbackIssue = useCallback(async () => {
+    dispatch(actions.setAnchorEl(null));
+    try {
+      if (!window.dialogAPI?.showMessageBox) {
+        throw new Error(t("settings.feedback.dialogUnavailable"));
+      }
+
+      const confirmation = await window.dialogAPI.showMessageBox({
+        type: "info",
+        buttons: [t("settings.feedback.cancel"), t("menu.feedback")],
+        defaultId: 1,
+        cancelId: 0,
+        title: t("settings.feedback.confirmTitle"),
+        message: t("settings.feedback.confirmMessage"),
+        detail: t("settings.feedback.confirmDetail"),
+        noLink: true,
+      });
+      if (confirmation?.response !== 1) {
+        return;
+      }
+
+      const result = await window.terminalAPI?.openFeedbackIssue?.({
+        source: "main-menu",
+        title: t("settings.feedback.defaultTitle"),
+      });
+      if (result?.success === false) {
+        throw new Error(result.error || t("settings.feedback.openIssueFailed"));
+      }
+      showSuccess(t("settings.feedback.issueOpened"));
+    } catch (error) {
+      showError(error?.message || t("settings.feedback.openIssueFailed"));
+    }
+  }, [dispatch, showError, showSuccess, t]);
+
   const handleSystemMenuAction = useCallback(
     (payload) => {
       const action = payload?.action;
@@ -1971,11 +2006,16 @@ function AppContent() {
       }
       if (action === "export-diagnostics") {
         void handleExportDiagnostics();
+        return;
+      }
+      if (action === "feedback-issue") {
+        void handleOpenFeedbackIssue();
       }
     },
     [
       handleCheckForUpdates,
       handleExportDiagnostics,
+      handleOpenFeedbackIssue,
       handleOpenAbout,
       handleOpenLogDirectory,
       handleOpenSettings,
@@ -3587,6 +3627,10 @@ function AppContent() {
                 <MenuItem onClick={handleExportDiagnostics}>
                   <BugReportIcon fontSize="small" sx={{ mr: 1 }} />
                   {t("menu.exportDiagnostics")}
+                </MenuItem>
+                <MenuItem onClick={handleOpenFeedbackIssue}>
+                  <FeedbackIcon fontSize="small" sx={{ mr: 1 }} />
+                  {t("menu.feedback")}
                 </MenuItem>
                 <MenuItem onClick={handleOpenAbout}>
                   <InfoIcon fontSize="small" sx={{ mr: 1 }} />

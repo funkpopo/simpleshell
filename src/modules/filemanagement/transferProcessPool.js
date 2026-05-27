@@ -23,7 +23,16 @@ function buildCancelledError(message = "Transfer cancelled by user") {
 
 function createTaskRuntimeError(message, payload = {}) {
   const error = new Error(message || "Transfer task failed");
-  if (payload.code) error.code = payload.code;
+  const raw = payload.raw && typeof payload.raw === "object" ? payload.raw : {};
+  const code = payload.code || raw.errorCode || raw.code || null;
+  if (code) {
+    error.code = code;
+    error.errorCode = code;
+  }
+  error.errorKind = payload.errorKind || raw.errorKind || null;
+  error.retryable = payload.retryable === true || raw.retryable === true;
+  error.module = payload.module || raw.module || null;
+  error.operation = payload.operation || raw.operation || null;
   if (payload.cancelled) {
     error.cancelled = true;
     error.userCancelled = true;
@@ -236,7 +245,12 @@ class TransferProcessPool {
         : null,
       error: {
         message: normalizeErrorMessage(error),
-        code: error?.code || null,
+        code: error?.code || error?.errorCode || null,
+        errorCode: error?.errorCode || error?.code || null,
+        errorKind: error?.errorKind || null,
+        retryable: error?.retryable === true,
+        module: error?.module || error?.worker || null,
+        operation: error?.operation || null,
         cancelled: Boolean(error?.cancelled || error?.userCancelled),
       },
       raw: error?.raw || null,
@@ -388,6 +402,11 @@ class TransferProcessPool {
       throw createTaskRuntimeError(
         result.error || "Native transfer task failed",
         {
+          code: result.errorCode || result.code,
+          errorKind: result.errorKind,
+          retryable: result.retryable,
+          module: result.module,
+          operation: result.operation,
           raw: result,
           worker: "native-sidecar",
         },
@@ -413,7 +432,11 @@ class TransferProcessPool {
               entry.cancelReason || normalizeErrorMessage(error),
             )
           : createTaskRuntimeError(normalizeErrorMessage(error), {
-              code: error?.code,
+              code: error?.code || error?.errorCode,
+              errorKind: error?.errorKind,
+              retryable: error?.retryable,
+              module: error?.module,
+              operation: error?.operation,
               raw: error?.raw || error,
               worker: "native-sidecar",
             });

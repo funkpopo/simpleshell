@@ -5,6 +5,10 @@
 const { app, BrowserWindow, dialog, shell } = require("electron");
 const { logToFile } = require("./core/utils/logger");
 const {
+  initializeCrashReporter,
+  recordCrashMarker,
+} = require("./core/utils/crashReporter");
+const {
   AppInitializer,
   AppCleanup,
   ipcSetup,
@@ -39,10 +43,34 @@ if (require("electron-squirrel-startup")) {
   app.quit();
 }
 
+initializeCrashReporter(app);
+
+app.on("child-process-gone", (_event, details = {}) => {
+  const type = details.type || "child";
+  const reason = details.reason || "unknown";
+  const message = `Child process gone: ${type} ${reason} (pid=${details.pid || "unknown"}, exitCode=${details.exitCode ?? "unknown"})`;
+  logToFile(message, reason === "crashed" || reason === "oom" ? "ERROR" : "WARN");
+  recordCrashMarker(app, {
+    module: "electron-child",
+    processType: type,
+    type: "child-process-gone",
+    reason,
+    exitCode: details.exitCode,
+    error: new Error(message),
+    extra: details,
+  });
+});
+
 // 全局错误处理器
 process.on("uncaughtException", (error) => {
   logToFile(`未捕获的异常: ${error.message}`, "ERROR");
   logToFile(`堆栈: ${error.stack}`, "ERROR");
+  recordCrashMarker(app, {
+    module: "main",
+    processType: "main",
+    type: "uncaughtException",
+    error,
+  });
 
   const {
     getPrimaryWindow,
@@ -62,11 +90,18 @@ process.on("unhandledRejection", (reason) => {
   const errorMessage =
     reason instanceof Error ? reason.message : String(reason);
   const errorStack = reason instanceof Error ? reason.stack : "";
+  const error = reason instanceof Error ? reason : new Error(errorMessage);
 
   logToFile(`未处理的Promise拒绝: ${errorMessage}`, "ERROR");
   if (errorStack) {
     logToFile(`堆栈: ${errorStack}`, "ERROR");
   }
+  recordCrashMarker(app, {
+    module: "main",
+    processType: "main",
+    type: "unhandledRejection",
+    error,
+  });
 
   const {
     getPrimaryWindow,

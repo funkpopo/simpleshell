@@ -4,6 +4,7 @@ const processManager = require("../process/processManager");
 const { getTransferNativeScannerPath } = require("./nativeTransferSidecar");
 const { processSSHPrivateKeyAsync } = require("./ssh-utils");
 const { logToFile } = require("./logger");
+const { recordCrashMarker } = require("./crashReporter");
 
 function normalizeErrorMessage(error) {
   if (!error) return "Unknown error";
@@ -11,12 +12,84 @@ function normalizeErrorMessage(error) {
   return error.message || String(error);
 }
 
+function parseStructuredErrorText(value) {
+  const text = String(value || "").trim();
+  if (!text || (!text.startsWith("{") && !text.startsWith("["))) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed?.type === "result" && parsed.result) {
+      return parsed.result;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function createNativeSidecarError(message, payload = {}) {
+  const error = new Error(message || payload.error || "Native sidecar failed");
+  const errorCode = payload.errorCode || payload.code || "NATIVE_SFTP_SIDECAR";
+  error.code = errorCode;
+  error.errorCode = errorCode;
+  error.errorKind = payload.errorKind || payload.kind || "sidecar";
+  error.retryable = payload.retryable === true;
+  error.module = payload.module || "native-sidecar";
+  error.operation = payload.operation || null;
+  error.sidecarVersion = payload.sidecarVersion || null;
+  error.raw = payload.raw || payload;
+  return error;
+}
+
+function normalizeNativeErrorPayload(payload, fallbackMessage) {
+  const structured =
+    payload && typeof payload === "object"
+      ? payload
+      : parseStructuredErrorText(payload);
+  const message =
+    structured?.error ||
+    structured?.message ||
+    fallbackMessage ||
+    normalizeErrorMessage(payload);
+
+  if (structured && typeof structured === "object") {
+    return {
+      ...structured,
+      success: false,
+      error: message,
+      message,
+      errorCode:
+        structured.errorCode || structured.code || "NATIVE_SFTP_SIDECAR",
+      errorKind: structured.errorKind || structured.kind || "sidecar",
+      retryable: structured.retryable === true,
+      module: structured.module || "native-sidecar",
+    };
+  }
+
+  return {
+    success: false,
+    error: message,
+    message,
+    errorCode: "NATIVE_SFTP_SIDECAR",
+    errorKind: "sidecar",
+    retryable: false,
+    module: "native-sidecar",
+  };
+}
+
 async function resolveSshConfig(tabId) {
   const processInfo = processManager.getProcess(tabId);
   const rawConfig = processInfo?.config;
   if (!rawConfig?.host || !rawConfig?.username) {
     logToFile(`Native SFTP: missing SSH config for tab ${tabId}`, "WARN");
-    throw new Error("SSH connection config is unavailable");
+    throw createNativeSidecarError("SSH connection config is unavailable", {
+      errorCode: "NATIVE_SFTP_MISSING_CONFIG",
+      errorKind: "validation",
+      retryable: false,
+      module: "native-sftp-client",
+    });
   }
 
   const sshConfig = await processSSHPrivateKeyAsync({
@@ -46,7 +119,13 @@ function invokeNativeRequest(tabId, request, options = {}) {
       `Native SFTP: sidecar binary not found for ${request?.operation || "unknown-operation"}`,
       "ERROR",
     );
-    return Promise.reject(new Error("Rust transfer sidecar was not found"));
+    return Promise.reject(
+      createNativeSidecarError("Rust transfer sidecar was not found", {
+        errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
+        errorKind: "sidecar",
+        retryable: false,
+      }),
+    );
   }
 
   logToFile(
@@ -71,7 +150,13 @@ function invokeNativeRequestWithConfig(
       `Native SFTP: sidecar binary not found for ${request?.operation || "unknown-operation"}`,
       "ERROR",
     );
-    return Promise.reject(new Error("Rust transfer sidecar was not found"));
+    return Promise.reject(
+      createNativeSidecarError("Rust transfer sidecar was not found", {
+        errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
+        errorKind: "sidecar",
+        retryable: false,
+      }),
+    );
   }
 
   return new Promise((resolve, reject) => {
@@ -128,8 +213,15 @@ function invokeNativeRequestWithConfig(
         payload = JSON.parse(line);
       } catch (error) {
         rejectOnce(
-          new Error(
+          createNativeSidecarError(
             `Native SFTP sidecar returned invalid JSON: ${normalizeErrorMessage(error)}`,
+            {
+              errorCode: "NATIVE_SFTP_INVALID_SIDECAR_OUTPUT",
+              errorKind: "internal",
+              retryable: false,
+              operation: request?.operation || null,
+              raw: { line },
+            },
           ),
         );
         return;
@@ -162,8 +254,15 @@ function invokeNativeRequestWithConfig(
 
     child.on("error", (error) => {
       rejectOnce(
-        new Error(
+        createNativeSidecarError(
           `Failed to start native SFTP sidecar: ${normalizeErrorMessage(error)}`,
+          {
+            errorCode: "NATIVE_SFTP_SIDECAR_START_FAILED",
+            errorKind: "sidecar",
+            retryable: false,
+            operation: request?.operation || null,
+            raw: error,
+          },
         ),
       );
     });
@@ -174,21 +273,46 @@ function invokeNativeRequestWithConfig(
       }
 
       if (code !== 0) {
+        const structured = normalizeNativeErrorPayload(
+          stderrBuffer.trim() || finalResult,
+          (finalResult && finalResult.error) ||
+            `Native SFTP sidecar exited with code ${code}`,
+        );
+        recordCrashMarker(null, {
+          module: "native-sidecar",
+          processType: "native-sidecar",
+          type: "sidecar-exit",
+          reason: structured.error,
+          exitCode: code,
+          operation: request?.operation || null,
+          error: structured.error,
+          extra: {
+            errorCode: structured.errorCode,
+            errorKind: structured.errorKind,
+            retryable: structured.retryable,
+          },
+        });
         rejectOnce(
-          new Error(
-            stderrBuffer.trim() ||
-              (finalResult && finalResult.error) ||
-              `Native SFTP sidecar exited with code ${code}`,
-          ),
+          createNativeSidecarError(structured.error, {
+            ...structured,
+            operation: structured.operation || request?.operation || null,
+            raw: { ...structured, exitCode: code },
+          }),
         );
         return;
       }
 
       if (!finalResult) {
         rejectOnce(
-          new Error(
+          createNativeSidecarError(
             stderrBuffer.trim() ||
               "Native SFTP sidecar did not return a result payload",
+            {
+              errorCode: "NATIVE_SFTP_MISSING_RESULT",
+              errorKind: "internal",
+              retryable: false,
+              operation: request?.operation || null,
+            },
           ),
         );
         return;
@@ -218,7 +342,14 @@ function watchDirectory(tabId, remotePath, options = {}) {
       "Native SFTP: sidecar binary not found for watchDirectory",
       "ERROR",
     );
-    return Promise.reject(new Error("Rust transfer sidecar was not found"));
+    return Promise.reject(
+      createNativeSidecarError("Rust transfer sidecar was not found", {
+        errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
+        errorKind: "sidecar",
+        retryable: false,
+        operation: "watchDirectory",
+      }),
+    );
   }
 
   logToFile(
@@ -243,7 +374,14 @@ function watchDirectoryWithConfig(
       "Native SFTP: sidecar binary not found for watchDirectory",
       "ERROR",
     );
-    return Promise.reject(new Error("Rust transfer sidecar was not found"));
+    return Promise.reject(
+      createNativeSidecarError("Rust transfer sidecar was not found", {
+        errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
+        errorKind: "sidecar",
+        retryable: false,
+        operation: "watchDirectory",
+      }),
+    );
   }
 
   return new Promise((resolve, reject) => {
@@ -300,8 +438,15 @@ function watchDirectoryWithConfig(
       try {
         payload = JSON.parse(line);
       } catch (error) {
-        const wrapped = new Error(
+        const wrapped = createNativeSidecarError(
           `Native SFTP sidecar returned invalid JSON: ${normalizeErrorMessage(error)}`,
+          {
+            errorCode: "NATIVE_SFTP_INVALID_SIDECAR_OUTPUT",
+            errorKind: "internal",
+            retryable: false,
+            operation: "watchDirectory",
+            raw: { line },
+          },
         );
         if (settled) {
           notifyRuntimeError(wrapped);
@@ -334,6 +479,24 @@ function watchDirectoryWithConfig(
         if (typeof options.onChanged === "function") {
           options.onChanged(eventPayload);
         }
+        return;
+      }
+
+      if (eventName === "error") {
+        const payloadError = normalizeNativeErrorPayload(
+          eventPayload,
+          eventPayload?.error || "Native SFTP directory watch failed",
+        );
+        const wrapped = createNativeSidecarError(payloadError.error, {
+          ...payloadError,
+          operation: payloadError.operation || "watchDirectory",
+        });
+        if (settled) {
+          notifyRuntimeError(wrapped);
+          controller.close();
+        } else {
+          rejectOnce(wrapped);
+        }
       }
     };
 
@@ -351,8 +514,15 @@ function watchDirectoryWithConfig(
     });
 
     child.on("error", (error) => {
-      const wrapped = new Error(
+      const wrapped = createNativeSidecarError(
         `Failed to start native SFTP sidecar: ${normalizeErrorMessage(error)}`,
+        {
+          errorCode: "NATIVE_SFTP_SIDECAR_START_FAILED",
+          errorKind: "sidecar",
+          retryable: false,
+          operation: "watchDirectory",
+          raw: error,
+        },
       );
       if (settled) {
         notifyRuntimeError(wrapped);
@@ -387,10 +557,30 @@ function watchDirectoryWithConfig(
       }
 
       if (code !== 0) {
-        const wrapped = new Error(
+        const structured = normalizeNativeErrorPayload(
           stderrBuffer.trim() ||
             `Native SFTP directory watch exited with code ${code}`,
         );
+        recordCrashMarker(null, {
+          module: "native-sidecar",
+          processType: "native-sidecar",
+          type: "sidecar-exit",
+          reason: structured.error,
+          exitCode: code,
+          signal,
+          operation: "watchDirectory",
+          error: structured.error,
+          extra: {
+            errorCode: structured.errorCode,
+            errorKind: structured.errorKind,
+            retryable: structured.retryable,
+          },
+        });
+        const wrapped = createNativeSidecarError(structured.error, {
+          ...structured,
+          operation: structured.operation || "watchDirectory",
+          raw: { ...structured, exitCode: code, signal },
+        });
         if (settled) {
           notifyRuntimeError(wrapped);
         } else {
@@ -402,14 +592,30 @@ function watchDirectoryWithConfig(
 
       if (!settled) {
         rejectOnce(
-          new Error("Native SFTP directory watch closed before it became ready"),
+          createNativeSidecarError(
+            "Native SFTP directory watch closed before it became ready",
+            {
+              errorCode: "NATIVE_SFTP_WATCH_CLOSED_BEFORE_READY",
+              errorKind: "sidecar",
+              retryable: true,
+              operation: "watchDirectory",
+            },
+          ),
         );
         emitExit();
         return;
       }
 
       notifyRuntimeError(
-        new Error("Native SFTP directory watch closed unexpectedly"),
+        createNativeSidecarError(
+          "Native SFTP directory watch closed unexpectedly",
+          {
+            errorCode: "NATIVE_SFTP_WATCH_CLOSED",
+            errorKind: "sidecar",
+            retryable: true,
+            operation: "watchDirectory",
+          },
+        ),
       );
       emitExit();
     });

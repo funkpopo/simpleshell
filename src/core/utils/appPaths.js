@@ -42,9 +42,14 @@ function getDiagnosticDirectory(app) {
   return path.join(getRuntimeBaseDirectory(app), "diagnostics");
 }
 
+function getCrashReportDirectory(app) {
+  return path.join(getDiagnosticDirectory(app), "crashes");
+}
+
 module.exports = {
   getConfigBackupDirectory,
   getConfigPath,
+  getCrashReportDirectory,
   getDiagnosticDirectory,
   getLogDirectory,
   getRuntimeBaseDirectory,

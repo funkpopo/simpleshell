@@ -14,7 +14,17 @@ function normalizeResult(raw) {
     return { success: true, data: raw };
   }
   if (raw.success === false) {
-    return { success: false, error: raw.error || "Operation failed" };
+    return {
+      success: false,
+      error: raw.error || "Operation failed",
+      message: raw.message || raw.error || "Operation failed",
+      errorCode: raw.errorCode || raw.code || null,
+      code: raw.code || raw.errorCode || null,
+      errorKind: raw.errorKind || null,
+      retryable: raw.retryable === true,
+      module: raw.module || null,
+      operation: raw.operation || null,
+    };
   }
   // Prefer unwrapping standardized { success: true, data } shapes.
   if ("data" in raw) {
@@ -102,6 +112,13 @@ async function batchInvoke(_event, calls) {
       results.push({
         success: false,
         error: error?.message || String(error),
+        message: error?.message || String(error),
+        errorCode: error?.errorCode || error?.code || null,
+        code: error?.code || error?.errorCode || null,
+        errorKind: error?.errorKind || null,
+        retryable: error?.retryable === true,
+        module: error?.module || null,
+        operation: error?.operation || null,
       });
     }
   }

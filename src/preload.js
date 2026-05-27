@@ -1,7 +1,13 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 
-const { contextBridge, ipcRenderer, clipboard, webUtils } = require("electron");
+const {
+  contextBridge,
+  ipcRenderer,
+  clipboard,
+  webUtils,
+  crashReporter,
+} = require("electron");
 const {
   IPC_EVENT_CHANNELS,
   IPC_REQUEST_CHANNELS,
@@ -38,6 +44,15 @@ const DEFAULT_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 const RESTRICTED_EXTERNAL_PROTOCOLS = new Set(["mailto:"]);
 const MAX_EXTERNAL_URL_LENGTH = 2048;
 const OPEN_EXTERNAL_IPC_TIMEOUT = 10000;
+
+try {
+  crashReporter.addExtraParameter("processType", "renderer");
+  crashReporter.addExtraParameter("module", "renderer");
+  crashReporter.addExtraParameter("platform", process.platform);
+  crashReporter.addExtraParameter("arch", process.arch);
+} catch {
+  // Crash reporter may be unavailable in unusual startup modes.
+}
 
 /** Main process may coalesce OUTPUT into one IPC with an array of messages. */
 const normalizeTerminalMailboxOutboundMessages = (payload) => {
@@ -619,6 +634,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   openLogDirectory: () => ipcRenderer.invoke("app:openLogDirectory"),
   exportDiagnostics: () => ipcRenderer.invoke("app:exportDiagnostics"),
+  copyDiagnosticSummary: (context) =>
+    ipcRenderer.invoke("app:copyDiagnosticSummary", context),
+  copyDiagnosticPackage: (context) =>
+    ipcRenderer.invoke("app:copyDiagnosticPackage", context),
+  openFeedbackIssue: (context) =>
+    ipcRenderer.invoke("app:openFeedbackIssue", context),
 
   // 文件管理相关API
   listFiles: async (tabId, path, options) => {
@@ -1082,6 +1103,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   loadLogSettings: () => ipcRenderer.invoke("settings:loadLogSettings"),
   saveLogSettings: (settings) =>
     ipcRenderer.invoke("settings:saveLogSettings", settings),
+  getErrorReportingSettings: () =>
+    ipcRenderer.invoke("settings:getErrorReportingSettings"),
+  saveErrorReportingSettings: (settings) =>
+    ipcRenderer.invoke("settings:saveErrorReportingSettings", settings),
 
   // 性能设置实时更新API
   updateCacheSettings: (settings) =>

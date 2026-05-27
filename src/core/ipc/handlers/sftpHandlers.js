@@ -3,6 +3,26 @@ const fileSnapshotStore = require("../../utils/fileSnapshotStore");
 const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
 
+function buildErrorResponse(error, fallbackMessage = "Operation failed") {
+  const fallback =
+    fallbackMessage && fallbackMessage !== "Operation failed"
+      ? fallbackMessage
+      : null;
+  const message = fallback || error?.message || String(error || fallbackMessage);
+  return {
+    success: false,
+    error: message,
+    message,
+    errorCode: error?.errorCode || error?.code || null,
+    code: error?.code || error?.errorCode || null,
+    errorKind: error?.errorKind || null,
+    retryable: error?.retryable === true,
+    module: error?.module || null,
+    operation: error?.operation || null,
+    raw: error?.raw || null,
+  };
+}
+
 /**
  * SFTP会话和队列相关的IPC处理器
  */
@@ -117,7 +137,7 @@ class SftpHandlers {
       return result;
     } catch (error) {
       logToFile(`Error reading file content: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to read file content");
     }
   }
 
@@ -127,7 +147,7 @@ class SftpHandlers {
       return result;
     } catch (error) {
       logToFile(`Error reading file as base64: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to read file as base64");
     }
   }
 
@@ -141,7 +161,7 @@ class SftpHandlers {
       return result;
     } catch (error) {
       logToFile(`Error saving file content: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to save file content");
     }
   }
 
@@ -241,7 +261,7 @@ class SftpHandlers {
       };
     } catch (error) {
       logToFile(`Error restoring file snapshot: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      return buildErrorResponse(error, "Failed to restore file snapshot");
     }
   }
 }

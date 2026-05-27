@@ -8,9 +8,12 @@ const { getDiagnosticDirectory, getConfigPath } = require("./appPaths");
 const { getLogFilePath } = require("./logger");
 const { redactSensitiveText } = require("./log-sanitizer");
 const { getTransferNativeScannerPath } = require("./nativeTransferSidecar");
+const { getCrashReporterDiagnostics } = require("./crashReporter");
 
 const MAX_LOG_LINES = 400;
 const SIDECAR_VERSION_TIMEOUT_MS = 3000;
+const FEEDBACK_ISSUE_URL =
+  "https://github.com/funkpopo/simpleshell/issues/new";
 
 function safeReadRecentLogLines(logFilePath) {
   if (!logFilePath || !fs.existsSync(logFilePath)) {
@@ -114,16 +117,133 @@ function getConfigSummary(app) {
   };
 }
 
-async function buildDiagnosticPayload(app, { updateService = null } = {}) {
+function pickRecentErrorLines(lines, maxLines = 12) {
+  if (!Array.isArray(lines)) {
+    return [];
+  }
+
+  return lines
+    .filter((line) => /\[(ERROR|WARN)\]/i.test(line) || /error|failed/i.test(line))
+    .slice(-maxLines);
+}
+
+function summarizeGpu(gpuInfo) {
+  const devices = Array.isArray(gpuInfo?.gpuDevice) ? gpuInfo.gpuDevice : [];
+  const activeDevice = devices.find((device) => device?.active) || devices[0];
+  const aux = gpuInfo?.auxAttributes || {};
+  return (
+    activeDevice?.deviceString ||
+    aux.glRenderer ||
+    gpuInfo?.displayRenderer ||
+    "unknown"
+  );
+}
+
+function buildDiagnosticSummary(payload) {
+  const recentLines = payload?.logs?.recentLines || [];
+  const recentErrors = pickRecentErrorLines(recentLines);
+  const crashRecords = Array.isArray(payload?.crashReporter?.recentRecords)
+    ? payload.crashReporter.recentRecords.slice(0, 5)
+    : [];
+  const lines = [
+    "## SimpleShell diagnostics",
+    "",
+    `Generated: ${payload?.generatedAt || "unknown"}`,
+    `App: ${payload?.app?.name || "SimpleShell"} ${payload?.app?.version || "unknown"} (${payload?.app?.packaged ? "packaged" : "development"})`,
+    `Runtime: Electron ${payload?.runtime?.electron || "unknown"}, Chrome ${payload?.runtime?.chrome || "unknown"}, Node ${payload?.runtime?.node || "unknown"}`,
+    `Platform: ${payload?.platform?.os || process.platform} ${payload?.platform?.release || ""} ${payload?.platform?.arch || process.arch}`,
+    `GPU: ${summarizeGpu(payload?.gpu)}`,
+    `Config schemaVersion: ${payload?.config?.schemaVersion || "unknown"}`,
+    `Update status: ${payload?.update?.status || payload?.update?.state || "unknown"}`,
+    `Sidecar: ${payload?.sidecar?.version || "unknown"} (${payload?.sidecar?.exists ? "found" : "missing"})`,
+    `Crash reporter: ${payload?.crashReporter?.started ? "started" : "not started"}, local only`,
+  ];
+
+  if (payload?.context && typeof payload.context === "object") {
+    lines.push("", "## User context");
+    if (payload.context.title) lines.push(`Title: ${payload.context.title}`);
+    if (payload.context.description) {
+      lines.push(`Description: ${payload.context.description}`);
+    }
+    if (payload.context.source) lines.push(`Source: ${payload.context.source}`);
+  }
+
+  if (crashRecords.length > 0) {
+    lines.push("", "## Recent crash records");
+    crashRecords.forEach((record) => {
+      const marker = record.marker || {};
+      lines.push(
+        `- ${marker.generatedAt || new Date(record.mtimeMs).toISOString()} ${marker.module || record.kind}: ${marker.reason || marker.error?.message || record.name}`,
+      );
+    });
+  }
+
+  if (recentErrors.length > 0) {
+    lines.push("", "## Recent error log lines");
+    recentErrors.forEach((line) => {
+      lines.push(`- ${line}`);
+    });
+  }
+
+  lines.push(
+    "",
+    "Note: The full diagnostic package is a local JSON file. Review it before attaching it to a public issue.",
+  );
+
+  return lines.join("\n");
+}
+
+function buildFeedbackIssueUrl(payload, summary = buildDiagnosticSummary(payload)) {
+  const titleBase = payload?.context?.title || "Problem report";
+  const title = `[Bug] ${titleBase}`.slice(0, 180);
+  const body = [
+    "### What happened?",
+    "",
+    payload?.context?.description || "Describe the issue here.",
+    "",
+    "### Diagnostics summary",
+    "",
+    summary,
+  ].join("\n");
+
+  const params = new URLSearchParams({
+    title,
+    body,
+  });
+  return `${FEEDBACK_ISSUE_URL}?${params.toString()}`;
+}
+
+async function buildDiagnosticPayload(
+  app,
+  { updateService = null, context = null } = {},
+) {
   const gpuInfo = await app.getGPUInfo("complete").catch((error) => ({
     error: error.message,
   }));
   const sidecarPath = getTransferNativeScannerPath();
   const sidecarRuntimeVersion = await resolveSidecarRuntimeVersion(sidecarPath);
   const logFilePath = getLogFilePath();
+  const recentLines = safeReadRecentLogLines(logFilePath);
 
   return {
     generatedAt: new Date().toISOString(),
+    context:
+      context && typeof context === "object"
+        ? {
+            title:
+              typeof context.title === "string"
+                ? redactSensitiveText(context.title).slice(0, 180)
+                : "",
+            description:
+              typeof context.description === "string"
+                ? redactSensitiveText(context.description).slice(0, 1000)
+                : "",
+            source:
+              typeof context.source === "string"
+                ? redactSensitiveText(context.source).slice(0, 80)
+                : "",
+          }
+        : null,
     app: {
       name: app.getName(),
       version: app.getVersion(),
@@ -154,9 +274,10 @@ async function buildDiagnosticPayload(app, { updateService = null } = {}) {
       exists: Boolean(sidecarPath && fs.existsSync(sidecarPath)),
       version: sidecarRuntimeVersion || readCargoSidecarVersion(),
     },
+    crashReporter: getCrashReporterDiagnostics(app),
     logs: {
       path: logFilePath,
-      recentLines: safeReadRecentLogLines(logFilePath),
+      recentLines,
     },
   };
 }
@@ -166,6 +287,7 @@ async function exportDiagnosticPackage(app, options = {}) {
   fs.mkdirSync(diagnosticsDir, { recursive: true });
 
   const payload = await buildDiagnosticPayload(app, options);
+  const summary = buildDiagnosticSummary(payload);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const filePath = path.join(diagnosticsDir, `diagnostics.${stamp}.json`);
 
@@ -176,10 +298,13 @@ async function exportDiagnosticPackage(app, options = {}) {
     filePath,
     diagnosticsDir,
     generatedAt: payload.generatedAt,
+    summary,
   };
 }
 
 module.exports = {
+  buildDiagnosticSummary,
+  buildFeedbackIssueUrl,
   buildDiagnosticPayload,
   exportDiagnosticPackage,
 };

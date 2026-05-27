@@ -148,6 +148,30 @@
           "logs": "Logs",
           "aiMemory": "AI memory"
         }
+      },
+      "feedback": {
+        "title": "Error Reporting & Feedback",
+        "localCrashCaptureOn": "Local crash capture enabled",
+        "localCrashCaptureOff": "Local crash capture unavailable",
+        "description": "Error reporting is off by default. When enabled, SimpleShell only stores crash markers and diagnostic summaries locally; a diagnostic summary is prefilled in GitHub Issue only after you confirm feedback.",
+        "enable": "Enable error reporting assistance",
+        "enableHelper": "Allow SimpleShell to collect local crash markers and prepare diagnostic summaries for feedback.",
+        "includeDiagnostics": "Include diagnostic summary in feedback",
+        "includeDiagnosticsHelper": "Includes version, platform, GPU, update status, sidecar version, recent error logs, and crash record summaries.",
+        "crashDirectory": "Crash record directory",
+        "copyPackage": "Copy Diagnostic Package",
+        "copyPackageFailed": "Failed to copy diagnostic package",
+        "packageCopied": "Diagnostic package copied to clipboard",
+        "dialogUnavailable": "Confirmation dialog is unavailable",
+        "cancel": "Cancel",
+        "openIssue": "Report Issue",
+        "confirmTitle": "Report Issue",
+        "confirmMessage": "Open a GitHub Issue page",
+        "confirmDetail": "A diagnostic summary will be prefilled in the issue body. Review it in the browser and remove anything you do not want to publish before submitting.",
+        "defaultTitle": "SimpleShell problem report",
+        "openIssueFailed": "Failed to open feedback issue",
+        "issueOpened": "GitHub Issue page opened",
+        "saveFailed": "Failed to save error reporting settings"
       }
     },
     "masterPassword": {
@@ -178,6 +202,7 @@
       "checkForUpdates": "Check for Updates",
       "openLogs": "Open Logs",
       "exportDiagnostics": "Export Diagnostics",
+      "feedback": "Report Issue",
       "exit": "Exit",
       "lockApp": "Lock App",
       "lockAppSuccess": "App locked"
@@ -1142,9 +1167,29 @@
       "componentTitle": "Component failed to load",
       "componentMessage": "{{componentName}} encountered an error while loading. Please try reloading.",
       "retryCount": "Retried {{count}} time(s)",
-      "reload": "Reload"
+      "reload": "Reload",
+      "exportDiagnostics": "Export Diagnostics",
+      "copyDiagnostics": "Copy Diagnostics",
+      "feedback": "Report Issue",
+      "diagnosticsExported": "Diagnostics exported",
+      "diagnosticsCopied": "Diagnostics copied to clipboard",
+      "feedbackOpened": "Feedback page opened",
+      "actionFailed": "Action failed"
+    },
+    "errorNotification": {
+      "showSolutions": "Show suggestions",
+      "hideSolutions": "Hide suggestions",
+      "copyDiagnosticSummary": "Copy diagnostic summary",
+      "feedback": "Report issue",
+      "solutions": "Suggestions"
     },
     "errors": {
+      "classification": {
+        "fatal": "Fatal error",
+        "retry": "Retry needed",
+        "recoverable": "Recoverable error",
+        "feedback": "Feedback needed"
+      },
       "ECONNREFUSED": {
         "title": "Cannot Connect to Server",
         "message": "Connection refused by the server. Possible reasons:\n• Server is not running or SSH service is not started\n• Incorrect port number\n• Firewall blocking the connection",

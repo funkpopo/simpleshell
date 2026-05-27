@@ -3,6 +3,7 @@ const path = require("path");
 const configService = require("../../services/configService");
 const { IPC_EVENT_CHANNELS } = require("../ipc/schema/channels");
 const { logToFile } = require("../utils/logger");
+const { recordCrashMarker } = require("../utils/crashReporter");
 
 const DEFAULT_WINDOW_BOUNDS = Object.freeze({
   width: 1200,
@@ -231,6 +232,39 @@ function registerWindowSecurityHandlers(mainWindow, webpackEntry) {
   });
 }
 
+function registerRendererCrashHandlers(mainWindow) {
+  mainWindow.webContents.on("render-process-gone", (_event, details = {}) => {
+    const reason = details.reason || "unknown";
+    if (reason === "clean-exit") {
+      return;
+    }
+
+    const message = `Renderer process gone: ${reason} (exitCode=${details.exitCode ?? "unknown"})`;
+    logToFile(message, reason === "crashed" || reason === "oom" ? "ERROR" : "WARN");
+    recordCrashMarker(null, {
+      module: "renderer",
+      processType: "renderer",
+      type: "render-process-gone",
+      reason,
+      exitCode: details.exitCode,
+      error: new Error(message),
+      extra: details,
+    });
+
+    if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send("app:error", {
+        type: "rendererCrash",
+        level: "fatal",
+        category: "fatal",
+        module: "renderer",
+        message,
+        action: "feedback",
+        timestamp: Date.now(),
+      });
+    }
+  });
+}
+
 /**
  * 创建主窗口
  * @param {Object} options - 窗口配置选项
@@ -273,6 +307,7 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
   mainWindow.setMenuBarVisibility(false);
   registerSessionSecurityHandlers();
   registerWindowSecurityHandlers(mainWindow, webpackEntry);
+  registerRendererCrashHandlers(mainWindow);
 
   const emitWindowState = () => {
     if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {

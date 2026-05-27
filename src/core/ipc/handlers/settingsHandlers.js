@@ -12,6 +12,10 @@ const {
 const { getTempDirectory } = require("../../utils/appPaths");
 const fileCache = require("../../utils/fileCache");
 const fileSnapshotStore = require("../../utils/fileSnapshotStore");
+const {
+  getErrorReportingStatus,
+  saveErrorReportingSettings,
+} = require("../../utils/crashReporter");
 
 const LOCAL_DATA_SECTIONS = new Set([
   "connections",
@@ -123,6 +127,16 @@ class SettingsHandlers {
         channel: "settings:saveLogSettings",
         category: "settings",
         handler: this.saveLogSettings.bind(this),
+      },
+      {
+        channel: "settings:getErrorReportingSettings",
+        category: "settings",
+        handler: this.getErrorReportingSettings.bind(this),
+      },
+      {
+        channel: "settings:saveErrorReportingSettings",
+        category: "settings",
+        handler: this.saveErrorReportingSettings.bind(this),
       },
       {
         channel: "settings:updateCacheSettings",
@@ -252,6 +266,33 @@ class SettingsHandlers {
       return { success: true };
     } catch (error) {
       logToFile(`Error saving log settings: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getErrorReportingSettings() {
+    try {
+      return getErrorReportingStatus(app);
+    } catch (error) {
+      logToFile(
+        `Error loading error reporting settings: ${error.message}`,
+        "ERROR",
+      );
+      return { success: false, error: error.message };
+    }
+  }
+
+  async saveErrorReportingSettings(event, settings) {
+    try {
+      void event;
+      const status = saveErrorReportingSettings(settings);
+      logToFile("Error reporting settings updated", "INFO");
+      return status;
+    } catch (error) {
+      logToFile(
+        `Error saving error reporting settings: ${error.message}`,
+        "ERROR",
+      );
       return { success: false, error: error.message };
     }
   }

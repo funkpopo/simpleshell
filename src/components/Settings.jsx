@@ -35,6 +35,8 @@ import DisplaySettingsIcon from "@mui/icons-material/DisplaySettings";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import FeedbackIcon from "@mui/icons-material/Feedback";
 import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../i18n/i18n";
 import { SettingsSkeleton } from "./SkeletonLoader.jsx";
@@ -206,6 +208,11 @@ const Settings = memo(({ open, onClose }) => {
   const [logLevel, setLogLevel] = React.useState("WARN");
   const [maxFileSize, setMaxFileSize] = React.useState(5);
   const [cleanupIntervalDays, setCleanupIntervalDays] = React.useState(7);
+  const [errorReportingEnabled, setErrorReportingEnabled] =
+    React.useState(false);
+  const [includeDiagnosticsInFeedback, setIncludeDiagnosticsInFeedback] =
+    React.useState(false);
+  const [crashReporterStatus, setCrashReporterStatus] = React.useState(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [masterPasswordEnabled, setMasterPasswordEnabled] =
     React.useState(false);
@@ -332,6 +339,19 @@ const Settings = memo(({ open, onClose }) => {
             setCleanupIntervalDays(logSettings.cleanupIntervalDays || 7);
           }
         }
+
+        if (window.terminalAPI?.getErrorReportingSettings) {
+          const response =
+            await window.terminalAPI.getErrorReportingSettings();
+          if (response?.success !== false) {
+            const settings = response?.settings || {};
+            setErrorReportingEnabled(settings.enabled === true);
+            setIncludeDiagnosticsInFeedback(
+              settings.includeDiagnosticsInFeedback === true,
+            );
+            setCrashReporterStatus(response?.crashReporter || null);
+          }
+        }
       } catch {
         /* intentionally ignored */
       } finally {
@@ -435,6 +455,60 @@ const Settings = memo(({ open, onClose }) => {
       );
     } catch (error) {
       showError(error?.message || t("settings.exportDiagnosticsFailed"));
+    }
+  };
+
+  const handleCopyDiagnosticPackage = async () => {
+    try {
+      const result = await window.terminalAPI?.copyDiagnosticPackage?.({
+        source: "settings",
+        title: t("settings.feedback.defaultTitle"),
+      });
+      if (result?.success === false) {
+        throw new Error(
+          result.error || t("settings.feedback.copyPackageFailed"),
+        );
+      }
+      showSuccess(t("settings.feedback.packageCopied"));
+    } catch (error) {
+      showError(error?.message || t("settings.feedback.copyPackageFailed"));
+    }
+  };
+
+  const handleOpenFeedbackIssue = async () => {
+    try {
+      if (!window.dialogAPI?.showMessageBox) {
+        throw new Error(t("settings.feedback.dialogUnavailable"));
+      }
+
+      const confirmation = await window.dialogAPI.showMessageBox({
+        type: "info",
+        buttons: [
+          t("settings.feedback.cancel"),
+          t("settings.feedback.openIssue"),
+        ],
+        defaultId: 1,
+        cancelId: 0,
+        title: t("settings.feedback.confirmTitle"),
+        message: t("settings.feedback.confirmMessage"),
+        detail: t("settings.feedback.confirmDetail"),
+        noLink: true,
+      });
+
+      if (confirmation?.response !== 1) {
+        return;
+      }
+
+      const result = await window.terminalAPI?.openFeedbackIssue?.({
+        source: "settings",
+        title: t("settings.feedback.defaultTitle"),
+      });
+      if (result?.success === false) {
+        throw new Error(result.error || t("settings.feedback.openIssueFailed"));
+      }
+      showSuccess(t("settings.feedback.issueOpened"));
+    } catch (error) {
+      showError(error?.message || t("settings.feedback.openIssueFailed"));
     }
   };
 
@@ -669,6 +743,21 @@ const Settings = memo(({ open, onClose }) => {
           cleanupIntervalDays: cleanupIntervalDays,
         };
         await window.terminalAPI.saveLogSettings(logSettings);
+      }
+
+      if (window.terminalAPI?.saveErrorReportingSettings) {
+        const response = await window.terminalAPI.saveErrorReportingSettings({
+          enabled: errorReportingEnabled,
+          prompted: true,
+          includeDiagnosticsInFeedback:
+            errorReportingEnabled && includeDiagnosticsInFeedback,
+        });
+        if (response?.success === false) {
+          throw new Error(
+            response.error || t("settings.feedback.saveFailed"),
+          );
+        }
+        setCrashReporterStatus(response?.crashReporter || null);
       }
 
       // Apply language change
@@ -1145,6 +1234,145 @@ const Settings = memo(({ open, onClose }) => {
                   </Box>
                 </Grid>
               </Grid>
+            </Box>
+
+            <Box sx={{ ...sectionCardSx, mt: 2.25 }}>
+              <Box sx={sectionTitleRowSx}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <BugReportIcon sx={{ color: "error.main" }} />
+                  <Typography variant="subtitle1">
+                    {t("settings.feedback.title")}
+                  </Typography>
+                </Box>
+                <Chip
+                  size="small"
+                  color={
+                    crashReporterStatus?.started ? "success" : "warning"
+                  }
+                  variant="outlined"
+                  label={
+                    crashReporterStatus?.started
+                      ? t("settings.feedback.localCrashCaptureOn")
+                      : t("settings.feedback.localCrashCaptureOff")
+                  }
+                />
+              </Box>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mb: 1.5 }}
+              >
+                {t("settings.feedback.description")}
+              </Typography>
+              <Grid container spacing={1.5}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={errorReportingEnabled}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setErrorReportingEnabled(checked);
+                          if (!checked) {
+                            setIncludeDiagnosticsInFeedback(false);
+                          } else {
+                            setIncludeDiagnosticsInFeedback(true);
+                          }
+                        }}
+                        size="small"
+                      />
+                    }
+                    label={
+                      <Typography variant="body2">
+                        {t("settings.feedback.enable")}
+                      </Typography>
+                    }
+                  />
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 0.25 }}
+                  >
+                    {t("settings.feedback.enableHelper")}
+                  </Typography>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={
+                          errorReportingEnabled && includeDiagnosticsInFeedback
+                        }
+                        onChange={(e) =>
+                          setIncludeDiagnosticsInFeedback(e.target.checked)
+                        }
+                        disabled={!errorReportingEnabled}
+                        size="small"
+                      />
+                    }
+                    label={
+                      <Typography variant="body2">
+                        {t("settings.feedback.includeDiagnostics")}
+                      </Typography>
+                    }
+                  />
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 0.25 }}
+                  >
+                    {t("settings.feedback.includeDiagnosticsHelper")}
+                  </Typography>
+                </Grid>
+              </Grid>
+              {crashReporterStatus?.crashDirectory ? (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{
+                    display: "block",
+                    mt: 1,
+                    wordBreak: "break-all",
+                    fontFamily: "monospace",
+                  }}
+                >
+                  {t("settings.feedback.crashDirectory")}:{" "}
+                  {crashReporterStatus.crashDirectory}
+                </Typography>
+              ) : null}
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: 1,
+                  mt: 1.5,
+                  flexWrap: "wrap",
+                }}
+              >
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<ContentCopyIcon />}
+                  onClick={handleCopyDiagnosticPackage}
+                >
+                  {t("settings.feedback.copyPackage")}
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<BugReportIcon />}
+                  onClick={handleExportDiagnostics}
+                >
+                  {t("settings.exportDiagnostics")}
+                </Button>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<FeedbackIcon />}
+                  onClick={handleOpenFeedbackIssue}
+                >
+                  {t("settings.feedback.openIssue")}
+                </Button>
+              </Box>
             </Box>
 
             <Box sx={{ ...sectionCardSx, mt: 2.25 }}>

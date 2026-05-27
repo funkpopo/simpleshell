@@ -6,6 +6,9 @@ import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import BugReportIcon from "@mui/icons-material/BugReport";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import FeedbackIcon from "@mui/icons-material/Feedback";
 import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 
@@ -229,8 +232,64 @@ class GlobalErrorBoundary extends React.Component {
 const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
   const theme = useTheme();
   const [showDetails, setShowDetails] = React.useState(false);
+  const [actionBusy, setActionBusy] = React.useState(false);
+  const [actionMessage, setActionMessage] = React.useState("");
   const { t } = useTranslation();
   const recentErrors = errorLogger.getRecentErrors();
+  const errorContext = React.useMemo(
+    () => ({
+      source: "global-error-boundary",
+      title: t("errorBoundary.appTitle"),
+      description: error?.stack || error?.message || String(error || ""),
+    }),
+    [error, t],
+  );
+
+  const runDiagnosticAction = async (action, successMessage) => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    setActionMessage("");
+    try {
+      const result = await action();
+      if (result?.cancelled) {
+        return;
+      }
+      if (result?.success === false) {
+        throw new Error(result.error || t("errorBoundary.actionFailed"));
+      }
+      setActionMessage(successMessage);
+    } catch (actionError) {
+      setActionMessage(actionError?.message || t("errorBoundary.actionFailed"));
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const openConfirmedFeedbackIssue = async () => {
+    if (!window.dialogAPI?.showMessageBox) {
+      throw new Error(t("settings.feedback.dialogUnavailable"));
+    }
+
+    const confirmation = await window.dialogAPI.showMessageBox({
+      type: "info",
+      buttons: [
+        t("settings.feedback.cancel"),
+        t("settings.feedback.openIssue"),
+      ],
+      defaultId: 1,
+      cancelId: 0,
+      title: t("settings.feedback.confirmTitle"),
+      message: t("settings.feedback.confirmMessage"),
+      detail: t("settings.feedback.confirmDetail"),
+      noLink: true,
+    });
+
+    if (confirmation?.response !== 1) {
+      return { success: true, cancelled: true };
+    }
+
+    return window.terminalAPI?.openFeedbackIssue?.(errorContext);
+  };
 
   return (
     <Box
@@ -263,7 +322,15 @@ const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
         </Typography>
       </Alert>
 
-      <Box sx={{ display: "flex", gap: 2, mb: 3 }}>
+      <Box
+        sx={{
+          display: "flex",
+          gap: 2,
+          mb: 3,
+          flexWrap: "wrap",
+          justifyContent: "center",
+        }}
+      >
         <Button
           variant="contained"
           color="primary"
@@ -275,6 +342,49 @@ const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
         </Button>
         <Button
           variant="outlined"
+          startIcon={<BugReportIcon />}
+          disabled={actionBusy}
+          onClick={() =>
+            runDiagnosticAction(
+              () => window.terminalAPI?.exportDiagnostics?.(),
+              t("errorBoundary.diagnosticsExported"),
+            )
+          }
+          size="large"
+        >
+          {t("errorBoundary.exportDiagnostics")}
+        </Button>
+        <Button
+          variant="outlined"
+          startIcon={<ContentCopyIcon />}
+          disabled={actionBusy}
+          onClick={() =>
+            runDiagnosticAction(
+              () =>
+                window.terminalAPI?.copyDiagnosticPackage?.(errorContext),
+              t("errorBoundary.diagnosticsCopied"),
+            )
+          }
+          size="large"
+        >
+          {t("errorBoundary.copyDiagnostics")}
+        </Button>
+        <Button
+          variant="outlined"
+          startIcon={<FeedbackIcon />}
+          disabled={actionBusy}
+          onClick={() =>
+            runDiagnosticAction(
+              openConfirmedFeedbackIssue,
+              t("errorBoundary.feedbackOpened"),
+            )
+          }
+          size="large"
+        >
+          {t("errorBoundary.feedback")}
+        </Button>
+        <Button
+          variant="outlined"
           onClick={() => setShowDetails(!showDetails)}
           size="large"
         >
@@ -283,6 +393,15 @@ const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
             : t("errorBoundary.showDetails")}
         </Button>
       </Box>
+      {actionMessage ? (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ mb: 2, maxWidth: 800, textAlign: "center" }}
+        >
+          {actionMessage}
+        </Typography>
+      ) : null}
 
       {showDetails && (
         <Box
