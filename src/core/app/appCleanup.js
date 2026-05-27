@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const { logToFile } = require("../utils/logger");
+const { getTempDirectory } = require("../utils/appPaths");
 const {
   mainProcessResourceManager,
 } = require("../utils/mainProcessResourceManager");
@@ -40,10 +41,7 @@ class AppCleanup {
    */
   async cleanupMemoryFile() {
     try {
-      const tempDir = this.app.isPackaged
-        ? path.join(path.dirname(this.app.getPath("exe")), "temp")
-        : path.join(this.app.getAppPath(), "temp");
-      const memFilePath = path.join(tempDir, "mem.json");
+      const memFilePath = path.join(getTempDirectory(this.app), "mem.json");
       await fs.promises.unlink(memFilePath);
       logToFile("记忆文件已清理", "INFO");
     } catch (error) {

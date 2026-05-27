@@ -63,6 +63,12 @@
         "warn": "警告",
         "error": "错误"
       },
+      "openLogDirectory": "打开日志目录",
+      "exportDiagnostics": "导出诊断包",
+      "logDirectoryOpened": "日志目录已打开",
+      "diagnosticsExported": "诊断包已生成：{{path}}",
+      "openLogDirectoryFailed": "打开日志目录失败",
+      "exportDiagnosticsFailed": "导出诊断包失败",
       "performanceSettings": "性能设置",
       "dnd": {
         "title": "标签拖拽",
@@ -114,6 +120,34 @@
         "passwordRequired": "请先设置主密码",
         "passwordMismatch": "两次输入的主密码不一致",
         "updateFailed": "更新主密码设置失败"
+      },
+      "localData": {
+        "title": "清除本机数据",
+        "description": "清除生产目录 config.json 中的配置记录，以及本机临时目录中的缓存、快照、日志和 AI 记忆文件。换机器使用仍只需要复制生产目录下的 config.json；AI 记忆保留在 temp/mem.json，不写入 config.json。",
+        "destructive": "不可撤销",
+        "clear": "清除所选数据",
+        "clearing": "正在清除...",
+        "cancel": "取消",
+        "confirm": "确认清除",
+        "confirmTitle": "确认清除本机数据",
+        "confirmMessage": "将清除以下所选数据，此操作不可撤销。",
+        "selectionSeparator": "、",
+        "clearSuccess": "本机数据已清除",
+        "clearFailed": "清除本机数据失败",
+        "dialogUnavailable": "消息确认对话框不可用",
+        "clearUnavailable": "本机数据清理接口不可用",
+        "options": {
+          "connections": "连接",
+          "credentials": "凭据",
+          "commandHistory": "命令历史",
+          "shortcutCommands": "快捷命令",
+          "uiSettings": "界面设置",
+          "aiSettings": "AI 设置",
+          "cache": "缓存",
+          "snapshots": "快照",
+          "logs": "日志",
+          "aiMemory": "AI 记忆"
+        }
       }
     },
     "masterPassword": {
@@ -141,6 +175,9 @@
     "menu": {
       "settings": "设置",
       "about": "关于",
+      "checkForUpdates": "检查更新",
+      "openLogs": "打开日志目录",
+      "exportDiagnostics": "导出诊断包",
       "exit": "退出",
       "lockApp": "锁定应用",
       "lockAppSuccess": "应用已锁定"
@@ -251,6 +288,7 @@
       "organization": "组织",
       "historyTitle": "查询历史",
       "toggleHistory": "展开/收起历史",
+      "clearHistory": "清空查询历史",
       "noHistory": "暂无历史记录",
       "myIp": "我的 IP",
       "apiUnavailable": "API 不可用"

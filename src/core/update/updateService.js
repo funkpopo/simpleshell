@@ -5,6 +5,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { spawn, execFile } = require("child_process");
 const { logToFile } = require("../utils/logger");
+const { getTempDirectory } = require("../utils/appPaths");
 
 const DOWNLOAD_CONNECTION_TIMEOUT = 30000;
 const DOWNLOAD_DATA_TIMEOUT = 60000;
@@ -19,7 +20,7 @@ const VERSION_TOKEN_REGEX = /v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i;
 
 class UpdateService {
   constructor() {
-    this.tempDir = path.join(app.getPath("userData"), "updates");
+    this.tempDir = path.join(getTempDirectory(app), "updates");
     this.installerMetaPath = path.join(
       this.tempDir,
       "latest-installer-meta.json",
@@ -1160,6 +1161,34 @@ class UpdateService {
     return {
       isDownloading: this.isDownloading,
       progress: this.downloadProgress,
+    };
+  }
+
+  getDiagnosticsSnapshot() {
+    return {
+      tempDir: this.tempDir,
+      currentVersion: this.currentVersion,
+      updateCheckUrl: this.updateCheckUrl,
+      isDownloading: this.isDownloading,
+      downloadProgress: this.downloadProgress,
+      latestReleaseAsset: this.latestReleaseAsset
+        ? {
+            name: this.latestReleaseAsset.name,
+            expectedSha256: this.latestReleaseAsset.expectedSha256,
+            version: this.latestReleaseAsset.version,
+            host: this.latestReleaseAsset.downloadUrl
+              ? new URL(this.latestReleaseAsset.downloadUrl).hostname
+              : null,
+          }
+        : null,
+      lastDownloadedInstaller: this.lastDownloadedInstaller
+        ? {
+            sha256: this.lastDownloadedInstaller.sha256,
+            expectedSha256: this.lastDownloadedInstaller.expectedSha256,
+            version: this.lastDownloadedInstaller.version,
+            downloadedAt: this.lastDownloadedInstaller.downloadedAt,
+          }
+        : null,
     };
   }
 

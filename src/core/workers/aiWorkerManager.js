@@ -29,8 +29,8 @@ function safeCallDisposer(disposer) {
     const result = disposer();
     // removeResource 是 async，这里允许返回 Promise
     return Promise.resolve(result);
-  } catch {
-    return Promise.reject(e);
+  } catch (error) {
+    return Promise.reject(error);
   }
 }
 

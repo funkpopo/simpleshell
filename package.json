@@ -1,6 +1,6 @@
 {
   "name": "simpleshell",
-  "productName": "simpleshell",
+  "productName": "SimpleShell",
   "version": "0.4.24",
   "description": "A Simple Electron SSH Terminal for Windows",
   "main": ".webpack/main",
@@ -11,7 +11,11 @@
     "package": "npm run prepare:native-sidecar && electron-forge package",
     "make": "npm run prepare:native-sidecar && electron-forge make",
     "publish": "npm run prepare:native-sidecar && electron-forge publish",
-    "lint": "echo \"No linting configured\""
+    "lint": "eslint src scripts webpack.main.config.js webpack.renderer.config.js webpack.rules.js forge.config.js eslint.config.js",
+    "format:check": "prettier --check .",
+    "test": "node scripts/regression/todo-regression.js",
+    "release:check": "node scripts/release-check.js",
+    "release:checksums": "node scripts/generate-checksums.js out"
   },
   "keywords": [],
   "author": {

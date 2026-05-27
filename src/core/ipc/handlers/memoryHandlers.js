@@ -2,6 +2,7 @@ const path = require("path");
 const fs = require("fs").promises;
 const { app } = require("electron");
 const { logToFile } = require("../../utils/logger");
+const { getTempDirectory } = require("../../utils/appPaths");
 const fileCache = require("../../utils/fileCache");
 const {
   mainProcessResourceManager,
@@ -14,11 +15,7 @@ const aiWorkerManager = require("../../workers/aiWorkerManager");
  */
 class MemoryHandlers {
   getTempDir() {
-    if (app.isPackaged) {
-      return path.join(path.dirname(app.getPath("exe")), "temp");
-    } else {
-      return path.join(app.getAppPath(), "temp");
-    }
+    return getTempDirectory(app);
   }
 
   getHandlers() {

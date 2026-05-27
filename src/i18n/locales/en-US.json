@@ -63,6 +63,12 @@
         "warn": "Warn",
         "error": "Error"
       },
+      "openLogDirectory": "Open Log Directory",
+      "exportDiagnostics": "Export Diagnostics",
+      "logDirectoryOpened": "Log directory opened",
+      "diagnosticsExported": "Diagnostics package generated: {{path}}",
+      "openLogDirectoryFailed": "Failed to open log directory",
+      "exportDiagnosticsFailed": "Failed to export diagnostics",
       "performanceSettings": "Performance Settings",
       "dnd": {
         "title": "Tab Drag & Drop",
@@ -114,6 +120,34 @@
         "passwordRequired": "Please set a master password first",
         "passwordMismatch": "The two master password entries do not match",
         "updateFailed": "Failed to update master password settings"
+      },
+      "localData": {
+        "title": "Clear Local Data",
+        "description": "Clear configuration records in config.json and local runtime files such as cache, snapshots, logs, and the AI memory file. Moving to another machine still only requires copying config.json from the production directory. AI memory remains in temp/mem.json and is not written to config.json.",
+        "destructive": "Irreversible",
+        "clear": "Clear Selected Data",
+        "clearing": "Clearing...",
+        "cancel": "Cancel",
+        "confirm": "Clear Data",
+        "confirmTitle": "Clear Local Data",
+        "confirmMessage": "The selected local data will be cleared. This action cannot be undone.",
+        "selectionSeparator": ", ",
+        "clearSuccess": "Local data cleared",
+        "clearFailed": "Failed to clear local data",
+        "dialogUnavailable": "Confirmation dialog is unavailable",
+        "clearUnavailable": "Local data clearing API is unavailable",
+        "options": {
+          "connections": "Connections",
+          "credentials": "Credentials",
+          "commandHistory": "Command history",
+          "shortcutCommands": "Shortcut commands",
+          "uiSettings": "UI settings",
+          "aiSettings": "AI settings",
+          "cache": "Cache",
+          "snapshots": "Snapshots",
+          "logs": "Logs",
+          "aiMemory": "AI memory"
+        }
       }
     },
     "masterPassword": {
@@ -141,6 +175,9 @@
     "menu": {
       "settings": "Settings",
       "about": "About",
+      "checkForUpdates": "Check for Updates",
+      "openLogs": "Open Logs",
+      "exportDiagnostics": "Export Diagnostics",
       "exit": "Exit",
       "lockApp": "Lock App",
       "lockAppSuccess": "App locked"
@@ -251,6 +288,7 @@
       "organization": "Organization",
       "historyTitle": "Query History",
       "toggleHistory": "Toggle history",
+      "clearHistory": "Clear query history",
       "noHistory": "No history records",
       "myIp": "My IP",
       "apiUnavailable": "API unavailable"

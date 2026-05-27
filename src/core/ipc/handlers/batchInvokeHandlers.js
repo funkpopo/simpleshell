@@ -3,6 +3,7 @@ const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
 
 const MAX_CALLS_PER_BATCH = 100;
+const MAX_BATCH_PAYLOAD_BYTES = 256 * 1024;
 
 function isStandardResponse(obj) {
   return obj && typeof obj === "object" && typeof obj.success === "boolean";
@@ -39,6 +40,22 @@ async function batchInvoke(_event, calls) {
       {
         success: false,
         error: `Too many calls in one batch (max ${MAX_CALLS_PER_BATCH})`,
+      },
+    ];
+  }
+
+  let payloadBytes = 0;
+  try {
+    payloadBytes = Buffer.byteLength(JSON.stringify(calls), "utf8");
+  } catch {
+    return [{ success: false, error: "Batch payload is not serializable" }];
+  }
+
+  if (payloadBytes > MAX_BATCH_PAYLOAD_BYTES) {
+    return [
+      {
+        success: false,
+        error: `Batch payload too large (max ${MAX_BATCH_PAYLOAD_BYTES} bytes)`,
       },
     ];
   }

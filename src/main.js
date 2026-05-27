@@ -9,6 +9,7 @@ const {
   AppCleanup,
   ipcSetup,
   bootstrapHardwareAcceleration,
+  installSystemMenu,
 } = require("./core/app");
 const aiWorkerManager = require("./core/workers/aiWorkerManager");
 const { createWindow } = require("./core/window/windowManager");
@@ -85,6 +86,16 @@ process.on("unhandledRejection", (reason) => {
 let appInitializer = null;
 let appCleanup = null;
 
+function createMainWindow() {
+  const mainWindow = createWindow({
+    preloadEntry: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+    webpackEntry: MAIN_WINDOW_WEBPACK_ENTRY,
+    onSetupIPC: setupIPC,
+  });
+  installSystemMenu();
+  return mainWindow;
+}
+
 // 应用准备就绪
 app.whenReady().then(async () => {
   // 初始化应用
@@ -95,11 +106,7 @@ app.whenReady().then(async () => {
   ipcSetup.initializeBeforeWindow();
 
   // 创建窗口
-  createWindow({
-    preloadEntry: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-    webpackEntry: MAIN_WINDOW_WEBPACK_ENTRY,
-    onSetupIPC: setupIPC,
-  });
+  createMainWindow();
 
   // 创建AI Worker
   aiWorkerManager.createAIWorker();
@@ -124,10 +131,6 @@ app.on("window-all-closed", () => {
 // macOS激活应用
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow({
-      preloadEntry: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-      webpackEntry: MAIN_WINDOW_WEBPACK_ENTRY,
-      onSetupIPC: setupIPC,
-    });
+    createMainWindow();
   }
 });

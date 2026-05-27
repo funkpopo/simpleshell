@@ -1,8 +1,30 @@
-const { BrowserWindow } = require("electron");
+const { BrowserWindow, app } = require("electron");
+const fs = require("fs/promises");
+const path = require("path");
 const configService = require("../../../services/configService");
 const commandHistoryService = require("../../../modules/terminal/command-history");
-const { logToFile, updateLogConfig } = require("../../utils/logger");
+const {
+  getLogDirectoryPath,
+  getLogFilePath,
+  logToFile,
+  updateLogConfig,
+} = require("../../utils/logger");
+const { getTempDirectory } = require("../../utils/appPaths");
 const fileCache = require("../../utils/fileCache");
+const fileSnapshotStore = require("../../utils/fileSnapshotStore");
+
+const LOCAL_DATA_SECTIONS = new Set([
+  "connections",
+  "credentials",
+  "commandHistory",
+  "shortcutCommands",
+  "uiSettings",
+  "aiSettings",
+  "cache",
+  "snapshots",
+  "logs",
+  "aiMemory",
+]);
 
 /**
  * 设置相关的IPC处理器
@@ -131,6 +153,11 @@ class SettingsHandlers {
         channel: "settings:lockCredentialStore",
         category: "settings",
         handler: this.lockCredentialStore.bind(this),
+      },
+      {
+        channel: "settings:clearLocalData",
+        category: "settings",
+        handler: this.clearLocalData.bind(this),
       },
       {
         channel: "get-shortcut-commands",
@@ -310,6 +337,156 @@ class SettingsHandlers {
       return result;
     } catch (error) {
       logToFile(`Error locking credential store: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  normalizeLocalDataSections(sections) {
+    if (!Array.isArray(sections)) {
+      throw new Error("Local data sections must be an array");
+    }
+
+    const uniqueSections = [];
+    for (const rawSection of sections) {
+      const section = String(rawSection || "").trim();
+      if (!LOCAL_DATA_SECTIONS.has(section)) {
+        throw new Error(`Unsupported local data section: ${section}`);
+      }
+      if (!uniqueSections.includes(section)) {
+        uniqueSections.push(section);
+      }
+    }
+
+    if (uniqueSections.length === 0) {
+      throw new Error("No local data section selected");
+    }
+
+    return uniqueSections;
+  }
+
+  notifyLocalDataChanged(sections) {
+    const payload = {
+      sections,
+      timestamp: Date.now(),
+    };
+
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win && !win.isDestroyed() && win.webContents) {
+        win.webContents.send("settings:localDataCleared", payload);
+        if (
+          sections.some((section) =>
+            ["connections", "credentials", "aiSettings"].includes(section),
+          )
+        ) {
+          win.webContents.send("connections-changed");
+        }
+        if (sections.includes("commandHistory")) {
+          win.webContents.send("command-history:changed", {
+            reason: "clear-local-data",
+            history: [],
+            count: 0,
+            timestamp: payload.timestamp,
+          });
+        }
+      }
+    }
+  }
+
+  async clearLogFiles() {
+    const logDir = getLogDirectoryPath();
+    const activeLogFile = getLogFilePath();
+    if (!logDir) {
+      throw new Error("Log directory is not initialized");
+    }
+
+    const entries = await fs.readdir(logDir, { withFileTypes: true });
+    let clearedCount = 0;
+    for (const entry of entries) {
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      const filePath = path.join(logDir, entry.name);
+      if (activeLogFile && filePath === activeLogFile) {
+        await fs.truncate(filePath, 0);
+      } else {
+        await fs.rm(filePath, { force: true });
+      }
+      clearedCount += 1;
+    }
+
+    return clearedCount;
+  }
+
+  async clearAIMemoryFile() {
+    const tempDir = getTempDirectory(app);
+    const memoryFilePath = path.join(tempDir, "mem.json");
+
+    try {
+      await fs.unlink(memoryFilePath);
+      return true;
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async clearLocalData(event, options = {}) {
+    try {
+      void event;
+      const sections = this.normalizeLocalDataSections(options?.sections);
+      const configSections = sections.filter((section) =>
+        [
+          "connections",
+          "credentials",
+          "commandHistory",
+          "shortcutCommands",
+          "uiSettings",
+          "aiSettings",
+        ].includes(section),
+      );
+
+      const runtime = {};
+      if (configSections.length > 0) {
+        configService.clearLocalConfigData({ sections: configSections });
+      }
+
+      if (sections.includes("commandHistory")) {
+        commandHistoryService.initialize([]);
+      }
+
+      if (sections.includes("cache")) {
+        runtime.cacheCleared = await fileCache.clearCacheDirectory({
+          recreate: true,
+        });
+      }
+
+      if (sections.includes("snapshots")) {
+        runtime.snapshotsCleared = await fileSnapshotStore.clearAllSnapshots({
+          recreate: true,
+        });
+      }
+
+      if (sections.includes("logs")) {
+        runtime.logFilesCleared = await this.clearLogFiles();
+      }
+
+      if (sections.includes("aiMemory")) {
+        runtime.aiMemoryCleared = await this.clearAIMemoryFile();
+      }
+
+      this.notifyLocalDataChanged(sections);
+      logToFile(`Local data cleared: ${sections.join(", ")}`, "WARN");
+
+      return {
+        success: true,
+        sections,
+        runtime,
+      };
+    } catch (error) {
+      logToFile(`Error clearing local data: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }

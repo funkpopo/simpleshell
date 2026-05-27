@@ -3,6 +3,13 @@ const path = require("path");
 const zlib = require("zlib");
 const Ajv = require("ajv");
 const addFormats = require("ajv-formats");
+const {
+  getConfigBackupDirectory,
+  getConfigPath,
+} = require("../core/utils/appPaths");
+
+const CURRENT_CONFIG_SCHEMA_VERSION = 1;
+const MAX_CONFIG_BACKUPS = 50;
 
 /**
  * ConfigService - 配置管理服务类
@@ -161,6 +168,21 @@ class ConfigService {
         },
         performance: { type: "object", default: {} },
         externalEditor: { type: "object", default: {} },
+        ipQueryHistory: {
+          type: "array",
+          default: [],
+          items: {
+            type: "object",
+            properties: {
+              id: { type: ["number", "string"] },
+              ip: { type: "string" },
+              locationText: { type: "string" },
+              latitude: { type: ["number", "string", "null"] },
+              longitude: { type: ["number", "string", "null"] },
+              time: { type: "number" },
+            },
+          },
+        },
         windowBounds: {
           type: "object",
           default: {},
@@ -244,28 +266,10 @@ class ConfigService {
    */
   _getMainConfigPath() {
     if (!this.app) {
-      const fallbackCwd = process.cwd ? process.cwd() : ".";
-      return path.join(fallbackCwd, "config.json_fallback_no_app");
+      throw new Error("Electron app instance is required");
     }
 
-    try {
-      const isDev =
-        process.env.NODE_ENV === "development" || !this.app.isPackaged;
-      if (isDev) {
-        return path.join(process.cwd(), "config.json");
-      } else {
-        return path.join(path.dirname(this.app.getPath("exe")), "config.json");
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Error getting main config path - ${error.message}`,
-        "ERROR",
-      );
-      return path.join(
-        this.app.getPath("userData"),
-        "config.json_fallback_general_error",
-      );
-    }
+    return getConfigPath(this.app);
   }
 
   /**
@@ -274,25 +278,84 @@ class ConfigService {
    * @returns {Object} 安全设置
    */
   _getDefaultSecuritySettings(existingSecurity = {}) {
-    const randomKey =
-      typeof existingSecurity?.randomKey === "string"
-        ? existingSecurity.randomKey.trim()
-        : "";
     const masterPasswordEnabled =
       existingSecurity?.masterPasswordEnabled === true &&
       typeof existingSecurity?.masterPasswordVerifier === "string" &&
       existingSecurity.masterPasswordVerifier.trim() !== "";
 
-    return {
-      randomKey:
-        randomKey ||
-        this.crypto.createSecurityConfig({ currentSecurity: existingSecurity })
-          .randomKey,
+    return this.crypto.createSecurityConfig({
+      currentSecurity: existingSecurity,
       masterPasswordEnabled,
-      masterPasswordVerifier: masterPasswordEnabled
-        ? existingSecurity.masterPasswordVerifier.trim()
-        : "",
-    };
+      masterPassword: "",
+    });
+  }
+
+  _getConfigBackupDirectory() {
+    return getConfigBackupDirectory(this.app);
+  }
+
+  _formatTimestampForFile(date = new Date()) {
+    return date.toISOString().replace(/[:.]/g, "-");
+  }
+
+  _safeJsonStringify(config) {
+    return JSON.stringify(config, null, 2);
+  }
+
+  _ensureDirectory(dirPath) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+
+  _createConfigBackup(reason = "manual") {
+    if (!this.mainConfigPath || !fs.existsSync(this.mainConfigPath)) {
+      return null;
+    }
+
+    const backupDir = this._getConfigBackupDirectory();
+    this._ensureDirectory(backupDir);
+    const normalizedReason = String(reason || "manual")
+      .replace(/[^a-zA-Z0-9_-]/g, "-")
+      .slice(0, 40);
+    const backupPath = path.join(
+      backupDir,
+      `config.${this._formatTimestampForFile()}.${normalizedReason}.json`,
+    );
+    fs.copyFileSync(this.mainConfigPath, backupPath);
+    this._cleanupOldConfigBackups();
+    this._log(`ConfigService: Backup created at ${backupPath}`, "INFO");
+    return backupPath;
+  }
+
+  _cleanupOldConfigBackups() {
+    const backupDir = this._getConfigBackupDirectory();
+    if (!fs.existsSync(backupDir)) {
+      return;
+    }
+
+    const backupFiles = fs
+      .readdirSync(backupDir, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          /^config\..+\.[a-zA-Z0-9_-]+\.json$/.test(entry.name),
+      )
+      .map((entry) => ({
+        name: entry.name,
+        path: path.join(backupDir, entry.name),
+        mtimeMs: fs.statSync(path.join(backupDir, entry.name)).mtimeMs,
+      }))
+      .sort((left, right) => right.mtimeMs - left.mtimeMs);
+
+    backupFiles.slice(MAX_CONFIG_BACKUPS).forEach((entry) => {
+      try {
+        fs.unlinkSync(entry.path);
+      } catch (error) {
+        this._log(
+          `ConfigService: Failed to remove old backup ${entry.name} - ${error.message}`,
+          "WARN",
+        );
+      }
+    });
   }
 
   /**
@@ -301,6 +364,7 @@ class ConfigService {
    */
   _buildDefaultConfig() {
     return {
+      schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
       security: this.crypto.createSecurityConfig(),
       connections: [],
       uiSettings: {
@@ -313,6 +377,7 @@ class ConfigService {
         terminalFontSize: 14,
         performance: {},
         externalEditor: {},
+        ipQueryHistory: [],
         windowBounds: {},
       },
       aiSettings: {
@@ -336,6 +401,55 @@ class ConfigService {
     };
   }
 
+  _normalizeConfigShape(config) {
+    const defaultConfig = this._buildDefaultConfig();
+    const source = config && typeof config === "object" ? config : {};
+    const normalized = {
+      ...defaultConfig,
+      ...source,
+      schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
+      uiSettings: {
+        ...defaultConfig.uiSettings,
+        ...(source.uiSettings && typeof source.uiSettings === "object"
+          ? source.uiSettings
+          : {}),
+      },
+      aiSettings:
+        source.aiSettings && typeof source.aiSettings === "object"
+          ? source.aiSettings
+          : defaultConfig.aiSettings,
+      logSettings: {
+        ...defaultConfig.logSettings,
+        ...(source.logSettings && typeof source.logSettings === "object"
+          ? source.logSettings
+          : {}),
+      },
+      connections: Array.isArray(source.connections)
+        ? source.connections
+        : defaultConfig.connections,
+      topConnections: Array.isArray(source.topConnections)
+        ? source.topConnections
+        : defaultConfig.topConnections,
+      lastConnections: Array.isArray(source.lastConnections)
+        ? source.lastConnections
+        : defaultConfig.lastConnections,
+      commandHistory:
+        source.commandHistory !== undefined
+          ? source.commandHistory
+          : defaultConfig.commandHistory,
+      shortcutCommands:
+        source.shortcutCommands !== undefined
+          ? source.shortcutCommands
+          : defaultConfig.shortcutCommands,
+    };
+
+    return {
+      config: normalized,
+      changed:
+        this._safeJsonStringify(source) !== this._safeJsonStringify(normalized),
+    };
+  }
+
   /**
    * 确保配置中包含安全配置
    * @param {Object} config - 原始配置
@@ -348,6 +462,8 @@ class ConfigService {
       normalizedConfig.security && typeof normalizedConfig.security === "object"
         ? normalizedConfig.security
         : {};
+    const existingMode =
+      typeof existingSecurity.mode === "string" ? existingSecurity.mode : "";
     const randomKey =
       typeof existingSecurity.randomKey === "string"
         ? existingSecurity.randomKey.trim()
@@ -360,16 +476,32 @@ class ConfigService {
         ? existingSecurity.masterPasswordVerifier.trim()
         : "";
 
-    let nextSecurity;
-    if (randomKey) {
+    let nextSecurity = null;
+    if (masterPasswordEnabled && randomKey && masterPasswordVerifier) {
       nextSecurity = {
+        mode: this.crypto.SECURITY_MODE_MASTER_PASSWORD,
         randomKey,
-        masterPasswordEnabled:
-          masterPasswordEnabled && masterPasswordVerifier !== "",
-        masterPasswordVerifier:
-          masterPasswordEnabled && masterPasswordVerifier !== ""
-            ? masterPasswordVerifier
-            : "",
+        masterPasswordEnabled: true,
+        masterPasswordVerifier,
+        kdf:
+          existingSecurity.kdf && typeof existingSecurity.kdf === "object"
+            ? existingSecurity.kdf
+            : {
+                algorithm: "scrypt",
+                version: this.crypto.KDF_VERSION,
+                ...this.crypto.SCRYPT_PARAMS,
+              },
+      };
+    } else if (
+      existingMode === this.crypto.SECURITY_MODE_LEGACY_RANDOM_KEY ||
+      randomKey
+    ) {
+      nextSecurity = {
+        mode: this.crypto.SECURITY_MODE_LEGACY_RANDOM_KEY,
+        randomKey,
+        masterPasswordEnabled: false,
+        masterPasswordVerifier: "",
+        kdf: null,
       };
     } else {
       nextSecurity = this.crypto.createSecurityConfig({
@@ -395,6 +527,84 @@ class ConfigService {
     this.crypto.configureSecurity(security);
   }
 
+  _readConfigFromDisk() {
+    const data = fs.readFileSync(this.mainConfigPath, "utf8");
+    const parsed = JSON.parse(data);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("config.json must contain a JSON object");
+    }
+    return parsed;
+  }
+
+  _writeRawConfig(config) {
+    const serialized = this._safeJsonStringify(config);
+    const tempPath = `${this.mainConfigPath}.tmp-${process.pid}`;
+    fs.writeFileSync(tempPath, serialized, "utf8");
+    fs.renameSync(tempPath, this.mainConfigPath);
+    this._configCache = this._cloneConfig(config);
+    this._lastSerializedConfig = serialized;
+    return true;
+  }
+
+  _recoverCorruptedConfig(error) {
+    const corruptBackup = this._createConfigBackup("corrupt-json");
+    const defaultConfig = this._buildDefaultConfig();
+    this._writeRawConfig(defaultConfig);
+    this._applySecuritySettings(defaultConfig.security);
+    this._log(
+      `ConfigService: config.json was corrupt and has been replaced. Backup: ${corruptBackup || "not-created"}. Error: ${error.message}`,
+      "ERROR",
+    );
+    return defaultConfig;
+  }
+
+  _reEncryptSensitiveDataWithSecurity(config, nextSecurity) {
+    this._applySecuritySettings(nextSecurity);
+    const nextConfig = {
+      ...config,
+      security: nextSecurity,
+      connections: this._processConnectionsForSave(config.connections || []),
+      topConnections: this._processConnectionsForSave(
+        config.topConnections || [],
+      ),
+      lastConnections: this._processConnectionsForSave(
+        config.lastConnections || [],
+      ),
+      aiSettings: this._processAISettingsForSave(config.aiSettings || {}),
+    };
+    return nextConfig;
+  }
+
+  _upgradeLegacyCredentialSecurity(config) {
+    const security = config?.security || {};
+    if (security.mode !== this.crypto.SECURITY_MODE_LEGACY_RANDOM_KEY) {
+      return { config, changed: false };
+    }
+
+    this._applySecuritySettings(security);
+    const decryptedConfig = {
+      ...config,
+      connections: this._processConnectionsForLoad(config.connections || []),
+      topConnections: this._processConnectionsForLoad(
+        config.topConnections || [],
+      ),
+      lastConnections: this._processConnectionsForLoad(
+        config.lastConnections || [],
+      ),
+      aiSettings: this._processAISettingsForLoad(config.aiSettings || {}),
+    };
+    const nextSecurity = this.crypto.createSecurityConfig();
+    const nextConfig = this._reEncryptSensitiveDataWithSecurity(
+      decryptedConfig,
+      nextSecurity,
+    );
+    this._log(
+      "ConfigService: Upgraded legacy randomKey credential storage to safeStorage.",
+      "INFO",
+    );
+    return { config: nextConfig, changed: true };
+  }
+
   /**
    * 初始化主配置文件（如果不存在则创建）
    */
@@ -411,28 +621,34 @@ class ConfigService {
       if (!fs.existsSync(this.mainConfigPath)) {
         const defaultConfig = this._buildDefaultConfig();
 
-        fs.writeFileSync(
-          this.mainConfigPath,
-          JSON.stringify(defaultConfig, null, 2),
-          "utf8",
-        );
-        this._configCache = defaultConfig;
-        this._lastSerializedConfig = JSON.stringify(defaultConfig, null, 2);
+        this._writeRawConfig(defaultConfig);
         this._applySecuritySettings(defaultConfig.security);
         this._log("ConfigService: Main config file created.", "INFO");
         return;
       }
 
-      const config = this._readConfig(true);
-      const { config: normalizedConfig, changed } =
-        this._ensureSecurityConfig(config);
+      this._createConfigBackup("startup");
+
+      let config;
+      try {
+        config = this._readConfigFromDisk();
+      } catch (error) {
+        this._recoverCorruptedConfig(error);
+        return;
+      }
+
+      const shapeResult = this._normalizeConfigShape(config);
+      const securityResult = this._ensureSecurityConfig(shapeResult.config);
+      const upgradeResult = this._upgradeLegacyCredentialSecurity(
+        securityResult.config,
+      );
+      const normalizedConfig = upgradeResult.config;
+      const changed =
+        shapeResult.changed || securityResult.changed || upgradeResult.changed;
 
       if (changed) {
-        this._writeConfig(normalizedConfig);
-        this._log(
-          "ConfigService: Security settings initialized for existing config.",
-          "INFO",
-        );
+        this._writeRawConfig(normalizedConfig);
+        this._log("ConfigService: config.json normalized in place.", "INFO");
       } else {
         this._configCache = this._cloneConfig(normalizedConfig);
         this._lastSerializedConfig = JSON.stringify(normalizedConfig, null, 2);
@@ -472,7 +688,7 @@ class ConfigService {
   _readConfig(forceRefresh = false) {
     if (!this.mainConfigPath) {
       this._log("ConfigService: Main config path not set.", "ERROR");
-      return {};
+      throw new Error("Main config path not set");
     }
 
     if (!forceRefresh && this._configCache) {
@@ -481,22 +697,23 @@ class ConfigService {
 
     try {
       if (fs.existsSync(this.mainConfigPath)) {
-        const data = fs.readFileSync(this.mainConfigPath, "utf8");
-        const parsed = JSON.parse(data);
-        this._configCache = parsed;
-        this._lastSerializedConfig = JSON.stringify(parsed, null, 2);
-        return this._cloneConfig(parsed);
+        const parsed = this._readConfigFromDisk();
+        const { config: shapedConfig } = this._normalizeConfigShape(parsed);
+        this._configCache = shapedConfig;
+        this._lastSerializedConfig = this._safeJsonStringify(shapedConfig);
+        return this._cloneConfig(shapedConfig);
       }
     } catch (error) {
       this._log(
         `ConfigService: Failed to read config - ${error.message}`,
         "ERROR",
       );
+      return this._cloneConfig(this._recoverCorruptedConfig(error));
     }
 
-    this._configCache = {};
-    this._lastSerializedConfig = JSON.stringify({}, null, 2);
-    return {};
+    const defaultConfig = this._buildDefaultConfig();
+    this._writeRawConfig(defaultConfig);
+    return this._cloneConfig(defaultConfig);
   }
 
   /**
@@ -511,17 +728,34 @@ class ConfigService {
     }
 
     try {
-      const serialized = JSON.stringify(config, null, 2);
+      const { config: normalizedConfig } = this._normalizeConfigShape(config);
+      const serialized = this._safeJsonStringify(normalizedConfig);
 
       // 内容未变更时跳过写盘，减少高频同步 I/O
       if (this._lastSerializedConfig === serialized) {
-        this._configCache = this._cloneConfig(config);
+        this._configCache = this._cloneConfig(normalizedConfig);
         return true;
       }
 
-      fs.writeFileSync(this.mainConfigPath, serialized, "utf8");
-      this._configCache = this._cloneConfig(config);
-      this._lastSerializedConfig = serialized;
+      const previousSerialized = fs.existsSync(this.mainConfigPath)
+        ? fs.readFileSync(this.mainConfigPath, "utf8")
+        : null;
+
+      try {
+        this._writeRawConfig(normalizedConfig);
+      } catch (writeError) {
+        if (previousSerialized !== null) {
+          fs.writeFileSync(this.mainConfigPath, previousSerialized, "utf8");
+          this._configCache = JSON.parse(previousSerialized);
+          this._lastSerializedConfig = previousSerialized;
+          this._log(
+            `ConfigService: Write failed and previous config was restored - ${writeError.message}`,
+            "ERROR",
+          );
+        }
+        throw writeError;
+      }
+
       return true;
     } catch (error) {
       this._log(
@@ -953,6 +1187,7 @@ class ConfigService {
       terminalFontSize: 14,
       performance: {},
       externalEditor: {},
+      ipQueryHistory: [],
       windowBounds: {},
     };
   }
@@ -1205,6 +1440,109 @@ class ConfigService {
       );
       return [];
     }
+  }
+
+  _stripSensitiveConnectionFields(items) {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+
+    return items.map((item) => {
+      const result = { ...item };
+      if (result.type === "connection") {
+        delete result.password;
+        delete result.passphrase;
+        delete result.privateKey;
+        delete result.privateKeyPath;
+      }
+      if (result.type === "group") {
+        result.items = this._stripSensitiveConnectionFields(result.items || []);
+      }
+      return result;
+    });
+  }
+
+  _stripSensitiveAIFields(settings) {
+    const result =
+      settings && typeof settings === "object" ? { ...settings } : {};
+
+    if (Array.isArray(result.configs)) {
+      result.configs = result.configs.map((cfg) => ({
+        ...cfg,
+        apiKey: "",
+      }));
+    }
+
+    if (result.current && typeof result.current === "object") {
+      result.current = {
+        ...result.current,
+        apiKey: "",
+      };
+    }
+
+    return result;
+  }
+
+  clearLocalConfigData(options = {}) {
+    if (!this._initialized) {
+      throw new Error("Config service is not initialized");
+    }
+
+    const sections = Array.isArray(options?.sections) ? options.sections : [];
+    const sectionSet = new Set(sections);
+    const config = this._readConfig(true);
+    const nextConfig = this._cloneConfig(config);
+
+    this._createConfigBackup("before-clear");
+
+    if (sectionSet.has("connections")) {
+      nextConfig.connections = [];
+      nextConfig.topConnections = [];
+      nextConfig.lastConnections = [];
+    }
+
+    if (sectionSet.has("credentials")) {
+      nextConfig.connections = this._stripSensitiveConnectionFields(
+        nextConfig.connections || [],
+      );
+      nextConfig.topConnections = this._stripSensitiveConnectionFields(
+        nextConfig.topConnections || [],
+      );
+      nextConfig.lastConnections = this._stripSensitiveConnectionFields(
+        nextConfig.lastConnections || [],
+      );
+      nextConfig.aiSettings = this._stripSensitiveAIFields(
+        nextConfig.aiSettings || {},
+      );
+    }
+
+    if (sectionSet.has("commandHistory")) {
+      nextConfig.commandHistory = this._compressCommandHistory([]);
+    }
+
+    if (sectionSet.has("shortcutCommands")) {
+      nextConfig.shortcutCommands = "{}";
+    }
+
+    if (sectionSet.has("uiSettings")) {
+      nextConfig.uiSettings = this._getDefaultUISettings();
+    }
+
+    if (sectionSet.has("aiSettings")) {
+      nextConfig.aiSettings = {
+        configs: [],
+        current: null,
+      };
+    }
+
+    if (!this._writeConfig(nextConfig)) {
+      throw new Error("Failed to clear local config data");
+    }
+
+    return {
+      success: true,
+      sections,
+    };
   }
 
   /**

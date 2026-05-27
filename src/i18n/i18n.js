@@ -23,9 +23,8 @@ i18n
       escapeValue: false, // not needed for React
     },
     detection: {
-      order: ["localStorage", "navigator"],
-      lookupLocalStorage: "language",
-      caches: ["localStorage"],
+      order: ["navigator"],
+      caches: [],
     },
   });
 
@@ -33,7 +32,6 @@ i18n
 export const changeLanguage = (lng) => {
   if (i18n.language !== lng) {
     i18n.changeLanguage(lng);
-    localStorage.setItem("language", lng);
   }
 };
 

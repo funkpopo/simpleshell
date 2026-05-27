@@ -597,7 +597,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                             </Box>
                           </Box>
                         </ListItem>
-                        {processes.slice(0, 50).map((p, idx) => (
+                        {processes.slice(0, 50).map((p) => (
                           <ListItem
                             key={p.pid}
                             divider

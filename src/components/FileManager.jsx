@@ -129,11 +129,18 @@ const getSearchFieldMotionSx = (
       borderRadius,
       backgroundColor,
       transition: "background-color 0.2s ease",
+      [REDUCED_MOTION_QUERY]: {
+        transition: "none",
+      },
       "&:hover": {
         backgroundColor: hoverBackgroundColor,
       },
       "&.Mui-focused": {
         backgroundColor: focusedBackgroundColor,
+        boxShadow: `0 0 0 2px ${focusOutlineColor}`,
+        "& .MuiOutlinedInput-notchedOutline": {
+          borderColor: focusShadowColor,
+        },
       },
     },
   };
@@ -1131,13 +1138,6 @@ const FileManager = memo(
     }, []);
 
     const getDirectoryFromCache = (path) => {
-      // 优先使用全局缓存（跨次打开可复用）
-      try {
-        const globalCached = dirCache.get(tabId, path, CACHE_EXPIRY_TIME);
-        if (globalCached) return globalCached;
-      } catch {
-        /* intentionally ignored */
-      }
       const cacheEntry = directoryCacheRef.current.get(path);
       if (!cacheEntry) {
         return null;
@@ -1153,12 +1153,6 @@ const FileManager = memo(
 
     // 更新目录缓存
     const updateDirectoryCache = (path, data) => {
-      // 写入全局缓存
-      try {
-        dirCache.set(tabId, path, data);
-      } catch {
-        /* intentionally ignored */
-      }
       directoryCacheRef.current.set(path, {
         data,
         timestamp: Date.now(),
@@ -6132,7 +6126,6 @@ const FileManager = memo(
           }),
         }}
         elevation={4}
-        tabIndex={0} // 使得Paper元素可以接收键盘事件
       >
         <Box sx={sidebarContentSx(theme, open)}>
           <Box

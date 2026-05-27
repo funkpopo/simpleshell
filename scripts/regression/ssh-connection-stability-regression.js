@@ -9,7 +9,7 @@ const sshPoolSource = fs.readFileSync(
 );
 
 const performHealthCheckMatch = sshPoolSource.match(
-  /async performHealthCheck\(\) \{([\s\S]*?)\n  \}/,
+  /async performHealthCheck\(\) \{([\s\S]*?)\n {2}\}/,
 );
 
 assert.ok(performHealthCheckMatch, "SSHPool.performHealthCheck must exist");
