@@ -10,8 +10,7 @@ const {
   updateLogConfig,
 } = require("../../utils/logger");
 const { getTempDirectory } = require("../../utils/appPaths");
-const fileCache = require("../../utils/fileCache");
-const fileSnapshotStore = require("../../utils/fileSnapshotStore");
+const runtimeFileLifecycle = require("../../utils/runtimeFileLifecycle");
 const {
   getErrorReportingStatus,
   saveErrorReportingSettings,
@@ -26,6 +25,7 @@ const LOCAL_DATA_SECTIONS = new Set([
   "aiSettings",
   "cache",
   "snapshots",
+  "externalEditorTemp",
   "logs",
   "aiMemory",
 ]);
@@ -137,11 +137,6 @@ class SettingsHandlers {
         channel: "settings:saveErrorReportingSettings",
         category: "settings",
         handler: this.saveErrorReportingSettings.bind(this),
-      },
-      {
-        channel: "settings:updateCacheSettings",
-        category: "settings",
-        handler: this.updateCacheSettings.bind(this),
       },
       {
         channel: "settings:updatePrefetchSettings",
@@ -293,19 +288,6 @@ class SettingsHandlers {
         `Error saving error reporting settings: ${error.message}`,
         "ERROR",
       );
-      return { success: false, error: error.message };
-    }
-  }
-
-  async updateCacheSettings(event, settings) {
-    try {
-      if (fileCache && fileCache.updateSettings) {
-        fileCache.updateSettings(settings);
-        logToFile("Cache settings updated", "INFO");
-      }
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error updating cache settings: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }
@@ -474,6 +456,14 @@ class SettingsHandlers {
     }
   }
 
+  async clearRuntimeFileResource(resourceName) {
+    return runtimeFileLifecycle.clearResource(resourceName, {
+      recreate: true,
+      includeActive: true,
+      reason: "clear-local-data",
+    });
+  }
+
   async clearLocalData(event, options = {}) {
     try {
       void event;
@@ -499,15 +489,19 @@ class SettingsHandlers {
       }
 
       if (sections.includes("cache")) {
-        runtime.cacheCleared = await fileCache.clearCacheDirectory({
-          recreate: true,
-        });
+        runtime.cacheCleared =
+          await this.clearRuntimeFileResource("file-cache");
       }
 
       if (sections.includes("snapshots")) {
-        runtime.snapshotsCleared = await fileSnapshotStore.clearAllSnapshots({
-          recreate: true,
-        });
+        runtime.snapshotsCleared =
+          await this.clearRuntimeFileResource("file-snapshots");
+      }
+
+      if (sections.includes("externalEditorTemp")) {
+        runtime.externalEditorTempCleared = await this.clearRuntimeFileResource(
+          "external-editor-temp",
+        );
       }
 
       if (sections.includes("logs")) {

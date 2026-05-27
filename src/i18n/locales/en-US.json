@@ -123,7 +123,7 @@
       },
       "localData": {
         "title": "Clear Local Data",
-        "description": "Clear configuration records in config.json and local runtime files such as cache, snapshots, logs, and the AI memory file. Moving to another machine still only requires copying config.json from the production directory. AI memory remains in temp/mem.json and is not written to config.json.",
+        "description": "Clear configuration records in config.json and local runtime files such as cache, snapshots, external editor temp files, logs, and the AI memory file. Moving to another machine still only requires copying config.json from the production directory. AI memory remains in temp/mem.json and is not written to config.json.",
         "destructive": "Irreversible",
         "clear": "Clear Selected Data",
         "clearing": "Clearing...",
@@ -145,6 +145,7 @@
           "aiSettings": "AI settings",
           "cache": "Cache",
           "snapshots": "Snapshots",
+          "externalEditorTemp": "External editor temp files",
           "logs": "Logs",
           "aiMemory": "AI memory"
         }

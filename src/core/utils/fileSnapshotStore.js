@@ -2,20 +2,40 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { getTempDirectory } = require("./appPaths");
+const runtimeFileLifecycle = require("./runtimeFileLifecycle");
 
 const DEFAULT_MAX_SNAPSHOTS_PER_FILE = 50;
 const DEFAULT_SNAPSHOT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const DEFAULT_SNAPSHOT_SETTINGS = Object.freeze({
+  maxAgeMs: DEFAULT_SNAPSHOT_MAX_AGE_MS,
+  maxTotalBytes: 256 * 1024 * 1024,
+  cleanupIntervalMs: 30 * 60 * 1000,
+  startupCleanup: "clear",
+  protectActive: false,
+});
+const LIFECYCLE_RESOURCE_NAME = "file-snapshots";
 
 class FileSnapshotStore {
   constructor() {
     this.snapshotRoot = null;
     this.logToFile = () => {};
     this.indexCache = new Map();
+    this.settings = { ...DEFAULT_SNAPSHOT_SETTINGS };
   }
 
   init(logToFile, app = null) {
     this.logToFile = logToFile || (() => {});
     this.snapshotRoot = this.getSnapshotRoot(app);
+    runtimeFileLifecycle.init(this.logToFile);
+    runtimeFileLifecycle.registerResource(LIFECYCLE_RESOURCE_NAME, {
+      rootPath: () => this.snapshotRoot,
+      policy: this.settings,
+      collectEntries: this.collectLifecycleEntries.bind(this),
+      removeEntry: this.removeLifecycleEntry.bind(this),
+      onClear: () => {
+        this.indexCache.clear();
+      },
+    });
     this.logToFile(
       `File snapshot store initialized with directory: ${this.snapshotRoot}`,
       "INFO",
@@ -224,6 +244,12 @@ class FileSnapshotStore {
       }),
     );
 
+    await runtimeFileLifecycle.sweepResource(LIFECYCLE_RESOURCE_NAME, {
+      expired: false,
+      size: true,
+      reason: "snapshot-write",
+    });
+
     this.logToFile(
       `Created snapshot for ${filePath} (tabId=${tabId}, snapshotId=${snapshotId})`,
       "INFO",
@@ -291,47 +317,15 @@ class FileSnapshotStore {
     };
   }
 
-  async clearAllSnapshots({ recreate = false } = {}) {
-    if (!this.snapshotRoot) {
-      return false;
-    }
-
-    try {
-      const existed = fs.existsSync(this.snapshotRoot);
-
-      if (existed) {
-        await fs.promises.rm(this.snapshotRoot, {
-          recursive: true,
-          force: true,
-        });
-      }
-
-      this.indexCache.clear();
-
-      if (recreate) {
-        await fs.promises.mkdir(this.snapshotRoot, { recursive: true });
-      }
-
-      return existed;
-    } catch (error) {
-      this.logToFile(
-        `Failed to clear snapshot directory ${this.snapshotRoot}: ${error.message}`,
-        "ERROR",
-      );
-      return false;
-    }
-  }
-
-  async cleanupExpiredSnapshots(maxAgeMs = DEFAULT_SNAPSHOT_MAX_AGE_MS) {
+  async collectLifecycleEntries() {
     if (!this.snapshotRoot || !fs.existsSync(this.snapshotRoot)) {
-      return 0;
+      return [];
     }
 
-    const cutoff = Date.now() - maxAgeMs;
     const entries = await fs.promises.readdir(this.snapshotRoot, {
       withFileTypes: true,
     });
-    let cleanedCount = 0;
+    const result = [];
 
     for (const entry of entries) {
       if (!entry.isDirectory()) {
@@ -339,24 +333,78 @@ class FileSnapshotStore {
       }
 
       const dirPath = path.join(this.snapshotRoot, entry.name);
-      const stats = await fs.promises.stat(dirPath);
-      if (stats.mtimeMs >= cutoff) {
+      let stats;
+      try {
+        stats = await fs.promises.stat(dirPath);
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          this.logToFile(
+            `Failed to stat snapshot directory ${dirPath}: ${error.message}`,
+            "WARN",
+          );
+        }
         continue;
       }
 
-      await fs.promises.rm(dirPath, { recursive: true, force: true });
-      this.indexCache.delete(dirPath);
-      cleanedCount += 1;
+      result.push({
+        path: dirPath,
+        type: "directory",
+        bytes: await this.getDirectorySize(dirPath),
+        createdAtMs: await this.getSnapshotDirectoryTimestamp(dirPath, stats),
+        mtimeMs: stats.mtimeMs,
+        active: false,
+      });
     }
 
-    if (cleanedCount > 0) {
-      this.logToFile(
-        `Cleaned up ${cleanedCount} expired snapshot directories`,
-        "INFO",
-      );
+    return result;
+  }
+
+  async getDirectorySize(dirPath) {
+    let total = 0;
+    let entries;
+    try {
+      entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return 0;
+      }
+      throw error;
     }
 
-    return cleanedCount;
+    for (const entry of entries) {
+      const entryPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        total += await this.getDirectorySize(entryPath);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      try {
+        const stats = await fs.promises.stat(entryPath);
+        total += stats.size;
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          throw error;
+        }
+      }
+    }
+    return total;
+  }
+
+  async getSnapshotDirectoryTimestamp(dirPath, fallbackStats) {
+    const entries = await this.loadIndex(dirPath);
+    const latestTime = entries.reduce((latest, entry) => {
+      const time = new Date(entry.createdAt).getTime();
+      return Number.isFinite(time) ? Math.max(latest, time) : latest;
+    }, 0);
+    return latestTime || fallbackStats.mtimeMs;
+  }
+
+  async removeLifecycleEntry(entry) {
+    await fs.promises.rm(entry.path, { recursive: true, force: true });
+    this.indexCache.delete(entry.path);
+    return true;
   }
 }
 

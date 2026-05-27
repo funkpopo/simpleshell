@@ -1059,10 +1059,9 @@ async function testD2AppQuitReleasesAllResources() {
   );
   const processManagerPath = path.join(ROOT, "src/core/process/processManager");
   const connectionManagerPath = path.join(ROOT, "src/modules/connection");
-  const fileCachePath = path.join(ROOT, "src/core/utils/fileCache");
-  const fileSnapshotStorePath = path.join(
+  const runtimeFileLifecyclePath = path.join(
     ROOT,
-    "src/core/utils/fileSnapshotStore",
+    "src/core/utils/runtimeFileLifecycle",
   );
   const configServicePath = path.join(ROOT, "src/services/configService");
   const commandHistoryPath = path.join(
@@ -1072,10 +1071,6 @@ async function testD2AppQuitReleasesAllResources() {
   const filemanagementServicePath = path.join(
     ROOT,
     "src/modules/filemanagement/filemanagementService",
-  );
-  const externalEditorPath = path.join(
-    ROOT,
-    "src/modules/sftp/externalEditorManager",
   );
 
   const mockedModules = [];
@@ -1104,7 +1099,8 @@ async function testD2AppQuitReleasesAllResources() {
   let filemanagementCleanupCount = 0;
   let connectionCleanupCount = 0;
   let releasedSshCount = 0;
-  let snapshotClearCount = 0;
+  let runtimeStopCount = 0;
+  const runtimeClearCalls = [];
 
   const processMap = new Map([
     [
@@ -1265,19 +1261,16 @@ async function testD2AppQuitReleasesAllResources() {
     },
   });
   injectMock(connectionManagerPath, connectionManagerMock);
-  injectMock(fileCachePath, {
-    cacheDir: "mock-cache",
-    async cleanupAllCaches() {
-      return 0;
-    },
-    async clearCacheDirectory() {
+  injectMock(runtimeFileLifecyclePath, {
+    async clearResource(resourceName, options) {
+      runtimeClearCalls.push({
+        resourceName,
+        options: { ...(options || {}) },
+      });
       return true;
     },
-  });
-  injectMock(fileSnapshotStorePath, {
-    snapshotRoot: "mock-snapshots",
-    async clearAllSnapshots() {
-      snapshotClearCount += 1;
+    stopPeriodicCleanup() {
+      runtimeStopCount += 1;
       return true;
     },
   });
@@ -1293,9 +1286,6 @@ async function testD2AppQuitReleasesAllResources() {
     },
   });
   injectMock(filemanagementServicePath, filemanagementServiceMock);
-  injectMock(externalEditorPath, {
-    async cleanup() {},
-  });
 
   clearRequire(appCleanupPath);
 
@@ -1328,7 +1318,21 @@ async function testD2AppQuitReleasesAllResources() {
     );
     assert.equal(connectionCleanupCount, 1, "退出时应清理连接管理器");
     assert.ok(releasedSshCount >= 1, "退出时应释放SSH连接引用");
-    assert.equal(snapshotClearCount, 1, "退出时应清理文件快照缓存");
+    assert.deepEqual(
+      runtimeClearCalls.map((call) => call.resourceName),
+      ["file-cache", "file-snapshots", "external-editor-temp"],
+      "退出时应通过统一生命周期清理所有运行时文件资源",
+    );
+    assert.deepEqual(
+      runtimeClearCalls.map((call) => call.options),
+      [
+        { includeActive: true, reason: "app-quit" },
+        { includeActive: true, reason: "app-quit" },
+        { includeActive: true, reason: "app-quit" },
+      ],
+      "退出清理应包含活跃运行时文件并标记 app-quit 原因",
+    );
+    assert.equal(runtimeStopCount, 1, "退出时应停止统一周期清理定时器");
     assert.equal(processMap.size, 0, "退出后进程表应清空");
 
     const finalFilemanagementStats =
@@ -1410,10 +1414,9 @@ async function testEConfigBackedLocalDataClearKeepsAIMemoryOutOfConfig() {
     "src/modules/terminal/command-history",
   );
   const loggerPath = path.join(ROOT, "src/core/utils/logger");
-  const fileCachePath = path.join(ROOT, "src/core/utils/fileCache");
-  const fileSnapshotStorePath = path.join(
+  const runtimeFileLifecyclePath = path.join(
     ROOT,
-    "src/core/utils/fileSnapshotStore",
+    "src/core/utils/runtimeFileLifecycle",
   );
 
   const electronMock = installElectronMock({
@@ -1432,8 +1435,7 @@ async function testEConfigBackedLocalDataClearKeepsAIMemoryOutOfConfig() {
 
   let configClearSections = null;
   let commandHistoryInitialized = null;
-  let cacheClearOptions = null;
-  let snapshotClearOptions = null;
+  const runtimeClearCalls = [];
   const logMessages = [];
 
   injectMock(
@@ -1445,6 +1447,11 @@ async function testEConfigBackedLocalDataClearKeepsAIMemoryOutOfConfig() {
           configClearSections.includes("aiMemory"),
           false,
           "AI 记忆不应作为 config.json 分项写入或清理",
+        );
+        assert.equal(
+          configClearSections.includes("externalEditorTemp"),
+          false,
+          "外部编辑临时文件不应作为 config.json 分项写入或清理",
         );
         return { success: true, sections: configClearSections };
       },
@@ -1477,20 +1484,13 @@ async function testEConfigBackedLocalDataClearKeepsAIMemoryOutOfConfig() {
     mockedModules,
   );
   injectMock(
-    fileCachePath,
+    runtimeFileLifecyclePath,
     {
-      async clearCacheDirectory(options) {
-        cacheClearOptions = { ...options };
-        return true;
-      },
-    },
-    mockedModules,
-  );
-  injectMock(
-    fileSnapshotStorePath,
-    {
-      async clearAllSnapshots(options) {
-        snapshotClearOptions = { ...options };
+      async clearResource(resourceName, options) {
+        runtimeClearCalls.push({
+          resourceName,
+          options: { ...(options || {}) },
+        });
         return true;
       },
     },
@@ -1512,6 +1512,7 @@ async function testEConfigBackedLocalDataClearKeepsAIMemoryOutOfConfig() {
         "aiSettings",
         "cache",
         "snapshots",
+        "externalEditorTemp",
         "logs",
         "aiMemory",
       ],
@@ -1532,14 +1533,34 @@ async function testEConfigBackedLocalDataClearKeepsAIMemoryOutOfConfig() {
     );
     assert.deepEqual(commandHistoryInitialized, [], "命令历史运行时状态应清空");
     assert.deepEqual(
-      cacheClearOptions,
-      { recreate: true },
-      "文件缓存目录清理后应重建",
-    );
-    assert.deepEqual(
-      snapshotClearOptions,
-      { recreate: true },
-      "文件快照目录清理后应重建",
+      runtimeClearCalls,
+      [
+        {
+          resourceName: "file-cache",
+          options: {
+            recreate: true,
+            includeActive: true,
+            reason: "clear-local-data",
+          },
+        },
+        {
+          resourceName: "file-snapshots",
+          options: {
+            recreate: true,
+            includeActive: true,
+            reason: "clear-local-data",
+          },
+        },
+        {
+          resourceName: "external-editor-temp",
+          options: {
+            recreate: true,
+            includeActive: true,
+            reason: "clear-local-data",
+          },
+        },
+      ],
+      "运行时文件应统一通过 lifecycle 清理并重建",
     );
     assert.equal(
       fs.existsSync(memoryFile),
@@ -1555,6 +1576,7 @@ async function testEConfigBackedLocalDataClearKeepsAIMemoryOutOfConfig() {
     assert.equal(result.runtime.aiMemoryCleared, true);
     assert.equal(result.runtime.cacheCleared, true);
     assert.equal(result.runtime.snapshotsCleared, true);
+    assert.equal(result.runtime.externalEditorTempCleared, true);
     assert.ok(
       result.runtime.logFilesCleared >= 2,
       "日志清理应覆盖当前日志和历史日志",
@@ -1591,6 +1613,177 @@ async function testEConfigBackedLocalDataClearKeepsAIMemoryOutOfConfig() {
     clearRequire(settingsHandlersPath);
     restoreMockedModules(mockedModules);
     electronMock.restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+async function testFUnifiedRuntimeFileLifecyclePolicy() {
+  const runtimeFileLifecyclePath = path.join(
+    ROOT,
+    "src/core/utils/runtimeFileLifecycle",
+  );
+  clearRequire(runtimeFileLifecyclePath);
+
+  const tempRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), "simpleshell-lifecycle-"),
+  );
+  const startupRoot = path.join(tempRoot, "startup");
+  const sweepRoot = path.join(tempRoot, "sweep");
+  fs.mkdirSync(startupRoot, { recursive: true });
+  fs.mkdirSync(sweepRoot, { recursive: true });
+
+  try {
+    const runtimeFileLifecycle = require(runtimeFileLifecyclePath);
+    runtimeFileLifecycle.init(() => {});
+
+    const startupFile = path.join(startupRoot, "previous-exit.tmp");
+    fs.writeFileSync(startupFile, "stale", "utf8");
+    let beforeClearCount = 0;
+    let afterClearCount = 0;
+
+    runtimeFileLifecycle.registerResource("test-startup-clear", {
+      rootPath: startupRoot,
+      policy: {
+        maxAgeMs: 60_000,
+        maxTotalBytes: 1024 * 1024,
+        cleanupIntervalMs: 60_000,
+        startupCleanup: "clear",
+        protectActive: false,
+      },
+      onBeforeClear() {
+        beforeClearCount += 1;
+      },
+      onClear() {
+        afterClearCount += 1;
+      },
+    });
+
+    const recovery = await runtimeFileLifecycle.recoverFromPreviousExit({
+      recreate: true,
+    });
+    assert.deepEqual(
+      recovery["test-startup-clear"],
+      { cleared: true },
+      "启动恢复应清理上次退出遗留的运行时目录",
+    );
+    assert.equal(fs.existsSync(startupRoot), true, "启动恢复后应重建目录");
+    assert.equal(fs.existsSync(startupFile), false, "启动恢复应删除旧文件");
+    assert.equal(beforeClearCount, 1, "清理前回调应执行一次");
+    assert.equal(afterClearCount, 1, "清理后回调应执行一次");
+
+    runtimeFileLifecycle.unregisterResource("test-startup-clear");
+
+    const now = Date.now();
+    const trackedEntries = new Map();
+    const writeTrackedFile = (name, bytes, ageMs, active = false) => {
+      const filePath = path.resolve(path.join(sweepRoot, name));
+      fs.writeFileSync(filePath, Buffer.alloc(bytes, "x"));
+      const timestamp = now - ageMs;
+      trackedEntries.set(filePath, {
+        path: filePath,
+        type: "file",
+        bytes,
+        createdAtMs: timestamp,
+        mtimeMs: timestamp,
+        active,
+      });
+      return filePath;
+    };
+
+    const activeOldFile = writeTrackedFile("active-old.tmp", 80, 10_000, true);
+    const expiredFile = writeTrackedFile("expired.tmp", 30, 10_000);
+    const sizeOldFile = writeTrackedFile("size-old.tmp", 70, 100);
+    const sizeNewFile = writeTrackedFile("size-new.tmp", 10, 10);
+
+    runtimeFileLifecycle.registerResource("test-sweep-policy", {
+      rootPath: sweepRoot,
+      policy: {
+        maxAgeMs: 1000,
+        maxTotalBytes: 100,
+        cleanupIntervalMs: 60_000,
+        startupCleanup: "sweep",
+        protectActive: true,
+      },
+      collectEntries() {
+        return Array.from(trackedEntries.values()).filter((entry) =>
+          fs.existsSync(entry.path),
+        );
+      },
+      onEntryRemoved(entry) {
+        trackedEntries.delete(entry.path);
+      },
+    });
+
+    const sweepResult = await runtimeFileLifecycle.sweepResource(
+      "test-sweep-policy",
+      { reason: "regression" },
+    );
+    assert.equal(sweepResult.removedExpired, 1, "过期文件应被清理");
+    assert.equal(sweepResult.removedForSize, 1, "超出大小上限时应清理旧文件");
+    assert.equal(sweepResult.totalBytesBefore, 190, "清理前总大小应按条目统计");
+    assert.equal(sweepResult.totalBytesAfter, 90, "清理后总大小应降到上限以下");
+    assert.equal(
+      fs.existsSync(activeOldFile),
+      true,
+      "活跃文件应受 protectActive 保护",
+    );
+    assert.equal(fs.existsSync(expiredFile), false, "过期文件应删除");
+    assert.equal(fs.existsSync(sizeOldFile), false, "大小清理应删除较旧文件");
+    assert.equal(fs.existsSync(sizeNewFile), true, "大小达标后应保留新文件");
+
+    const partialCleared = await runtimeFileLifecycle.clearResource(
+      "test-sweep-policy",
+      {
+        includeActive: false,
+        recreate: true,
+        reason: "manual-partial",
+      },
+    );
+    assert.equal(partialCleared, true, "手动清理应删除非活跃文件");
+    assert.equal(
+      fs.existsSync(activeOldFile),
+      true,
+      "不包含活跃文件的手动清理应保留活跃文件",
+    );
+    assert.equal(fs.existsSync(sizeNewFile), false, "非活跃文件应被手动清理");
+    assert.equal(fs.existsSync(sweepRoot), true, "手动清理后目录应存在");
+
+    const fullCleared = await runtimeFileLifecycle.clearResource(
+      "test-sweep-policy",
+      {
+        includeActive: true,
+        recreate: true,
+        reason: "manual-full",
+      },
+    );
+    assert.equal(fullCleared, true, "包含活跃文件的手动清理应成功");
+    assert.equal(
+      fs.existsSync(activeOldFile),
+      false,
+      "包含活跃文件时应删除活跃文件",
+    );
+    assert.equal(fs.existsSync(sweepRoot), true, "完整清理后应重建目录");
+
+    assert.equal(
+      runtimeFileLifecycle.startPeriodicCleanup(),
+      true,
+      "注册资源后应可启动统一周期清理",
+    );
+    assert.equal(
+      runtimeFileLifecycle.stopPeriodicCleanup(),
+      true,
+      "统一周期清理应可停止",
+    );
+
+    return true;
+  } finally {
+    try {
+      const runtimeFileLifecycle = require(runtimeFileLifecyclePath);
+      runtimeFileLifecycle.stopPeriodicCleanup();
+    } catch {
+      // ignore cleanup failure in test teardown
+    }
+    clearRequire(runtimeFileLifecyclePath);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 }
@@ -1637,6 +1830,11 @@ async function run() {
       id: "E1",
       name: "E. 清除本机数据覆盖 config.json 分项、运行时目录和 temp/mem.json AI 记忆",
       fn: testEConfigBackedLocalDataClearKeepsAIMemoryOutOfConfig,
+    },
+    {
+      id: "F1",
+      name: "F. 统一运行时文件生命周期覆盖启动恢复、过期、大小上限、手动清理和活跃保护",
+      fn: testFUnifiedRuntimeFileLifecyclePolicy,
     },
   ];
 

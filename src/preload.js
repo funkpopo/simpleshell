@@ -1109,8 +1109,19 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke("settings:saveErrorReportingSettings", settings),
 
   // 性能设置实时更新API
-  updateCacheSettings: (settings) =>
-    ipcRenderer.invoke("settings:updateCacheSettings", settings),
+  configureRuntimeFileResource: (resourceName, settings = {}) =>
+    ipcRenderer.invoke("runtime-files:configure", resourceName, settings),
+  releaseRuntimeFilePath: (resourceName, targetPath, options = {}) =>
+    ipcRenderer.invoke(
+      "runtime-files:releasePath",
+      resourceName,
+      targetPath,
+      options,
+    ),
+  clearRuntimeFileResource: (resourceName, options = {}) =>
+    ipcRenderer.invoke("runtime-files:clear", resourceName, options),
+  sweepRuntimeFileResource: (resourceName, options = {}) =>
+    ipcRenderer.invoke("runtime-files:sweep", resourceName, options),
   updatePrefetchSettings: (settings) =>
     ipcRenderer.invoke("settings:updatePrefetchSettings", settings),
 
@@ -1191,11 +1202,6 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       commandHistoryChangedWrappers.delete(callback);
     }
   },
-
-  // 文件缓存管理API
-  cleanupFileCache: (cacheFilePath) =>
-    ipcRenderer.invoke("cleanupFileCache", cacheFilePath),
-  cleanupTabCache: (tabId) => ipcRenderer.invoke("cleanupTabCache", tabId),
 
   // IP地址查询API
   queryIpAddress: (ip = "") => ipcRenderer.invoke("ip:query", ip),

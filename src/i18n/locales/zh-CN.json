@@ -123,7 +123,7 @@
       },
       "localData": {
         "title": "清除本机数据",
-        "description": "清除生产目录 config.json 中的配置记录，以及本机临时目录中的缓存、快照、日志和 AI 记忆文件。换机器使用仍只需要复制生产目录下的 config.json；AI 记忆保留在 temp/mem.json，不写入 config.json。",
+        "description": "清除生产目录 config.json 中的配置记录，以及本机临时目录中的缓存、快照、外部编辑临时文件、日志和 AI 记忆文件。换机器使用仍只需要复制生产目录下的 config.json；AI 记忆保留在 temp/mem.json，不写入 config.json。",
         "destructive": "不可撤销",
         "clear": "清除所选数据",
         "clearing": "正在清除...",
@@ -145,6 +145,7 @@
           "aiSettings": "AI 设置",
           "cache": "缓存",
           "snapshots": "快照",
+          "externalEditorTemp": "外部编辑临时文件",
           "logs": "日志",
           "aiMemory": "AI 记忆"
         }

@@ -1,4 +1,3 @@
-const fileCache = require("../../utils/fileCache");
 const fileSnapshotStore = require("../../utils/fileSnapshotStore");
 const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
@@ -8,7 +7,8 @@ function buildErrorResponse(error, fallbackMessage = "Operation failed") {
     fallbackMessage && fallbackMessage !== "Operation failed"
       ? fallbackMessage
       : null;
-  const message = fallback || error?.message || String(error || fallbackMessage);
+  const message =
+    fallback || error?.message || String(error || fallbackMessage);
   return {
     success: false,
     error: message,
@@ -58,16 +58,6 @@ class SftpHandlers {
         channel: "saveFileContent",
         category: "sftp",
         handler: this.saveFileContent.bind(this),
-      },
-      {
-        channel: "cleanupFileCache",
-        category: "sftp",
-        handler: this.cleanupFileCache.bind(this),
-      },
-      {
-        channel: "cleanupTabCache",
-        category: "sftp",
-        handler: this.cleanupTabCache.bind(this),
       },
       {
         channel: "listFileSnapshots",
@@ -162,26 +152,6 @@ class SftpHandlers {
     } catch (error) {
       logToFile(`Error saving file content: ${error.message}`, "ERROR");
       return buildErrorResponse(error, "Failed to save file content");
-    }
-  }
-
-  async cleanupFileCache(event, cacheFilePath) {
-    try {
-      await fileCache.cleanup(cacheFilePath);
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error cleaning up file cache: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
-  }
-
-  async cleanupTabCache(event, tabId) {
-    try {
-      await fileCache.cleanupTabFiles(tabId);
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error cleaning up tab cache: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
     }
   }
 
