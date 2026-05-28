@@ -1,10 +1,14 @@
 const { logToFile } = require("../utils/logger");
-const { ipcMain: electronIpcMain } = require("electron");
 const { finishTrace, startTrace } = require("./ipcTrace");
 const {
   buildErrorResponse,
   normalizeErrorMessage,
 } = require("../utils/errorResponse");
+const {
+  getEventChannelDefinition,
+  getRequestChannelDefinition,
+} = require("./schema/channels");
+const { validateSchema } = require("./schema/validator");
 
 function isStandardResponse(result) {
   return result && typeof result === "object" && "success" in result;
@@ -42,11 +46,29 @@ function normalizeFailureResponse(result, options = {}) {
 }
 
 function wrapIpcHandler(handler, options = {}) {
-  const { logPerformance = false, channelName, category } = options;
+  const {
+    logPerformance = false,
+    channelName,
+    category,
+    channelDefinition = null,
+  } = options;
   return async (event, ...args) => {
     const start = Date.now();
     const trace = startTrace(channelName, args, { category });
     try {
+      if (channelDefinition?.requestSchema) {
+        const validation = validateSchema(channelDefinition.requestSchema, args);
+        if (!validation.valid) {
+          const message = `Invalid IPC request payload for ${channelName}: ${validation.error}`;
+          logToFile(message, "WARN");
+          finishTrace(trace, { success: false, error: message });
+          return buildErrorResponse(new Error(message), {
+            module: category || channelDefinition.category || "ipc",
+            operation: channelName,
+          });
+        }
+      }
+
       const result = await handler(event, ...args);
       if (logPerformance) {
         const duration = Date.now() - start;
@@ -63,11 +85,38 @@ function wrapIpcHandler(handler, options = {}) {
           channelName,
           category,
         });
+        if (channelDefinition?.responseSchema) {
+          const validation = validateSchema(
+            channelDefinition.responseSchema,
+            normalizedResult,
+          );
+          if (!validation.valid) {
+            const message = `Invalid IPC response payload for ${channelName}: ${validation.error}`;
+            logToFile(message, "ERROR");
+            finishTrace(trace, { success: false, error: message });
+            return buildErrorResponse(new Error(message), {
+              module: category || channelDefinition.category || "ipc",
+              operation: channelName,
+            });
+          }
+        }
         finishTrace(trace, {
           success: normalizedResult.success !== false,
           error: normalizedResult.error,
         });
         return normalizedResult;
+      }
+      if (channelDefinition?.responseSchema) {
+        const validation = validateSchema(channelDefinition.responseSchema, result);
+        if (!validation.valid) {
+          const message = `Invalid IPC response payload for ${channelName}: ${validation.error}`;
+          logToFile(message, "ERROR");
+          finishTrace(trace, { success: false, error: message });
+          return buildErrorResponse(new Error(message), {
+            module: category || channelDefinition.category || "ipc",
+            operation: channelName,
+          });
+        }
       }
       finishTrace(trace, { success: true });
       return result;
@@ -84,41 +133,90 @@ function wrapIpcHandler(handler, options = {}) {
   };
 }
 
-function safeHandle(
-  ipcMainOrChannel,
-  channelOrHandler,
-  handlerOrOptions,
-  options = {},
-) {
-  let ipcMain = ipcMainOrChannel;
-  let channel = channelOrHandler;
-  let handler = handlerOrOptions;
-
-  // 兼容旧用法: safeHandle("channel", handler, options?)
-  if (
-    typeof ipcMainOrChannel === "string" &&
-    typeof channelOrHandler === "function" &&
-    (handlerOrOptions === undefined || typeof handlerOrOptions === "object")
-  ) {
-    channel = ipcMainOrChannel;
-    handler = channelOrHandler;
-    options = handlerOrOptions || options;
-    ipcMain = electronIpcMain;
-  }
-
+function safeHandle(ipcMain, channel, handler, options = {}) {
   if (!ipcMain || typeof ipcMain.handle !== "function") {
     const errorMsg = `safeHandle: ipcMain is invalid or doesn't have 'handle' method for channel: ${channel}`;
     logToFile(errorMsg, "ERROR");
     throw new Error(errorMsg);
   }
 
-  const wrapped = wrapIpcHandler(handler, { ...options, channelName: channel });
+  if (typeof channel !== "string" || channel.trim() === "") {
+    const errorMsg = "safeHandle: channel must be a declared IPC channel string";
+    logToFile(errorMsg, "ERROR");
+    throw new Error(errorMsg);
+  }
+
+  if (typeof handler !== "function") {
+    const errorMsg = `safeHandle: handler must be a function for channel: ${channel}`;
+    logToFile(errorMsg, "ERROR");
+    throw new Error(errorMsg);
+  }
+
+  const channelDefinition = getRequestChannelDefinition(channel);
+  if (!channelDefinition) {
+    const errorMsg = `safeHandle: undeclared IPC request channel: ${channel}`;
+    logToFile(errorMsg, "ERROR");
+    throw new Error(errorMsg);
+  }
+
+  const wrapped = wrapIpcHandler(handler, {
+    ...options,
+    channelName: channel,
+    category: options.category || channelDefinition?.category,
+    channelDefinition,
+  });
   ipcMain.handle(channel, wrapped);
+}
+
+function safeOn(ipcMain, channel, handler, options = {}) {
+  if (!ipcMain || typeof ipcMain.on !== "function") {
+    const errorMsg = `safeOn: ipcMain is invalid or doesn't have 'on' method for channel: ${channel}`;
+    logToFile(errorMsg, "ERROR");
+    throw new Error(errorMsg);
+  }
+
+  if (typeof channel !== "string" || channel.trim() === "") {
+    const errorMsg = "safeOn: channel must be a declared IPC channel string";
+    logToFile(errorMsg, "ERROR");
+    throw new Error(errorMsg);
+  }
+
+  if (typeof handler !== "function") {
+    const errorMsg = `safeOn: handler must be a function for channel: ${channel}`;
+    logToFile(errorMsg, "ERROR");
+    throw new Error(errorMsg);
+  }
+
+  const channelDefinition = getEventChannelDefinition(channel);
+  if (!channelDefinition) {
+    const errorMsg = `safeOn: undeclared IPC event channel: ${channel}`;
+    logToFile(errorMsg, "ERROR");
+    throw new Error(errorMsg);
+  }
+
+  const wrapped = (event, ...args) => {
+    if (channelDefinition?.payloadSchema) {
+      const validation = validateSchema(channelDefinition.payloadSchema, args);
+      if (!validation.valid) {
+        logToFile(
+          `Invalid IPC event payload for ${channel}: ${validation.error}`,
+          "WARN",
+        );
+        return;
+      }
+    }
+
+    return handler(event, ...args);
+  };
+
+  ipcMain.on(channel, wrapped);
+  return wrapped;
 }
 
 module.exports = {
   success,
   failure,
   wrapIpcHandler,
+  safeOn,
   safeHandle,
 };

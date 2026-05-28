@@ -2,6 +2,7 @@ const fileSnapshotStore = require("../../utils/fileSnapshotStore");
 const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
 const { buildErrorResponse } = require("../../utils/errorResponse");
+const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * SFTP会话和队列相关的IPC处理器
@@ -10,52 +11,52 @@ class SftpHandlers {
   getHandlers() {
     return [
       {
-        channel: "getSftpSession",
+        channel: IPC_REQUEST_CHANNELS.SFTP_GET_SESSION,
         category: "sftp",
         handler: this.getSftpSession.bind(this),
       },
       {
-        channel: "enqueueSftpOperation",
+        channel: IPC_REQUEST_CHANNELS.SFTP_ENQUEUE_OPERATION,
         category: "sftp",
         handler: this.enqueueSftpOperation.bind(this),
       },
       {
-        channel: "processSftpQueue",
+        channel: IPC_REQUEST_CHANNELS.SFTP_PROCESS_QUEUE,
         category: "sftp",
         handler: this.processSftpQueue.bind(this),
       },
       {
-        channel: "readFileContent",
+        channel: IPC_REQUEST_CHANNELS.SFTP_READ_FILE_CONTENT,
         category: "sftp",
         handler: this.readFileContent.bind(this),
       },
       {
-        channel: "readFileAsBase64",
+        channel: IPC_REQUEST_CHANNELS.SFTP_READ_FILE_BASE64,
         category: "sftp",
         handler: this.readFileAsBase64.bind(this),
       },
       {
-        channel: "saveFileContent",
+        channel: IPC_REQUEST_CHANNELS.SFTP_SAVE_FILE_CONTENT,
         category: "sftp",
         handler: this.saveFileContent.bind(this),
       },
       {
-        channel: "listFileSnapshots",
+        channel: IPC_REQUEST_CHANNELS.SFTP_LIST_FILE_SNAPSHOTS,
         category: "sftp",
         handler: this.listFileSnapshots.bind(this),
       },
       {
-        channel: "createFileSnapshot",
+        channel: IPC_REQUEST_CHANNELS.SFTP_CREATE_FILE_SNAPSHOT,
         category: "sftp",
         handler: this.createFileSnapshot.bind(this),
       },
       {
-        channel: "getFileSnapshot",
+        channel: IPC_REQUEST_CHANNELS.SFTP_GET_FILE_SNAPSHOT,
         category: "sftp",
         handler: this.getFileSnapshot.bind(this),
       },
       {
-        channel: "restoreFileSnapshot",
+        channel: IPC_REQUEST_CHANNELS.SFTP_RESTORE_FILE_SNAPSHOT,
         category: "sftp",
         handler: this.restoreFileSnapshot.bind(this),
       },

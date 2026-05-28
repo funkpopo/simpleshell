@@ -1,5 +1,6 @@
 const { dialog, BrowserWindow } = require("electron");
 const { logToFile } = require("../../utils/logger");
+const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * 对话框相关的IPC处理器
@@ -11,17 +12,17 @@ class DialogHandlers {
   getHandlers() {
     return [
       {
-        channel: "dialog:showOpenDialog",
+        channel: IPC_REQUEST_CHANNELS.DIALOG_SHOW_OPEN,
         category: "dialog",
         handler: this.showOpenDialog.bind(this),
       },
       {
-        channel: "dialog:showSaveDialog",
+        channel: IPC_REQUEST_CHANNELS.DIALOG_SHOW_SAVE,
         category: "dialog",
         handler: this.showSaveDialog.bind(this),
       },
       {
-        channel: "dialog:showMessageBox",
+        channel: IPC_REQUEST_CHANNELS.DIALOG_SHOW_MESSAGE,
         category: "dialog",
         handler: this.showMessageBox.bind(this),
       },

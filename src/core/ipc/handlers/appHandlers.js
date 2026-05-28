@@ -8,6 +8,10 @@ const {
   exportDiagnosticPackage,
 } = require("../../utils/diagnostics");
 const updateService = require("../../update/updateService");
+const {
+  IPC_EVENT_CHANNELS,
+  IPC_REQUEST_CHANNELS,
+} = require("../schema/channels");
 
 const DEFAULT_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 const CONFIRMABLE_EXTERNAL_PROTOCOLS = new Set(["mailto:"]);
@@ -31,88 +35,82 @@ class AppHandlers {
   getHandlers() {
     return [
       {
-        channel: "app:getVersion",
+        channel: IPC_REQUEST_CHANNELS.APP_GET_VERSION,
         category: "app",
         handler: this.getVersion.bind(this),
       },
       {
-        channel: "app:close",
+        channel: IPC_REQUEST_CHANNELS.APP_CLOSE,
         category: "app",
         handler: this.closeApp.bind(this),
       },
       {
-        channel: "app:reloadWindow",
+        channel: IPC_REQUEST_CHANNELS.APP_RELOAD_WINDOW,
         category: "app",
         handler: this.reloadWindow.bind(this),
       },
       {
-        channel: "app:openExternal",
+        channel: IPC_REQUEST_CHANNELS.APP_OPEN_EXTERNAL,
         category: "app",
         handler: this.openExternal.bind(this),
       },
       {
-        channel: "app:checkForUpdate",
+        channel: IPC_REQUEST_CHANNELS.APP_CHECK_FOR_UPDATE,
         category: "app",
         handler: this.checkForUpdate.bind(this),
       },
       {
-        channel: "app:downloadUpdate",
+        channel: IPC_REQUEST_CHANNELS.APP_DOWNLOAD_UPDATE,
         category: "app",
         handler: this.downloadUpdate.bind(this),
       },
       {
-        channel: "app:installUpdate",
+        channel: IPC_REQUEST_CHANNELS.APP_INSTALL_UPDATE,
         category: "app",
         handler: this.installUpdate.bind(this),
       },
       {
-        channel: "app:getDownloadProgress",
+        channel: IPC_REQUEST_CHANNELS.APP_GET_DOWNLOAD_PROGRESS,
         category: "app",
         handler: this.getDownloadProgress.bind(this),
       },
       {
-        channel: "app:cancelDownload",
+        channel: IPC_REQUEST_CHANNELS.APP_CANCEL_DOWNLOAD,
         category: "app",
         handler: this.cancelDownload.bind(this),
       },
       {
-        channel: "app:hasDownloadedInstaller",
+        channel: IPC_REQUEST_CHANNELS.APP_HAS_DOWNLOADED_INSTALLER,
         category: "app",
         handler: this.hasDownloadedInstaller.bind(this),
       },
       {
-        channel: "app:getGpuInfo",
+        channel: IPC_REQUEST_CHANNELS.APP_GET_GPU_INFO,
         category: "app",
         handler: this.getGpuInfo.bind(this),
       },
       {
-        channel: "app:openLogDirectory",
+        channel: IPC_REQUEST_CHANNELS.APP_OPEN_LOG_DIRECTORY,
         category: "app",
         handler: this.openLogDirectory.bind(this),
       },
       {
-        channel: "app:exportDiagnostics",
+        channel: IPC_REQUEST_CHANNELS.APP_EXPORT_DIAGNOSTICS,
         category: "app",
         handler: this.exportDiagnostics.bind(this),
       },
       {
-        channel: "app:copyDiagnosticSummary",
+        channel: IPC_REQUEST_CHANNELS.APP_COPY_DIAGNOSTIC_SUMMARY,
         category: "app",
         handler: this.copyDiagnosticSummary.bind(this),
       },
       {
-        channel: "app:copyDiagnosticPackage",
+        channel: IPC_REQUEST_CHANNELS.APP_COPY_DIAGNOSTIC_PACKAGE,
         category: "app",
         handler: this.copyDiagnosticPackage.bind(this),
       },
       {
-        channel: "app:openFeedbackIssue",
-        category: "app",
-        handler: this.openFeedbackIssue.bind(this),
-      },
-      {
-        // Backward-compatible alias for a previously misspelled renderer IPC channel.
-        channel: "app:openFeedbacklssue",
+        channel: IPC_REQUEST_CHANNELS.APP_OPEN_FEEDBACK_ISSUE,
         category: "app",
         handler: this.openFeedbackIssue.bind(this),
       },
@@ -343,7 +341,10 @@ class AppHandlers {
       const onProgress = (progressData) => {
         if (event?.sender) {
           // 发送进度事件到渲染进程
-          event.sender.send("update:downloadProgress", progressData);
+          event.sender.send(
+            IPC_EVENT_CHANNELS.UPDATE_DOWNLOAD_PROGRESS,
+            progressData,
+          );
         }
       };
 

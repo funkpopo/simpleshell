@@ -1,6 +1,11 @@
 const { ipcMain } = require("electron");
 const { logToFile } = require("../utils/logger");
 const { wrapIpcHandler } = require("./ipcResponse");
+const {
+  getEventChannelDefinition,
+  getRequestChannelDefinition,
+} = require("./schema/channels");
+const { validateSchema } = require("./schema/validator");
 const { finishTrace, startTrace } = require("./ipcTrace");
 
 class IPCRegistry {
@@ -17,6 +22,11 @@ class IPCRegistry {
    * @param {Object} options - 配置选项
    */
   register(channel, category, handler, options = {}) {
+    const channelDefinition = getRequestChannelDefinition(channel);
+    if (!channelDefinition) {
+      throw new Error(`Cannot register undeclared IPC request channel: ${channel}`);
+    }
+
     if (this.handlers.has(channel)) {
       logToFile(`Warning: Overwriting existing handler for ${channel}`, "WARN");
     }
@@ -24,7 +34,8 @@ class IPCRegistry {
     const wrappedHandler = wrapIpcHandler(handler, {
       logPerformance: options.logPerformance,
       channelName: channel,
-      category,
+      category: category || channelDefinition.category,
+      channelDefinition,
     });
 
     // 注册处理器
@@ -32,17 +43,18 @@ class IPCRegistry {
 
     // 存储元数据
     this.handlers.set(channel, {
-      category,
+      category: category || channelDefinition.category,
       handler: wrappedHandler,
       originalHandler: handler,
       options,
     });
 
     // 按类别分组
-    if (!this.categories.has(category)) {
-      this.categories.set(category, new Set());
+    const effectiveCategory = category || channelDefinition.category;
+    if (!this.categories.has(effectiveCategory)) {
+      this.categories.set(effectiveCategory, new Set());
     }
-    this.categories.get(category).add(channel);
+    this.categories.get(effectiveCategory).add(channel);
 
     return this;
   }
@@ -65,6 +77,11 @@ class IPCRegistry {
    * @param {Function} handler - 处理函数
    */
   on(channel, category, handler) {
+    const channelDefinition = getEventChannelDefinition(channel);
+    if (!channelDefinition) {
+      throw new Error(`Cannot register undeclared IPC event channel: ${channel}`);
+    }
+
     if (this.handlers.has(channel)) {
       logToFile(
         `Warning: Overwriting existing listener for ${channel}`,
@@ -73,8 +90,20 @@ class IPCRegistry {
     }
 
     const wrappedHandler = (event, ...args) => {
-      const trace = startTrace(channel, args, { category });
+      const effectiveCategory = category || channelDefinition.category;
+      const trace = startTrace(channel, args, { category: effectiveCategory });
       try {
+        if (channelDefinition.payloadSchema) {
+          const validation = validateSchema(channelDefinition.payloadSchema, args);
+          if (!validation.valid) {
+            logToFile(
+              `Invalid IPC event payload for ${channel}: ${validation.error}`,
+              "WARN",
+            );
+            finishTrace(trace, { success: false, error: validation.error });
+            return;
+          }
+        }
         handler(event, ...args);
         finishTrace(trace, { success: true });
       } catch (error) {
@@ -91,17 +120,18 @@ class IPCRegistry {
 
     // 存储元数据
     this.handlers.set(channel, {
-      category,
+      category: category || channelDefinition.category,
       handler: wrappedHandler,
       originalHandler: handler,
       type: "listener",
     });
 
     // 按类别分组
-    if (!this.categories.has(category)) {
-      this.categories.set(category, new Set());
+    const effectiveCategory = category || channelDefinition.category;
+    if (!this.categories.has(effectiveCategory)) {
+      this.categories.set(effectiveCategory, new Set());
     }
-    this.categories.get(category).add(channel);
+    this.categories.get(effectiveCategory).add(channel);
 
     return this;
   }

@@ -6,6 +6,10 @@ const processManager = require("../../process/processManager");
 const path = require("path");
 const fs = require("fs");
 const { shell } = require("electron");
+const {
+  IPC_EVENT_CHANNELS,
+  IPC_REQUEST_CHANNELS,
+} = require("../schema/channels");
 
 const toPosixPath = (targetPath = "") => String(targetPath).replace(/\\/g, "/");
 
@@ -74,137 +78,137 @@ class FileHandlers {
   getHandlers() {
     return [
       {
-        channel: "listFiles",
+        channel: IPC_REQUEST_CHANNELS.FILE_LIST,
         category: "file",
         handler: this.listFiles.bind(this),
       },
       {
-        channel: "copyFile",
+        channel: IPC_REQUEST_CHANNELS.FILE_COPY,
         category: "file",
         handler: this.copyFile.bind(this),
       },
       {
-        channel: "moveFile",
+        channel: IPC_REQUEST_CHANNELS.FILE_MOVE,
         category: "file",
         handler: this.moveFile.bind(this),
       },
       {
-        channel: "deleteFile",
+        channel: IPC_REQUEST_CHANNELS.FILE_DELETE,
         category: "file",
         handler: this.deleteFile.bind(this),
       },
       {
-        channel: "createFolder",
+        channel: IPC_REQUEST_CHANNELS.FILE_CREATE_FOLDER,
         category: "file",
         handler: this.createFolder.bind(this),
       },
       {
-        channel: "createFile",
+        channel: IPC_REQUEST_CHANNELS.FILE_CREATE,
         category: "file",
         handler: this.createFile.bind(this),
       },
       {
-        channel: "renameFile",
+        channel: IPC_REQUEST_CHANNELS.FILE_RENAME,
         category: "file",
         handler: this.renameFile.bind(this),
       },
       {
-        channel: "downloadFile",
+        channel: IPC_REQUEST_CHANNELS.FILE_DOWNLOAD,
         category: "file",
         handler: this.downloadFile.bind(this),
       },
       {
-        channel: "downloadFolder",
+        channel: IPC_REQUEST_CHANNELS.FILE_DOWNLOAD_FOLDER,
         category: "file",
         handler: this.downloadFolder.bind(this),
       },
       {
-        channel: "getFilePermissions",
+        channel: IPC_REQUEST_CHANNELS.FILE_GET_PERMISSIONS,
         category: "file",
         handler: this.getFilePermissions.bind(this),
       },
       {
-        channel: "getAbsolutePath",
+        channel: IPC_REQUEST_CHANNELS.FILE_GET_ABSOLUTE_PATH,
         category: "file",
         handler: this.getAbsolutePath.bind(this),
       },
       {
-        channel: "checkPathExists",
+        channel: IPC_REQUEST_CHANNELS.FILE_CHECK_PATH_EXISTS,
         category: "file",
         handler: this.checkPathExists.bind(this),
       },
       {
-        channel: "showItemInFolder",
+        channel: IPC_REQUEST_CHANNELS.FILE_SHOW_ITEM_IN_FOLDER,
         category: "file",
         handler: this.showItemInFolder.bind(this),
       },
       {
-        channel: "cancelTransfer",
+        channel: IPC_REQUEST_CHANNELS.FILE_CANCEL_TRANSFER,
         category: "file",
         handler: this.cancelTransfer.bind(this),
       },
       {
-        channel: "cancelListFiles",
+        channel: IPC_REQUEST_CHANNELS.FILE_CANCEL_LIST,
         category: "file",
         handler: this.cancelListFiles.bind(this),
       },
       {
-        channel: "startDirectoryWatch",
+        channel: IPC_REQUEST_CHANNELS.FILE_START_DIRECTORY_WATCH,
         category: "file",
         handler: this.startDirectoryWatch.bind(this),
       },
       {
-        channel: "stopDirectoryWatch",
+        channel: IPC_REQUEST_CHANNELS.FILE_STOP_DIRECTORY_WATCH,
         category: "file",
         handler: this.stopDirectoryWatch.bind(this),
       },
       {
-        channel: "downloadFiles",
+        channel: IPC_REQUEST_CHANNELS.FILE_DOWNLOAD_FILES,
         category: "file",
         handler: this.downloadFiles.bind(this),
       },
       {
-        channel: "setFilePermissions",
+        channel: IPC_REQUEST_CHANNELS.FILE_SET_PERMISSIONS,
         category: "file",
         handler: this.setFilePermissions.bind(this),
       },
       {
-        channel: "getFilePermissionsBatch",
+        channel: IPC_REQUEST_CHANNELS.FILE_GET_PERMISSIONS_BATCH,
         category: "file",
         handler: this.getFilePermissionsBatch.bind(this),
       },
       {
-        channel: "setFileOwnership",
+        channel: IPC_REQUEST_CHANNELS.FILE_SET_OWNERSHIP,
         category: "file",
         handler: this.setFileOwnership.bind(this),
       },
       {
-        channel: "createRemoteFolders",
+        channel: IPC_REQUEST_CHANNELS.FILE_CREATE_REMOTE_FOLDERS,
         category: "file",
         handler: this.createRemoteFolders.bind(this),
       },
       {
-        channel: "uploadFile",
+        channel: IPC_REQUEST_CHANNELS.FILE_UPLOAD,
         category: "file",
         handler: this.uploadFile.bind(this),
       },
       {
-        channel: "uploadDroppedFiles",
+        channel: IPC_REQUEST_CHANNELS.FILE_UPLOAD_DROPPED,
         category: "file",
         handler: this.uploadDroppedFiles.bind(this),
       },
       {
-        channel: "validateDroppedItems",
+        channel: IPC_REQUEST_CHANNELS.FILE_VALIDATE_DROPPED_ITEMS,
         category: "file",
         handler: this.validateDroppedItems.bind(this),
       },
       {
-        channel: "checkDroppedUploadConflicts",
+        channel: IPC_REQUEST_CHANNELS.FILE_CHECK_DROPPED_UPLOAD_CONFLICTS,
         category: "file",
         handler: this.checkDroppedUploadConflicts.bind(this),
       },
       {
-        channel: "upload-folder",
+        channel: IPC_REQUEST_CHANNELS.FILE_UPLOAD_FOLDER,
         category: "file",
         handler: this.uploadFolder.bind(this),
       },
@@ -268,7 +272,7 @@ class FileHandlers {
         return;
       }
 
-      entry.sender.send("directory-watch:event", {
+      entry.sender.send(IPC_EVENT_CHANNELS.DIRECTORY_WATCH_EVENT, {
         ...payload,
         watchId: entry.watchId,
         tabId: entry.tabId,
@@ -340,7 +344,7 @@ class FileHandlers {
             const send = (payload) => {
               try {
                 if (event && event.sender && !event.sender.isDestroyed()) {
-                  event.sender.send("listFiles:chunk", payload);
+                  event.sender.send(IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, payload);
                 }
               } catch {
                 // ignore send errors (window may be gone)
@@ -385,7 +389,7 @@ class FileHandlers {
           .catch((err) => {
             try {
               if (event && event.sender && !event.sender.isDestroyed()) {
-                event.sender.send("listFiles:chunk", {
+                event.sender.send(IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, {
                   tabId,
                   path: requestedPath,
                   token,

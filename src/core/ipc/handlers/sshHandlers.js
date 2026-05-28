@@ -11,6 +11,12 @@ const {
   buildReconnectWaitMessage,
   checkSshPreflight,
 } = require("../../connection/ssh-retry-helper");
+const {
+  IPC_EVENT_CHANNELS,
+  IPC_REQUEST_CHANNELS,
+  getTerminalProcessExitChannel,
+  getTerminalProcessOutputChannel,
+} = require("../schema/channels");
 
 function isZhLanguage(language) {
   return String(language || "zh-CN")
@@ -120,22 +126,22 @@ class SSHHandlers {
   getHandlers() {
     return [
       {
-        channel: "terminal:startSSH",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_START_SSH,
         category: "terminal",
         handler: this.startSSH.bind(this),
       },
       {
-        channel: "terminal:startTelnet",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_START_TELNET,
         category: "terminal",
         handler: this.startTelnet.bind(this),
       },
       {
-        channel: "ssh:auth-response",
+        channel: IPC_REQUEST_CHANNELS.SSH_AUTH_RESPONSE,
         category: "terminal",
         handler: this.handleAuthResponse.bind(this),
       },
       {
-        channel: "terminal:updateConnectionCredentials",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_UPDATE_CONNECTION_CREDENTIALS,
         category: "terminal",
         handler: this.updateConnectionCredentials.bind(this),
       },
@@ -219,7 +225,7 @@ class SSHHandlers {
         const windows = BrowserWindow.getAllWindows();
         for (const win of windows) {
           if (win && !win.isDestroyed() && win.webContents) {
-            win.webContents.send("connections-changed");
+            win.webContents.send(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
           }
         }
 
@@ -457,7 +463,7 @@ class SSHHandlers {
       });
 
       // 发送认证请求到渲染进程
-      mainWindow.webContents.send("ssh:auth-request", {
+      mainWindow.webContents.send(IPC_EVENT_CHANNELS.SSH_AUTH_REQUEST, {
         requestId,
         tabId,
         ...authData,
@@ -586,7 +592,10 @@ class SSHHandlers {
       return;
     }
 
-    mainWindow.webContents.send(`process:output:${processId}`, output);
+    const channel = getTerminalProcessOutputChannel(processId);
+    if (channel) {
+      mainWindow.webContents.send(channel, output);
+    }
   }
 
   _emitTerminalSessionEvent(channel, payload = {}) {
@@ -848,7 +857,7 @@ class SSHHandlers {
           port: sshConfig.port,
           username: sshConfig.username,
         };
-        mainWindow.webContents.send("tab-connection-status", {
+        mainWindow.webContents.send(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, {
           tabId,
           connectionStatus,
         });
@@ -859,7 +868,7 @@ class SSHHandlers {
         `\r\n\x1b[32m*** ${getTerminalText(sshConfig, "reconnectRecoverySucceeded")} ***\x1b[0m\r\n`,
       );
 
-      this._emitTerminalSessionEvent("terminal:session-restored", {
+      this._emitTerminalSessionEvent(IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORED, {
         processId,
         tabId,
         connectionKey,
@@ -884,7 +893,7 @@ class SSHHandlers {
           username: sshConfig.username,
           error: message,
         };
-        mainWindow.webContents.send("tab-connection-status", {
+        mainWindow.webContents.send(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, {
           tabId,
           connectionStatus,
         });
@@ -905,7 +914,7 @@ class SSHHandlers {
         )} ***\x1b[0m\r\n`,
       );
 
-      this._emitTerminalSessionEvent("terminal:session-restore-failed", {
+      this._emitTerminalSessionEvent(IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORE_FAILED, {
         processId,
         tabId,
         connectionKey,
@@ -926,7 +935,7 @@ class SSHHandlers {
       const windows = BrowserWindow.getAllWindows();
       for (const win of windows) {
         if (win && !win.isDestroyed() && win.webContents) {
-          win.webContents.send("top-connections-changed", lastConnections);
+          win.webContents.send(IPC_EVENT_CHANNELS.TOP_CONNECTIONS_CHANGED, lastConnections);
         }
       }
     } catch {
@@ -1149,7 +1158,7 @@ class SSHHandlers {
           port: sshConfig.port,
           username: sshConfig.username,
         };
-        mainWindow.webContents.send("tab-connection-status", {
+        mainWindow.webContents.send(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, {
           tabId: sshConfig.tabId,
           connectionStatus,
         });
@@ -1277,10 +1286,13 @@ class SSHHandlers {
             message: err.message,
           })} ***\r\n`,
         );
-        mainWindow.webContents.send(`process:exit:${processId}`, {
-          code: 1,
-          signal: null,
-        });
+        const exitChannel = getTerminalProcessExitChannel(processId);
+        if (exitChannel) {
+          mainWindow.webContents.send(exitChannel, {
+            code: 1,
+            signal: null,
+          });
+        }
       }
       this._destroyProcessMailbox(processId);
 
@@ -1298,10 +1310,13 @@ class SSHHandlers {
           processId,
           `\r\n*** ${getTerminalText(telnetConfig, "telnetClosed")} ***\r\n`,
         );
-        mainWindow.webContents.send(`process:exit:${processId}`, {
-          code: 0,
-          signal: null,
-        });
+        const exitChannel = getTerminalProcessExitChannel(processId);
+        if (exitChannel) {
+          mainWindow.webContents.send(exitChannel, {
+            code: 0,
+            signal: null,
+          });
+        }
       }
       this._destroyProcessMailbox(processId);
 
@@ -1803,7 +1818,7 @@ class SSHHandlers {
               port: sshConfig.port,
               username: sshConfig.username,
             };
-            mainWindow.webContents.send("tab-connection-status", {
+            mainWindow.webContents.send(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, {
               tabId: sshConfig.tabId,
               connectionStatus,
             });
@@ -1911,7 +1926,7 @@ class SSHHandlers {
             username: sshConfig.username,
             error: err?.message || String(err),
           };
-          mainWindow.webContents.send("tab-connection-status", {
+          mainWindow.webContents.send(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, {
             tabId: sshConfig.tabId,
             connectionStatus,
           });

@@ -2,6 +2,10 @@ const configService = require("../../../services/configService");
 const { logToFile } = require("../../utils/logger");
 const aiWorkerManager = require("../../workers/aiWorkerManager");
 const { BrowserWindow } = require("electron");
+const {
+  IPC_EVENT_CHANNELS,
+  IPC_REQUEST_CHANNELS,
+} = require("../schema/channels");
 
 /**
  * AI相关的IPC处理器
@@ -210,52 +214,52 @@ class AIHandlers {
   getHandlers() {
     return [
       {
-        channel: "ai:loadSettings",
+        channel: IPC_REQUEST_CHANNELS.AI_LOAD_SETTINGS,
         category: "ai",
         handler: this.loadSettings.bind(this),
       },
       {
-        channel: "ai:saveSettings",
+        channel: IPC_REQUEST_CHANNELS.AI_SAVE_SETTINGS,
         category: "ai",
         handler: this.saveSettings.bind(this),
       },
       {
-        channel: "ai:saveApiConfig",
+        channel: IPC_REQUEST_CHANNELS.AI_SAVE_API_CONFIG,
         category: "ai",
         handler: this.saveApiConfig.bind(this),
       },
       {
-        channel: "ai:deleteApiConfig",
+        channel: IPC_REQUEST_CHANNELS.AI_DELETE_API_CONFIG,
         category: "ai",
         handler: this.deleteApiConfig.bind(this),
       },
       {
-        channel: "ai:setCurrentApiConfig",
+        channel: IPC_REQUEST_CHANNELS.AI_SET_CURRENT_API_CONFIG,
         category: "ai",
         handler: this.setCurrentApiConfig.bind(this),
       },
       {
-        channel: "ai:sendPrompt",
+        channel: IPC_REQUEST_CHANNELS.AI_SEND_PROMPT,
         category: "ai",
         handler: this.sendPrompt.bind(this),
       },
       {
-        channel: "ai:sendAPIRequest",
+        channel: IPC_REQUEST_CHANNELS.AI_SEND_API_REQUEST,
         category: "ai",
         handler: this.sendAPIRequest.bind(this),
       },
       {
-        channel: "ai:abortAPIRequest",
+        channel: IPC_REQUEST_CHANNELS.AI_ABORT_API_REQUEST,
         category: "ai",
         handler: this.abortAPIRequest.bind(this),
       },
       {
-        channel: "ai:fetchModels",
+        channel: IPC_REQUEST_CHANNELS.AI_FETCH_MODELS,
         category: "ai",
         handler: this.fetchModels.bind(this),
       },
       {
-        channel: "ai:saveCustomRiskRules",
+        channel: IPC_REQUEST_CHANNELS.AI_SAVE_CUSTOM_RISK_RULES,
         category: "ai",
         handler: this.saveCustomRiskRules.bind(this),
       },
@@ -477,7 +481,7 @@ class AIHandlers {
         const mainWindow = BrowserWindow.getAllWindows()[0];
         if (mainWindow && !mainWindow.webContents.isDestroyed()) {
           // 发送中断消息给渲染进程
-          mainWindow.webContents.send("stream-end", {
+          mainWindow.webContents.send(IPC_EVENT_CHANNELS.AI_STREAM_END, {
             tabId: "ai",
             aborted: true,
             sessionId: currentSessionId,

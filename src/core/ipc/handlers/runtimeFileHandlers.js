@@ -1,6 +1,7 @@
 const runtimeFileLifecycle = require("../../utils/runtimeFileLifecycle");
 const fileCache = require("../../utils/fileCache");
 const { logToFile } = require("../../utils/logger");
+const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 const RESOURCE_NAMES = new Set([
   "file-cache",
@@ -20,22 +21,22 @@ class RuntimeFileHandlers {
   getHandlers() {
     return [
       {
-        channel: "runtime-files:configure",
+        channel: IPC_REQUEST_CHANNELS.RUNTIME_FILES_CONFIGURE,
         category: "runtime-files",
         handler: this.configureResource.bind(this),
       },
       {
-        channel: "runtime-files:releasePath",
+        channel: IPC_REQUEST_CHANNELS.RUNTIME_FILES_RELEASE_PATH,
         category: "runtime-files",
         handler: this.releasePath.bind(this),
       },
       {
-        channel: "runtime-files:clear",
+        channel: IPC_REQUEST_CHANNELS.RUNTIME_FILES_CLEAR,
         category: "runtime-files",
         handler: this.clearResource.bind(this),
       },
       {
-        channel: "runtime-files:sweep",
+        channel: IPC_REQUEST_CHANNELS.RUNTIME_FILES_SWEEP,
         category: "runtime-files",
         handler: this.sweepResource.bind(this),
       },

@@ -13,6 +13,7 @@ const {
 const { processSSHPrivateKeyAsync } = require("../../core/utils/ssh-utils");
 const nativeSftpClient = require("../../core/utils/nativeSftpClient");
 const { logToFile } = require("../../core/utils/logger");
+const { IPC_EVENT_CHANNELS } = require("../../core/ipc/schema/channels");
 const connectionManager = require("../connection");
 const TransferProcessPool = require("./transferProcessPool");
 
@@ -1249,7 +1250,7 @@ class FilemanagementService {
           }
 
           if (!response?.success) {
-            this._safeSend(sender, "listFiles:chunk", {
+            this._safeSend(sender, IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, {
               tabId,
               path: pathForRequest,
               token,
@@ -1262,7 +1263,7 @@ class FilemanagementService {
 
           const list = Array.isArray(response.data) ? response.data : [];
           if (list.length === 0) {
-            this._safeSend(sender, "listFiles:chunk", {
+            this._safeSend(sender, IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, {
               tabId,
               path: pathForRequest,
               token,
@@ -1275,7 +1276,7 @@ class FilemanagementService {
           for (let i = 0; i < list.length; i += chunkSize) {
             const items = list.slice(i, i + chunkSize);
             const done = i + chunkSize >= list.length;
-            this._safeSend(sender, "listFiles:chunk", {
+            this._safeSend(sender, IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, {
               tabId,
               path: pathForRequest,
               token,
@@ -1285,7 +1286,7 @@ class FilemanagementService {
           }
         })
         .catch((error) => {
-          this._safeSend(event?.sender, "listFiles:chunk", {
+          this._safeSend(event?.sender, IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, {
             tabId,
             path: pathForRequest,
             token,
@@ -2022,7 +2023,7 @@ class FilemanagementService {
       if (state) state.totalBytes = fileSize;
 
       this._emitTransferProgress(transferKey, {
-        channel: "download-progress",
+        channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
         force: true,
         fileName: defaultName || normalizedRemotePath,
         currentFile: defaultName || normalizedRemotePath,
@@ -2093,7 +2094,7 @@ class FilemanagementService {
             if (!current) return;
             current.transferredBytes += deltaBytes;
             this._emitTransferProgress(transferKey, {
-              channel: "download-progress",
+              channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
               fileName: defaultName || normalizedRemotePath,
               currentFile: defaultName || normalizedRemotePath,
               currentFileIndex: 1,
@@ -2146,7 +2147,7 @@ class FilemanagementService {
             if (!current) return;
             current.transferredBytes += bytes;
             this._emitTransferProgress(transferKey, {
-              channel: "download-progress",
+              channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
               fileName: defaultName || normalizedRemotePath,
               currentFile: defaultName || normalizedRemotePath,
               currentFileIndex: 1,
@@ -2165,7 +2166,7 @@ class FilemanagementService {
       }
 
       this._emitTransferProgress(transferKey, {
-        channel: "download-progress",
+        channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
         force: true,
         fileName: defaultName || normalizedRemotePath,
         currentFile: defaultName || normalizedRemotePath,
@@ -2271,7 +2272,7 @@ class FilemanagementService {
       });
 
       this._emitTransferProgress(transferKey, {
-        channel: "download-progress",
+        channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
         force: true,
         isBatch: true,
         fileName: displayName,
@@ -2411,7 +2412,7 @@ class FilemanagementService {
           state.transferredBytes += deltaBytes;
 
           this._emitTransferProgress(transferKey, {
-            channel: "download-progress",
+            channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
             isBatch: true,
             fileName: taskMeta.fileName,
             currentFile: taskMeta.fileName,
@@ -2445,7 +2446,7 @@ class FilemanagementService {
           }
 
           this._emitTransferProgress(transferKey, {
-            channel: "download-progress",
+            channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
             force: !taskMeta.chunked,
             isBatch: true,
             fileName: taskMeta.fileName,
@@ -2484,7 +2485,7 @@ class FilemanagementService {
         await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
         chunkTempCleanup.clear();
         this._emitTransferProgress(transferKey, {
-          channel: "download-progress",
+          channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
           force: true,
           isBatch: true,
           fileName: this._getTransferDisplayName(
@@ -2542,7 +2543,7 @@ class FilemanagementService {
           }
 
           this._emitTransferProgress(transferKey, {
-            channel: "download-progress",
+            channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
             force: true,
             isBatch: true,
             fileName: fileState.fileName,
@@ -2574,7 +2575,7 @@ class FilemanagementService {
         await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
         chunkTempCleanup.clear();
         this._emitTransferProgress(transferKey, {
-          channel: "download-progress",
+          channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
           force: true,
           isBatch: true,
           fileName: this._getTransferDisplayName(
@@ -2628,7 +2629,7 @@ class FilemanagementService {
       });
 
       this._emitTransferProgress(transferKey, {
-        channel: "download-progress",
+        channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
         force: true,
         isBatch: true,
         fileName:
@@ -2724,7 +2725,7 @@ class FilemanagementService {
         },
       });
       this._emitTransferProgress(transferKey, {
-        channel: "download-folder-progress",
+        channel: IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
         force: true,
         fileName: folderName,
         currentFile: "正在扫描远程文件夹",
@@ -2750,7 +2751,7 @@ class FilemanagementService {
       }
 
       this._emitTransferProgress(transferKey, {
-        channel: "download-folder-progress",
+        channel: IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
         force: true,
         fileName: folderName,
         currentFile: "",
@@ -2896,7 +2897,7 @@ class FilemanagementService {
           if (!state) return;
           state.transferredBytes += deltaBytes;
           this._emitTransferProgress(transferKey, {
-            channel: "download-folder-progress",
+            channel: IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
             fileName: folderName,
             currentFile: taskMeta.fileName,
             currentFileIndex: taskMeta.index + 1,
@@ -2927,7 +2928,7 @@ class FilemanagementService {
           }
 
           this._emitTransferProgress(transferKey, {
-            channel: "download-folder-progress",
+            channel: IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
             force: !taskMeta.chunked,
             fileName: folderName,
             currentFile: taskMeta.fileName,
@@ -2965,7 +2966,7 @@ class FilemanagementService {
         await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
         chunkTempCleanup.clear();
         this._emitTransferProgress(transferKey, {
-          channel: "download-folder-progress",
+          channel: IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
           force: true,
           fileName: folderName,
           extra: {
@@ -3019,7 +3020,7 @@ class FilemanagementService {
           }
 
           this._emitTransferProgress(transferKey, {
-            channel: "download-folder-progress",
+            channel: IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
             force: true,
             fileName: folderName,
             currentFile: fileState.fileName,
@@ -3050,7 +3051,7 @@ class FilemanagementService {
         await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
         chunkTempCleanup.clear();
         this._emitTransferProgress(transferKey, {
-          channel: "download-folder-progress",
+          channel: IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
           force: true,
           fileName: folderName,
           extra: {
@@ -3100,7 +3101,7 @@ class FilemanagementService {
       });
 
       this._emitTransferProgress(transferKey, {
-        channel: "download-folder-progress",
+        channel: IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
         force: true,
         fileName: folderName,
         currentFile: "",
