@@ -10,11 +10,13 @@ const Client = require("ssh2").Client;
 const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 const proxyManager = require("../proxy/proxy-manager");
 const { createChannelPoolManager } = require("../utils/ssh-utils");
-const { sanitizePathForLog } = require("../utils/log-sanitizer");
 const {
   resolveSshNetworkProfile,
   applySocketNetworkProfile,
 } = require("../utils/ssh-network-profile");
+const {
+  classifyConnectionFailure,
+} = require("../../shared/connectionErrorAdvice");
 const ReconnectionManager = require("./reconnection-manager");
 
 // 代理类型常量
@@ -918,9 +920,7 @@ class SSHPool extends BaseConnectionPool {
         errorMessage.includes("ECONNREFUSED") ||
         errorMessage.includes("timeout")
       ) {
-        errorMessage = isZh
-          ? `代理连接失败: ${errorMessage}. 请检查代理配置或代理状态`
-          : `Proxy connection failed: ${errorMessage}. Check proxy configuration or proxy status`;
+        errorMessage = isZh ? "代理连接失败" : "Proxy connection failed";
         isProxyError = true;
       }
     }
@@ -932,18 +932,12 @@ class SSHPool extends BaseConnectionPool {
         errorMessage.includes("All configured authentication methods failed")
       ) {
         errorMessage = isZh
-          ? "SSH认证失败: 所有认证方式均失败，请检查用户名、密码或私钥文件"
-          : "SSH authentication failed: all authentication methods failed. Check username, password, or private key file";
+          ? "SSH认证失败"
+          : "SSH authentication failed";
 
         // 如果配置了私钥路径但没有私钥内容，提供具体提示
         if (sshConfig.privateKeyPath && !processedConfig.privateKey) {
-          errorMessage += isZh
-            ? `. 私钥文件路径 ${sanitizePathForLog(
-                sshConfig.privateKeyPath,
-              )} 可能无法读取`
-            : `. Private key file path ${sanitizePathForLog(
-                sshConfig.privateKeyPath,
-              )} may not be readable`;
+          errorMessage = isZh ? "私钥文件无法读取" : "Private key is unreadable";
         }
       } else if (
         lowerError.includes("host denied") ||
@@ -952,8 +946,8 @@ class SSHPool extends BaseConnectionPool {
         lowerError.includes("fingerprint")
       ) {
         errorMessage = isZh
-          ? "SSH主机指纹校验失败: 服务器主机密钥与本地记录不匹配，连接已被阻止"
-          : "SSH host fingerprint verification failed: server host key does not match the local record, connection blocked";
+          ? "SSH主机密钥校验失败"
+          : "SSH host key verification failed";
       } else if (errorMessage.includes("connect ECONNREFUSED")) {
         errorMessage = isZh
           ? `连接被拒绝: 无法连接到 ${sshConfig.host}:${sshConfig.port || 22}${usingProxy ? " (通过代理)" : ""}`
@@ -979,6 +973,10 @@ class SSHPool extends BaseConnectionPool {
     const enhancedError = new Error(errorMessage);
     enhancedError.originalError = err;
     enhancedError.connectionKey = connectionKey;
+    enhancedError.code =
+      err?.code ||
+      err?.originalError?.code ||
+      (isProxyError ? "EPROXYUNAVAILABLE" : null);
     enhancedError.sshConfig = {
       host: sshConfig.host,
       port: sshConfig.port || 22,
@@ -989,7 +987,15 @@ class SSHPool extends BaseConnectionPool {
       usingProxy: usingProxy,
       proxyType: usingProxy ? resolvedProxyConfig.type : null,
       isProxyError: isProxyError,
+      authType: sshConfig.authType || null,
+      language: sshConfig.language || null,
     };
+    enhancedError.connectionFailure = classifyConnectionFailure(enhancedError, {
+      ...enhancedError.sshConfig,
+      protocol: "ssh",
+    });
+    enhancedError.connectionFailureKind = enhancedError.connectionFailure.kind;
+    enhancedError.connectionAdvice = enhancedError.connectionFailure.suggestion;
 
     return enhancedError;
   }

@@ -365,6 +365,7 @@
         "connectionCancelled": "已取消连接",
         "connectionFailed": "连接失败: {{error}}",
         "reconnectFailed": "重连失败: {{error}}",
+        "connectionAdvice": "建议: {{advice}}",
         "unknownError": "未知错误",
         "newConnectionEstablished": "已建立新连接",
         "noProcessId": "未能获取进程 ID",

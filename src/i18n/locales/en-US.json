@@ -365,6 +365,7 @@
         "connectionCancelled": "Connection cancelled",
         "connectionFailed": "Connection failed: {{error}}",
         "reconnectFailed": "Reconnect failed: {{error}}",
+        "connectionAdvice": "Suggestion: {{advice}}",
         "unknownError": "Unknown error",
         "newConnectionEstablished": "New connection established",
         "noProcessId": "Could not get process ID",
