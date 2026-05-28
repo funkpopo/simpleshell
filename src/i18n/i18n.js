@@ -11,14 +11,43 @@ const resources = {
   "zh-CN": translationZH,
 };
 
+const supportedLanguages = Object.keys(resources);
+
+const normalizeLanguage = (lng) => {
+  if (typeof lng !== "string" || !lng.trim()) {
+    return "zh-CN";
+  }
+
+  const normalized = lng.trim();
+  if (supportedLanguages.includes(normalized)) {
+    return normalized;
+  }
+
+  const lower = normalized.toLowerCase();
+  if (lower === "zh" || lower.startsWith("zh-")) {
+    return "zh-CN";
+  }
+  if (lower === "en" || lower.startsWith("en-")) {
+    return "en-US";
+  }
+
+  throw new Error(`Unsupported UI language: ${lng}`);
+};
+
 // Initialize i18next
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: "zh-CN",
+    fallbackLng: false,
+    supportedLngs: supportedLanguages,
+    load: "currentOnly",
+    returnNull: false,
     debug: process.env.NODE_ENV === "development",
+    parseMissingKeyHandler: (key) => {
+      throw new Error(`Missing translation key: ${key}`);
+    },
     interpolation: {
       escapeValue: false, // not needed for React
     },
@@ -30,8 +59,9 @@ i18n
 
 // Function to change the language
 export const changeLanguage = (lng) => {
-  if (i18n.language !== lng) {
-    i18n.changeLanguage(lng);
+  const normalizedLanguage = normalizeLanguage(lng);
+  if (i18n.language !== normalizedLanguage) {
+    i18n.changeLanguage(normalizedLanguage);
   }
 };
 

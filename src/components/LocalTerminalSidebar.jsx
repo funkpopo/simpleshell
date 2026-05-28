@@ -582,7 +582,8 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
             onClick={() => detectTerminals(true, { silent: false })}
             disabled={isDetecting}
             sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-          >
+          
+            aria-label={t("localTerminal.refresh")}>
             {isDetecting ? (
               <CircularProgress size={16} />
             ) : (
@@ -596,7 +597,8 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
             size="small"
             onClick={onClose}
             sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-          >
+          
+            aria-label={t("common.close")}>
             <CloseIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -627,9 +629,15 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
               ),
               endAdornment: searchQuery && (
                 <InputAdornment position="end">
-                  <IconButton size="small" onClick={clearSearch}>
-                    <ClearIcon fontSize="small" />
-                  </IconButton>
+                  <Tooltip title={t("common.clearSearch")}>
+                    <IconButton
+                      size="small"
+                      onClick={clearSearch}
+                      aria-label={t("common.clearSearch")}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 </InputAdornment>
               ),
             }}

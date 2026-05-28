@@ -231,6 +231,26 @@ simpleshell/
 - 代理支持：`http-proxy-agent`、`https-proxy-agent`、`socks-proxy-agent`
 - 性能辅助：`react-window`、`react-window-infinite-loader`
 
+## **连接架构**
+
+- Core 与 Modules
+  - `src/core/connection`：规范的底层连接原语和连接池。文件沿用 `*-connection-pool.js` 命名，例如 `ssh-connection-pool.js`、`telnet-connection-pool.js`，并共享 `base-connection-pool.js`。
+  - `src/modules/connection`：应用层编排模块，将核心连接池和 SFTP 管理器组合成应用使用的统一服务，通过 `require("./modules/connection")` 暴露。
+
+- 命名一致性
+  - 协议专用连接池统一使用 `*-connection-pool`。
+  - 旧的高级连接池/管理器已经移除。
+    - `ssh-advanced-pool.js` 已合并到 `src/core/connection/ssh-pool.js`。
+    - 已删除弃用的 `src/core/connection/connection-manager.js`，避免控制路径分裂。
+  - 已删除弃用的 `src/core/connection/connection-monitor.js`。连接健康和可观测性现在依赖：
+    - 连接池健康检查（`base-connection-pool.js`）
+    - 重连状态机（`reconnection-manager.js`）
+    - 网络延迟服务（`networkLatencyService.js`）
+
+- 导入建议
+  - 连接池：`const { sshConnectionPool, telnetConnectionPool } = require("../../core/connection");`
+  - 应用层连接能力（包含 SFTP）：`const connectionManager = require("./modules/connection");`
+
 ## **贡献**
 
 欢迎贡献！请随时提交 Pull Request。

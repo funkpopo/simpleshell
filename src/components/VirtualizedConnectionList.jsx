@@ -17,6 +17,7 @@ import {
   Typography,
   useTheme,
   IconButton,
+  Tooltip,
 } from "@mui/material";
 import {
   Computer as ComputerIcon,
@@ -25,6 +26,7 @@ import {
   ExpandMore as ExpandMoreIcon,
   DragIndicator as DragIndicatorIcon,
 } from "@mui/icons-material";
+import { useTranslation } from "react-i18next";
 import { sidebarListItemSx } from "./sidebarItemStyles";
 
 // Matches ConnectionManager.jsx row markers for native contextmenu retarget focus
@@ -44,6 +46,7 @@ const ConnectionItem = memo(
     onItemContextMenu,
   }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
 
     const item = flattenedItems[index];
     if (!item) return null;
@@ -182,19 +185,28 @@ const ConnectionItem = memo(
             />
 
             {isGroup && (
-              <IconButton
-                size="small"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onToggleGroup(item.id);
-                }}
-                sx={{
-                  transform: item.expanded ? "rotate(180deg)" : "rotate(0deg)",
-                  transition: theme.transitions.create("transform"),
-                }}
+              <Tooltip
+                title={item.expanded ? t("common.collapse") : t("common.expand")}
               >
-                <ExpandMoreIcon fontSize="small" />
-              </IconButton>
+                <IconButton
+                  size="small"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleGroup(item.id);
+                  }}
+                  aria-label={
+                    item.expanded ? t("common.collapse") : t("common.expand")
+                  }
+                  sx={{
+                    transform: item.expanded
+                      ? "rotate(180deg)"
+                      : "rotate(0deg)",
+                    transition: theme.transitions.create("transform"),
+                  }}
+                >
+                  <ExpandMoreIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
             )}
           </ListItemButton>
         </ListItem>
@@ -336,7 +348,6 @@ const VirtualizedConnectionList = ({
       addResizeObserver(updateHeight, containerRef.current);
     }
     // useEffect 不应该返回 addResizeObserver 的返回值
-    // eslint-disable-next-line consistent-return
   }, [addResizeObserver]);
 
   // Track expanded groups

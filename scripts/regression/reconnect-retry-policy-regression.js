@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const path = require("node:path");

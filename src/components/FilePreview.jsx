@@ -6,8 +6,8 @@ import React, {
   useMemo,
   memo,
 } from "react";
+import Dialog from "./AccessibleDialog.jsx";
 import {
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -2394,7 +2394,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                     onClick={goToPrevPage}
                     disabled={pageNumber <= 1}
                     size="small"
-                  >
+                  
+                    aria-label={t("filePreview.previousPage")}>
                     <NavigateBeforeIcon />
                   </IconButton>
                 </span>
@@ -2405,7 +2406,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                     onClick={goToNextPage}
                     disabled={pageNumber >= (numPages || 1)}
                     size="small"
-                  >
+                  
+                    aria-label={t("filePreview.nextPage")}>
                     <NavigateNextIcon />
                   </IconButton>
                 </span>
@@ -2425,7 +2427,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   onClick={zoomIn}
                   disabled={scale >= 3.0}
                   size="small"
-                >
+                
+                  aria-label={t("filePreview.zoomIn")}>
                   <ZoomInIcon />
                 </IconButton>
               </Tooltip>
@@ -2434,7 +2437,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   onClick={zoomOut}
                   disabled={scale <= 0.5}
                   size="small"
-                >
+                
+                  aria-label={t("filePreview.zoomOut")}>
                   <ZoomOutIcon />
                 </IconButton>
               </Tooltip>
@@ -2593,9 +2597,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   }
                 />
               ) : null}
-              <IconButton onClick={handleClose}>
-                <CloseIcon />
-              </IconButton>
+              <Tooltip title={t("common.close")}>
+                <IconButton
+                  onClick={handleClose}
+                  aria-label={t("common.close")}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </Tooltip>
             </Stack>
           </Stack>
 

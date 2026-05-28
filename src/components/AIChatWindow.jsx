@@ -7,8 +7,8 @@ import React, {
   memo,
   useTransition,
 } from "react";
+import Dialog from "./AccessibleDialog.jsx";
 import {
-  Dialog,
   DialogTitle,
   DialogContent,
   IconButton,
@@ -1330,7 +1330,8 @@ const AIChatWindow = ({
       >
         <Box display="flex" alignItems="center" gap={1}>
           <Tooltip title={t("aiAssistant.minimize")}>
-            <IconButton size="medium" onClick={onMinimize} sx={{ p: 0.5 }}>
+            <IconButton size="medium" onClick={onMinimize} sx={{ p: 0.5 }}
+              aria-label={t("aiAssistant.minimize")}>
               <AIIcon />
             </IconButton>
           </Tooltip>
@@ -1373,18 +1374,26 @@ const AIChatWindow = ({
             </MenuItem>
           </Menu>
           <Tooltip title={t("ai.clearChat")}>
-            <IconButton size="small" onClick={handleClearChat}>
+            <IconButton size="small" onClick={handleClearChat}
+              aria-label={t("ai.clearChat")}>
               <DeleteIcon />
             </IconButton>
           </Tooltip>
           <Tooltip title={t("ai.settings")}>
-            <IconButton size="small" onClick={() => setSettingsOpen(true)}>
+            <IconButton size="small" onClick={() => setSettingsOpen(true)}
+              aria-label={t("ai.settings")}>
               <SettingsIcon />
             </IconButton>
           </Tooltip>
-          <IconButton size="small" onClick={handleClose}>
-            <CloseIcon />
-          </IconButton>
+          <Tooltip title={t("aiAssistant.close")}>
+            <IconButton
+              size="small"
+              onClick={handleClose}
+              aria-label={t("aiAssistant.close")}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
       </DialogTitle>
       <Divider />
@@ -1510,7 +1519,8 @@ const AIChatWindow = ({
                     size="small"
                     onClick={() => handleCopyMessage(message.content)}
                     sx={{ opacity: 0.7 }}
-                  >
+                  
+                    aria-label={t("ai.copyMessage")}>
                     <ContentCopyIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -1597,30 +1607,38 @@ const AIChatWindow = ({
             size="small"
           />
           {isPending || abortController ? (
-            <Fab
-              size="small"
-              color="error"
-              onClick={handleAbortRequest}
-              sx={{ flexShrink: 0 }}
-            >
-              <StopIcon />
-            </Fab>
+            <Tooltip title={t("ai.stopGenerating")}>
+              <Fab
+                size="small"
+                color="error"
+                onClick={handleAbortRequest}
+                aria-label={t("ai.stopGenerating")}
+                sx={{ flexShrink: 0 }}
+              >
+                <StopIcon />
+              </Fab>
+            </Tooltip>
           ) : (
-            <Fab
-              size="small"
-              color="primary"
-              onClick={handleSendMessage}
-              disabled={
-                !input.trim() ||
-                !currentApi ||
-                !currentApi.apiUrl ||
-                !hasConfiguredApiKey(currentApi) ||
-                !currentApi.model
-              }
-              sx={{ flexShrink: 0 }}
-            >
-              <SendIcon />
-            </Fab>
+            <Tooltip title={t("ai.sendMessage")}>
+              <span>
+                <Fab
+                  size="small"
+                  color="primary"
+                  onClick={handleSendMessage}
+                  disabled={
+                    !input.trim() ||
+                    !currentApi ||
+                    !currentApi.apiUrl ||
+                    !hasConfiguredApiKey(currentApi) ||
+                    !currentApi.model
+                  }
+                  aria-label={t("ai.sendMessage")}
+                  sx={{ flexShrink: 0 }}
+                >
+                  <SendIcon />
+                </Fab>
+              </span>
+            </Tooltip>
           )}
         </Box>
 

@@ -1,7 +1,7 @@
 import React, { memo, useMemo, useCallback, useState } from "react";
+import Dialog from "./AccessibleDialog.jsx";
 import {
   Box,
-  Dialog,
   Typography,
   IconButton,
   LinearProgress,
@@ -231,24 +231,38 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
                   backgroundColor: "rgba(244,67,54,0.1)",
                 },
               }}
-            >
+            
+              aria-label={t("fileManager.transfer.deleteRecord")}>
               <CloseIcon sx={{ fontSize: 14 }} />
             </IconButton>
           </Tooltip>
         )}
         {/* 展开/折叠按钮 */}
         {canExpand && (
-          <IconButton
-            size="small"
-            onClick={() => setExpanded(!expanded)}
-            sx={{ width: 20, height: 20, p: 0 }}
+          <Tooltip
+            title={
+              expanded
+                ? t("fileManager.transfer.collapseDetails")
+                : t("fileManager.transfer.viewDetails")
+            }
           >
-            {expanded ? (
-              <ExpandLessIcon sx={{ fontSize: 16 }} />
-            ) : (
-              <ExpandMoreIcon sx={{ fontSize: 16 }} />
-            )}
-          </IconButton>
+            <IconButton
+              size="small"
+              onClick={() => setExpanded(!expanded)}
+              aria-label={
+                expanded
+                  ? t("fileManager.transfer.collapseDetails")
+                  : t("fileManager.transfer.viewDetails")
+              }
+              sx={{ width: 20, height: 20, p: 0 }}
+            >
+              {expanded ? (
+                <ExpandLessIcon sx={{ fontSize: 16 }} />
+              ) : (
+                <ExpandMoreIcon sx={{ fontSize: 16 }} />
+              )}
+            </IconButton>
+          </Tooltip>
         )}
       </Box>
 
@@ -368,7 +382,8 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
                   backgroundColor: "rgba(244,67,54,0.1)",
                 },
               }}
-            >
+            
+              aria-label={t("fileManager.transfer.stop")}>
               <StopIcon sx={{ fontSize: 14 }} />
             </IconButton>
           </Tooltip>
@@ -609,13 +624,25 @@ const TransferSidebar = memo(
           </Box>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
             {onMinimize && (
-              <IconButton onClick={onMinimize} size="small">
-                <MinimizeIcon fontSize="small" />
-              </IconButton>
+              <Tooltip title={t("fileManager.transfer.minimize")}>
+                <IconButton
+                  onClick={onMinimize}
+                  size="small"
+                  aria-label={t("fileManager.transfer.minimize")}
+                >
+                  <MinimizeIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
             )}
-            <IconButton onClick={onClose} size="small">
-              <CloseIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title={t("common.close")}>
+              <IconButton
+                onClick={onClose}
+                size="small"
+                aria-label={t("common.close")}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
         </Box>
 

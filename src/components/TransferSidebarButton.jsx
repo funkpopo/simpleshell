@@ -12,11 +12,10 @@ import { sumTransferFileCount } from "../utils/transferCounts.js";
  * 传输侧边栏按钮 - 带环形进度条
  */
 const TransferSidebarButton = memo(
-  forwardRef(({ isOpen, onClick, tooltip, tooltipPlacement = "top" }, ref) => {
+  forwardRef(({ isOpen, onClick, tooltipPlacement = "top" }, ref) => {
     const theme = useTheme();
     const { t } = useTranslation();
     const { allTransfers } = useAllGlobalTransfers();
-    const resolvedTooltip = tooltip || t("fileManager.transfer.panelTitle");
 
     // 计算总进度
     const { totalProgress, hasActiveTransfers, activeCount } = useMemo(() => {
@@ -56,7 +55,10 @@ const TransferSidebarButton = memo(
     const showProgressRing = hasActiveTransfers && !isOpen;
 
     return (
-      <SidebarTooltip title={resolvedTooltip} placement={tooltipPlacement}>
+      <SidebarTooltip
+        title={t("fileManager.transfer.panelTitle")}
+        placement={tooltipPlacement}
+      >
         <Box
           ref={ref}
           sx={{
@@ -102,6 +104,7 @@ const TransferSidebarButton = memo(
             onClick={onClick}
             color="primary"
             size="small"
+            aria-label={t("fileManager.transfer.panelTitle")}
             sx={{
               width: 32,
               height: 32,
@@ -149,7 +152,6 @@ const TransferSidebarButton = memo(
 TransferSidebarButton.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClick: PropTypes.func.isRequired,
-  tooltip: PropTypes.string,
   tooltipPlacement: PropTypes.string,
 };
 

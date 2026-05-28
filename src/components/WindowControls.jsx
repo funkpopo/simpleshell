@@ -119,7 +119,7 @@ const WindowControls = () => {
         ml: 0.5,
       }}
     >
-      <Tooltip title={t("windowControls.minimize") ?? ""}>
+      <Tooltip title={t("windowControls.minimize")}>
         <IconButton
           size="small"
           disableRipple
@@ -133,8 +133,8 @@ const WindowControls = () => {
       <Tooltip
         title={
           isExpanded
-            ? (t("windowControls.restore") ?? "")
-            : (t("windowControls.maximize") ?? "")
+            ? t("windowControls.restore")
+            : t("windowControls.maximize")
         }
       >
         <IconButton
@@ -155,7 +155,7 @@ const WindowControls = () => {
           )}
         </IconButton>
       </Tooltip>
-      <Tooltip title={t("windowControls.close") ?? ""}>
+      <Tooltip title={t("windowControls.close")}>
         <IconButton
           size="small"
           disableRipple

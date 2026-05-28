@@ -1866,7 +1866,7 @@ function AppContent() {
       if (target.closest("#menu-appbar")) {
         return;
       }
-      if (target.closest('[aria-label="menu"]')) {
+      if (target.closest('[data-main-menu-button="true"]')) {
         return;
       }
       handleClose();
@@ -3664,20 +3664,23 @@ function AppContent() {
                 WebkitAppRegion: open ? "no-drag" : "drag",
               }}
             >
-              <IconButton
-                edge="start"
-                color="inherit"
-                aria-label="menu"
-                sx={{ mr: 1, WebkitAppRegion: "no-drag" }}
-                onClick={handleMenu}
-              >
-                <AppsIcon />
-              </IconButton>
+              <Tooltip title={t("menu.mainMenu")}>
+                <IconButton
+                  edge="start"
+                  color="inherit"
+                  aria-label={t("menu.mainMenu")}
+                  data-main-menu-button="true"
+                  sx={{ mr: 1, WebkitAppRegion: "no-drag" }}
+                  onClick={handleMenu}
+                >
+                  <AppsIcon />
+                </IconButton>
+              </Tooltip>
               <Tooltip title={t("menu.lockApp")}>
                 <IconButton
                   color="inherit"
                   size="small"
-                  aria-label="lock-app"
+                  aria-label={t("menu.lockApp")}
                   sx={{ mr: 1, WebkitAppRegion: "no-drag" }}
                   onClick={handleLockApp}
                 >
@@ -4401,7 +4404,8 @@ function AppContent() {
                   title={t("sidebar.theme")}
                   placement={sidebarTooltipPlacement}
                 >
-                  <IconButton onClick={toggleTheme} color="primary">
+                  <IconButton onClick={toggleTheme} color="primary"
+                    aria-label={t("sidebar.theme")}>
                     {darkMode ? <DarkModeIcon /> : <LightModeIcon />}
                   </IconButton>
                 </SidebarTooltip>
@@ -4424,7 +4428,8 @@ function AppContent() {
                           : "action.hover",
                       },
                     }}
-                  >
+                  
+                    aria-label={t("sidebar.monitor")}>
                     <MonitorHeartIcon />
                   </IconButton>
                 </SidebarTooltip>
@@ -4447,7 +4452,8 @@ function AppContent() {
                           : "action.hover",
                       },
                     }}
-                  >
+                  
+                    aria-label={t("sidebar.connections")}>
                     <LinkIcon />
                   </IconButton>
                 </SidebarTooltip>
@@ -4471,7 +4477,8 @@ function AppContent() {
                       },
                     }}
                     disabled={isSSHButtonDisabled}
-                  >
+                  
+                    aria-label={t("sidebar.files")}>
                     <FolderIcon />
                   </IconButton>
                 </SidebarTooltip>
@@ -4495,7 +4502,8 @@ function AppContent() {
                       },
                     }}
                     disabled={isSSHButtonDisabled}
-                  >
+                  
+                    aria-label={t("sidebar.shortcutCommands")}>
                     <TerminalIcon />
                   </IconButton>
                 </SidebarTooltip>
@@ -4518,7 +4526,8 @@ function AppContent() {
                           : "action.hover",
                       },
                     }}
-                  >
+                  
+                    aria-label={t("sidebar.history")}>
                     <HistoryIcon />
                   </IconButton>
                 </SidebarTooltip>
@@ -4541,7 +4550,8 @@ function AppContent() {
                           : "action.hover",
                       },
                     }}
-                  >
+                  
+                    aria-label={t("sidebar.ipQuery")}>
                     <PublicIcon />
                   </IconButton>
                 </SidebarTooltip>
@@ -4564,7 +4574,8 @@ function AppContent() {
                           : "action.hover",
                       },
                     }}
-                  >
+                  
+                    aria-label={t("sidebar.securityTool")}>
                     <VpnKeyIcon />
                   </IconButton>
                 </SidebarTooltip>
@@ -4597,7 +4608,8 @@ function AppContent() {
                           : "action.hover",
                       },
                     }}
-                  >
+                  
+                    aria-label={t("sidebar.localTerminal")}>
                     <ComputerIcon />
                   </IconButton>
                 </SidebarTooltip>
@@ -4614,7 +4626,6 @@ function AppContent() {
                         setLastActiveFloatWindow("transfer");
                       }
                     }}
-                    tooltip="文件传输"
                     tooltipPlacement={sidebarTooltipPlacement}
                   />
                 )}
@@ -4645,7 +4656,10 @@ function AppContent() {
                             : "action.hover",
                       },
                     }}
-                  >
+                  
+                    aria-label={aiPanelOpen && aiApiReachable === false
+                      ? t("sidebar.aiApiUnreachable")
+                      : t("sidebar.ai")}>
                     <AIIcon />
                     {aiPanelOpen && (
                       <Box
@@ -4682,7 +4696,10 @@ function AppContent() {
                   <IconButton
                     color="primary"
                     onClick={handleToggleSidebarPosition}
-                  >
+                  
+                    aria-label={sidebarPosition === "left"
+                      ? t("sidebar.moveToRight")
+                      : t("sidebar.moveToLeft")}>
                     {sidebarPosition === "left" ? (
                       <LastPageIcon />
                     ) : (

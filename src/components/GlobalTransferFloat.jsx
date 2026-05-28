@@ -298,7 +298,8 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
                     backgroundColor: "#ffebee",
                   },
                 }}
-              >
+              
+                aria-label={t("fileManager.transfer.delete")}>
                 <Close sx={{ fontSize: 16 }} />
               </IconButton>
             </Tooltip>
@@ -319,7 +320,8 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
                     backgroundColor: "#ffebee",
                   },
                 }}
-              >
+              
+                aria-label={t("fileManager.transfer.stop")}>
                 <Close sx={{ fontSize: 16 }} />
               </IconButton>
             </Tooltip>
@@ -580,7 +582,8 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
                     backgroundColor: "rgba(255,255,255,0.1)",
                   },
                 }}
-              >
+              
+                aria-label={isMinimized ? t("fileManager.transfer.expand") : t("fileManager.transfer.minimize")}>
                 {isMinimized ? (
                   <ExpandMore sx={{ fontSize: 18 }} />
                 ) : (
@@ -602,7 +605,8 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
                     backgroundColor: "rgba(255,255,255,0.1)",
                   },
                 }}
-              >
+              
+                aria-label={t("common.close")}>
                 <Close sx={{ fontSize: 16 }} />
               </IconButton>
             </Tooltip>

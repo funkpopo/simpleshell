@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
+import Dialog from "./AccessibleDialog.jsx";
 import {
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -20,6 +20,7 @@ import {
   InputAdornment,
   IconButton,
   Chip,
+  Tooltip,
 } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
 import VisibilityIcon from "@mui/icons-material/Visibility";
@@ -338,9 +339,13 @@ const SSHAuthDialog = ({
             InputProps={{
               endAdornment: (
                 <InputAdornment position="end">
-                  <IconButton size="small" disabled>
+                  <Box
+                    component="span"
+                    aria-hidden="true"
+                    sx={{ display: "inline-flex", color: "action.disabled" }}
+                  >
                     <VisibilityIcon fontSize="small" sx={{ opacity: 0.5 }} />
-                  </IconButton>
+                  </Box>
                 </InputAdornment>
               ),
             }}
@@ -433,17 +438,30 @@ const SSHAuthDialog = ({
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
-                      <IconButton
-                        size="small"
-                        onClick={() => setShowPassword(!showPassword)}
-                        edge="end"
+                      <Tooltip
+                        title={
+                          showPassword
+                            ? t("common.hidePassword")
+                            : t("common.showPassword")
+                        }
                       >
-                        {showPassword ? (
-                          <VisibilityOffIcon fontSize="small" />
-                        ) : (
-                          <VisibilityIcon fontSize="small" />
-                        )}
-                      </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={() => setShowPassword(!showPassword)}
+                          edge="end"
+                          aria-label={
+                            showPassword
+                              ? t("common.hidePassword")
+                              : t("common.showPassword")
+                          }
+                        >
+                          {showPassword ? (
+                            <VisibilityOffIcon fontSize="small" />
+                          ) : (
+                            <VisibilityIcon fontSize="small" />
+                          )}
+                        </IconButton>
+                      </Tooltip>
                     </InputAdornment>
                   ),
                 }}

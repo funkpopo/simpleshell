@@ -5,8 +5,10 @@ import React, {
   useMemo,
   useCallback,
 } from "react";
+import Dialog from "./AccessibleDialog.jsx";
 import useAutoCleanup from "../hooks/useAutoCleanup";
-import { List } from "react-window";
+import {
+  List } from "react-window";
 import {
   Box,
   Paper,
@@ -21,7 +23,6 @@ import {
   Divider,
   Menu,
   MenuItem,
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -30,6 +31,7 @@ import {
   Snackbar,
   Alert,
   Checkbox,
+  Tooltip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
@@ -93,6 +95,7 @@ const HistoryItem = React.memo(
     handleMenuOpen,
   }) => {
     const theme = useTheme();
+    const { t } = useTranslation();
     const item = filteredHistory[index];
     if (!item) return null;
     const isContextMenuTarget =
@@ -175,43 +178,49 @@ const HistoryItem = React.memo(
                   flexShrink: 0,
                 }}
               >
-                <IconButton
-                  size="small"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleSendCommand(item.command);
-                  }}
-                  sx={{
-                    width: 26,
-                    height: 26,
-                    color: "primary.main",
-                    bgcolor: "transparent",
-                    "&:hover": {
-                      bgcolor: "action.hover",
-                    },
-                  }}
-                >
-                  <SendIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void handleCopyCommand(item.command);
-                  }}
-                  sx={{
-                    width: 26,
-                    height: 26,
-                    color: "text.secondary",
-                    bgcolor: "transparent",
-                    "&:hover": {
-                      color: "text.primary",
-                      bgcolor: "action.hover",
-                    },
-                  }}
-                >
-                  <ContentCopyIcon sx={{ fontSize: 16 }} />
-                </IconButton>
+                <Tooltip title={t("commandHistory.sendCommand")}>
+                  <IconButton
+                    size="small"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleSendCommand(item.command);
+                    }}
+                    aria-label={t("commandHistory.sendCommand")}
+                    sx={{
+                      width: 26,
+                      height: 26,
+                      color: "primary.main",
+                      bgcolor: "transparent",
+                      "&:hover": {
+                        bgcolor: "action.hover",
+                      },
+                    }}
+                  >
+                    <SendIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title={t("commandHistory.copyCommand")}>
+                  <IconButton
+                    size="small"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleCopyCommand(item.command);
+                    }}
+                    aria-label={t("commandHistory.copyCommand")}
+                    sx={{
+                      width: 26,
+                      height: 26,
+                      color: "text.secondary",
+                      bgcolor: "transparent",
+                      "&:hover": {
+                        color: "text.primary",
+                        bgcolor: "action.hover",
+                      },
+                    }}
+                  >
+                    <ContentCopyIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
               </Box>
             )}
           </ListItemButton>
@@ -332,7 +341,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       addResizeObserver(updateHeight, containerRef.current);
     }
     // useEffect 不应该返回 addResizeObserver 的返回值
-    // eslint-disable-next-line consistent-return
   }, [open, addResizeObserver]);
 
   // 加载历史记录
@@ -759,13 +767,16 @@ function CommandHistory({ open, onClose, onSendCommand }) {
             <Typography variant="subtitle1" fontWeight="medium">
               {t("commandHistory.title")}
             </Typography>
-            <IconButton
-              onClick={onClose}
-              size="small"
-              sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-            >
-              <CloseIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title={t("common.close")}>
+              <IconButton
+                onClick={onClose}
+                size="small"
+                aria-label={t("common.close")}
+                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
 
           {/* 搜索栏和工具栏 */}
@@ -787,13 +798,16 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                 ),
                 endAdornment: searchTerm && (
                   <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      onClick={() => setSearchTerm("")}
-                      edge="end"
-                    >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
+                    <Tooltip title={t("common.clearSearch")}>
+                      <IconButton
+                        size="small"
+                        onClick={() => setSearchTerm("")}
+                        edge="end"
+                        aria-label={t("common.clearSearch")}
+                      >
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   </InputAdornment>
                 ),
               }}
