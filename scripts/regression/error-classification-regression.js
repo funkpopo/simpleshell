@@ -195,6 +195,103 @@ function testErrorResponseContract() {
   assert.equal(event.errorCategory, "fatal");
   assert.equal(event.fatal, true);
   assert.equal(event.errorClassification.reason, "fatal-signal");
+
+  const connectionResponse = buildErrorResponse(
+    Object.assign(new Error("getaddrinfo ENOTFOUND example.internal"), {
+      code: "ENOTFOUND",
+      sshConfig: {
+        host: "example.internal",
+        port: 22,
+        username: "deploy",
+        language: "en-US",
+      },
+    }),
+    {
+      module: "terminal",
+      operation: "start-ssh",
+    },
+  );
+  assert.equal(connectionResponse.connectionFailure.kind, "dns");
+  assert.equal(
+    connectionResponse.connectionFailure.message,
+    "Host cannot be resolved (example.internal:22)",
+  );
+  assert.equal(
+    connectionResponse.connectionAdvice,
+    "Check the hostname/DNS, or use the server IP.",
+  );
+}
+
+function testConnectionFailureAdvice() {
+  const {
+    CONNECTION_FAILURE_KINDS,
+    classifyConnectionFailure,
+  } = require(path.join(ROOT, "src", "shared", "connectionErrorAdvice"));
+
+  const config = {
+    host: "server.example",
+    port: 2222,
+    username: "root",
+    authType: "privateKey",
+    privateKeyPath: "/home/me/.ssh/id_ed25519",
+    language: "zh-CN",
+  };
+  const cases = [
+    [
+      Object.assign(new Error("getaddrinfo ENOTFOUND server.example"), {
+        code: "ENOTFOUND",
+      }),
+      CONNECTION_FAILURE_KINDS.DNS,
+      /主机名\/DNS/,
+    ],
+    [
+      Object.assign(new Error("connect ECONNREFUSED 10.0.0.8:2222"), {
+        code: "ECONNREFUSED",
+      }),
+      CONNECTION_FAILURE_KINDS.PORT,
+      /端口号正确/,
+    ],
+    [
+      new Error("All configured authentication methods failed"),
+      CONNECTION_FAILURE_KINDS.AUTH,
+      /用户名、密码\/私钥/,
+    ],
+    [
+      Object.assign(new Error("proxy tunnel timeout"), {
+        code: "EPROXYUNAVAILABLE",
+      }),
+      CONNECTION_FAILURE_KINDS.PROXY,
+      /代理地址/,
+      { ...config, usingProxy: true },
+    ],
+    [
+      new Error("Host fingerprint verification failed"),
+      CONNECTION_FAILURE_KINDS.HOST_KEY,
+      /服务器身份/,
+    ],
+    [
+      Object.assign(new Error("connect ETIMEDOUT 10.0.0.8:2222"), {
+        code: "ETIMEDOUT",
+      }),
+      CONNECTION_FAILURE_KINDS.FIREWALL,
+      /防火墙/,
+    ],
+    [
+      Object.assign(new Error("private key bad permissions"), {
+        code: "EACCES",
+      }),
+      CONNECTION_FAILURE_KINDS.PRIVATE_KEY_PERMISSION,
+      /600 或 400/,
+    ],
+  ];
+
+  for (const [error, expectedKind, suggestionPattern, caseConfig] of cases) {
+    const advice = classifyConnectionFailure(error, caseConfig || config);
+    assert.equal(advice.kind, expectedKind);
+    assert.match(advice.suggestion, suggestionPattern);
+    assert.equal(typeof advice.message, "string");
+    assert.ok(advice.message.length > 0);
+  }
 }
 
 async function testIpcFailureNormalization() {
@@ -307,6 +404,7 @@ async function run() {
   const tests = [
     ["classification policy", () => testClassificationPolicy()],
     ["error response contract", () => testErrorResponseContract()],
+    ["connection failure advice", () => testConnectionFailureAdvice()],
     ["ipc failure normalization", () => testIpcFailureNormalization()],
     [
       "update error classification",

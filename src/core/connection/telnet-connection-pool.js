@@ -5,6 +5,9 @@
 
 const BaseConnectionPool = require("./base-connection-pool");
 const Telnet = require("telnet-client");
+const {
+  classifyConnectionFailure,
+} = require("../../shared/connectionErrorAdvice");
 
 /**
  * Telnet连接池类
@@ -197,6 +200,7 @@ class TelnetConnectionPool extends BaseConnectionPool {
 
     // 创建增强的错误对象（使用简洁的错误消息）
     const enhancedError = new Error(errorMessage);
+    enhancedError.code = err?.code || null;
     enhancedError.originalError = err;
     enhancedError.connectionKey = connectionKey;
     enhancedError.telnetConfig = {
@@ -204,7 +208,15 @@ class TelnetConnectionPool extends BaseConnectionPool {
       port: telnetConfig.port || 23,
       username: telnetConfig.username,
       hasPassword: !!telnetConfig.password,
+      language: telnetConfig.language || null,
+      protocol: "telnet",
     };
+    enhancedError.connectionFailure = classifyConnectionFailure(enhancedError, {
+      ...enhancedError.telnetConfig,
+      protocol: "telnet",
+    });
+    enhancedError.connectionFailureKind = enhancedError.connectionFailure.kind;
+    enhancedError.connectionAdvice = enhancedError.connectionFailure.suggestion;
 
     return enhancedError;
   }

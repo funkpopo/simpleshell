@@ -168,7 +168,7 @@ function safeHandle(ipcMain, channel, handler, options = {}) {
   ipcMain.handle(channel, wrapped);
 }
 
-function safeOn(ipcMain, channel, handler, options = {}) {
+function safeOn(ipcMain, channel, handler, _options = {}) {
   if (!ipcMain || typeof ipcMain.on !== "function") {
     const errorMsg = `safeOn: ipcMain is invalid or doesn't have 'on' method for channel: ${channel}`;
     logToFile(errorMsg, "ERROR");

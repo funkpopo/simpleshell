@@ -2377,24 +2377,44 @@ const WebTerminal = ({
           }
 
           const formatConnectionError = (error) => {
+            const errorObject =
+              error && typeof error === "object" ? error : null;
             const rawMessage =
-              typeof error?.message === "string" && error.message.trim()
-                ? error.message
+              typeof errorObject?.error === "string" &&
+              errorObject.error.trim()
+                ? errorObject.error
+                : typeof errorObject?.message === "string" &&
+                    errorObject.message.trim()
+                  ? errorObject.message
                 : String(error || "").trim();
             const isCancelled =
               /cancel(l)?ed/i.test(rawMessage) || rawMessage.includes("取消");
             if (isCancelled) {
               return `\r\n${t("webTerminal.runtime.connectionCancelled")}`;
             }
-            const fallbackMessage =
-              rawMessage || t("webTerminal.runtime.unknownError");
-            return localizedSshConfig.splitReconnect
+            const connectionFailure = errorObject?.connectionFailure;
+            const reason =
+              typeof connectionFailure?.message === "string" &&
+              connectionFailure.message.trim()
+                ? connectionFailure.message.trim()
+                : rawMessage || t("webTerminal.runtime.unknownError");
+            const baseMessage = localizedSshConfig.splitReconnect
               ? `\r\n${t("webTerminal.runtime.reconnectFailed", {
-                  error: fallbackMessage,
+                  error: reason,
                 })}`
               : `\r\n${t("webTerminal.runtime.connectionFailed", {
-                  error: fallbackMessage,
+                  error: reason,
                 })}`;
+            const suggestion =
+              typeof connectionFailure?.suggestion === "string" &&
+              connectionFailure.suggestion.trim()
+                ? connectionFailure.suggestion.trim()
+                : "";
+            return suggestion
+              ? `${baseMessage}\r\n${t("webTerminal.runtime.connectionAdvice", {
+                  advice: suggestion,
+                })}`
+              : baseMessage;
           };
 
           const normalizeConnectResult = (result) => {
@@ -2404,7 +2424,7 @@ const WebTerminal = ({
               Object.prototype.hasOwnProperty.call(result, "success")
             ) {
               if (!result.success) {
-                return { processId: null, error: result.error };
+                return { processId: null, error: result };
               }
               return { processId: result.data ?? null, error: null };
             }

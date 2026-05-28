@@ -1,4 +1,7 @@
 const { classifyErrorResponse } = require("../../shared/errorClassification");
+const {
+  classifyConnectionFailure,
+} = require("../../shared/connectionErrorAdvice");
 
 function normalizeErrorMessage(error) {
   if (!error) {
@@ -30,6 +33,22 @@ function pickErrorCode(error) {
   return error.errorCode || error.code || error.error?.code || null;
 }
 
+function pickConnectionConfig(source, options = {}) {
+  if (!source || typeof source !== "object") {
+    return options.connectionConfig || null;
+  }
+  return (
+    options.connectionConfig ||
+    source.connectionConfig ||
+    source.sshConfig ||
+    source.telnetConfig ||
+    source.raw?.connectionConfig ||
+    source.raw?.sshConfig ||
+    source.raw?.telnetConfig ||
+    null
+  );
+}
+
 function normalizeResponseOptions(options = {}) {
   if (typeof options === "string") {
     return { message: options };
@@ -52,6 +71,13 @@ function buildErrorResponse(error, options = {}) {
   const operation = normalizedOptions.operation || source.operation || null;
   const moduleName = normalizedOptions.module || source.module || null;
   const errorCode = pickErrorCode(source);
+  const connectionConfig = pickConnectionConfig(source, normalizedOptions);
+  const connectionFailure =
+    source.connectionFailure ||
+    normalizedOptions.connectionFailure ||
+    (connectionConfig
+      ? classifyConnectionFailure(source, connectionConfig)
+      : null);
   const errorForClassification =
     error && typeof error === "object" ? source : technicalMessage;
   const classificationFields = classifyErrorResponse(errorForClassification, {
@@ -76,6 +102,9 @@ function buildErrorResponse(error, options = {}) {
     errorCode,
     code: errorCode,
     errorKind: source.errorKind || normalizedOptions.errorKind || null,
+    connectionFailure,
+    connectionFailureKind: connectionFailure?.kind || null,
+    connectionAdvice: connectionFailure?.suggestion || null,
     module: moduleName,
     operation,
     raw: source.raw || null,

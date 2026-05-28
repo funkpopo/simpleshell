@@ -17,6 +17,9 @@ const {
   getTerminalProcessExitChannel,
   getTerminalProcessOutputChannel,
 } = require("../schema/channels");
+const {
+  classifyConnectionFailure,
+} = require("../../../shared/connectionErrorAdvice");
 
 function isZhLanguage(language) {
   return String(language || "zh-CN")
@@ -1364,13 +1367,19 @@ class SSHHandlers {
 
     const msg = String(error?.message || "").toLowerCase();
     return (
+      error?.connectionFailureKind === "auth" ||
+      error?.connectionFailureKind === "private-key-permission" ||
       msg.includes("authentication") ||
       msg.includes("auth fail") ||
       msg.includes("all configured authentication methods failed") ||
       msg.includes("permission denied") ||
       msg.includes("publickey") ||
       msg.includes("password") ||
-      msg.includes("keyboard-interactive")
+      msg.includes("keyboard-interactive") ||
+      msg.includes("认证失败") ||
+      msg.includes("身份验证") ||
+      msg.includes("密码") ||
+      msg.includes("私钥")
     );
   }
 
@@ -1395,7 +1404,7 @@ class SSHHandlers {
 
     if (code === "EPROXYUNAVAILABLE") {
       return new Error(
-        `代理不可用: 无法通过当前代理连接到 ${host}:${port}，请检查代理/VPN/网络后重试`,
+        `代理不可用: 无法通过当前代理连接到 ${host}:${port}`,
       );
     }
 
@@ -1438,6 +1447,21 @@ class SSHHandlers {
     );
     error.code = preflightResult?.code || "ESSHPREFLIGHT";
     error.preflightResult = preflightResult;
+    error.sshConfig = {
+      host: sshConfig.host,
+      port: sshConfig.port || 22,
+      username: sshConfig.username,
+      usingProxy: Boolean(sshConfig.proxy),
+      authType: sshConfig.authType || null,
+      privateKeyPath: sshConfig.privateKeyPath || null,
+      language: sshConfig.language || null,
+    };
+    error.connectionFailure = classifyConnectionFailure(error, {
+      ...error.sshConfig,
+      protocol: "ssh",
+    });
+    error.connectionFailureKind = error.connectionFailure.kind;
+    error.connectionAdvice = error.connectionFailure.suggestion;
     throw error;
   }
 
