@@ -447,14 +447,16 @@ export const LocalTerminalSidebarSkeleton = memo((props) => {
         </Typography>
         <Tooltip title={t("localTerminal.refresh")}>
           <span>
-            <IconButton size="small" disabled>
+            <IconButton size="small" disabled
+              aria-label={t("localTerminal.refresh")}>
               <CircularProgress size={18} />
             </IconButton>
           </span>
         </Tooltip>
         <Tooltip title={t("common.close")}>
           <span>
-            <IconButton size="small" onClick={onClose} disabled={!onClose}>
+            <IconButton size="small" onClick={onClose} disabled={!onClose}
+              aria-label={t("common.close")}>
               <CloseIcon />
             </IconButton>
           </span>

@@ -13,6 +13,9 @@ body {
   height: 100%;
   /* Base font size will be controlled by Settings */
   font-size: 14px; /* Default size, will be overridden by JS */
+  line-height: 1.5;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -38,6 +41,41 @@ textarea,
   -webkit-user-select: text;
 }
 
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+[role="button"],
+.MuiIconButton-root,
+.MuiButton-root,
+.MuiFab-root {
+  touch-action: manipulation;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible,
+.Mui-focusVisible {
+  outline: 2px solid var(--color-primary-main);
+  outline-offset: 2px;
+}
+
+.MuiIconButton-root:focus-visible,
+.MuiButton-root:focus-visible,
+.MuiFab-root:focus-visible,
+.MuiMenuItem-root.Mui-focusVisible,
+.MuiListItemButton-root.Mui-focusVisible,
+.MuiTab-root.Mui-focusVisible {
+  outline: 2px solid var(--color-primary-main);
+  outline-offset: 2px;
+}
+
 /* 确保MUI容器正确工作 */
 .MuiBox-root.css-7ukeqs,
 .MuiBox-root.css-blwm5h {
@@ -58,5 +96,110 @@ textarea,
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :focus-visible,
+  .Mui-focusVisible,
+  .MuiIconButton-root:focus-visible,
+  .MuiButton-root:focus-visible,
+  .MuiFab-root:focus-visible {
+    outline-width: 3px;
+  }
+}
+
+@media (forced-colors: active) {
+  html,
+  body,
+  #root {
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  *,
+  *::before,
+  *::after {
+    border-color: CanvasText;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  a {
+    color: LinkText;
+  }
+
+  svg {
+    forced-color-adjust: auto;
+  }
+
+  :focus-visible,
+  .Mui-focusVisible,
+  .MuiIconButton-root:focus-visible,
+  .MuiButton-root:focus-visible,
+  .MuiFab-root:focus-visible,
+  .MuiMenuItem-root.Mui-focusVisible,
+  .MuiListItemButton-root.Mui-focusVisible,
+  .MuiTab-root.Mui-focusVisible {
+    outline: 3px solid Highlight;
+    outline-offset: 3px;
+  }
+
+  .MuiPaper-root,
+  .MuiDialog-paper,
+  .MuiPopover-paper,
+  .MuiMenu-paper,
+  .MuiCard-root,
+  .MuiDrawer-paper,
+  .MuiTooltip-tooltip {
+    background: Canvas !important;
+    color: CanvasText !important;
+    border: 1px solid CanvasText !important;
+  }
+
+  .MuiButton-root,
+  .MuiIconButton-root,
+  .MuiFab-root,
+  .MuiChip-root,
+  .MuiTab-root,
+  .MuiToggleButton-root {
+    color: ButtonText !important;
+    border: 1px solid ButtonText !important;
+    background: ButtonFace !important;
+  }
+
+  .MuiButton-root.Mui-disabled,
+  .MuiIconButton-root.Mui-disabled,
+  .MuiFab-root.Mui-disabled,
+  .MuiInputBase-root.Mui-disabled,
+  .MuiChip-root.Mui-disabled {
+    color: GrayText !important;
+    border-color: GrayText !important;
+  }
+
+  .Mui-selected,
+  [aria-selected="true"] {
+    color: HighlightText !important;
+    background: Highlight !important;
+  }
+
+  .MuiInputBase-root,
+  .MuiOutlinedInput-notchedOutline,
+  .MuiSelect-select,
+  .MuiSlider-rail,
+  .MuiLinearProgress-root {
+    color: CanvasText !important;
+    border-color: CanvasText !important;
+    background: Canvas !important;
+  }
+
+  .MuiSlider-thumb,
+  .MuiSlider-track,
+  .MuiLinearProgress-bar,
+  .MuiCircularProgress-circle {
+    color: Highlight !important;
+    border-color: Highlight !important;
+    background: Highlight !important;
+    stroke: Highlight !important;
   }
 }

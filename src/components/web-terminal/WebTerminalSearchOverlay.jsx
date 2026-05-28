@@ -52,7 +52,8 @@ const WebTerminalSearchOverlay = ({
               color: "inherit !important",
             },
           }}
-        >
+        
+          aria-label={t("webTerminal.search.open")}>
           <SearchIcon fontSize="small" />
         </IconButton>
       </Tooltip>
@@ -107,7 +108,8 @@ const WebTerminalSearchOverlay = ({
             onClick={onSearchPrevious}
             className="search-button"
             disabled={!searchTerm || noMatchFound}
-          >
+          
+            aria-label={t("webTerminal.search.previous")}>
             <NavigateBeforeIcon fontSize="small" />
           </IconButton>
         </span>
@@ -119,7 +121,8 @@ const WebTerminalSearchOverlay = ({
             onClick={onSearchNext}
             className="search-button"
             disabled={!searchTerm || noMatchFound}
-          >
+          
+            aria-label={t("webTerminal.search.next")}>
             <NavigateNextIcon fontSize="small" />
           </IconButton>
         </span>
@@ -129,7 +132,8 @@ const WebTerminalSearchOverlay = ({
           size="small"
           onClick={onCloseSearch}
           className="search-button"
-        >
+        
+          aria-label={t("webTerminal.search.close")}>
           <CloseIcon fontSize="small" />
         </IconButton>
       </Tooltip>

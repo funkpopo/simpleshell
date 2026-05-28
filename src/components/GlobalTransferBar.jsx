@@ -148,28 +148,31 @@ const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
             </span>
           )}
           {showDelete && (
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(transfer);
-              }}
-              sx={{
-                width: 18,
-                height: 18,
-                padding: 0,
-                marginLeft: 0.5,
-                color: "inherit",
-                opacity: 0.7,
-                "&:hover": {
-                  opacity: 1,
-                  color: "#f44336",
-                  backgroundColor: "rgba(244, 67, 54, 0.1)",
-                },
-              }}
-            >
-              <Close sx={{ fontSize: 12 }} />
-            </IconButton>
+            <Tooltip title={t("fileManager.transfer.deleteRecord")}>
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(transfer);
+                }}
+                aria-label={t("fileManager.transfer.deleteRecord")}
+                sx={{
+                  width: 18,
+                  height: 18,
+                  padding: 0,
+                  marginLeft: 0.5,
+                  color: "inherit",
+                  opacity: 0.7,
+                  "&:hover": {
+                    opacity: 1,
+                    color: "#f44336",
+                    backgroundColor: "rgba(244, 67, 54, 0.1)",
+                  },
+                }}
+              >
+                <Close sx={{ fontSize: 12 }} />
+              </IconButton>
+            </Tooltip>
           )}
         </Box>
       }
@@ -401,7 +404,8 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
         {/* 清除已完成按钮 */}
         {completedCount > 0 && (
           <Tooltip title={t("fileManager.transfer.clearCompleted")}>
-            <IconButton size="small" onClick={handleClearCompleted}>
+            <IconButton size="small" onClick={handleClearCompleted}
+              aria-label={t("fileManager.transfer.clearCompleted")}>
               <Close sx={{ fontSize: 16 }} />
             </IconButton>
           </Tooltip>
@@ -422,7 +426,8 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
                 ? onToggleFloat(null)
                 : onOpenFloat && onOpenFloat(null)
             }
-          >
+          
+            aria-label={isFloatOpen ? t("fileManager.transfer.collapseDetails") : t("fileManager.transfer.viewDetails")}>
             {isFloatOpen ? (
               <ExpandMore sx={{ fontSize: 18 }} />
             ) : (

@@ -210,13 +210,16 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
           <Typography variant="subtitle1" fontWeight="medium">
             {t("securityTools.title")}
           </Typography>
-          <IconButton
-            size="small"
-            onClick={onClose}
-            sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
+          <Tooltip title={t("common.close")}>
+            <IconButton
+              size="small"
+              onClick={onClose}
+              aria-label={t("common.close")}
+              sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Box>
 
         {/* 标签页 */}
@@ -386,7 +389,8 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                       onClick={() => copyToClipboard(password, "password")}
                       size="small"
                       color="primary"
-                    >
+                    
+                      aria-label={copySuccess.password ? t("randomPassword.copied") : t("randomPassword.copy")}>
                       {copySuccess.password ? (
                         <CheckIcon color="success" />
                       ) : (
@@ -519,7 +523,8 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                           onClick={() =>
                             copyToClipboard(keyPair.publicKey, "publicKey")
                           }
-                        >
+                        
+                          aria-label={copySuccess.publicKey ? t("sshKeyGenerator.copied") : t("sshKeyGenerator.copy")}>
                           {copySuccess.publicKey ? (
                             <CheckIcon color="success" fontSize="small" />
                           ) : (
@@ -533,7 +538,8 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                           onClick={() =>
                             saveToFile(keyPair.publicKey, `id_${keyType}.pub`)
                           }
-                        >
+                        
+                          aria-label={t("sshKeyGenerator.savePublic")}>
                           <SaveIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
@@ -579,7 +585,8 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                           onClick={() =>
                             copyToClipboard(keyPair.privateKey, "privateKey")
                           }
-                        >
+                        
+                          aria-label={copySuccess.privateKey ? t("sshKeyGenerator.copied") : t("sshKeyGenerator.copy")}>
                           {copySuccess.privateKey ? (
                             <CheckIcon color="success" fontSize="small" />
                           ) : (
@@ -593,7 +600,8 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                           onClick={() =>
                             saveToFile(keyPair.privateKey, `id_${keyType}`)
                           }
-                        >
+                        
+                          aria-label={t("sshKeyGenerator.savePrivate")}>
                           <SaveIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>

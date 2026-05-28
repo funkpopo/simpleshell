@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import Dialog from "./AccessibleDialog.jsx";
 import useAutoCleanup from "../hooks/useAutoCleanup";
-import { List } from "react-window";
+import {
+  List } from "react-window";
 import {
   Box,
   Paper,
@@ -15,7 +17,6 @@ import {
   Tooltip,
   Menu,
   MenuItem,
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -189,7 +190,8 @@ const CommandItem = React.memo(
                       bgcolor: "action.hover",
                     },
                   }}
-                >
+                
+                  aria-label={t("shortcutCommands.sendAndExecute")}>
                   <SendIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Tooltip>
@@ -210,7 +212,8 @@ const CommandItem = React.memo(
                       bgcolor: "action.hover",
                     },
                   }}
-                >
+                
+                  aria-label={t("shortcutCommands.copyCommand")}>
                   <ContentCopyIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Tooltip>
@@ -335,7 +338,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       addResizeObserver(updateHeight, containerRef.current);
     }
     // useEffect 不应该返回 addResizeObserver 的返回值
-    // eslint-disable-next-line consistent-return
   }, [open, addResizeObserver]);
 
   // 加载命令数据
@@ -894,23 +896,26 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                     <ExpandMoreIcon sx={{ color: "text.secondary" }} />
                   )}
                   {category.id !== "uncategorized" && (
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMenuOpen(e, category.id, "category");
-                      }}
-                      sx={{
-                        ml: 1,
-                        opacity: 0.7,
-                        "&:hover": {
-                          opacity: 1,
-                          backgroundColor: "rgba(255, 255, 255, 0.1)",
-                        },
-                      }}
-                    >
-                      <MoreVertIcon fontSize="small" />
-                    </IconButton>
+                    <Tooltip title={t("shortcutCommands.categoryActions")}>
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMenuOpen(e, category.id, "category");
+                        }}
+                        aria-label={t("shortcutCommands.categoryActions")}
+                        sx={{
+                          ml: 1,
+                          opacity: 0.7,
+                          "&:hover": {
+                            opacity: 1,
+                            backgroundColor: "rgba(255, 255, 255, 0.1)",
+                          },
+                        }}
+                      >
+                        <MoreVertIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   )}
                 </ListItemButton>
               </ListItem>
@@ -1015,7 +1020,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                                     bgcolor: "action.hover",
                                   },
                                 }}
-                              >
+                              
+                                aria-label={t("shortcutCommands.sendAndExecute")}>
                                 <SendIcon sx={{ fontSize: 15 }} />
                               </IconButton>
                             </Tooltip>
@@ -1036,7 +1042,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                                     bgcolor: "action.hover",
                                   },
                                 }}
-                              >
+                              
+                                aria-label={t("shortcutCommands.copyCommand")}>
                                 <ContentCopyIcon sx={{ fontSize: 15 }} />
                               </IconButton>
                             </Tooltip>
@@ -1258,17 +1265,21 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                 onClick={handleAddCommand}
                 size="small"
                 sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-              >
+              
+                aria-label={t("shortcutCommands.addCommand")}>
                 <AddIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <IconButton
-              onClick={onClose}
-              size="small"
-              sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-            >
-              <CloseIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title={t("common.close")}>
+              <IconButton
+                onClick={onClose}
+                size="small"
+                aria-label={t("common.close")}
+                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
         </Box>
 
@@ -1290,9 +1301,15 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
               ),
               endAdornment: searchTerm && (
                 <InputAdornment position="end">
-                  <IconButton size="small" onClick={() => setSearchTerm("")}>
-                    <ClearIcon fontSize="small" />
-                  </IconButton>
+                  <Tooltip title={t("common.clearSearch")}>
+                    <IconButton
+                      size="small"
+                      onClick={() => setSearchTerm("")}
+                      aria-label={t("common.clearSearch")}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 </InputAdornment>
               ),
             }}

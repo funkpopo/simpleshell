@@ -3,13 +3,13 @@
  * 显示AI回复中的命令块，带有风险等级标识和执行按钮
  */
 import React, { useState, memo } from "react";
+import Dialog from "./AccessibleDialog.jsx";
 import {
   Box,
   Typography,
   IconButton,
   Tooltip,
   Chip,
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogContentText,
@@ -47,6 +47,38 @@ const getRiskIcon = (risk) => {
   }
 };
 
+const getRiskLevelText = (t, riskName) => {
+  switch (riskName) {
+    case "critical":
+      return t("ai.riskLevels.critical");
+    case "high":
+      return t("ai.riskLevels.high");
+    case "medium":
+      return t("ai.riskLevels.medium");
+    case "low":
+      return t("ai.riskLevels.low");
+    case "safe":
+    default:
+      return t("ai.riskLevels.safe");
+  }
+};
+
+const getRiskDescriptionText = (t, riskName) => {
+  switch (riskName) {
+    case "critical":
+      return t("ai.riskDescriptions.critical");
+    case "high":
+      return t("ai.riskDescriptions.high");
+    case "medium":
+      return t("ai.riskDescriptions.medium");
+    case "low":
+      return t("ai.riskDescriptions.low");
+    case "safe":
+    default:
+      return t("ai.riskDescriptions.safe");
+  }
+};
+
 /**
  * 确认对话框组件
  */
@@ -62,10 +94,12 @@ const ConfirmationDialog = memo(
           severity={risk.level >= RISK_LEVELS.HIGH.level ? "error" : "warning"}
           sx={{ mb: 2 }}
         >
-          {t("ai.riskWarning", { level: t(`ai.riskLevels.${risk.name}`) })}
+          {t("ai.riskWarning", {
+            level: getRiskLevelText(t, risk.name),
+          })}
         </Alert>
         <DialogContentText sx={{ mb: 2 }}>
-          {risk.description || t(`ai.riskDescriptions.${risk.name}`)}
+          {getRiskDescriptionText(t, risk.name)}
         </DialogContentText>
         <Box
           sx={{
@@ -105,12 +139,11 @@ const ConfirmationDialog = memo(
  */
 const ExecutableCommand = memo(
   ({ command, risk, onExecute, onCopy, disabled = false }) => {
-    const { t, i18n } = useTranslation();
+    const { t } = useTranslation();
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [copied, setCopied] = useState(false);
 
-    const isZhCN = i18n.language === "zh-CN" || i18n.language.startsWith("zh");
-    const riskLabel = isZhCN ? risk.label : risk.labelEn;
+    const riskLabel = getRiskLevelText(t, risk.name);
 
     const handleExecuteClick = () => {
       if (requiresConfirmation(risk)) {
@@ -201,7 +234,8 @@ const ExecutableCommand = memo(
               />
               <Box sx={{ display: "flex", gap: 0.5 }}>
                 <Tooltip title={copied ? t("ai.copied") : t("ai.copyCommand")}>
-                  <IconButton size="small" onClick={handleCopy} sx={{ p: 0.5 }}>
+                  <IconButton size="small" onClick={handleCopy} sx={{ p: 0.5 }}
+                    aria-label={copied ? t("ai.copied") : t("ai.copyCommand")}>
                     <ContentCopyIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -224,7 +258,8 @@ const ExecutableCommand = memo(
                           color: "action.disabled",
                         },
                       }}
-                    >
+                    
+                      aria-label={t("ai.executeCommand")}>
                       <PlayArrowIcon fontSize="small" />
                     </IconButton>
                   </span>

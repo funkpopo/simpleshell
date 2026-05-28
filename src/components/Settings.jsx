@@ -1,12 +1,13 @@
 import * as React from "react";
+import Dialog from "./AccessibleDialog.jsx";
 import { memo } from "react";
 import { styled } from "@mui/material/styles";
-import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import CloseIcon from "@mui/icons-material/Close";
 import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
@@ -90,18 +91,20 @@ const BootstrapDialogTitle = memo((props) => {
     <DialogTitle sx={{ m: 0, p: 2 }} {...other}>
       {children}
       {onClose ? (
-        <IconButton
-          aria-label={t("about.close")}
-          onClick={onClose}
-          sx={{
-            position: "absolute",
-            right: 8,
-            top: 8,
-            color: (theme) => theme.palette.grey[500],
-          }}
-        >
-          <CloseIcon />
-        </IconButton>
+        <Tooltip title={t("common.close")}>
+          <IconButton
+            aria-label={t("common.close")}
+            onClick={onClose}
+            sx={{
+              position: "absolute",
+              right: 8,
+              top: 8,
+              color: (theme) => theme.palette.grey[500],
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </Tooltip>
       ) : null}
     </DialogTitle>
   );

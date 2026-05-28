@@ -310,17 +310,21 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 onClick={handleRefresh}
                 disabled={loading}
                 sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-              >
+              
+                aria-label={t("common.refresh")}>
                 <RefreshIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <IconButton
-              size="small"
-              onClick={onClose}
-              sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-            >
-              <CloseIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title={t("common.close")}>
+              <IconButton
+                size="small"
+                onClick={onClose}
+                aria-label={t("common.close")}
+                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
         </Box>
 

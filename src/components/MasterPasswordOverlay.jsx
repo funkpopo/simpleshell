@@ -6,6 +6,7 @@ import Typography from "@mui/material/Typography";
 import TextField from "@mui/material/TextField";
 import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import Alert from "@mui/material/Alert";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import CloseIcon from "@mui/icons-material/Close";
@@ -128,25 +129,28 @@ const MasterPasswordOverlay = React.memo(
             },
           }}
         >
-          <IconButton
-            aria-label={t("common.close")}
-            size="small"
-            onClick={handleClose}
-            sx={{
-              position: "absolute",
-              top: 10,
-              right: 10,
-              zIndex: 2,
-              color: "text.secondary",
-              bgcolor: (theme) => alpha(theme.palette.background.paper, 0.45),
-              "&:hover": {
-                color: "text.primary",
-                bgcolor: (theme) => alpha(theme.palette.action.hover, 0.75),
-              },
-            }}
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
+          <Tooltip title={t("common.close")}>
+            <IconButton
+              aria-label={t("common.close")}
+              size="small"
+              onClick={handleClose}
+              sx={{
+                position: "absolute",
+                top: 10,
+                right: 10,
+                zIndex: 2,
+                color: "text.secondary",
+                bgcolor: (theme) =>
+                  alpha(theme.palette.background.paper, 0.45),
+                "&:hover": {
+                  color: "text.primary",
+                  bgcolor: (theme) => alpha(theme.palette.action.hover, 0.75),
+                },
+              }}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
 
           <Box
             sx={{

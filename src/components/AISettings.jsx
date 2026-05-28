@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, memo } from "react";
+import Dialog from "./AccessibleDialog.jsx";
 import {
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -615,9 +615,15 @@ const AISettings = ({ open, onClose }) => {
         <Typography variant="h6" component="span">
           {t("aiSettings.title")}
         </Typography>
-        <IconButton onClick={handleClose} size="small">
-          <CloseIcon />
-        </IconButton>
+        <Tooltip title={t("common.close")}>
+          <IconButton
+            onClick={handleClose}
+            size="small"
+            aria-label={t("common.close")}
+          >
+            <CloseIcon />
+          </IconButton>
+        </Tooltip>
       </DialogTitle>
       <DialogContent dividers sx={{ p: 0 }}>
         {loading && (
@@ -761,7 +767,8 @@ const AISettings = ({ open, onClose }) => {
                                       size="small"
                                       onClick={() => handleCloneApi(apiConfig)}
                                       color="primary"
-                                    >
+                                    
+                                      aria-label={t("aiSettings.cloneApi")}>
                                       <ContentCopyIcon />
                                     </IconButton>
                                   </Tooltip>
@@ -782,7 +789,8 @@ const AISettings = ({ open, onClose }) => {
                                     <IconButton
                                       size="small"
                                       onClick={() => handleEditApi(apiConfig)}
-                                    >
+                                    
+                                      aria-label={t("aiSettings.editApi")}>
                                       <EditIcon />
                                     </IconButton>
                                   </Tooltip>
@@ -793,7 +801,8 @@ const AISettings = ({ open, onClose }) => {
                                         handleDeleteApi(apiConfig.id)
                                       }
                                       color="error"
-                                    >
+                                    
+                                      aria-label={t("aiSettings.deleteApi")}>
                                       <DeleteIcon />
                                     </IconButton>
                                   </Tooltip>
@@ -899,10 +908,7 @@ const AISettings = ({ open, onClose }) => {
                         required
                         helperText={
                           config.hasApiKey && !config.apiKey
-                            ? t(
-                                "aiSettings.keyStoredInMain",
-                                "已在主进程安全保存，留空表示保持不变",
-                              )
+                            ? t("aiSettings.keyStoredInMain")
                             : undefined
                         }
                       />
@@ -962,7 +968,8 @@ const AISettings = ({ open, onClose }) => {
                               !hasConfiguredApiKey(config)
                             }
                             sx={{ mt: 1 }}
-                          >
+                          
+                            aria-label={t("aiSettings.fetchModels")}>
                             {fetchingModels ? (
                               <CircularProgress size={20} />
                             ) : (
@@ -1124,7 +1131,8 @@ const AISettings = ({ open, onClose }) => {
                           onClick={handleAddRule}
                           color="primary"
                           sx={{ mt: 0.5 }}
-                        >
+                        
+                          aria-label={t("aiSettings.addNewRule")}>
                           <AddIcon />
                         </IconButton>
                       </Tooltip>
@@ -1195,15 +1203,18 @@ const AISettings = ({ open, onClose }) => {
                                     }}
                                   />
                                   <ListItemSecondaryAction>
-                                    <IconButton
-                                      edge="end"
-                                      size="small"
-                                      onClick={() =>
-                                        handleDeleteRule(level, index)
-                                      }
-                                    >
-                                      <DeleteIcon fontSize="small" />
-                                    </IconButton>
+                                    <Tooltip title={t("aiSettings.deleteRule")}>
+                                      <IconButton
+                                        edge="end"
+                                        size="small"
+                                        onClick={() =>
+                                          handleDeleteRule(level, index)
+                                        }
+                                        aria-label={t("aiSettings.deleteRule")}
+                                      >
+                                        <DeleteIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
                                   </ListItemSecondaryAction>
                                 </ListItem>
                               ))}

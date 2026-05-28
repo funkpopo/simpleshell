@@ -6,7 +6,9 @@ import React, {
   useMemo,
   useRef,
 } from "react";
-import { flushSync } from "react-dom";
+import Dialog from "./AccessibleDialog.jsx";
+import {
+  flushSync } from "react-dom";
 import {
   Box,
   Typography,
@@ -19,7 +21,6 @@ import {
   IconButton,
   TextField,
   Button,
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -2019,15 +2020,18 @@ const ConnectionManager = memo(
             }}
           >
             <Typography variant="subtitle1" fontWeight="medium">
-              连接管理
+              {t("connectionManager.title")}
             </Typography>
-            <IconButton
-              size="small"
-              onClick={onClose}
-              sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-            >
-              <CloseIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title={t("common.close")}>
+              <IconButton
+                size="small"
+                onClick={onClose}
+                aria-label={t("common.close")}
+                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
 
           {/* 操作按钮区 */}
@@ -2047,7 +2051,7 @@ const ConnectionManager = memo(
               onClick={() => handleAddConnection()}
               sx={{ fontSize: "0.75rem" }}
             >
-              新建连接
+              {t("connectionManager.newConnection")}
             </Button>
             <Button
               size="small"
@@ -2055,7 +2059,7 @@ const ConnectionManager = memo(
               onClick={handleAddGroup}
               sx={{ fontSize: "0.75rem" }}
             >
-              新建分组
+              {t("connectionManager.newGroup")}
             </Button>
           </Box>
 
@@ -2077,13 +2081,16 @@ const ConnectionManager = memo(
                 ),
                 endAdornment: searchQuery && (
                   <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      onClick={() => setSearchQuery("")}
-                      edge="end"
-                    >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
+                    <Tooltip title={t("common.clearSearch")}>
+                      <IconButton
+                        size="small"
+                        onClick={() => setSearchQuery("")}
+                        edge="end"
+                        aria-label={t("common.clearSearch")}
+                      >
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   </InputAdornment>
                 ),
               }}

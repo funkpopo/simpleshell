@@ -6,6 +6,7 @@ import TextField from "@mui/material/TextField";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PublicIcon from "@mui/icons-material/Public";
@@ -465,13 +466,16 @@ const IPAddressQuery = memo(({ open, onClose }) => {
             {t("ipAddressQuery.title")}
           </Typography>
           <Box>
-            <IconButton
-              size="small"
-              onClick={onClose}
-              sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-            >
-              <CloseIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title={t("common.close")}>
+              <IconButton
+                size="small"
+                onClick={onClose}
+                aria-label={t("common.close")}
+                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
         </Box>
 
@@ -548,30 +552,38 @@ const IPAddressQuery = memo(({ open, onClose }) => {
               </Typography>
             </Box>
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <IconButton
-                size="small"
-                onClick={() => setHistoryOpen((v) => !v)}
-                aria-expanded={historyOpen}
-                aria-label={t("ipAddressQuery.toggleHistory")}
-              >
-                <ExpandMoreIcon
-                  fontSize="small"
-                  sx={{
-                    transform: historyOpen ? "rotate(0deg)" : "rotate(180deg)",
-                    transition: theme.transitions.create("transform", {
-                      duration: theme.transitions.duration.shortest,
-                    }),
-                  }}
-                />
-              </IconButton>
-              <IconButton
-                size="small"
-                onClick={handleClearHistory}
-                disabled={history.length === 0 || loading}
-                aria-label={t("ipAddressQuery.clearHistory")}
-              >
-                <DeleteSweepIcon fontSize="small" />
-              </IconButton>
+              <Tooltip title={t("ipAddressQuery.toggleHistory")}>
+                <IconButton
+                  size="small"
+                  onClick={() => setHistoryOpen((v) => !v)}
+                  aria-expanded={historyOpen}
+                  aria-label={t("ipAddressQuery.toggleHistory")}
+                >
+                  <ExpandMoreIcon
+                    fontSize="small"
+                    sx={{
+                      transform: historyOpen
+                        ? "rotate(0deg)"
+                        : "rotate(180deg)",
+                      transition: theme.transitions.create("transform", {
+                        duration: theme.transitions.duration.shortest,
+                      }),
+                    }}
+                  />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t("ipAddressQuery.clearHistory")}>
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={handleClearHistory}
+                    disabled={history.length === 0 || loading}
+                    aria-label={t("ipAddressQuery.clearHistory")}
+                  >
+                    <DeleteSweepIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
             </Box>
           </Box>
           <Collapse in={historyOpen} timeout="auto" unmountOnExit>

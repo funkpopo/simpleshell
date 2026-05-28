@@ -6,7 +6,9 @@ import React, {
   useMemo,
   useRef,
 } from "react";
-import { flushSync } from "react-dom";
+import Dialog from "./AccessibleDialog.jsx";
+import {
+  flushSync } from "react-dom";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import {
   Box,
@@ -25,7 +27,6 @@ import {
   Button,
   Alert,
   Snackbar,
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -734,7 +735,6 @@ const FileManager = memo(
         }
       });
       // useEffect 不应该返回 addEventListener 的返回值
-      // eslint-disable-next-line consistent-return
     }, [addEventListener]);
 
     const showNotification = useCallback(
@@ -6307,14 +6307,19 @@ const FileManager = memo(
                 ? `${t("fileManager.title")} - ${tabName}`
                 : t("fileManager.title")}
             </Typography>
-            <IconButton
-              size="small"
-              onClick={handleClose}
-              edge="end"
-              disabled={isClosing} // 禁用关闭按钮当正在关闭时
-            >
-              <CloseIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title={t("common.close")}>
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={handleClose}
+                  edge="end"
+                  disabled={isClosing}
+                  aria-label={t("common.close")}
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
           </Box>
 
           <Box
@@ -6345,7 +6350,8 @@ const FileManager = memo(
                       size="small"
                       onClick={handleHistoryBack}
                       disabled={historyIndex <= 0}
-                    >
+                    
+                      aria-label={t("fileManager.back")}>
                       <ArrowBackIcon fontSize="small" />
                     </IconButton>
                   </span>
@@ -6357,7 +6363,8 @@ const FileManager = memo(
                       size="small"
                       onClick={handleGoToNextPath}
                       disabled={historyIndex >= pathHistory.length - 1}
-                    >
+                    
+                      aria-label={t("fileManager.nextPath")}>
                       <ArrowForwardIcon fontSize="small" />
                     </IconButton>
                   </span>
@@ -6369,20 +6376,23 @@ const FileManager = memo(
                       size="small"
                       onClick={handleGoUp}
                       disabled={!currentPath || currentPath === "/"}
-                    >
+                    
+                      aria-label={t("fileManager.upLevel")}>
                       <ArrowUpwardIcon fontSize="small" />
                     </IconButton>
                   </span>
                 </Tooltip>
 
                 <Tooltip title={t("fileManager.home")}>
-                  <IconButton size="small" onClick={handleGoHome}>
+                  <IconButton size="small" onClick={handleGoHome}
+                    aria-label={t("fileManager.home")}>
                     <HomeIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
 
                 <Tooltip title={t("fileManager.refresh")}>
-                  <IconButton size="small" onClick={handleRefresh}>
+                  <IconButton size="small" onClick={handleRefresh}
+                    aria-label={t("fileManager.refresh")}>
                     <RefreshIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -6417,16 +6427,19 @@ const FileManager = memo(
               }}
             >
               <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <Tooltip
-                  title={`${t("fileManager.createFile")} / ${t("fileManager.createFolder")}`}
-                >
-                  <IconButton size="small" onClick={handleCreateMenuOpen}>
+                <Tooltip title={t("fileManager.createFileOrFolder")}>
+                  <IconButton
+                    size="small"
+                    onClick={handleCreateMenuOpen}
+                    aria-label={t("fileManager.createFileOrFolder")}
+                  >
                     <NoteAddIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
 
                 <Tooltip title={t("fileManager.upload")}>
-                  <IconButton size="small" onClick={handleUploadMenuOpen}>
+                  <IconButton size="small" onClick={handleUploadMenuOpen}
+                    aria-label={t("fileManager.upload")}>
                     <UploadFileIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -6458,19 +6471,22 @@ const FileManager = memo(
                       ),
                       endAdornment: (
                         <InputAdornment position="end">
-                          <IconButton
-                            size="small"
-                            onClick={() => {
-                              if (searchTerm) {
-                                setSearchTerm("");
-                                return;
-                              }
-                              setShowSearch(false);
-                            }}
-                            edge="end"
-                          >
-                            <ClearIcon fontSize="small" />
-                          </IconButton>
+                          <Tooltip title={t("common.clearSearch")}>
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                if (searchTerm) {
+                                  setSearchTerm("");
+                                  return;
+                                }
+                                setShowSearch(false);
+                              }}
+                              edge="end"
+                              aria-label={t("common.clearSearch")}
+                            >
+                              <ClearIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         </InputAdornment>
                       ),
                     }}
@@ -6492,14 +6508,16 @@ const FileManager = memo(
 
                 {!showSearch && (
                   <Tooltip title={t("fileManager.search")}>
-                    <IconButton size="small" onClick={toggleSearch}>
+                    <IconButton size="small" onClick={toggleSearch}
+                      aria-label={t("fileManager.search")}>
                       <SearchIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
                 )}
 
                 <Tooltip title={t("fileManager.sort")}>
-                  <IconButton size="small" onClick={handleSortMenuOpen}>
+                  <IconButton size="small" onClick={handleSortMenuOpen}
+                    aria-label={t("fileManager.sort")}>
                     {sortMode === "time" ? (
                       <AccessTimeIcon fontSize="small" />
                     ) : (
