@@ -4,6 +4,8 @@
  */
 
 const { logToFile } = require("../../utils/logger");
+const { safeOn } = require("../ipcResponse");
+const { IPC_EVENT_CHANNELS } = require("../schema/channels");
 
 /**
  * 注册批量IPC消息处理器
@@ -11,7 +13,7 @@ const { logToFile } = require("../../utils/logger");
  */
 function registerBatchHandlers(ipcMain) {
   // 处理批量进度更新
-  ipcMain.on("transfer-progress:batch", (event, progressDataArray) => {
+  safeOn(ipcMain, IPC_EVENT_CHANNELS.TRANSFER_PROGRESS_BATCH, (event, progressDataArray) => {
     if (!Array.isArray(progressDataArray)) {
       logToFile("Invalid batch progress data: not an array", "WARN");
       return;
@@ -20,7 +22,7 @@ function registerBatchHandlers(ipcMain) {
     // 转发每个进度消息到前端
     for (const progressData of progressDataArray) {
       try {
-        event.sender.send("transfer-progress", progressData);
+        event.sender.send(IPC_EVENT_CHANNELS.TRANSFER_PROGRESS, progressData);
       } catch (error) {
         logToFile(`Error forwarding progress data: ${error.message}`, "ERROR");
       }
@@ -29,7 +31,7 @@ function registerBatchHandlers(ipcMain) {
 
   // 通用批量消息处理器
   // 支持将任何channel的批量消息转发为单独的消息
-  ipcMain.on("ipc:batch-forward", (event, { channel, messages }) => {
+  safeOn(ipcMain, IPC_EVENT_CHANNELS.IPC_BATCH_FORWARD, (event, { channel, messages }) => {
     if (!channel || !Array.isArray(messages)) {
       logToFile("Invalid batch forward request", "WARN");
       return;
@@ -54,10 +56,10 @@ function registerBatchHandlers(ipcMain) {
   // 使用通配符监听所有批量消息
   // 注意：Electron的ipcMain不支持通配符，所以我们需要显式注册常见的批量channel
   const commonBatchChannels = [
-    "transfer-progress:batch",
-    "terminal-output:batch",
-    "file-change:batch",
-    "log-message:batch",
+    IPC_EVENT_CHANNELS.TRANSFER_PROGRESS_BATCH,
+    IPC_EVENT_CHANNELS.TERMINAL_OUTPUT_BATCH,
+    IPC_EVENT_CHANNELS.FILE_CHANGE_BATCH,
+    IPC_EVENT_CHANNELS.LOG_MESSAGE_BATCH,
   ];
 
   commonBatchChannels.forEach((batchChannel) => {
@@ -67,9 +69,9 @@ function registerBatchHandlers(ipcMain) {
     const baseChannel = match[1];
 
     // 如果已经注册过了，跳过
-    if (batchChannel === "transfer-progress:batch") return;
+    if (batchChannel === IPC_EVENT_CHANNELS.TRANSFER_PROGRESS_BATCH) return;
 
-    ipcMain.on(batchChannel, (event, messages) => {
+    safeOn(ipcMain, batchChannel, (event, messages) => {
       if (!Array.isArray(messages)) {
         logToFile(
           `Invalid batch messages for ${batchChannel}: not an array`,

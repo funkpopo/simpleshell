@@ -257,7 +257,7 @@ function registerRendererCrashHandlers(mainWindow) {
 
     if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
       mainWindow.webContents.send(
-        "app:error",
+        IPC_EVENT_CHANNELS.APP_ERROR,
         buildErrorEvent(new Error(message), {
           type: "rendererCrash",
           module: "renderer",

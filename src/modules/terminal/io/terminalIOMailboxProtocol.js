@@ -1,5 +1,9 @@
-const TERMINAL_IO_MAILBOX_CHANNEL = "terminal:mailbox";
-const TERMINAL_IO_MAILBOX_OUTPUT_CHANNEL_PREFIX = "terminal:mailbox:process:";
+const {
+  IPC_EVENT_CHANNELS,
+  getTerminalMailboxOutputChannel,
+} = require("../../../core/ipc/schema/channels");
+
+const TERMINAL_IO_MAILBOX_CHANNEL = IPC_EVENT_CHANNELS.TERMINAL_IO_MAILBOX;
 
 const TERMINAL_IO_MESSAGE_TYPES = Object.freeze({
   INPUT: "input",
@@ -49,13 +53,12 @@ const getTerminalIOMailboxOutputChannel = (processId) => {
     return null;
   }
 
-  return `${TERMINAL_IO_MAILBOX_OUTPUT_CHANNEL_PREFIX}${normalizedProcessId}`;
+  return getTerminalMailboxOutputChannel(normalizedProcessId);
 };
 
 module.exports = {
   TERMINAL_IO_DEFAULTS,
   TERMINAL_IO_MAILBOX_CHANNEL,
-  TERMINAL_IO_MAILBOX_OUTPUT_CHANNEL_PREFIX,
   TERMINAL_IO_MESSAGE_TYPES,
   getTerminalIOMailboxOutputChannel,
   normalizeMailboxProcessId,

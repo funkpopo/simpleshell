@@ -11,6 +11,9 @@ const {
 const {
   IPC_EVENT_CHANNELS,
   IPC_REQUEST_CHANNELS,
+  getUploadDroppedProgressChannel,
+  getUploadFolderProgressChannel,
+  getUploadProgressChannel,
 } = require("./core/ipc/schema/channels");
 const {
   TERMINAL_IO_MAILBOX_CHANNEL,
@@ -24,10 +27,15 @@ const connectionsChangedWrappers = new WeakMap();
 const commandHistoryChangedWrappers = new WeakMap();
 const localDataClearedWrappers = new WeakMap();
 const streamWrappersByChannel = {
-  "stream-chunk": new WeakMap(),
-  "stream-end": new WeakMap(),
-  "stream-error": new WeakMap(),
+  [IPC_EVENT_CHANNELS.AI_STREAM_CHUNK]: new WeakMap(),
+  [IPC_EVENT_CHANNELS.AI_STREAM_END]: new WeakMap(),
+  [IPC_EVENT_CHANNELS.AI_STREAM_ERROR]: new WeakMap(),
 };
+const AI_STREAM_CHANNELS = Object.freeze([
+  IPC_EVENT_CHANNELS.AI_STREAM_CHUNK,
+  IPC_EVENT_CHANNELS.AI_STREAM_END,
+  IPC_EVENT_CHANNELS.AI_STREAM_ERROR,
+]);
 const processOutputWrappersByChannel = new Map();
 const processOutputListenersByChannel = new Map();
 const terminalMailboxWrappersByChannel = new Map();
@@ -199,7 +207,7 @@ const maybeAutoCancelTrackedListFiles = () => {
   listFilesTabByToken.clear();
 
   pendingTabIds.forEach((tabId) => {
-    ipcRenderer.invoke("cancelListFiles", tabId).catch(() => {});
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CANCEL_LIST, tabId).catch(() => {});
   });
 };
 
@@ -305,7 +313,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
 
   // 发送命令到主进程处理 (用于模拟终端)
-  sendCommand: (command) => ipcRenderer.invoke("terminal:command", command),
+  sendCommand: (command) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_COMMAND, command),
 
   // 终端进程管理
   sendToProcess: (processId, data) => {
@@ -326,7 +334,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     return true;
   },
   sendToProcessWithAck: (processId, data) =>
-    ipcRenderer.invoke("terminal:sendToProcess", processId, data),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_SEND_TO_PROCESS, processId, data),
   notifyOutputConsumed: (processId, bytes) => {
     if (processId === undefined || processId === null) {
       return;
@@ -344,82 +352,82 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     });
   },
   killProcess: (processId) =>
-    ipcRenderer.invoke("terminal:killProcess", processId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_KILL_PROCESS, processId),
   // 新增：获取进程信息
   getProcessInfo: (processId) =>
-    ipcRenderer.invoke("terminal:getProcessInfo", processId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_INFO, processId),
 
   // 本地终端API
-  detectLocalTerminals: () => ipcRenderer.invoke("detectLocalTerminals"),
+  detectLocalTerminals: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINALS_DETECT),
   launchLocalTerminal: (terminalConfig, tabId) =>
-    ipcRenderer.invoke("launchLocalTerminal", terminalConfig, tabId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_LAUNCH, terminalConfig, tabId),
   closeLocalTerminal: (tabId) =>
-    ipcRenderer.invoke("closeLocalTerminal", tabId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_CLOSE, tabId),
   getLocalTerminalInfo: (tabId) =>
-    ipcRenderer.invoke("getLocalTerminalInfo", tabId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_INFO, tabId),
 
   // 重连管理API
   getReconnectStatus: (args) =>
-    ipcRenderer.invoke("get-reconnect-status", args),
-  manualReconnect: (args) => ipcRenderer.invoke("manual-reconnect", args),
-  pauseReconnect: (args) => ipcRenderer.invoke("pause-reconnect", args),
-  resumeReconnect: (args) => ipcRenderer.invoke("resume-reconnect", args),
-  getReconnectStatistics: () => ipcRenderer.invoke("get-reconnect-statistics"),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_GET_STATUS, args),
+  manualReconnect: (args) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_MANUAL, args),
+  pauseReconnect: (args) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_PAUSE, args),
+  resumeReconnect: (args) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_RESUME, args),
+  getReconnectStatistics: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_GET_STATISTICS),
 
   // 重连事件监听器
-  onReconnectStart: (callback) => ipcRenderer.on("reconnect-started", callback),
+  onReconnectStart: (callback) => ipcRenderer.on(IPC_EVENT_CHANNELS.RECONNECT_STARTED, callback),
   onReconnectProgress: (callback) =>
-    ipcRenderer.on("reconnect-progress", callback),
+    ipcRenderer.on(IPC_EVENT_CHANNELS.RECONNECT_PROGRESS, callback),
   onReconnectSuccess: (callback) =>
-    ipcRenderer.on("reconnect-success", callback),
-  onReconnectFailed: (callback) => ipcRenderer.on("reconnect-failed", callback),
+    ipcRenderer.on(IPC_EVENT_CHANNELS.RECONNECT_SUCCESS, callback),
+  onReconnectFailed: (callback) => ipcRenderer.on(IPC_EVENT_CHANNELS.RECONNECT_FAILED, callback),
   onReconnectAbandoned: (callback) =>
-    ipcRenderer.on("reconnect-abandoned", callback),
-  onConnectionLost: (callback) => ipcRenderer.on("connection-lost", callback),
+    ipcRenderer.on(IPC_EVENT_CHANNELS.RECONNECT_ABANDONED, callback),
+  onConnectionLost: (callback) => ipcRenderer.on(IPC_EVENT_CHANNELS.CONNECTION_LOST, callback),
   onTabConnectionStatus: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = (_event, data) => callback(data);
-    ipcRenderer.on("tab-connection-status", wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, wrappedCallback);
     return () => {
-      ipcRenderer.removeListener("tab-connection-status", wrappedCallback);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, wrappedCallback);
     };
   },
   removeReconnectListeners: () => {
-    ipcRenderer.removeAllListeners("reconnect-started");
-    ipcRenderer.removeAllListeners("reconnect-progress");
-    ipcRenderer.removeAllListeners("reconnect-success");
-    ipcRenderer.removeAllListeners("reconnect-failed");
-    ipcRenderer.removeAllListeners("reconnect-abandoned");
-    ipcRenderer.removeAllListeners("connection-lost");
+    ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.RECONNECT_STARTED);
+    ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.RECONNECT_PROGRESS);
+    ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.RECONNECT_SUCCESS);
+    ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.RECONNECT_FAILED);
+    ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.RECONNECT_ABANDONED);
+    ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.CONNECTION_LOST);
   },
 
   // 自定义终端管理API
   addCustomTerminal: (terminalConfig) =>
-    ipcRenderer.invoke("addCustomTerminal", terminalConfig),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_ADD_CUSTOM, terminalConfig),
   updateCustomTerminal: (id, updates) =>
-    ipcRenderer.invoke("updateCustomTerminal", id, updates),
-  deleteCustomTerminal: (id) => ipcRenderer.invoke("deleteCustomTerminal", id),
-  getCustomTerminals: () => ipcRenderer.invoke("getCustomTerminals"),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_UPDATE_CUSTOM, id, updates),
+  deleteCustomTerminal: (id) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_DELETE_CUSTOM, id),
+  getCustomTerminals: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_CUSTOM),
 
   resizeEmbeddedTerminal: (tabId, bounds) =>
-    ipcRenderer.invoke("resizeEmbeddedTerminal", tabId, bounds),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_RESIZE_EMBEDDED, tabId, bounds),
   getAllActiveLocalTerminals: () =>
-    ipcRenderer.invoke("getAllActiveLocalTerminals"),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_ALL_ACTIVE),
 
   // 资源监控API
   getSystemInfo: (processId) =>
-    ipcRenderer.invoke("terminal:getSystemInfo", processId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_GET_SYSTEM_INFO, processId),
   getProcessList: (processId) =>
-    ipcRenderer.invoke("terminal:getProcessList", processId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_LIST, processId),
 
   // 连接管理API
   cleanupConnection: (processId) =>
-    ipcRenderer.invoke("terminal:cleanupConnection", processId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_CLEANUP_CONNECTION, processId),
 
   // 快捷命令API
-  getShortcutCommands: () => ipcRenderer.invoke("get-shortcut-commands"),
+  getShortcutCommands: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SHORTCUT_COMMANDS_GET),
   saveShortcutCommands: (data) =>
-    ipcRenderer.invoke("save-shortcut-commands", data),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SHORTCUT_COMMANDS_SAVE, data),
 
   // 事件监听
   onProcessOutput: (processId, callback) => {
@@ -479,19 +487,19 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
 
   // 连接配置存储API
-  loadConnections: () => ipcRenderer.invoke("terminal:loadConnections"),
+  loadConnections: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_LOAD_CONNECTIONS),
   saveConnections: (connections) =>
-    ipcRenderer.invoke("terminal:saveConnections", connections),
-  loadTopConnections: () => ipcRenderer.invoke("terminal:loadTopConnections"),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_SAVE_CONNECTIONS, connections),
+  loadTopConnections: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_LOAD_TOP_CONNECTIONS),
 
   // 热门连接实时更新事件
   onTopConnectionsChanged: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrapped = (_e, ids) => callback(ids);
     topConnectionsChangedWrappers.set(callback, wrapped);
-    ipcRenderer.on("top-connections-changed", wrapped);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.TOP_CONNECTIONS_CHANGED, wrapped);
     return () => {
-      ipcRenderer.removeListener("top-connections-changed", wrapped);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.TOP_CONNECTIONS_CHANGED, wrapped);
       topConnectionsChangedWrappers.delete(callback);
     };
   },
@@ -499,7 +507,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     if (!callback) return;
     const wrapped = topConnectionsChangedWrappers.get(callback);
     if (wrapped) {
-      ipcRenderer.removeListener("top-connections-changed", wrapped);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.TOP_CONNECTIONS_CHANGED, wrapped);
       topConnectionsChangedWrappers.delete(callback);
     }
   },
@@ -509,9 +517,9 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = () => callback();
     connectionsChangedWrappers.set(callback, wrappedCallback);
-    ipcRenderer.on("connections-changed", wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED, wrappedCallback);
     return () => {
-      ipcRenderer.removeListener("connections-changed", wrappedCallback);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED, wrappedCallback);
       connectionsChangedWrappers.delete(callback);
     };
   },
@@ -519,16 +527,16 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     if (!callback) return;
     const wrappedCallback = connectionsChangedWrappers.get(callback);
     if (wrappedCallback) {
-      ipcRenderer.removeListener("connections-changed", wrappedCallback);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED, wrappedCallback);
       connectionsChangedWrappers.delete(callback);
     }
   },
 
   // 选择密钥文件
-  selectKeyFile: () => ipcRenderer.invoke("terminal:selectKeyFile"),
+  selectKeyFile: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_SELECT_KEY_FILE),
 
   // 简单命令执行
-  executeCommand: (command) => ipcRenderer.invoke("terminal:command", command),
+  executeCommand: (command) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_COMMAND, command),
 
   // 终端大小调整
   resizeTerminal: (processId, cols, rows) => {
@@ -545,38 +553,37 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
 
   // AI助手API
-  saveAISettings: (settings) => ipcRenderer.invoke("ai:saveSettings", settings),
-  loadAISettings: () => ipcRenderer.invoke("ai:loadSettings"),
+  saveAISettings: (settings) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SAVE_SETTINGS, settings),
+  loadAISettings: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_LOAD_SETTINGS),
   sendAIPrompt: (prompt, settings) =>
-    ipcRenderer.invoke("ai:sendPrompt", prompt, settings),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SEND_PROMPT, prompt, settings),
   // 新增: 直接发送API请求的方法
   sendAPIRequest: (requestData, isStream) =>
-    ipcRenderer.invoke("ai:sendAPIRequest", requestData, isStream),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SEND_API_REQUEST, requestData, isStream),
   // 新增: 中断API请求的方法
-  cancelAPIRequest: () => ipcRenderer.invoke("ai:abortAPIRequest"),
+  cancelAPIRequest: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_ABORT_API_REQUEST),
   // 新增: API配置管理方法
-  saveApiConfig: (config) => ipcRenderer.invoke("ai:saveApiConfig", config),
+  saveApiConfig: (config) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SAVE_API_CONFIG, config),
   deleteApiConfig: (configId) =>
-    ipcRenderer.invoke("ai:deleteApiConfig", configId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_DELETE_API_CONFIG, configId),
   setCurrentApiConfig: (configId) =>
-    ipcRenderer.invoke("ai:setCurrentApiConfig", configId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SET_CURRENT_API_CONFIG, configId),
   // 新增: 获取模型列表方法
   fetchModels: (requestData) =>
-    ipcRenderer.invoke("ai:fetchModels", requestData),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_FETCH_MODELS, requestData),
   // 新增: 保存自定义风险规则
   saveCustomRiskRules: (rules) =>
-    ipcRenderer.invoke("ai:saveCustomRiskRules", rules),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SAVE_CUSTOM_RISK_RULES, rules),
 
   // 记忆文件管理API
-  saveMemory: (memory) => ipcRenderer.invoke("memory:save", memory),
-  loadMemory: () => ipcRenderer.invoke("memory:load"),
-  deleteMemory: () => ipcRenderer.invoke("memory:delete"),
-  getMemoryDiagnostics: () => ipcRenderer.invoke("memory:getDiagnostics"),
+  saveMemory: (memory) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.MEMORY_SAVE, memory),
+  loadMemory: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.MEMORY_LOAD),
+  deleteMemory: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.MEMORY_DELETE),
+  getMemoryDiagnostics: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.MEMORY_GET_DIAGNOSTICS),
 
   // 添加事件监听器注册方法
   on: (channel, callback) => {
-    const validChannels = ["stream-chunk", "stream-end", "stream-error"];
-    if (validChannels.includes(channel)) {
+    if (AI_STREAM_CHANNELS.includes(channel)) {
       // 包装回调函数，确保正确传递数据
       const wrappedCallback = (event, data) => {
         callback(event, data);
@@ -588,8 +595,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
   // 添加off方法作为removeListener的别名
   off: (channel, callback) => {
-    const validChannels = ["stream-chunk", "stream-end", "stream-error"];
-    if (validChannels.includes(channel)) {
+    if (AI_STREAM_CHANNELS.includes(channel)) {
       // 使用包装的回调函数进行移除
       const wrappedCallback =
         callback && streamWrappersByChannel[channel].get(callback);
@@ -601,8 +607,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
   // 添加事件监听器移除方法
   removeListener: (channel, callback) => {
-    const validChannels = ["stream-chunk", "stream-end", "stream-error"];
-    if (validChannels.includes(channel)) {
+    if (AI_STREAM_CHANNELS.includes(channel)) {
       // 使用包装的回调函数进行移除
       const wrappedCallback =
         callback && streamWrappersByChannel[channel].get(callback);
@@ -614,16 +619,16 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
 
   // 获取应用版本
-  getAppVersion: () => ipcRenderer.invoke("app:getVersion"),
+  getAppVersion: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_GET_VERSION),
 
   onMenuAction: (callback) => {
     if (typeof callback !== "function") {
       return () => {};
     }
     const wrapped = (_event, payload) => callback(payload);
-    ipcRenderer.on("app:menu-action", wrapped);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.APP_MENU_ACTION, wrapped);
     return () => {
-      ipcRenderer.removeListener("app:menu-action", wrapped);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.APP_MENU_ACTION, wrapped);
     };
   },
   onOpenFiles: (callback) => {
@@ -632,9 +637,9 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }
     const wrapped = (_event, payload) => callback(payload);
     openFilesWrappers.set(callback, wrapped);
-    ipcRenderer.on("app:open-files", wrapped);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.APP_OPEN_FILES, wrapped);
     return () => {
-      ipcRenderer.removeListener("app:open-files", wrapped);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.APP_OPEN_FILES, wrapped);
       openFilesWrappers.delete(callback);
     };
   },
@@ -643,29 +648,28 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     if (!wrapped) {
       return;
     }
-    ipcRenderer.removeListener("app:open-files", wrapped);
+    ipcRenderer.removeListener(IPC_EVENT_CHANNELS.APP_OPEN_FILES, wrapped);
     openFilesWrappers.delete(callback);
   },
 
   // 关闭应用
-  closeApp: () => ipcRenderer.invoke("app:close"),
+  closeApp: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_CLOSE),
 
   // 检查更新
-  checkForUpdate: () => ipcRenderer.invoke("app:checkForUpdate"),
+  checkForUpdate: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_CHECK_FOR_UPDATE),
 
-  openLogDirectory: () => ipcRenderer.invoke("app:openLogDirectory"),
-  exportDiagnostics: () => ipcRenderer.invoke("app:exportDiagnostics"),
+  openLogDirectory: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_OPEN_LOG_DIRECTORY),
+  exportDiagnostics: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_EXPORT_DIAGNOSTICS),
   copyDiagnosticSummary: (context) =>
-    ipcRenderer.invoke("app:copyDiagnosticSummary", context),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_COPY_DIAGNOSTIC_SUMMARY, context),
   copyDiagnosticPackage: (context) =>
-    ipcRenderer.invoke("app:copyDiagnosticPackage", context),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_COPY_DIAGNOSTIC_PACKAGE, context),
   openFeedbackIssue: (context) =>
-    ipcRenderer.invoke("app:openFeedbackIssue", context),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_OPEN_FEEDBACK_ISSUE, context),
 
   // 文件管理相关API
   listFiles: async (tabId, path, options) => {
-    const response = await ipcRenderer.invoke(
-      "listFiles",
+    const response = await ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_LIST,
       tabId,
       path,
       options,
@@ -681,7 +685,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     } else {
       untrackListFilesTokensForTab(tabId);
     }
-    return ipcRenderer.invoke("cancelListFiles", tabId, token);
+    return ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CANCEL_LIST, tabId, token);
   },
   onListFilesChunk: (callback) => {
     if (typeof callback !== "function") {
@@ -694,12 +698,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       }
       callback(data);
     };
-    ipcRenderer.on("listFiles:chunk", wrapped);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, wrapped);
     listFilesChunkWrappers.set(callback, wrapped);
     listFilesChunkListeners.add(wrapped);
 
     return () => {
-      ipcRenderer.removeListener("listFiles:chunk", wrapped);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, wrapped);
       listFilesChunkListeners.delete(wrapped);
       listFilesChunkWrappers.delete(callback);
       maybeAutoCancelTrackedListFiles();
@@ -715,27 +719,27 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       return;
     }
 
-    ipcRenderer.removeListener("listFiles:chunk", wrapped);
+    ipcRenderer.removeListener(IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, wrapped);
     listFilesChunkListeners.delete(wrapped);
     listFilesChunkWrappers.delete(callback);
     maybeAutoCancelTrackedListFiles();
   },
   startDirectoryWatch: (tabId, path, options) =>
-    ipcRenderer.invoke("startDirectoryWatch", tabId, path, options),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_START_DIRECTORY_WATCH, tabId, path, options),
   stopDirectoryWatch: (tabId, watchId = null) =>
-    ipcRenderer.invoke("stopDirectoryWatch", tabId, watchId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_STOP_DIRECTORY_WATCH, tabId, watchId),
   onDirectoryWatchEvent: (callback) => {
     if (typeof callback !== "function") {
       return () => {};
     }
 
     const wrapped = (_, data) => callback(data);
-    ipcRenderer.on("directory-watch:event", wrapped);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.DIRECTORY_WATCH_EVENT, wrapped);
     directoryWatchEventWrappers.set(callback, wrapped);
     directoryWatchEventListeners.add(wrapped);
 
     return () => {
-      ipcRenderer.removeListener("directory-watch:event", wrapped);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.DIRECTORY_WATCH_EVENT, wrapped);
       directoryWatchEventListeners.delete(wrapped);
       directoryWatchEventWrappers.delete(callback);
     };
@@ -750,20 +754,20 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       return;
     }
 
-    ipcRenderer.removeListener("directory-watch:event", wrapped);
+    ipcRenderer.removeListener(IPC_EVENT_CHANNELS.DIRECTORY_WATCH_EVENT, wrapped);
     directoryWatchEventListeners.delete(wrapped);
     directoryWatchEventWrappers.delete(callback);
   },
   copyFile: (tabId, sourcePath, targetPath) =>
-    ipcRenderer.invoke("copyFile", tabId, sourcePath, targetPath),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_COPY, tabId, sourcePath, targetPath),
   moveFile: (tabId, sourcePath, targetPath) =>
-    ipcRenderer.invoke("moveFile", tabId, sourcePath, targetPath),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_MOVE, tabId, sourcePath, targetPath),
   deleteFile: (tabId, filePath, isDirectory) =>
-    ipcRenderer.invoke("deleteFile", tabId, filePath, isDirectory),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_DELETE, tabId, filePath, isDirectory),
   createFolder: (tabId, folderPath) =>
-    ipcRenderer.invoke("createFolder", tabId, folderPath),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CREATE_FOLDER, tabId, folderPath),
   createFile: (tabId, filePath) =>
-    ipcRenderer.invoke("createFile", tabId, filePath),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CREATE, tabId, filePath),
   downloadFile: (tabId, remotePath, progressCallback) => {
     // 注册一个临时的进度监听器
     const progressListener = (_, data) => {
@@ -784,11 +788,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     };
 
     // 添加进度事件监听器
-    ipcRenderer.on("download-progress", progressListener);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS, progressListener);
 
     // 发起下载请求并在完成后移除监听器
-    return ipcRenderer.invoke("downloadFile", tabId, remotePath).finally(() => {
-      ipcRenderer.removeListener("download-progress", progressListener);
+    return ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_DOWNLOAD, tabId, remotePath).finally(() => {
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS, progressListener);
     });
   },
   // 批量下载多个文件
@@ -815,26 +819,26 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     };
 
     // 添加进度事件监听器
-    ipcRenderer.on("download-progress", progressListener);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS, progressListener);
 
     // 发起批量下载请求并在完成后移除监听器
-    return ipcRenderer.invoke("downloadFiles", tabId, files).finally(() => {
-      ipcRenderer.removeListener("download-progress", progressListener);
+    return ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_DOWNLOAD_FILES, tabId, files).finally(() => {
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS, progressListener);
     });
   },
   // 新增API
   openFileInExternalEditor: (tabId, remotePath) =>
-    ipcRenderer.invoke("external-editor:open", tabId, remotePath),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.EXTERNAL_EDITOR_OPEN, tabId, remotePath),
 
   onExternalEditorEvent: (callback) => {
     if (typeof callback !== "function") {
       return () => {};
     }
     const wrapped = (_, data) => callback(data);
-    ipcRenderer.on("external-editor:sync", wrapped);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.EXTERNAL_EDITOR_SYNC, wrapped);
     if (!callback._wrappedCallback) callback._wrappedCallback = wrapped;
     return () => {
-      ipcRenderer.removeListener("external-editor:sync", wrapped);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.EXTERNAL_EDITOR_SYNC, wrapped);
     };
   },
   offExternalEditorEvent: (callback) => {
@@ -842,33 +846,33 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       return;
     }
     const wrapped = callback._wrappedCallback || callback;
-    ipcRenderer.removeListener("external-editor:sync", wrapped);
+    ipcRenderer.removeListener(IPC_EVENT_CHANNELS.EXTERNAL_EDITOR_SYNC, wrapped);
   },
 
   renameFile: (tabId, oldPath, newName) =>
-    ipcRenderer.invoke("renameFile", tabId, oldPath, newName),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_RENAME, tabId, oldPath, newName),
 
   // 权限设置API
   setFilePermissions: (tabId, filePath, permissions) =>
-    ipcRenderer.invoke("setFilePermissions", tabId, filePath, permissions),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_SET_PERMISSIONS, tabId, filePath, permissions),
   // 所有者/组设置API
   setFileOwnership: (tabId, filePath, owner, group) =>
-    ipcRenderer.invoke("setFileOwnership", tabId, filePath, owner, group),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_SET_OWNERSHIP, tabId, filePath, owner, group),
   getFilePermissions: (tabId, filePath) =>
-    ipcRenderer.invoke("getFilePermissions", tabId, filePath),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_GET_PERMISSIONS, tabId, filePath),
 
   // 批量获取文件权限 - 减少 IPC 调用开销
   getFilePermissionsBatch: (tabId, filePaths) =>
-    ipcRenderer.invoke("getFilePermissionsBatch", tabId, filePaths),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_GET_PERMISSIONS_BATCH, tabId, filePaths),
 
   // 通用批量 IPC 调用 API
   // 用法: batchInvoke([['channel1', arg1, arg2], ['channel2', arg1]])
   // 返回: [{ success: true, data: result1 }, { success: false, error: 'message' }, ...]
-  batchInvoke: (calls) => ipcRenderer.invoke("ipc:batchInvoke", calls),
+  batchInvoke: (calls) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.IPC_BATCH_INVOKE, calls),
 
   uploadFile: (tabId, targetFolder, progressCallback) => {
     // Unique channel for this specific upload
-    const progressChannel = `upload-progress-${tabId}-${Date.now()}`;
+    const progressChannel = getUploadProgressChannel(`${tabId}-${Date.now()}`);
 
     // Listen for progress updates on the unique channel
     const handler = (event, progressData) => {
@@ -897,7 +901,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
     // Invoke the main process to start the upload, passing the unique channel
     return ipcRenderer
-      .invoke("uploadFile", tabId, targetFolder, progressChannel)
+      .invoke(
+        IPC_REQUEST_CHANNELS.FILE_UPLOAD,
+        tabId,
+        targetFolder,
+        progressChannel,
+      )
       .finally(() => {
         // Ensure listener is removed if invoke fails or completes without progressData signal
         ipcRenderer.removeListener(progressChannel, handler);
@@ -905,11 +914,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
   // 创建远程文件夹结构
   createRemoteFolders: (tabId, folderPath) =>
-    ipcRenderer.invoke("createRemoteFolders", tabId, folderPath),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CREATE_REMOTE_FOLDERS, tabId, folderPath),
   // 新增: 上传文件夹API
   uploadFolder: (tabId, targetFolder, progressCallback) => {
     // Unique channel for this specific upload
-    const progressChannel = `upload-folder-progress-${tabId}-${Date.now()}`;
+    const progressChannel = getUploadFolderProgressChannel(
+      `${tabId}-${Date.now()}`,
+    );
 
     // Listen for progress updates on the unique channel
     const handler = (event, progressData) => {
@@ -938,7 +949,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
     // Invoke the main process to start the upload, passing the unique channel
     return ipcRenderer
-      .invoke("upload-folder", tabId, targetFolder, progressChannel)
+      .invoke(
+        IPC_REQUEST_CHANNELS.FILE_UPLOAD_FOLDER,
+        tabId,
+        targetFolder,
+        progressChannel,
+      )
       .finally(() => {
         // Ensure listener is removed if invoke fails or completes without progressData signal
         ipcRenderer.removeListener(progressChannel, handler);
@@ -947,7 +963,9 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 新增: 上传拖拽文件API (用于文件管理器拖放功能)
   uploadDroppedFiles: (tabId, targetFolder, uploadData, progressCallback) => {
     // Unique channel for this specific upload
-    const progressChannel = `upload-dropped-progress-${tabId}-${Date.now()}`;
+    const progressChannel = getUploadDroppedProgressChannel(
+      `${tabId}-${Date.now()}`,
+    );
 
     // Listen for progress updates on the unique channel
     const handler = (event, progressData) => {
@@ -978,7 +996,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     // Invoke the main process to start the upload, passing the unique channel
     return ipcRenderer
       .invoke(
-        "uploadDroppedFiles",
+        IPC_REQUEST_CHANNELS.FILE_UPLOAD_DROPPED,
         tabId,
         targetFolder,
         uploadData,
@@ -1010,46 +1028,48 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     };
 
     // 添加进度事件监听器
-    ipcRenderer.on("download-folder-progress", progressListener);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS, progressListener);
 
     // 发起下载请求并在完成后移除监听器
     return ipcRenderer
-      .invoke("downloadFolder", tabId, remoteFolderPath)
+      .invoke(
+        IPC_REQUEST_CHANNELS.FILE_DOWNLOAD_FOLDER,
+        tabId,
+        remoteFolderPath,
+      )
       .finally(() => {
-        ipcRenderer.removeListener(
-          "download-folder-progress",
+        ipcRenderer.removeListener(IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
           progressListener,
         );
       });
   },
   cancelTransfer: (tabId, type) =>
-    ipcRenderer.invoke("cancelTransfer", tabId, type),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CANCEL_TRANSFER, tabId, type),
   getAbsolutePath: (tabId, relativePath) =>
-    ipcRenderer.invoke("getAbsolutePath", tabId, relativePath),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_GET_ABSOLUTE_PATH, tabId, relativePath),
   // 添加文件内容读取API
   readFileContent: (tabId, filePath) =>
-    ipcRenderer.invoke("readFileContent", tabId, filePath),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SFTP_READ_FILE_CONTENT, tabId, filePath),
 
   // 新增：保存文件内容API
   saveFileContent: (tabId, filePath, content) =>
-    ipcRenderer.invoke("saveFileContent", tabId, filePath, content),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SFTP_SAVE_FILE_CONTENT, tabId, filePath, content),
 
   // 从base64解码读取文件内容
   readFileAsBase64: (tabId, filePath) =>
-    ipcRenderer.invoke("readFileAsBase64", tabId, filePath),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SFTP_READ_FILE_BASE64, tabId, filePath),
 
   listFileSnapshots: (tabId, filePath) =>
-    ipcRenderer.invoke("listFileSnapshots", tabId, filePath),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SFTP_LIST_FILE_SNAPSHOTS, tabId, filePath),
 
   createFileSnapshot: (tabId, filePath, content, options = {}) =>
-    ipcRenderer.invoke("createFileSnapshot", tabId, filePath, content, options),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SFTP_CREATE_FILE_SNAPSHOT, tabId, filePath, content, options),
 
   getFileSnapshot: (tabId, filePath, snapshotId) =>
-    ipcRenderer.invoke("getFileSnapshot", tabId, filePath, snapshotId),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SFTP_GET_FILE_SNAPSHOT, tabId, filePath, snapshotId),
 
   restoreFileSnapshot: (tabId, filePath, snapshotId, currentContent = null) =>
-    ipcRenderer.invoke(
-      "restoreFileSnapshot",
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SFTP_RESTORE_FILE_SNAPSHOT,
       tabId,
       filePath,
       snapshotId,
@@ -1060,7 +1080,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   openExternal: async (url, options = {}) => {
     const payload = normalizeExternalOpenRequest(url, options);
     const result = await Promise.race([
-      ipcRenderer.invoke("app:openExternal", payload),
+      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_OPEN_EXTERNAL, payload),
       new Promise((_, reject) =>
         setTimeout(
           () => reject(new Error("openExternal IPC timed out")),
@@ -1078,13 +1098,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
 
   // 文件系统辅助API
-  checkPathExists: (path) => ipcRenderer.invoke("checkPathExists", path),
-  showItemInFolder: (path) => ipcRenderer.invoke("showItemInFolder", path),
+  checkPathExists: (path) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CHECK_PATH_EXISTS, path),
+  showItemInFolder: (path) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_SHOW_ITEM_IN_FOLDER, path),
   validateDroppedItems: (items) =>
-    ipcRenderer.invoke("validateDroppedItems", items),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_VALIDATE_DROPPED_ITEMS, items),
   checkDroppedUploadConflicts: (tabId, targetFolder, uploadData) =>
-    ipcRenderer.invoke(
-      "checkDroppedUploadConflicts",
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CHECK_DROPPED_UPLOAD_CONFLICTS,
       tabId,
       targetFolder,
       uploadData,
@@ -1098,25 +1117,25 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
 
   // UI设置相关API
-  loadUISettings: () => ipcRenderer.invoke("settings:loadUISettings"),
+  loadUISettings: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_LOAD_UI),
   saveUISettings: (settings) =>
-    ipcRenderer.invoke("settings:saveUISettings", settings),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_SAVE_UI, settings),
   getCredentialSecurityStatus: () =>
-    ipcRenderer.invoke("settings:getCredentialSecurityStatus"),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_GET_CREDENTIAL_SECURITY_STATUS),
   updateCredentialSecurity: (settings) =>
-    ipcRenderer.invoke("settings:updateCredentialSecurity", settings),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_CREDENTIAL_SECURITY, settings),
   unlockCredentialStore: (masterPassword) =>
-    ipcRenderer.invoke("settings:unlockCredentialStore", masterPassword),
-  lockCredentialStore: () => ipcRenderer.invoke("settings:lockCredentialStore"),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_UNLOCK_CREDENTIAL_STORE, masterPassword),
+  lockCredentialStore: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_LOCK_CREDENTIAL_STORE),
   clearLocalData: (options) =>
-    ipcRenderer.invoke("settings:clearLocalData", options),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_CLEAR_LOCAL_DATA, options),
   onLocalDataCleared: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = (_event, payload) => callback(payload);
     localDataClearedWrappers.set(callback, wrappedCallback);
-    ipcRenderer.on("settings:localDataCleared", wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.SETTINGS_LOCAL_DATA_CLEARED, wrappedCallback);
     return () => {
-      ipcRenderer.removeListener("settings:localDataCleared", wrappedCallback);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.SETTINGS_LOCAL_DATA_CLEARED, wrappedCallback);
       localDataClearedWrappers.delete(callback);
     };
   },
@@ -1124,39 +1143,38 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     if (!callback) return;
     const wrappedCallback = localDataClearedWrappers.get(callback);
     if (wrappedCallback) {
-      ipcRenderer.removeListener("settings:localDataCleared", wrappedCallback);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.SETTINGS_LOCAL_DATA_CLEARED, wrappedCallback);
       localDataClearedWrappers.delete(callback);
     }
   },
 
   // 日志设置相关API
-  loadLogSettings: () => ipcRenderer.invoke("settings:loadLogSettings"),
+  loadLogSettings: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_LOAD_LOG),
   saveLogSettings: (settings) =>
-    ipcRenderer.invoke("settings:saveLogSettings", settings),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_SAVE_LOG, settings),
   getErrorReportingSettings: () =>
-    ipcRenderer.invoke("settings:getErrorReportingSettings"),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_GET_ERROR_REPORTING),
   saveErrorReportingSettings: (settings) =>
-    ipcRenderer.invoke("settings:saveErrorReportingSettings", settings),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_SAVE_ERROR_REPORTING, settings),
 
   // 性能设置实时更新API
   configureRuntimeFileResource: (resourceName, settings = {}) =>
-    ipcRenderer.invoke("runtime-files:configure", resourceName, settings),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RUNTIME_FILES_CONFIGURE, resourceName, settings),
   releaseRuntimeFilePath: (resourceName, targetPath, options = {}) =>
-    ipcRenderer.invoke(
-      "runtime-files:releasePath",
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RUNTIME_FILES_RELEASE_PATH,
       resourceName,
       targetPath,
       options,
     ),
   clearRuntimeFileResource: (resourceName, options = {}) =>
-    ipcRenderer.invoke("runtime-files:clear", resourceName, options),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RUNTIME_FILES_CLEAR, resourceName, options),
   sweepRuntimeFileResource: (resourceName, options = {}) =>
-    ipcRenderer.invoke("runtime-files:sweep", resourceName, options),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RUNTIME_FILES_SWEEP, resourceName, options),
   updatePrefetchSettings: (settings) =>
-    ipcRenderer.invoke("settings:updatePrefetchSettings", settings),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_PREFETCH, settings),
 
   // 窗口重新加载
-  reloadWindow: () => ipcRenderer.invoke("app:reloadWindow"),
+  reloadWindow: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_RELOAD_WINDOW),
 
   // 窗口控制API
   minimizeWindow: () =>
@@ -1181,46 +1199,45 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
 
   // 更新相关API
-  downloadUpdate: () => ipcRenderer.invoke("app:downloadUpdate"),
-  installUpdate: () => ipcRenderer.invoke("app:installUpdate"),
-  getDownloadProgress: () => ipcRenderer.invoke("app:getDownloadProgress"),
-  cancelDownload: () => ipcRenderer.invoke("app:cancelDownload"),
+  downloadUpdate: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_DOWNLOAD_UPDATE),
+  installUpdate: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_INSTALL_UPDATE),
+  getDownloadProgress: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_GET_DOWNLOAD_PROGRESS),
+  cancelDownload: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_CANCEL_DOWNLOAD),
   hasDownloadedInstaller: () =>
-    ipcRenderer.invoke("app:hasDownloadedInstaller"),
-  getGpuInfo: () => ipcRenderer.invoke("app:getGpuInfo"),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_HAS_DOWNLOADED_INSTALLER),
+  getGpuInfo: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_GET_GPU_INFO),
 
   // 新增: 通知主进程编辑器模式变化的API
   notifyEditorModeChange: (processId, isEditorMode) =>
-    ipcRenderer.invoke(
-      "terminal:notifyEditorModeChange",
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_NOTIFY_EDITOR_MODE_CHANGE,
       processId,
       isEditorMode,
     ),
 
   // 命令历史相关API
   addToCommandHistory: (command) =>
-    ipcRenderer.invoke("command-history:add", command),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_ADD, command),
   getCommandSuggestions: (input, maxResults) =>
-    ipcRenderer.invoke("command-history:getSuggestions", input, maxResults),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_SUGGESTIONS, input, maxResults),
   incrementCommandUsage: (command) =>
-    ipcRenderer.invoke("command-history:incrementUsage", command),
-  clearCommandHistory: () => ipcRenderer.invoke("command-history:clear"),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_INCREMENT_USAGE, command),
+  clearCommandHistory: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_CLEAR),
   getCommandHistoryStatistics: () =>
-    ipcRenderer.invoke("command-history:getStatistics"),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_STATISTICS),
 
   // 新增：历史命令管理API
-  getAllCommandHistory: () => ipcRenderer.invoke("command-history:getAll"),
+  getAllCommandHistory: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_ALL),
   deleteCommandHistory: (command) =>
-    ipcRenderer.invoke("command-history:delete", command),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_DELETE, command),
   deleteCommandHistoryBatch: (commands) =>
-    ipcRenderer.invoke("command-history:deleteBatch", commands),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_DELETE_BATCH, commands),
   onCommandHistoryChanged: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = (_event, payload) => callback(payload);
     commandHistoryChangedWrappers.set(callback, wrappedCallback);
-    ipcRenderer.on("command-history:changed", wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.COMMAND_HISTORY_CHANGED, wrappedCallback);
     return () => {
-      ipcRenderer.removeListener("command-history:changed", wrappedCallback);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.COMMAND_HISTORY_CHANGED, wrappedCallback);
       commandHistoryChangedWrappers.delete(callback);
     };
   },
@@ -1228,81 +1245,80 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     if (!callback) return;
     const wrappedCallback = commandHistoryChangedWrappers.get(callback);
     if (wrappedCallback) {
-      ipcRenderer.removeListener("command-history:changed", wrappedCallback);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.COMMAND_HISTORY_CHANGED, wrappedCallback);
       commandHistoryChangedWrappers.delete(callback);
     }
   },
 
   // IP地址查询API
-  queryIpAddress: (ip = "") => ipcRenderer.invoke("ip:query", ip),
+  queryIpAddress: (ip = "") => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.UTILITY_IP_QUERY, ip),
 
   // 网络延迟检测API
   registerLatencyDetection: (tabId, host, port) =>
-    ipcRenderer.invoke("latency:register", { tabId, host, port }),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_REGISTER, { tabId, host, port }),
   unregisterLatencyDetection: (tabId) =>
-    ipcRenderer.invoke("latency:unregister", { tabId }),
-  getLatencyInfo: (tabId) => ipcRenderer.invoke("latency:getInfo", { tabId }),
-  getAllLatencyInfo: () => ipcRenderer.invoke("latency:getAllInfo"),
-  getLatencyServiceStatus: () => ipcRenderer.invoke("latency:getServiceStatus"),
-  testLatencyNow: (tabId) => ipcRenderer.invoke("latency:testNow", { tabId }),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_UNREGISTER, { tabId }),
+  getLatencyInfo: (tabId) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_GET_INFO, { tabId }),
+  getAllLatencyInfo: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_GET_ALL_INFO),
+  getLatencyServiceStatus: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_GET_SERVICE_STATUS),
+  testLatencyNow: (tabId) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_TEST_NOW, { tabId }),
   // 延迟事件监听
   onLatencyUpdate: (callback) => {
     const wrappedCallback = (event, data) => callback(event, data);
-    ipcRenderer.on("latency:updated", wrappedCallback);
-    return () => ipcRenderer.removeListener("latency:updated", wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.LATENCY_UPDATED, wrappedCallback);
+    return () => ipcRenderer.removeListener(IPC_EVENT_CHANNELS.LATENCY_UPDATED, wrappedCallback);
   },
   onLatencyError: (callback) => {
     const wrappedCallback = (event, data) => callback(event, data);
-    ipcRenderer.on("latency:error", wrappedCallback);
-    return () => ipcRenderer.removeListener("latency:error", wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.LATENCY_ERROR, wrappedCallback);
+    return () => ipcRenderer.removeListener(IPC_EVENT_CHANNELS.LATENCY_ERROR, wrappedCallback);
   },
   onLatencyDisconnected: (callback) => {
     const wrappedCallback = (event, data) => callback(event, data);
-    ipcRenderer.on("latency:disconnected", wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.LATENCY_DISCONNECTED, wrappedCallback);
     return () =>
-      ipcRenderer.removeListener("latency:disconnected", wrappedCallback);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.LATENCY_DISCONNECTED, wrappedCallback);
   },
 
   // SSH连接相关
-  startSSH: (sshConfig) => ipcRenderer.invoke("terminal:startSSH", sshConfig),
+  startSSH: (sshConfig) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_START_SSH, sshConfig),
 
   // Telnet连接相关
   startTelnet: (telnetConfig) =>
-    ipcRenderer.invoke("terminal:startTelnet", telnetConfig),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_START_TELNET, telnetConfig),
 
   // SSH 认证相关 IPC
   // 监听 SSH 认证请求（主机密钥验证、凭证请求等）
   onSSHAuthRequest: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = (_, data) => callback(data);
-    ipcRenderer.on("ssh:auth-request", wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.SSH_AUTH_REQUEST, wrappedCallback);
     return () => {
-      ipcRenderer.removeListener("ssh:auth-request", wrappedCallback);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.SSH_AUTH_REQUEST, wrappedCallback);
     };
   },
   offSSHAuthRequest: () => {
-    ipcRenderer.removeAllListeners("ssh:auth-request");
+    ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.SSH_AUTH_REQUEST);
   },
 
   // 响应 SSH 认证请求
   respondSSHAuth: (response) =>
-    ipcRenderer.invoke("ssh:auth-response", response),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SSH_AUTH_RESPONSE, response),
 
   onTerminalSessionRestored: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = (_event, data) => callback(data);
-    ipcRenderer.on("terminal:session-restored", wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORED, wrappedCallback);
     return () => {
-      ipcRenderer.removeListener("terminal:session-restored", wrappedCallback);
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORED, wrappedCallback);
     };
   },
   onTerminalSessionRestoreFailed: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = (_event, data) => callback(data);
-    ipcRenderer.on("terminal:session-restore-failed", wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORE_FAILED, wrappedCallback);
     return () => {
-      ipcRenderer.removeListener(
-        "terminal:session-restore-failed",
+      ipcRenderer.removeListener(IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORE_FAILED,
         wrappedCallback,
       );
     };
@@ -1310,8 +1326,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 更新连接配置（用于保存自动登录凭据）
   updateConnectionCredentials: (connectionId, credentials) =>
-    ipcRenderer.invoke(
-      "terminal:updateConnectionCredentials",
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_UPDATE_CONNECTION_CREDENTIALS,
       connectionId,
       credentials,
     ),
@@ -1321,35 +1336,35 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 contextBridge.exposeInMainWorld("electronAPI", {
   // SSH密钥对生成
   generateSSHKeyPair: (options) =>
-    ipcRenderer.invoke("generateSSHKeyPair", options),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SSH_KEY_GENERATE, options),
 
   // 保存SSH密钥到文件
-  saveSSHKey: (options) => ipcRenderer.invoke("saveSSHKey", options),
+  saveSSHKey: (options) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SSH_KEY_SAVE, options),
 });
 
 // 文件对话框API
 contextBridge.exposeInMainWorld("dialogAPI", {
   // 显示打开文件/目录对话框
   showOpenDialog: (options) =>
-    ipcRenderer.invoke("dialog:showOpenDialog", options),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.DIALOG_SHOW_OPEN, options),
 
   // 显示保存文件对话框
   showSaveDialog: (options) =>
-    ipcRenderer.invoke("dialog:showSaveDialog", options),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.DIALOG_SHOW_SAVE, options),
 
   // 显示消息框
   showMessageBox: (options) =>
-    ipcRenderer.invoke("dialog:showMessageBox", options),
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.DIALOG_SHOW_MESSAGE, options),
 });
 
 // 应用错误处理API
 contextBridge.exposeInMainWorld("appErrorAPI", {
   // 监听应用错误
-  onError: (callback) => ipcRenderer.on("app:error", callback),
+  onError: (callback) => ipcRenderer.on(IPC_EVENT_CHANNELS.APP_ERROR, callback),
 
   // 移除错误监听
   removeErrorListener: () => {
-    ipcRenderer.removeAllListeners("app:error");
+    ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.APP_ERROR);
   },
 });
 

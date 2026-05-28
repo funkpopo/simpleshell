@@ -1,5 +1,6 @@
 const processManager = require("../../process/processManager");
 const { logToFile } = require("../../utils/logger");
+const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * 连接状态相关的IPC处理器
@@ -11,7 +12,7 @@ class ConnectionHandlers {
   getHandlers() {
     return [
       {
-        channel: "connection:getTabStatus",
+        channel: IPC_REQUEST_CHANNELS.CONNECTION_GET_TAB_STATUS,
         category: "connection",
         handler: this.getTabStatus.bind(this),
       },

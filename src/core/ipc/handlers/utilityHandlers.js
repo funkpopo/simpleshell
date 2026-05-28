@@ -1,6 +1,7 @@
 const ipQuery = require("../../../modules/system-info/ip-query");
 const proxyManager = require("../../proxy/proxy-manager");
 const { logToFile } = require("../../utils/logger");
+const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * 实用工具相关的IPC处理器
@@ -12,7 +13,7 @@ class UtilityHandlers {
   getHandlers() {
     return [
       {
-        channel: "ip:query",
+        channel: IPC_REQUEST_CHANNELS.UTILITY_IP_QUERY,
         category: "utility",
         handler: this.queryIp.bind(this),
       },

@@ -1,5 +1,9 @@
 const NetworkLatencyService = require("../../services/networkLatencyService");
 const { logToFile } = require("../../utils/logger");
+const {
+  IPC_EVENT_CHANNELS,
+  IPC_REQUEST_CHANNELS,
+} = require("../schema/channels");
 
 /**
  * 网络延迟检测相关的IPC处理器
@@ -31,32 +35,32 @@ class LatencyHandlers {
   getHandlers() {
     return [
       {
-        channel: "latency:register",
+        channel: IPC_REQUEST_CHANNELS.LATENCY_REGISTER,
         category: "latency",
         handler: this.registerConnection.bind(this),
       },
       {
-        channel: "latency:unregister",
+        channel: IPC_REQUEST_CHANNELS.LATENCY_UNREGISTER,
         category: "latency",
         handler: this.unregisterConnection.bind(this),
       },
       {
-        channel: "latency:getInfo",
+        channel: IPC_REQUEST_CHANNELS.LATENCY_GET_INFO,
         category: "latency",
         handler: this.getLatencyInfo.bind(this),
       },
       {
-        channel: "latency:getAllInfo",
+        channel: IPC_REQUEST_CHANNELS.LATENCY_GET_ALL_INFO,
         category: "latency",
         handler: this.getAllLatencyInfo.bind(this),
       },
       {
-        channel: "latency:getServiceStatus",
+        channel: IPC_REQUEST_CHANNELS.LATENCY_GET_SERVICE_STATUS,
         category: "latency",
         handler: this.getServiceStatus.bind(this),
       },
       {
-        channel: "latency:testNow",
+        channel: IPC_REQUEST_CHANNELS.LATENCY_TEST_NOW,
         category: "latency",
         handler: this.testLatencyNow.bind(this),
       },
@@ -208,7 +212,7 @@ class LatencyHandlers {
 
     windows.forEach((window) => {
       if (!window.isDestroyed()) {
-        window.webContents.send("latency:updated", data);
+        window.webContents.send(IPC_EVENT_CHANNELS.LATENCY_UPDATED, data);
       }
     });
   }
@@ -222,7 +226,7 @@ class LatencyHandlers {
 
     windows.forEach((window) => {
       if (!window.isDestroyed()) {
-        window.webContents.send("latency:error", data);
+        window.webContents.send(IPC_EVENT_CHANNELS.LATENCY_ERROR, data);
       }
     });
   }
@@ -236,7 +240,7 @@ class LatencyHandlers {
 
     windows.forEach((window) => {
       if (!window.isDestroyed()) {
-        window.webContents.send("latency:disconnected", data);
+        window.webContents.send(IPC_EVENT_CHANNELS.LATENCY_DISCONNECTED, data);
       }
     });
   }

@@ -6,6 +6,10 @@ const {
   TERMINAL_IO_MAILBOX_CHANNEL,
   TERMINAL_IO_MESSAGE_TYPES,
 } = require("../../../modules/terminal/io/terminalIOMailboxProtocol");
+const {
+  IPC_EVENT_CHANNELS,
+  IPC_REQUEST_CHANNELS,
+} = require("../schema/channels");
 
 // 跟踪编辑器会话状态的正则表达式
 const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
@@ -43,47 +47,47 @@ class TerminalHandlers {
   getHandlers() {
     return [
       {
-        channel: "terminal:sendToProcess",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_SEND_TO_PROCESS,
         category: "terminal",
         handler: this.sendToProcess.bind(this),
       },
       {
-        channel: "terminal:killProcess",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_KILL_PROCESS,
         category: "terminal",
         handler: this.killProcess.bind(this),
       },
       {
-        channel: "terminal:saveConnections",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_SAVE_CONNECTIONS,
         category: "terminal",
         handler: this.saveConnections.bind(this),
       },
       {
-        channel: "terminal:selectKeyFile",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_SELECT_KEY_FILE,
         category: "terminal",
         handler: this.selectKeyFile.bind(this),
       },
       {
-        channel: "terminal:command",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_COMMAND,
         category: "terminal",
         handler: this.executeCommand.bind(this),
       },
       {
-        channel: "terminal:resize",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_RESIZE,
         category: "terminal",
         handler: this.resizeTerminal.bind(this),
       },
       {
-        channel: "terminal:cleanupConnection",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_CLEANUP_CONNECTION,
         category: "terminal",
         handler: this.cleanupConnection.bind(this),
       },
       {
-        channel: "terminal:getProcessInfo",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_INFO,
         category: "terminal",
         handler: this.getProcessInfo.bind(this),
       },
       {
-        channel: "terminal:notifyEditorModeChange",
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_NOTIFY_EDITOR_MODE_CHANGE,
         category: "terminal",
         handler: this.notifyEditorModeChange.bind(this),
       },
@@ -96,12 +100,12 @@ class TerminalHandlers {
   getEventHandlers() {
     return [
       {
-        channel: "terminal:sendInput",
+        channel: IPC_EVENT_CHANNELS.TERMINAL_SEND_INPUT,
         category: "terminal",
         handler: this.sendInput.bind(this),
       },
       {
-        channel: "terminal:outputAck",
+        channel: IPC_EVENT_CHANNELS.TERMINAL_OUTPUT_ACK,
         category: "terminal",
         handler: this.handleOutputAck.bind(this),
       },
@@ -463,7 +467,7 @@ class TerminalHandlers {
       const windows = BrowserWindow.getAllWindows();
       for (const win of windows) {
         if (win && !win.isDestroyed() && win.webContents) {
-          win.webContents.send("connections-changed");
+          win.webContents.send(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
         }
       }
     }

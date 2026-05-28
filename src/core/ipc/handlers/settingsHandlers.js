@@ -18,6 +18,10 @@ const {
 const {
   applyDesktopIntegrationSettings,
 } = require("../../app/desktopIntegration");
+const {
+  IPC_EVENT_CHANNELS,
+  IPC_REQUEST_CHANNELS,
+} = require("../schema/channels");
 
 const LOCAL_DATA_SECTIONS = new Set([
   "connections",
@@ -54,7 +58,7 @@ class SettingsHandlers {
         !win.webContents.isDestroyed?.()
       ) {
         try {
-          win.webContents.send("command-history:changed", payload);
+          win.webContents.send(IPC_EVENT_CHANNELS.COMMAND_HISTORY_CHANGED, payload);
         } catch (error) {
           logToFile(
             `Error broadcasting command history change: ${error.message}`,
@@ -112,112 +116,112 @@ class SettingsHandlers {
   getHandlers() {
     return [
       {
-        channel: "settings:loadUISettings",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_LOAD_UI,
         category: "settings",
         handler: this.loadUISettings.bind(this),
       },
       {
-        channel: "settings:saveUISettings",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_SAVE_UI,
         category: "settings",
         handler: this.saveUISettings.bind(this),
       },
       {
-        channel: "settings:loadLogSettings",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_LOAD_LOG,
         category: "settings",
         handler: this.loadLogSettings.bind(this),
       },
       {
-        channel: "settings:saveLogSettings",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_SAVE_LOG,
         category: "settings",
         handler: this.saveLogSettings.bind(this),
       },
       {
-        channel: "settings:getErrorReportingSettings",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_GET_ERROR_REPORTING,
         category: "settings",
         handler: this.getErrorReportingSettings.bind(this),
       },
       {
-        channel: "settings:saveErrorReportingSettings",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_SAVE_ERROR_REPORTING,
         category: "settings",
         handler: this.saveErrorReportingSettings.bind(this),
       },
       {
-        channel: "settings:updatePrefetchSettings",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_PREFETCH,
         category: "settings",
         handler: this.updatePrefetchSettings.bind(this),
       },
       {
-        channel: "settings:getCredentialSecurityStatus",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_GET_CREDENTIAL_SECURITY_STATUS,
         category: "settings",
         handler: this.getCredentialSecurityStatus.bind(this),
       },
       {
-        channel: "settings:updateCredentialSecurity",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_CREDENTIAL_SECURITY,
         category: "settings",
         handler: this.updateCredentialSecurity.bind(this),
       },
       {
-        channel: "settings:unlockCredentialStore",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_UNLOCK_CREDENTIAL_STORE,
         category: "settings",
         handler: this.unlockCredentialStore.bind(this),
       },
       {
-        channel: "settings:lockCredentialStore",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_LOCK_CREDENTIAL_STORE,
         category: "settings",
         handler: this.lockCredentialStore.bind(this),
       },
       {
-        channel: "settings:clearLocalData",
+        channel: IPC_REQUEST_CHANNELS.SETTINGS_CLEAR_LOCAL_DATA,
         category: "settings",
         handler: this.clearLocalData.bind(this),
       },
       {
-        channel: "get-shortcut-commands",
+        channel: IPC_REQUEST_CHANNELS.SHORTCUT_COMMANDS_GET,
         category: "settings",
         handler: this.getShortcutCommands.bind(this),
       },
       {
-        channel: "save-shortcut-commands",
+        channel: IPC_REQUEST_CHANNELS.SHORTCUT_COMMANDS_SAVE,
         category: "settings",
         handler: this.saveShortcutCommands.bind(this),
       },
       {
-        channel: "command-history:add",
+        channel: IPC_REQUEST_CHANNELS.COMMAND_HISTORY_ADD,
         category: "settings",
         handler: this.addCommandHistory.bind(this),
       },
       {
-        channel: "command-history:getSuggestions",
+        channel: IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_SUGGESTIONS,
         category: "settings",
         handler: this.getCommandSuggestions.bind(this),
       },
       {
-        channel: "command-history:incrementUsage",
+        channel: IPC_REQUEST_CHANNELS.COMMAND_HISTORY_INCREMENT_USAGE,
         category: "settings",
         handler: this.incrementCommandUsage.bind(this),
       },
       {
-        channel: "command-history:clear",
+        channel: IPC_REQUEST_CHANNELS.COMMAND_HISTORY_CLEAR,
         category: "settings",
         handler: this.clearCommandHistory.bind(this),
       },
       {
-        channel: "command-history:getStatistics",
+        channel: IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_STATISTICS,
         category: "settings",
         handler: this.getCommandStatistics.bind(this),
       },
       {
-        channel: "command-history:getAll",
+        channel: IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_ALL,
         category: "settings",
         handler: this.getAllCommandHistory.bind(this),
       },
       {
-        channel: "command-history:delete",
+        channel: IPC_REQUEST_CHANNELS.COMMAND_HISTORY_DELETE,
         category: "settings",
         handler: this.deleteCommand.bind(this),
       },
       {
-        channel: "command-history:deleteBatch",
+        channel: IPC_REQUEST_CHANNELS.COMMAND_HISTORY_DELETE_BATCH,
         category: "settings",
         handler: this.deleteCommandBatch.bind(this),
       },
@@ -331,7 +335,7 @@ class SettingsHandlers {
       const windows = BrowserWindow.getAllWindows();
       for (const win of windows) {
         if (win && !win.isDestroyed() && win.webContents) {
-          win.webContents.send("connections-changed");
+          win.webContents.send(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
         }
       }
       logToFile("Credential security settings updated", "INFO");
@@ -402,16 +406,16 @@ class SettingsHandlers {
 
     for (const win of BrowserWindow.getAllWindows()) {
       if (win && !win.isDestroyed() && win.webContents) {
-        win.webContents.send("settings:localDataCleared", payload);
+        win.webContents.send(IPC_EVENT_CHANNELS.SETTINGS_LOCAL_DATA_CLEARED, payload);
         if (
           sections.some((section) =>
             ["connections", "credentials", "aiSettings"].includes(section),
           )
         ) {
-          win.webContents.send("connections-changed");
+          win.webContents.send(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
         }
         if (sections.includes("commandHistory")) {
-          win.webContents.send("command-history:changed", {
+          win.webContents.send(IPC_EVENT_CHANNELS.COMMAND_HISTORY_CHANGED, {
             reason: "clear-local-data",
             history: [],
             count: 0,

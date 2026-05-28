@@ -1,6 +1,7 @@
 const fs = require("fs");
 const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
+const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 const MAX_CALLS_PER_BATCH = 100;
 const MAX_BATCH_PAYLOAD_BYTES = 256 * 1024;
@@ -86,14 +87,14 @@ async function batchInvoke(_event, calls) {
 
     try {
       // Strict allowlist: keep narrow to avoid arbitrary IPC execution.
-      if (channel === "getFilePermissions") {
+      if (channel === IPC_REQUEST_CHANNELS.FILE_GET_PERMISSIONS) {
         const [tabId, filePath] = args;
         const raw = await nativeSftpClient.getFilePermissions(tabId, filePath);
         results.push(normalizeResult(raw));
         continue;
       }
 
-      if (channel === "checkPathExists") {
+      if (channel === IPC_REQUEST_CHANNELS.FILE_CHECK_PATH_EXISTS) {
         const [checkPath] = args;
         const exists = fs.existsSync(checkPath);
         results.push({ success: true, data: { exists } });
@@ -127,7 +128,7 @@ async function batchInvoke(_event, calls) {
 }
 
 function registerBatchInvokeHandlers(ipcMain, safeHandle) {
-  safeHandle(ipcMain, "ipc:batchInvoke", batchInvoke);
+  safeHandle(ipcMain, IPC_REQUEST_CHANNELS.IPC_BATCH_INVOKE, batchInvoke);
 }
 
 module.exports = {

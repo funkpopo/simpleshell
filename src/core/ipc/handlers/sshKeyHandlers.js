@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const util = require("util");
 const fs = require("fs").promises;
 const { logToFile } = require("../../utils/logger");
+const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 const generateKeyPairAsync = util.promisify(crypto.generateKeyPair);
 
@@ -13,12 +14,12 @@ class SshKeyHandlers {
   getHandlers() {
     return [
       {
-        channel: "generateSSHKeyPair",
+        channel: IPC_REQUEST_CHANNELS.SSH_KEY_GENERATE,
         category: "sshKey",
         handler: this.generateSSHKeyPair.bind(this),
       },
       {
-        channel: "saveSSHKey",
+        channel: IPC_REQUEST_CHANNELS.SSH_KEY_SAVE,
         category: "sshKey",
         handler: this.saveSSHKey.bind(this),
       },

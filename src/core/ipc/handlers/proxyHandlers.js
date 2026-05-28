@@ -1,5 +1,6 @@
 const proxyManager = require("../../proxy/proxy-manager");
 const { logToFile } = require("../../utils/logger");
+const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * 代理配置相关的IPC处理器
@@ -11,22 +12,22 @@ class ProxyHandlers {
   getHandlers() {
     return [
       {
-        channel: "proxy:getStatus",
+        channel: IPC_REQUEST_CHANNELS.PROXY_GET_STATUS,
         category: "proxy",
         handler: this.getStatus.bind(this),
       },
       {
-        channel: "proxy:getDefaultConfig",
+        channel: IPC_REQUEST_CHANNELS.PROXY_GET_DEFAULT_CONFIG,
         category: "proxy",
         handler: this.getDefaultConfig.bind(this),
       },
       {
-        channel: "proxy:saveDefaultConfig",
+        channel: IPC_REQUEST_CHANNELS.PROXY_SAVE_DEFAULT_CONFIG,
         category: "proxy",
         handler: this.saveDefaultConfig.bind(this),
       },
       {
-        channel: "proxy:getSystemConfig",
+        channel: IPC_REQUEST_CHANNELS.PROXY_GET_SYSTEM_CONFIG,
         category: "proxy",
         handler: this.getSystemConfig.bind(this),
       },

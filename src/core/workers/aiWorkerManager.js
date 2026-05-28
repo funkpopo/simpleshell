@@ -5,6 +5,7 @@ const { resolveWorkerScriptPath } = require("../utils/workerScriptResolver");
 const {
   mainProcessResourceManager,
 } = require("../utils/mainProcessResourceManager");
+const { IPC_EVENT_CHANNELS } = require("../ipc/schema/channels");
 
 // AI Worker状态
 let aiWorker = null;
@@ -123,7 +124,7 @@ function handleWorkerTypeMessage(type, id, data, result, error) {
     case "stream_chunk":
       if (data && data.sessionId) {
         streamSessions.set(data.sessionId, id);
-        mainWindow.webContents.send("stream-chunk", {
+        mainWindow.webContents.send(IPC_EVENT_CHANNELS.AI_STREAM_CHUNK, {
           tabId: "ai",
           chunk: data.chunk,
           sessionId: data.sessionId,
@@ -133,7 +134,7 @@ function handleWorkerTypeMessage(type, id, data, result, error) {
 
     case "stream_end":
       if (data && data.sessionId) {
-        mainWindow.webContents.send("stream-end", {
+        mainWindow.webContents.send(IPC_EVENT_CHANNELS.AI_STREAM_END, {
           tabId: "ai",
           sessionId: data.sessionId,
           aborted: data.aborted || false,
@@ -144,7 +145,7 @@ function handleWorkerTypeMessage(type, id, data, result, error) {
 
     case "stream_error":
       if (data && data.sessionId) {
-        mainWindow.webContents.send("stream-error", {
+        mainWindow.webContents.send(IPC_EVENT_CHANNELS.AI_STREAM_ERROR, {
           tabId: "ai",
           sessionId: data.sessionId,
           error: data.error || { message: "未知错误" },

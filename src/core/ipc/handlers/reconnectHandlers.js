@@ -1,6 +1,10 @@
 const { ipcMain } = require("electron");
 const { logToFile } = require("../../utils/logger");
 const { safeHandle } = require("../ipcResponse");
+const {
+  IPC_EVENT_CHANNELS,
+  IPC_REQUEST_CHANNELS,
+} = require("../schema/channels");
 
 // 存储重连事件监听器
 const reconnectListeners = new Map();
@@ -110,7 +114,10 @@ function normalizeReconnectPayload(
 }
 
 function shouldSkipDuplicateTerminalEvent(channel, payload) {
-  if (channel !== "reconnect-failed" && channel !== "reconnect-abandoned") {
+  if (
+    channel !== IPC_EVENT_CHANNELS.RECONNECT_FAILED &&
+    channel !== IPC_EVENT_CHANNELS.RECONNECT_ABANDONED
+  ) {
     return false;
   }
 
@@ -146,20 +153,25 @@ function registerReconnectHandlers(connectionPool) {
   boundReconnectionManager = connectionPool.reconnectionManager || null;
 
   // 监听重连状态请求
-  safeHandle(ipcMain, "get-reconnect-status", async (_event, { tabId }) => {
-    const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
-    if (!connectionKey) {
-      return null;
-    }
+  safeHandle(
+    ipcMain,
+    IPC_REQUEST_CHANNELS.RECONNECT_GET_STATUS,
+    async (_event, { tabId }) => {
+      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
+      if (!connectionKey) {
+        return null;
+      }
 
-    const status = connectionPool.getConnectionStatus(connectionKey);
-    return status?.reconnectStatus || null;
-  });
+      const status = connectionPool.getConnectionStatus(connectionKey);
+      return status?.reconnectStatus || null;
+    },
+    { category: "reconnect" },
+  );
 
   // 手动触发重连
   safeHandle(
     ipcMain,
-    "manual-reconnect",
+    IPC_REQUEST_CHANNELS.RECONNECT_MANUAL,
     async (_event, { tabId, sshConfig }) => {
       const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
 
@@ -188,35 +200,51 @@ function registerReconnectHandlers(connectionPool) {
       await connectionPool.reconnectionManager.manualReconnect(connectionKey);
       return { success: true, connectionKey };
     },
+    { category: "reconnect" },
   );
 
   // 暂停重连
-  safeHandle(ipcMain, "pause-reconnect", async (event, { tabId }) => {
-    const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
-    if (connectionKey && connectionPool.reconnectionManager) {
-      connectionPool.reconnectionManager.pauseReconnection(connectionKey);
-      return { success: true };
-    }
-    return { success: false, error: "连接未找到" };
-  });
+  safeHandle(
+    ipcMain,
+    IPC_REQUEST_CHANNELS.RECONNECT_PAUSE,
+    async (event, { tabId }) => {
+      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
+      if (connectionKey && connectionPool.reconnectionManager) {
+        connectionPool.reconnectionManager.pauseReconnection(connectionKey);
+        return { success: true };
+      }
+      return { success: false, error: "连接未找到" };
+    },
+    { category: "reconnect" },
+  );
 
   // 恢复重连
-  safeHandle(ipcMain, "resume-reconnect", async (event, { tabId }) => {
-    const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
-    if (connectionKey && connectionPool.reconnectionManager) {
-      connectionPool.reconnectionManager.resumeReconnection(connectionKey);
-      return { success: true };
-    }
-    return { success: false, error: "连接未找到" };
-  });
+  safeHandle(
+    ipcMain,
+    IPC_REQUEST_CHANNELS.RECONNECT_RESUME,
+    async (event, { tabId }) => {
+      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
+      if (connectionKey && connectionPool.reconnectionManager) {
+        connectionPool.reconnectionManager.resumeReconnection(connectionKey);
+        return { success: true };
+      }
+      return { success: false, error: "连接未找到" };
+    },
+    { category: "reconnect" },
+  );
 
   // 获取重连统计信息
-  safeHandle(ipcMain, "get-reconnect-statistics", async () => {
-    if (connectionPool.reconnectionManager) {
-      return connectionPool.reconnectionManager.getStatistics();
-    }
-    return null;
-  });
+  safeHandle(
+    ipcMain,
+    IPC_REQUEST_CHANNELS.RECONNECT_GET_STATISTICS,
+    async () => {
+      if (connectionPool.reconnectionManager) {
+        return connectionPool.reconnectionManager.getStatistics();
+      }
+      return null;
+    },
+    { category: "reconnect" },
+  );
 
   // 设置重连事件转发
   if (boundReconnectionManager) {
@@ -238,7 +266,7 @@ function registerReconnectHandlers(connectionPool) {
         maxAttempts: maxRetries,
         error: null,
       });
-      broadcastToRenderer("reconnect-started", {
+      broadcastToRenderer(IPC_EVENT_CHANNELS.RECONNECT_STARTED, {
         ...payload,
         timestamp: Date.now(),
       });
@@ -266,7 +294,7 @@ function registerReconnectHandlers(connectionPool) {
         delay,
         error: null,
       });
-      broadcastToRenderer("reconnect-progress", {
+      broadcastToRenderer(IPC_EVENT_CHANNELS.RECONNECT_PROGRESS, {
         ...payload,
         timestamp: Date.now(),
       });
@@ -297,7 +325,7 @@ function registerReconnectHandlers(connectionPool) {
         "INFO",
       );
 
-      broadcastToRenderer("reconnect-success", {
+      broadcastToRenderer(IPC_EVENT_CHANNELS.RECONNECT_SUCCESS, {
         ...payload,
         timestamp: Date.now(),
       });
@@ -332,7 +360,7 @@ function registerReconnectHandlers(connectionPool) {
           ),
         },
       );
-      if (shouldSkipDuplicateTerminalEvent("reconnect-failed", payload)) {
+      if (shouldSkipDuplicateTerminalEvent(IPC_EVENT_CHANNELS.RECONNECT_FAILED, payload)) {
         logToFile(
           `跳过重复重连失败广播: tabId=${payload.tabId}, attempts=${payload.attempts}`,
           "DEBUG",
@@ -345,7 +373,7 @@ function registerReconnectHandlers(connectionPool) {
         "ERROR",
       );
 
-      broadcastToRenderer("reconnect-failed", {
+      broadcastToRenderer(IPC_EVENT_CHANNELS.RECONNECT_FAILED, {
         ...payload,
         timestamp: Date.now(),
       });
@@ -385,7 +413,7 @@ function registerReconnectHandlers(connectionPool) {
         },
         { hint: getDefaultReconnectHint(language) },
       );
-      if (shouldSkipDuplicateTerminalEvent("reconnect-abandoned", payload)) {
+      if (shouldSkipDuplicateTerminalEvent(IPC_EVENT_CHANNELS.RECONNECT_ABANDONED, payload)) {
         logToFile(
           `跳过重复重连放弃广播: tabId=${payload.tabId}, attempts=${payload.attempts}`,
           "DEBUG",
@@ -398,7 +426,7 @@ function registerReconnectHandlers(connectionPool) {
         "WARN",
       );
 
-      broadcastToRenderer("reconnect-abandoned", {
+      broadcastToRenderer(IPC_EVENT_CHANNELS.RECONNECT_ABANDONED, {
         ...payload,
         timestamp: Date.now(),
       });
@@ -410,7 +438,7 @@ function registerReconnectHandlers(connectionPool) {
   // 连接丢失事件（实际由连接池发出，而非 reconnectionManager）
   const onPoolConnectionLost = ({ key }) => {
     const tabId = extractTabIdFromSessionId(key);
-    broadcastToRenderer("connection-lost", {
+    broadcastToRenderer(IPC_EVENT_CHANNELS.CONNECTION_LOST, {
       tabId,
       sessionId: key,
       timestamp: Date.now(),
@@ -481,11 +509,11 @@ function cleanupReconnectHandlers() {
   recentReconnectTerminalEvents.clear();
 
   // 移除所有IPC处理器
-  ipcMain.removeHandler("get-reconnect-status");
-  ipcMain.removeHandler("manual-reconnect");
-  ipcMain.removeHandler("pause-reconnect");
-  ipcMain.removeHandler("resume-reconnect");
-  ipcMain.removeHandler("get-reconnect-statistics");
+  ipcMain.removeHandler(IPC_REQUEST_CHANNELS.RECONNECT_GET_STATUS);
+  ipcMain.removeHandler(IPC_REQUEST_CHANNELS.RECONNECT_MANUAL);
+  ipcMain.removeHandler(IPC_REQUEST_CHANNELS.RECONNECT_PAUSE);
+  ipcMain.removeHandler(IPC_REQUEST_CHANNELS.RECONNECT_RESUME);
+  ipcMain.removeHandler(IPC_REQUEST_CHANNELS.RECONNECT_GET_STATISTICS);
 }
 
 module.exports = {

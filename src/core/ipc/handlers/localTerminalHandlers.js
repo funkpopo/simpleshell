@@ -3,6 +3,10 @@ const { ipcMain: electronIpcMain } = require("electron");
 const TerminalDetector = require("../../local-terminal/terminal-detector");
 const LocalTerminalManager = require("../../local-terminal/local-terminal-manager");
 const WindowEmbedder = require("../../local-terminal/window-embedder");
+const {
+  IPC_EVENT_CHANNELS,
+  IPC_REQUEST_CHANNELS,
+} = require("../schema/channels");
 
 class LocalTerminalHandlers {
   constructor(mainWindow, ipcMain) {
@@ -20,7 +24,7 @@ class LocalTerminalHandlers {
   setupEventListeners() {
     // 监听终端管理器事件
     this.terminalManager.on("terminalLaunched", (data) => {
-      this.mainWindow.webContents.send("localTerminalStatus", {
+      this.mainWindow.webContents.send(IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS, {
         type: "launched",
         tabId: data.tabId,
         terminalInfo: {
@@ -49,7 +53,7 @@ class LocalTerminalHandlers {
           // 执行窗口嵌入
           await this.windowEmbedder.embedWindow(tabId, hwnd, containerBounds);
 
-          this.mainWindow.webContents.send("localTerminalStatus", {
+          this.mainWindow.webContents.send(IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS, {
             type: "embedded",
             tabId,
             hwnd,
@@ -57,7 +61,7 @@ class LocalTerminalHandlers {
           });
         } catch (error) {
           console.error("Failed to embed terminal window:", error);
-          this.mainWindow.webContents.send("localTerminalStatus", {
+          this.mainWindow.webContents.send(IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS, {
             type: "embed-error",
             tabId,
             error: error.message || "Embed failed",
@@ -65,7 +69,7 @@ class LocalTerminalHandlers {
         }
       }
 
-      this.mainWindow.webContents.send("localTerminalStatus", {
+      this.mainWindow.webContents.send(IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS, {
         type: "ready",
         tabId,
         hwnd,
@@ -74,7 +78,7 @@ class LocalTerminalHandlers {
     });
 
     this.terminalManager.on("terminalError", (data) => {
-      this.mainWindow.webContents.send("localTerminalStatus", {
+      this.mainWindow.webContents.send(IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS, {
         type: "error",
         tabId: data.tabId,
         error: {
@@ -85,7 +89,7 @@ class LocalTerminalHandlers {
     });
 
     this.terminalManager.on("terminalExited", (data) => {
-      this.mainWindow.webContents.send("localTerminalStatus", {
+      this.mainWindow.webContents.send(IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS, {
         type: "closed",
         tabId: data.tabId,
         code: data.code,
@@ -94,7 +98,7 @@ class LocalTerminalHandlers {
 
     // 监听窗口嵌入事件
     this.windowEmbedder.on("windowEmbedded", (data) => {
-      this.mainWindow.webContents.send("localTerminalStatus", {
+      this.mainWindow.webContents.send(IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS, {
         type: "embedded",
         tabId: data.tabId,
         hwnd: data.hwnd,
@@ -102,7 +106,7 @@ class LocalTerminalHandlers {
     });
 
     this.windowEmbedder.on("windowUnembedded", (data) => {
-      this.mainWindow.webContents.send("localTerminalStatus", {
+      this.mainWindow.webContents.send(IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS, {
         type: "unembedded",
         tabId: data.tabId,
       });
@@ -141,17 +145,22 @@ class LocalTerminalHandlers {
 
   registerHandlers() {
     // 检测本地终端
-    safeHandle(this.ipcMain, "detectLocalTerminals", async (event, options) => {
-      // 获取系统检测到的终端
-      const systemTerminals =
-        await this.terminalDetector.detectAllTerminals(options);
-      return systemTerminals;
-    });
+    safeHandle(
+      this.ipcMain,
+      IPC_REQUEST_CHANNELS.LOCAL_TERMINALS_DETECT,
+      async (event, options) => {
+        // 获取系统检测到的终端
+        const systemTerminals =
+          await this.terminalDetector.detectAllTerminals(options);
+        return systemTerminals;
+      },
+      { category: "local-terminal" },
+    );
 
     // 启动本地终端
     safeHandle(
       this.ipcMain,
-      "launchLocalTerminal",
+      IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_LAUNCH,
       async (event, terminalConfig, tabId, options = {}) => {
         const result = await this.terminalManager.launchTerminal(
           terminalConfig,
@@ -180,53 +189,64 @@ class LocalTerminalHandlers {
           embedded: false, // 初始嵌入状态，后续通过事件更新
         };
       },
+      { category: "local-terminal" },
     );
 
     // 关闭本地终端
-    safeHandle(this.ipcMain, "closeLocalTerminal", async (event, tabId) => {
-      // 先取消窗口嵌入
-      await this.windowEmbedder.unembedWindow(tabId);
-      // 再结束终端进程
-      await this.terminalManager.closeTerminal(tabId);
+    safeHandle(
+      this.ipcMain,
+      IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_CLOSE,
+      async (event, tabId) => {
+        // 先取消窗口嵌入
+        await this.windowEmbedder.unembedWindow(tabId);
+        // 再结束终端进程
+        await this.terminalManager.closeTerminal(tabId);
 
-      return { success: true };
-    });
+        return { success: true };
+      },
+      { category: "local-terminal" },
+    );
 
     // 获取终端详细信息
-    safeHandle(this.ipcMain, "getLocalTerminalInfo", async (event, tabId) => {
-      const terminalInfo = this.terminalManager.getActiveTerminal(tabId);
-      const embeddedInfo = this.windowEmbedder.getEmbeddedWindow(tabId);
+    safeHandle(
+      this.ipcMain,
+      IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_INFO,
+      async (event, tabId) => {
+        const terminalInfo = this.terminalManager.getActiveTerminal(tabId);
+        const embeddedInfo = this.windowEmbedder.getEmbeddedWindow(tabId);
 
-      // 仅返回可序列化字段
-      return {
-        success: true,
-        data: {
-          terminal: terminalInfo
-            ? {
-                tabId: terminalInfo.tabId,
-                pid: terminalInfo.pid,
-                status: terminalInfo.status,
-                startTime: terminalInfo.startTime,
-                hwnd: terminalInfo.hwnd,
-              }
-            : null,
-          embedded: embeddedInfo
-            ? {
-                tabId: embeddedInfo.tabId,
-                hwnd: embeddedInfo.hwnd,
-                isEmbedded: embeddedInfo.isEmbedded,
-                originalParent: embeddedInfo.originalParent,
-                originalStyle: embeddedInfo.originalStyle,
-              }
-            : null,
-        },
-      };
-    });
+        // 仅返回可序列化字段
+        return {
+          success: true,
+          data: {
+            terminal: terminalInfo
+              ? {
+                  tabId: terminalInfo.tabId,
+                  pid: terminalInfo.pid,
+                  status: terminalInfo.status,
+                  startTime: terminalInfo.startTime,
+                  hwnd: terminalInfo.hwnd,
+                }
+              : null,
+            embedded: embeddedInfo
+              ? {
+                  tabId: embeddedInfo.tabId,
+                  hwnd: embeddedInfo.hwnd,
+                  isEmbedded: embeddedInfo.isEmbedded,
+                  originalParent: embeddedInfo.originalParent,
+                  originalStyle: embeddedInfo.originalStyle,
+                }
+              : null,
+          },
+        };
+      },
+      { category: "local-terminal" },
+    );
 
     // 调整嵌入窗口大小
     safeHandle(
       this.ipcMain,
-      "resizeEmbeddedTerminal",
+      IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_RESIZE_EMBEDDED,
       async (event, tabId, bounds) => {
         const resized = await this.windowEmbedder.resizeEmbeddedWindow(
           tabId,
@@ -234,33 +254,39 @@ class LocalTerminalHandlers {
         );
         return { success: Boolean(resized) };
       },
+      { category: "local-terminal" },
     );
 
     // 获取所有活动终端
-    safeHandle(this.ipcMain, "getAllActiveLocalTerminals", async () => {
-      const terminals = this.terminalManager.getAllActiveTerminals();
+    safeHandle(
+      this.ipcMain,
+      IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_ALL_ACTIVE,
+      async () => {
+        const terminals = this.terminalManager.getAllActiveTerminals();
 
-      // 返回可序列化的终端信息
-      const serializableTerminals = terminals.map((terminal) => ({
-        tabId: terminal.tabId,
-        pid: terminal.pid,
-        status: terminal.status,
-        startTime: terminal.startTime,
-        hwnd: terminal.hwnd,
-        config: terminal.config
-          ? {
-              name: terminal.config.name,
-              type: terminal.config.type,
-              executable: terminal.config.executable,
-            }
-          : null,
-      }));
+        // 返回可序列化的终端信息
+        const serializableTerminals = terminals.map((terminal) => ({
+          tabId: terminal.tabId,
+          pid: terminal.pid,
+          status: terminal.status,
+          startTime: terminal.startTime,
+          hwnd: terminal.hwnd,
+          config: terminal.config
+            ? {
+                name: terminal.config.name,
+                type: terminal.config.type,
+                executable: terminal.config.executable,
+              }
+            : null,
+        }));
 
-      return {
-        success: true,
-        data: serializableTerminals,
-      };
-    });
+        return {
+          success: true,
+          data: serializableTerminals,
+        };
+      },
+      { category: "local-terminal" },
+    );
   }
 
   async cleanup() {

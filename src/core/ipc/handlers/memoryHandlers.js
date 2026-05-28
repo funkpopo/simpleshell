@@ -9,6 +9,7 @@ const {
 } = require("../../utils/mainProcessResourceManager");
 const processManager = require("../../process/processManager");
 const aiWorkerManager = require("../../workers/aiWorkerManager");
+const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * 记忆文件相关的IPC处理器
@@ -21,22 +22,22 @@ class MemoryHandlers {
   getHandlers() {
     return [
       {
-        channel: "memory:save",
+        channel: IPC_REQUEST_CHANNELS.MEMORY_SAVE,
         category: "memory",
         handler: this.saveMemory.bind(this),
       },
       {
-        channel: "memory:load",
+        channel: IPC_REQUEST_CHANNELS.MEMORY_LOAD,
         category: "memory",
         handler: this.loadMemory.bind(this),
       },
       {
-        channel: "memory:delete",
+        channel: IPC_REQUEST_CHANNELS.MEMORY_DELETE,
         category: "memory",
         handler: this.deleteMemory.bind(this),
       },
       {
-        channel: "memory:getDiagnostics",
+        channel: IPC_REQUEST_CHANNELS.MEMORY_GET_DIAGNOSTICS,
         category: "memory",
         handler: this.getDiagnostics.bind(this),
       },
