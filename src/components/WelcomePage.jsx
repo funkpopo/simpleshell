@@ -1,6 +1,7 @@
 import React, { useCallback, memo } from "react";
 import {
   Box,
+  Button,
   Typography,
   Paper,
   List,
@@ -14,7 +15,7 @@ import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import { countries } from "countries-list";
 
-const WelcomePage = ({ topConnections, onOpenConnection }) => {
+const WelcomePage = ({ topConnections, onOpenConnection, onCreateConnection }) => {
   const theme = useTheme();
   const { t } = useTranslation();
 
@@ -290,19 +291,86 @@ const WelcomePage = ({ topConnections, onOpenConnection }) => {
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                textAlign: "center",
-                py: 5,
+                textAlign: "left",
+                py: 3,
               }}
             >
               <Typography
                 variant="h5"
                 gutterBottom
-                sx={{ fontWeight: "bold", mb: 2 }}
+                sx={{ fontWeight: "bold", mb: 1, textAlign: "center" }}
               >
                 {t("welcome.title")}
               </Typography>
-              <Typography variant="body1" sx={{ mb: 4, lineHeight: 1.8 }}>
-                {t("welcome.description")}
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mb: 2.5, lineHeight: 1.6, textAlign: "center" }}
+              >
+                {t("welcome.emptyDescription")}
+              </Typography>
+              <Box
+                sx={{
+                  width: "100%",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: 1,
+                  p: 1.5,
+                  bgcolor: "background.default",
+                  mb: 2,
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{ fontWeight: 700, display: "block", mb: 1 }}
+                >
+                  {t("welcome.exampleTitle")}
+                </Typography>
+                {[
+                  ["Host", "203.0.113.10"],
+                  ["Port", "22"],
+                  ["User", "root / ubuntu / admin"],
+                  ["Auth", t("welcome.exampleAuth")],
+                ].map(([label, value]) => (
+                  <Box
+                    key={label}
+                    sx={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 1,
+                      py: 0.25,
+                    }}
+                  >
+                    <Typography variant="caption" color="text.secondary">
+                      {label}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontFamily: "monospace",
+                        textAlign: "right",
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {value}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+              <Button
+                variant="contained"
+                fullWidth
+                onClick={onCreateConnection}
+                sx={{ mb: 1 }}
+              >
+                {t("welcome.newConnection")}
+              </Button>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ textAlign: "center", lineHeight: 1.5 }}
+              >
+                {t("welcome.emptyHint")}
               </Typography>
             </Box>
           )}

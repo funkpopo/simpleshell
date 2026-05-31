@@ -336,6 +336,14 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     { permission: "credentials" },
   ),
   defineRequest(
+    "TERMINAL_TEST_SSH_CONNECTION",
+    "terminal:testSSHConnection",
+    "terminal",
+    args([objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "credentials" },
+  ),
+  defineRequest(
     "TERMINAL_START_TELNET",
     "terminal:startTelnet",
     "terminal",

@@ -34,6 +34,8 @@ import {
   Switch,
   FormControlLabel,
   Divider,
+  Alert,
+  CircularProgress,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { compactContextMenuPaperSx } from "./contextMenuStyles";
@@ -48,6 +50,8 @@ import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import SearchIcon from "@mui/icons-material/Search";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import {
   DndContext,
   KeyboardSensor,
@@ -82,7 +86,10 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.initialConnections === nextProps.initialConnections &&
     prevProps.onClose === nextProps.onClose &&
     prevProps.onConnectionsUpdate === nextProps.onConnectionsUpdate &&
-    prevProps.onOpenConnection === nextProps.onOpenConnection
+    prevProps.onOpenConnection === nextProps.onOpenConnection &&
+    prevProps.createConnectionSignal === nextProps.createConnectionSignal &&
+    prevProps.onCreateConnectionSignalConsumed ===
+      nextProps.onCreateConnectionSignalConsumed
   );
 };
 
@@ -388,6 +395,160 @@ const countVisibleItems = (items = []) => {
 
     return total + 1;
   }, 0);
+};
+
+const parsePortValue = (value, fallback = 22) => {
+  const port = Number.parseInt(value, 10);
+  return Number.isFinite(port) ? port : fallback;
+};
+
+const isPortValid = (value) => {
+  const port = Number(value);
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+};
+
+const hasWhitespace = (value) => /\s/.test(String(value || ""));
+
+const buildConnectionPayloadFromForm = ({
+  formData,
+  id,
+  selectedItem,
+  dialogMode,
+}) => {
+  const protocol = formData.protocol || "ssh";
+  const fallbackPort = protocol === "telnet" ? 23 : 22;
+
+  return {
+    id:
+      id ||
+      (dialogMode === "add"
+        ? `conn_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+        : selectedItem?.id || `conn_${Date.now()}`),
+    type: "connection",
+    name: String(formData.name || "").trim(),
+    host: String(formData.host || "").trim(),
+    port: parsePortValue(formData.port, fallbackPort),
+    username: String(formData.username || "").trim(),
+    password: formData.password || "",
+    authType: formData.authType || "password",
+    privateKeyPath: String(formData.privateKeyPath || "").trim(),
+    country: formData.country,
+    os: formData.os,
+    connectionType: formData.connectionType,
+    protocol,
+    proxy: formData.enableProxy
+      ? {
+          type: formData.proxyType,
+          host: String(formData.proxyHost || "").trim(),
+          port: parsePortValue(formData.proxyPort, 8080),
+          username: formData.proxyUsername || undefined,
+          password: formData.proxyPassword || undefined,
+          useDefault: formData.proxyUseDefault,
+        }
+      : null,
+  };
+};
+
+const getConnectionValidationSteps = (t, formData, privateKeyCheck) => {
+  if ((formData.protocol || "ssh") !== "ssh") {
+    return [];
+  }
+
+  const host = String(formData.host || "").trim();
+  const username = String(formData.username || "").trim();
+  const proxyHost = String(formData.proxyHost || "").trim();
+  const privateKeyPath = String(formData.privateKeyPath || "").trim();
+  const authType = formData.authType || "password";
+  const isPrivateKeyAuth = authType === "privateKey";
+  const privateKeyUnsafe =
+    privateKeyCheck?.permissions &&
+    /^[0-7]{3,4}$/.test(privateKeyCheck.permissions) &&
+    (Number.parseInt(privateKeyCheck.permissions, 8) & 0o077) !== 0;
+
+  return [
+    {
+      key: "host",
+      title: t("connectionManager.validation.host"),
+      ok: Boolean(host) && !hasWhitespace(host),
+      message: !host
+        ? t("connectionManager.validation.hostMissing")
+        : hasWhitespace(host)
+          ? t("connectionManager.validation.hostWhitespace")
+          : t("connectionManager.validation.hostOk"),
+    },
+    {
+      key: "port",
+      title: t("connectionManager.validation.port"),
+      ok: isPortValid(formData.port),
+      message: isPortValid(formData.port)
+        ? t("connectionManager.validation.portOk")
+        : t("connectionManager.validation.portInvalid"),
+    },
+    {
+      key: "username",
+      title: t("connectionManager.validation.username"),
+      ok: Boolean(username),
+      message: username
+        ? t("connectionManager.validation.usernameOk")
+        : t("connectionManager.validation.usernameMissing"),
+    },
+    {
+      key: "auth",
+      title: t("connectionManager.validation.auth"),
+      ok: authType === "password" || (isPrivateKeyAuth && Boolean(privateKeyPath)),
+      message:
+        authType === "password"
+          ? t("connectionManager.validation.passwordAuthOk")
+          : privateKeyPath
+            ? t("connectionManager.validation.privateKeySelected")
+            : t("connectionManager.validation.privateKeyMissing"),
+    },
+    {
+      key: "proxy",
+      title: t("connectionManager.validation.proxy"),
+      ok:
+        !formData.enableProxy ||
+        formData.proxyUseDefault ||
+        (Boolean(proxyHost) && isPortValid(formData.proxyPort)),
+      message: !formData.enableProxy
+        ? t("connectionManager.validation.proxyDisabled")
+        : formData.proxyUseDefault
+          ? t("connectionManager.validation.proxyDefault")
+          : !proxyHost
+            ? t("connectionManager.validation.proxyHostMissing")
+            : !isPortValid(formData.proxyPort)
+              ? t("connectionManager.validation.proxyPortInvalid")
+              : t("connectionManager.validation.proxyOk"),
+    },
+    {
+      key: "privateKey",
+      title: t("connectionManager.validation.privateKey"),
+      ok:
+        !isPrivateKeyAuth ||
+        privateKeyCheck?.status === "ok" ||
+        privateKeyCheck?.status === "warning",
+      severity:
+        isPrivateKeyAuth && privateKeyUnsafe && privateKeyCheck?.status !== "error"
+          ? "warning"
+          : privateKeyCheck?.status === "checking"
+            ? "checking"
+            : "default",
+      message: !isPrivateKeyAuth
+        ? t("connectionManager.validation.privateKeyNotUsed")
+        : !privateKeyPath
+          ? t("connectionManager.validation.privateKeyMissing")
+          : privateKeyCheck?.status === "checking"
+            ? t("connectionManager.validation.privateKeyChecking")
+            : privateKeyCheck?.status === "error"
+              ? privateKeyCheck.message ||
+                t("connectionManager.validation.privateKeyUnreadable")
+              : privateKeyUnsafe
+                ? t("connectionManager.validation.privateKeyUnsafe", {
+                    permissions: privateKeyCheck.permissions,
+                  })
+                : t("connectionManager.validation.privateKeyOk"),
+    },
+  ];
 };
 
 const ConnectionListItem = memo(function ConnectionListItem({
@@ -794,9 +955,11 @@ const ConnectionManager = memo(
     initialConnections = [],
     onConnectionsUpdate,
     onOpenConnection,
+    createConnectionSignal = 0,
+    onCreateConnectionSignalConsumed,
   }) => {
     const theme = useTheme();
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const { showError, showSuccess } = useNotification();
     const [connections, setConnections] = useState(initialConnections);
     const [isLoading, setIsLoading] = useState(!initialConnections.length);
@@ -1031,6 +1194,13 @@ const ConnectionManager = memo(
       proxyPassword: "",
       proxyUseDefault: true, // 使用默认代理配置
     });
+    const [privateKeyCheck, setPrivateKeyCheck] = useState({
+      status: "idle",
+      message: "",
+      permissions: null,
+    });
+    const [connectionTestResult, setConnectionTestResult] = useState(null);
+    const [testingConnection, setTestingConnection] = useState(false);
 
     const filteredItems = useMemo(() => {
       let items;
@@ -1115,6 +1285,8 @@ const ConnectionManager = memo(
       setSelectedItem(null);
       setDialogType("connection");
       setDialogMode("add");
+      setPrivateKeyCheck({ status: "idle", message: "", permissions: null });
+      setConnectionTestResult(null);
       setFormData({
         name: "",
         host: "",
@@ -1140,6 +1312,20 @@ const ConnectionManager = memo(
       setDialogOpen(true);
     }, []);
 
+    useEffect(() => {
+      if (!open || !createConnectionSignal) {
+        return;
+      }
+
+      handleAddConnection();
+      onCreateConnectionSignalConsumed?.();
+    }, [
+      createConnectionSignal,
+      handleAddConnection,
+      onCreateConnectionSignalConsumed,
+      open,
+    ]);
+
     // 打开添加组对话框
     const handleAddGroup = useCallback(() => {
       setSelectedItem(null);
@@ -1161,11 +1347,15 @@ const ConnectionManager = memo(
 
       if (item.type === "group") {
         setDialogType("group");
+        setPrivateKeyCheck({ status: "idle", message: "", permissions: null });
+        setConnectionTestResult(null);
         setFormData({
           name: item.name,
         });
       } else {
         setDialogType("connection");
+        setPrivateKeyCheck({ status: "idle", message: "", permissions: null });
+        setConnectionTestResult(null);
         // 确保端口值与协议类型匹配
         const port = item.port || (item.protocol === "telnet" ? 23 : 22);
         setFormData({
@@ -1419,11 +1609,13 @@ const ConnectionManager = memo(
 
     const handleDialogClose = useCallback(() => {
       setDialogOpen(false);
+      setConnectionTestResult(null);
     }, []);
 
     const handleFormChange = useCallback((e) => {
       const { name, value } = e.target;
 
+      setConnectionTestResult(null);
       setFormData((prev) => {
         // 如果修改的是协议字段，根据协议类型自动更新端口值
         if (name === "protocol") {
@@ -1436,6 +1628,227 @@ const ConnectionManager = memo(
         return { ...prev, [name]: value };
       });
     }, []);
+
+    useEffect(() => {
+      if (
+        !dialogOpen ||
+        dialogType !== "connection" ||
+        formData.protocol !== "ssh" ||
+        formData.authType !== "privateKey"
+      ) {
+        setPrivateKeyCheck((previous) =>
+          previous.status === "idle"
+            ? previous
+            : { status: "idle", message: "", permissions: null },
+        );
+        return undefined;
+      }
+
+      const privateKeyPath = String(formData.privateKeyPath || "").trim();
+      if (!privateKeyPath) {
+        setPrivateKeyCheck((previous) =>
+          previous.status === "idle"
+            ? previous
+            : { status: "idle", message: "", permissions: null },
+        );
+        return undefined;
+      }
+
+      let cancelled = false;
+      setPrivateKeyCheck({
+        status: "checking",
+        message: t("connectionManager.validation.privateKeyChecking"),
+        permissions: null,
+      });
+
+      const timer = window.setTimeout(async () => {
+        try {
+          if (!window.terminalAPI?.checkPathExists) {
+            if (!cancelled) {
+              setPrivateKeyCheck({
+                status: "warning",
+                message: t("connectionManager.validation.privateKeyCannotVerify"),
+                permissions: null,
+              });
+            }
+            return;
+          }
+
+          const result =
+            await window.terminalAPI.checkPathExists(privateKeyPath);
+          if (cancelled) {
+            return;
+          }
+
+          if (result?.success === false) {
+            setPrivateKeyCheck({
+              status: "error",
+              message:
+                result.error ||
+                t("connectionManager.validation.privateKeyUnreadable"),
+              permissions: null,
+            });
+            return;
+          }
+
+          if (!result?.exists) {
+            setPrivateKeyCheck({
+              status: "error",
+              message: t("connectionManager.validation.privateKeyNotFound"),
+              permissions: null,
+            });
+            return;
+          }
+
+          if (result.isFile === false) {
+            setPrivateKeyCheck({
+              status: "error",
+              message: t("connectionManager.validation.privateKeyNotFile"),
+              permissions: result.permissions || null,
+            });
+            return;
+          }
+
+          if (result.readable === false) {
+            setPrivateKeyCheck({
+              status: "error",
+              message: t("connectionManager.validation.privateKeyUnreadable"),
+              permissions: result.permissions || null,
+            });
+            return;
+          }
+
+          const permissions = result.permissions || null;
+          const unsafe =
+            permissions &&
+            /^[0-7]{3,4}$/.test(permissions) &&
+            (Number.parseInt(permissions, 8) & 0o077) !== 0;
+
+          setPrivateKeyCheck({
+            status: unsafe ? "warning" : "ok",
+            message: unsafe
+              ? t("connectionManager.validation.privateKeyUnsafe", {
+                  permissions,
+                })
+              : t("connectionManager.validation.privateKeyOk"),
+            permissions,
+          });
+        } catch (error) {
+          if (!cancelled) {
+            setPrivateKeyCheck({
+              status: "error",
+              message:
+                error?.message ||
+                t("connectionManager.validation.privateKeyUnreadable"),
+              permissions: null,
+            });
+          }
+        }
+      }, 180);
+
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timer);
+      };
+    }, [
+      dialogOpen,
+      dialogType,
+      formData.authType,
+      formData.privateKeyPath,
+      formData.protocol,
+      t,
+    ]);
+
+    const validationSteps = useMemo(
+      () => getConnectionValidationSteps(t, formData, privateKeyCheck),
+      [formData, privateKeyCheck, t],
+    );
+
+    const firstInvalidStep = useMemo(
+      () => validationSteps.find((step) => !step.ok),
+      [validationSteps],
+    );
+
+    const canTestConnection =
+      dialogType === "connection" &&
+      formData.protocol === "ssh" &&
+      !testingConnection &&
+      !firstInvalidStep;
+
+    const handleTestConnection = useCallback(async () => {
+      if (dialogType !== "connection" || formData.protocol !== "ssh") {
+        return;
+      }
+
+      const invalidStep = validationSteps.find((step) => !step.ok);
+      if (invalidStep) {
+        showError(invalidStep.message);
+        setConnectionTestResult({
+          success: false,
+          message: invalidStep.message,
+        });
+        return;
+      }
+
+      if (!window.terminalAPI?.testSSHConnection) {
+        const message = t("connectionManager.testUnavailable");
+        setConnectionTestResult({ success: false, message });
+        showError(message);
+        return;
+      }
+
+      setTestingConnection(true);
+      setConnectionTestResult(null);
+
+      try {
+        const payload = buildConnectionPayloadFromForm({
+          formData,
+          selectedItem,
+          dialogMode,
+        });
+        const result = await window.terminalAPI.testSSHConnection({
+          ...payload,
+          language: i18n.language,
+        });
+
+        if (result?.success) {
+          const message = t("connectionManager.testSuccess", {
+            duration: Math.max(1, Math.round(Number(result.durationMs) || 1)),
+          });
+          setConnectionTestResult({ success: true, message });
+          showSuccess(message);
+          return;
+        }
+
+        const message =
+          result?.advice ||
+          result?.error ||
+          t("connectionManager.testFailed");
+        setConnectionTestResult({
+          success: false,
+          message,
+          detail: result?.error || "",
+          kind: result?.failureKind || "",
+        });
+        showError(message);
+      } catch (error) {
+        const message = error?.message || t("connectionManager.testFailed");
+        setConnectionTestResult({ success: false, message });
+        showError(message);
+      } finally {
+        setTestingConnection(false);
+      }
+    }, [
+      dialogMode,
+      dialogType,
+      formData,
+      i18n.language,
+      selectedItem,
+      showError,
+      showSuccess,
+      t,
+      validationSteps,
+    ]);
 
     const handleSave = useCallback(() => {
       // 验证必填字段
@@ -1498,37 +1911,18 @@ const ConnectionManager = memo(
         return;
       }
 
+      const invalidStep = validationSteps.find((step) => !step.ok);
+      if (invalidStep) {
+        showError(invalidStep.message);
+        return;
+      }
+
       // 处理连接保存
-      const connectionData = {
-        id:
-          dialogMode === "add"
-            ? `conn_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
-            : selectedItem?.id || `conn_${Date.now()}`,
-        type: "connection",
-        name: formData.name,
-        host: formData.host,
-        port:
-          parseInt(formData.port) || (formData.protocol === "ssh" ? 22 : 23),
-        username: formData.username,
-        password: formData.password,
-        authType: formData.authType,
-        privateKeyPath: formData.privateKeyPath,
-        country: formData.country,
-        os: formData.os,
-        connectionType: formData.connectionType,
-        protocol: formData.protocol,
-        // 代理配置
-        proxy: formData.enableProxy
-          ? {
-              type: formData.proxyType,
-              host: formData.proxyHost,
-              port: parseInt(formData.proxyPort) || 8080,
-              username: formData.proxyUsername || undefined,
-              password: formData.proxyPassword || undefined,
-              useDefault: formData.proxyUseDefault,
-            }
-          : null,
-      };
+      const connectionData = buildConnectionPayloadFromForm({
+        formData,
+        selectedItem,
+        dialogMode,
+      });
 
       // 保存到本地状态
       let newConnections;
@@ -1640,6 +2034,7 @@ const ConnectionManager = memo(
           ? t("connectionManager.createSuccess")
           : t("connectionManager.updateSuccess"),
       );
+      setConnectionTestResult(null);
     }, [
       dialogType,
       dialogMode,
@@ -1649,6 +2044,7 @@ const ConnectionManager = memo(
       t,
       showError,
       showSuccess,
+      validationSteps,
     ]);
 
     const handleOpenConnection = useCallback(
@@ -1987,6 +2383,52 @@ const ConnectionManager = memo(
         </MenuItem>
       ));
     }, []);
+
+    const renderValidationStep = (step) => {
+      const isChecking = step.severity === "checking";
+      const isWarning = step.severity === "warning";
+      const color = step.ok
+        ? isWarning
+          ? "warning.main"
+          : "success.main"
+        : isChecking
+          ? "text.secondary"
+          : "error.main";
+
+      return (
+        <Box
+          key={step.key}
+          sx={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 1,
+            py: 0.5,
+          }}
+        >
+          <Box sx={{ color, mt: 0.1, lineHeight: 0 }}>
+            {isChecking ? (
+              <CircularProgress size={16} />
+            ) : step.ok ? (
+              <CheckCircleOutlineIcon fontSize="small" />
+            ) : (
+              <ErrorOutlineIcon fontSize="small" />
+            )}
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="caption" sx={{ fontWeight: 600 }}>
+              {step.title}
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", lineHeight: 1.35 }}
+            >
+              {step.message}
+            </Typography>
+          </Box>
+        </Box>
+      );
+    };
 
     return (
       <Paper
@@ -2677,11 +3119,73 @@ const ConnectionManager = memo(
                         )}
                       </>
                     )}
+
+                    {formData.protocol === "ssh" && (
+                      <Box
+                        sx={{
+                          border: 1,
+                          borderColor: "divider",
+                          borderRadius: 1,
+                          p: 1.25,
+                          bgcolor: "background.default",
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            fontWeight: 700,
+                            display: "block",
+                            mb: 0.5,
+                          }}
+                        >
+                          {t("connectionManager.validation.title")}
+                        </Typography>
+                        <Box>{validationSteps.map(renderValidationStep)}</Box>
+
+                        {connectionTestResult ? (
+                          <Alert
+                            severity={
+                              connectionTestResult.success
+                                ? "success"
+                                : "warning"
+                            }
+                            variant="outlined"
+                            sx={{ mt: 1 }}
+                          >
+                            <Typography variant="body2">
+                              {connectionTestResult.message}
+                            </Typography>
+                            {connectionTestResult.detail ? (
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ display: "block", mt: 0.25 }}
+                              >
+                                {connectionTestResult.detail}
+                              </Typography>
+                            ) : null}
+                          </Alert>
+                        ) : null}
+                      </Box>
+                    )}
                   </>
                 )}
               </Box>
             </DialogContent>
             <DialogActions>
+              {dialogType === "connection" && formData.protocol === "ssh" && (
+                <Button
+                  onClick={handleTestConnection}
+                  disabled={!canTestConnection}
+                  startIcon={
+                    testingConnection ? <CircularProgress size={16} /> : null
+                  }
+                >
+                  {testingConnection
+                    ? t("connectionManager.testing")
+                    : t("connectionManager.testConnection")}
+                </Button>
+              )}
               <Button onClick={handleDialogClose}>{t("common.cancel")}</Button>
               <Button onClick={handleSave} variant="contained">
                 {t("common.save")}

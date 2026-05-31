@@ -389,6 +389,11 @@ class ConfigService {
           trayEnabled: false,
           closeToTray: false,
         },
+        onboarding: {
+          completed: false,
+          completedAt: null,
+          version: 1,
+        },
         ipQueryHistory: [],
         windowBounds: {},
       },
@@ -454,6 +459,19 @@ class ConfigService {
           ? source.shortcutCommands
           : defaultConfig.shortcutCommands,
     };
+
+    if (
+      source.uiSettings &&
+      typeof source.uiSettings === "object" &&
+      source.uiSettings.onboarding === undefined
+    ) {
+      normalized.uiSettings.onboarding = {
+        completed: true,
+        completedAt: null,
+        version: 1,
+        inferredFromExistingConfig: true,
+      };
+    }
 
     return {
       config: normalized,
@@ -1202,6 +1220,11 @@ class ConfigService {
       desktopIntegration: {
         trayEnabled: false,
         closeToTray: false,
+      },
+      onboarding: {
+        completed: false,
+        completedAt: null,
+        version: 1,
       },
       ipQueryHistory: [],
       windowBounds: {},

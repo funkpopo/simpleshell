@@ -1282,6 +1282,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // SSH连接相关
   startSSH: (sshConfig) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_START_SSH, sshConfig),
+  testSSHConnection: (sshConfig) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_TEST_SSH_CONNECTION, sshConfig),
 
   // Telnet连接相关
   startTelnet: (telnetConfig) =>
