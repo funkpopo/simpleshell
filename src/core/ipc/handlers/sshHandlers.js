@@ -10,6 +10,7 @@ const {
   buildReconnectTimeoutMessage,
   buildReconnectWaitMessage,
   checkSshPreflight,
+  createManagedSshConnection,
 } = require("../../connection/ssh-retry-helper");
 const {
   IPC_EVENT_CHANNELS,
@@ -134,6 +135,11 @@ class SSHHandlers {
         handler: this.startSSH.bind(this),
       },
       {
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_TEST_SSH_CONNECTION,
+        category: "terminal",
+        handler: this.testSSHConnection.bind(this),
+      },
+      {
         channel: IPC_REQUEST_CHANNELS.TERMINAL_START_TELNET,
         category: "terminal",
         handler: this.startTelnet.bind(this),
@@ -172,6 +178,108 @@ class SSHHandlers {
 
     pendingRequest.resolve(authData);
     return { success: true };
+  }
+
+  _normalizeTestSSHConfig(sshConfig = {}) {
+    const port = Number.parseInt(sshConfig.port, 10);
+    return {
+      ...sshConfig,
+      protocol: "ssh",
+      host: String(sshConfig.host || "").trim(),
+      port: Number.isFinite(port) && port > 0 ? port : 22,
+      username: String(sshConfig.username || "").trim(),
+      password: sshConfig.password || "",
+      authType: sshConfig.authType || "password",
+      privateKeyPath:
+        typeof sshConfig.privateKeyPath === "string"
+          ? sshConfig.privateKeyPath.trim()
+          : "",
+      tabId: sshConfig.tabId || `connection-test-${Date.now()}`,
+      autoReconnect: false,
+      retryOnAuthFailure: false,
+    };
+  }
+
+  _validateTestSSHConfig(sshConfig) {
+    if (!sshConfig.host) {
+      throw new Error("Host is required");
+    }
+
+    if (
+      !Number.isFinite(Number(sshConfig.port)) ||
+      Number(sshConfig.port) < 1 ||
+      Number(sshConfig.port) > 65535
+    ) {
+      throw new Error("Port must be between 1 and 65535");
+    }
+
+    if (!sshConfig.username) {
+      throw new Error("Username is required");
+    }
+
+    if (sshConfig.authType === "privateKey" && !sshConfig.privateKeyPath) {
+      throw new Error("Private key path is required");
+    }
+  }
+
+  async testSSHConnection(event, rawConfig) {
+    void event;
+    const startedAt = Date.now();
+    const sshConfig = this._normalizeTestSSHConfig(rawConfig);
+
+    try {
+      this._validateTestSSHConfig(sshConfig);
+
+      await this._assertSSHReachableBeforeAuth(sshConfig);
+
+      let connectionHandle = null;
+      try {
+        connectionHandle = await createManagedSshConnection(
+          this._attachHostVerificationConfig(sshConfig),
+          {
+            connectionTimeoutMs: 30000,
+          },
+        );
+
+        return {
+          success: true,
+          durationMs: Date.now() - startedAt,
+          host: sshConfig.host,
+          port: sshConfig.port,
+          username: sshConfig.username,
+        };
+      } finally {
+        try {
+          connectionHandle?.cleanup?.();
+        } catch {
+          // Best-effort cleanup for the temporary test socket.
+        }
+      }
+    } catch (error) {
+      const classified = classifyConnectionFailure(error, {
+        host: sshConfig.host,
+        port: sshConfig.port,
+        username: sshConfig.username,
+        authType: sshConfig.authType,
+        privateKeyPath: sshConfig.privateKeyPath,
+        usingProxy: Boolean(sshConfig.proxy),
+        protocol: "ssh",
+      });
+
+      logToFile(
+        `SSH connection test failed: ${sshConfig.host}:${sshConfig.port} - ${error.message}`,
+        "WARN",
+      );
+
+      return {
+        success: false,
+        error: error.message,
+        code: error.code || error.originalError?.code || null,
+        failureKind: classified.kind,
+        advice: classified.suggestion,
+        durationMs: Date.now() - startedAt,
+      };
+    }
   }
 
   /**

@@ -45,6 +45,7 @@ import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import ComputerIcon from "@mui/icons-material/Computer";
 import WebTerminal from "./components/WebTerminal.jsx";
 import WelcomePage from "./components/WelcomePage.jsx";
+import FirstRunDialog from "./components/FirstRunDialog.jsx";
 import ConnectionManager from "./components/ConnectionManager.jsx";
 import FileManager from "./components/FileManager.jsx";
 import {
@@ -506,6 +507,12 @@ function AppContent() {
       unlocked: true,
       requiresUnlock: false,
     });
+  const [uiSettingsSnapshot, setUiSettingsSnapshot] = React.useState(null);
+  const [uiSettingsLoaded, setUiSettingsLoaded] = React.useState(false);
+  const [connectionsLoaded, setConnectionsLoaded] = React.useState(false);
+  const [firstRunDialogOpen, setFirstRunDialogOpen] = React.useState(false);
+  const [createConnectionSignal, setCreateConnectionSignal] =
+    React.useState(0);
   const [masterPasswordError, setMasterPasswordError] = React.useState("");
   const [unlockingCredentialStore, setUnlockingCredentialStore] =
     React.useState(false);
@@ -722,6 +729,7 @@ function AppContent() {
         dispatch(actions.setThemeLoading(true));
         if (window.terminalAPI?.loadUISettings) {
           const settings = await window.terminalAPI.loadUISettings();
+          setUiSettingsSnapshot(settings || null);
           if (settings && settings.darkMode !== undefined) {
             dispatch(actions.setDarkMode(settings.darkMode));
           }
@@ -737,6 +745,7 @@ function AppContent() {
       } catch {
         window.__hardwareAccelerationEnabled = true;
       } finally {
+        setUiSettingsLoaded(true);
         dispatch(actions.setThemeLoading(false));
       }
     };
@@ -796,29 +805,54 @@ function AppContent() {
     processCacheRef.current = processCache;
   }, [processCache]);
 
+  React.useEffect(() => {
+    if (!uiSettingsLoaded || !connectionsLoaded) {
+      return;
+    }
+
+    const onboardingCompleted =
+      uiSettingsSnapshot?.onboarding?.completed === true;
+    const hasExistingConnections =
+      Array.isArray(connections) && connections.length > 0;
+
+    if (!onboardingCompleted && !hasExistingConnections) {
+      setFirstRunDialogOpen(true);
+    }
+  }, [connections, connectionsLoaded, uiSettingsLoaded, uiSettingsSnapshot]);
+
+  const handleFirstRunComplete = useCallback((settings) => {
+    setUiSettingsSnapshot(settings || null);
+    setFirstRunDialogOpen(false);
+  }, []);
+
   const refreshConnectionState = useCallback(async () => {
     if (!window.terminalAPI?.loadConnections) {
+      setConnectionsLoaded(true);
       return;
     }
-
-    const loadedConnections =
-      (await window.terminalAPI.loadConnections()) || [];
-    if (!Array.isArray(loadedConnections)) {
-      return;
-    }
-
-    dispatch(actions.setConnections(loadedConnections));
 
     try {
-      const topConnectionCandidates =
-        (await window.terminalAPI.loadTopConnections?.()) || [];
-      const normalizedRecent = normalizeRecentConnections(
-        Array.isArray(topConnectionCandidates) ? topConnectionCandidates : [],
-        loadedConnections,
-      );
-      dispatch(actions.setTopConnections(normalizedRecent));
-    } catch {
-      dispatch(actions.setTopConnections([]));
+      const loadedConnections =
+        (await window.terminalAPI.loadConnections()) || [];
+      if (!Array.isArray(loadedConnections)) {
+        return;
+      }
+
+      dispatch(actions.setConnections(loadedConnections));
+
+      try {
+        const topConnectionCandidates =
+          (await window.terminalAPI.loadTopConnections?.()) || [];
+        const normalizedRecent = normalizeRecentConnections(
+          Array.isArray(topConnectionCandidates) ? topConnectionCandidates : [],
+          loadedConnections,
+        );
+        dispatch(actions.setTopConnections(normalizedRecent));
+      } catch {
+        dispatch(actions.setTopConnections([]));
+      }
+    } finally {
+      setConnectionsLoaded(true);
     }
   }, [dispatch]);
 
@@ -2382,6 +2416,16 @@ function AppContent() {
     dispatch(actions.setConnectionManagerOpen(false));
     setFallbackSidebarAfterClose("connection");
   }, [dispatch, setFallbackSidebarAfterClose]);
+
+  const handleRequestCreateConnection = useCallback(() => {
+    dispatch(actions.setConnectionManagerOpen(true));
+    dispatch(actions.setLastOpenedSidebar("connection"));
+    setCreateConnectionSignal(Date.now());
+
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 15);
+  }, [dispatch]);
 
   // 关闭终端连接
   const handleCloseConnection = () => {
@@ -4132,6 +4176,7 @@ function AppContent() {
                       connections={connections}
                       topConnections={topConnections}
                       onOpenConnection={handleOpenConnection}
+                      onCreateConnection={handleRequestCreateConnection}
                       onConnectionsUpdate={handleConnectionsUpdate}
                     />
                   </Box>
@@ -4248,6 +4293,10 @@ function AppContent() {
                       initialConnections={connections}
                       onConnectionsUpdate={handleConnectionsUpdate}
                       onOpenConnection={handleOpenConnection}
+                      createConnectionSignal={createConnectionSignal}
+                      onCreateConnectionSignalConsumed={() =>
+                        setCreateConnectionSignal(0)
+                      }
                     />
                   )}
                 </Box>
@@ -4746,6 +4795,13 @@ function AppContent() {
           anchorEl={transferSidebarButtonRef.current}
         />
       )}
+
+      <FirstRunDialog
+        open={firstRunDialogOpen}
+        initialSettings={uiSettingsSnapshot}
+        credentialSecurityStatus={credentialSecurityStatus}
+        onComplete={handleFirstRunComplete}
+      />
 
       {/* 关于对话框 */}
       <AboutDialog

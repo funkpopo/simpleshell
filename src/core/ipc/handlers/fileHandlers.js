@@ -608,7 +608,29 @@ class FileHandlers {
   async checkPathExists(event, checkPath) {
     try {
       const exists = fs.existsSync(checkPath);
-      return { success: true, exists };
+      if (!exists) {
+        return { success: true, exists };
+      }
+
+      const stats = fs.statSync(checkPath);
+      let readable = true;
+      try {
+        fs.accessSync(checkPath, fs.constants.R_OK);
+      } catch {
+        readable = false;
+      }
+
+      return {
+        success: true,
+        exists,
+        readable,
+        isFile: stats.isFile(),
+        isDirectory: stats.isDirectory(),
+        mode: Number.isFinite(stats.mode) ? stats.mode : null,
+        permissions: Number.isFinite(stats.mode)
+          ? (stats.mode & 0o777).toString(8).padStart(3, "0")
+          : null,
+      };
     } catch (error) {
       logToFile(`Error checking path: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
