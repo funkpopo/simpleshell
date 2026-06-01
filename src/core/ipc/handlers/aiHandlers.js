@@ -455,7 +455,10 @@ class AIHandlers {
       });
     } catch (error) {
       logToFile(`处理AI请求时出错: ${error.message}`, "ERROR");
-      return { error: error.message || "处理请求时出错" };
+      return {
+        error: error.message || "处理请求时出错",
+        statusCode: error.statusCode || error.raw?.statusCode,
+      };
     }
   }
 

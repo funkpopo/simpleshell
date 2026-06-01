@@ -311,7 +311,7 @@ const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
           maxWidth: "600px",
           mb: 3,
         }}
-        icon={<ErrorOutlineIcon />}
+        icon={<ErrorOutlinedIcon />}
       >
         <AlertTitle>{t("errorBoundary.appTitle")}</AlertTitle>
         <Typography variant="body2" sx={{ mb: 2 }}>
@@ -518,7 +518,7 @@ const ErrorFallback = ({
           maxWidth: "400px",
           mb: 2,
         }}
-        icon={<ErrorOutlineIcon />}
+        icon={<ErrorOutlinedIcon />}
       >
         <AlertTitle>{t("errorBoundary.componentTitle")}</AlertTitle>
         <Typography variant="body2" sx={{ mb: 1 }}>

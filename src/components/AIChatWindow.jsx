@@ -34,6 +34,8 @@ import SendIcon from "@mui/icons-material/Send";
 import SettingsIcon from "@mui/icons-material/Settings";
 import StopIcon from "@mui/icons-material/Stop";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import EditIcon from "@mui/icons-material/Edit";
+import ReplayIcon from "@mui/icons-material/Replay";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
@@ -55,6 +57,24 @@ import "./AIChatWindow.css";
 import "./CodeHighlight.css";
 
 const MAX_MARKDOWN_LINK_LENGTH = 2048;
+const API_ERROR_SUMMARY_MAX_LENGTH = 180;
+const MESSAGE_ACTION_BUTTON_SX = {
+  width: 24,
+  height: 24,
+  p: 0.25,
+  color: "text.secondary",
+  opacity: 0.72,
+  "&:hover": {
+    opacity: 1,
+  },
+  "&.Mui-disabled": {
+    color: "text.disabled",
+    opacity: 0.35,
+  },
+};
+const MESSAGE_ACTION_ICON_SX = {
+  fontSize: 15,
+};
 const ALLOWED_MARKDOWN_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const MARKDOWN_ALLOWED_ELEMENTS = [
   "p",
@@ -79,6 +99,108 @@ const buildInlineApiKeyPayload = (apiConfig) => {
   const apiKey =
     typeof apiConfig?.apiKey === "string" ? apiConfig.apiKey.trim() : "";
   return apiKey ? { apiKey } : {};
+};
+
+const pickApiErrorMessage = (errorLike, fallback) => {
+  if (typeof errorLike === "string") {
+    return errorLike;
+  }
+
+  if (!errorLike || typeof errorLike !== "object") {
+    return fallback;
+  }
+
+  return (
+    errorLike.message ||
+    errorLike.error ||
+    errorLike.technicalMessage ||
+    errorLike.statusText ||
+    errorLike.raw?.message ||
+    errorLike.raw?.error ||
+    fallback
+  );
+};
+
+const getApiErrorStatusCode = (errorLike) => {
+  if (!errorLike || typeof errorLike !== "object") {
+    const match = String(errorLike || "").match(/\b([45]\d{2})\b/);
+    return match ? Number(match[1]) : null;
+  }
+
+  const candidates = [
+    errorLike.statusCode,
+    errorLike.status,
+    errorLike.raw?.statusCode,
+    errorLike.raw?.status,
+    errorLike.error?.statusCode,
+    errorLike.error?.status,
+  ];
+
+  for (const candidate of candidates) {
+    const statusCode = Number(candidate);
+    if (statusCode >= 400 && statusCode <= 599) {
+      return statusCode;
+    }
+  }
+
+  const text = [
+    errorLike.message,
+    errorLike.error,
+    errorLike.technicalMessage,
+    errorLike.raw?.message,
+    errorLike.raw?.error,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const match = text.match(/\b([45]\d{2})\b/);
+  return match ? Number(match[1]) : null;
+};
+
+const compactApiErrorMessage = (message) => {
+  const compact = String(message || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (compact.length <= API_ERROR_SUMMARY_MAX_LENGTH) {
+    return compact;
+  }
+
+  return `${compact.slice(0, API_ERROR_SUMMARY_MAX_LENGTH - 3)}...`;
+};
+
+const stripStatusPrefix = (message, statusCode) =>
+  message
+    .replace(
+      new RegExp(
+        `^\\s*API\\s*(?:请求失败|request failed)?\\s*:?\\s*${statusCode}\\s*:?\\s*`,
+        "i",
+      ),
+      "",
+    )
+    .replace(new RegExp(`^\\s*${statusCode}\\s*:?\\s*`, "i"), "")
+    .trim();
+
+const formatBriefApiError = (errorLike, fallback) => {
+  const statusCode = getApiErrorStatusCode(errorLike);
+  const message = compactApiErrorMessage(
+    pickApiErrorMessage(errorLike, fallback),
+  );
+
+  if (!statusCode) {
+    return message || fallback;
+  }
+
+  return `API ${statusCode}: ${stripStatusPrefix(message, statusCode) || fallback}`;
+};
+
+const createApiResponseError = (response, fallback) => {
+  const error = new Error(pickApiErrorMessage(response, fallback));
+  const statusCode = getApiErrorStatusCode(response);
+  if (statusCode) {
+    error.statusCode = statusCode;
+  }
+  error.raw = response;
+  return error;
 };
 
 const normalizeSafeMarkdownHref = (href) => {
@@ -644,9 +766,44 @@ const AIChatWindow = ({
     }
   };
 
-  // 发送消息
-  const handleSendMessage = async () => {
-    if (!input.trim() || isPending) return;
+  const cleanupStreamHandlers = useCallback((sessionId) => {
+    if (!sessionId) {
+      return;
+    }
+
+    const handlers = streamHandlersRef.current[sessionId];
+    if (!handlers) {
+      return;
+    }
+
+    handlers.unsubscribeChunk?.();
+    handlers.unsubscribeEnd?.();
+    handlers.unsubscribeError?.();
+    delete streamHandlersRef.current[sessionId];
+  }, []);
+
+  const markAssistantMessageComplete = (messageId) => {
+    startTransition(() => {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                isStreaming: false,
+              }
+            : message,
+        ),
+      );
+    });
+  };
+
+  const sendMessageContent = async (
+    content,
+    historyMessages = messages,
+    options = {},
+  ) => {
+    const trimmedContent = content.trim();
+    if (!trimmedContent || isPending || abortController) return;
 
     // 在执行任何操作之前验证 API 配置
     if (
@@ -659,21 +816,28 @@ const AIChatWindow = ({
       return;
     }
 
+    const requestTimestamp = Date.now();
     const userMessage = {
-      id: Date.now(),
+      id: requestTimestamp,
       role: "user",
-      content: input.trim(),
+      content: trimmedContent,
       timestamp: new Date(),
     };
 
-    startTransition(() => {
-      setMessages((prev) => [...prev, userMessage]);
-    });
-    setInput("");
+    setMessages((prev) =>
+      options.replaceHistory
+        ? [...historyMessages, userMessage]
+        : [...prev, userMessage],
+    );
+    if (options.clearInput) {
+      setInput("");
+    }
     setError("");
 
     const controller = new AbortController();
     setAbortController(controller);
+    let activeSessionId = null;
+    let activeAssistantMessageId = null;
 
     try {
       // 加载记忆文件
@@ -687,13 +851,14 @@ const AIChatWindow = ({
 
       // 如果有记忆，注入到系统提示词开头
       if (memory) {
-        systemPrompt = generateMemoryContext(memory, i18n.language) + systemPrompt;
+        systemPrompt =
+          generateMemoryContext(memory, i18n.language) + systemPrompt;
       }
 
       // 构建消息列表，包含系统提示词
       const apiMessages = [
         { role: "system", content: systemPrompt },
-        ...messages.map((m) => ({ role: m.role, content: m.content })),
+        ...historyMessages.map((m) => ({ role: m.role, content: m.content })),
         { role: "user", content: userMessage.content },
       ];
 
@@ -712,16 +877,18 @@ const AIChatWindow = ({
       if (currentApi.streamEnabled !== false) {
         // 流式响应
         const assistantMessage = {
-          id: Date.now() + 1,
+          id: requestTimestamp + 1,
           role: "assistant",
           content: "",
           timestamp: new Date(),
           isStreaming: true,
         };
+        activeAssistantMessageId = assistantMessage.id;
         setMessages((prev) => [...prev, assistantMessage]);
 
         // 生成会话ID
-        const sessionId = `session_${Date.now()}`;
+        const sessionId = `session_${requestTimestamp}`;
+        activeSessionId = sessionId;
         requestData.sessionId = sessionId;
         setCurrentSessionId(sessionId);
 
@@ -758,10 +925,17 @@ const AIChatWindow = ({
             setAbortController(null);
             setCurrentSessionId(null);
             // 清理监听器
-            const handlers = streamHandlersRef.current[sessionId];
-            handlers?.unsubscribeChunk?.();
-            handlers?.unsubscribeEnd?.();
-            delete streamHandlersRef.current[sessionId];
+            cleanupStreamHandlers(sessionId);
+          }
+        };
+
+        const handleStreamError = (event, data) => {
+          if (data.sessionId === sessionId) {
+            markAssistantMessageComplete(assistantMessage.id);
+            setError(formatBriefApiError(data.error, t("ai.requestFailed")));
+            setAbortController(null);
+            setCurrentSessionId(null);
+            cleanupStreamHandlers(sessionId);
           }
         };
 
@@ -770,13 +944,17 @@ const AIChatWindow = ({
           window.terminalAPI.onAIStreamChunk?.(handleStreamChunk) || (() => {});
         const unsubscribeEnd =
           window.terminalAPI.onAIStreamEnd?.(handleStreamEnd) || (() => {});
+        const unsubscribeError =
+          window.terminalAPI.onAIStreamError?.(handleStreamError) || (() => {});
 
         // 保存监听器引用
         streamHandlersRef.current[sessionId] = {
           chunk: handleStreamChunk,
           end: handleStreamEnd,
+          error: handleStreamError,
           unsubscribeChunk,
           unsubscribeEnd,
+          unsubscribeError,
         };
 
         // 注册abort事件处理
@@ -789,11 +967,9 @@ const AIChatWindow = ({
 
         if (response && response.error) {
           // 清理监听器
-          unsubscribeChunk();
-          unsubscribeEnd();
-          delete streamHandlersRef.current[sessionId];
+          cleanupStreamHandlers(sessionId);
           setCurrentSessionId(null);
-          throw new Error(response.error);
+          throw createApiResponseError(response, t("ai.requestFailed"));
         }
       } else {
         // 非流式响应
@@ -811,25 +987,29 @@ const AIChatWindow = ({
           };
           setMessages((prev) => [...prev, assistantMessage]);
         } else if (response && response.error) {
-          throw new Error(response.error);
+          throw createApiResponseError(response, t("ai.requestFailed"));
         } else {
           throw new Error(t("ai.unknownError"));
         }
       }
     } catch (err) {
       if (err.name !== "AbortError") {
-        setError(err.message || t("ai.requestFailed"));
+        if (activeAssistantMessageId) {
+          markAssistantMessageComplete(activeAssistantMessageId);
+        }
+        if (activeSessionId) {
+          cleanupStreamHandlers(activeSessionId);
+          setCurrentSessionId(null);
+        }
+        setAbortController(null);
+        setError(formatBriefApiError(err, t("ai.requestFailed")));
       }
       // 如果是中断错误，确保消息状态正确
       if (err.name === "AbortError") {
         // 清理所有监听器
-        if (currentSessionId && window.terminalAPI) {
-          const handlers = streamHandlersRef.current[currentSessionId];
-          if (handlers) {
-            handlers.unsubscribeChunk?.();
-            handlers.unsubscribeEnd?.();
-            delete streamHandlersRef.current[currentSessionId];
-          }
+        const sessionIdToClean = activeSessionId || currentSessionId;
+        if (sessionIdToClean && window.terminalAPI) {
+          cleanupStreamHandlers(sessionIdToClean);
         }
         setCurrentSessionId(null);
 
@@ -849,10 +1029,67 @@ const AIChatWindow = ({
         });
       }
     } finally {
-      if (!currentApi.streamEnabled || currentApi.streamEnabled === false) {
+      if (currentApi?.streamEnabled === false) {
         setAbortController(null);
       }
     }
+  };
+
+  // 发送消息
+  const handleSendMessage = async () => {
+    await sendMessageContent(input, messages, { clearInput: true });
+  };
+
+  const updateCompressedMemoryAfterTruncate = async (messageIndex) => {
+    const shouldClearMemory = messageIndex < compressedMessageCount;
+    setCompressedMessageCount((prev) =>
+      messageIndex < prev ? 0 : Math.min(prev, messageIndex),
+    );
+
+    if (shouldClearMemory && window.terminalAPI?.deleteMemory) {
+      try {
+        await window.terminalAPI.deleteMemory();
+      } catch (err) {
+        console.error("Failed to reset AI memory after truncating chat:", err);
+      }
+    }
+  };
+
+  const handleEditMessage = async (message) => {
+    if (message.role !== "user" || isPending || abortController) {
+      return;
+    }
+
+    const messageIndex = messages.findIndex((item) => item.id === message.id);
+    if (messageIndex < 0) {
+      return;
+    }
+
+    setInput(message.content);
+    setError("");
+    setMessages((prev) => prev.slice(0, messageIndex));
+    await updateCompressedMemoryAfterTruncate(messageIndex);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  };
+
+  const handleRetryMessage = async (message) => {
+    if (message.role !== "user" || isPending || abortController) {
+      return;
+    }
+
+    const messageIndex = messages.findIndex((item) => item.id === message.id);
+    if (messageIndex < 0) {
+      return;
+    }
+
+    const historyMessages = messages.slice(0, messageIndex);
+    await updateCompressedMemoryAfterTruncate(messageIndex);
+    setError("");
+    await sendMessageContent(message.content, historyMessages, {
+      replaceHistory: true,
+    });
   };
 
   // 中断请求
@@ -867,6 +1104,7 @@ const AIChatWindow = ({
         if (handlers) {
           handlers.unsubscribeChunk?.();
           handlers.unsubscribeEnd?.();
+          handlers.unsubscribeError?.();
           delete streamHandlersRef.current[currentSessionId];
         }
         setCurrentSessionId(null);
@@ -1463,75 +1701,136 @@ const AIChatWindow = ({
               )}
             </Box>
           )}
-          {messages.map((message) => (
-            <MessageBubble
-              key={message.id}
-              isUser={message.role === "user"}
-              ref={(el) => {
-                if (el) messageRefsMap.current[message.id] = el;
-              }}
-            >
-              <Box display="flex" alignItems="flex-start" gap={1}>
-                <Box flex={1}>
-                  {message.role === "assistant" ? (
-                    showThinking ? (
-                      processThinkContent(message.content).map(
-                        (part, index) => (
-                          <Box key={index}>
-                            {part.type === "text" ? (
-                              renderMessageContent(
-                                part.content,
-                                message.id,
-                                message.isStreaming,
-                              )
-                            ) : (
-                              <ThinkContent
-                                content={part.content}
-                                isExpanded={expandedThinking[message.id]}
-                                onToggle={() => toggleThinking(message.id)}
-                              />
-                            )}
-                          </Box>
-                        ),
+          {messages.map((message) => {
+            const isUserMessage = message.role === "user";
+            const messageActionsDisabled = Boolean(
+              isPending || abortController || message.isStreaming,
+            );
+
+            return (
+              <Box
+                key={message.id}
+                sx={{
+                  alignSelf: isUserMessage ? "flex-end" : "flex-start",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: isUserMessage ? "flex-end" : "flex-start",
+                  maxWidth: "85%",
+                  mb: 1.25,
+                }}
+              >
+                <MessageBubble
+                  isUser={isUserMessage}
+                  ref={(el) => {
+                    if (el) messageRefsMap.current[message.id] = el;
+                  }}
+                  sx={{
+                    alignSelf: "stretch",
+                    maxWidth: "100%",
+                    mb: 0,
+                  }}
+                >
+                  <Box>
+                    {message.role === "assistant" ? (
+                      showThinking ? (
+                        processThinkContent(message.content).map(
+                          (part, index) => (
+                            <Box key={index}>
+                              {part.type === "text" ? (
+                                renderMessageContent(
+                                  part.content,
+                                  message.id,
+                                  message.isStreaming,
+                                )
+                              ) : (
+                                <ThinkContent
+                                  content={part.content}
+                                  isExpanded={expandedThinking[message.id]}
+                                  onToggle={() => toggleThinking(message.id)}
+                                />
+                              )}
+                            </Box>
+                          ),
+                        )
+                      ) : (
+                        renderMessageContent(
+                          message.content.replace(
+                            /<think>[\s\S]*?<\/think>/g,
+                            "",
+                          ),
+                          message.id,
+                          message.isStreaming,
+                        )
                       )
                     ) : (
-                      renderMessageContent(
-                        message.content.replace(
-                          /<think>[\s\S]*?<\/think>/g,
-                          "",
-                        ),
-                        message.id,
-                        message.isStreaming,
-                      )
-                    )
-                  ) : (
-                    <ReactMarkdown
-                      components={markdownComponents}
-                      allowedElements={MARKDOWN_ALLOWED_ELEMENTS}
-                      unwrapDisallowed
-                      urlTransform={markdownUrlTransform}
-                      skipHtml
+                      <ReactMarkdown
+                        components={markdownComponents}
+                        allowedElements={MARKDOWN_ALLOWED_ELEMENTS}
+                        unwrapDisallowed
+                        urlTransform={markdownUrlTransform}
+                        skipHtml
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    )}
+                    {message.isStreaming && (
+                      <CircularProgress size={12} sx={{ ml: 1 }} />
+                    )}
+                  </Box>
+                </MessageBubble>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.25,
+                    mt: 0.25,
+                    px: 0.5,
+                  }}
+                >
+                  {isUserMessage && (
+                    <>
+                      <Tooltip title={t("ai.editMessage")}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleEditMessage(message)}
+                            disabled={messageActionsDisabled}
+                            sx={MESSAGE_ACTION_BUTTON_SX}
+                            aria-label={t("ai.editMessage")}
+                          >
+                            <EditIcon sx={MESSAGE_ACTION_ICON_SX} />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title={t("ai.retryMessage")}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleRetryMessage(message)}
+                            disabled={messageActionsDisabled}
+                            sx={MESSAGE_ACTION_BUTTON_SX}
+                            aria-label={t("ai.retryMessage")}
+                          >
+                            <ReplayIcon sx={MESSAGE_ACTION_ICON_SX} />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </>
+                  )}
+                  <Tooltip title={t("ai.copyMessage")}>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleCopyMessage(message.content)}
+                      sx={MESSAGE_ACTION_BUTTON_SX}
+                      aria-label={t("ai.copyMessage")}
                     >
-                      {message.content}
-                    </ReactMarkdown>
-                  )}
-                  {message.isStreaming && (
-                    <CircularProgress size={12} sx={{ ml: 1 }} />
-                  )}
+                      <ContentCopyIcon sx={MESSAGE_ACTION_ICON_SX} />
+                    </IconButton>
+                  </Tooltip>
                 </Box>
-                <Tooltip title={t("ai.copyMessage")}>
-                  <IconButton
-                    size="small"
-                    onClick={() => handleCopyMessage(message.content)}
-                    sx={{ opacity: 0.7 }}
-                  
-                    aria-label={t("ai.copyMessage")}>
-                    <ContentCopyIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
               </Box>
-            </MessageBubble>
-          ))}
+            );
+          })}
           <div ref={messagesEndRef} />
         </Box>
 
@@ -1592,7 +1891,14 @@ const AIChatWindow = ({
         )}
 
         {/* 输入区域 */}
-        <Box display="flex" gap={1} alignItems="flex-end">
+        <Box
+          sx={{
+            display: "flex",
+            gap: 1,
+            alignItems: "center",
+            width: "100%",
+          }}
+        >
           <TextField
             fullWidth
             multiline
@@ -1610,6 +1916,10 @@ const AIChatWindow = ({
             inputRef={inputRef}
             variant="outlined"
             size="small"
+            sx={{
+              flex: "1 1 0",
+              minWidth: 0,
+            }}
           />
           {isPending || abortController ? (
             <Tooltip title={t("ai.stopGenerating")}>
@@ -1618,7 +1928,12 @@ const AIChatWindow = ({
                 color="error"
                 onClick={handleAbortRequest}
                 aria-label={t("ai.stopGenerating")}
-                sx={{ flexShrink: 0 }}
+                sx={{
+                  flexShrink: 0,
+                  width: 36,
+                  height: 36,
+                  minHeight: 36,
+                }}
               >
                 <StopIcon />
               </Fab>
@@ -1638,7 +1953,12 @@ const AIChatWindow = ({
                     !currentApi.model
                   }
                   aria-label={t("ai.sendMessage")}
-                  sx={{ flexShrink: 0 }}
+                  sx={{
+                    flexShrink: 0,
+                    width: 36,
+                    height: 36,
+                    minHeight: 36,
+                  }}
                 >
                   <SendIcon />
                 </Fab>

@@ -50,6 +50,16 @@ class AppHandlers {
         handler: this.reloadWindow.bind(this),
       },
       {
+        channel: IPC_REQUEST_CHANNELS.CLIPBOARD_READ_TEXT,
+        category: "clipboard",
+        handler: this.readClipboardText.bind(this),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.CLIPBOARD_WRITE_TEXT,
+        category: "clipboard",
+        handler: this.writeClipboardText.bind(this),
+      },
+      {
         channel: IPC_REQUEST_CHANNELS.APP_OPEN_EXTERNAL,
         category: "app",
         handler: this.openExternal.bind(this),
@@ -197,6 +207,29 @@ class AppHandlers {
       return { success: false, error: "No window found" };
     } catch (error) {
       logToFile(`Error reloading window: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async readClipboardText() {
+    try {
+      return {
+        success: true,
+        text: clipboard.readText(),
+      };
+    } catch (error) {
+      logToFile(`Error reading clipboard text: ${error.message}`, "ERROR");
+      return { success: false, error: error.message };
+    }
+  }
+
+  async writeClipboardText(event, text) {
+    try {
+      void event;
+      clipboard.writeText(String(text ?? ""));
+      return { success: true };
+    } catch (error) {
+      logToFile(`Error writing clipboard text: ${error.message}`, "ERROR");
       return { success: false, error: error.message };
     }
   }

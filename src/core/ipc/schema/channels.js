@@ -115,6 +115,22 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
   defineRequest("APP_CLOSE", "app:close", "app", NO_ARGS_SCHEMA),
   defineRequest("APP_RELOAD_WINDOW", "app:reloadWindow", "app", NO_ARGS_SCHEMA),
   defineRequest(
+    "CLIPBOARD_READ_TEXT",
+    "clipboard:readText",
+    "clipboard",
+    NO_ARGS_SCHEMA,
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "clipboard" },
+  ),
+  defineRequest(
+    "CLIPBOARD_WRITE_TEXT",
+    "clipboard:writeText",
+    "clipboard",
+    args([{}]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "clipboard" },
+  ),
+  defineRequest(
     "APP_OPEN_EXTERNAL",
     "app:openExternal",
     "app",

@@ -4,7 +4,6 @@
 const {
   contextBridge,
   ipcRenderer,
-  clipboard,
   webUtils,
   crashReporter,
 } = require("electron");
@@ -1405,9 +1404,21 @@ contextBridge.exposeInMainWorld("appErrorAPI", {
 
 // Clipboard API (Electron 40+ safe access pattern)
 contextBridge.exposeInMainWorld("clipboardAPI", {
-  readText: async () => clipboard.readText(),
+  readText: async () => {
+    const result = await ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CLIPBOARD_READ_TEXT);
+    if (result?.success === false) {
+      throw new Error(result.error || "Failed to read clipboard text");
+    }
+    return typeof result?.text === "string" ? result.text : "";
+  },
   writeText: async (text) => {
-    clipboard.writeText(String(text ?? ""));
+    const result = await ipcRenderer.invoke(
+      IPC_REQUEST_CHANNELS.CLIPBOARD_WRITE_TEXT,
+      String(text ?? ""),
+    );
+    if (result?.success === false) {
+      throw new Error(result.error || "Failed to write clipboard text");
+    }
     for (const listener of clipboardWriteSuccessListeners) {
       try {
         listener({ timestamp: Date.now() });
