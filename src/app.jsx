@@ -87,10 +87,10 @@ import {
 } from "./core/syncInputGroups";
 import ListItemText from "@mui/material/ListItemText";
 import Divider from "@mui/material/Divider";
-import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
+import AddCircleOutlinedIcon from "@mui/icons-material/AddCircleOutlined";
 import AddIcon from "@mui/icons-material/Add";
-import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutline";
-import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
+import PauseCircleOutlinedIcon from "@mui/icons-material/PauseCircleOutlined";
+import PlayCircleOutlinedIcon from "@mui/icons-material/PlayCircleOutlined";
 import { dispatchCommandToGroup } from "./core/syncGroupCommandDispatcher";
 import { useEventManager } from "./core/utils/eventManager.js";
 import ErrorNotification from "./components/ErrorNotification.jsx";
@@ -4046,7 +4046,7 @@ function AppContent() {
                   onClick={handlePauseReconnect}
                   disabled={isReconnectActionPending}
                 >
-                  <PauseCircleOutlineIcon fontSize="small" sx={{ mr: 1 }} />
+                  <PauseCircleOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
                   {t("tabMenu.pauseReconnect")}
                 </MenuItem>
               )}
@@ -4057,7 +4057,7 @@ function AppContent() {
                   onClick={handleResumeReconnect}
                   disabled={isReconnectActionPending}
                 >
-                  <PlayCircleOutlineIcon fontSize="small" sx={{ mr: 1 }} />
+                  <PlayCircleOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
                   {t("tabMenu.resumeReconnect")}
                 </MenuItem>
               )}
@@ -4100,7 +4100,7 @@ function AppContent() {
                     key="create-group"
                     onClick={() => handleCreateGroup(tabId)}
                   >
-                    <AddCircleOutlineIcon fontSize="small" sx={{ mr: 1 }} />
+                    <AddCircleOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
                     <ListItemText>{t("tabMenu.createGroup")}</ListItemText>
                   </MenuItem>,
                 );
