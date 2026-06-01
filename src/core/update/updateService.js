@@ -17,7 +17,7 @@ const UPDATE_CHECK_URL =
 const INSTALLER_META_FILE = "latest-installer-meta.json";
 const UPDATE_ERROR_FILE = "latest-update-error.json";
 const INSTALLER_LOG_FILE = "latest-install.log";
-const INSTALLER_SCRIPT_FILE = "install-and-restart.cmd";
+const INSTALLER_SCRIPT_FILE = "install-and-restart.ps1";
 const TRUSTED_DOWNLOAD_HOSTS = new Set([
   "github.com",
   "objects.githubusercontent.com",
@@ -1424,8 +1424,16 @@ class UpdateService {
       );
 
       const installer = this.spawn(
-        "cmd.exe",
-        ["/c", this.installerScriptPath],
+        "powershell.exe",
+        [
+          "-NoLogo",
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          this.installerScriptPath,
+        ],
         {
           detached: true,
           stdio: "ignore",
@@ -1479,7 +1487,7 @@ class UpdateService {
     const psExecutable = toPowerShellString(executablePath);
     const psLog = toPowerShellString(this.installerLogPath);
 
-    const powershell = [
+    return [
       "$ErrorActionPreference = 'Stop'",
       `$log = ${psLog}`,
       "function Write-UpdateLog($message) {",
@@ -1503,13 +1511,6 @@ class UpdateService {
       '  Write-UpdateLog "Application executable not found for restart: $exe"',
       "}",
       "exit 0",
-    ].join("; ");
-
-    return [
-      "@echo off",
-      "setlocal",
-      `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ${JSON.stringify(powershell)}`,
-      "exit /b %ERRORLEVEL%",
       "",
     ].join("\r\n");
   }
