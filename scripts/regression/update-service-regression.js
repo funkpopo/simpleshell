@@ -483,6 +483,49 @@ async function testOfflineRecovery() {
   }
 }
 
+async function testWindowsInstallerRunsHiddenPowerShellScript() {
+  const context = withUpdateService();
+  try {
+    const { service } = context;
+    const installerPath = path.join(service.tempDir, "SimpleShell-Setup.exe");
+    fs.mkdirSync(service.tempDir, { recursive: true });
+    fs.writeFileSync(installerPath, "installer");
+
+    let spawnCall = null;
+    const child = new EventEmitter();
+    child.unref = () => {};
+    service.spawn = (command, args, options) => {
+      spawnCall = { command, args, options };
+      return child;
+    };
+
+    await service.installWindowsUpdate(installerPath);
+
+    assert.equal(spawnCall.command, "powershell.exe");
+    assert.deepEqual(spawnCall.args, [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      service.installerScriptPath,
+    ]);
+    assert.equal(spawnCall.options.windowsHide, true);
+    assert.equal(spawnCall.options.detached, true);
+    assert.equal(spawnCall.options.stdio, "ignore");
+    assert.equal(path.extname(service.installerScriptPath), ".ps1");
+
+    const script = fs.readFileSync(service.installerScriptPath, "utf8");
+    assert.match(script, /\$ErrorActionPreference = 'Stop'/);
+    assert.match(script, /Start-Process -FilePath \$installer/);
+    assert.doesNotMatch(script, /powershell\.exe/i);
+    assert.doesNotMatch(script, /cmd\.exe/i);
+  } finally {
+    context.restore();
+  }
+}
+
 async function run() {
   const tests = [
     ["version comparison", testVersionComparison],
@@ -495,6 +538,10 @@ async function run() {
     ["trusted redirect download", testTrustedRedirectDownload],
     ["cancel download", testCancelDownload],
     ["offline recovery", testOfflineRecovery],
+    [
+      "Windows installer uses hidden PowerShell script",
+      testWindowsInstallerRunsHiddenPowerShellScript,
+    ],
   ];
 
   for (const [name, fn] of tests) {
