@@ -38,6 +38,14 @@ const IPC_STRING_PATTERNS = [
     kind: "webcontents-send",
     re: /(?:webContents|sender)\.send\(\s*["']([^"']+)["']/g,
   },
+  {
+    kind: "terminal-api-listener",
+    re: /window\.terminalAPI\.(?:on|off|removeListener)\(\s*["']([^"']+)["']/g,
+  },
+  {
+    kind: "progress-channel-property",
+    re: /progressChannel:\s*["']([^"']+)["']/g,
+  },
 ];
 
 const FORBIDDEN_IPC_PATTERNS = [

@@ -617,6 +617,39 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       }
     }
   },
+  onAIStreamChunk: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const channel = IPC_EVENT_CHANNELS.AI_STREAM_CHUNK;
+    const wrappedCallback = (event, data) => callback(event, data);
+    ipcRenderer.on(channel, wrappedCallback);
+    streamWrappersByChannel[channel].set(callback, wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener(channel, wrappedCallback);
+      streamWrappersByChannel[channel].delete(callback);
+    };
+  },
+  onAIStreamEnd: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const channel = IPC_EVENT_CHANNELS.AI_STREAM_END;
+    const wrappedCallback = (event, data) => callback(event, data);
+    ipcRenderer.on(channel, wrappedCallback);
+    streamWrappersByChannel[channel].set(callback, wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener(channel, wrappedCallback);
+      streamWrappersByChannel[channel].delete(callback);
+    };
+  },
+  onAIStreamError: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const channel = IPC_EVENT_CHANNELS.AI_STREAM_ERROR;
+    const wrappedCallback = (event, data) => callback(event, data);
+    ipcRenderer.on(channel, wrappedCallback);
+    streamWrappersByChannel[channel].set(callback, wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener(channel, wrappedCallback);
+      streamWrappersByChannel[channel].delete(callback);
+    };
+  },
 
   // 获取应用版本
   getAppVersion: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_GET_VERSION),
