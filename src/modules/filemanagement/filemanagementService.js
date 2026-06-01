@@ -2003,7 +2003,7 @@ class FilemanagementService {
         tabId,
         type: "download",
         sender,
-        progressChannel: "download-progress",
+        progressChannel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
         totalFiles: 1,
         metadata: {
           displayName: defaultName || normalizedRemotePath,
@@ -2263,7 +2263,7 @@ class FilemanagementService {
         tabId,
         type: "batch-download",
         sender,
-        progressChannel: "download-progress",
+        progressChannel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
         totalBytes,
         totalFiles,
         metadata: {
@@ -2717,7 +2717,7 @@ class FilemanagementService {
         tabId,
         type: "download-folder",
         sender,
-        progressChannel: "download-folder-progress",
+        progressChannel: IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
         totalBytes: 0,
         totalFiles: 1,
         metadata: {

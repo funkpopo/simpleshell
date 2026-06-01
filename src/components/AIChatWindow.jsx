@@ -758,20 +758,25 @@ const AIChatWindow = ({
             setAbortController(null);
             setCurrentSessionId(null);
             // 清理监听器
-            window.terminalAPI.off("stream-chunk", handleStreamChunk);
-            window.terminalAPI.off("stream-end", handleStreamEnd);
+            const handlers = streamHandlersRef.current[sessionId];
+            handlers?.unsubscribeChunk?.();
+            handlers?.unsubscribeEnd?.();
             delete streamHandlersRef.current[sessionId];
           }
         };
 
         // 注册监听器
-        window.terminalAPI.on("stream-chunk", handleStreamChunk);
-        window.terminalAPI.on("stream-end", handleStreamEnd);
+        const unsubscribeChunk =
+          window.terminalAPI.onAIStreamChunk?.(handleStreamChunk) || (() => {});
+        const unsubscribeEnd =
+          window.terminalAPI.onAIStreamEnd?.(handleStreamEnd) || (() => {});
 
         // 保存监听器引用
         streamHandlersRef.current[sessionId] = {
           chunk: handleStreamChunk,
           end: handleStreamEnd,
+          unsubscribeChunk,
+          unsubscribeEnd,
         };
 
         // 注册abort事件处理
@@ -784,8 +789,8 @@ const AIChatWindow = ({
 
         if (response && response.error) {
           // 清理监听器
-          window.terminalAPI.off("stream-chunk", handleStreamChunk);
-          window.terminalAPI.off("stream-end", handleStreamEnd);
+          unsubscribeChunk();
+          unsubscribeEnd();
           delete streamHandlersRef.current[sessionId];
           setCurrentSessionId(null);
           throw new Error(response.error);
@@ -821,8 +826,8 @@ const AIChatWindow = ({
         if (currentSessionId && window.terminalAPI) {
           const handlers = streamHandlersRef.current[currentSessionId];
           if (handlers) {
-            window.terminalAPI.off("stream-chunk", handlers.chunk);
-            window.terminalAPI.off("stream-end", handlers.end);
+            handlers.unsubscribeChunk?.();
+            handlers.unsubscribeEnd?.();
             delete streamHandlersRef.current[currentSessionId];
           }
         }
@@ -860,8 +865,8 @@ const AIChatWindow = ({
       if (currentSessionId && window.terminalAPI) {
         const handlers = streamHandlersRef.current[currentSessionId];
         if (handlers) {
-          window.terminalAPI.off("stream-chunk", handlers.chunk);
-          window.terminalAPI.off("stream-end", handlers.end);
+          handlers.unsubscribeChunk?.();
+          handlers.unsubscribeEnd?.();
           delete streamHandlersRef.current[currentSessionId];
         }
         setCurrentSessionId(null);
