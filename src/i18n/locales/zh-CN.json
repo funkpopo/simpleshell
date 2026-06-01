@@ -700,6 +700,8 @@
       "thinking": "思考中...",
       "thinkingProcess": "思考过程",
       "copyMessage": "复制消息",
+      "editMessage": "编辑消息",
+      "retryMessage": "重试消息",
       "clearChat": "清空对话",
       "settings": "设置",
       "manageApis": "管理 API 配置",

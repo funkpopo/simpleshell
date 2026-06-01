@@ -700,6 +700,8 @@
       "thinking": "Thinking...",
       "thinkingProcess": "Thinking Process",
       "copyMessage": "Copy message",
+      "editMessage": "Edit message",
+      "retryMessage": "Retry message",
       "clearChat": "Clear chat",
       "settings": "Settings",
       "manageApis": "Manage API configurations",

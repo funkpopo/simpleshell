@@ -298,11 +298,9 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
       nodeIntegration: false,
       // Avoid background timer throttling that can delay terminal repaint / input after tab switches.
       backgroundThrottling: false,
-      // Electron 40 may run preloads in a sandboxed context depending on defaults.
-      // Our webpack preload bundle includes asset-relocator runtime that uses `__dirname`,
-      // which is not available in sandboxed preloads. Keep renderer Node disabled, but
-      // ensure preload runs in the normal (non-sandboxed) context.
-      sandbox: false,
+      // Keep preload sandboxed. The renderer webpack config excludes asset-relocator
+      // runtime from preload bundles, and Node-backed APIs are exposed through IPC.
+      sandbox: true,
     },
     icon: iconPath,
   });

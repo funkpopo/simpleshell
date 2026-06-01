@@ -213,7 +213,12 @@ function createAIWorker() {
       if (callback) {
         if (error) {
           const errorMessage = error.message || "Unknown error";
-          callback.reject(new Error(errorMessage));
+          const normalizedError = new Error(errorMessage);
+          if (error.statusCode) {
+            normalizedError.statusCode = error.statusCode;
+          }
+          normalizedError.raw = error;
+          callback.reject(normalizedError);
         } else {
           callback.resolve(result);
         }
