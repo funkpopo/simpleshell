@@ -5,7 +5,7 @@ import Button from "@mui/material/Button";
 import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import ErrorOutlinedIcon from "@mui/icons-material/ErrorOutlined";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import FeedbackIcon from "@mui/icons-material/Feedback";

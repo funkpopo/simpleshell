@@ -50,8 +50,8 @@ import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import SearchIcon from "@mui/icons-material/Search";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
-import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
-import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
+import ErrorOutlinedIcon from "@mui/icons-material/ErrorOutlined";
 import {
   DndContext,
   KeyboardSensor,
@@ -2409,9 +2409,9 @@ const ConnectionManager = memo(
             {isChecking ? (
               <CircularProgress size={16} />
             ) : step.ok ? (
-              <CheckCircleOutlineIcon fontSize="small" />
+              <CheckCircleOutlinedIcon fontSize="small" />
             ) : (
-              <ErrorOutlineIcon fontSize="small" />
+              <ErrorOutlinedIcon fontSize="small" />
             )}
           </Box>
           <Box sx={{ minWidth: 0 }}>
