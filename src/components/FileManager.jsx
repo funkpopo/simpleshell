@@ -7,8 +7,7 @@ import React, {
   useRef,
 } from "react";
 import Dialog from "./AccessibleDialog.jsx";
-import {
-  flushSync } from "react-dom";
+import { flushSync } from "react-dom";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import {
   Box,
@@ -214,6 +213,38 @@ const getTopLevelTransferItemName = (targetPath) => {
 
   const [firstSegment] = normalizedPath.split("/").filter(Boolean);
   return firstSegment || "";
+};
+
+const getLocalPathBaseName = (localPath) => {
+  const normalized = String(localPath || "").replace(/[\\/]+$/, "");
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || "";
+};
+
+const getDroppedEntryName = (entry) => {
+  const name = typeof entry?.name === "string" ? entry.name : "";
+  if (!name || name === "." || name === ".." || /[\\/]/.test(name)) {
+    return "";
+  }
+  return name;
+};
+
+const joinDroppedLocalPath = (basePath, childName) => {
+  const base = String(basePath || "");
+  const child = typeof childName === "string" ? childName : "";
+
+  if (
+    !base ||
+    !child ||
+    child === "." ||
+    child === ".." ||
+    /[\\/]/.test(child)
+  ) {
+    return "";
+  }
+
+  const separator = base.includes("\\") ? "\\" : "/";
+  return `${base}${/[\\/]$/.test(base) ? "" : separator}${child}`;
 };
 
 const normalizeNavigationState = (navigationState, currentPath = "/") => {
@@ -764,7 +795,6 @@ const FileManager = memo(
       transferList,
       addTransferProgress: storeAddTransferProgress,
       updateTransferProgress: storeUpdateTransferProgress,
-      removeTransferProgress: storeRemoveTransferProgress,
       scheduleTransferCleanup: storeScheduleTransferCleanup,
     } = useGlobalTransfers(tabId);
 
@@ -790,11 +820,6 @@ const FileManager = memo(
     // 更新传输进度
     const updateTransferProgress = (transferId, updateData) => {
       storeUpdateTransferProgress(transferId, updateData);
-    };
-
-    // 移除传输任务
-    const removeTransferProgress = (transferId) => {
-      storeRemoveTransferProgress(transferId);
     };
 
     // 清理已完成的传输任务
@@ -3293,6 +3318,23 @@ const FileManager = memo(
             2000,
           );
 
+          activeUploadTransferId = addTransferProgress({
+            type: "upload-multifile",
+            progress: 0,
+            fileName: t("fileManager.messages.preparingUpload"),
+            statusText: t("fileManager.transfer.status.preparingUpload"),
+            currentFile: "",
+            transferredBytes: 0,
+            totalBytes: 0,
+            transferSpeed: 0,
+            remainingTime: 0,
+            currentFileIndex: 0,
+            processedFiles: 0,
+            totalFiles: 1,
+            transferKey: "",
+            fileList: null,
+          });
+
           // 使用progressCallback处理进度更新
           const result = await window.terminalAPI.uploadFile(
             tabId,
@@ -3326,6 +3368,8 @@ const FileManager = memo(
                   progress: validProgress,
                   fileName:
                     fileName || t("fileManager.messages.preparingUpload"),
+                  statusText: t("fileManager.transfer.status.uploading"),
+                  currentFile: fileName || "",
                   transferredBytes: validTransferredBytes,
                   totalBytes: validTotalBytes,
                   transferSpeed: validTransferSpeed,
@@ -3340,7 +3384,9 @@ const FileManager = memo(
 
               updateTransferProgress(activeUploadTransferId, {
                 progress: validProgress,
-                fileName: fileName || "",
+                fileName: fileName || t("fileManager.messages.preparingUpload"),
+                statusText: t("fileManager.transfer.status.uploading"),
+                currentFile: fileName || "",
                 transferredBytes: validTransferredBytes,
                 totalBytes: validTotalBytes,
                 transferSpeed: validTransferSpeed,
@@ -3359,8 +3405,10 @@ const FileManager = memo(
             if (activeUploadTransferId) {
               updateTransferProgress(activeUploadTransferId, {
                 isCancelled: true,
+                statusText: t("fileManager.transfer.status.transferCancelled"),
                 cancelMessage: t("fileManager.errors.userCancelled"),
               });
+              storeScheduleTransferCleanup(activeUploadTransferId, 3000);
             }
           } else if (result?.success) {
             // 标记传输完成
@@ -3369,6 +3417,8 @@ const FileManager = memo(
                 progress: 100,
                 fileName:
                   result.message || t("fileManager.messages.uploadComplete"),
+                statusText: t("fileManager.transfer.status.completed"),
+                currentFile: "",
                 processedFiles: Math.max(
                   0,
                   result.successfulFiles ?? result.totalFiles ?? 0,
@@ -3408,6 +3458,7 @@ const FileManager = memo(
               if (activeUploadTransferId) {
                 updateTransferProgress(activeUploadTransferId, {
                   error: result.error || t("fileManager.errors.uploadFailed"),
+                  statusText: t("fileManager.transfer.status.failed"),
                 });
                 storeScheduleTransferCleanup(activeUploadTransferId, 5000);
               }
@@ -3416,8 +3467,12 @@ const FileManager = memo(
               if (activeUploadTransferId) {
                 updateTransferProgress(activeUploadTransferId, {
                   isCancelled: true,
+                  statusText: t(
+                    "fileManager.transfer.status.transferCancelled",
+                  ),
                   cancelMessage: t("fileManager.errors.userCancelled"),
                 });
+                storeScheduleTransferCleanup(activeUploadTransferId, 3000);
               }
             }
           }
@@ -3434,7 +3489,7 @@ const FileManager = memo(
         if (
           !transferCancelled &&
           !isUserCancellationError(error) &&
-          !error.message?.includes("reply was never sent")
+          !error?.message?.includes("reply was never sent")
         ) {
           showNotification(
             (error && (error.message || error.error)) ||
@@ -3444,10 +3499,11 @@ const FileManager = memo(
           );
           // 更新所有未完成的传输为错误状态
           const errorMessage =
-            error.message || t("fileManager.errors.unknownError");
+            error?.message || t("fileManager.errors.unknownError");
           if (activeUploadTransferId) {
             updateTransferProgress(activeUploadTransferId, {
               error: errorMessage,
+              statusText: t("fileManager.transfer.status.failed"),
             });
             storeScheduleTransferCleanup(activeUploadTransferId, 5000);
           } else {
@@ -3467,8 +3523,10 @@ const FileManager = memo(
           if (activeUploadTransferId) {
             updateTransferProgress(activeUploadTransferId, {
               isCancelled: true,
+              statusText: t("fileManager.transfer.status.transferCancelled"),
               cancelMessage: t("fileManager.errors.userCancelled"),
             });
+            storeScheduleTransferCleanup(activeUploadTransferId, 3000);
           } else {
             // 标记所有未完成的传输为取消状态
             transferProgressList
@@ -3526,6 +3584,22 @@ const FileManager = memo(
             2000,
           );
 
+          activeUploadTransferId = addTransferProgress({
+            type: "upload-folder",
+            progress: 0,
+            fileName: t("fileManager.messages.preparingUpload"),
+            statusText: t("fileManager.transfer.status.preparingUpload"),
+            currentFile: "",
+            transferredBytes: 0,
+            totalBytes: 0,
+            transferSpeed: 0,
+            remainingTime: 0,
+            processedFiles: 0,
+            totalFiles: 1,
+            transferKey: "",
+            fileList: null,
+          });
+
           // 使用progressCallback处理进度更新
           const result = await window.terminalAPI.uploadFolder(
             tabId,
@@ -3558,6 +3632,7 @@ const FileManager = memo(
                   progress: validProgress,
                   fileName:
                     fileName || t("fileManager.messages.preparingUpload"),
+                  statusText: t("fileManager.transfer.status.uploading"),
                   currentFile: currentFile || "",
                   transferredBytes: validTransferredBytes,
                   totalBytes: validTotalBytes,
@@ -3572,7 +3647,8 @@ const FileManager = memo(
 
               updateTransferProgress(activeUploadTransferId, {
                 progress: validProgress,
-                fileName: fileName || "",
+                fileName: fileName || t("fileManager.messages.preparingUpload"),
+                statusText: t("fileManager.transfer.status.uploading"),
                 currentFile: currentFile || "",
                 transferredBytes: validTransferredBytes,
                 totalBytes: validTotalBytes,
@@ -3591,8 +3667,10 @@ const FileManager = memo(
             if (activeUploadTransferId) {
               updateTransferProgress(activeUploadTransferId, {
                 isCancelled: true,
+                statusText: t("fileManager.transfer.status.transferCancelled"),
                 cancelMessage: t("fileManager.errors.userCancelled"),
               });
+              storeScheduleTransferCleanup(activeUploadTransferId, 3000);
             }
           } else if (result?.success) {
             // 标记传输完成
@@ -3601,6 +3679,8 @@ const FileManager = memo(
                 progress: 100,
                 fileName:
                   result.message || t("fileManager.messages.uploadComplete"),
+                statusText: t("fileManager.transfer.status.completed"),
+                currentFile: "",
               });
 
               // 传输完成后延迟移除
@@ -3634,6 +3714,7 @@ const FileManager = memo(
               if (activeUploadTransferId) {
                 updateTransferProgress(activeUploadTransferId, {
                   error: result.error || t("fileManager.errors.uploadFailed"),
+                  statusText: t("fileManager.transfer.status.failed"),
                 });
                 storeScheduleTransferCleanup(activeUploadTransferId, 5000);
               }
@@ -3642,8 +3723,12 @@ const FileManager = memo(
               if (activeUploadTransferId) {
                 updateTransferProgress(activeUploadTransferId, {
                   isCancelled: true,
+                  statusText: t(
+                    "fileManager.transfer.status.transferCancelled",
+                  ),
                   cancelMessage: t("fileManager.errors.userCancelled"),
                 });
+                storeScheduleTransferCleanup(activeUploadTransferId, 3000);
               }
             }
           }
@@ -3660,7 +3745,7 @@ const FileManager = memo(
         if (
           !transferCancelled &&
           !isUserCancellationError(error) &&
-          !error.message?.includes("reply was never sent")
+          !error?.message?.includes("reply was never sent")
         ) {
           showNotification(
             (error && (error.message || error.error)) ||
@@ -3673,6 +3758,7 @@ const FileManager = memo(
               error?.message || t("fileManager.errors.unknownError");
             updateTransferProgress(activeUploadTransferId, {
               error: errorMessage,
+              statusText: t("fileManager.transfer.status.failed"),
             });
             storeScheduleTransferCleanup(activeUploadTransferId, 5000);
           }
@@ -3681,8 +3767,10 @@ const FileManager = memo(
           if (activeUploadTransferId) {
             updateTransferProgress(activeUploadTransferId, {
               isCancelled: true,
+              statusText: t("fileManager.transfer.status.transferCancelled"),
               cancelMessage: t("fileManager.errors.userCancelled"),
             });
+            storeScheduleTransferCleanup(activeUploadTransferId, 3000);
           }
         }
 
@@ -4284,8 +4372,8 @@ const FileManager = memo(
       if (window.terminalAPI?.getPathForFile) {
         try {
           const resolvedPath = window.terminalAPI.getPathForFile(file);
-          if (typeof resolvedPath === "string" && resolvedPath.trim()) {
-            return resolvedPath.trim();
+          if (typeof resolvedPath === "string" && resolvedPath) {
+            return resolvedPath;
           }
         } catch {
           return "";
@@ -4293,31 +4381,6 @@ const FileManager = memo(
       }
 
       return "";
-    }, []);
-
-    const readDroppedFileEntry = useCallback((entry) => {
-      return new Promise((resolve) => {
-        if (!entry || typeof entry.file !== "function") {
-          resolve(null);
-          return;
-        }
-
-        try {
-          const maybePromise = entry.file(
-            (file) => resolve(file || null),
-            () => resolve(null),
-          );
-          if (maybePromise && typeof maybePromise.then === "function") {
-            maybePromise
-              .then((file) => resolve(file || null))
-              .catch(() => {
-                resolve(null);
-              });
-          }
-        } catch {
-          resolve(null);
-        }
-      });
     }, []);
 
     const getDropValidationMessage = useCallback(
@@ -4423,70 +4486,73 @@ const FileManager = memo(
           return;
         }
 
+        const transferId = addTransferProgress({
+          type: "upload-multifile",
+          progress: 0,
+          fileName: t("fileManager.messages.preparingUpload"),
+          statusText: t("fileManager.transfer.status.preparingUpload"),
+          currentFile: "",
+          transferredBytes: 0,
+          totalBytes: 0,
+          transferSpeed: 0,
+          remainingTime: 0,
+          currentFileIndex: 0,
+          processedFiles: 0,
+          totalFiles: Math.max(1, entries?.length || 1),
+          transferKey: "",
+          fileList: null,
+        });
+        let didForegroundRefresh = false;
+
         const droppedItems = [];
-        const addParentFolders = (relativePath, folders) => {
-          const parts = String(relativePath || "")
-            .replace(/\\/g, "/")
-            .split("/")
-            .filter(Boolean);
 
-          for (let index = 1; index < parts.length; index += 1) {
-            folders.add(parts.slice(0, index).join("/"));
-          }
-        };
-        const addFolderAndParents = (relativePath, folders) => {
-          const normalized = String(relativePath || "")
-            .replace(/\\/g, "/")
-            .replace(/\/+$/, "")
-            .split("/")
-            .filter(Boolean)
-            .join("/");
-
-          if (!normalized) {
-            return;
-          }
-
-          addParentFolders(normalized, folders);
-          folders.add(normalized);
-        };
-
-        const readEntry = async (entry, pathPrefix = "") => {
+        const readEntry = async (entry, pathPrefix = "", localPath = "") => {
           if (!entry) return;
+          const entryName = getDroppedEntryName(entry);
 
           if (entry.isFile) {
-            const file = await readDroppedFileEntry(entry);
-            if (!file) {
+            if (!entryName) {
               droppedItems.push({
-                name: entry.name || "",
-                relativePath: `${pathPrefix}${entry.name || "unnamed-file"}`,
-                localPath: "",
+                name: "",
+                relativePath: "",
+                localPath,
+                isFile: true,
               });
               return;
             }
 
             droppedItems.push({
-              name: file.name || entry.name || "",
-              relativePath: `${pathPrefix}${file.name || entry.name || "unnamed-file"}`,
-              localPath: getDroppedFileLocalPath(file),
-              size: Number.isFinite(file.size) ? file.size : 0,
-              type: file.type || "",
-              lastModified: file.lastModified || 0,
+              name: entryName,
+              relativePath: `${pathPrefix}${entryName}`,
+              localPath,
+              isFile: true,
             });
             return;
           }
 
           if (!entry.isDirectory || typeof entry.createReader !== "function") {
             droppedItems.push({
-              name: entry.name || "",
-              relativePath: `${pathPrefix}${entry.name || "unsupported-item"}`,
+              name: entryName,
+              relativePath: entryName ? `${pathPrefix}${entryName}` : "",
               localPath: "",
             });
             return;
           }
 
-          const directoryName = entry.name || "folder";
-          const directoryPrefix = `${pathPrefix}${directoryName}/`;
+          if (!entryName) {
+            droppedItems.push({
+              name: "",
+              relativePath: "",
+              localPath,
+              isDirectory: true,
+              directoryReadable: false,
+            });
+            return;
+          }
+
+          const directoryPrefix = `${pathPrefix}${entryName}/`;
           const directoryRelativePath = directoryPrefix.replace(/\/$/, "");
+          const directoryLocalPath = localPath;
           const reader = entry.createReader();
           const childEntries = [];
           let directoryReadable = true;
@@ -4512,25 +4578,35 @@ const FileManager = memo(
           });
 
           droppedItems.push({
-            name: directoryName,
+            name: entryName,
             relativePath: directoryRelativePath,
-            localPath: "",
+            localPath: directoryLocalPath,
             isDirectory: true,
             directoryReadable,
           });
 
           for (const childEntry of childEntries) {
-            await readEntry(childEntry, directoryPrefix);
+            await readEntry(
+              childEntry,
+              directoryPrefix,
+              joinDroppedLocalPath(directoryLocalPath, childEntry?.name),
+            );
           }
         };
 
-        for (const entry of entries) {
-          await readEntry(entry);
+        for (const rootItem of entries) {
+          await readEntry(rootItem.entry, "", rootItem.localPath);
         }
 
         if (droppedItems.length === 0) {
+          const message = t("fileManager.errors.noFilesSelected");
+          updateTransferProgress(transferId, {
+            error: message,
+            statusText: t("fileManager.transfer.status.failed"),
+          });
+          storeScheduleTransferCleanup(transferId, 3000);
           setNotification({
-            message: t("fileManager.errors.noFilesSelected"),
+            message,
             severity: "warning",
           });
           return;
@@ -4539,20 +4615,20 @@ const FileManager = memo(
         const validation =
           await window.terminalAPI.validateDroppedItems(droppedItems);
         if (!validation?.success || validation.rejected?.length > 0) {
+          const message = getDropValidationMessage(validation?.rejected?.[0]);
+          updateTransferProgress(transferId, {
+            error: message,
+            statusText: t("fileManager.transfer.status.failed"),
+          });
+          storeScheduleTransferCleanup(transferId, 5000);
           setNotification({
-            message: getDropValidationMessage(validation?.rejected?.[0]),
+            message,
             severity: "error",
           });
           return;
         }
 
-        const foldersToCreateSet = new Set();
-        for (const item of validation.folders || []) {
-          addFolderAndParents(item.relativePath, foldersToCreateSet);
-        }
-
         const filesDataForUpload = (validation.files || []).map((item) => {
-          addParentFolders(item.relativePath, foldersToCreateSet);
           return {
             name: item.name,
             relativePath: item.relativePath,
@@ -4562,11 +4638,28 @@ const FileManager = memo(
           };
         });
 
-        const foldersToCreate = Array.from(foldersToCreateSet).sort();
+        const foldersForUpload = (validation.folders || [])
+          .map((item) => ({
+            name: item.name,
+            relativePath: item.relativePath,
+            lastModified: item.lastModified,
+            localPath: item.localPath,
+          }))
+          .sort((left, right) =>
+            String(left.relativePath || "").localeCompare(
+              String(right.relativePath || ""),
+            ),
+          );
 
-        if (filesDataForUpload.length === 0 && foldersToCreate.length === 0) {
+        if (filesDataForUpload.length === 0 && foldersForUpload.length === 0) {
+          const message = t("fileManager.errors.noFilesSelected");
+          updateTransferProgress(transferId, {
+            error: message,
+            statusText: t("fileManager.transfer.status.failed"),
+          });
+          storeScheduleTransferCleanup(transferId, 3000);
           setNotification({
-            message: t("fileManager.errors.noFilesSelected"),
+            message,
             severity: "warning",
           });
           return;
@@ -4574,69 +4667,70 @@ const FileManager = memo(
 
         const uploadData = {
           files: filesDataForUpload,
-          folders: foldersToCreate,
+          folders: foldersForUpload,
         };
-        const conflictResult =
-          await window.terminalAPI.checkDroppedUploadConflicts(
-            tabId,
-            targetPath,
-            uploadData,
-          );
-        if (!conflictResult?.success) {
-          throw new Error(
-            t("fileManager.errors.dragDropValidationFailed", {
-              reason:
-                conflictResult?.error || t("fileManager.errors.unknownError"),
-            }),
-          );
-        }
-
-        if (conflictResult.hasConflicts) {
-          const confirmed = await confirmDroppedUploadConflicts(
-            conflictResult.conflicts,
-          );
-          if (!confirmed) {
-            setNotification({
-              message: t("fileManager.errors.dragDropConflictCancelled"),
-              severity: "warning",
-            });
-            return;
-          }
-        }
-
         const droppedDisplayName =
           buildTransferDisplayName(
             [
               ...filesDataForUpload.map((item) =>
                 getTopLevelTransferItemName(item.relativePath || item.name),
               ),
-              ...foldersToCreate.map((folderPath) =>
-                getTopLevelTransferItemName(folderPath),
+              ...foldersForUpload.map((folder) =>
+                getTopLevelTransferItemName(folder.relativePath || folder.name),
               ),
             ],
             "项目",
           ) || t("fileManager.messages.preparingUpload");
 
-        const transferId = addTransferProgress({
-          type: "upload-multifile",
-          progress: 0,
+        updateTransferProgress(transferId, {
           fileName: droppedDisplayName,
-          transferredBytes: 0,
           totalBytes: filesDataForUpload.reduce(
             (sum, item) => sum + Math.max(0, Number(item.size) || 0),
             0,
           ),
-          transferSpeed: 0,
-          remainingTime: 0,
-          currentFileIndex: 0,
           totalFiles: Math.max(
             1,
-            filesDataForUpload.length || foldersToCreate.length,
+            filesDataForUpload.length || foldersForUpload.length,
           ),
         });
-        let didForegroundRefresh = false;
 
         try {
+          const conflictResult =
+            await window.terminalAPI.checkDroppedUploadConflicts(
+              tabId,
+              targetPath,
+              uploadData,
+            );
+          if (!conflictResult?.success) {
+            throw new Error(
+              t("fileManager.errors.dragDropValidationFailed", {
+                reason:
+                  conflictResult?.error || t("fileManager.errors.unknownError"),
+              }),
+            );
+          }
+
+          if (conflictResult.hasConflicts) {
+            const confirmed = await confirmDroppedUploadConflicts(
+              conflictResult.conflicts,
+            );
+            if (!confirmed) {
+              updateTransferProgress(transferId, {
+                isCancelled: true,
+                statusText: t("fileManager.transfer.status.transferCancelled"),
+                cancelMessage: t(
+                  "fileManager.errors.dragDropConflictCancelled",
+                ),
+              });
+              storeScheduleTransferCleanup(transferId, 3000);
+              setNotification({
+                message: t("fileManager.errors.dragDropConflictCancelled"),
+                severity: "warning",
+              });
+              return;
+            }
+          }
+
           const result = await window.terminalAPI.uploadDroppedFiles(
             tabId,
             targetPath,
@@ -4670,7 +4764,9 @@ const FileManager = memo(
 
               updateTransferProgress(transferId, {
                 progress: validProgress,
-                fileName: fileName || t("fileManager.messages.unknownFile"),
+                fileName: fileName || droppedDisplayName,
+                statusText: t("fileManager.transfer.status.uploading"),
+                currentFile: fileName || "",
                 transferredBytes: validTransferredBytes,
                 totalBytes: validTotalBytes,
                 transferSpeed: validTransferSpeed,
@@ -4689,13 +4785,17 @@ const FileManager = memo(
             setTransferCancelled(true);
             updateTransferProgress(transferId, {
               isCancelled: true,
+              statusText: t("fileManager.transfer.status.transferCancelled"),
               cancelMessage: t("fileManager.errors.userCancelled"),
             });
+            storeScheduleTransferCleanup(transferId, 3000);
           } else if (result?.success) {
             updateTransferProgress(transferId, {
               progress: 100,
               fileName:
                 result.message || t("fileManager.messages.uploadComplete"),
+              statusText: t("fileManager.transfer.status.completed"),
+              currentFile: "",
               isCompleted: true,
               processedFiles: Math.max(
                 0,
@@ -4737,23 +4837,31 @@ const FileManager = memo(
           }
         } catch (error) {
           const isCancellation = isUserCancellationError(error);
+          const errorMessage =
+            error?.message ||
+            error?.toString?.() ||
+            t("fileManager.errors.unknownError");
 
           updateTransferProgress(transferId, {
-            error: !isCancellation,
+            error: isCancellation ? "" : errorMessage,
             isCancelled: isCancellation,
-            errorMessage: error.message || error.toString(),
+            statusText: isCancellation
+              ? t("fileManager.transfer.status.transferCancelled")
+              : t("fileManager.transfer.status.failed"),
+            errorMessage,
           });
 
           if (!isCancellation) {
             setNotification({
-              message: error.message || t("fileManager.errors.uploadFailed"),
+              message: errorMessage || t("fileManager.errors.uploadFailed"),
               severity: "error",
             });
           }
 
-          addTimeout(() => {
-            removeTransferProgress(transferId);
-          }, 3000);
+          storeScheduleTransferCleanup(
+            transferId,
+            isCancellation ? 3000 : 5000,
+          );
 
           if (!didForegroundRefresh) {
             refreshAfterUserActivity();
@@ -4768,8 +4876,6 @@ const FileManager = memo(
         transferCancelled,
         addTransferProgress,
         updateTransferProgress,
-        removeTransferProgress,
-        addTimeout,
         isUserCancellationError,
         refreshAfterUserActivity,
         setNotification,
@@ -4777,8 +4883,6 @@ const FileManager = memo(
         setPathInput,
         loadDirectory,
         storeScheduleTransferCleanup,
-        getDroppedFileLocalPath,
-        readDroppedFileEntry,
         getDropValidationMessage,
         confirmDroppedUploadConflicts,
       ],
@@ -4804,7 +4908,41 @@ const FileManager = memo(
         if (!items || items.length === 0) return;
 
         const itemsArray = Array.from(items);
+        const nativeFiles = Array.from(e.dataTransfer.files || []);
         if (itemsArray.some((item) => item.kind === "string")) {
+          setNotification({
+            message: t("fileManager.errors.dragDropRemotePathUnsupported"),
+            severity: "warning",
+          });
+          return;
+        }
+
+        if (nativeFiles.length !== itemsArray.length) {
+          setNotification({
+            message: t("fileManager.errors.dragDropRemotePathUnsupported"),
+            severity: "warning",
+          });
+          return;
+        }
+
+        const nativePathByName = new Map();
+        const duplicateNativeNames = new Set();
+        let hasInvalidNativePath = false;
+        for (const nativeFile of nativeFiles) {
+          const localPath = getDroppedFileLocalPath(nativeFile);
+          const localBaseName = getLocalPathBaseName(localPath);
+          if (!localPath || !localBaseName) {
+            hasInvalidNativePath = true;
+            continue;
+          }
+
+          if (nativePathByName.has(localBaseName)) {
+            duplicateNativeNames.add(localBaseName);
+          }
+          nativePathByName.set(localBaseName, localPath);
+        }
+
+        if (hasInvalidNativePath || duplicateNativeNames.size > 0) {
           setNotification({
             message: t("fileManager.errors.dragDropRemotePathUnsupported"),
             severity: "warning",
@@ -4815,15 +4953,19 @@ const FileManager = memo(
         const filesAndFolders = [];
         const rejectedItems = [];
 
-        for (const item of itemsArray) {
+        for (let index = 0; index < itemsArray.length; index += 1) {
+          const item = itemsArray[index];
           if (item.kind !== "file") {
             rejectedItems.push(item);
             continue;
           }
 
           const entry = item.webkitGetAsEntry?.();
-          if (entry) {
-            filesAndFolders.push(entry);
+          const entryName = getDroppedEntryName(entry);
+          const localPath = nativePathByName.get(entryName);
+
+          if (entry && entryName && localPath) {
+            filesAndFolders.push({ entry, localPath });
             continue;
           }
 
@@ -4851,7 +4993,13 @@ const FileManager = memo(
           });
         }
       },
-      [sshConnection, t, handleDroppedItems, setNotification],
+      [
+        sshConnection,
+        t,
+        handleDroppedItems,
+        setNotification,
+        getDroppedFileLocalPath,
+      ],
     );
 
     useEffect(() => {
@@ -6350,8 +6498,8 @@ const FileManager = memo(
                       size="small"
                       onClick={handleHistoryBack}
                       disabled={historyIndex <= 0}
-                    
-                      aria-label={t("fileManager.back")}>
+                      aria-label={t("fileManager.back")}
+                    >
                       <ArrowBackIcon fontSize="small" />
                     </IconButton>
                   </span>
@@ -6363,8 +6511,8 @@ const FileManager = memo(
                       size="small"
                       onClick={handleGoToNextPath}
                       disabled={historyIndex >= pathHistory.length - 1}
-                    
-                      aria-label={t("fileManager.nextPath")}>
+                      aria-label={t("fileManager.nextPath")}
+                    >
                       <ArrowForwardIcon fontSize="small" />
                     </IconButton>
                   </span>
@@ -6376,23 +6524,29 @@ const FileManager = memo(
                       size="small"
                       onClick={handleGoUp}
                       disabled={!currentPath || currentPath === "/"}
-                    
-                      aria-label={t("fileManager.upLevel")}>
+                      aria-label={t("fileManager.upLevel")}
+                    >
                       <ArrowUpwardIcon fontSize="small" />
                     </IconButton>
                   </span>
                 </Tooltip>
 
                 <Tooltip title={t("fileManager.home")}>
-                  <IconButton size="small" onClick={handleGoHome}
-                    aria-label={t("fileManager.home")}>
+                  <IconButton
+                    size="small"
+                    onClick={handleGoHome}
+                    aria-label={t("fileManager.home")}
+                  >
                     <HomeIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
 
                 <Tooltip title={t("fileManager.refresh")}>
-                  <IconButton size="small" onClick={handleRefresh}
-                    aria-label={t("fileManager.refresh")}>
+                  <IconButton
+                    size="small"
+                    onClick={handleRefresh}
+                    aria-label={t("fileManager.refresh")}
+                  >
                     <RefreshIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -6438,8 +6592,11 @@ const FileManager = memo(
                 </Tooltip>
 
                 <Tooltip title={t("fileManager.upload")}>
-                  <IconButton size="small" onClick={handleUploadMenuOpen}
-                    aria-label={t("fileManager.upload")}>
+                  <IconButton
+                    size="small"
+                    onClick={handleUploadMenuOpen}
+                    aria-label={t("fileManager.upload")}
+                  >
                     <UploadFileIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -6508,16 +6665,22 @@ const FileManager = memo(
 
                 {!showSearch && (
                   <Tooltip title={t("fileManager.search")}>
-                    <IconButton size="small" onClick={toggleSearch}
-                      aria-label={t("fileManager.search")}>
+                    <IconButton
+                      size="small"
+                      onClick={toggleSearch}
+                      aria-label={t("fileManager.search")}
+                    >
                       <SearchIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
                 )}
 
                 <Tooltip title={t("fileManager.sort")}>
-                  <IconButton size="small" onClick={handleSortMenuOpen}
-                    aria-label={t("fileManager.sort")}>
+                  <IconButton
+                    size="small"
+                    onClick={handleSortMenuOpen}
+                    aria-label={t("fileManager.sort")}
+                  >
                     {sortMode === "time" ? (
                       <AccessTimeIcon fontSize="small" />
                     ) : (

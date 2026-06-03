@@ -5,6 +5,21 @@ const SENSITIVE_KEY_PATTERN =
   /password|passphrase|privatekey|privateKey|apiKey|token|secret|credential/i;
 const MAX_SERIALIZED_PAYLOAD_BYTES = 64 * 1024;
 const DEFAULT_SLOW_THRESHOLD_MS = 100;
+const CHANNEL_SLOW_THRESHOLD_MS = Object.freeze({
+  "settings:unlockCredentialStore": 1000,
+  "terminal:startSSH": 2000,
+  startDirectoryWatch: 1000,
+  checkDroppedUploadConflicts: 5000,
+  uploadFile: 5000,
+  uploadFolder: 5000,
+  uploadDroppedFiles: 5000,
+  downloadFile: 5000,
+  downloadFiles: 5000,
+  downloadFolder: 5000,
+  createFolder: 1000,
+  moveFile: 1000,
+  deleteFile: 1000,
+});
 
 let nextRequestId = 1;
 
@@ -94,20 +109,29 @@ function estimateArgsPayloadSize(args) {
   }, 0);
 }
 
+function getSlowThresholdMs(channel, options = {}) {
+  if (Number.isFinite(options.slowThresholdMs)) {
+    return options.slowThresholdMs;
+  }
+  const channelThreshold = CHANNEL_SLOW_THRESHOLD_MS[channel];
+  return Number.isFinite(channelThreshold)
+    ? channelThreshold
+    : DEFAULT_SLOW_THRESHOLD_MS;
+}
+
 function startTrace(channel, args = [], options = {}) {
   if (!isTracingEnabled()) {
     return null;
   }
 
+  const normalizedChannel = channel || "<unknown>";
   return {
     requestId: createRequestId(),
-    channel: channel || "<unknown>",
+    channel: normalizedChannel,
     category: options.category || "ipc",
     startedAt: now(),
     payloadSize: estimateArgsPayloadSize(args),
-    slowThresholdMs: Number.isFinite(options.slowThresholdMs)
-      ? options.slowThresholdMs
-      : DEFAULT_SLOW_THRESHOLD_MS,
+    slowThresholdMs: getSlowThresholdMs(normalizedChannel, options),
     logAll:
       options.logAll === true || process.env.SIMPLE_SHELL_IPC_TRACE === "1",
   };
@@ -130,7 +154,7 @@ function finishTrace(trace, outcome = {}) {
   const level = failed
     ? "WARN"
     : durationMs >= trace.slowThresholdMs
-      ? "WARN"
+      ? "INFO"
       : "DEBUG";
   const payload =
     trace.payloadSize >= 0 ? `${trace.payloadSize}b` : "unknown-size";

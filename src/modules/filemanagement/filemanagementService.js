@@ -16,6 +16,7 @@ const { logToFile } = require("../../core/utils/logger");
 const { IPC_EVENT_CHANNELS } = require("../../core/ipc/schema/channels");
 const connectionManager = require("../connection");
 const TransferProcessPool = require("./transferProcessPool");
+const { SESSION_CONFIG, TRANSFER_CONFIG } = require("../sftp/sftpConfig");
 
 const DIRECTORY_TYPE_MASK = 0o170000;
 const DIRECTORY_MODE = 0o040000;
@@ -126,6 +127,14 @@ function getTopLevelTransferItemName(targetPath) {
 
   const [firstSegment] = normalizedPath.split("/").filter(Boolean);
   return firstSegment || "";
+}
+
+function normalizeDroppedTransferRelativePath(relativePath) {
+  return toPosixPath(relativePath || "")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment && segment !== "." && segment !== "..")
+    .join("/");
 }
 
 class FilemanagementService {
@@ -626,10 +635,28 @@ class FilemanagementService {
     return 256 * 1024;
   }
 
-  _chooseConcurrency(totalFiles, totalBytes, isFolderLike = false) {
+  _chooseConcurrency(
+    totalFiles,
+    totalBytes,
+    isFolderLike = false,
+    direction = "download",
+  ) {
     const files = Math.max(1, totalFiles || 1);
     const bytes = Math.max(0, totalBytes || 0);
     const cpu = Math.max(2, os.cpus()?.length || 4);
+    const isUpload = direction === "upload";
+    const configuredDirectionLimit = isUpload
+      ? TRANSFER_CONFIG?.PARALLEL_FILES_UPLOAD
+      : TRANSFER_CONFIG?.PARALLEL_FILES_DOWNLOAD;
+    const directionLimit =
+      Number.isFinite(configuredDirectionLimit) && configuredDirectionLimit > 0
+        ? Math.floor(configuredDirectionLimit)
+        : files;
+    const sessionLimit =
+      Number.isFinite(SESSION_CONFIG?.MAX_SESSIONS_PER_TAB) &&
+      SESSION_CONFIG.MAX_SESSIONS_PER_TAB > 0
+        ? Math.floor(SESSION_CONFIG.MAX_SESSIONS_PER_TAB)
+        : files;
 
     let concurrency = Math.max(2, Math.floor(cpu / 2));
     if (bytes >= 8 * 1024 * 1024 * 1024) {
@@ -644,7 +671,10 @@ class FilemanagementService {
       concurrency = Math.min(concurrency + 2, 10);
     }
 
-    return Math.max(1, Math.min(concurrency, files));
+    return Math.max(
+      1,
+      Math.min(concurrency, files, directionLimit, sessionLimit),
+    );
   }
 
   _shouldUseChunkParallel(totalBytes) {
@@ -2079,6 +2109,7 @@ class FilemanagementService {
             chunkSegments.length,
             fileSize,
             false,
+            "download",
           ),
           onProgress: (message) => {
             const taskMeta = taskMetaMap.get(message?.taskId);
@@ -2385,6 +2416,7 @@ class FilemanagementService {
         tasks.length,
         totalBytes,
         false,
+        "download",
       );
 
       const transferProcessPool = this._ensureTransferProcessPool();
@@ -2873,6 +2905,7 @@ class FilemanagementService {
         tasks.length,
         totalBytes,
         true,
+        "download",
       );
 
       const transferProcessPool = this._ensureTransferProcessPool();
@@ -3175,13 +3208,21 @@ class FilemanagementService {
     displayName,
     includeOperationComplete = false,
   }) {
-    if (!Array.isArray(entries) || entries.length === 0) {
+    const uploadEntries = Array.isArray(entries) ? entries : [];
+    const requestedRemoteDirectories = Array.isArray(remoteDirectories)
+      ? remoteDirectories
+      : [];
+
+    if (uploadEntries.length === 0 && requestedRemoteDirectories.length === 0) {
       return { success: false, error: "没有有效的文件可上传" };
     }
 
     const sender = event?.sender;
-    const totalFiles = entries.length;
-    const totalBytes = entries.reduce(
+    const totalFiles =
+      uploadEntries.length > 0
+        ? uploadEntries.length
+        : requestedRemoteDirectories.length;
+    const totalBytes = uploadEntries.reduce(
       (sum, entry) => sum + (Number.isFinite(entry.size) ? entry.size : 0),
       0,
     );
@@ -3249,10 +3290,8 @@ class FilemanagementService {
     const taskTransferredBytes = new Map();
     const fileStateMap = new Map();
     try {
-      const directories = Array.isArray(remoteDirectories)
-        ? [...remoteDirectories]
-        : [];
-      for (const entry of entries) {
+      const directories = [...requestedRemoteDirectories];
+      for (const entry of uploadEntries) {
         directories.push(
           path.posix.dirname(this._normalizeRemotePath(entry.remotePath)),
         );
@@ -3266,9 +3305,9 @@ class FilemanagementService {
       });
 
       const tasks = [];
-      for (let index = 0; index < entries.length; index += 1) {
+      for (let index = 0; index < uploadEntries.length; index += 1) {
         this._throwIfTransferCancelled(transferKey);
-        const entry = entries[index];
+        const entry = uploadEntries[index];
         const normalizedRemotePath = this._normalizeRemotePath(
           entry.remotePath,
         );
@@ -3365,10 +3404,43 @@ class FilemanagementService {
         });
       }
       this._throwIfTransferCancelled(transferKey);
+
+      if (tasks.length === 0) {
+        const state = this._getTransfer(transferKey);
+        if (state) {
+          state.processedFiles = totalFiles;
+        }
+        const finalState = this._getTransfer(transferKey);
+        this._recordTransferMetrics({
+          transferredBytes: finalState?.transferredBytes || 0,
+          completed: totalFiles,
+          failed: 0,
+          cancelled: false,
+          durationMs: finalState ? Date.now() - finalState.startAt : 0,
+        });
+        this._emitTransferProgress(transferKey, {
+          force: true,
+          fileName: "上传完成",
+          currentFile: "",
+          currentFileIndex: totalFiles,
+          extra: { operationComplete: true, cancelled: false },
+        });
+        this._finalizeTransfer(transferKey);
+        return {
+          success: true,
+          uploadedCount: 0,
+          totalFiles,
+          failedCount: 0,
+          transferKey,
+          message: "上传完成",
+        };
+      }
+
       const concurrency = this._chooseConcurrency(
         tasks.length,
         totalBytes,
         true,
+        "upload",
       );
 
       const transferProcessPool = this._ensureTransferProcessPool();
@@ -3727,11 +3799,7 @@ class FilemanagementService {
   ) {
     try {
       const normalizedTarget = this._normalizeRemotePath(targetFolder);
-      const rawFiles = Array.isArray(uploadData?.files)
-        ? uploadData.files
-        : Array.isArray(uploadData)
-          ? uploadData
-          : [];
+      const rawFiles = Array.isArray(uploadData?.files) ? uploadData.files : [];
       const rawFolders = Array.isArray(uploadData?.folders)
         ? uploadData.folders
         : [];
@@ -3740,24 +3808,28 @@ class FilemanagementService {
       for (const fileData of rawFiles) {
         if (!fileData) continue;
 
-        const relativePath = toPosixPath(
-          fileData.relativePath || fileData.name || "unnamed-file",
+        const relativePath = normalizeDroppedTransferRelativePath(
+          fileData.relativePath,
         );
-        const remotePath = this._joinRemotePath(normalizedTarget, relativePath);
-        const fileName = path.posix.basename(relativePath);
+        if (!relativePath) {
+          throw new Error("拖放文件缺少有效的相对路径");
+        }
 
         if (!fileData.localPath) {
           throw new Error(`拖放文件缺少可验证的本地路径: ${relativePath}`);
         }
 
-        const stats = await fsp.stat(fileData.localPath);
-        await fsp.access(fileData.localPath, fs.constants.R_OK);
+        const resolvedLocalPath = path.resolve(fileData.localPath);
+        const stats = await fsp.stat(resolvedLocalPath);
+        await fsp.access(resolvedLocalPath, fs.constants.R_OK);
         if (!stats.isFile()) {
           throw new Error(`拖放项目不是可上传的本地文件: ${relativePath}`);
         }
 
+        const remotePath = this._joinRemotePath(normalizedTarget, relativePath);
+        const fileName = path.posix.basename(relativePath);
         entries.push({
-          localPath: fileData.localPath,
+          localPath: resolvedLocalPath,
           fileName,
           relativePath,
           remotePath,
@@ -3765,16 +3837,42 @@ class FilemanagementService {
         });
       }
 
-      const remoteDirectories = rawFolders.map((folderPath) =>
-        this._joinRemotePath(normalizedTarget, toPosixPath(folderPath)),
-      );
+      const remoteDirectories = [];
+      const folderDisplayPaths = [];
+      for (const folderData of rawFolders) {
+        if (!folderData) continue;
+
+        const relativePath = normalizeDroppedTransferRelativePath(
+          folderData.relativePath,
+        );
+        if (!relativePath) {
+          throw new Error("拖放文件夹缺少有效的相对路径");
+        }
+
+        if (!folderData.localPath) {
+          throw new Error(`拖放文件夹缺少可验证的本地路径: ${relativePath}`);
+        }
+
+        const resolvedLocalPath = path.resolve(folderData.localPath);
+        const stats = await fsp.stat(resolvedLocalPath);
+        await fsp.access(resolvedLocalPath, fs.constants.R_OK);
+        if (!stats.isDirectory()) {
+          throw new Error(`拖放项目不是可上传的本地文件夹: ${relativePath}`);
+        }
+        await fsp.readdir(resolvedLocalPath);
+
+        remoteDirectories.push(
+          this._joinRemotePath(normalizedTarget, relativePath),
+        );
+        folderDisplayPaths.push(relativePath);
+      }
       const displayName =
         buildTransferDisplayName(
           [
             ...entries.map((entry) =>
               getTopLevelTransferItemName(entry.relativePath || entry.fileName),
             ),
-            ...rawFolders.map((folderPath) =>
+            ...folderDisplayPaths.map((folderPath) =>
               getTopLevelTransferItemName(folderPath),
             ),
           ],
