@@ -12,6 +12,31 @@ function normalizeErrorMessage(error) {
   return error.message || String(error);
 }
 
+function normalizeLogLevel(level, fallback = "WARN") {
+  const normalized = String(level || "")
+    .trim()
+    .toUpperCase();
+  return ["DEBUG", "INFO", "WARN", "ERROR"].includes(normalized)
+    ? normalized
+    : fallback;
+}
+
+function isExpectedNativeFailure(value, options = {}) {
+  if (typeof options.expectedFailure !== "function") {
+    return false;
+  }
+
+  try {
+    return options.expectedFailure(value) === true;
+  } catch (error) {
+    logToFile(
+      `Native SFTP: expectedFailure predicate failed - ${normalizeErrorMessage(error)}`,
+      "WARN",
+    );
+    return false;
+  }
+}
+
 function parseStructuredErrorText(value) {
   const text = String(value || "").trim();
   if (!text || (!text.startsWith("{") && !text.startsWith("["))) {
@@ -192,9 +217,14 @@ function invokeNativeRequestWithConfig(
       if (settled) return;
       settled = true;
       if (value?.success === false) {
+        const expectedFailure = isExpectedNativeFailure(value, options);
+        const level = expectedFailure
+          ? normalizeLogLevel(options.expectedFailureLevel, "DEBUG")
+          : "WARN";
+        const status = expectedFailure ? "expected error" : "error";
         logToFile(
-          `Native SFTP: ${request?.operation || "unknown-operation"} completed with error - ${value?.error || "unknown error"}`,
-          "WARN",
+          `Native SFTP: ${request?.operation || "unknown-operation"} completed with ${status} - ${value?.error || "unknown error"}`,
+          level,
         );
       } else {
         logToFile(
@@ -705,11 +735,15 @@ async function renameFile(tabId, sourcePath, targetPath) {
   });
 }
 
-async function getFilePermissions(tabId, targetPath) {
-  return invokeNativeRequest(tabId, {
-    operation: "getFilePermissions",
-    path: targetPath,
-  });
+async function getFilePermissions(tabId, targetPath, options = {}) {
+  return invokeNativeRequest(
+    tabId,
+    {
+      operation: "getFilePermissions",
+      path: targetPath,
+    },
+    options,
+  );
 }
 
 async function getAbsolutePath(tabId, targetPath) {
@@ -767,10 +801,10 @@ async function createRemoteFolders(tabId, folderPath) {
   });
 }
 
-async function getFilePermissionsBatch(tabId, filePaths) {
+async function getFilePermissionsBatch(tabId, filePaths, options = {}) {
   const results = await Promise.all(
     (Array.isArray(filePaths) ? filePaths : []).map(async (filePath) => {
-      const result = await getFilePermissions(tabId, filePath);
+      const result = await getFilePermissions(tabId, filePath, options);
       return result?.success
         ? {
             path: filePath,

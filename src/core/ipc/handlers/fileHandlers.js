@@ -38,7 +38,11 @@ const normalizeDroppedRelativePath = (relativePath, name = "") => {
     .filter((segment) => segment && segment !== "." && segment !== "..")
     .join("/");
 
-  return normalized || "unnamed-file";
+  return normalized;
+};
+
+const normalizeDroppedFolderRelativePath = (folderData) => {
+  return normalizeDroppedRelativePath(folderData?.relativePath);
 };
 
 const isDroppedRemoteNotFound = (errorLike = {}) => {
@@ -344,7 +348,10 @@ class FileHandlers {
             const send = (payload) => {
               try {
                 if (event && event.sender && !event.sender.isDestroyed()) {
-                  event.sender.send(IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, payload);
+                  event.sender.send(
+                    IPC_EVENT_CHANNELS.FILE_LIST_CHUNK,
+                    payload,
+                  );
                 }
               } catch {
                 // ignore send errors (window may be gone)
@@ -660,10 +667,18 @@ class FileHandlers {
           : path.basename(String(item?.localPath || ""));
       const localPath =
         typeof item?.localPath === "string" ? item.localPath.trim() : "";
-      const relativePath = normalizeDroppedRelativePath(
-        item?.relativePath,
-        name,
-      );
+      const relativePath = normalizeDroppedRelativePath(item?.relativePath);
+
+      if (!relativePath) {
+        rejected.push({
+          name,
+          localPath,
+          relativePath: "",
+          reason: "invalid-relative-path",
+          message: "Dropped item has no valid relative path",
+        });
+        continue;
+      }
 
       if (!localPath) {
         rejected.push({
@@ -679,6 +694,8 @@ class FileHandlers {
         const resolvedPath = path.resolve(localPath);
         const stats = fs.statSync(resolvedPath);
         fs.accessSync(resolvedPath, fs.constants.R_OK);
+        const expectsFile = item?.isFile === true;
+        const expectsDirectory = item?.isDirectory === true;
 
         const descriptor = {
           name: name || path.basename(resolvedPath),
@@ -690,12 +707,48 @@ class FileHandlers {
           isFile: stats.isFile(),
         };
 
+        if (expectsFile && !descriptor.isFile) {
+          rejected.push({
+            name: descriptor.name,
+            localPath: resolvedPath,
+            relativePath,
+            reason: "unsupported-file-type",
+            message:
+              "Dropped item was declared as a file but is not a regular file",
+          });
+          continue;
+        }
+
+        if (expectsDirectory && !descriptor.isDirectory) {
+          rejected.push({
+            name: descriptor.name,
+            localPath: resolvedPath,
+            relativePath,
+            reason: "unsupported-file-type",
+            message:
+              "Dropped item was declared as a directory but is not a directory",
+          });
+          continue;
+        }
+
         if (descriptor.isFile) {
           files.push(descriptor);
           continue;
         }
 
         if (descriptor.isDirectory) {
+          if (item?.directoryReadable === false) {
+            rejected.push({
+              name: descriptor.name,
+              localPath: resolvedPath,
+              relativePath,
+              reason: "not-readable",
+              message: "Dropped directory could not be enumerated",
+            });
+            continue;
+          }
+
+          fs.readdirSync(resolvedPath);
           folders.push(descriptor);
           continue;
         }
@@ -749,10 +802,11 @@ class FileHandlers {
     const candidates = [];
 
     for (const fileData of rawFiles) {
-      const relativePath = normalizeDroppedRelativePath(
-        fileData?.relativePath,
-        fileData?.name,
-      );
+      const relativePath = normalizeDroppedRelativePath(fileData?.relativePath);
+      if (!relativePath) {
+        return { success: false, error: "拖放文件缺少有效的相对路径" };
+      }
+
       candidates.push({
         type: "file",
         name: path.posix.basename(relativePath),
@@ -761,8 +815,12 @@ class FileHandlers {
       });
     }
 
-    for (const folderPath of rawFolders) {
-      const relativePath = normalizeDroppedRelativePath(folderPath, folderPath);
+    for (const folderData of rawFolders) {
+      const relativePath = normalizeDroppedFolderRelativePath(folderData);
+      if (!relativePath) {
+        return { success: false, error: "拖放文件夹缺少有效的相对路径" };
+      }
+
       candidates.push({
         type: "directory",
         name: path.posix.basename(relativePath),
@@ -772,8 +830,9 @@ class FileHandlers {
     }
 
     const dedupedCandidates = Array.from(
-      new Map(candidates.map((candidate) => [candidate.remotePath, candidate]))
-        .values(),
+      new Map(
+        candidates.map((candidate) => [candidate.remotePath, candidate]),
+      ).values(),
     );
     const conflicts = [];
 
@@ -782,6 +841,10 @@ class FileHandlers {
         const result = await nativeSftpClient.getFilePermissions(
           tabId,
           candidate.remotePath,
+          {
+            expectedFailure: isDroppedRemoteNotFound,
+            expectedFailureLevel: "DEBUG",
+          },
         );
         if (result?.success) {
           conflicts.push({

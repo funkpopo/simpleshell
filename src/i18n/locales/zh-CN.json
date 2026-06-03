@@ -1058,6 +1058,8 @@
           "cancelledShort": "已取消",
           "waitingForSaveLocation": "等待选择保存位置",
           "waitingForTargetFolder": "等待选择保存目录",
+          "preparingUpload": "正在准备上传",
+          "uploading": "正在上传",
           "downloading": "正在下载",
           "downloadingFile": "正在下载 {{name}}",
           "downloadingBatch": "正在下载 ({{completed}}/{{total}})",

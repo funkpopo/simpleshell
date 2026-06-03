@@ -1058,6 +1058,8 @@
           "cancelledShort": "Cancelled",
           "waitingForSaveLocation": "Waiting for a save location",
           "waitingForTargetFolder": "Waiting for a target folder",
+          "preparingUpload": "Preparing upload",
+          "uploading": "Uploading",
           "downloading": "Downloading",
           "downloadingFile": "Downloading {{name}}",
           "downloadingBatch": "Downloading ({{completed}}/{{total}})",
