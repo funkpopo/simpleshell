@@ -205,7 +205,7 @@ const anthropicAdapter = {
   /**
    * 构建请求体
    */
-  buildRequestBody(model, messages, isStream, maxTokens) {
+  buildRequestBody(model, messages, isStream) {
     // 转换消息格式：OpenAI格式 -> Anthropic格式
     // Anthropic需要将system消息单独提取出来
     let systemMessage = "";
@@ -225,7 +225,6 @@ const anthropicAdapter = {
     const body = {
       model: model,
       messages: convertedMessages,
-      max_tokens: maxTokens || 4096,
     };
 
     if (systemMessage) {
@@ -370,7 +369,7 @@ const geminiAdapter = {
   /**
    * 构建请求体
    */
-  buildRequestBody(model, messages, isStream, maxTokens) {
+  buildRequestBody(model, messages, isStream) {
     void isStream;
     // 转换消息格式：OpenAI格式 -> Gemini格式
     const contents = [];
@@ -389,9 +388,6 @@ const geminiAdapter = {
 
     const body = {
       contents: contents,
-      generationConfig: {
-        maxOutputTokens: maxTokens || 4096,
-      },
     };
 
     if (systemInstruction) {
@@ -656,7 +652,7 @@ function handleAPIRequest(requestId, requestData) {
  * @param {Object} requestData - 请求数据
  */
 function handleStandardRequest(requestId, requestData) {
-  const { url, apiKey, model, messages, provider, maxTokens } = requestData;
+  const { url, apiKey, model, messages, provider } = requestData;
 
   // 获取适配器
   const adapter = getApiAdapter(provider);
@@ -769,12 +765,7 @@ function handleStandardRequest(requestId, requestData) {
   activeRequests.set(requestId, { req, type: "standard" });
 
   // 使用适配器构建请求体
-  const requestBody = adapter.buildRequestBody(
-    model,
-    messages,
-    false,
-    maxTokens,
-  );
+  const requestBody = adapter.buildRequestBody(model, messages, false);
 
   // 发送请求数据
   req.write(JSON.stringify(requestBody));
@@ -788,8 +779,7 @@ function handleStandardRequest(requestId, requestData) {
  * @param {Object} requestData - 请求数据
  */
 function handleStreamRequest(requestId, requestData) {
-  const { url, apiKey, model, messages, sessionId, provider, maxTokens } =
-    requestData;
+  const { url, apiKey, model, messages, sessionId, provider } = requestData;
 
   // 获取适配器
   const adapter = getApiAdapter(provider);
@@ -1000,12 +990,7 @@ function handleStreamRequest(requestId, requestData) {
   activeRequests.set(requestId, { req, type: "stream", sessionId });
 
   // 使用适配器构建请求体
-  const requestBody = adapter.buildRequestBody(
-    model,
-    messages,
-    true,
-    maxTokens,
-  );
+  const requestBody = adapter.buildRequestBody(model, messages, true);
 
   // 发送请求数据
   req.write(JSON.stringify(requestBody));

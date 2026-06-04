@@ -48,7 +48,6 @@ import ReactMarkdown from "react-markdown";
 import {
   generateSystemPrompt,
   generateMemoryContext,
-  generateMemorySummaryPrompt,
   parseCommandsFromResponse,
   setCustomRiskRules,
 } from "../utils/aiSystemPrompt";
@@ -228,105 +227,6 @@ const normalizeSafeMarkdownHref = (href) => {
   return urlObj.toString();
 };
 
-// Token估算函数
-const estimateTokens = (text) => {
-  if (!text) return 0;
-  // 中文字符计数
-  const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
-  // 非中文字符计数
-  const otherChars = text.length - chineseChars;
-  // 中文约1.5 token/字符，英文约0.25 token/字符
-  return Math.ceil(chineseChars * 1.5 + otherChars * 0.25);
-};
-
-// Token使用扇形图组件
-const TokenUsageChart = ({ used, max, onCompressClick, isCompressing }) => {
-  const { t } = useTranslation();
-  const percentage = Math.min((used / max) * 100, 100);
-  const angle = (percentage / 100) * 360;
-  const radius = 12;
-  const cx = 14;
-  const cy = 14;
-  const isWarning = percentage >= 80;
-
-  // 计算扇形路径
-  const getArcPath = (startAngle, endAngle) => {
-    const start = {
-      x: cx + radius * Math.cos(((startAngle - 90) * Math.PI) / 180),
-      y: cy + radius * Math.sin(((startAngle - 90) * Math.PI) / 180),
-    };
-    const end = {
-      x: cx + radius * Math.cos(((endAngle - 90) * Math.PI) / 180),
-      y: cy + radius * Math.sin(((endAngle - 90) * Math.PI) / 180),
-    };
-    const largeArc = endAngle - startAngle > 180 ? 1 : 0;
-    return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y} Z`;
-  };
-
-  const color =
-    percentage > 90 ? "#f44336" : percentage > 70 ? "#ff9800" : "#4caf50";
-
-  const tooltipContent = isWarning
-    ? `${used.toLocaleString()} / ${max.toLocaleString()} tokens\n${t(
-        "ai.contextCapacityWarning",
-      )}`
-    : `${used.toLocaleString()} / ${max.toLocaleString()} tokens`;
-
-  const handleClick = () => {
-    if (isWarning && onCompressClick && !isCompressing) {
-      onCompressClick();
-    }
-  };
-
-  if (isCompressing) {
-    return (
-      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ fontSize: "0.7rem" }}
-        >
-          {t("ai.memoryGenerating")}
-        </Typography>
-        <CircularProgress size={16} thickness={4} />
-      </Box>
-    );
-  }
-
-  return (
-    <Tooltip
-      title={<span style={{ whiteSpace: "pre-line" }}>{tooltipContent}</span>}
-      placement="top"
-      arrow
-    >
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          gap: 0.5,
-          cursor: isWarning ? "pointer" : "default",
-          "&:hover": isWarning ? { opacity: 0.8 } : {},
-        }}
-        onClick={handleClick}
-      >
-        <svg width="28" height="28" viewBox="0 0 28 28">
-          <circle cx={cx} cy={cy} r={radius} fill="rgba(128,128,128,0.2)" />
-          {angle > 0 && (
-            <path d={getArcPath(0, Math.min(angle, 359.9))} fill={color} />
-          )}
-        </svg>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ fontSize: "0.7rem" }}
-        >
-          {percentage.toFixed(0)}%
-        </Typography>
-      </Box>
-    </Tooltip>
-  );
-};
-
 const DIALOG_RIGHT_GAP = 50;
 const DIALOG_BOTTOM_GAP = 20;
 const DIALOG_TOP_GAP = 20;
@@ -479,8 +379,6 @@ const AIChatWindow = ({
   const [windowHeight, setWindowHeight] = useState(DEFAULT_HEIGHT);
   const [isResizing, setIsResizing] = useState(null);
   const [prevWindowState, setPrevWindowState] = useState(null);
-  const [isCompressing, setIsCompressing] = useState(false);
-  const [compressedMessageCount, setCompressedMessageCount] = useState(0);
   const streamHandlersRef = useRef({});
 
   const messagesEndRef = useRef(null);
@@ -674,7 +572,7 @@ const AIChatWindow = ({
         const settings = await window.terminalAPI.loadAISettings();
         setAvailableApis(settings.configs || []);
         if (settings.current) {
-          // 从configs中获取最新的配置（确保maxTokens等设置是最新的）
+          // 从configs中获取最新的配置
           const latestConfig =
             settings.configs?.find((c) => c.id === settings.current.id) ||
             settings.current;
@@ -869,8 +767,6 @@ const AIChatWindow = ({
         model: currentApi.model,
         provider: currentApi.provider || "openai",
         messages: apiMessages,
-        temperature: currentApi.temperature || 0.7,
-        maxTokens: currentApi.maxTokens || 2000,
         stream: currentApi.streamEnabled !== false,
       };
 
@@ -1040,13 +936,8 @@ const AIChatWindow = ({
     await sendMessageContent(input, messages, { clearInput: true });
   };
 
-  const updateCompressedMemoryAfterTruncate = async (messageIndex) => {
-    const shouldClearMemory = messageIndex < compressedMessageCount;
-    setCompressedMessageCount((prev) =>
-      messageIndex < prev ? 0 : Math.min(prev, messageIndex),
-    );
-
-    if (shouldClearMemory && window.terminalAPI?.deleteMemory) {
+  const clearMemoryAfterTruncate = async () => {
+    if (window.terminalAPI?.deleteMemory) {
       try {
         await window.terminalAPI.deleteMemory();
       } catch (err) {
@@ -1068,7 +959,7 @@ const AIChatWindow = ({
     setInput(message.content);
     setError("");
     setMessages((prev) => prev.slice(0, messageIndex));
-    await updateCompressedMemoryAfterTruncate(messageIndex);
+    await clearMemoryAfterTruncate();
     requestAnimationFrame(() => {
       inputRef.current?.focus();
     });
@@ -1085,7 +976,7 @@ const AIChatWindow = ({
     }
 
     const historyMessages = messages.slice(0, messageIndex);
-    await updateCompressedMemoryAfterTruncate(messageIndex);
+    await clearMemoryAfterTruncate();
     setError("");
     await sendMessageContent(message.content, historyMessages, {
       replaceHistory: true,
@@ -1132,75 +1023,9 @@ const AIChatWindow = ({
   const handleClearChat = async () => {
     setMessages([]);
     setError("");
-    setCompressedMessageCount(0);
     // 删除记忆文件
     if (window.terminalAPI?.deleteMemory) {
       await window.terminalAPI.deleteMemory();
-    }
-  };
-
-  // 生成记忆摘要
-  const generateMemory = async (msgs, api) => {
-    const prompt = generateMemorySummaryPrompt(msgs, i18n.language);
-
-    const response = await window.terminalAPI.sendAPIRequest(
-      {
-        apiConfigId: api.id || undefined,
-        url: api.apiUrl,
-        ...buildInlineApiKeyPayload(api),
-        model: api.model,
-        provider: api.provider || "openai",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.3,
-        maxTokens: 4096,
-      },
-      false,
-    );
-
-    if (response.error) {
-      throw new Error(response.error);
-    }
-
-    // 从API响应中提取内容
-    const responseContent =
-      response.content ||
-      (response.choices && response.choices[0]?.message?.content);
-
-    if (!responseContent) {
-      throw new Error(t("ai.emptyApiResponse"));
-    }
-
-    // 尝试解析JSON，处理可能的markdown代码块
-    let content = responseContent.trim();
-    if (content.startsWith("```json")) {
-      content = content.slice(7);
-    } else if (content.startsWith("```")) {
-      content = content.slice(3);
-    }
-    if (content.endsWith("```")) {
-      content = content.slice(0, -3);
-    }
-    return JSON.parse(content.trim());
-  };
-
-  // 处理记忆压缩
-  const handleCompressMemory = async () => {
-    if (messages.length === 0 || !currentApi || isCompressing) return;
-
-    setIsCompressing(true);
-    try {
-      const memory = await generateMemory(messages, currentApi);
-      await window.terminalAPI.saveMemory({
-        ...memory,
-        timestamp: new Date().toISOString(),
-        messageCount: messages.length,
-      });
-      // 记录已压缩的消息数量，用于重置token计数
-      setCompressedMessageCount(messages.length);
-    } catch (err) {
-      setError(t("ai.compressFailed") + ": " + err.message);
-    } finally {
-      setIsCompressing(false);
     }
   };
 
@@ -1210,7 +1035,6 @@ const AIChatWindow = ({
     setInput("");
     setError("");
     setExpandedThinking({});
-    setCompressedMessageCount(0);
     // 删除记忆文件
     if (window.terminalAPI?.deleteMemory) {
       await window.terminalAPI.deleteMemory();
@@ -1583,7 +1407,7 @@ const AIChatWindow = ({
         <Box display="flex" alignItems="center" gap={0.5}>
           {currentApi && (
             <Chip
-              label={currentApi.name || currentApi.model}
+              label={currentApi.model}
               size="small"
               onClick={(e) => setApiMenuAnchor(e.currentTarget)}
               sx={{ cursor: "pointer" }}
@@ -1607,7 +1431,7 @@ const AIChatWindow = ({
                 onClick={() => handleApiChange(api)}
                 selected={currentApi?.id === api.id}
               >
-                {api.name} ({api.model})
+                {api.model}
               </MenuItem>
             ))}
             <Divider />
@@ -1967,13 +1791,10 @@ const AIChatWindow = ({
           )}
         </Box>
 
-        {/* 显示思考内容开关和Token使用情况 */}
+        {/* 显示思考内容开关 */}
         <Box
           sx={{
             mt: 1,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
           }}
         >
           <FormControlLabel
@@ -1986,19 +1807,6 @@ const AIChatWindow = ({
             }
             label={t("ai.showThinking")}
           />
-          {currentApi?.maxTokens && (
-            <TokenUsageChart
-              used={
-                messages
-                  .slice(compressedMessageCount)
-                  .reduce((sum, m) => sum + estimateTokens(m.content), 0) +
-                estimateTokens(input)
-              }
-              max={currentApi.maxTokens}
-              onCompressClick={handleCompressMemory}
-              isCompressing={isCompressing}
-            />
-          )}
         </Box>
       </DialogContent>
 

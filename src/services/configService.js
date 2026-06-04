@@ -1040,6 +1040,32 @@ class ConfigService {
   _processAISettingsForSave(settings) {
     const settingsToSave =
       settings && typeof settings === "object" ? { ...settings } : {};
+    const normalizeApiConfig = (cfg) => {
+      if (!cfg || typeof cfg !== "object") {
+        return cfg;
+      }
+
+      const { maxTokens, temperature, ...normalized } = cfg;
+      void maxTokens;
+      void temperature;
+
+      if (typeof normalized.model === "string") {
+        normalized.model = normalized.model.trim();
+        if (normalized.model) {
+          normalized.name = normalized.model;
+        }
+      }
+
+      return normalized;
+    };
+
+    if (Array.isArray(settingsToSave.configs)) {
+      settingsToSave.configs = settingsToSave.configs.map(normalizeApiConfig);
+    }
+
+    if (settingsToSave.current) {
+      settingsToSave.current = normalizeApiConfig(settingsToSave.current);
+    }
 
     if (Array.isArray(settingsToSave.configs) && this.crypto.encryptText) {
       settingsToSave.configs = settingsToSave.configs.map((cfg) => {

@@ -627,6 +627,7 @@
       "apiKey": "API 密钥",
       "keyStoredInMain": "密钥已在主进程安全保存，留空表示保持不变",
       "model": "模型名称",
+      "modelSelectPlaceholder": "请先点击右侧模型探测按钮",
       "placeholders": {
         "name": "我的 API",
         "baseUrl": "https://api.openai.com/v1",
@@ -670,9 +671,8 @@
       "selectApi": "选择 API",
       "apiSwitched": "已切换到：{{name}}",
       "cloneApi": "克隆配置",
-      "editingExistingConfig": "正在编辑已有配置",
       "clonedConfigHint": "基于已有配置新建，无需重新输入 API 地址和密钥",
-      "fetchModels": "获取模型列表",
+      "fetchModels": "模型探测",
       "modelsFetched": "获取模型列表成功",
       "fetchModelsFailed": "获取模型列表失败",
       "apiUrlAndKeyRequired": "获取模型列表需要 API 地址和密钥",

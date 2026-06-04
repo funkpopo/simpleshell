@@ -52,6 +52,12 @@ class AIHandlers {
 
     const normalizedConfig = { ...config };
     delete normalizedConfig.hasApiKey;
+    delete normalizedConfig.maxTokens;
+    delete normalizedConfig.temperature;
+    if (this._isNonEmptyString(normalizedConfig.model)) {
+      normalizedConfig.model = normalizedConfig.model.trim();
+      normalizedConfig.name = normalizedConfig.model;
+    }
     return normalizedConfig;
   }
 
@@ -191,18 +197,6 @@ class AIHandlers {
         resolvedData.model = resolvedData.model || targetConfig.model;
         resolvedData.provider = resolvedData.provider || targetConfig.provider;
       }
-      if (
-        resolvedData.maxTokens === undefined &&
-        targetConfig.maxTokens !== undefined
-      ) {
-        resolvedData.maxTokens = targetConfig.maxTokens;
-      }
-      if (
-        resolvedData.temperature === undefined &&
-        targetConfig.temperature !== undefined
-      ) {
-        resolvedData.temperature = targetConfig.temperature;
-      }
     }
 
     return resolvedData;
@@ -301,7 +295,7 @@ class AIHandlers {
       const existingIndex = settings.configs.findIndex(
         (c) => c.id === config.id,
       );
-      const normalizedConfig = { ...config };
+      const normalizedConfig = this._stripApiConfigMeta(config);
       delete normalizedConfig.hasApiKey;
 
       if (existingIndex >= 0) {
@@ -313,6 +307,11 @@ class AIHandlers {
           ...existingConfig,
           ...normalizedConfig,
         };
+        delete settings.configs[existingIndex].maxTokens;
+        delete settings.configs[existingIndex].temperature;
+        if (settings.current?.id === normalizedConfig.id) {
+          settings.current = { ...settings.configs[existingIndex] };
+        }
       } else {
         if (!normalizedConfig.apiKey) {
           throw new Error("API Key is required for a new API config");
