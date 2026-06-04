@@ -10,7 +10,6 @@ import {
   Typography,
   Switch,
   FormControlLabel,
-  Slider,
   Alert,
   CircularProgress,
   IconButton,
@@ -21,7 +20,6 @@ import {
   Card,
   CardContent,
   CardActions,
-  Autocomplete,
   Select,
   MenuItem,
   FormControl,
@@ -61,8 +59,6 @@ const createEmptyConfig = () => ({
   apiKey: "",
   hasApiKey: false,
   model: "",
-  maxTokens: 2000,
-  temperature: 0.7,
   streamEnabled: true,
 });
 
@@ -72,6 +68,21 @@ const hasConfiguredApiKey = (config) =>
 const buildInlineApiKeyPayload = (config) => {
   const apiKey = typeof config?.apiKey === "string" ? config.apiKey.trim() : "";
   return apiKey ? { apiKey } : {};
+};
+
+const buildSavableApiConfig = (config) => {
+  const { maxTokens, temperature, ...savableConfig } = config || {};
+  void maxTokens;
+  void temperature;
+
+  const model =
+    typeof savableConfig.model === "string" ? savableConfig.model.trim() : "";
+
+  return {
+    ...savableConfig,
+    model,
+    name: model,
+  };
 };
 
 const AISettings = ({ open, onClose }) => {
@@ -160,14 +171,12 @@ const AISettings = ({ open, onClose }) => {
           setCurrentApiId(settings.current.id || null);
           setConfig({
             id: settings.current.id || "",
-            name: settings.current.name || "",
+            name: settings.current.model || settings.current.name || "",
             provider: settings.current.provider || PROVIDER_TYPES.OPENAI,
             apiUrl: settings.current.apiUrl || "",
             apiKey: settings.current.apiKey || "",
             hasApiKey: settings.current.hasApiKey === true,
             model: settings.current.model || "",
-            maxTokens: settings.current.maxTokens || 2000,
-            temperature: settings.current.temperature || 0.7,
             streamEnabled: settings.current.streamEnabled !== false,
           });
         } else {
@@ -208,6 +217,24 @@ const AISettings = ({ open, onClose }) => {
         };
       }
 
+      if (field === "provider" || field === "apiUrl") {
+        setAvailableModels([]);
+        return {
+          ...prev,
+          [field]: value,
+          model: "",
+          name: "",
+        };
+      }
+
+      if (field === "model") {
+        return {
+          ...prev,
+          model: value,
+          name: value,
+        };
+      }
+
       return {
         ...prev,
         [field]: value,
@@ -220,6 +247,7 @@ const AISettings = ({ open, onClose }) => {
   // 添加新API配置
   const handleAddApi = () => {
     resetConfig();
+    setAvailableModels([]);
     setEditMode(true);
     setEditingConfig(null);
   };
@@ -228,16 +256,15 @@ const AISettings = ({ open, onClose }) => {
   const handleEditApi = (apiConfig) => {
     setConfig({
       id: apiConfig.id,
-      name: apiConfig.name,
+      name: apiConfig.model || apiConfig.name || "",
       provider: apiConfig.provider || PROVIDER_TYPES.OPENAI,
       apiUrl: apiConfig.apiUrl,
       apiKey: apiConfig.apiKey,
       hasApiKey: apiConfig.hasApiKey === true,
       model: apiConfig.model,
-      maxTokens: apiConfig.maxTokens || 2000,
-      temperature: apiConfig.temperature || 0.7,
       streamEnabled: apiConfig.streamEnabled !== false,
     });
+    setAvailableModels(apiConfig.model ? [apiConfig.model] : []);
     setEditMode(true);
     setEditingConfig(apiConfig);
   };
@@ -246,16 +273,15 @@ const AISettings = ({ open, onClose }) => {
   const handleCloneApi = (apiConfig) => {
     setConfig({
       id: "", // 新配置ID为空
-      name: `${apiConfig.name} (副本)`, // 添加副本标识
+      name: apiConfig.model || apiConfig.name || "",
       provider: apiConfig.provider || PROVIDER_TYPES.OPENAI,
       apiUrl: apiConfig.apiUrl, // 保持相同的API URL
       apiKey: "",
       hasApiKey: false,
       model: apiConfig.model, // 可以使用相同的模型或修改
-      maxTokens: apiConfig.maxTokens || 2000,
-      temperature: apiConfig.temperature || 0.7,
       streamEnabled: apiConfig.streamEnabled !== false,
     });
+    setAvailableModels(apiConfig.model ? [apiConfig.model] : []);
     setEditMode(true);
     setEditingConfig(null); // 不是编辑现有配置，而是创建新配置
   };
@@ -315,12 +341,6 @@ const AISettings = ({ open, onClose }) => {
   };
 
   const validateConfig = () => {
-    // 在编辑模式下验证名称
-    if (editMode && !config.name.trim()) {
-      setError(t("aiSettings.apiNameRequired"));
-      return false;
-    }
-
     if (!config.apiUrl.trim()) {
       setError(t("aiSettings.apiUrlRequired"));
       return false;
@@ -342,18 +362,6 @@ const AISettings = ({ open, onClose }) => {
       return false;
     }
 
-    // 验证温度范围
-    if (config.temperature < 0 || config.temperature > 2) {
-      setError(t("aiSettings.temperatureRange"));
-      return false;
-    }
-
-    // 验证最大令牌数范围
-    if (config.maxTokens < 1 || config.maxTokens > 32000) {
-      setError(t("aiSettings.maxTokensRange"));
-      return false;
-    }
-
     return true;
   };
 
@@ -365,10 +373,10 @@ const AISettings = ({ open, onClose }) => {
     try {
       if (editMode) {
         // 编辑模式：保存单个API配置
-        const apiConfig = {
+        const apiConfig = buildSavableApiConfig({
           ...config,
           id: config.id || Date.now().toString(),
-        };
+        });
 
         const result = await window.terminalAPI.saveApiConfig(apiConfig);
         if (result) {
@@ -381,15 +389,13 @@ const AISettings = ({ open, onClose }) => {
         }
       } else {
         // 列表模式：保存整体设置（兼容旧版本）
+        const apiConfig = buildSavableApiConfig({
+          ...config,
+          id: Date.now().toString(),
+        });
         const settings = {
-          current: config,
-          configs: [
-            {
-              ...config,
-              id: Date.now().toString(),
-              name: config.name || "Default",
-            },
-          ],
+          current: apiConfig,
+          configs: [apiConfig],
         };
 
         const result = await window.terminalAPI.saveAISettings(settings);
@@ -424,7 +430,6 @@ const AISettings = ({ open, onClose }) => {
           ...buildInlineApiKeyPayload(config),
           model: config.model,
           provider: config.provider,
-          maxTokens: config.maxTokens,
           messages: [{ role: "user", content: "Hello" }],
         };
 
@@ -491,7 +496,17 @@ const AISettings = ({ open, onClose }) => {
       });
 
       if (result && result.models && Array.isArray(result.models)) {
-        setAvailableModels(result.models);
+        const models = [
+          ...new Set(
+            result.models
+              .map((model) => (typeof model === "string" ? model.trim() : ""))
+              .filter(Boolean),
+          ),
+        ];
+        setAvailableModels(models);
+        if (config.model && !models.includes(config.model)) {
+          handleConfigChange("model", "");
+        }
         setSuccess(t("aiSettings.modelsFetched"));
       } else {
         setError(t("aiSettings.fetchModelsFailed"));
@@ -720,7 +735,7 @@ const AISettings = ({ open, onClose }) => {
                                         variant="subtitle1"
                                         fontWeight="medium"
                                       >
-                                        {apiConfig.name}
+                                        {apiConfig.model || apiConfig.name}
                                       </Typography>
                                       {currentApiId === apiConfig.id && (
                                         <Chip
@@ -740,13 +755,6 @@ const AISettings = ({ open, onClose }) => {
                                       {(
                                         apiConfig.provider || "openai"
                                       ).toUpperCase()}
-                                    </Typography>
-                                    <Typography
-                                      variant="body2"
-                                      color="text.secondary"
-                                      sx={{ mb: 0.5 }}
-                                    >
-                                      {t("aiSettings.model")}: {apiConfig.model}
                                     </Typography>
                                     <Typography
                                       variant="body2"
@@ -824,7 +832,7 @@ const AISettings = ({ open, onClose }) => {
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
-                            mb: editingConfig ? 0 : 2,
+                            mb: 2,
                           }}
                         >
                           <Typography variant="h6">
@@ -833,11 +841,6 @@ const AISettings = ({ open, onClose }) => {
                               : t("aiSettings.addApi")}
                           </Typography>
                         </Box>
-                        {editingConfig && (
-                          <Alert severity="info" sx={{ mb: 2 }}>
-                            {t("aiSettings.editingExistingConfig")}
-                          </Alert>
-                        )}
                         {!editingConfig &&
                           config.apiUrl &&
                           hasConfiguredApiKey(config) && (
@@ -846,18 +849,6 @@ const AISettings = ({ open, onClose }) => {
                             </Alert>
                           )}
                       </Box>
-                      <TextField
-                        inputRef={firstInputRef}
-                        label={t("aiSettings.apiName")}
-                        value={config.name}
-                        onChange={(e) =>
-                          handleConfigChange("name", e.target.value)
-                        }
-                        fullWidth
-                        placeholder={t("aiSettings.placeholders.name")}
-                        variant="outlined"
-                        required
-                      />
                       <FormControl fullWidth variant="outlined">
                         <InputLabel>{t("aiSettings.providerType")}</InputLabel>
                         <Select
@@ -884,6 +875,7 @@ const AISettings = ({ open, onClose }) => {
                         </Select>
                       </FormControl>
                       <TextField
+                        inputRef={firstInputRef}
                         label={t("aiSettings.apiUrl")}
                         value={config.apiUrl}
                         onChange={(e) =>
@@ -919,46 +911,31 @@ const AISettings = ({ open, onClose }) => {
                           alignItems: "flex-start",
                         }}
                       >
-                        <Autocomplete
-                          value={config.model}
-                          onChange={(event, newValue) => {
-                            handleConfigChange("model", newValue || "");
-                          }}
-                          onInputChange={(event, newInputValue) => {
-                            handleConfigChange("model", newInputValue);
-                          }}
-                          options={availableModels}
-                          freeSolo
-                          fullWidth
-                          slotProps={{
-                            paper: {
-                              sx: {
-                                border: 1,
-                                borderColor: "divider",
-                                boxShadow: 3,
-                              },
-                            },
-                            popper: {
+                        <FormControl fullWidth variant="outlined" required>
+                          <InputLabel>{t("aiSettings.model")}</InputLabel>
+                          <Select
+                            value={config.model}
+                            onChange={(e) =>
+                              handleConfigChange("model", e.target.value)
+                            }
+                            label={t("aiSettings.model")}
+                            displayEmpty
+                            MenuProps={{
                               sx: {
                                 zIndex: (theme) => theme.zIndex.modal + 210,
                               },
-                            },
-                          }}
-                          renderInput={(params) => (
-                            <TextField
-                              {...params}
-                              label={t("aiSettings.model")}
-                              placeholder={t("aiSettings.placeholders.model")}
-                              variant="outlined"
-                              required
-                            />
-                          )}
-                          renderOption={(props, option) => (
-                            <li {...props} key={option}>
-                              {option}
-                            </li>
-                          )}
-                        />
+                            }}
+                          >
+                            <MenuItem value="" disabled>
+                              {t("aiSettings.modelSelectPlaceholder")}
+                            </MenuItem>
+                            {availableModels.map((model) => (
+                              <MenuItem key={model} value={model}>
+                                {model}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
                         <Tooltip title={t("aiSettings.fetchModels")}>
                           <IconButton
                             onClick={handleFetchModels}
@@ -977,49 +954,6 @@ const AISettings = ({ open, onClose }) => {
                             )}
                           </IconButton>
                         </Tooltip>
-                      </Box>
-                      <Box>
-                        <Typography gutterBottom>
-                          {t("aiSettings.maxTokens")}: {config.maxTokens}
-                        </Typography>
-                        <Slider
-                          value={config.maxTokens}
-                          onChange={(_, value) =>
-                            handleConfigChange("maxTokens", value)
-                          }
-                          min={100}
-                          max={32000}
-                          step={100}
-                          marks={[
-                            { value: 1000, label: "1000" },
-                            { value: 4000, label: "4000" },
-                            { value: 8000, label: "8000" },
-                            { value: 12000, label: "12000" },
-                            { value: 16000, label: "16000" },
-                            { value: 32000, label: "32000" },
-                          ]}
-                        />
-                      </Box>
-                      <Box>
-                        <Typography gutterBottom>
-                          {t("aiSettings.temperature")}: {config.temperature}
-                        </Typography>
-                        <Slider
-                          value={config.temperature}
-                          onChange={(_, value) =>
-                            handleConfigChange("temperature", value)
-                          }
-                          min={0}
-                          max={2}
-                          step={0.1}
-                          marks={[
-                            { value: 0, label: "0" },
-                            { value: 0.5, label: "0.5" },
-                            { value: 1, label: "1" },
-                            { value: 1.5, label: "1.5" },
-                            { value: 2, label: "2" },
-                          ]}
-                        />
                       </Box>
                       <FormControlLabel
                         control={

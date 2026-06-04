@@ -627,6 +627,7 @@
       "apiKey": "API Key",
       "keyStoredInMain": "Key is securely stored in main process; leave blank to keep unchanged",
       "model": "Model Name",
+      "modelSelectPlaceholder": "Click the model detection button on the right first",
       "placeholders": {
         "name": "My API",
         "baseUrl": "https://api.openai.com/v1",
@@ -670,9 +671,8 @@
       "selectApi": "Select API",
       "apiSwitched": "Switched to: {{name}}",
       "cloneApi": "Clone Configuration",
-      "editingExistingConfig": "Editing existing configuration",
       "clonedConfigHint": "Creating new configuration based on existing one, no need to re-enter API URL and key",
-      "fetchModels": "Fetch Models",
+      "fetchModels": "Detect Models",
       "modelsFetched": "Models fetched successfully",
       "fetchModelsFailed": "Failed to fetch models",
       "apiUrlAndKeyRequired": "API URL and API Key are required to fetch models",
