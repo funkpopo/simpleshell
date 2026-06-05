@@ -2,7 +2,10 @@ const net = require("node:net");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { FusesPlugin } = require("@electron-forge/plugin-fuses");
+const { WebpackPlugin } = require("@electron-forge/plugin-webpack");
 const { FuseV1Options, FuseVersion } = require("@electron/fuses");
+const fsExtra = require("fs-extra");
+const webpack = require("webpack");
 
 const MIN_PORT = 1024;
 const MAX_PORT = 65535;
@@ -32,6 +35,203 @@ const LINUX_ICON_PATH = path.join(
   "SimpleShell.png",
 );
 const MAC_ENTITLEMENTS_PATH = path.join(__dirname, "entitlements.plist");
+const WEBPACK_DIR = path.resolve(__dirname, ".webpack");
+const WINDOWS_MOVE_RETRY_DELAY_MS = 250;
+const WINDOWS_MOVE_RETRIES = 8;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isRetryableWindowsMoveError = (error) =>
+  process.platform === "win32" &&
+  ["EPERM", "EBUSY", "ENOTEMPTY"].includes(error?.code);
+
+const isWebpackPath = (value) => {
+  const relativePath = path.relative(WEBPACK_DIR, path.resolve(value));
+
+  return relativePath === "" || !relativePath.startsWith("..");
+};
+
+const isWebpackMove = (src, dest) => isWebpackPath(src) && isWebpackPath(dest);
+
+const installWindowsWebpackMoveFallback = () => {
+  if (process.platform !== "win32" || fsExtra.__simpleShellWebpackMovePatch) {
+    return;
+  }
+
+  const originalMove = fsExtra.move.bind(fsExtra);
+
+  const moveWithFallback = async (src, dest, options) => {
+    try {
+      return await originalMove(src, dest, options);
+    } catch (error) {
+      if (!isWebpackMove(src, dest) || !isRetryableWindowsMoveError(error)) {
+        throw error;
+      }
+
+      for (let attempt = 0; attempt < WINDOWS_MOVE_RETRIES; attempt += 1) {
+        await sleep(WINDOWS_MOVE_RETRY_DELAY_MS);
+
+        try {
+          return await originalMove(src, dest, options);
+        } catch (retryError) {
+          if (!isRetryableWindowsMoveError(retryError)) {
+            throw retryError;
+          }
+        }
+      }
+
+      await fsExtra.copy(src, dest, {
+        errorOnExist: true,
+        overwrite: false,
+      });
+      await fsExtra.remove(src);
+
+      return undefined;
+    }
+  };
+
+  fsExtra.move = (src, dest, options, callback) => {
+    if (typeof options === "function") {
+      return moveWithFallback(src, dest).then(
+        () => options(),
+        (error) => options(error),
+      );
+    }
+
+    if (typeof callback === "function") {
+      return moveWithFallback(src, dest, options).then(
+        () => callback(),
+        (error) => callback(error),
+      );
+    }
+
+    return moveWithFallback(src, dest, options);
+  };
+
+  Object.defineProperty(fsExtra, "__simpleShellWebpackMovePatch", {
+    value: true,
+  });
+};
+
+installWindowsWebpackMoveFallback();
+
+const closeWebpackCompiler = (compiler) =>
+  new Promise((resolve, reject) => {
+    if (typeof compiler.close !== "function") {
+      resolve();
+      return;
+    }
+
+    compiler.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
+
+class WindowsSafeWebpackPlugin extends WebpackPlugin {
+  constructor(config) {
+    super(config);
+
+    const compileMain = this.compileMain;
+
+    this.compileMain = async (watch = false, logger) => {
+      if (watch) {
+        return compileMain.call(this, watch, logger);
+      }
+
+      let tab;
+      if (logger) {
+        tab = logger.createTab("Main Process");
+      }
+
+      const mainConfig = await this.configGenerator.getMainConfig();
+
+      await new Promise((resolve, reject) => {
+        const compiler = webpack(mainConfig);
+
+        compiler.run(async (err, stats) => {
+          let primaryError = err || null;
+
+          try {
+            if (tab && stats) {
+              tab.log(stats.toString({ colors: true }));
+            }
+
+            if (this.config.jsonStats) {
+              await this.writeJSONStats(
+                "main",
+                stats,
+                mainConfig.stats,
+                "main",
+              );
+            }
+
+            if (!primaryError && stats?.hasErrors()) {
+              primaryError = new Error(
+                `Compilation errors in the main process: ${stats.toString()}`,
+              );
+            }
+
+            await closeWebpackCompiler(compiler);
+          } catch (error) {
+            primaryError = primaryError || error;
+          }
+
+          if (primaryError) {
+            reject(primaryError);
+            return;
+          }
+
+          resolve();
+        });
+      });
+    };
+
+    this.runWebpack = async (options, rendererOptions) =>
+      new Promise((resolve, reject) => {
+        const compiler = webpack(options);
+
+        compiler.run(async (err, stats) => {
+          let primaryError = err || null;
+
+          try {
+            if (rendererOptions?.jsonStats) {
+              for (const [index, entryStats] of (
+                stats?.stats || []
+              ).entries()) {
+                const name = rendererOptions.entryPoints[index].name;
+                const statsOptions = Array.isArray(options)
+                  ? options[index].stats
+                  : options.stats;
+
+                await this.writeJSONStats(
+                  "renderer",
+                  entryStats,
+                  statsOptions,
+                  name,
+                );
+              }
+            }
+
+            await closeWebpackCompiler(compiler);
+          } catch (error) {
+            primaryError = primaryError || error;
+          }
+
+          if (primaryError) {
+            reject(primaryError);
+            return;
+          }
+
+          resolve(stats);
+        });
+      });
+  }
+}
 
 const parsePort = (rawValue, fallback) => {
   if (!rawValue) {
@@ -345,29 +545,26 @@ module.exports = async () => {
         name: "@electron-forge/plugin-auto-unpack-natives",
         config: {},
       },
-      {
-        name: "@electron-forge/plugin-webpack",
-        config: {
-          mainConfig: "./webpack.main.config.js",
-          renderer: {
-            config: "./webpack.renderer.config.js",
-            entryPoints: [
-              {
-                html: "./src/index.html",
-                js: "./src/app.jsx",
-                name: "main_window",
-                preload: {
-                  js: "./src/preload.js",
-                },
+      new WindowsSafeWebpackPlugin({
+        mainConfig: "./webpack.main.config.js",
+        renderer: {
+          config: "./webpack.renderer.config.js",
+          entryPoints: [
+            {
+              html: "./src/index.html",
+              js: "./src/app.jsx",
+              name: "main_window",
+              preload: {
+                js: "./src/preload.js",
               },
-            ],
-          },
-          devContentSecurityPolicy:
-            "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: ws: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self';",
-          port: devServerPort,
-          loggerPort,
+            },
+          ],
         },
-      },
+        devContentSecurityPolicy:
+          "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: ws: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self';",
+        port: devServerPort,
+        loggerPort,
+      }),
       // Fuses are used to enable/disable various Electron functionality
       // at package time, before code signing the application
       new FusesPlugin({
