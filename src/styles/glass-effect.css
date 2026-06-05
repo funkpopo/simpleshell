@@ -1,16 +1,27 @@
-/* Glass effect utility classes */
+/*
+ * 毛玻璃效果工具类
+ * 引用 theme-variables.css 中的 token，适配暗/亮主题
+ */
 .glass-effect {
-  background-color: rgba(255, 255, 255, 0.7);
+  background-color: var(--glass-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px 0 var(--glass-shadow);
 }
 
 .dark-glass-effect {
-  background-color: rgba(40, 44, 52, 0.7);
+  background-color: var(--glass-dark-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  border: 1px solid var(--glass-dark-border);
+  box-shadow: 0 8px 32px 0 var(--glass-dark-shadow);
+}
+
+/* 通用浮动面板毛玻璃（用于 FloatingDialog 等） */
+.float-glass {
+  background-color: var(--float-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--float-shadow);
 }

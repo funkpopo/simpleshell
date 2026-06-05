@@ -68,8 +68,7 @@ import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
 import { sidebarContentSx } from "./sidebarItemStyles";
-
-const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
+import { getSearchFieldMotionSx } from "../utils/searchFieldStyles";
 
 const FILE_LIST_ROW_HEIGHT = 36;
 const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
@@ -102,48 +101,6 @@ const FILE_LIST_SECONDARY_TYPOGRAPHY_PROPS = {
   variant: "caption",
   color: "text.secondary",
   noWrap: true,
-};
-
-const getSearchFieldMotionSx = (
-  theme,
-  {
-    borderRadius = 1.5,
-    backgroundColor = theme.palette.mode === "dark"
-      ? alpha(theme.palette.background.default, 0.5)
-      : theme.palette.background.default,
-    hoverBackgroundColor = theme.palette.background.paper,
-    focusedBackgroundColor = theme.palette.background.paper,
-  } = {},
-) => {
-  const focusOutlineColor =
-    theme.palette.mode === "dark"
-      ? alpha(theme.palette.primary.light, 0.28)
-      : alpha(theme.palette.primary.main, 0.22);
-  const focusShadowColor =
-    theme.palette.mode === "dark"
-      ? alpha(theme.palette.primary.main, 0.3)
-      : alpha(theme.palette.primary.main, 0.16);
-
-  return {
-    "& .MuiOutlinedInput-root": {
-      borderRadius,
-      backgroundColor,
-      transition: "background-color 0.2s ease",
-      [REDUCED_MOTION_QUERY]: {
-        transition: "none",
-      },
-      "&:hover": {
-        backgroundColor: hoverBackgroundColor,
-      },
-      "&.Mui-focused": {
-        backgroundColor: focusedBackgroundColor,
-        boxShadow: `0 0 0 2px ${focusOutlineColor}`,
-        "& .MuiOutlinedInput-notchedOutline": {
-          borderColor: focusShadowColor,
-        },
-      },
-    },
-  };
 };
 
 const joinPath = (basePath, childName) => {
@@ -6650,15 +6607,7 @@ const FileManager = memo(
                     sx={{
                       flex: 1,
                       minWidth: 0,
-                      ...getSearchFieldMotionSx(theme, {
-                        borderRadius: 1.5,
-                        backgroundColor:
-                          theme.palette.mode === "dark"
-                            ? alpha(theme.palette.background.default, 0.5)
-                            : theme.palette.background.default,
-                        hoverBackgroundColor: theme.palette.background.paper,
-                        focusedBackgroundColor: theme.palette.background.paper,
-                      }),
+                      ...getSearchFieldMotionSx(theme),
                     }}
                   />
                 )}

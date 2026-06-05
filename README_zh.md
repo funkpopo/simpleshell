@@ -275,4 +275,4 @@ simpleshell/
 
 ## **作者**
 
-**funkpopo** - [s767609509@gmail.com](mailto:s767609509@gmail.com)
+**funkpopo** - [funkpopoisme@gmail.com](mailto:funkpopoisme@gmail.com)

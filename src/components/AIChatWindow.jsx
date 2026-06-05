@@ -44,6 +44,7 @@ import AISettings from "./AISettings";
 import ExecutableCommand from "./ExecutableCommand";
 import { useTranslation } from "react-i18next";
 import { styled } from "@mui/material/styles";
+import { RADIUS } from "../theme";
 import ReactMarkdown from "react-markdown";
 import {
   generateSystemPrompt,
@@ -230,7 +231,7 @@ const normalizeSafeMarkdownHref = (href) => {
 const DIALOG_RIGHT_GAP = 50;
 const DIALOG_BOTTOM_GAP = 20;
 const DIALOG_TOP_GAP = 20;
-const DIALOG_PAPER_RADIUS = 16;
+const DIALOG_PAPER_RADIUS = RADIUS.LG;
 const HANDLE_VISUAL_INSET = 12;
 
 // 默认和限制尺寸

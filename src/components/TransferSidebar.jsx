@@ -16,6 +16,7 @@ import {
   ListItemText,
 } from "@mui/material";
 import { styled, useTheme } from "@mui/material/styles";
+import { RADIUS } from "../theme";
 import CloseIcon from "@mui/icons-material/Close";
 import MinimizeIcon from "@mui/icons-material/Minimize";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
@@ -65,7 +66,7 @@ const FloatingDialog = styled(Dialog)(
           ? "rgba(30, 30, 30, 0.95)"
           : "rgba(255, 255, 255, 0.95)",
       backdropFilter: "blur(10px)",
-      borderRadius: 16,
+      borderRadius: RADIUS.LG,
       boxShadow:
         theme.palette.mode === "dark"
           ? "0 10px 40px rgba(0, 0, 0, 0.6)"

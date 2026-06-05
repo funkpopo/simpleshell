@@ -432,18 +432,17 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                       <LinearProgress
                         variant="determinate"
                         value={systemInfo.cpu.usage}
+                        color={
+                          systemInfo.cpu.usage > 80
+                            ? "error"
+                            : systemInfo.cpu.usage > 50
+                              ? "warning"
+                              : "success"
+                        }
                         sx={{
                           mt: 1,
                           height: 8,
                           borderRadius: 1,
-                          "& .MuiLinearProgress-bar": {
-                            background:
-                              systemInfo.cpu.usage > 80
-                                ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
-                                : systemInfo.cpu.usage > 50
-                                  ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
-                                  : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
-                          },
                         }}
                       />
                     </Box>
@@ -478,18 +477,17 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                       <LinearProgress
                         variant="determinate"
                         value={systemInfo.memory.usagePercent}
+                        color={
+                          systemInfo.memory.usagePercent > 80
+                            ? "error"
+                            : systemInfo.memory.usagePercent > 50
+                              ? "warning"
+                              : "success"
+                        }
                         sx={{
                           mt: 1,
                           height: 8,
                           borderRadius: 1,
-                          "& .MuiLinearProgress-bar": {
-                            background:
-                              systemInfo.memory.usagePercent > 80
-                                ? `linear-gradient(90deg, ${theme.palette.error.light} 0%, ${theme.palette.error.main} 50%, ${theme.palette.error.dark} 100%)`
-                                : systemInfo.memory.usagePercent > 50
-                                  ? `linear-gradient(90deg, ${theme.palette.warning.light} 0%, ${theme.palette.warning.main} 50%, ${theme.palette.warning.dark} 100%)`
-                                  : `linear-gradient(90deg, ${theme.palette.success.light} 0%, ${theme.palette.success.main} 50%, ${theme.palette.success.dark} 100%)`,
-                          },
                         }}
                       />
                     </Box>
