@@ -55,6 +55,7 @@ import SortByAlphaIcon from "@mui/icons-material/SortByAlpha";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import FilePreview from "./FilePreview.jsx";
+import OverflowTooltipText from "./OverflowTooltipText.jsx";
 // TransferProgressFloat 已移至全局显示,不再导入
 import FilePermissionEditor from "./FilePermissionEditor.jsx";
 import { List, ListItem, ListItemButton } from "@mui/material";
@@ -79,6 +80,7 @@ const FILE_LIST_ITEM_MIN_HEIGHT = 32;
 
 const FILE_LIST_TEXT_SX = {
   my: 0,
+  minWidth: 0,
   "& .MuiListItemText-primary": {
     fontSize: "0.875rem",
     lineHeight: 1.2,
@@ -92,15 +94,22 @@ const FILE_LIST_TEXT_SX = {
   },
 };
 
-const FILE_LIST_PRIMARY_TYPOGRAPHY_PROPS = {
-  variant: "body2",
-  noWrap: true,
+const FILE_LIST_NAME_SX = {
+  fontSize: "0.875rem",
+  lineHeight: 1.2,
+  marginBottom: "2px",
+  fontWeight: 500,
 };
 
-const FILE_LIST_SECONDARY_TYPOGRAPHY_PROPS = {
-  variant: "caption",
-  color: "text.secondary",
-  noWrap: true,
+const FILE_LIST_SECONDARY_TEXT_SX = {
+  display: "block",
+  minWidth: 0,
+  fontSize: "0.75rem",
+  lineHeight: 1.1,
+  marginTop: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 };
 
 const joinPath = (basePath, childName) => {
@@ -302,11 +311,22 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
             )}
           </ListItemIcon>
           <ListItemText
-            primary={file.name || ""}
-            secondary={secondaryText}
+            disableTypography
+            primary={
+              <OverflowTooltipText
+                variant="body2"
+                sx={FILE_LIST_NAME_SX}
+                tooltipTitle={file.name || ""}
+              >
+                {file.name || ""}
+              </OverflowTooltipText>
+            }
+            secondary={
+              <Box component="span" sx={FILE_LIST_SECONDARY_TEXT_SX}>
+                {secondaryText}
+              </Box>
+            }
             sx={FILE_LIST_TEXT_SX}
-            primaryTypographyProps={FILE_LIST_PRIMARY_TYPOGRAPHY_PROPS}
-            secondaryTypographyProps={FILE_LIST_SECONDARY_TYPOGRAPHY_PROPS}
           />
         </ListItemButton>
       </ListItem>
@@ -3958,15 +3978,25 @@ const FileManager = memo(
                         )}
                       </ListItemIcon>
                       <ListItemText
-                        primary={file.name || ""}
-                        secondary={secondaryText}
+                        disableTypography
+                        primary={
+                          <OverflowTooltipText
+                            variant="body2"
+                            sx={FILE_LIST_NAME_SX}
+                            tooltipTitle={file.name || ""}
+                          >
+                            {file.name || ""}
+                          </OverflowTooltipText>
+                        }
+                        secondary={
+                          <Box
+                            component="span"
+                            sx={FILE_LIST_SECONDARY_TEXT_SX}
+                          >
+                            {secondaryText}
+                          </Box>
+                        }
                         sx={FILE_LIST_TEXT_SX}
-                        primaryTypographyProps={
-                          FILE_LIST_PRIMARY_TYPOGRAPHY_PROPS
-                        }
-                        secondaryTypographyProps={
-                          FILE_LIST_SECONDARY_TYPOGRAPHY_PROPS
-                        }
                       />
                     </ListItemButton>
                   </ListItem>

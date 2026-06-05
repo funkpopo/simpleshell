@@ -42,6 +42,7 @@ import {
   sumTransferFileCount,
 } from "../utils/transferCounts.js";
 import { useTranslation } from "react-i18next";
+import OverflowTooltipText from "./OverflowTooltipText.jsx";
 
 // 浮动窗口对话框样式（参考 AIChatWindow）
 const FloatingDialog = styled(Dialog)(
@@ -192,19 +193,19 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
       {/* 头部：图标 + 文件名 + 时间 + 状态 */}
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <Box sx={{ flexShrink: 0 }}>{getTransferIcon(transfer.type)}</Box>
-        <Typography
+        <OverflowTooltipText
           variant="body2"
           sx={{
             flex: 1,
             minWidth: 0,
             fontWeight: 500,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
           }}
+          tooltipTitle={
+            transfer.fileName || t("fileManager.transfer.fallbackName")
+          }
         >
           {transfer.fileName || t("fileManager.transfer.fallbackName")}
-        </Typography>
+        </OverflowTooltipText>
         <Typography
           variant="caption"
           color="text.secondary"
@@ -232,8 +233,8 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
                   backgroundColor: "rgba(244,67,54,0.1)",
                 },
               }}
-            
-              aria-label={t("fileManager.transfer.deleteRecord")}>
+              aria-label={t("fileManager.transfer.deleteRecord")}
+            >
               <CloseIcon sx={{ fontSize: 14 }} />
             </IconButton>
           </Tooltip>
@@ -383,8 +384,8 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
                   backgroundColor: "rgba(244,67,54,0.1)",
                 },
               }}
-            
-              aria-label={t("fileManager.transfer.stop")}>
+              aria-label={t("fileManager.transfer.stop")}
+            >
               <StopIcon sx={{ fontSize: 14 }} />
             </IconButton>
           </Tooltip>
@@ -423,15 +424,23 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
                     )}
                   </ListItemIcon>
                   <ListItemText
-                    primary={file.name}
                     secondary={formatSize(file.size)}
+                    sx={{ minWidth: 0 }}
+                    primary={
+                      <OverflowTooltipText
+                        variant="caption"
+                        sx={{ fontSize: "0.7rem" }}
+                        tooltipTitle={file.name || ""}
+                      >
+                        {file.name || ""}
+                      </OverflowTooltipText>
+                    }
                     primaryTypographyProps={{
-                      variant: "caption",
-                      noWrap: true,
-                      sx: { fontSize: "0.7rem" },
+                      component: "div",
                     }}
                     secondaryTypographyProps={{
                       variant: "caption",
+                      noWrap: true,
                       sx: { fontSize: "0.6rem" },
                     }}
                   />
