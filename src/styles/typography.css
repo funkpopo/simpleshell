@@ -1,16 +1,41 @@
-/* Typography responsive settings */
+/*
+ * 排版基础设置
+ * 语义级字号层级。组件中应优先使用 MUI variant（h6/subtitle2/body2/caption），
+ * 而非 sx={{ fontSize: ... }} 分散定义。
+ */
 .MuiTypography-root {
-  font-size: 1rem; /* 使用相对单位，响应html的font-size变化 */
+  font-size: 1rem;
 }
 
 .MuiButton-root {
-  font-size: 0.9rem;
+  font-size: 0.875rem;
 }
 
 .MuiMenuItem-root {
-  font-size: 0.9rem;
+  font-size: 0.875rem;
 }
 
 .MuiTab-root {
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+}
+
+/* 补充 MUI theme 中未覆盖的常用 variant */
+.MuiTypography-body2.MuiTypography-gutterBottom {
+  margin-bottom: 0.35em;
+}
+
+.MuiTypography-caption {
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+/* 确保列表项中的字号一致 */
+.MuiListItemText-primary {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.MuiListItemText-secondary {
+  font-size: 0.75rem;
+  line-height: 1.4;
 }

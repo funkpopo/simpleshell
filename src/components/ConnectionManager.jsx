@@ -76,8 +76,7 @@ import { useNotification } from "../contexts/NotificationContext";
 import { ConnectionManagerSkeleton } from "./SkeletonLoader.jsx";
 import VirtualizedConnectionList from "./VirtualizedConnectionList.jsx";
 import { sidebarContentSx, sidebarListItemSx } from "./sidebarItemStyles";
-
-const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
+import { getSearchFieldMotionSx } from "../utils/searchFieldStyles";
 
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
@@ -151,40 +150,6 @@ const getConnectionVersion = (connection) => {
     connection.password || "",
     proxySignature,
   ].join("|");
-};
-
-const getSearchFieldMotionSx = (theme, { borderRadius = 2 } = {}) => {
-  const focusOutlineColor =
-    theme.palette.mode === "dark"
-      ? alpha(theme.palette.primary.light, 0.28)
-      : alpha(theme.palette.primary.main, 0.22);
-  const focusShadowColor =
-    theme.palette.mode === "dark"
-      ? alpha(theme.palette.primary.main, 0.28)
-      : alpha(theme.palette.primary.main, 0.16);
-
-  return {
-    "& .MuiOutlinedInput-root": {
-      borderRadius,
-      transition:
-        "transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease",
-      transformOrigin: "center",
-      "&:hover": {
-        backgroundColor: theme.palette.background.paper,
-      },
-      "&.Mui-focused": {
-        backgroundColor: theme.palette.background.paper,
-        transform: "scale(1.01)",
-        boxShadow: `0 0 0 1px ${focusOutlineColor}, 0 10px 24px ${focusShadowColor}`,
-      },
-      [REDUCED_MOTION_QUERY]: {
-        transition: "box-shadow 0.2s ease, background-color 0.2s ease",
-        "&.Mui-focused": {
-          transform: "none",
-        },
-      },
-    },
-  };
 };
 
 const areConnectionListsEqual = (prevList = [], nextList = []) => {
@@ -2539,6 +2504,7 @@ const ConnectionManager = memo(
               sx={{
                 ...getSearchFieldMotionSx(theme, {
                   borderRadius: 2,
+                  enableScale: true,
                 }),
               }}
             />

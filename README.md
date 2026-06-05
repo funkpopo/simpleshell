@@ -275,4 +275,4 @@ Distributed under the Apache License 2.0. See `LICENSE` for more information.
 
 ## **Author**
 
-**funkpopo** - [s767609509@gmail.com](mailto:s767609509@gmail.com)
+**funkpopo** - [funkpopoisme@gmail.com](mailto:funkpopoisme@gmail.com)

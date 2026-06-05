@@ -1089,10 +1089,10 @@ const AboutDialog = memo(function AboutDialog({
               href="#"
               onClick={(e) => {
                 e.preventDefault();
-                handleOpenExternalLink("mailto:s767609509@gmail.com");
+                handleOpenExternalLink("mailto:funkpopoisme@gmail.com");
               }}
             >
-              s767609509@gmail.com
+              funkpopoisme@gmail.com
             </Link>
           </Typography>
 

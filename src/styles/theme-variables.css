@@ -1,6 +1,10 @@
 /*
  * 主题 CSS 变量定义
  * 通过切换 body 类名 (.dark-theme / .light-theme) 实现即时主题切换
+ * 维护与 MUI theme 同步的三级圆角系统:
+ *   --radius-sm: 按钮、输入框、列表项、骨架屏、工具提示
+ *   --radius-md: 卡片、对话框、Paper 容器
+ *   --radius-lg: 浮动对话框、Chip
  */
 
 /* 浅色主题（默认） */
@@ -41,10 +45,27 @@
   --color-selected: rgba(25, 118, 210, 0.12);
   --color-focus: rgba(25, 118, 210, 0.2);
 
+  /* 三级圆角系统 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
   /* 阴影 */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12);
   --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.12);
   --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.18);
+
+  /* 毛玻璃背景 */
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.18);
+  --glass-shadow: rgba(31, 38, 135, 0.37);
+  --glass-dark-bg: rgba(40, 44, 52, 0.7);
+  --glass-dark-border: rgba(255, 255, 255, 0.18);
+  --glass-dark-shadow: rgba(0, 0, 0, 0.37);
+
+  /* 浮动对话框毛玻璃 */
+  --float-bg: rgba(255, 255, 255, 0.95);
+  --float-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
 
   /* 主题切换过渡 */
   --theme-transition-duration: 0.4s;
@@ -88,13 +109,33 @@
   --color-selected: rgba(144, 202, 249, 0.12);
   --color-focus: rgba(144, 202, 249, 0.2);
 
+  /* 三级圆角系统 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
   /* 阴影 */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);
+
+  /* 毛玻璃背景 */
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.18);
+  --glass-shadow: rgba(31, 38, 135, 0.37);
+  --glass-dark-bg: rgba(40, 44, 52, 0.7);
+  --glass-dark-border: rgba(255, 255, 255, 0.18);
+  --glass-dark-shadow: rgba(0, 0, 0, 0.37);
+
+  /* 浮动对话框毛玻璃 */
+  --float-bg: rgba(30, 30, 30, 0.95);
+  --float-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+
+  /* 主题切换过渡 */
+  --theme-transition-duration: 0.4s;
+  --theme-transition-easing: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 为支持 CSS 变量过渡的属性添加过渡效果 */
 body {
   background-color: var(--color-bg-default);
   color: var(--color-text-primary);

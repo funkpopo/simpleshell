@@ -8,10 +8,30 @@ const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
 const PRESS_TRANSITION =
   "transform 100ms ease-out, box-shadow 0.2s ease, background-color 0.2s ease";
 
+const RADIUS_SM = 6;
+const RADIUS_MD = 10;
+const RADIUS_LG = 16;
+
+export const RADIUS = { SM: RADIUS_SM, MD: RADIUS_MD, LG: RADIUS_LG };
+
+const primaryColor = (darkMode) => (darkMode ? "#90caf9" : "#1976d2");
+const primaryAlpha = (darkMode, alpha) =>
+  darkMode ? `rgba(144, 202, 249, ${alpha})` : `rgba(25, 118, 210, ${alpha})`;
+
+const hoverBg = (darkMode) =>
+  darkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+const selectedBg = (darkMode) => primaryAlpha(darkMode, 0.12);
+const selectedHoverBg = (darkMode) => primaryAlpha(darkMode, 0.16);
+
+const sh = (darkMode, y, blur, darkOpacity, lightOpacity) =>
+  `0 ${y}px ${blur}px rgba(0,0,0,${darkMode ? darkOpacity : lightOpacity})`;
+
+const borderClr = (darkMode) =>
+  darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)";
+
 const DialogGrowTransition = forwardRef(
   function DialogGrowTransition(props, ref) {
     const prefersReducedMotion = useMediaQuery(REDUCED_MOTION_QUERY);
-
     return createElement(Grow, {
       ...props,
       timeout: prefersReducedMotion ? 0 : props.timeout,
@@ -23,7 +43,6 @@ const DialogGrowTransition = forwardRef(
 const SnackbarSlideTransition = forwardRef(
   function SnackbarSlideTransition(props, ref) {
     const prefersReducedMotion = useMediaQuery(REDUCED_MOTION_QUERY);
-
     return createElement(Slide, {
       ...props,
       direction: "left",
@@ -33,17 +52,12 @@ const SnackbarSlideTransition = forwardRef(
   },
 );
 
-/**
- * 创建统一的Material-UI主题配置
- * @param {boolean} darkMode - 是否为深色模式
- * @returns {object} Material-UI主题对象
- */
 export const createUnifiedTheme = (darkMode) =>
   createTheme({
     palette: {
       mode: darkMode ? "dark" : "light",
       primary: {
-        main: darkMode ? "#90caf9" : "#1976d2",
+        main: primaryColor(darkMode),
         light: darkMode ? "#bbdefb" : "#42a5f5",
         dark: darkMode ? "#5c9bd1" : "#1565c0",
       },
@@ -56,51 +70,42 @@ export const createUnifiedTheme = (darkMode) =>
         default: darkMode ? "#121212" : "#e8eaed",
         paper: darkMode ? "#1e1e1e" : "#f3f4f6",
       },
-      success: {
-        main: darkMode ? "#4caf50" : "#2e7d32",
-      },
-      warning: {
-        main: darkMode ? "#ff9800" : "#ed6c02",
-      },
-      error: {
-        main: darkMode ? "#f44336" : "#d32f2f",
-      },
+      success: { main: darkMode ? "#4caf50" : "#2e7d32" },
+      warning: { main: darkMode ? "#ff9800" : "#ed6c02" },
+      error: { main: darkMode ? "#f44336" : "#d32f2f" },
     },
     shape: {
-      borderRadius: 8,
+      borderRadius: RADIUS_SM,
     },
     typography: {
+      fontFamily: [
+        "-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "Roboto",
+        '"Helvetica Neue"', "Arial", "sans-serif",
+      ].join(","),
+      h6: { fontSize: "1rem", fontWeight: 600, lineHeight: 1.3 },
+      subtitle2: { fontSize: "0.875rem", fontWeight: 600, lineHeight: 1.3 },
+      body2: { fontSize: "0.875rem", lineHeight: 1.5 },
+      caption: { fontSize: "0.75rem", lineHeight: 1.4 },
       button: {
         textTransform: "none",
         fontWeight: 600,
       },
     },
     components: {
-      // 统一骨架屏样式
       MuiSkeleton: {
         defaultProps: {
-          // 统一动画：亮色使用 wave，暗色使用 pulse（柔和）
           animation: darkMode ? "pulse" : "wave",
         },
         styleOverrides: {
           root: {
-            // 统一底色：基于主题动态透明度
             backgroundColor: darkMode
               ? "rgba(255,255,255,0.08)"
               : "rgba(0,0,0,0.08)",
-            borderRadius: 6,
+            borderRadius: RADIUS_SM,
           },
-          text: {
-            borderRadius: 6,
-          },
-          rectangular: {
-            borderRadius: 8,
-          },
-          circular: {
-            // 保持圆形
-          },
+          text: { borderRadius: RADIUS_SM },
+          rectangular: { borderRadius: RADIUS_SM },
           wave: {
-            // 调整高亮带颜色以匹配主题
             "&::after": {
               background: darkMode
                 ? "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)"
@@ -109,69 +114,58 @@ export const createUnifiedTheme = (darkMode) =>
           },
         },
       },
-      // 统一按钮样式
+
       MuiButton: {
         styleOverrides: {
           root: {
-            borderRadius: 8,
             textTransform: "none",
             fontWeight: 600,
             boxShadow: "none",
             transition: PRESS_TRANSITION,
             transform: "translateZ(0)",
             "&:hover": {
-              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+              boxShadow: sh(darkMode, 2, 8, 0.3, 0.15),
             },
             "&:active": {
               transform: "scale(0.97)",
             },
             [REDUCED_MOTION_QUERY]: {
               transition: "box-shadow 0.2s ease, background-color 0.2s ease",
-              "&:active": {
-                transform: "none",
-              },
+              "&:active": { transform: "none" },
             },
           },
           contained: {
-            boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+            boxShadow: sh(darkMode, 1, 3, 0.3, 0.12),
             "&:hover": {
-              boxShadow: "0 2px 8px rgba(0,0,0,0.24)",
+              boxShadow: sh(darkMode, 2, 8, 0.4, 0.24),
             },
           },
           outlined: {
             borderWidth: "1.5px",
             "&:hover": {
               borderWidth: "1.5px",
-              backgroundColor: darkMode
-                ? "rgba(144, 202, 249, 0.04)"
-                : "rgba(25, 118, 210, 0.08)",
+              backgroundColor: primaryAlpha(darkMode, 0.08),
             },
           },
           text: {
             "&:hover": {
-              backgroundColor: darkMode
-                ? "rgba(144, 202, 249, 0.04)"
-                : "rgba(25, 118, 210, 0.08)",
+              backgroundColor: primaryAlpha(darkMode, 0.08),
             },
           },
         },
       },
 
-      // 统一输入框样式
       MuiTextField: {
-        defaultProps: {
-          variant: "outlined",
-        },
+        defaultProps: { variant: "outlined" },
         styleOverrides: {
           root: {
             "& .MuiOutlinedInput-root": {
-              borderRadius: 8,
               backgroundColor: darkMode
                 ? "rgba(255,255,255,0.02)"
                 : "rgba(0,0,0,0.02)",
               transition: "all 0.2s ease",
               "&:hover .MuiOutlinedInput-notchedOutline": {
-                borderColor: darkMode ? "#90caf9" : "#1976d2",
+                borderColor: primaryColor(darkMode),
                 borderWidth: "2px",
               },
               "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
@@ -180,64 +174,43 @@ export const createUnifiedTheme = (darkMode) =>
             },
             "& .MuiInputLabel-outlined": {
               "&.Mui-focused": {
-                color: darkMode ? "#90caf9" : "#1976d2",
+                color: primaryColor(darkMode),
               },
             },
           },
         },
       },
 
-      // 统一卡片样式
       MuiCard: {
         styleOverrides: {
           root: {
-            borderRadius: 12,
-            boxShadow: darkMode
-              ? "0 2px 8px rgba(0,0,0,0.3)"
-              : "0 2px 8px rgba(0,0,0,0.12)",
-            border: `1px solid ${darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)"}`,
+            borderRadius: RADIUS_MD,
+            boxShadow: sh(darkMode, 2, 8, 0.3, 0.12),
+            border: `1px solid ${borderClr(darkMode)}`,
             transition: "all 0.3s ease",
             "&:hover": {
-              boxShadow: darkMode
-                ? "0 4px 16px rgba(0,0,0,0.4)"
-                : "0 4px 16px rgba(0,0,0,0.15)",
+              boxShadow: sh(darkMode, 4, 16, 0.4, 0.15),
               transform: "translateY(-1px)",
             },
           },
         },
       },
 
-      // 统一纸张组件样式
       MuiPaper: {
         styleOverrides: {
           root: {
-            borderRadius: 8,
             backgroundImage: "none",
-          },
-          elevation1: {
-            boxShadow: darkMode
-              ? "0 1px 3px rgba(0,0,0,0.3)"
-              : "0 1px 3px rgba(0,0,0,0.12)",
-          },
-          elevation3: {
-            boxShadow: darkMode
-              ? "0 3px 6px rgba(0,0,0,0.4)"
-              : "0 3px 6px rgba(0,0,0,0.16)",
           },
         },
       },
 
-      // 统一图标按钮样式
       MuiIconButton: {
         styleOverrides: {
           root: {
-            borderRadius: 8,
             transition: PRESS_TRANSITION,
             transform: "translateZ(0)",
             "&:hover": {
-              backgroundColor: darkMode
-                ? "rgba(255,255,255,0.08)"
-                : "rgba(0,0,0,0.06)",
+              backgroundColor: hoverBg(darkMode),
               transform: "scale(1.05)",
             },
             "&:active": {
@@ -245,33 +218,23 @@ export const createUnifiedTheme = (darkMode) =>
             },
             [REDUCED_MOTION_QUERY]: {
               transition: "background-color 0.2s ease",
-              "&:hover": {
-                transform: "none",
-              },
-              "&:active": {
-                transform: "none",
-              },
+              "&:hover": { transform: "none" },
+              "&:active": { transform: "none" },
             },
           },
         },
       },
 
-      // 统一对话框样式
       MuiDialog: {
         defaultProps: {
-          slots: {
-            transition: DialogGrowTransition,
-          },
-          transitionDuration: {
-            enter: 220,
-            exit: 180,
-          },
+          slots: { transition: DialogGrowTransition },
+          transitionDuration: { enter: 220, exit: 180 },
         },
         styleOverrides: {
           paper: {
-            borderRadius: 12,
+            borderRadius: RADIUS_MD,
             backgroundImage: "none",
-            border: `1px solid ${darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)"}`,
+            border: `1px solid ${borderClr(darkMode)}`,
             transformOrigin: "center top",
             willChange: "transform, opacity",
           },
@@ -280,32 +243,24 @@ export const createUnifiedTheme = (darkMode) =>
 
       MuiSnackbar: {
         defaultProps: {
-          slots: {
-            transition: SnackbarSlideTransition,
-          },
-          transitionDuration: {
-            enter: 300,
-            exit: 220,
-          },
+          slots: { transition: SnackbarSlideTransition },
+          transitionDuration: { enter: 300, exit: 220 },
         },
       },
 
-      // 统一选择器样式
       MuiSelect: {
         styleOverrides: {
           outlined: {
-            borderRadius: 8,
             backgroundColor: darkMode
               ? "rgba(255,255,255,0.02)"
               : "rgba(0,0,0,0.02)",
             "&:hover .MuiOutlinedInput-notchedOutline": {
-              borderColor: darkMode ? "#90caf9" : "#1976d2",
+              borderColor: primaryColor(darkMode),
             },
           },
         },
       },
 
-      // 统一列表项样式 - 避免多层高亮
       MuiListItem: {
         styleOverrides: {
           root: {
@@ -313,8 +268,7 @@ export const createUnifiedTheme = (darkMode) =>
             paddingBottom: 4,
             minHeight: 50,
             maxHeight: 50,
-            borderRadius: 6,
-            // 移除ListItem的hover效果，让ListItemButton处理
+            borderRadius: RADIUS_SM,
             "&:hover": {
               backgroundColor: "transparent",
             },
@@ -332,47 +286,32 @@ export const createUnifiedTheme = (darkMode) =>
         },
       },
 
-      // 统一列表按钮样式 - 统一管理交互效果
       MuiListItemButton: {
         styleOverrides: {
           root: {
-            borderRadius: 6,
+            borderRadius: RADIUS_SM,
             transition: "all 0.2s ease",
-            // 默认状态下的背景
             backgroundColor: "transparent",
-            // 悬停状态
             "&:hover": {
-              backgroundColor: darkMode
-                ? "rgba(255,255,255,0.08)"
-                : "rgba(0,0,0,0.06)",
+              backgroundColor: hoverBg(darkMode),
             },
-            // 选中状态
             "&.Mui-selected": {
-              backgroundColor: darkMode
-                ? "rgba(144, 202, 249, 0.12)"
-                : "rgba(25, 118, 210, 0.12)",
-              // 选中时的悬停效果，避免过度高亮
+              backgroundColor: selectedBg(darkMode),
               "&:hover": {
-                backgroundColor: darkMode
-                  ? "rgba(144, 202, 249, 0.16)"
-                  : "rgba(25, 118, 210, 0.16)",
+                backgroundColor: selectedHoverBg(darkMode),
               },
             },
-            // 聚焦状态
             "&.Mui-focusVisible": {
-              backgroundColor: darkMode
-                ? "rgba(144, 202, 249, 0.12)"
-                : "rgba(25, 118, 210, 0.12)",
+              backgroundColor: selectedBg(darkMode),
             },
           },
         },
       },
 
-      // 统一芯片样式
       MuiChip: {
         styleOverrides: {
           root: {
-            borderRadius: 16,
+            borderRadius: RADIUS_LG,
             fontWeight: 500,
             transition: "all 0.2s ease",
             "&:hover": {
@@ -385,7 +324,6 @@ export const createUnifiedTheme = (darkMode) =>
         },
       },
 
-      // 统一工具提示样式
       MuiTooltip: {
         defaultProps: {
           placement: "top",
@@ -396,90 +334,62 @@ export const createUnifiedTheme = (darkMode) =>
         },
         styleOverrides: {
           tooltip: {
-            borderRadius: 6,
+            borderRadius: RADIUS_SM,
             fontSize: "0.75rem",
             backgroundColor: darkMode
               ? "rgba(97, 97, 97, 0.95)"
               : "rgba(97, 97, 97, 0.9)",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            boxShadow: sh(darkMode, 2, 8, 0.3, 0.15),
           },
-          tooltipPlacementTop: {
-            marginBottom: 4,
-          },
-          tooltipPlacementBottom: {
-            marginTop: 4,
-          },
-          tooltipPlacementLeft: {
-            marginRight: 4,
-          },
-          tooltipPlacementRight: {
-            marginLeft: 4,
-          },
+          tooltipPlacementTop: { marginBottom: 4 },
+          tooltipPlacementBottom: { marginTop: 4 },
+          tooltipPlacementLeft: { marginRight: 4 },
+          tooltipPlacementRight: { marginLeft: 4 },
         },
       },
 
-      // 统一菜单样式
       MuiMenu: {
         styleOverrides: {
           paper: {
-            borderRadius: 8,
             marginTop: 4,
-            boxShadow: darkMode
-              ? "0 4px 16px rgba(0,0,0,0.4)"
-              : "0 4px 16px rgba(0,0,0,0.18)",
-            border: `1px solid ${darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)"}`,
+            boxShadow: sh(darkMode, 4, 16, 0.4, 0.18),
+            border: `1px solid ${borderClr(darkMode)}`,
           },
         },
       },
 
-      // 统一菜单项样式 - 避免多层高亮
       MuiMenuItem: {
         styleOverrides: {
           root: {
-            borderRadius: 4,
+            borderRadius: RADIUS_SM,
             margin: "2px 4px",
             transition: "all 0.2s ease",
             backgroundColor: "transparent",
-            // 悬停状态
             "&:hover": {
-              backgroundColor: darkMode
-                ? "rgba(255,255,255,0.08)"
-                : "rgba(0,0,0,0.06)",
+              backgroundColor: hoverBg(darkMode),
             },
-            // 选中状态
             "&.Mui-selected": {
-              backgroundColor: darkMode
-                ? "rgba(144, 202, 249, 0.12)"
-                : "rgba(25, 118, 210, 0.12)",
-              // 选中时的悬停效果，使用稍微深一点的颜色但避免过度高亮
+              backgroundColor: selectedBg(darkMode),
               "&:hover": {
-                backgroundColor: darkMode
-                  ? "rgba(144, 202, 249, 0.16)"
-                  : "rgba(25, 118, 210, 0.16)",
+                backgroundColor: selectedHoverBg(darkMode),
               },
             },
-            // 聚焦状态
             "&.Mui-focusVisible": {
-              backgroundColor: darkMode
-                ? "rgba(144, 202, 249, 0.12)"
-                : "rgba(25, 118, 210, 0.12)",
+              backgroundColor: selectedBg(darkMode),
             },
           },
         },
       },
 
-      // 统一标签页样式
       MuiTab: {
         styleOverrides: {
           root: {
             textTransform: "none",
             fontWeight: 500,
-            borderRadius: "8px 8px 0 0",
+            borderRadius: `${RADIUS_SM}px ${RADIUS_SM}px 0 0`,
             transition: "all 0.2s ease",
             "&:hover": {
-              backgroundColor: darkMode
-                ? "rgba(255,255,255,0.08)"
-                : "rgba(0,0,0,0.06)",
+              backgroundColor: hoverBg(darkMode),
             },
             "&.Mui-selected": {
               fontWeight: 600,
@@ -488,7 +398,6 @@ export const createUnifiedTheme = (darkMode) =>
         },
       },
 
-      // 统一标签页容器样式
       MuiTabs: {
         styleOverrides: {
           indicator: {
@@ -498,14 +407,13 @@ export const createUnifiedTheme = (darkMode) =>
         },
       },
 
-      // 统一开关样式
       MuiSwitch: {
         styleOverrides: {
           root: {
             "& .MuiSwitch-switchBase.Mui-checked": {
-              color: darkMode ? "#90caf9" : "#1976d2",
+              color: primaryColor(darkMode),
               "& + .MuiSwitch-track": {
-                backgroundColor: darkMode ? "#90caf9" : "#1976d2",
+                backgroundColor: primaryColor(darkMode),
                 opacity: 0.5,
               },
             },
@@ -519,14 +427,13 @@ export const createUnifiedTheme = (darkMode) =>
         },
       },
 
-      // 统一滑块样式
       MuiSlider: {
         styleOverrides: {
           root: {
             "& .MuiSlider-thumb": {
               boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
               "&:hover, &.Mui-focusVisible": {
-                boxShadow: `0 0 0 8px ${darkMode ? "rgba(144, 202, 249, 0.16)" : "rgba(25, 118, 210, 0.16)"}`,
+                boxShadow: `0 0 0 8px ${primaryAlpha(darkMode, 0.16)}`,
               },
             },
             "& .MuiSlider-track": {
