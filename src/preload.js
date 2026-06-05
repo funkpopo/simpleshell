@@ -1249,8 +1249,20 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 命令历史相关API
   addToCommandHistory: (command) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_ADD, command),
-  getCommandSuggestions: (input, maxResults) =>
-    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_SUGGESTIONS, input, maxResults),
+  getCommandSuggestions: (input, maxResults) => {
+    if (maxResults === undefined) {
+      return ipcRenderer.invoke(
+        IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_SUGGESTIONS,
+        input,
+      );
+    }
+
+    return ipcRenderer.invoke(
+      IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_SUGGESTIONS,
+      input,
+      maxResults,
+    );
+  },
   incrementCommandUsage: (command) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_INCREMENT_USAGE, command),
   clearCommandHistory: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_CLEAR),

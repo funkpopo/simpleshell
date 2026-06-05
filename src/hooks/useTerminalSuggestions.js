@@ -19,6 +19,8 @@ const waitForTerminalLayoutFrame = () =>
     });
   });
 
+const COMMAND_SUGGESTION_LIMIT = 10;
+
 const isUsableRect = (rect) =>
   rect &&
   Number.isFinite(rect.left) &&
@@ -41,8 +43,8 @@ export const useTerminalSuggestions = ({
   tabId,
   termRef,
   terminalRef,
-  inEditorMode,
-  isCommandExecuting,
+  inEditorModeRef,
+  isCommandExecutingRef,
   lastExecutedCommandRef,
   lastExecutedCommandTimeRef,
   sendInputToProcess,
@@ -51,9 +53,12 @@ export const useTerminalSuggestions = ({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(null);
   const [currentInput, setCurrentInput] = useState("");
-  const [suggestionsHiddenByEsc, setSuggestionsHiddenByEsc] = useState(false);
-  const [suggestionsSuppressedUntilEnter, setSuggestionsSuppressedUntilEnter] =
+  const [suggestionsHiddenByEsc, setSuggestionsHiddenByEscState] =
     useState(false);
+  const [
+    suggestionsSuppressedUntilEnter,
+    setSuggestionsSuppressedUntilEnterState,
+  ] = useState(false);
 
   const suppressionContextRef = useRef({ input: "", timestamp: 0 });
   const suggestionsSuppressedRef = useRef(false);
@@ -61,6 +66,24 @@ export const useTerminalSuggestions = ({
   const suggestionSelectedRef = useRef(false);
   const getSuggestionsRef = useRef(null);
   const suggestionRequestIdRef = useRef(0);
+
+  const setSuggestionsHiddenByEsc = useCallback((value) => {
+    const nextValue =
+      typeof value === "function"
+        ? Boolean(value(suggestionsHiddenByEscRef.current))
+        : Boolean(value);
+    suggestionsHiddenByEscRef.current = nextValue;
+    setSuggestionsHiddenByEscState(nextValue);
+  }, []);
+
+  const setSuggestionsSuppressedUntilEnter = useCallback((value) => {
+    const nextValue =
+      typeof value === "function"
+        ? Boolean(value(suggestionsSuppressedRef.current))
+        : Boolean(value);
+    suggestionsSuppressedRef.current = nextValue;
+    setSuggestionsSuppressedUntilEnterState(nextValue);
+  }, []);
 
   useEffect(() => {
     suggestionsSuppressedRef.current = suggestionsSuppressedUntilEnter;
@@ -157,7 +180,12 @@ export const useTerminalSuggestions = ({
     async (input) => {
       const requestId = suggestionRequestIdRef.current + 1;
       suggestionRequestIdRef.current = requestId;
-      if (!input || input.trim() === "" || inEditorMode || isCommandExecuting) {
+      if (
+        !input ||
+        input.trim() === "" ||
+        inEditorModeRef.current ||
+        isCommandExecutingRef.current
+      ) {
         setSuggestions([]);
         setShowSuggestions(false);
         return;
@@ -183,7 +211,10 @@ export const useTerminalSuggestions = ({
       try {
         if (window.terminalAPI && window.terminalAPI.getCommandSuggestions) {
           const response =
-            await window.terminalAPI.getCommandSuggestions(trimmedInput);
+            await window.terminalAPI.getCommandSuggestions(
+              trimmedInput,
+              COMMAND_SUGGESTION_LIMIT,
+            );
           const commandSuggestions = response?.success
             ? response.suggestions
             : [];
@@ -213,7 +244,7 @@ export const useTerminalSuggestions = ({
                 if (!aStartsWith && bStartsWith) return 1;
                 return (b.count || 0) - (a.count || 0);
               })
-              .slice(0, 10);
+              .slice(0, COMMAND_SUGGESTION_LIMIT);
 
             if (filteredSuggestions.length > 0) {
               await waitForTerminalLayoutFrame();
@@ -250,8 +281,8 @@ export const useTerminalSuggestions = ({
       }
     },
     [
-      inEditorMode,
-      isCommandExecuting,
+      inEditorModeRef,
+      isCommandExecutingRef,
       lastExecutedCommandRef,
       lastExecutedCommandTimeRef,
       updateCursorPosition,
@@ -269,16 +300,16 @@ export const useTerminalSuggestions = ({
         input &&
         !suggestionsHiddenByEsc &&
         !suggestionsSuppressedUntilEnter &&
-        !isCommandExecuting
+        !isCommandExecutingRef.current
       ) {
         getSuggestions(input);
       }
     },
     [
       getSuggestions,
+      isCommandExecutingRef,
       suggestionsHiddenByEsc,
       suggestionsSuppressedUntilEnter,
-      isCommandExecuting,
     ],
   );
 

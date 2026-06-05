@@ -544,10 +544,12 @@ const WebTerminal = ({
   const [selectedText, setSelectedText] = useState("");
   const searchAddonRef = useRef(null);
   const [searchAddonVersion, setSearchAddonVersion] = useState(0);
-  const [inEditorMode, setInEditorMode] = useState(false);
+  const [, setInEditorMode] = useState(false);
 
   // 命令执行状态跟踪
-  const [isCommandExecuting, setIsCommandExecuting] = useState(false);
+  const [, setIsCommandExecuting] = useState(false);
+  const inEditorModeRef = useRef(false);
+  const isCommandExecutingRef = useRef(false);
   const lastExecutedCommandTimeRef = useRef(0);
   const lastExecutedCommandRef = useRef("");
   const pendingSystemShortcutRecoveryRef = useRef(false);
@@ -558,6 +560,16 @@ const WebTerminal = ({
     command: "",
     capturedAt: 0,
   });
+
+  const setEditorModeState = useCallback((nextInEditorMode) => {
+    const normalizedInEditorMode = Boolean(nextInEditorMode);
+    inEditorModeRef.current = normalizedInEditorMode;
+    setInEditorMode((previousInEditorMode) =>
+      previousInEditorMode === normalizedInEditorMode
+        ? previousInEditorMode
+        : normalizedInEditorMode,
+    );
+  }, []);
 
   const {
     showSearchBar,
@@ -601,23 +613,12 @@ const WebTerminal = ({
     tabId,
     termRef,
     terminalRef,
-    inEditorMode,
-    isCommandExecuting,
+    inEditorModeRef,
+    isCommandExecutingRef,
     lastExecutedCommandRef,
     lastExecutedCommandTimeRef,
     sendInputToProcess,
   });
-
-  const inEditorModeRef = useRef(false);
-  const isCommandExecutingRef = useRef(false);
-
-  useEffect(() => {
-    inEditorModeRef.current = inEditorMode;
-  }, [inEditorMode]);
-
-  useEffect(() => {
-    isCommandExecutingRef.current = isCommandExecuting;
-  }, [isCommandExecuting]);
 
   const attachTerminalToContainer = useCallback(
     (termInstance = null) => {
@@ -862,7 +863,10 @@ const WebTerminal = ({
     }
 
     if (promptStateChanged || commandRunningChanged) {
-      setIsCommandExecuting(state.commandRunning && !state.promptReady);
+      const nextIsCommandExecuting =
+        state.commandRunning && !state.promptReady;
+      isCommandExecutingRef.current = nextIsCommandExecuting;
+      setIsCommandExecuting(nextIsCommandExecuting);
     }
   }, []);
 
@@ -874,6 +878,7 @@ const WebTerminal = ({
     };
     clearPendingWrappedInputRefresh(termRef.current);
 
+    isCommandExecutingRef.current = false;
     setIsCommandExecuting(false);
   }, []);
 
@@ -989,7 +994,7 @@ const WebTerminal = ({
           !inEditorModeRef.current &&
           !suggestionsHiddenByEsc &&
           !suggestionsSuppressedUntilEnter &&
-          !isCommandExecuting
+          !isCommandExecutingRef.current
         ) {
           getSuggestions(currentInput);
         } else if (!promptReady || !currentInput.trim()) {
@@ -1004,7 +1009,6 @@ const WebTerminal = ({
       currentInput,
       focusTerminalInput,
       getSuggestions,
-      isCommandExecuting,
       scheduleTerminalRedraw,
       setShowSuggestions,
       setSuggestions,
@@ -1122,7 +1126,7 @@ const WebTerminal = ({
           inEditorMode = true;
           clearPendingWrappedInputRefresh(term);
           applyPromptTrackingState({ promptReady: false });
-          setInEditorMode(true);
+          setEditorModeState(true);
           scheduleTerminalLayoutSyncRef.current("alternate-buffer-force", {
             immediate: true,
           });
@@ -1140,7 +1144,7 @@ const WebTerminal = ({
           clearPendingWrappedInputRefresh(term);
           if (inEditorMode) {
             inEditorMode = false;
-            setInEditorMode(false);
+            setEditorModeState(false);
 
             // 通知主进程编辑器模式状态变更
             if (processId && window.terminalAPI?.notifyEditorModeChange) {
@@ -1452,6 +1456,7 @@ const WebTerminal = ({
             (!term.buffer || typeof term.buffer.onBufferChange !== "function")
           ) {
             inEditorMode = true;
+            setEditorModeState(true);
 
             // 通知主进程编辑器模式状态变更
             if (processId && window.terminalAPI?.notifyEditorModeChange) {
@@ -1594,6 +1599,7 @@ const WebTerminal = ({
             // 检查是否包含典型的shell提示符
             if (/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*$/.test(line)) {
               inEditorMode = false;
+              setEditorModeState(false);
 
               // 通知主进程编辑器模式状态变更
               if (processId && window.terminalAPI?.notifyEditorModeChange) {
@@ -3801,8 +3807,8 @@ const WebTerminal = ({
             showSuggestions,
             suggestions,
             currentInput,
-            inEditorMode,
-            isCommandExecuting,
+            inEditorMode: inEditorModeRef.current,
+            isCommandExecuting: isCommandExecutingRef.current,
           }) && Boolean(cursorPosition)
         }
         position={cursorPosition}

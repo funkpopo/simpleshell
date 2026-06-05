@@ -9,6 +9,14 @@ function readSource(relativePath) {
 }
 
 const {
+  IPC_REQUEST_CHANNELS,
+  getChannelDefinition,
+} = require(path.join(ROOT, "src/core/ipc/schema/channels.js"));
+const { validateSchema } = require(path.join(
+  ROOT,
+  "src/core/ipc/schema/validator.js",
+));
+const {
   isSuggestionTrackingContext,
   shouldDisplayCommandSuggestions,
   shouldIgnoreCommandSuggestionKeyEvent,
@@ -20,6 +28,10 @@ const webTerminalSource = readSource("src/components/WebTerminal.jsx");
 const commandSuggestionSource = readSource(
   "src/components/CommandSuggestion.jsx",
 );
+const commandSuggestionHookSource = readSource(
+  "src/hooks/useTerminalSuggestions.js",
+);
+const preloadSource = readSource("src/preload.js");
 
 function createMockTerm({ type = "normal" } = {}) {
   return {
@@ -107,6 +119,103 @@ function testSuggestionWindowVisibilityTracksRealInputState() {
       isCommandExecuting: false,
     }),
     false,
+  );
+}
+
+function testSuggestionLookupUsesSynchronousTerminalStateRefs() {
+  assert.match(
+    webTerminalSource,
+    /useTerminalSuggestions\(\{[\s\S]*inEditorModeRef,[\s\S]*isCommandExecutingRef,/,
+    "WebTerminal must pass live terminal state refs into the suggestion hook.",
+  );
+
+  assert.match(
+    webTerminalSource,
+    /const nextIsCommandExecuting\s*=[\s\S]*state\.commandRunning && !state\.promptReady;[\s\S]*isCommandExecutingRef\.current = nextIsCommandExecuting;[\s\S]*setIsCommandExecuting\(nextIsCommandExecuting\)/,
+    "Prompt tracking must update the executing ref before React state commits.",
+  );
+
+  assert.match(
+    webTerminalSource,
+    /const setEditorModeState = useCallback\([\s\S]*inEditorModeRef\.current = normalizedInEditorMode;[\s\S]*setInEditorMode/,
+    "Editor-mode changes must update the editor-mode ref before React state commits.",
+  );
+
+  assert.doesNotMatch(
+    webTerminalSource,
+    /useEffect\(\(\) => \{\s*(?:inEditorModeRef|isCommandExecutingRef)\.current = (?:inEditorMode|isCommandExecuting);[\s\S]*?\}, \[(?:inEditorMode|isCommandExecuting)\]\)/,
+    "Live suggestion refs must not be rewritten later from stale React state effects.",
+  );
+
+  assert.match(
+    commandSuggestionHookSource,
+    /inEditorModeRef\.current[\s\S]*isCommandExecutingRef\.current/,
+    "Suggestion lookup must read the live editor/executing refs.",
+  );
+
+  assert.doesNotMatch(
+    commandSuggestionHookSource,
+    /\binEditorMode\b(?!Ref)|\bisCommandExecuting\b(?!Ref)/,
+    "Suggestion hook must not gate lookups on stale React state values.",
+  );
+}
+
+function testCommandSuggestionIpcOmitsUndefinedLimit() {
+  const definition = getChannelDefinition(
+    IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_SUGGESTIONS,
+  );
+
+  assert.equal(
+    validateSchema(definition.requestSchema, ["g"]).valid,
+    true,
+    "Command suggestion IPC must allow omitting maxResults.",
+  );
+  assert.equal(
+    validateSchema(definition.requestSchema, ["g", 10]).valid,
+    true,
+    "Command suggestion IPC must allow a numeric maxResults.",
+  );
+  assert.equal(
+    validateSchema(definition.requestSchema, ["g", undefined]).valid,
+    false,
+    "Command suggestion IPC must reject an undefined maxResults argument.",
+  );
+
+  assert.match(
+    preloadSource,
+    /getCommandSuggestions:\s*\(input,\s*maxResults\)\s*=>\s*\{[\s\S]*if\s*\(\s*maxResults === undefined\s*\)\s*\{[\s\S]*ipcRenderer\.invoke\(\s*IPC_REQUEST_CHANNELS\.COMMAND_HISTORY_GET_SUGGESTIONS,\s*input,\s*\)/,
+    "Preload must omit maxResults from the IPC argument list when it is undefined.",
+  );
+
+  assert.match(
+    commandSuggestionHookSource,
+    /const COMMAND_SUGGESTION_LIMIT = 10;/,
+    "Command suggestion lookups must use an explicit numeric result limit.",
+  );
+  assert.match(
+    commandSuggestionHookSource,
+    /getCommandSuggestions\(\s*trimmedInput,\s*COMMAND_SUGGESTION_LIMIT,\s*\)/,
+    "WebTerminal suggestion lookup must pass a numeric maxResults value.",
+  );
+}
+
+function testSuggestionSuppressionFlagsUpdateRefsSynchronously() {
+  assert.match(
+    commandSuggestionHookSource,
+    /const setSuggestionsHiddenByEsc = useCallback\([\s\S]*suggestionsHiddenByEscRef\.current = nextValue;[\s\S]*setSuggestionsHiddenByEscState\(nextValue\)/,
+    "Esc-hidden suggestion state must update the live ref before React state commits.",
+  );
+
+  assert.match(
+    commandSuggestionHookSource,
+    /const setSuggestionsSuppressedUntilEnter = useCallback\([\s\S]*suggestionsSuppressedRef\.current = nextValue;[\s\S]*setSuggestionsSuppressedUntilEnterState\(nextValue\)/,
+    "Suppressed-until-enter suggestion state must update the live ref before React state commits.",
+  );
+
+  assert.match(
+    webTerminalSource,
+    /setSuggestionsSuppressedUntilEnter\(false\);[\s\S]*setSuggestionsHiddenByEsc\(false\);[\s\S]*!suggestionsHiddenByEscRef\.current &&[\s\S]*!suggestionsSuppressedRef\.current/,
+    "Continuing input after suppression must clear live refs before checking whether to request suggestions.",
   );
 }
 
@@ -218,6 +327,18 @@ function run() {
     [
       "suggestion window visibility follows actual input state",
       testSuggestionWindowVisibilityTracksRealInputState,
+    ],
+    [
+      "suggestion lookup uses synchronous terminal state refs",
+      testSuggestionLookupUsesSynchronousTerminalStateRefs,
+    ],
+    [
+      "command suggestion IPC omits undefined limit",
+      testCommandSuggestionIpcOmitsUndefinedLimit,
+    ],
+    [
+      "suggestion suppression flags update refs synchronously",
+      testSuggestionSuppressionFlagsUpdateRefsSynchronously,
     ],
     [
       "IME and system keys do not drive command suggestion window logic",
