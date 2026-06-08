@@ -12,12 +12,14 @@ const DOWNLOAD_CONNECTION_TIMEOUT = 30000;
 const DOWNLOAD_DATA_TIMEOUT = 60000;
 const MAX_REDIRECTS = 5;
 const PRODUCT_NAME = "SimpleShell";
+const UPDATE_TEMP_DIR_NAME = "updates";
 const UPDATE_CHECK_URL =
   "https://api.github.com/repos/funkpopo/simpleshell/releases/latest";
 const INSTALLER_META_FILE = "latest-installer-meta.json";
 const UPDATE_ERROR_FILE = "latest-update-error.json";
 const INSTALLER_LOG_FILE = "latest-install.log";
-const INSTALLER_SCRIPT_FILE = "install-and-restart.ps1";
+const LEGACY_INSTALLER_SCRIPT_FILE = "install-and-restart.ps1";
+const WINDOWS_INSTALLER_ARGS = ["/S"];
 const TRUSTED_DOWNLOAD_HOSTS = new Set([
   "github.com",
   "objects.githubusercontent.com",
@@ -30,8 +32,22 @@ const SECURITY_UPDATE_REGEX =
 const IMPORTANT_UPDATE_REGEX =
   /\b(critical|important|breaking|urgent|high priority|重要|紧急|关键|破坏性)\b/i;
 
-function toPowerShellString(value) {
-  return `'${String(value ?? "").replace(/'/g, "''")}'`;
+function resolveDefaultUpdateTempDir(appInstance) {
+  if (appInstance?.isPackaged) {
+    try {
+      const userDataPath = appInstance.getPath?.("userData");
+      if (userDataPath) {
+        return path.join(userDataPath, UPDATE_TEMP_DIR_NAME);
+      }
+    } catch (error) {
+      logToFile(
+        `Failed to resolve packaged update directory: ${error.message}`,
+        "WARN",
+      );
+    }
+  }
+
+  return path.join(getTempDirectory(appInstance), UPDATE_TEMP_DIR_NAME);
 }
 
 function normalizeVersionInput(value) {
@@ -87,12 +103,14 @@ class UpdateService {
     this.execFile = options.execFile || execFile;
     this.platform = options.platform || process.platform;
     this.productName = options.productName || PRODUCT_NAME;
-    this.tempDir =
-      options.tempDir || path.join(getTempDirectory(this.app), "updates");
+    this.tempDir = options.tempDir || resolveDefaultUpdateTempDir(this.app);
     this.installerMetaPath = path.join(this.tempDir, INSTALLER_META_FILE);
     this.updateErrorPath = path.join(this.tempDir, UPDATE_ERROR_FILE);
     this.installerLogPath = path.join(this.tempDir, INSTALLER_LOG_FILE);
-    this.installerScriptPath = path.join(this.tempDir, INSTALLER_SCRIPT_FILE);
+    this.legacyInstallerScriptPath = path.join(
+      this.tempDir,
+      LEGACY_INSTALLER_SCRIPT_FILE,
+    );
     this.currentVersion =
       options.currentVersion ||
       (typeof this.app.getVersion === "function"
@@ -224,7 +242,7 @@ class UpdateService {
       path.basename(this.installerMetaPath),
       path.basename(this.updateErrorPath),
       path.basename(this.installerLogPath),
-      path.basename(this.installerScriptPath),
+      path.basename(this.legacyInstallerScriptPath),
     ]);
 
     if (controlledFiles.has(normalizedFileName)) {
@@ -1186,7 +1204,10 @@ class UpdateService {
   }
 
   async cleanupInstallerRuntimeFiles() {
-    const runtimeFiles = [this.installerScriptPath, this.installerLogPath];
+    const runtimeFiles = [
+      this.legacyInstallerScriptPath,
+      this.installerLogPath,
+    ];
 
     for (const runtimeFile of runtimeFiles) {
       try {
@@ -1410,109 +1431,70 @@ class UpdateService {
    * Windows更新安装
    */
   async installWindowsUpdate(filePath) {
-    const executablePath = this.resolveCurrentExecutablePath();
-    const scriptContent = this.buildWindowsInstallScript(
-      filePath,
-      executablePath,
-    );
-    await fsp.writeFile(this.installerScriptPath, scriptContent, "utf8");
+    logToFile(`Scheduling Windows installer: ${filePath}`, "INFO");
+    await this.appendInstallerLog(`Scheduling Windows installer: ${filePath}`);
 
-    return new Promise((resolve, reject) => {
+    if (typeof this.app.relaunch === "function") {
+      this.app.relaunch({
+        execPath: filePath,
+        args: WINDOWS_INSTALLER_ARGS,
+      });
+      await this.appendInstallerLog(
+        "Windows installer scheduled with Electron relaunch",
+      );
       logToFile(
-        `Starting Windows update helper: ${this.installerScriptPath}`,
+        "Windows installer scheduled to run after application exit",
         "INFO",
       );
+      this.scheduleQuitForUpdateInstallation();
+      return;
+    }
 
-      const installer = this.spawn(
-        "powershell.exe",
-        [
-          "-NoLogo",
-          "-NoProfile",
-          "-NonInteractive",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-File",
-          this.installerScriptPath,
-        ],
-        {
+    await this.spawnWindowsInstaller(filePath);
+    this.scheduleQuitForUpdateInstallation();
+  }
+
+  spawnWindowsInstaller(filePath) {
+    return new Promise((resolve, reject) => {
+      let installer;
+      try {
+        installer = this.spawn(filePath, WINDOWS_INSTALLER_ARGS, {
           detached: true,
           stdio: "ignore",
           windowsHide: true,
-        },
-      );
+        });
+      } catch (error) {
+        logToFile(`Windows installer spawn error: ${error.message}`, "ERROR");
+        reject(error);
+        return;
+      }
 
       installer.on("error", (error) => {
-        logToFile(
-          `Windows update helper spawn error: ${error.message}`,
-          "ERROR",
-        );
+        logToFile(`Windows installer spawn error: ${error.message}`, "ERROR");
         reject(error);
       });
 
-      installer.unref();
+      if (typeof installer.unref === "function") {
+        installer.unref();
+      }
+
       logToFile(
-        "Windows installer started, preparing to quit application",
+        "Windows installer process started, preparing to quit application",
         "INFO",
       );
       resolve();
-
-      setTimeout(() => {
-        logToFile("Force exiting application for update installation", "INFO");
-        if (typeof this.app.exit === "function") {
-          this.app.exit(0);
-        } else if (typeof this.app.quit === "function") {
-          this.app.quit();
-        }
-      }, 500);
     });
   }
 
-  resolveCurrentExecutablePath() {
-    try {
-      if (typeof this.app.getPath === "function") {
-        const exePath = this.app.getPath("exe");
-        if (exePath) {
-          return exePath;
-        }
+  scheduleQuitForUpdateInstallation() {
+    setTimeout(() => {
+      logToFile("Exiting application for update installation", "INFO");
+      if (typeof this.app.exit === "function") {
+        this.app.exit(0);
+      } else if (typeof this.app.quit === "function") {
+        this.app.quit();
       }
-    } catch {
-      // Fall back to the Node/Electron executable path below.
-    }
-
-    return process.execPath;
-  }
-
-  buildWindowsInstallScript(installerPath, executablePath) {
-    const psInstaller = toPowerShellString(installerPath);
-    const psExecutable = toPowerShellString(executablePath);
-    const psLog = toPowerShellString(this.installerLogPath);
-
-    return [
-      "$ErrorActionPreference = 'Stop'",
-      `$log = ${psLog}`,
-      "function Write-UpdateLog($message) {",
-      "  $stamp = (Get-Date).ToUniversalTime().ToString('o')",
-      '  Add-Content -LiteralPath $log -Encoding UTF8 -Value "[$stamp] $message"',
-      "}",
-      `Write-UpdateLog 'Helper started for ${this.productName}'`,
-      "Start-Sleep -Seconds 1",
-      `$installer = ${psInstaller}`,
-      `$exe = ${psExecutable}`,
-      'Write-UpdateLog "Launching installer: $installer"',
-      "$process = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru",
-      "$exitCode = [int]$process.ExitCode",
-      'Write-UpdateLog "Installer exit code: $exitCode"',
-      "if ($exitCode -ne 0) { exit $exitCode }",
-      "Start-Sleep -Seconds 2",
-      "if (Test-Path -LiteralPath $exe) {",
-      '  Write-UpdateLog "Restarting application: $exe"',
-      "  Start-Process -FilePath $exe | Out-Null",
-      "} else {",
-      '  Write-UpdateLog "Application executable not found for restart: $exe"',
-      "}",
-      "exit 0",
-      "",
-    ].join("\r\n");
+    }, 500);
   }
 
   /**

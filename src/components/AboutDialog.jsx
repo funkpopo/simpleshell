@@ -23,7 +23,6 @@ import {
   Update as UpdateIcon,
   Check as CheckIcon,
   Cancel as CancelIcon,
-  Replay as ReplayIcon,
   Schedule as ScheduleIcon,
 } from "@mui/icons-material";
 
@@ -206,14 +205,6 @@ const RELEASE_NOTE_ALLOWED_ELEMENTS = [
   "input",
 ];
 
-const normalizeVersionString = (value) => {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  return value.trim().replace(/^v/i, "");
-};
-
 const formatBytes = (value) => {
   const bytes = Number(value);
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -250,21 +241,6 @@ const formatDateTime = (value, locale) => {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-};
-
-const doesInstallerMatchUpdate = (installerInfo, nextUpdateInfo) => {
-  const installerVersion = normalizeVersionString(
-    installerInfo?.installerVersion,
-  );
-  const latestVersion = normalizeVersionString(nextUpdateInfo?.latestVersion);
-
-  return Boolean(
-    installerInfo?.available &&
-    nextUpdateInfo?.hasUpdate &&
-    installerVersion &&
-    latestVersion &&
-    installerVersion === latestVersion,
-  );
 };
 
 const normalizeSafeMarkdownHref = (href) => {
@@ -315,32 +291,26 @@ const AboutDialog = memo(function AboutDialog({
   const [error, setError] = useState("");
   const lastHandledCheckUpdateSignalRef = useRef(0);
 
-  const downloadedInstallerMatchesUpdate = doesInstallerMatchUpdate(
-    downloadedInstallerInfo,
-    updateInfo,
-  );
-  const canInstallDownloadedUpdate =
-    downloadedInstallerInfo?.available &&
-    (updateStatus === "downloaded" ||
-      (updateStatus !== "checking" &&
-        updateStatus !== "downloading" &&
-        updateStatus !== "installing" &&
-        (!updateInfo?.hasUpdate || downloadedInstallerMatchesUpdate)));
+  const hasDownloadedInstaller = downloadedInstallerInfo?.available === true;
+  const updateIsBusy =
+    updateStatus === "checking" ||
+    updateStatus === "downloading" ||
+    updateStatus === "installing";
+  const displayUpdateInfo = hasDownloadedInstaller
+    ? downloadedInstallerInfo
+    : updateInfo;
+  const canInstallDownloadedUpdate = hasDownloadedInstaller && !updateIsBusy;
   const shouldShowDownloadedInstallerNotice =
-    downloadedInstallerInfo?.available &&
-    updateStatus !== "downloaded" &&
-    updateStatus !== "downloading" &&
-    updateStatus !== "installing" &&
-    (!updateInfo?.hasUpdate || downloadedInstallerMatchesUpdate);
+    hasDownloadedInstaller && updateStatus !== "downloaded" && !updateIsBusy;
   const updateVersion =
-    updateInfo?.latestVersion ||
-    downloadedInstallerInfo?.installerVersion ||
+    displayUpdateInfo?.installerVersion ||
+    displayUpdateInfo?.latestVersion ||
     "";
   const downloadSizeText = formatBytes(
-    updateInfo?.downloadSize || downloadedInstallerInfo?.size,
+    displayUpdateInfo?.size || displayUpdateInfo?.downloadSize,
   );
   const releaseDateText = formatDateTime(
-    updateInfo?.publishedAt || downloadedInstallerInfo?.publishedAt,
+    displayUpdateInfo?.publishedAt,
     i18n.language,
   );
   const downloadedText = formatBytes(downloadDetails.downloaded);
@@ -348,15 +318,11 @@ const AboutDialog = memo(function AboutDialog({
     downloadDetails.total || updateInfo?.downloadSize || 0,
   );
   const downloadSpeedText = formatBytes(downloadDetails.speedBytesPerSecond);
-  const updateSeverity =
-    updateInfo?.severity || downloadedInstallerInfo?.severity || "normal";
-  const shouldShowSecurityChip =
-    updateInfo?.isSecurityUpdate === true ||
-    downloadedInstallerInfo?.isSecurityUpdate === true;
+  const updateSeverity = displayUpdateInfo?.severity || "normal";
+  const shouldShowSecurityChip = displayUpdateInfo?.isSecurityUpdate === true;
   const shouldShowImportantChip =
     !shouldShowSecurityChip &&
-    (updateInfo?.isImportantUpdate === true ||
-      downloadedInstallerInfo?.isImportantUpdate === true ||
+    (displayUpdateInfo?.isImportantUpdate === true ||
       updateSeverity === "important");
   const lastUpdateError = downloadedInstallerInfo?.lastError;
   const shouldShowFailureProtectionNotice = Boolean(
@@ -501,14 +467,11 @@ const AboutDialog = memo(function AboutDialog({
       if (result.success) {
         setUpdateInfo(result.updateInfo);
         setUpdateStatus(
-          result.updateInfo.hasUpdate
-            ? doesInstallerMatchUpdate(
-                downloadedInstallerInfo,
-                result.updateInfo,
-              )
-              ? "downloaded"
-              : "available"
-            : "upToDate",
+          downloadedInstallerInfo?.available
+            ? "downloaded"
+            : result.updateInfo.hasUpdate
+              ? "available"
+              : "upToDate",
         );
       } else {
         setError(result.error || t("update.errors.checkFailed"));
@@ -924,7 +887,7 @@ const AboutDialog = memo(function AboutDialog({
         disabled={updateStatus === "installing"}
         startIcon={<UpdateIcon />}
       >
-        {t("update.installAndRestart")}
+        {t("update.installUpdate")}
       </Button>
     ) : null;
 
@@ -959,17 +922,17 @@ const AboutDialog = memo(function AboutDialog({
                 ? t("update.retryCheck")
                 : t("about.checkUpdateButton")}
             </Button>
-            {updateInfo?.hasUpdate ? (
+            {canInstallDownloadedUpdate ? installButton : null}
+            {updateInfo?.hasUpdate && !canInstallDownloadedUpdate ? (
               <Button
-                variant={canInstallDownloadedUpdate ? "outlined" : "contained"}
+                variant="contained"
                 onClick={downloadUpdate}
                 disabled={isDownloading}
-                startIcon={<ReplayIcon />}
+                startIcon={<DownloadIcon />}
               >
-                {t("update.retryDownload")}
+                {t("update.download")}
               </Button>
             ) : null}
-            {installButton}
             {remindLaterButton}
           </>
         );
@@ -984,14 +947,18 @@ const AboutDialog = memo(function AboutDialog({
       case "available":
         return (
           <>
-            <Button
-              variant="contained"
-              onClick={downloadUpdate}
-              disabled={isDownloading}
-              startIcon={<DownloadIcon />}
-            >
-              {t("update.download")}
-            </Button>
+            {canInstallDownloadedUpdate ? (
+              installButton
+            ) : (
+              <Button
+                variant="contained"
+                onClick={downloadUpdate}
+                disabled={isDownloading}
+                startIcon={<DownloadIcon />}
+              >
+                {t("update.download")}
+              </Button>
+            )}
             {remindLaterButton}
           </>
         );

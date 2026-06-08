@@ -47,6 +47,37 @@ if (!gotTheLock) {
 
 // 处理Squirrel启动
 if (require("electron-squirrel-startup")) {
+  const updateService = require("./core/update/updateService");
+  let cleanupStarted = false;
+  let cleanupCompleted = false;
+  const cleanupBeforeSquirrelQuit = (event) => {
+    if (cleanupCompleted) {
+      return;
+    }
+
+    event.preventDefault();
+    if (cleanupStarted) {
+      return;
+    }
+
+    cleanupStarted = true;
+    Promise.race([
+      updateService.cleanupConsumedInstaller(),
+      new Promise((resolve) => setTimeout(resolve, 10000)),
+    ])
+      .catch((error) => {
+        logToFile(
+          `Squirrel update installer cleanup failed: ${error.message}`,
+          "WARN",
+        );
+      })
+      .finally(() => {
+        cleanupCompleted = true;
+        app.removeListener("before-quit", cleanupBeforeSquirrelQuit);
+        app.quit();
+      });
+  };
+  app.on("before-quit", cleanupBeforeSquirrelQuit);
   app.quit();
 }
 

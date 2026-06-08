@@ -1132,6 +1132,7 @@
       "downloadSize": "Download Size",
       "download": "Download Update",
       "installNow": "Install Now",
+      "installUpdate": "Install Update",
       "installAndRestart": "Install and Restart",
       "retryCheck": "Retry Check",
       "retryDownload": "Retry Download",
@@ -1144,7 +1145,7 @@
       "downloadProgress": "Download progress: {{percent}}%",
       "downloadBytes": "{{downloaded}} of {{total}} downloaded",
       "downloadSpeed": "{{speed}}",
-      "installRestartHint": "SimpleShell will launch the installer, restart the app, and clean up the old package after the new version starts.",
+      "installRestartHint": "SimpleShell will launch the installer and exit. The old package is cleaned up when the new version starts.",
       "failureProtection": "The last update step failed: {{error}}. The downloaded package was kept so you can retry. Installer log: {{logPath}}",
       "errors": {
         "checkFailed": "Failed to check for updates",
