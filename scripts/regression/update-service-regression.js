@@ -483,7 +483,41 @@ async function testOfflineRecovery() {
   }
 }
 
-async function testWindowsInstallerRunsHiddenPowerShellScript() {
+async function testWindowsInstallerSchedulesTrustedPackageWithRelaunch() {
+  const context = withUpdateService();
+  try {
+    const { service } = context;
+    const installerPath = path.join(service.tempDir, "SimpleShell-Setup.exe");
+    fs.mkdirSync(service.tempDir, { recursive: true });
+    fs.writeFileSync(installerPath, "installer");
+
+    let relaunchOptions = null;
+    let quitScheduled = false;
+    service.app.relaunch = (options) => {
+      relaunchOptions = options;
+    };
+    service.scheduleQuitForUpdateInstallation = () => {
+      quitScheduled = true;
+    };
+
+    await service.installWindowsUpdate(installerPath);
+
+    assert.deepEqual(relaunchOptions, {
+      execPath: installerPath,
+      args: ["/S"],
+    });
+    assert.equal(quitScheduled, true);
+    assert.equal(
+      fs.existsSync(path.join(service.tempDir, "install-and-restart.ps1")),
+      false,
+      "Windows update must not generate a PowerShell helper script",
+    );
+  } finally {
+    context.restore();
+  }
+}
+
+async function testWindowsInstallerFallbackSpawnsPackageDirectly() {
   const context = withUpdateService();
   try {
     const { service } = context;
@@ -492,35 +526,76 @@ async function testWindowsInstallerRunsHiddenPowerShellScript() {
     fs.writeFileSync(installerPath, "installer");
 
     let spawnCall = null;
+    let quitScheduled = false;
     const child = new EventEmitter();
     child.unref = () => {};
+    service.app.relaunch = undefined;
     service.spawn = (command, args, options) => {
       spawnCall = { command, args, options };
       return child;
     };
+    service.scheduleQuitForUpdateInstallation = () => {
+      quitScheduled = true;
+    };
 
     await service.installWindowsUpdate(installerPath);
 
-    assert.equal(spawnCall.command, "powershell.exe");
-    assert.deepEqual(spawnCall.args, [
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      service.installerScriptPath,
-    ]);
+    assert.equal(spawnCall.command, installerPath);
+    assert.notEqual(path.basename(spawnCall.command).toLowerCase(), "cmd.exe");
+    assert.notEqual(
+      path.basename(spawnCall.command).toLowerCase(),
+      "powershell.exe",
+    );
+    assert.deepEqual(spawnCall.args, ["/S"]);
     assert.equal(spawnCall.options.windowsHide, true);
     assert.equal(spawnCall.options.detached, true);
     assert.equal(spawnCall.options.stdio, "ignore");
-    assert.equal(path.extname(service.installerScriptPath), ".ps1");
+    assert.equal(quitScheduled, true);
+  } finally {
+    context.restore();
+  }
+}
 
-    const script = fs.readFileSync(service.installerScriptPath, "utf8");
-    assert.match(script, /\$ErrorActionPreference = 'Stop'/);
-    assert.match(script, /Start-Process -FilePath \$installer/);
-    assert.doesNotMatch(script, /powershell\.exe/i);
-    assert.doesNotMatch(script, /cmd\.exe/i);
+async function testConsumedInstallerIsCleanedAfterUpdate() {
+  const context = withUpdateService();
+  try {
+    const { service } = context;
+    service.currentVersion = "1.0.1";
+    await service.ensureTempDir();
+
+    const installerBuffer = Buffer.from("installed update package");
+    const installerPath = path.join(
+      service.tempDir,
+      "SimpleShell-Setup-1.0.1.exe",
+    );
+    const legacyScriptPath = path.join(
+      service.tempDir,
+      "install-and-restart.ps1",
+    );
+    fs.writeFileSync(installerPath, installerBuffer);
+    fs.writeFileSync(service.installerLogPath, "install log");
+    fs.writeFileSync(legacyScriptPath, "legacy helper");
+
+    await service.saveInstallerMeta({
+      filePath: installerPath,
+      sha256: sha256(installerBuffer),
+      expectedSha256: sha256(installerBuffer),
+      version: "1.0.1",
+      downloadedAt: new Date().toISOString(),
+      sourceUrl:
+        "https://github.com/funkpopo/simpleshell/releases/download/v1.0.1/SimpleShell-Setup.exe",
+      size: installerBuffer.length,
+      status: "install-launched",
+    });
+    await service.recordUpdateError("install", new Error("previous failure"));
+
+    await service.cleanupConsumedInstaller();
+
+    assert.equal(fs.existsSync(installerPath), false);
+    assert.equal(fs.existsSync(service.installerMetaPath), false);
+    assert.equal(fs.existsSync(service.updateErrorPath), false);
+    assert.equal(fs.existsSync(service.installerLogPath), false);
+    assert.equal(fs.existsSync(legacyScriptPath), false);
   } finally {
     context.restore();
   }
@@ -539,8 +614,16 @@ async function run() {
     ["cancel download", testCancelDownload],
     ["offline recovery", testOfflineRecovery],
     [
-      "Windows installer uses hidden PowerShell script",
-      testWindowsInstallerRunsHiddenPowerShellScript,
+      "Windows installer schedules trusted package with relaunch",
+      testWindowsInstallerSchedulesTrustedPackageWithRelaunch,
+    ],
+    [
+      "Windows installer fallback spawns package directly",
+      testWindowsInstallerFallbackSpawnsPackageDirectly,
+    ],
+    [
+      "consumed installer is cleaned after update",
+      testConsumedInstallerIsCleanedAfterUpdate,
     ],
   ];
 
