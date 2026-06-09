@@ -126,35 +126,6 @@
         "passwordMismatch": "两次输入的主密码不一致",
         "updateFailed": "更新主密码设置失败"
       },
-      "localData": {
-        "title": "清除本机数据",
-        "description": "清除生产目录 config.json 中的配置记录，以及本机临时目录中的缓存、快照、外部编辑临时文件、日志和 AI 记忆文件。换机器使用仍只需要复制生产目录下的 config.json；AI 记忆保留在 temp/mem.json，不写入 config.json。",
-        "destructive": "不可撤销",
-        "clear": "清除所选数据",
-        "clearing": "正在清除...",
-        "cancel": "取消",
-        "confirm": "确认清除",
-        "confirmTitle": "确认清除本机数据",
-        "confirmMessage": "将清除以下所选数据，此操作不可撤销。",
-        "selectionSeparator": "、",
-        "clearSuccess": "本机数据已清除",
-        "clearFailed": "清除本机数据失败",
-        "dialogUnavailable": "消息确认对话框不可用",
-        "clearUnavailable": "本机数据清理接口不可用",
-        "options": {
-          "connections": "连接",
-          "credentials": "凭据",
-          "commandHistory": "命令历史",
-          "shortcutCommands": "快捷命令",
-          "uiSettings": "界面设置",
-          "aiSettings": "AI 设置",
-          "cache": "缓存",
-          "snapshots": "快照",
-          "externalEditorTemp": "外部编辑临时文件",
-          "logs": "日志",
-          "aiMemory": "AI 记忆"
-        }
-      },
       "feedback": {
         "title": "错误报告与反馈",
         "localCrashCaptureOn": "本地崩溃采集已启用",
