@@ -21,7 +21,6 @@ import TextField from "@mui/material/TextField";
 import InputAdornment from "@mui/material/InputAdornment";
 import Switch from "@mui/material/Switch";
 import FormControlLabel from "@mui/material/FormControlLabel";
-import Checkbox from "@mui/material/Checkbox";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
@@ -35,7 +34,6 @@ import CachedIcon from "@mui/icons-material/Cached";
 import DisplaySettingsIcon from "@mui/icons-material/DisplaySettings";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import BugReportIcon from "@mui/icons-material/BugReport";
-import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import FeedbackIcon from "@mui/icons-material/Feedback";
 import { useTranslation } from "react-i18next";
@@ -153,53 +151,6 @@ const Settings = memo(({ open, onClose }) => {
     { value: "ERROR", label: t("settings.logLevels.error") },
   ];
 
-  const localDataOptions = [
-    {
-      value: "connections",
-      label: t("settings.localData.options.connections"),
-    },
-    {
-      value: "credentials",
-      label: t("settings.localData.options.credentials"),
-    },
-    {
-      value: "commandHistory",
-      label: t("settings.localData.options.commandHistory"),
-    },
-    {
-      value: "shortcutCommands",
-      label: t("settings.localData.options.shortcutCommands"),
-    },
-    {
-      value: "uiSettings",
-      label: t("settings.localData.options.uiSettings"),
-    },
-    {
-      value: "aiSettings",
-      label: t("settings.localData.options.aiSettings"),
-    },
-    {
-      value: "cache",
-      label: t("settings.localData.options.cache"),
-    },
-    {
-      value: "snapshots",
-      label: t("settings.localData.options.snapshots"),
-    },
-    {
-      value: "externalEditorTemp",
-      label: t("settings.localData.options.externalEditorTemp"),
-    },
-    {
-      value: "logs",
-      label: t("settings.localData.options.logs"),
-    },
-    {
-      value: "aiMemory",
-      label: t("settings.localData.options.aiMemory"),
-    },
-  ];
-
   // Initial states
   const [language, setLanguage] = React.useState("");
   const [fontSize, setFontSize] = React.useState(14);
@@ -251,9 +202,6 @@ const Settings = memo(({ open, onClose }) => {
   const [needsRestart, setNeedsRestart] = React.useState(false);
   const [originalPerformanceSettings, setOriginalPerformanceSettings] =
     React.useState({});
-  const [selectedLocalDataSections, setSelectedLocalDataSections] =
-    React.useState([]);
-  const [isClearingLocalData, setIsClearingLocalData] = React.useState(false);
 
   // Load settings from config.json via API
   React.useEffect(() => {
@@ -523,79 +471,6 @@ const Settings = memo(({ open, onClose }) => {
       showSuccess(t("settings.feedback.issueOpened"));
     } catch (error) {
       showError(error?.message || t("settings.feedback.openIssueFailed"));
-    }
-  };
-
-  const toggleLocalDataSection = (section) => {
-    setSelectedLocalDataSections((current) =>
-      current.includes(section)
-        ? current.filter((item) => item !== section)
-        : [...current, section],
-    );
-  };
-
-  const handleClearLocalData = async () => {
-    if (selectedLocalDataSections.length === 0 || isClearingLocalData) {
-      return;
-    }
-
-    try {
-      if (!window.dialogAPI?.showMessageBox) {
-        throw new Error(t("settings.localData.dialogUnavailable"));
-      }
-      if (!window.terminalAPI?.clearLocalData) {
-        throw new Error(t("settings.localData.clearUnavailable"));
-      }
-
-      const selectedLabels = localDataOptions
-        .filter((option) => selectedLocalDataSections.includes(option.value))
-        .map((option) => option.label)
-        .join(t("settings.localData.selectionSeparator"));
-      const confirmation = await window.dialogAPI.showMessageBox({
-        type: "warning",
-        buttons: [
-          t("settings.localData.cancel"),
-          t("settings.localData.confirm"),
-        ],
-        defaultId: 0,
-        cancelId: 0,
-        title: t("settings.localData.confirmTitle"),
-        message: t("settings.localData.confirmMessage"),
-        detail: selectedLabels,
-        noLink: true,
-      });
-
-      if (confirmation?.response !== 1) {
-        return;
-      }
-
-      setIsClearingLocalData(true);
-      const result = await window.terminalAPI.clearLocalData({
-        sections: selectedLocalDataSections,
-      });
-
-      if (result?.success === false) {
-        throw new Error(result.error || t("settings.localData.clearFailed"));
-      }
-
-      window.dispatchEvent(
-        new CustomEvent("localDataCleared", {
-          detail: {
-            sections: result?.sections || selectedLocalDataSections,
-            runtime: result?.runtime || {},
-          },
-        }),
-      );
-      showSuccess(t("settings.localData.clearSuccess"));
-      setSelectedLocalDataSections([]);
-
-      if (selectedLocalDataSections.includes("uiSettings")) {
-        onClose();
-      }
-    } catch (error) {
-      showError(error?.message || t("settings.localData.clearFailed"));
-    } finally {
-      setIsClearingLocalData(false);
     }
   };
 
@@ -1433,73 +1308,6 @@ const Settings = memo(({ open, onClose }) => {
                   onClick={handleOpenFeedbackIssue}
                 >
                   {t("settings.feedback.openIssue")}
-                </Button>
-              </Box>
-            </Box>
-
-            <Box sx={{ ...sectionCardSx, mt: 2.25 }}>
-              <Box sx={sectionTitleRowSx}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <DeleteSweepIcon sx={{ color: "warning.main" }} />
-                  <Typography variant="subtitle1">
-                    {t("settings.localData.title")}
-                  </Typography>
-                </Box>
-                <Chip
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                  label={t("settings.localData.destructive")}
-                />
-              </Box>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ mb: 1.5 }}
-              >
-                {t("settings.localData.description")}
-              </Typography>
-              <Grid container spacing={0.5}>
-                {localDataOptions.map((option) => (
-                  <Grid key={option.value} size={{ xs: 12, sm: 6, md: 4 }}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          size="small"
-                          checked={selectedLocalDataSections.includes(
-                            option.value,
-                          )}
-                          onChange={() => toggleLocalDataSection(option.value)}
-                        />
-                      }
-                      label={
-                        <Typography variant="body2">{option.label}</Typography>
-                      }
-                    />
-                  </Grid>
-                ))}
-              </Grid>
-              <Box
-                sx={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  mt: 1.5,
-                }}
-              >
-                <Button
-                  variant="outlined"
-                  color="warning"
-                  size="small"
-                  startIcon={<DeleteSweepIcon />}
-                  onClick={handleClearLocalData}
-                  disabled={
-                    selectedLocalDataSections.length === 0 ||
-                    isClearingLocalData
-                  }
-                >
-                  {isClearingLocalData
-                    ? t("settings.localData.clearing")
-                    : t("settings.localData.clear")}
                 </Button>
               </Box>
             </Box>
