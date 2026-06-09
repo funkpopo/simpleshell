@@ -292,7 +292,10 @@ const CommandSuggestion = ({
             }
             break;
           case "Escape":
-            onClose?.();
+            onClose?.({
+              reason: "escape",
+              suppressUntilEnter: true,
+            });
             break;
         }
       }
@@ -321,7 +324,10 @@ const CommandSuggestion = ({
 
     const handleClickOutside = (e) => {
       if (componentRef.current && !componentRef.current.contains(e.target)) {
-        onClose?.();
+        onClose?.({
+          reason: "outside",
+          suppressUntilEnter: false,
+        });
       }
     };
 

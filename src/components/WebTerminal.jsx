@@ -19,7 +19,10 @@ import CommandSuggestion from "./CommandSuggestion";
 import WebTerminalSearchOverlay from "./web-terminal/WebTerminalSearchOverlay.jsx";
 import WebTerminalContextMenu from "./web-terminal/WebTerminalContextMenu.jsx";
 import { RendererTerminalIOMailbox } from "../modules/terminal/io/RendererTerminalIOMailbox.js";
-import { isPromptReadyFromTerminal } from "../modules/terminal/promptDetection.js";
+import {
+  getLogicalLineUntilCursor,
+  isPromptReadyFromTerminal,
+} from "../modules/terminal/promptDetection.js";
 import {
   isSuggestionTrackingContext,
   shouldDisplayCommandSuggestions,
@@ -89,6 +92,16 @@ const areWebTerminalPropsEqual = (prevProps, nextProps) => {
 
 const TERMINAL_COMMAND_LINE_REGEX =
   /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.+)$/;
+const TERMINAL_PROMPT_INPUT_PATTERNS = Object.freeze([
+  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[\w.-]+@[\w.-]+(?::[^\r\n#$%>]*)?)[#$%]\s+(.+)$/,
+  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[~./][^\r\n#$%>]*)[#$%]\s+(.+)$/,
+  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[#$%]\s+(.+)$/,
+  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*PS [^\r\n>]+>\s+(.+)$/,
+  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[A-Za-z]:\\[^\r\n>]*>\s+(.+)$/,
+  /^(?:mysql|sqlite|duckdb)>\s+(.+)$/i,
+  /^MariaDB \[[^\]\r\n]*\]>\s+(.+)$/i,
+  /^[^\s\r\n]+(?:=>|=#)\s+(.+)$/,
+]);
 const FULLSCREEN_COMMAND_REGEX =
   /\b(top|htop|vi|vim|nano|less|more|watch|tail -f)\b/;
 // 服务端关闭回显后的密码/口令/密钥短语提示识别
@@ -126,6 +139,27 @@ const clearPendingWrappedInputRefresh = (term) => {
   }
 
   term.__pendingWrappedInputRefresh = false;
+};
+
+const extractCurrentCommandInput = (term) => {
+  if (!term || term?.buffer?.active?.type === "alternate") {
+    return "";
+  }
+
+  const logicalLine = getLogicalLineUntilCursor(term);
+  for (const pattern of TERMINAL_PROMPT_INPUT_PATTERNS) {
+    const match = logicalLine.match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  const currentLine =
+    term.buffer?.active
+      ?.getLine(term.buffer.active.cursorY)
+      ?.translateToString() || "";
+  const fallbackMatch = currentLine.match(TERMINAL_COMMAND_LINE_REGEX);
+  return fallbackMatch?.[1] || "";
 };
 
 const shouldForceTerminalViewportRefresh = (term, inEditorMode = false) => {
@@ -596,9 +630,7 @@ const WebTerminal = ({
     cursorPosition,
     currentInput,
     setCurrentInput,
-    suggestionsHiddenByEsc,
     setSuggestionsHiddenByEsc,
-    suggestionsSuppressedUntilEnter,
     setSuggestionsSuppressedUntilEnter,
     suppressionContextRef,
     suggestionsSuppressedRef,
@@ -976,7 +1008,17 @@ const WebTerminal = ({
 
       syncPromptTrackingFromTerminal(term);
 
-      if (currentInput.trim()) {
+      const terminalInput = extractCurrentCommandInput(term);
+      const effectiveInput = terminalInput || currentInput;
+      const normalizedInput = effectiveInput.trim();
+
+      if (terminalInput && terminalInput !== currentInput) {
+        setCurrentInput(terminalInput);
+      } else if (!terminalInput && currentInput && !normalizedInput) {
+        setCurrentInput("");
+      }
+
+      if (normalizedInput) {
         resumePromptTrackingForSuggestionInput(term);
       }
 
@@ -990,14 +1032,14 @@ const WebTerminal = ({
       if (refreshSuggestions && !imeCompositionActiveRef.current) {
         if (
           promptReady &&
-          currentInput.trim() &&
+          normalizedInput &&
           !inEditorModeRef.current &&
-          !suggestionsHiddenByEsc &&
-          !suggestionsSuppressedUntilEnter &&
+          !suggestionsHiddenByEscRef.current &&
+          !suggestionsSuppressedRef.current &&
           !isCommandExecutingRef.current
         ) {
-          getSuggestions(currentInput);
-        } else if (!promptReady || !currentInput.trim()) {
+          getSuggestions(effectiveInput);
+        } else if (!promptReady || !normalizedInput) {
           setShowSuggestions(false);
           setSuggestions([]);
         }
@@ -1010,10 +1052,9 @@ const WebTerminal = ({
       focusTerminalInput,
       getSuggestions,
       scheduleTerminalRedraw,
+      setCurrentInput,
       setShowSuggestions,
       setSuggestions,
-      suggestionsHiddenByEsc,
-      suggestionsSuppressedUntilEnter,
       syncPromptTrackingFromTerminal,
       updateCursorPosition,
       resumePromptTrackingForSuggestionInput,
@@ -3514,7 +3555,7 @@ const WebTerminal = ({
         recoverTerminalAfterActivation({
           resize: true,
           refocus: true,
-          refreshSuggestions: false,
+          refreshSuggestions: true,
         });
       }, delay),
     );
@@ -3533,7 +3574,7 @@ const WebTerminal = ({
         recoverTerminalAfterActivation({
           resize: true,
           refocus: true,
-          refreshSuggestions: false,
+          refreshSuggestions: true,
         });
       }, 120);
     };
@@ -3803,6 +3844,7 @@ const WebTerminal = ({
       <CommandSuggestion
         suggestions={suggestions}
         visible={
+          isActive &&
           shouldDisplayCommandSuggestions({
             showSuggestions,
             suggestions,
