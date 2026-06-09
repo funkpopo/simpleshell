@@ -352,16 +352,32 @@ export const useTerminalSuggestions = ({
     [currentInput, sendInputToProcess, tabId, termRef],
   );
 
-  const closeSuggestions = useCallback(() => {
-    suggestionRequestIdRef.current += 1;
-    setShowSuggestions(false);
-    setSuggestions([]);
-    setSuggestionsSuppressedUntilEnter(true);
-    suppressionContextRef.current = {
-      input: currentInput,
-      timestamp: Date.now(),
-    };
-  }, [currentInput]);
+  const closeSuggestions = useCallback(
+    (options = {}) => {
+      const shouldSuppressUntilEnter =
+        options?.suppressUntilEnter !== false;
+
+      suggestionRequestIdRef.current += 1;
+      setShowSuggestions(false);
+      setSuggestions([]);
+
+      if (shouldSuppressUntilEnter) {
+        setSuggestionsSuppressedUntilEnter(true);
+        suppressionContextRef.current = {
+          input: currentInput,
+          timestamp: Date.now(),
+        };
+      } else {
+        setSuggestionsHiddenByEsc(false);
+        setSuggestionsSuppressedUntilEnter(false);
+        suppressionContextRef.current = {
+          input: "",
+          timestamp: 0,
+        };
+      }
+    },
+    [currentInput],
+  );
 
   return {
     suggestions,
