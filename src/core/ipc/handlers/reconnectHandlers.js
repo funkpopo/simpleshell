@@ -32,9 +32,9 @@ function getSessionLanguage(reconnectionManager, sessionId) {
 
 function getDefaultReconnectHint(language) {
   if (!isZhLanguage(language)) {
-    return "Check proxy/VPN/network and try again. You can use Manual Reconnect.";
+    return "Check proxy/VPN/network and refresh or reopen the connection.";
   }
-  return "请检查代理/VPN和网络后重试，可点击“手动重连”。";
+  return "请检查代理/VPN和网络后刷新或重新打开连接。";
 }
 
 function resolveMaxAttempts(reconnectionManager, sessionId, fallback = null) {
@@ -164,41 +164,6 @@ function registerReconnectHandlers(connectionPool) {
 
       const status = connectionPool.getConnectionStatus(connectionKey);
       return status?.reconnectStatus || null;
-    },
-    { category: "reconnect" },
-  );
-
-  // 手动触发重连
-  safeHandle(
-    ipcMain,
-    IPC_REQUEST_CHANNELS.RECONNECT_MANUAL,
-    async (_event, { tabId, sshConfig }) => {
-      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
-
-      if (!connectionKey) {
-        // 如果没有连接，创建新连接
-        const newConnection = await connectionPool.getConnection(sshConfig);
-        return { success: true, connectionKey: newConnection.key };
-      }
-
-      // 如果还未注册重连会话（比如用户在连接正常时点击“手动重连”），先注册但不自动启动
-      const existingSession =
-        connectionPool.reconnectionManager?.getSessionStatus(connectionKey);
-      if (!existingSession) {
-        const conn = connectionPool.connections?.get(connectionKey);
-        if (conn && conn.client && conn.config) {
-          connectionPool.reconnectionManager.registerSession(
-            connectionKey,
-            conn.client,
-            conn.config,
-            { autoStart: false, state: "connected" },
-          );
-        }
-      }
-
-      // 触发手动重连
-      await connectionPool.reconnectionManager.manualReconnect(connectionKey);
-      return { success: true, connectionKey };
     },
     { category: "reconnect" },
   );
@@ -536,7 +501,6 @@ function cleanupReconnectHandlers() {
 
   // 移除所有IPC处理器
   ipcMain.removeHandler(IPC_REQUEST_CHANNELS.RECONNECT_GET_STATUS);
-  ipcMain.removeHandler(IPC_REQUEST_CHANNELS.RECONNECT_MANUAL);
   ipcMain.removeHandler(IPC_REQUEST_CHANNELS.RECONNECT_PAUSE);
   ipcMain.removeHandler(IPC_REQUEST_CHANNELS.RECONNECT_RESUME);
   ipcMain.removeHandler(IPC_REQUEST_CHANNELS.RECONNECT_GET_STATISTICS);

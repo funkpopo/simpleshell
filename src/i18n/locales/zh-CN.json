@@ -240,13 +240,11 @@
       "retryWindowRemaining": "自动重连窗口剩余：{{seconds}} 秒",
       "lastError": "最近错误：{{error}}",
       "reconnectHint": "提示：{{hint}}",
-      "manualReconnect": "手动重连",
       "pauseReconnect": "暂停自动重连",
       "resumeReconnect": "恢复自动重连",
-      "manualReconnectStarted": "已触发手动重连",
       "pauseReconnectDone": "已暂停自动重连",
       "resumeReconnectDone": "已恢复自动重连",
-      "reconnectSessionRestoreFailedHint": "底层连接已恢复，但终端会话恢复失败，可点击“手动重连”。"
+      "reconnectSessionRestoreFailedHint": "底层连接已恢复，但终端会话恢复失败，请刷新连接。"
     },
     "about": {
       "title": "关于 SimpleShell",

@@ -446,14 +446,6 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     objectPayloadArgs(["tabId"]),
   ),
   defineRequest(
-    "RECONNECT_MANUAL",
-    "manual-reconnect",
-    "reconnect",
-    objectPayloadArgs(["tabId"]),
-    STANDARD_RESPONSE_SCHEMA,
-    { permission: "process-control" },
-  ),
-  defineRequest(
     "RECONNECT_PAUSE",
     "pause-reconnect",
     "reconnect",

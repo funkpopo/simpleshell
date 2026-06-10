@@ -38,9 +38,9 @@ function isZhLanguage(language) {
 
 function buildMaxRetriesMessage(maxRetries, language) {
   if (!isZhLanguage(language)) {
-    return `Reached the maximum retry count (${maxRetries}). Check proxy/VPN/network and reconnect manually.`;
+    return `Reached the maximum retry count (${maxRetries}). Check proxy/VPN/network and refresh or reopen the connection.`;
   }
-  return `达到最大重试次数（${maxRetries}次），请检查代理/VPN/网络后手动重连。`;
+  return `达到最大重试次数（${maxRetries}次），请检查代理/VPN/网络后刷新或重新打开连接。`;
 }
 
 class ReconnectionManager extends EventEmitter {
@@ -96,7 +96,7 @@ class ReconnectionManager extends EventEmitter {
     }
 
     const {
-      // 断线场景默认应进入 pending 并启动重连；手动注册（例如用户点“手动重连”）可关闭 autoStart
+      // 断线场景默认应进入 pending 并启动重连；恢复现有会话时可关闭 autoStart
       autoStart = true,
       state,
       failureReason = FAILURE_REASON.NETWORK,
@@ -1464,29 +1464,6 @@ class ReconnectionManager extends EventEmitter {
         }, effectiveTimeout);
       }
     });
-  }
-
-  // 手动触发重连
-  async manualReconnect(sessionId) {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      throw new Error(`会话不存在: ${sessionId}`);
-    }
-
-    if (session.state === RECONNECT_STATE.RECONNECTING) {
-      throw new Error("正在重连中");
-    }
-
-    // 取消任何待执行的重连任务，避免并发
-    this.cancelPendingReconnect(sessionId);
-
-    session.retryCount = 0; // 重置重试次数
-    session.reconnectWindowStartedAt = Date.now(); // 手动重连开启新的总耗时窗口
-    session.intentionalClose = false;
-    session.state = RECONNECT_STATE.PENDING;
-    session.failureReason = FAILURE_REASON.NETWORK;
-    logToFile(`手动触发重连: ${sessionId}`, "INFO");
-    await this.executeReconnect(session, FAILURE_REASON.NETWORK);
   }
 
   // 暂停重连

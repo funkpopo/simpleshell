@@ -69,7 +69,7 @@ function testDefaultRetryPolicyIsFiveSecondsForTwentyFiveSecondsWindow() {
   );
   assert.equal(
     buildReconnectTimeoutMessage(DEFAULT_SSH_RETRY_CONFIG),
-    "重连超时（25秒），请检查网络/VPN后手动重连。",
+    "重连超时（25秒），请检查网络/VPN后刷新或重新打开连接。",
     "超时提示文案应保持简洁并同步使用25秒窗口",
   );
 }

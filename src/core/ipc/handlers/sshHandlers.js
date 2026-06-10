@@ -40,8 +40,8 @@ function getTerminalText(config, key, params = {}) {
       : "Restoring terminal...",
     reconnectRecoverySucceeded: isZh ? "终端已恢复" : "Terminal restored",
     reconnectRecoveryFailedDefault: isZh
-      ? "终端恢复失败，请手动重连。"
-      : "Terminal restore failed. Reconnect manually.",
+      ? "终端恢复失败，请刷新连接。"
+      : "Terminal restore failed. Refresh the connection.",
     reconnectRecoveryFailedHint: isZh
       ? "连接已恢复，但终端恢复失败。"
       : "Connection recovered, but terminal restore failed.",
