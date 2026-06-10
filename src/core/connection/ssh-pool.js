@@ -58,7 +58,6 @@ class SSHPool extends BaseConnectionPool {
 
     // 初始化重连管理器
     this.reconnectionManager = new ReconnectionManager();
-
   }
 
   /**
@@ -87,7 +86,7 @@ class SSHPool extends BaseConnectionPool {
    * @private
    */
   _setupReconnectionEvents() {
-    // 监听重连成功事件，更新连接池中的连接
+    // transport 接管成功时先更新连接池；终端会话恢复由后续显式事件触发
     this.reconnectionManager.on(
       "connectionReplaced",
       ({ sessionId, newConnection }) => {
@@ -99,6 +98,15 @@ class SSHPool extends BaseConnectionPool {
           conn.intentionalClose = false;
           conn.closeReason = CLOSE_REASON.NETWORK;
           conn.lastUsed = Date.now();
+        }
+      },
+    );
+
+    this.reconnectionManager.on(
+      "reconnectSessionRestoreReady",
+      ({ sessionId }) => {
+        const conn = this.connections.get(sessionId);
+        if (conn) {
           this.emit("connectionReconnected", {
             key: sessionId,
             connection: conn,
@@ -931,13 +939,13 @@ class SSHPool extends BaseConnectionPool {
       if (
         errorMessage.includes("All configured authentication methods failed")
       ) {
-        errorMessage = isZh
-          ? "SSH认证失败"
-          : "SSH authentication failed";
+        errorMessage = isZh ? "SSH认证失败" : "SSH authentication failed";
 
         // 如果配置了私钥路径但没有私钥内容，提供具体提示
         if (sshConfig.privateKeyPath && !processedConfig.privateKey) {
-          errorMessage = isZh ? "私钥文件无法读取" : "Private key is unreadable";
+          errorMessage = isZh
+            ? "私钥文件无法读取"
+            : "Private key is unreadable";
         }
       } else if (
         lowerError.includes("host denied") ||

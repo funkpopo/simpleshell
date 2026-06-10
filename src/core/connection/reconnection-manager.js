@@ -22,6 +22,7 @@ const RECONNECT_STATE = {
   CONNECTED: "connected",
   FAILED: "failed",
   ABANDONED: "abandoned",
+  PAUSED: "paused",
 };
 
 const FAILURE_PATTERN_GUARD = {
@@ -249,7 +250,8 @@ class ReconnectionManager extends EventEmitter {
     // 如果已经处于重连中或已放弃，忽略
     if (
       session.state === RECONNECT_STATE.RECONNECTING ||
-      session.state === RECONNECT_STATE.ABANDONED
+      session.state === RECONNECT_STATE.ABANDONED ||
+      session.state === RECONNECT_STATE.PAUSED
     ) {
       logToFile(
         `忽略连接错误(状态: ${session.state}): ${session.id} - ${error.message}`,
@@ -307,7 +309,8 @@ class ReconnectionManager extends EventEmitter {
     // 如果已经处于重连中或已放弃，忽略
     if (
       session.state === RECONNECT_STATE.RECONNECTING ||
-      session.state === RECONNECT_STATE.ABANDONED
+      session.state === RECONNECT_STATE.ABANDONED ||
+      session.state === RECONNECT_STATE.PAUSED
     ) {
       logToFile(`忽略连接关闭(状态: ${session.state}): ${session.id}`, "DEBUG");
       return;
@@ -347,7 +350,8 @@ class ReconnectionManager extends EventEmitter {
     // 如果已经处于重连中或已放弃，忽略
     if (
       session.state === RECONNECT_STATE.RECONNECTING ||
-      session.state === RECONNECT_STATE.ABANDONED
+      session.state === RECONNECT_STATE.ABANDONED ||
+      session.state === RECONNECT_STATE.PAUSED
     ) {
       logToFile(`忽略连接超时(状态: ${session.state}): ${session.id}`, "DEBUG");
       return;
@@ -513,11 +517,7 @@ class ReconnectionManager extends EventEmitter {
       : "Connection disconnected and automatic reconnect failed. Please reconnect.";
   }
 
-  _shouldStopReconnectByFailurePattern(
-    session,
-    failureReason,
-    maxRetries = 0,
-  ) {
+  _shouldStopReconnectByFailurePattern(session, failureReason, maxRetries = 0) {
     const pattern = this.failurePatterns.get(session?.id);
     if (!pattern) {
       return false;
@@ -741,6 +741,7 @@ class ReconnectionManager extends EventEmitter {
       session.disposed === true ||
       session.intentionalClose === true ||
       session.state === RECONNECT_STATE.ABANDONED ||
+      session.state === RECONNECT_STATE.PAUSED ||
       !this.sessions.has(session.id) ||
       this.sessions.get(session.id) !== session
     );
@@ -778,9 +779,12 @@ class ReconnectionManager extends EventEmitter {
     const maxRetries = this._getMaxRetriesForSession(session, failureReason);
     const strategyFields = this._getRetryStrategyFields(session, failureReason);
 
-    // 检查是否应该跳过本次重连（已放弃或已连接）
-    if (session.state === RECONNECT_STATE.ABANDONED) {
-      logToFile(`跳过重连(已放弃): ${session.id}`, "DEBUG");
+    // 检查是否应该跳过本次重连（已放弃/已暂停）
+    if (
+      session.state === RECONNECT_STATE.ABANDONED ||
+      session.state === RECONNECT_STATE.PAUSED
+    ) {
+      logToFile(`跳过重连(状态=${session.state}): ${session.id}`, "DEBUG");
       return;
     }
 
@@ -850,9 +854,7 @@ class ReconnectionManager extends EventEmitter {
       const attemptNumber = session.retryCount;
       const preflight = await this._checkPreflight(session);
       if (!preflight?.ok) {
-        const preflightError = new Error(
-          preflight?.message || "连接预检失败",
-        );
+        const preflightError = new Error(preflight?.message || "连接预检失败");
         if (preflight?.code) {
           preflightError.code = preflight.code;
         }
@@ -920,11 +922,13 @@ class ReconnectionManager extends EventEmitter {
       this.statistics.successfulReconnects++;
 
       logToFile(`重连成功: ${session.id}`, "INFO");
-      this.emit("reconnectSuccess", {
+      const successPayload = {
         sessionId: session.id,
         attempts: attemptNumber,
         ...strategyFields,
-      });
+      };
+      this.emit("reconnectSuccess", successPayload);
+      this.emit("reconnectSessionRestoreReady", successPayload);
     } catch (error) {
       if (newConnection && !newConnectionAdopted) {
         if (session?.pendingReconnectConnection === newConnection) {
@@ -1355,7 +1359,8 @@ class ReconnectionManager extends EventEmitter {
 
     if (
       session.state === RECONNECT_STATE.RECONNECTING ||
-      session.state === RECONNECT_STATE.PENDING
+      session.state === RECONNECT_STATE.PENDING ||
+      session.state === RECONNECT_STATE.PAUSED
     ) {
       return;
     }
@@ -1487,27 +1492,78 @@ class ReconnectionManager extends EventEmitter {
   // 暂停重连
   pauseReconnection(sessionId) {
     const session = this.sessions.get(sessionId);
-    if (session) {
-      this.cancelPendingReconnect(sessionId);
-      this._clearPendingReconnectConnection(session, "pause-reconnect");
-      session.state = RECONNECT_STATE.ABANDONED;
-      session.isReconnecting = false;
-      session.failureReason = session.failureReason || FAILURE_REASON.NETWORK;
-      logToFile(`暂停重连: ${sessionId}`, "INFO");
+    if (!session) {
+      return {
+        success: false,
+        sessionId,
+        state: null,
+        error: `会话不存在: ${sessionId}`,
+      };
     }
+
+    const previousState = session.state;
+    if (
+      previousState !== RECONNECT_STATE.PENDING &&
+      previousState !== RECONNECT_STATE.RECONNECTING
+    ) {
+      return {
+        success: false,
+        sessionId,
+        state: previousState,
+        error: `当前状态不可暂停: ${previousState}`,
+      };
+    }
+
+    this.cancelPendingReconnect(sessionId);
+    this._clearPendingReconnectConnection(session, "pause-reconnect");
+    session.state = RECONNECT_STATE.PAUSED;
+    session.isReconnecting = false;
+    session.failureReason = session.failureReason || FAILURE_REASON.NETWORK;
+    logToFile(`暂停重连: ${sessionId}`, "INFO");
+
+    return {
+      success: true,
+      sessionId,
+      previousState,
+      state: session.state,
+    };
   }
 
   // 恢复重连
   resumeReconnection(sessionId) {
     const session = this.sessions.get(sessionId);
-    if (session && session.state === RECONNECT_STATE.ABANDONED) {
-      session.state = RECONNECT_STATE.PENDING;
-      session.retryCount = 0;
-      session.reconnectWindowStartedAt = Date.now();
-      session.failureReason = FAILURE_REASON.NETWORK;
-      void this.scheduleReconnect(session, FAILURE_REASON.NETWORK);
-      logToFile(`恢复重连: ${sessionId}`, "INFO");
+    if (!session) {
+      return {
+        success: false,
+        sessionId,
+        state: null,
+        error: `会话不存在: ${sessionId}`,
+      };
     }
+
+    const previousState = session.state;
+    if (previousState !== RECONNECT_STATE.PAUSED) {
+      return {
+        success: false,
+        sessionId,
+        state: previousState,
+        error: `当前状态不可恢复: ${previousState}`,
+      };
+    }
+
+    session.state = RECONNECT_STATE.PENDING;
+    session.retryCount = 0;
+    session.reconnectWindowStartedAt = Date.now();
+    session.failureReason = FAILURE_REASON.NETWORK;
+    void this.scheduleReconnect(session, FAILURE_REASON.NETWORK);
+    logToFile(`恢复重连: ${sessionId}`, "INFO");
+
+    return {
+      success: true,
+      sessionId,
+      previousState,
+      state: session.state,
+    };
   }
 
   // 关闭

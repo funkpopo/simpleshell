@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const repoRoot = path.resolve(__dirname, "..", "..");
+const repoRoot = path.resolve(__dirname, "..");
 const windowManagerSource = fs.readFileSync(
   path.join(repoRoot, "src/core/window/windowManager.js"),
   "utf8",
@@ -26,4 +26,4 @@ assert.match(
   "Main BrowserWindow should show after ready-to-show.",
 );
 
-console.log("Background session regression checks passed.");
+console.log("Background session checks passed.");

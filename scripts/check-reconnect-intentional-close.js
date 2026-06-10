@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const path = require("node:path");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..");
 
 const ReconnectionManager = require(path.join(
   ROOT,
@@ -135,7 +135,7 @@ function run() {
   });
 
   console.log(
-    `\n${tests.length} reconnect intentional-close regression checks passed.`,
+    `\n${tests.length} reconnect intentional-close checks passed.`,
   );
 }
 

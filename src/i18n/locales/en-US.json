@@ -221,6 +221,7 @@
       "reconnectPending": "Waiting for next automatic retry",
       "reconnectWaitingRetry": "Automatic retry in {{seconds}}s",
       "reconnecting": "Automatically reconnecting",
+      "reconnectRestoringSession": "Restoring terminal session",
       "reconnectFailed": "Automatic reconnect failed",
       "reconnectStopped": "Automatic reconnect stopped",
       "reconnectPaused": "Automatic reconnect paused",

@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..");
 
 function readSource(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -356,7 +356,7 @@ function run() {
   });
 
   console.log(
-    `\n${tests.length} WebTerminal command suggestion regression checks passed.`,
+    `\n${tests.length} WebTerminal command suggestion checks passed.`,
   );
 }
 

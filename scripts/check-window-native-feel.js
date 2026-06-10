@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const repoRoot = path.resolve(__dirname, "..", "..");
+const repoRoot = path.resolve(__dirname, "..");
 
 function readSource(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
@@ -905,7 +905,7 @@ function run() {
     console.log(`PASS ${name}`);
   });
 
-  console.log(`\n${tests.length} window native-feel regression checks passed.`);
+  console.log(`\n${tests.length} window native-feel checks passed.`);
 }
 
 run();

@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..");
 const ELECTRON_PATH = require.resolve("electron");
 const IPC_RESPONSE_PATH = path.join(ROOT, "src", "core", "ipc", "ipcResponse");
 const UPDATE_SERVICE_PATH = path.join(
@@ -422,7 +422,7 @@ async function run() {
       console.log(`PASS error classification - ${name}`);
     }
     console.log(
-      `\n${tests.length} error classification regression checks passed.`,
+      `\n${tests.length} error classification checks passed.`,
     );
   } finally {
     clearRequire(IPC_RESPONSE_PATH);

@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..");
 
 const {
   createSuggestionSuppressionContext,
@@ -234,7 +234,7 @@ function run() {
     console.log(`PASS ${name}`);
   });
 
-  console.log(`\n${tests.length} UI reconnect regression checks passed.`);
+  console.log(`\n${tests.length} UI reconnect checks passed.`);
 }
 
 run();
