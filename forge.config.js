@@ -38,6 +38,12 @@ const MAC_ENTITLEMENTS_PATH = path.join(__dirname, "entitlements.plist");
 const WEBPACK_DIR = path.resolve(__dirname, ".webpack");
 const WINDOWS_MOVE_RETRY_DELAY_MS = 250;
 const WINDOWS_MOVE_RETRIES = 8;
+const PACKAGED_SCRIPT_NAMES_TO_REMOVE = new Set([
+  "run-checks.js",
+  "release-check.js",
+  "generate-checksums.js",
+  "prepare-rust-sidecar.js",
+]);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -342,6 +348,63 @@ const cleanupLocalesHook = (
   );
 };
 
+const shouldRemovePackagedScript = (entry) =>
+  entry.isFile() &&
+  (entry.name.startsWith("check-") ||
+    PACKAGED_SCRIPT_NAMES_TO_REMOVE.has(entry.name));
+
+const cleanupPackagedDevelopmentFiles = async (buildPath) => {
+  const scriptsDir = path.join(buildPath, "scripts");
+  const packageJsonPath = path.join(buildPath, "package.json");
+
+  try {
+    const scriptEntries = await fs.readdir(scriptsDir, { withFileTypes: true });
+    await Promise.all(
+      scriptEntries
+        .filter(shouldRemovePackagedScript)
+        .map((entry) =>
+          fs.rm(path.join(scriptsDir, entry.name), { force: true }),
+        ),
+    );
+  } catch (error) {
+    if (error && error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  let packageJson;
+  try {
+    packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf8"));
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return;
+    }
+
+    throw error;
+  }
+
+  delete packageJson.scripts;
+
+  await fs.writeFile(
+    packageJsonPath,
+    `${JSON.stringify(packageJson, null, 2)}\n`,
+    "utf8",
+  );
+};
+
+const cleanupPackagedDevelopmentFilesHook = (
+  buildPath,
+  _electronVersion,
+  _platform,
+  _arch,
+  callback,
+) => {
+  cleanupPackagedDevelopmentFiles(buildPath).then(
+    () => callback(),
+    (error) => callback(error),
+  );
+};
+
 const buildMacSignConfig = () => {
   if (!process.env.MAC_CODESIGN_IDENTITY) {
     return undefined;
@@ -477,6 +540,7 @@ module.exports = async () => {
           SIDECAR_BASENAME,
         ),
       ],
+      afterPrune: [cleanupPackagedDevelopmentFilesHook],
       afterComplete: [cleanupLocalesHook],
       download: {
         unsafelyDisableChecksums: false,

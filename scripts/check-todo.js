@@ -7,7 +7,7 @@ const { generateKeyPairSync } = require("node:crypto");
 const { Server } = require("ssh2");
 const path = require("node:path");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..");
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -1715,7 +1715,7 @@ async function testFUnifiedRuntimeFileLifecyclePolicy() {
 
     const sweepResult = await runtimeFileLifecycle.sweepResource(
       "test-sweep-policy",
-      { reason: "regression" },
+      { reason: "check" },
     );
     assert.equal(sweepResult.removedExpired, 1, "过期文件应被清理");
     assert.equal(sweepResult.removedForSize, 1, "超出大小上限时应清理旧文件");

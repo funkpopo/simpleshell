@@ -210,8 +210,16 @@ function registerReconnectHandlers(connectionPool) {
     async (event, { tabId }) => {
       const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
       if (connectionKey && connectionPool.reconnectionManager) {
-        connectionPool.reconnectionManager.pauseReconnection(connectionKey);
-        return { success: true };
+        const result =
+          connectionPool.reconnectionManager.pauseReconnection(connectionKey);
+        return {
+          success: result?.success === true,
+          connectionKey,
+          state: result?.state || null,
+          previousState: result?.previousState || null,
+          error:
+            result?.success === true ? null : result?.error || "重连未暂停",
+        };
       }
       return { success: false, error: "连接未找到" };
     },
@@ -225,8 +233,16 @@ function registerReconnectHandlers(connectionPool) {
     async (event, { tabId }) => {
       const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
       if (connectionKey && connectionPool.reconnectionManager) {
-        connectionPool.reconnectionManager.resumeReconnection(connectionKey);
-        return { success: true };
+        const result =
+          connectionPool.reconnectionManager.resumeReconnection(connectionKey);
+        return {
+          success: result?.success === true,
+          connectionKey,
+          state: result?.state || null,
+          previousState: result?.previousState || null,
+          error:
+            result?.success === true ? null : result?.error || "重连未恢复",
+        };
       }
       return { success: false, error: "连接未找到" };
     },
@@ -360,7 +376,12 @@ function registerReconnectHandlers(connectionPool) {
           ),
         },
       );
-      if (shouldSkipDuplicateTerminalEvent(IPC_EVENT_CHANNELS.RECONNECT_FAILED, payload)) {
+      if (
+        shouldSkipDuplicateTerminalEvent(
+          IPC_EVENT_CHANNELS.RECONNECT_FAILED,
+          payload,
+        )
+      ) {
         logToFile(
           `跳过重复重连失败广播: tabId=${payload.tabId}, attempts=${payload.attempts}`,
           "DEBUG",
@@ -413,7 +434,12 @@ function registerReconnectHandlers(connectionPool) {
         },
         { hint: getDefaultReconnectHint(language) },
       );
-      if (shouldSkipDuplicateTerminalEvent(IPC_EVENT_CHANNELS.RECONNECT_ABANDONED, payload)) {
+      if (
+        shouldSkipDuplicateTerminalEvent(
+          IPC_EVENT_CHANNELS.RECONNECT_ABANDONED,
+          payload,
+        )
+      ) {
         logToFile(
           `跳过重复重连放弃广播: tabId=${payload.tabId}, attempts=${payload.attempts}`,
           "DEBUG",

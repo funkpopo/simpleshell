@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..");
 
 function deferred() {
   let resolve;
@@ -42,7 +42,7 @@ function loadNetworkLatencyService() {
     resolveProxyConfigAsync: async () => null,
     isValidProxyConfig: () => false,
     createTunnelSocket: async () => {
-      throw new Error("proxy tunnel should not be used by regression tests");
+      throw new Error("proxy tunnel should not be used by latency checks");
     },
   });
   injectMock(loggerPath, {

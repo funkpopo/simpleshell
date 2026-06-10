@@ -5,7 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { EventEmitter } = require("node:events");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..");
 const UPDATE_SERVICE_PATH = path.join(
   ROOT,
   "src",
@@ -203,11 +203,11 @@ function withUpdateService({ platform = "win32", routes = new Map() } = {}) {
     currentVersion: "1.0.0",
     tempDir: path.join(tempRoot, "updates"),
     spawn() {
-      throw new Error("spawn should not be called by update regression tests");
+      throw new Error("spawn should not be called by update checks");
     },
     execFile() {
       throw new Error(
-        "execFile should not be called by update regression tests",
+        "execFile should not be called by update checks",
       );
     },
     dialog: { async showMessageBox() {} },
@@ -632,7 +632,7 @@ async function run() {
     console.log(`PASS update service - ${name}`);
   }
 
-  console.log(`\n${tests.length} update service regression checks passed.`);
+  console.log(`\n${tests.length} update service checks passed.`);
 }
 
 run().catch((error) => {

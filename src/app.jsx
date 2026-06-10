@@ -99,6 +99,16 @@ import GlobalTransferFloat from "./components/GlobalTransferFloat.jsx";
 import TransferSidebar from "./components/TransferSidebar.jsx";
 import TransferSidebarButton from "./components/TransferSidebarButton.jsx";
 import { useNotification } from "./contexts/NotificationContext.jsx";
+import {
+  buildReconnectBadgeTooltip,
+  buildReconnectStatusPatch,
+  buildReconnectStatusTitle,
+  canPauseReconnectStatus,
+  getReconnectStatusColor,
+  normalizeReconnectUiState,
+  shouldClearOnTabConnectionStatus,
+  shouldMarkPendingOnTabConnectionStatus,
+} from "./modules/terminal/reconnectTabStatus.js";
 
 const SIDEBAR_TRANSITION_MS = 250;
 const SIDEBAR_UNMOUNT_DELAY_MS = SIDEBAR_TRANSITION_MS + 40;
@@ -371,41 +381,6 @@ const buildRecentConnectionsSignature = (items) => {
 const normalizeSidebarPosition = (position) =>
   position === "left" ? "left" : "right";
 
-const RECONNECT_STATE_COLORS = {
-  pending: "#ed6c02",
-  reconnecting: "#0288d1",
-  failed: "#d32f2f",
-  abandoned: "#d32f2f",
-  paused: "#9e9e9e",
-};
-
-const normalizeReconnectUiState = (state) => {
-  switch (state) {
-    case "pending":
-    case "reconnecting":
-    case "failed":
-    case "abandoned":
-    case "paused":
-      return state;
-    default:
-      return null;
-  }
-};
-
-const getReconnectStatusColor = (state) =>
-  RECONNECT_STATE_COLORS[normalizeReconnectUiState(state)] || null;
-
-const getReconnectCountdownSeconds = (nextReconnectAt, now = Date.now()) => {
-  const target = Number(nextReconnectAt);
-  if (!Number.isFinite(target) || target <= 0) {
-    return null;
-  }
-  return Math.max(0, Math.ceil((target - now) / 1000));
-};
-
-const getReconnectNextAt = (status) =>
-  status?.nextRetryAt ?? status?.nextReconnectAt ?? null;
-
 const getReconnectFailureReasonLabel = (t, failureReason) => {
   switch (String(failureReason || "").toLowerCase()) {
     case "proxy-unavailable":
@@ -429,61 +404,6 @@ const getReconnectFailureReasonLabel = (t, failureReason) => {
     default:
       return null;
   }
-};
-
-const buildReconnectStatusTitle = (t, status, now = Date.now()) => {
-  const state = normalizeReconnectUiState(status?.state);
-  const seconds = getReconnectCountdownSeconds(getReconnectNextAt(status), now);
-
-  switch (state) {
-    case "pending":
-      return Number.isFinite(seconds) && seconds > 0
-        ? t("tabMenu.reconnectWaitingRetry", { seconds })
-        : t("tabMenu.reconnectPending");
-    case "reconnecting":
-      return t("tabMenu.reconnecting");
-    case "failed":
-      return t("tabMenu.reconnectFailed");
-    case "abandoned":
-      return t("tabMenu.reconnectStopped");
-    case "paused":
-      return t("tabMenu.reconnectPaused");
-    default:
-      return null;
-  }
-};
-
-const buildReconnectBadgeTooltip = (t, status, now = Date.now()) => {
-  const title = buildReconnectStatusTitle(t, status, now);
-  if (!title) {
-    return null;
-  }
-
-  const attempts = Number(status?.attempts);
-  const maxAttempts = Number(status?.maxAttempts);
-  if (
-    Number.isFinite(attempts) &&
-    Number.isFinite(maxAttempts) &&
-    maxAttempts
-  ) {
-    return `${title} (${attempts}/${maxAttempts})`;
-  }
-
-  return title;
-};
-
-const canPauseReconnectStatus = (status) => {
-  const state = normalizeReconnectUiState(status?.state);
-  return state === "pending" || state === "reconnecting";
-};
-
-const shouldClearStaleReconnectStatus = (status, loadedState) => {
-  const backendState = String(loadedState || "").toLowerCase();
-  if (backendState !== "connected" && backendState !== "idle") {
-    return false;
-  }
-
-  return Boolean(status);
 };
 
 function AppContent() {
@@ -511,8 +431,7 @@ function AppContent() {
   const [uiSettingsLoaded, setUiSettingsLoaded] = React.useState(false);
   const [connectionsLoaded, setConnectionsLoaded] = React.useState(false);
   const [firstRunDialogOpen, setFirstRunDialogOpen] = React.useState(false);
-  const [createConnectionSignal, setCreateConnectionSignal] =
-    React.useState(0);
+  const [createConnectionSignal, setCreateConnectionSignal] = React.useState(0);
   const [masterPasswordError, setMasterPasswordError] = React.useState("");
   const [unlockingCredentialStore, setUnlockingCredentialStore] =
     React.useState(false);
@@ -865,12 +784,16 @@ function AppContent() {
   const [reconnectActionTabId, setReconnectActionTabId] = React.useState(null);
   const [reconnectNow, setReconnectNow] = React.useState(Date.now());
 
-  const updateReconnectStatus = useCallback((tabId, updater) => {
+  const updateReconnectStatus = useCallback((tabId, updater, options = {}) => {
     if (!tabId) {
       return;
     }
 
     setReconnectStateByTabId((previous) => {
+      if (options.requireExisting && !previous[tabId]) {
+        return previous;
+      }
+
       const current = previous[tabId] || { tabId };
       const draft =
         typeof updater === "function"
@@ -927,17 +850,6 @@ function AppContent() {
         const status = await window.terminalAPI.getReconnectStatus({ tabId });
         const normalizedState = normalizeReconnectUiState(status?.state);
         if (!normalizedState) {
-          setReconnectStateByTabId((previous) => {
-            if (
-              !shouldClearStaleReconnectStatus(previous[tabId], status?.state)
-            ) {
-              return previous;
-            }
-
-            const next = { ...previous };
-            delete next[tabId];
-            return next;
-          });
           return;
         }
 
@@ -989,14 +901,9 @@ function AppContent() {
         return;
       }
 
-      updateReconnectStatus(payload.tabId, (current) => ({
-        ...current,
-        state: "pending",
-        phase: null,
-        nextRetryAt: null,
-        windowExpiresAt: current?.windowExpiresAt || null,
-        error: null,
-      }));
+      updateReconnectStatus(payload.tabId, (current) =>
+        buildReconnectStatusPatch("connection-lost", payload, current),
+      );
     };
 
     const handleReconnectStarted = (_event, payload) => {
@@ -1004,17 +911,9 @@ function AppContent() {
         return;
       }
 
-      updateReconnectStatus(payload.tabId, {
-        state: "reconnecting",
-        attempts: Number(payload?.attempts || 0),
-        maxAttempts: Number(payload?.maxAttempts || 0),
-        phase: null,
-        nextRetryAt: null,
-        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
-        failureReason: payload?.failureReason || null,
-        error: null,
-        hint: payload?.hint || null,
-      });
+      updateReconnectStatus(payload.tabId, (current) =>
+        buildReconnectStatusPatch("reconnect-started", payload, current),
+      );
       setReconnectActionTabId((current) =>
         current === payload.tabId ? null : current,
       );
@@ -1025,20 +924,9 @@ function AppContent() {
         return;
       }
 
-      const delay = Number(payload?.delay || 0);
-      const baseTimestamp = Number(payload?.timestamp || Date.now());
-      updateReconnectStatus(payload.tabId, {
-        state: "pending",
-        attempts: Number(payload?.attempts || 0),
-        maxAttempts: Number(payload?.maxAttempts || 0),
-        phase: null,
-        nextRetryAt:
-          Number.isFinite(delay) && delay > 0 ? baseTimestamp + delay : null,
-        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
-        failureReason: payload?.failureReason || null,
-        error: null,
-        hint: payload?.hint || null,
-      });
+      updateReconnectStatus(payload.tabId, (current) =>
+        buildReconnectStatusPatch("reconnect-progress", payload, current),
+      );
       setReconnectActionTabId((current) =>
         current === payload.tabId ? null : current,
       );
@@ -1049,7 +937,9 @@ function AppContent() {
         return;
       }
 
-      clearReconnectStatus(payload.tabId);
+      updateReconnectStatus(payload.tabId, (current) =>
+        buildReconnectStatusPatch("reconnect-success", payload, current),
+      );
       setReconnectActionTabId((current) =>
         current === payload.tabId ? null : current,
       );
@@ -1060,17 +950,9 @@ function AppContent() {
         return;
       }
 
-      updateReconnectStatus(payload.tabId, {
-        state: "failed",
-        attempts: Number(payload?.attempts || 0),
-        maxAttempts: Number(payload?.maxAttempts || 0),
-        phase: null,
-        nextRetryAt: null,
-        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
-        failureReason: payload?.failureReason || null,
-        error: payload?.error || null,
-        hint: payload?.hint || null,
-      });
+      updateReconnectStatus(payload.tabId, (current) =>
+        buildReconnectStatusPatch("reconnect-failed", payload, current),
+      );
       setReconnectActionTabId((current) =>
         current === payload.tabId ? null : current,
       );
@@ -1081,17 +963,9 @@ function AppContent() {
         return;
       }
 
-      updateReconnectStatus(payload.tabId, {
-        state: "abandoned",
-        attempts: Number(payload?.attempts || 0),
-        maxAttempts: Number(payload?.maxAttempts || 0),
-        phase: null,
-        nextRetryAt: null,
-        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
-        failureReason: payload?.failureReason || null,
-        error: payload?.error || null,
-        hint: payload?.hint || null,
-      });
+      updateReconnectStatus(payload.tabId, (current) =>
+        buildReconnectStatusPatch("reconnect-abandoned", payload, current),
+      );
       setReconnectActionTabId((current) =>
         current === payload.tabId ? null : current,
       );
@@ -1125,31 +999,50 @@ function AppContent() {
         return;
       }
 
-      updateReconnectStatus(payload.tabId, {
-        state: "failed",
-        phase: null,
-        attempts: Number(payload?.attempts || 0),
-        maxAttempts: Number(payload?.maxAttempts || 0),
-        nextRetryAt: null,
-        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
-        failureReason: payload?.failureReason || "network",
-        error: payload?.error || null,
-        hint: payload?.hint || t("tabMenu.reconnectSessionRestoreFailedHint"),
-      });
+      updateReconnectStatus(payload.tabId, (current) =>
+        buildReconnectStatusPatch(
+          "terminal-session-restore-failed",
+          {
+            ...payload,
+            hint:
+              payload?.hint || t("tabMenu.reconnectSessionRestoreFailedHint"),
+          },
+          current,
+        ),
+      );
       setReconnectActionTabId((current) =>
         current === payload.tabId ? null : current,
       );
     };
 
     const handleTabConnectionStatus = (payload) => {
-      if (!payload?.tabId || payload?.connectionStatus?.isConnected !== true) {
+      if (!payload?.tabId) {
         return;
       }
 
-      clearReconnectStatus(payload.tabId);
-      setReconnectActionTabId((current) =>
-        current === payload.tabId ? null : current,
-      );
+      if (shouldClearOnTabConnectionStatus(payload.connectionStatus)) {
+        clearReconnectStatus(payload.tabId);
+        setReconnectActionTabId((current) =>
+          current === payload.tabId ? null : current,
+        );
+        return;
+      }
+
+      if (shouldMarkPendingOnTabConnectionStatus(payload.connectionStatus)) {
+        updateReconnectStatus(
+          payload.tabId,
+          (current) =>
+            buildReconnectStatusPatch(
+              "tab-connection-offline",
+              {
+                failureReason: payload?.connectionStatus?.failureReason,
+                error: payload?.connectionStatus?.error,
+              },
+              current,
+            ),
+          { requireExisting: true },
+        );
+      }
     };
 
     window.terminalAPI.onConnectionLost?.(handleConnectionLost);
@@ -2449,14 +2342,17 @@ function AppContent() {
 
     const sshConfig = terminalInstances[`${tabId}-config`] || null;
     setReconnectActionTabId(tabId);
-    updateReconnectStatus(tabId, (current) => ({
-      ...current,
-      state: "reconnecting",
-      phase: null,
-      nextRetryAt: null,
-      failureReason: current?.failureReason || "network",
-      error: null,
-    }));
+    updateReconnectStatus(tabId, (current) =>
+      buildReconnectStatusPatch(
+        "manual-reconnect-started",
+        {
+          attempts: 0,
+          maxAttempts: current?.maxAttempts || 0,
+          failureReason: current?.failureReason || "network",
+        },
+        current,
+      ),
+    );
 
     try {
       const result = await window.terminalAPI.manualReconnect({
@@ -2471,14 +2367,19 @@ function AppContent() {
       showInfo(t("tabMenu.manualReconnectStarted"));
       handleTabContextMenuClose();
     } catch (error) {
-      updateReconnectStatus(tabId, (current) => ({
-        ...current,
-        state: "failed",
-        phase: null,
-        nextRetryAt: null,
-        windowExpiresAt: current?.windowExpiresAt || null,
-        error: error?.message || String(error),
-      }));
+      updateReconnectStatus(tabId, (current) =>
+        buildReconnectStatusPatch(
+          "reconnect-failed",
+          {
+            attempts: current?.attempts || 0,
+            maxAttempts: current?.maxAttempts || 0,
+            failureReason: current?.failureReason || "network",
+            error: error?.message || String(error),
+            windowExpiresAt: current?.windowExpiresAt || null,
+          },
+          current,
+        ),
+      );
       setReconnectActionTabId(null);
       showError(error?.message || t("tabMenu.manualReconnect"));
     }
@@ -2511,13 +2412,9 @@ function AppContent() {
         throw new Error(result.error || t("tabMenu.pauseReconnect"));
       }
 
-      updateReconnectStatus(tabId, (current) => ({
-        ...current,
-        state: "paused",
-        phase: null,
-        nextRetryAt: null,
-        error: null,
-      }));
+      updateReconnectStatus(tabId, (current) =>
+        buildReconnectStatusPatch("reconnect-paused", {}, current),
+      );
       setReconnectActionTabId(null);
       showInfo(t("tabMenu.pauseReconnectDone"));
       handleTabContextMenuClose();
@@ -2553,14 +2450,16 @@ function AppContent() {
         throw new Error(result.error || t("tabMenu.resumeReconnect"));
       }
 
-      updateReconnectStatus(tabId, (current) => ({
-        ...current,
-        state: "pending",
-        phase: null,
-        nextRetryAt: null,
-        failureReason: current?.failureReason || "network",
-        error: null,
-      }));
+      updateReconnectStatus(tabId, (current) =>
+        buildReconnectStatusPatch(
+          "reconnect-resumed",
+          {
+            failureReason: current?.failureReason || "network",
+            windowExpiresAt: current?.windowExpiresAt || null,
+          },
+          current,
+        ),
+      );
       setReconnectActionTabId(null);
       showInfo(t("tabMenu.resumeReconnectDone"));
       handleTabContextMenuClose();

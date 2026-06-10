@@ -87,6 +87,15 @@ function getTerminalText(config, key, params = {}) {
   return messages[key] || key;
 }
 
+function extractTabIdFromConnectionKey(connectionKey) {
+  if (!connectionKey || !String(connectionKey).startsWith("tab:")) {
+    return null;
+  }
+
+  const parts = String(connectionKey).split(":");
+  return parts.length >= 2 ? parts[1] : null;
+}
+
 /**
  * SSH/Telnet连接相关的IPC处理器
  * 这是一个高风险模块，涉及多个全局状态的管理
@@ -721,6 +730,69 @@ class SSHHandlers {
     });
   }
 
+  _emitSshTabConnectionStatus(tabId, sshConfig, overrides = {}) {
+    const mainWindow = this._getMainWindow();
+    if (!tabId || !mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+
+    const connectionStatus = {
+      isConnected: true,
+      isConnecting: false,
+      quality: "excellent",
+      lastUpdate: Date.now(),
+      connectionType: "SSH",
+      host: sshConfig?.host,
+      port: sshConfig?.port,
+      username: sshConfig?.username,
+      ...overrides,
+    };
+
+    mainWindow.webContents.send(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, {
+      tabId,
+      connectionStatus,
+    });
+  }
+
+  _emitTerminalSessionRestored({ processId, tabId, connectionKey, sshConfig }) {
+    this._emitSshTabConnectionStatus(tabId, sshConfig);
+    this._emitTerminalSessionEvent(
+      IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORED,
+      {
+        processId,
+        tabId,
+        connectionKey,
+        host: sshConfig?.host,
+        port: sshConfig?.port || 22,
+        username: sshConfig?.username,
+      },
+    );
+  }
+
+  _emitTerminalSessionRestoreFailed({
+    processId = null,
+    tabId,
+    connectionKey,
+    sshConfig,
+    error,
+    hint,
+  }) {
+    this._emitTerminalSessionEvent(
+      IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORE_FAILED,
+      {
+        processId,
+        tabId,
+        connectionKey,
+        host: sshConfig?.host,
+        port: sshConfig?.port || 22,
+        username: sshConfig?.username,
+        error:
+          error || getTerminalText(sshConfig, "reconnectRecoveryFailedDefault"),
+        hint: hint || getTerminalText(sshConfig, "reconnectRecoveryFailedHint"),
+      },
+    );
+  }
+
   _setProcessBufferedBytes(processId, bytes) {
     if (!this.terminalIOMailboxManager) {
       return;
@@ -846,48 +918,20 @@ class SSHHandlers {
 
   _resolveProcessBinding(connectionKey) {
     const binding = this.connectionProcessBindings.get(connectionKey);
-    if (binding) {
-      const hasProcess = this.childProcesses.has(binding.processId);
-      const hasTab = binding.tabId
-        ? this.childProcesses.has(binding.tabId)
-        : false;
-      if (hasProcess || hasTab) {
-        return binding;
-      }
-      this.connectionProcessBindings.delete(connectionKey);
+    if (!binding) {
+      return null;
     }
 
-    let fallback = null;
-    for (const [
-      candidateProcessId,
-      procInfo,
-    ] of this.childProcesses.entries()) {
-      if (
-        procInfo?.type === "ssh2" &&
-        procInfo?.connectionInfo?.key === connectionKey
-      ) {
-        const candidateTabId = procInfo?.config?.tabId || null;
-        const candidate = {
-          processId: candidateProcessId,
-          tabId: candidateTabId,
-        };
-        if (
-          candidateTabId &&
-          String(candidateProcessId) !== String(candidateTabId)
-        ) {
-          this.connectionProcessBindings.set(connectionKey, candidate);
-          return candidate;
-        }
-        if (!fallback) {
-          fallback = candidate;
-        }
-      }
+    const hasProcess = this.childProcesses.has(binding.processId);
+    const hasTab = binding.tabId
+      ? this.childProcesses.has(binding.tabId)
+      : false;
+    if (hasProcess || hasTab) {
+      return binding;
     }
 
-    if (fallback) {
-      this.connectionProcessBindings.set(connectionKey, fallback);
-    }
-    return fallback;
+    this.connectionProcessBindings.delete(connectionKey);
+    return null;
   }
 
   _isSSHStreamUsable(stream) {
@@ -901,8 +945,24 @@ class SSHHandlers {
   async _handleConnectionReconnected(connectionKey, connectionInfoFromPool) {
     if (!connectionKey) return;
 
+    const tabIdFromConnectionKey = extractTabIdFromConnectionKey(connectionKey);
     const binding = this._resolveProcessBinding(connectionKey);
     if (!binding) {
+      const sshConfig = connectionInfoFromPool?.config || null;
+      const message = getTerminalText(
+        sshConfig,
+        "reconnectRecoveryFailedDefault",
+      );
+      logToFile(
+        `自动恢复终端会话失败: connection=${connectionKey}, error=no terminal binding`,
+        "ERROR",
+      );
+      this._emitTerminalSessionRestoreFailed({
+        tabId: tabIdFromConnectionKey,
+        connectionKey,
+        sshConfig,
+        error: message,
+      });
       return;
     }
 
@@ -911,20 +971,44 @@ class SSHHandlers {
     const tabProcInfo = tabId ? this.childProcesses.get(tabId) : null;
     if (!procInfo && !tabProcInfo) {
       this._unbindConnectionProcess(connectionKey);
+      const sshConfig = connectionInfoFromPool?.config || null;
+      const message = getTerminalText(
+        sshConfig,
+        "reconnectRecoveryFailedDefault",
+      );
+      logToFile(
+        `自动恢复终端会话失败: connection=${connectionKey}, process=${processId}, error=bound terminal process missing`,
+        "ERROR",
+      );
+      this._emitTerminalSessionRestoreFailed({
+        processId,
+        tabId: tabId || tabIdFromConnectionKey,
+        connectionKey,
+        sshConfig,
+        error: message,
+      });
       return;
     }
 
     const activeProc = procInfo || tabProcInfo;
     if (!activeProc || activeProc.type !== "ssh2") {
-      return;
-    }
-
-    const existingStream = procInfo?.stream || tabProcInfo?.stream;
-    if (this._isSSHStreamUsable(existingStream)) {
-      return;
-    }
-
-    if (this.reconnectingShells.has(connectionKey)) {
+      const sshConfig =
+        activeProc?.config || connectionInfoFromPool?.config || null;
+      const message = getTerminalText(
+        sshConfig,
+        "reconnectRecoveryFailedDefault",
+      );
+      logToFile(
+        `自动恢复终端会话失败: connection=${connectionKey}, process=${processId}, error=bound process is not ssh2`,
+        "ERROR",
+      );
+      this._emitTerminalSessionRestoreFailed({
+        processId,
+        tabId: tabId || tabIdFromConnectionKey,
+        connectionKey,
+        sshConfig,
+        error: message,
+      });
       return;
     }
 
@@ -932,12 +1016,54 @@ class SSHHandlers {
       this.connectionManager?.sshConnectionPool?.connections?.get(
         connectionKey,
       ) || connectionInfoFromPool;
-    if (!latestConnInfo?.client) {
+    const sshConfig = activeProc.config || latestConnInfo?.config;
+    if (!sshConfig) {
+      const message = getTerminalText(null, "reconnectRecoveryFailedDefault");
+      logToFile(
+        `自动恢复终端会话失败: connection=${connectionKey}, process=${processId}, error=missing ssh config`,
+        "ERROR",
+      );
+      this._emitTerminalSessionRestoreFailed({
+        processId,
+        tabId: tabId || tabIdFromConnectionKey,
+        connectionKey,
+        sshConfig: null,
+        error: message,
+      });
       return;
     }
 
-    const sshConfig = activeProc.config || latestConnInfo.config;
-    if (!sshConfig) {
+    const existingStream = procInfo?.stream || tabProcInfo?.stream;
+    if (this._isSSHStreamUsable(existingStream)) {
+      this._emitTerminalSessionRestored({
+        processId,
+        tabId,
+        connectionKey,
+        sshConfig,
+      });
+      return;
+    }
+
+    if (this.reconnectingShells.has(connectionKey)) {
+      return;
+    }
+
+    if (!latestConnInfo?.client) {
+      const message = getTerminalText(
+        sshConfig,
+        "reconnectRecoveryFailedDefault",
+      );
+      logToFile(
+        `自动恢复终端会话失败: connection=${connectionKey}, process=${processId}, error=missing recovered ssh client`,
+        "ERROR",
+      );
+      this._emitTerminalSessionRestoreFailed({
+        processId,
+        tabId: tabId || tabIdFromConnectionKey,
+        connectionKey,
+        sshConfig,
+        error: message,
+      });
       return;
     }
 
@@ -956,59 +1082,26 @@ class SSHHandlers {
         { isReconnectRecovery: true },
       );
 
-      const mainWindow = this._getMainWindow();
-      if (tabId && mainWindow && !mainWindow.isDestroyed()) {
-        const connectionStatus = {
-          isConnected: true,
-          isConnecting: false,
-          quality: "excellent",
-          lastUpdate: Date.now(),
-          connectionType: "SSH",
-          host: sshConfig.host,
-          port: sshConfig.port,
-          username: sshConfig.username,
-        };
-        mainWindow.webContents.send(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, {
-          tabId,
-          connectionStatus,
-        });
-      }
-
       this._emitProcessOutput(
         processId,
         `\r\n\x1b[32m*** ${getTerminalText(sshConfig, "reconnectRecoverySucceeded")} ***\x1b[0m\r\n`,
       );
 
-      this._emitTerminalSessionEvent(IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORED, {
+      this._emitTerminalSessionRestored({
         processId,
         tabId,
         connectionKey,
-        host: sshConfig.host,
-        port: sshConfig.port || 22,
-        username: sshConfig.username,
+        sshConfig,
       });
     } catch (error) {
       const message =
         error?.message ||
         getTerminalText(sshConfig, "reconnectRecoveryFailedDefault");
-      const mainWindow = this._getMainWindow();
-      if (tabId && mainWindow && !mainWindow.isDestroyed()) {
-        const connectionStatus = {
-          isConnected: false,
-          isConnecting: false,
-          quality: "offline",
-          lastUpdate: Date.now(),
-          connectionType: "SSH",
-          host: sshConfig.host,
-          port: sshConfig.port,
-          username: sshConfig.username,
-          error: message,
-        };
-        mainWindow.webContents.send(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, {
-          tabId,
-          connectionStatus,
-        });
-      }
+      this._emitSshTabConnectionStatus(tabId, sshConfig, {
+        isConnected: false,
+        quality: "offline",
+        error: message,
+      });
 
       logToFile(
         `自动恢复终端会话失败: connection=${connectionKey}, process=${processId}, error=${message}`,
@@ -1025,15 +1118,12 @@ class SSHHandlers {
         )} ***\x1b[0m\r\n`,
       );
 
-      this._emitTerminalSessionEvent(IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORE_FAILED, {
+      this._emitTerminalSessionRestoreFailed({
         processId,
         tabId,
         connectionKey,
-        host: sshConfig.host,
-        port: sshConfig.port || 22,
-        username: sshConfig.username,
+        sshConfig,
         error: message,
-        hint: getTerminalText(sshConfig, "reconnectRecoveryFailedHint"),
       });
     } finally {
       this.reconnectingShells.delete(connectionKey);
@@ -1046,7 +1136,10 @@ class SSHHandlers {
       const windows = BrowserWindow.getAllWindows();
       for (const win of windows) {
         if (win && !win.isDestroyed() && win.webContents) {
-          win.webContents.send(IPC_EVENT_CHANNELS.TOP_CONNECTIONS_CHANGED, lastConnections);
+          win.webContents.send(
+            IPC_EVENT_CHANNELS.TOP_CONNECTIONS_CHANGED,
+            lastConnections,
+          );
         }
       }
     } catch {
@@ -1511,9 +1604,7 @@ class SSHHandlers {
     const message = String(preflightResult?.message || "");
 
     if (code === "EPROXYUNAVAILABLE") {
-      return new Error(
-        `代理不可用: 无法通过当前代理连接到 ${host}:${port}`,
-      );
+      return new Error(`代理不可用: 无法通过当前代理连接到 ${host}:${port}`);
     }
 
     if (code === "ECONNREFUSED" || message.includes("ECONNREFUSED")) {
@@ -1932,44 +2023,78 @@ class SSHHandlers {
         settled = true;
         cleanup();
 
-        // 更新进程状态
-        const procInfo = this.childProcesses.get(processId);
-        if (procInfo) procInfo.ready = true;
-        if (sshConfig.tabId) {
-          const tabProcInfo = this.childProcesses.get(sshConfig.tabId);
-          if (tabProcInfo) tabProcInfo.ready = true;
-
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            const connectionStatus = {
-              isConnected: true,
-              isConnecting: false,
-              quality: "excellent",
-              lastUpdate: Date.now(),
-              connectionType: "SSH",
-              host: sshConfig.host,
-              port: sshConfig.port,
-              username: sshConfig.username,
-            };
-            mainWindow.webContents.send(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, {
-              tabId: sshConfig.tabId,
-              connectionStatus,
-            });
-          }
-        }
-
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          this._emitProcessOutput(
-            processId,
-            `\r\n*** ${getTerminalText(sshConfig, "sshConnected", {
-              host: sshConfig.host,
-            })} ***\r\n`,
-          );
-        }
-
         const clientToUse = fromReconnectManager ? getLatestClient() : ssh;
         this._createSSHShell(clientToUse, processId, sshConfig, connectionInfo)
-          .then(resolve)
-          .catch(reject);
+          .then((result) => {
+            const procInfo = this.childProcesses.get(processId);
+            if (procInfo) procInfo.ready = true;
+            if (sshConfig.tabId) {
+              const tabProcInfo = this.childProcesses.get(sshConfig.tabId);
+              if (tabProcInfo) tabProcInfo.ready = true;
+
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                const connectionStatus = {
+                  isConnected: true,
+                  isConnecting: false,
+                  quality: "excellent",
+                  lastUpdate: Date.now(),
+                  connectionType: "SSH",
+                  host: sshConfig.host,
+                  port: sshConfig.port,
+                  username: sshConfig.username,
+                };
+                mainWindow.webContents.send(
+                  IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS,
+                  {
+                    tabId: sshConfig.tabId,
+                    connectionStatus,
+                  },
+                );
+              }
+            }
+
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              this._emitProcessOutput(
+                processId,
+                `\r\n*** ${getTerminalText(sshConfig, "sshConnected", {
+                  host: sshConfig.host,
+                })} ***\r\n`,
+              );
+            }
+
+            resolve(result);
+          })
+          .catch((error) => {
+            const procInfo = this.childProcesses.get(processId);
+            if (procInfo) procInfo.ready = false;
+            if (sshConfig.tabId) {
+              const tabProcInfo = this.childProcesses.get(sshConfig.tabId);
+              if (tabProcInfo) tabProcInfo.ready = false;
+
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                const connectionStatus = {
+                  isConnected: false,
+                  isConnecting: false,
+                  quality: "offline",
+                  lastUpdate: Date.now(),
+                  connectionType: "SSH",
+                  host: sshConfig.host,
+                  port: sshConfig.port,
+                  username: sshConfig.username,
+                  error: error?.message || String(error),
+                };
+                mainWindow.webContents.send(
+                  IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS,
+                  {
+                    tabId: sshConfig.tabId,
+                    connectionStatus,
+                  },
+                );
+              }
+            }
+
+            reject(error);
+          });
       };
 
       const startWaitForReconnect = () => {
@@ -2058,10 +2183,13 @@ class SSHHandlers {
             username: sshConfig.username,
             error: err?.message || String(err),
           };
-          mainWindow.webContents.send(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, {
-            tabId: sshConfig.tabId,
-            connectionStatus,
-          });
+          mainWindow.webContents.send(
+            IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS,
+            {
+              tabId: sshConfig.tabId,
+              connectionStatus,
+            },
+          );
         }
 
         this.connectionManager.releaseSSHConnection(

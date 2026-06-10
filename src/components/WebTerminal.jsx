@@ -3555,7 +3555,6 @@ const WebTerminal = ({
         recoverTerminalAfterActivation({
           resize: true,
           refocus: true,
-          refreshSuggestions: true,
         });
       }, delay),
     );
@@ -3574,7 +3573,6 @@ const WebTerminal = ({
         recoverTerminalAfterActivation({
           resize: true,
           refocus: true,
-          refreshSuggestions: true,
         });
       }, 120);
     };

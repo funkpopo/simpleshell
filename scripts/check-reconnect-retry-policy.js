@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const path = require("node:path");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..");
 
 const ReconnectionManager = require(
   path.join(ROOT, "src/core/connection/reconnection-manager.js"),
@@ -287,7 +287,7 @@ async function run() {
   }
 
   console.log(
-    `\n${tests.length} reconnect retry policy regression checks passed.`,
+    `\n${tests.length} reconnect retry policy checks passed.`,
   );
 }
 

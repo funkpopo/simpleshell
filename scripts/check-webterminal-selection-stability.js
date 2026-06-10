@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const repoRoot = path.resolve(__dirname, "..", "..");
+const repoRoot = path.resolve(__dirname, "..");
 const read = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
@@ -77,4 +77,4 @@ assert.equal(
   "terminal letter spacing must remain zero for stable cell geometry",
 );
 
-console.log("WebTerminal selection stability regression checks passed.");
+console.log("WebTerminal selection stability checks passed.");

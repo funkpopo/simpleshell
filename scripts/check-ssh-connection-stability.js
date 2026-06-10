@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const repoRoot = path.resolve(__dirname, "..", "..");
+const repoRoot = path.resolve(__dirname, "..");
 const sshPoolSource = fs.readFileSync(
   path.join(repoRoot, "src/core/connection/ssh-pool.js"),
   "utf8",
@@ -37,4 +37,4 @@ assert.match(
   "SSHPool.performHealthCheck should only delegate to BaseConnectionPool",
 );
 
-console.log("SSH connection stability regression checks passed.");
+console.log("SSH connection stability checks passed.");

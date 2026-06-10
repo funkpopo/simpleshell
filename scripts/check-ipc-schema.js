@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..");
 const SRC_DIR = path.join(ROOT, "src");
 const {
   IPC_CHANNEL_DEFINITIONS,
@@ -259,7 +259,7 @@ function run() {
   assertStaticChannelsAreDeclared();
   assertNoStaticIpcStringUsage();
   assertNoForbiddenIpcPatterns();
-  console.log("PASS ipc-schema-regression");
+  console.log("PASS check-ipc-schema");
 }
 
 run();

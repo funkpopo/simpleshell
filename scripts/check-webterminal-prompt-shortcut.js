@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..");
 
 const { isLikelyPromptLine, isPromptReadyFromTerminal } = require(
   path.join(ROOT, "src/modules/terminal/promptDetection.js"),
@@ -124,7 +124,7 @@ function run() {
   });
 
   console.log(
-    `\n${tests.length} WebTerminal prompt/shortcut regression checks passed.`,
+    `\n${tests.length} WebTerminal prompt/shortcut checks passed.`,
   );
 }
 

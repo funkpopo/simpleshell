@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(__dirname, "..");
 
 function readSource(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -103,7 +103,7 @@ function run() {
     /Risk Record[\s\S]*Alternatives[\s\S]*Guardrails/,
     "Preload sandbox documentation must record risks, alternatives, and guardrails.",
   );
-  console.log("PASS preload-sandbox-regression");
+  console.log("PASS check-preload-sandbox");
 }
 
 run();
