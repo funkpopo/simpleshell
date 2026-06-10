@@ -155,7 +155,7 @@ function testTerminalSessionFailureKeepsFailureIndicatorVisible() {
     "terminal-session-restore-failed",
     {
       error: "Unable to create shell",
-      hint: "Reconnect manually",
+      hint: "Refresh the connection",
     },
     status,
   );
@@ -163,7 +163,7 @@ function testTerminalSessionFailureKeepsFailureIndicatorVisible() {
   assert.equal(status.state, RECONNECT_TAB_STATES.FAILED);
   assert.equal(status.phase, "terminal-session");
   assert.equal(status.error, "Unable to create shell");
-  assert.equal(status.hint, "Reconnect manually");
+  assert.equal(status.hint, "Refresh the connection");
   assert.equal(canPauseReconnectStatus(status), false);
 }
 
@@ -172,7 +172,7 @@ function testTerminalSessionFailureRequiresExistingReconnectState() {
     "terminal-session-restore-failed",
     {
       error: "Unable to create shell",
-      hint: "Reconnect manually",
+      hint: "Refresh the connection",
     },
   );
 
@@ -321,14 +321,6 @@ function testPausedStateIsNotOverwrittenByLateReconnectEvents() {
       status,
     ).state,
     RECONNECT_TAB_STATES.PENDING,
-  );
-  assert.equal(
-    buildReconnectStatusPatch(
-      "manual-reconnect-started",
-      { failureReason: "network" },
-      status,
-    ).state,
-    RECONNECT_TAB_STATES.RECONNECTING,
   );
 }
 

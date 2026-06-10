@@ -368,7 +368,6 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 重连管理API
   getReconnectStatus: (args) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_GET_STATUS, args),
-  manualReconnect: (args) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_MANUAL, args),
   pauseReconnect: (args) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_PAUSE, args),
   resumeReconnect: (args) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_RESUME, args),
   getReconnectStatistics: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_GET_STATISTICS),

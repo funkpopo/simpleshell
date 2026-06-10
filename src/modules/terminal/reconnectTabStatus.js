@@ -148,19 +148,6 @@ const buildReconnectStatusPatch = (eventType, payload = {}, current = {}) => {
         hint: payload?.hint || null,
       };
 
-    case "manual-reconnect-started":
-      return {
-        state: RECONNECT_TAB_STATES.RECONNECTING,
-        attempts: Number(payload?.attempts || 0),
-        maxAttempts: Number(payload?.maxAttempts || 0),
-        phase: "transport",
-        nextRetryAt: null,
-        windowExpiresAt: Number(payload?.windowExpiresAt || 0) || null,
-        failureReason: payload?.failureReason || null,
-        error: null,
-        hint: payload?.hint || null,
-      };
-
     case "reconnect-progress": {
       if (isPausedReconnectStatus(current)) {
         return preservePausedReconnectStatus(current, payload);

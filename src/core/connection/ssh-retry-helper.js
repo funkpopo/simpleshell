@@ -241,9 +241,9 @@ function buildReconnectTimeoutMessage(retryConfig, language = "zh-CN") {
     language,
   );
   if (!isZhLanguage(language)) {
-    return `Reconnect timed out (${duration}). Check network/VPN and reconnect manually.`;
+    return `Reconnect timed out (${duration}). Check network/VPN and refresh or reopen the connection.`;
   }
-  return `重连超时（${duration}），请检查网络/VPN后手动重连。`;
+  return `重连超时（${duration}），请检查网络/VPN后刷新或重新打开连接。`;
 }
 
 function buildReconnectWaitMessage(retryConfig, language = "zh-CN") {

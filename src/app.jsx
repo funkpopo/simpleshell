@@ -2329,70 +2329,6 @@ function AppContent() {
     handleTabContextMenuClose();
   };
 
-  const handleManualReconnect = useCallback(async () => {
-    const tabId = tabContextMenu.tabId;
-    if (!tabId) {
-      return;
-    }
-
-    if (!window.terminalAPI?.manualReconnect) {
-      showError(t("app.apiNotFound"));
-      return;
-    }
-
-    const sshConfig = terminalInstances[`${tabId}-config`] || null;
-    setReconnectActionTabId(tabId);
-    updateReconnectStatus(tabId, (current) =>
-      buildReconnectStatusPatch(
-        "manual-reconnect-started",
-        {
-          attempts: 0,
-          maxAttempts: current?.maxAttempts || 0,
-          failureReason: current?.failureReason || "network",
-        },
-        current,
-      ),
-    );
-
-    try {
-      const result = await window.terminalAPI.manualReconnect({
-        tabId,
-        sshConfig,
-      });
-      if (result && result.success === false) {
-        throw new Error(result.error || t("tabMenu.manualReconnect"));
-      }
-
-      setReconnectActionTabId(null);
-      showInfo(t("tabMenu.manualReconnectStarted"));
-      handleTabContextMenuClose();
-    } catch (error) {
-      updateReconnectStatus(tabId, (current) =>
-        buildReconnectStatusPatch(
-          "reconnect-failed",
-          {
-            attempts: current?.attempts || 0,
-            maxAttempts: current?.maxAttempts || 0,
-            failureReason: current?.failureReason || "network",
-            error: error?.message || String(error),
-            windowExpiresAt: current?.windowExpiresAt || null,
-          },
-          current,
-        ),
-      );
-      setReconnectActionTabId(null);
-      showError(error?.message || t("tabMenu.manualReconnect"));
-    }
-  }, [
-    handleTabContextMenuClose,
-    showError,
-    showInfo,
-    t,
-    tabContextMenu.tabId,
-    terminalInstances,
-    updateReconnectStatus,
-  ]);
-
   const handlePauseReconnect = useCallback(async () => {
     const tabId = tabContextMenu.tabId;
     if (!tabId) {
@@ -3844,7 +3780,7 @@ function AppContent() {
               {t("tabMenu.close")}
             </MenuItem>
 
-            {isContextMenuSshTab && <Divider />}
+            {isContextMenuSshTab && contextMenuReconnectStatus && <Divider />}
 
             {isContextMenuSshTab && contextMenuReconnectStatus && (
               <Box
@@ -3927,16 +3863,6 @@ function AppContent() {
                   </Typography>
                 )}
               </Box>
-            )}
-
-            {isContextMenuSshTab && (
-              <MenuItem
-                onClick={handleManualReconnect}
-                disabled={isReconnectActionPending}
-              >
-                <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
-                {t("tabMenu.manualReconnect")}
-              </MenuItem>
             )}
 
             {isContextMenuSshTab &&
