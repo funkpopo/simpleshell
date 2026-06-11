@@ -2390,10 +2390,10 @@ const FileManager = memo(
 
     const handleFileSelect = useCallback(
       (file, index, event) => {
-        // 只在需要时阻止默认行为
+        event.stopPropagation();
+
         if (event.shiftKey || event.ctrlKey || event.metaKey) {
           event.preventDefault();
-          event.stopPropagation();
         }
 
         const isMultiSelect = event.ctrlKey || event.metaKey;
@@ -4048,13 +4048,23 @@ const FileManager = memo(
       });
     };
 
-    const handleBlankClick = useCallback(() => {
-      if (!selectedFile && selectedFiles.length === 0) {
-        return;
-      }
+    const handleBlankClick = useCallback(
+      (event) => {
+        if (
+          event?.target instanceof Element &&
+          event.target.closest('[data-file-item="true"]')
+        ) {
+          return;
+        }
 
-      clearSelection();
-    }, [clearSelection, selectedFile, selectedFiles.length]);
+        if (!selectedFile && selectedFiles.length === 0) {
+          return;
+        }
+
+        clearSelection();
+      },
+      [clearSelection, selectedFile, selectedFiles.length],
+    );
 
     // 关闭空白区域右键菜单
     const handleBlankContextMenuClose = () => {

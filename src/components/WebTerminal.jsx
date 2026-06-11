@@ -3356,10 +3356,6 @@ const WebTerminal = ({
   // 关闭右键菜单
   const handleClose = () => {
     setContextMenu(null);
-    // 新增：关闭标签页时释放后端连接
-    if (tabId && window.terminalAPI && window.terminalAPI.releaseConnection) {
-      window.terminalAPI.releaseConnection(tabId);
-    }
   };
 
   // 复制选中的文本
