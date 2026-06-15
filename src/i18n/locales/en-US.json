@@ -819,7 +819,6 @@
       "zoomIn": "Zoom In",
       "zoomOut": "Zoom Out",
       "download": "Download",
-      "font": "Font",
       "savingFile": "Saving file...",
       "selectedVersion": "Selected version: {{date}}",
       "clearSelection": "Clear Selection",

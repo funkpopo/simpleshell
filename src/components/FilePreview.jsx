@@ -20,10 +20,6 @@ import {
   Snackbar,
   Alert,
   ButtonGroup,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
   Divider,
   Stack,
   Chip,
@@ -36,6 +32,7 @@ import DownloadIcon from "@mui/icons-material/Download";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import SaveIcon from "@mui/icons-material/Save";
+import SearchIcon from "@mui/icons-material/Search";
 import RestoreIcon from "@mui/icons-material/Restore";
 import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
@@ -50,6 +47,7 @@ import {
   RangeSetBuilder,
 } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { openSearchPanel, search } from "@codemirror/search";
 import {
   getCodemirrorLanguageIdFromFilename,
   loadCodemirrorLanguageExtension,
@@ -239,9 +237,30 @@ const getMimeType = (filename) => {
   return mimeTypes[ext] || "application/octet-stream";
 };
 
+const normalizeEditorFontSetting = (fontSetting) => {
+  if (!fontSetting || typeof fontSetting !== "string") {
+    return "system";
+  }
+
+  const normalized = fontSetting.trim().toLowerCase();
+  switch (normalized) {
+    case "fira code":
+    case "fira-code":
+      return "fira-code";
+    case "space mono":
+    case "space-mono":
+      return "space-mono";
+    case "consolas":
+      return "consolas";
+    case "system":
+    default:
+      return "system";
+  }
+};
+
 // 获取字体族名称
 const getFontFamily = (fontSetting) => {
-  switch (fontSetting) {
+  switch (normalizeEditorFontSetting(fontSetting)) {
     case "fira-code":
       return '"Fira Code", "Consolas", "Monaco", "Courier New", monospace';
     case "consolas":
@@ -254,13 +273,18 @@ const getFontFamily = (fontSetting) => {
   }
 };
 
-// 字体选项定义
-const fontOptions = [
-  { value: "system", label: "系统默认" },
-  { value: "consolas", label: "Consolas" },
-  { value: "fira-code", label: "Fira Code" },
-  { value: "space-mono", label: "Space Mono" },
-];
+const resolveGlobalEditorFontSetting = (settings) => {
+  if (!settings || typeof settings !== "object") {
+    return "system";
+  }
+
+  const normalizedEditorFont = normalizeEditorFontSetting(settings.editorFont);
+  if (settings.editorFont && normalizedEditorFont !== "system") {
+    return normalizedEditorFont;
+  }
+
+  return settings.terminalFont || normalizedEditorFont;
+};
 
 const formatSnapshotDate = (value) => {
   const date = new Date(value);
@@ -562,7 +586,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [modified, setModified] = useState(false);
   const [savingFile, setSavingFile] = useState(false);
   const [notification, setNotification] = useState(null);
-  const [editorFont, setEditorFont] = useState("system");
+  const [globalEditorFont, setGlobalEditorFont] = useState("system");
   const [snapshots, setSnapshots] = useState([]);
   const [loadingSnapshots, setLoadingSnapshots] = useState(false);
   const [creatingSnapshot, setCreatingSnapshot] = useState(false);
@@ -576,6 +600,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const textEditorScrollListenerRef = useRef(null);
   const textEditorScrollSnapshotRef = useRef({ top: 0, left: 0 });
   const shouldRestoreTextEditorScrollRef = useRef(false);
+  const textEditorScrollRestoreModeRef = useRef("always");
   const syncedContentRef = useRef(null);
 
   const [codemirrorLangExtensions, setCodemirrorLangExtensions] = useState([]);
@@ -655,6 +680,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     [],
   );
 
+  const queueTextEditorScrollRestore = useCallback((mode = "always") => {
+    textEditorScrollRestoreModeRef.current = mode;
+    shouldRestoreTextEditorScrollRef.current = true;
+  }, []);
+
   const restoreTextEditorScrollPosition = useCallback(
     (view = textEditorRef.current) => {
       if (!shouldRestoreTextEditorScrollRef.current || !view?.scrollDOM) {
@@ -662,7 +692,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       }
 
       const { top, left } = textEditorScrollSnapshotRef.current;
+      const mode = textEditorScrollRestoreModeRef.current;
       shouldRestoreTextEditorScrollRef.current = false;
+      textEditorScrollRestoreModeRef.current = "always";
 
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -671,8 +703,27 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             return;
           }
 
-          activeView.scrollDOM.scrollTop = top;
-          activeView.scrollDOM.scrollLeft = left;
+          if (mode === "if-top-jump") {
+            const currentTop = activeView.scrollDOM.scrollTop;
+            const currentLeft = activeView.scrollDOM.scrollLeft;
+            const jumpedToTop = top > 4 && currentTop <= 4;
+            const jumpedToLeft = left > 4 && currentLeft <= 4;
+
+            if (!jumpedToTop && !jumpedToLeft) {
+              return;
+            }
+
+            if (jumpedToTop) {
+              activeView.scrollDOM.scrollTop = top;
+            }
+            if (jumpedToLeft) {
+              activeView.scrollDOM.scrollLeft = left;
+            }
+          } else {
+            activeView.scrollDOM.scrollTop = top;
+            activeView.scrollDOM.scrollLeft = left;
+          }
+
           activeView.requestMeasure();
         });
       });
@@ -714,6 +765,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       textEditorRef.current = null;
       textEditorScrollSnapshotRef.current = { top: 0, left: 0 };
       shouldRestoreTextEditorScrollRef.current = false;
+      textEditorScrollRestoreModeRef.current = "always";
       syncedContentRef.current = null;
     }
   }, [detachTextEditorScrollListener, open]);
@@ -792,24 +844,64 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     };
   }, [open, isTextPreview, file?.name]);
 
-  // 加载字体设置
+  // 加载全局编辑器字体设置
   useEffect(() => {
-    const loadFontSetting = async () => {
+    if (!open || !isTextPreview) {
+      return;
+    }
+
+    let cancelled = false;
+    const loadGlobalEditorFont = async () => {
       try {
-        // 从config.json加载文件预览字体设置
         if (window.terminalAPI?.loadUISettings) {
-          const settings = await window.terminalAPI.loadUISettings();
-          if (settings?.filePreviewFont) {
-            setEditorFont(settings.filePreviewFont);
+          const response = await window.terminalAPI.loadUISettings();
+          const settings = response?.success ? response.settings : response;
+          if (!cancelled && settings) {
+            setGlobalEditorFont(
+              normalizeEditorFontSetting(
+                resolveGlobalEditorFontSetting(settings),
+              ),
+            );
           }
         }
       } catch (error) {
-        console.error("Failed to load font setting:", error);
+        console.error("Failed to load global editor font setting:", error);
       }
     };
 
-    loadFontSetting();
-  }, []);
+    loadGlobalEditorFont();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isTextPreview]);
+
+  useEffect(() => {
+    if (!open || !isTextPreview) {
+      return undefined;
+    }
+
+    const handleSettingsChanged = (event) => {
+      const settings = event.detail;
+      if (settings?.editorFont || settings?.terminalFont) {
+        captureTextEditorScrollPosition();
+        queueTextEditorScrollRestore();
+        setGlobalEditorFont(
+          normalizeEditorFontSetting(resolveGlobalEditorFontSetting(settings)),
+        );
+      }
+    };
+
+    window.addEventListener("settingsChanged", handleSettingsChanged);
+    return () => {
+      window.removeEventListener("settingsChanged", handleSettingsChanged);
+    };
+  }, [
+    captureTextEditorScrollPosition,
+    isTextPreview,
+    open,
+    queueTextEditorScrollRestore,
+  ]);
 
   const refreshSnapshots = useCallback(async () => {
     if (!open || !isTextPreview || !window.terminalAPI?.listFileSnapshots) {
@@ -915,7 +1007,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setSnapshots([]);
       syncedContentRef.current = null;
       textEditorScrollSnapshotRef.current = { top: 0, left: 0 };
-      shouldRestoreTextEditorScrollRef.current = true;
+      queueTextEditorScrollRestore();
 
       try {
         // 检查文件大小限制 (10MB = 10 * 1024 * 1024 bytes)
@@ -1059,7 +1151,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     loadFileContent();
     // 重置编辑状态
     setIsEditing(false);
-  }, [open, file, fullPath, tabId, createSnapshot]);
+  }, [
+    open,
+    file,
+    fullPath,
+    tabId,
+    createSnapshot,
+    queueTextEditorScrollRestore,
+  ]);
 
   useEffect(() => {
     if (!open || !isTextPreview || pendingRestoreSnapshot) {
@@ -1068,7 +1167,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
     restoreTextEditorScrollPosition();
   }, [
-    editorFont,
+    content,
+    globalEditorFont,
     fullPath,
     isEditing,
     isTextPreview,
@@ -1309,10 +1409,43 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   };
 
   // 处理文本编辑
-  const handleEditorChange = useCallback((value) => {
-    setContent(value);
-    setModified(true);
-  }, []);
+  const handleEditorChange = useCallback(
+    (value, viewUpdate) => {
+      captureTextEditorScrollPosition(viewUpdate?.view);
+      queueTextEditorScrollRestore("if-top-jump");
+      setContent(value);
+      setModified(true);
+    },
+    [captureTextEditorScrollPosition, queueTextEditorScrollRestore],
+  );
+
+  const handleOpenTextSearch = useCallback(() => {
+    if (
+      !isTextPreview ||
+      loading ||
+      savingFile ||
+      pendingRestoreSnapshot ||
+      syntaxHighlightState.loading ||
+      syntaxHighlightState.error
+    ) {
+      return;
+    }
+
+    const view = textEditorRef.current;
+    if (!view) {
+      return;
+    }
+
+    view.focus();
+    openSearchPanel(view);
+  }, [
+    isTextPreview,
+    loading,
+    pendingRestoreSnapshot,
+    savingFile,
+    syntaxHighlightState.error,
+    syntaxHighlightState.loading,
+  ]);
 
   const handleSelectSnapshot = useCallback(
     (snapshot) => {
@@ -1321,28 +1454,29 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       }
 
       if (pendingRestoreSnapshot?.id === snapshot.id) {
-        shouldRestoreTextEditorScrollRef.current = true;
+        queueTextEditorScrollRestore();
         setPendingRestoreSnapshot(null);
         setSelectedSnapshotContent(null);
         return;
       }
 
       captureTextEditorScrollPosition();
-      shouldRestoreTextEditorScrollRef.current = true;
+      queueTextEditorScrollRestore();
       setPendingRestoreSnapshot(snapshot);
     },
     [
       captureTextEditorScrollPosition,
       pendingRestoreSnapshot,
+      queueTextEditorScrollRestore,
       restoringSnapshotId,
     ],
   );
 
   const handleClearSnapshotSelection = useCallback(() => {
-    shouldRestoreTextEditorScrollRef.current = true;
+    queueTextEditorScrollRestore();
     setPendingRestoreSnapshot(null);
     setSelectedSnapshotContent(null);
-  }, []);
+  }, [queueTextEditorScrollRestore]);
 
   // 处理保存文件
   const handleSaveFile = useCallback(async () => {
@@ -1444,6 +1578,17 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
       if (!isInsideDialog) return;
 
+      if (key === "f") {
+        if (!isTextFile(file?.name) || pendingRestoreSnapshot) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        handleOpenTextSearch();
+        return;
+      }
+
       if (key === "s") {
         event.preventDefault();
         event.stopPropagation();
@@ -1481,14 +1626,37 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open, file, isEditing, modified, savingFile, handleSaveFile]);
+  }, [
+    open,
+    file,
+    isEditing,
+    modified,
+    savingFile,
+    pendingRestoreSnapshot,
+    handleOpenTextSearch,
+    handleSaveFile,
+  ]);
 
-  // 切换编辑/预览模式
-  const toggleEditMode = useCallback(() => {
-    captureTextEditorScrollPosition();
-    shouldRestoreTextEditorScrollRef.current = true;
-    setIsEditing((current) => !current);
-  }, [captureTextEditorScrollPosition]);
+  const setTextEditorMode = useCallback(
+    (nextIsEditing) => {
+      if (isEditing === nextIsEditing) {
+        return;
+      }
+
+      captureTextEditorScrollPosition();
+      queueTextEditorScrollRestore();
+      setIsEditing(nextIsEditing);
+    },
+    [captureTextEditorScrollPosition, isEditing, queueTextEditorScrollRestore],
+  );
+
+  const switchToPreviewMode = useCallback(() => {
+    setTextEditorMode(false);
+  }, [setTextEditorMode]);
+
+  const switchToEditMode = useCallback(() => {
+    setTextEditorMode(true);
+  }, [setTextEditorMode]);
 
   const handleRestoreSnapshot = useCallback(async () => {
     if (
@@ -1519,7 +1687,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setIsEditing(true);
       setSnapshots(Array.isArray(response.snapshots) ? response.snapshots : []);
       setSelectedSnapshotContent(null);
-      shouldRestoreTextEditorScrollRef.current = true;
+      queueTextEditorScrollRestore();
       setNotification({
         message: `已回退到 ${formatSnapshotDate(pendingRestoreSnapshot.createdAt)}`,
         severity: "success",
@@ -1533,37 +1701,13 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     } finally {
       setRestoringSnapshotId(null);
     }
-  }, [pendingRestoreSnapshot, tabId, fullPath, content]);
-
-  // 处理字体选择变更
-  const handleFontChange = async (event) => {
-    const newFont = event.target.value;
-    captureTextEditorScrollPosition();
-    shouldRestoreTextEditorScrollRef.current = true;
-    setEditorFont(newFont);
-
-    try {
-      // 保存到config.json
-      if (window.terminalAPI?.saveUISettings) {
-        // 先获取当前设置
-        const currentSettings =
-          (await window.terminalAPI.loadUISettings()) || {};
-        // 更新文件预览字体设置
-        const updatedSettings = {
-          ...currentSettings,
-          filePreviewFont: newFont,
-        };
-        // 保存更新后的设置
-        await window.terminalAPI.saveUISettings(updatedSettings);
-      }
-    } catch (error) {
-      console.error("Failed to save font setting:", error);
-      setNotification({
-        message: "字体设置保存失败",
-        severity: "error",
-      });
-    }
-  };
+  }, [
+    pendingRestoreSnapshot,
+    tabId,
+    fullPath,
+    content,
+    queueTextEditorScrollRestore,
+  ]);
 
   // 处理通知关闭
   const handleCloseNotification = () => {
@@ -1593,17 +1737,49 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       theme.palette.mode === "dark"
         ? alpha(theme.palette.primary.light, 0.4)
         : alpha(theme.palette.primary.main, 0.36);
+    const fontFamily = getFontFamily(globalEditorFont);
+    const editorSurfaceColor =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.background.paper, 0.82)
+        : theme.palette.background.paper;
+    const panelBackgroundColor =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.background.default, 0.92)
+        : alpha(theme.palette.background.paper, 0.98);
+    const inputBackgroundColor =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.common.white, 0.06)
+        : alpha(theme.palette.common.black, 0.035);
+    const controlBorderColor =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.common.white, 0.16)
+        : alpha(theme.palette.common.black, 0.16);
+    const controlHoverBackgroundColor =
+      theme.palette.mode === "dark"
+        ? alpha(theme.palette.primary.light, 0.16)
+        : alpha(theme.palette.primary.main, 0.08);
+    const activeLineBackgroundColor = isEditing
+      ? theme.palette.mode === "dark"
+        ? alpha(theme.palette.primary.light, 0.08)
+        : alpha(theme.palette.primary.main, 0.055)
+      : "transparent";
 
     nextExtensions.push(
+      search({ top: true }),
       EditorView.theme({
-        ".cm-editor": {
-          fontFamily: getFontFamily(editorFont) + " !important",
+        "&": {
+          fontFamily: `${fontFamily} !important`,
           width: "100%",
           height: "100%",
+          backgroundColor: editorSurfaceColor,
+        },
+        "&.cm-focused": {
+          outline: "none",
         },
         ".cm-scroller": {
           overflowX: "hidden",
           overflowY: "auto",
+          backgroundColor: editorSurfaceColor,
           scrollbarWidth: "thin",
           scrollbarColor: `${scrollbarThumbColor} ${scrollbarTrackColor}`,
           "&::-webkit-scrollbar": {
@@ -1628,11 +1804,129 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           },
         },
         ".cm-content": {
-          fontFamily: getFontFamily(editorFont) + " !important",
+          fontFamily: `${fontFamily} !important`,
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
           overflowWrap: "anywhere",
-          minHeight: "100%",
+          minHeight: 0,
+          padding: "12px 0 16px",
+          caretColor: isEditing ? theme.palette.primary.main : "transparent",
+        },
+        ".cm-line": {
+          padding: "0 16px",
+        },
+        ".cm-gutters": {
+          backgroundColor:
+            theme.palette.mode === "dark"
+              ? alpha(theme.palette.background.default, 0.72)
+              : alpha(theme.palette.background.default, 0.7),
+          color: theme.palette.text.secondary,
+          borderRight: `1px solid ${theme.palette.divider}`,
+        },
+        ".cm-activeLine, .cm-activeLineGutter": {
+          backgroundColor: activeLineBackgroundColor,
+        },
+        ...(isEditing
+          ? {}
+          : {
+              ".cm-cursor, .cm-dropCursor": {
+                display: "none",
+              },
+            }),
+        ".cm-panels": {
+          backgroundColor: panelBackgroundColor,
+          color: theme.palette.text.primary,
+          borderColor: theme.palette.divider,
+          fontFamily: theme.typography.fontFamily,
+        },
+        ".cm-panels-top": {
+          borderBottom: `1px solid ${theme.palette.divider}`,
+        },
+        ".cm-panel.cm-search": {
+          display: "flex",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "8px",
+          padding: "10px 12px",
+          position: "relative",
+          backgroundColor: panelBackgroundColor,
+          color: theme.palette.text.primary,
+          fontSize: "0.875rem",
+          lineHeight: 1.35,
+        },
+        ".cm-panel.cm-search input, .cm-panel.cm-search button, .cm-panel.cm-search label":
+          {
+            margin: 0,
+            font: "inherit",
+          },
+        ".cm-panel.cm-search .cm-textfield": {
+          minWidth: "min(280px, 100%)",
+          height: "32px",
+          padding: "4px 9px",
+          border: `1px solid ${controlBorderColor}`,
+          borderRadius: "6px",
+          backgroundColor: inputBackgroundColor,
+          color: theme.palette.text.primary,
+          outline: "none",
+        },
+        ".cm-panel.cm-search .cm-textfield:focus": {
+          borderColor: theme.palette.primary.main,
+          boxShadow: `0 0 0 2px ${alpha(theme.palette.primary.main, 0.18)}`,
+        },
+        ".cm-panel.cm-search button": {
+          height: "30px",
+          minWidth: "34px",
+          padding: "0 10px",
+          border: `1px solid ${controlBorderColor}`,
+          borderRadius: "6px",
+          backgroundColor:
+            theme.palette.mode === "dark"
+              ? alpha(theme.palette.common.white, 0.05)
+              : theme.palette.background.paper,
+          color: theme.palette.text.primary,
+          cursor: "pointer",
+        },
+        ".cm-panel.cm-search button:hover": {
+          backgroundColor: controlHoverBackgroundColor,
+          borderColor: alpha(theme.palette.primary.main, 0.42),
+        },
+        ".cm-panel.cm-search label": {
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "4px",
+          color: theme.palette.text.secondary,
+          fontSize: "0.8125rem",
+          whiteSpace: "nowrap",
+        },
+        ".cm-panel.cm-search input[type=checkbox]": {
+          width: "14px",
+          height: "14px",
+          margin: 0,
+        },
+        ".cm-panel.cm-search br": {
+          display: "none",
+        },
+        ".cm-panel.cm-search [name=close]": {
+          position: "static",
+          marginLeft: "auto",
+          width: "30px",
+          minWidth: "30px",
+          padding: 0,
+          borderColor: "transparent",
+          backgroundColor: "transparent",
+          fontSize: "1rem",
+        },
+        ".cm-searchMatch": {
+          backgroundColor:
+            theme.palette.mode === "dark"
+              ? alpha(theme.palette.warning.light, 0.34)
+              : alpha(theme.palette.warning.main, 0.28),
+        },
+        ".cm-searchMatch-selected": {
+          backgroundColor:
+            theme.palette.mode === "dark"
+              ? alpha(theme.palette.primary.light, 0.48)
+              : alpha(theme.palette.primary.main, 0.3),
         },
       }),
     );
@@ -1640,7 +1934,13 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     nextExtensions.push(EditorView.lineWrapping);
 
     return nextExtensions;
-  }, [codemirrorLangExtensions, editorFont, isTextPreview, theme]);
+  }, [
+    codemirrorLangExtensions,
+    globalEditorFont,
+    isEditing,
+    isTextPreview,
+    theme,
+  ]);
 
   // PDF相关事件处理
   const onDocumentLoadSuccess = ({ numPages }) => {
@@ -1873,7 +2173,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       theme.palette.mode === "dark"
         ? alpha(theme.palette.primary.light, 0.4)
         : alpha(theme.palette.primary.main, 0.36);
-    const fontFamily = getFontFamily(editorFont);
+    const fontFamily = getFontFamily(globalEditorFont);
     const vscodeGreenBackground =
       theme.palette.mode === "dark"
         ? alpha(theme.palette.success.main, 0.22)
@@ -1943,8 +2243,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         whiteSpace: "pre-wrap",
         wordBreak: "break-word",
         overflowWrap: "anywhere",
-        minHeight: "100%",
-        paddingBottom: "24px",
+        minHeight: 0,
+        padding: "8px 0 12px",
       },
       ".cm-line": {
         padding: "0 12px",
@@ -2155,7 +2455,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 }}
               >
                 <CodeMirror
-                  key={`diff-base-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}-${syntaxHighlightState.languageId || "plain"}`}
+                  key={`diff-base-${pendingRestoreSnapshot?.id}-${globalEditorFont}-${theme.palette.mode}-${syntaxHighlightState.languageId || "plain"}`}
                   value={snapshotDiffPaneData.base.value}
                   height="100%"
                   basicSetup={false}
@@ -2196,7 +2496,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 }}
               >
                 <CodeMirror
-                  key={`diff-current-${pendingRestoreSnapshot?.id}-${editorFont}-${theme.palette.mode}-${syntaxHighlightState.languageId || "plain"}`}
+                  key={`diff-current-${pendingRestoreSnapshot?.id}-${globalEditorFont}-${theme.palette.mode}-${syntaxHighlightState.languageId || "plain"}`}
                   value={snapshotDiffPaneData.current.value}
                   height="100%"
                   basicSetup={false}
@@ -2305,7 +2605,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 height="100%"
                 extensions={textEditorExtensions}
                 theme={theme.palette.mode}
-                editable={isEditing}
+                editable
                 readOnly={!isEditing}
                 onChange={handleEditorChange}
                 style={cmStyle}
@@ -2394,8 +2694,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                     onClick={goToPrevPage}
                     disabled={pageNumber <= 1}
                     size="small"
-                  
-                    aria-label={t("filePreview.previousPage")}>
+                    aria-label={t("filePreview.previousPage")}
+                  >
                     <NavigateBeforeIcon />
                   </IconButton>
                 </span>
@@ -2406,8 +2706,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                     onClick={goToNextPage}
                     disabled={pageNumber >= (numPages || 1)}
                     size="small"
-                  
-                    aria-label={t("filePreview.nextPage")}>
+                    aria-label={t("filePreview.nextPage")}
+                  >
                     <NavigateNextIcon />
                   </IconButton>
                 </span>
@@ -2427,8 +2727,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   onClick={zoomIn}
                   disabled={scale >= 3.0}
                   size="small"
-                
-                  aria-label={t("filePreview.zoomIn")}>
+                  aria-label={t("filePreview.zoomIn")}
+                >
                   <ZoomInIcon />
                 </IconButton>
               </Tooltip>
@@ -2437,8 +2737,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   onClick={zoomOut}
                   disabled={scale <= 0.5}
                   size="small"
-                
-                  aria-label={t("filePreview.zoomOut")}>
+                  aria-label={t("filePreview.zoomOut")}
+                >
                   <ZoomOutIcon />
                 </IconButton>
               </Tooltip>
@@ -2619,18 +2919,47 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 <>
                   <Button
                     size="small"
-                    variant={isEditing ? "contained" : "outlined"}
-                    startIcon={isEditing ? <VisibilityIcon /> : <EditIcon />}
-                    onClick={toggleEditMode}
+                    variant="outlined"
+                    startIcon={<SearchIcon />}
+                    onClick={handleOpenTextSearch}
                     disabled={
                       loading ||
                       savingFile ||
+                      pendingRestoreSnapshot ||
                       syntaxHighlightState.loading ||
                       Boolean(syntaxHighlightState.error)
                     }
                   >
-                    {isEditing ? "切换到预览" : "切换到编辑"}
+                    搜索
                   </Button>
+                  <ButtonGroup size="small" variant="outlined">
+                    <Button
+                      variant={!isEditing ? "contained" : "outlined"}
+                      startIcon={<VisibilityIcon />}
+                      onClick={switchToPreviewMode}
+                      disabled={
+                        loading ||
+                        savingFile ||
+                        syntaxHighlightState.loading ||
+                        Boolean(syntaxHighlightState.error)
+                      }
+                    >
+                      预览
+                    </Button>
+                    <Button
+                      variant={isEditing ? "contained" : "outlined"}
+                      startIcon={<EditIcon />}
+                      onClick={switchToEditMode}
+                      disabled={
+                        loading ||
+                        savingFile ||
+                        syntaxHighlightState.loading ||
+                        Boolean(syntaxHighlightState.error)
+                      }
+                    >
+                      编辑
+                    </Button>
+                  </ButtonGroup>
                   <Button
                     size="small"
                     variant="contained"
@@ -2659,26 +2988,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 {t("filePreview.download")}
               </Button>
             </Stack>
-
-            {isTextPreview ? (
-              <FormControl size="small" sx={{ minWidth: 140 }}>
-                <InputLabel id="font-select-label">
-                  {t("filePreview.font")}
-                </InputLabel>
-                <Select
-                  labelId="font-select-label"
-                  value={editorFont}
-                  label={t("filePreview.font")}
-                  onChange={handleFontChange}
-                >
-                  {fontOptions.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            ) : null}
           </Stack>
         </Stack>
       </DialogTitle>

@@ -154,6 +154,7 @@ const Settings = memo(({ open, onClose }) => {
   // Initial states
   const [language, setLanguage] = React.useState("");
   const [fontSize, setFontSize] = React.useState(14);
+  const [editorFont, setEditorFont] = React.useState("system");
   const [terminalFont, setTerminalFont] = React.useState("Fira Code");
   const [terminalFontSize, setTerminalFontSize] = React.useState(14);
   const [terminalFontWeight, setTerminalFontWeight] = React.useState(500);
@@ -217,6 +218,7 @@ const Settings = memo(({ open, onClose }) => {
           if (settings) {
             setLanguage(settings.language || "zh-CN");
             setFontSize(settings.fontSize || 14);
+            setEditorFont(settings.editorFont || "system");
             setTerminalFont(settings.terminalFont || "Fira Code");
             setTerminalFontSize(settings.terminalFontSize || 14);
             setTerminalFontWeight(settings.terminalFontWeight || 500);
@@ -589,7 +591,7 @@ const Settings = memo(({ open, onClose }) => {
         const settings = {
           language,
           fontSize,
-          editorFont: "system", // 保持editorFont字段
+          editorFont,
           terminalFont,
           terminalFontSize,
           terminalFontWeight,
@@ -664,6 +666,7 @@ const Settings = memo(({ open, onClose }) => {
           detail: {
             language,
             fontSize,
+            editorFont,
             terminalFont,
             terminalFontSize,
             terminalFontWeight,

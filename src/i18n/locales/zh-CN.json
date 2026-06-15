@@ -819,7 +819,6 @@
       "zoomIn": "放大",
       "zoomOut": "缩小",
       "download": "下载",
-      "font": "字体",
       "savingFile": "正在保存文件...",
       "selectedVersion": "已选中版本：{{date}}",
       "clearSelection": "取消选择",
