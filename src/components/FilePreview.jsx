@@ -27,7 +27,6 @@ import {
   ListItemButton,
   ListItemText,
 } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
 import DownloadIcon from "@mui/icons-material/Download";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
@@ -602,6 +601,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const shouldRestoreTextEditorScrollRef = useRef(false);
   const textEditorScrollRestoreModeRef = useRef("always");
   const syncedContentRef = useRef(null);
+  const closeInProgressRef = useRef(false);
 
   const [codemirrorLangExtensions, setCodemirrorLangExtensions] = useState([]);
   const [syntaxHighlightState, setSyntaxHighlightState] = useState({
@@ -781,6 +781,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setPendingRestoreSnapshot(null);
       setSelectedSnapshotContent(null);
       setShowCloseConfirm(false);
+      closeInProgressRef.current = false;
     }
   }, [open]);
 
@@ -1765,7 +1766,28 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       : "transparent";
 
     nextExtensions.push(
-      search({ top: true }),
+      search(),
+      EditorState.phrases.of({
+        Find: t("filePreview.searchPanel.find"),
+        Replace: t("filePreview.searchPanel.replace"),
+        next: t("filePreview.searchPanel.next"),
+        previous: t("filePreview.searchPanel.previous"),
+        all: t("filePreview.searchPanel.all"),
+        "match case": t("filePreview.searchPanel.matchCase"),
+        regexp: t("filePreview.searchPanel.regexp"),
+        "by word": t("filePreview.searchPanel.byWord"),
+        replace: t("filePreview.searchPanel.replaceAction"),
+        "replace all": t("filePreview.searchPanel.replaceAll"),
+        close: t("filePreview.searchPanel.close"),
+        "current match": t("filePreview.searchPanel.currentMatch"),
+        "on line": t("filePreview.searchPanel.onLine"),
+        "replaced match on line $": t(
+          "filePreview.searchPanel.replacedMatchOnLine",
+        ),
+        "replaced $ matches": t("filePreview.searchPanel.replacedMatches"),
+        "Go to line": t("filePreview.searchPanel.goToLine"),
+        go: t("filePreview.searchPanel.go"),
+      }),
       EditorView.theme({
         "&": {
           fontFamily: `${fontFamily} !important`,
@@ -1839,8 +1861,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           borderColor: theme.palette.divider,
           fontFamily: theme.typography.fontFamily,
         },
-        ".cm-panels-top": {
-          borderBottom: `1px solid ${theme.palette.divider}`,
+        ".cm-panels-bottom": {
+          borderTop: `1px solid ${theme.palette.divider}`,
         },
         ".cm-panel.cm-search": {
           display: "flex",
@@ -1939,6 +1961,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     globalEditorFont,
     isEditing,
     isTextPreview,
+    t,
     theme,
   ]);
 
@@ -1990,13 +2013,26 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
   // 处理对话框关闭
   const handleClose = async () => {
-    if (isTextPreview && modified && !savingFile) {
+    if (closeInProgressRef.current) {
+      return;
+    }
+
+    if (savingFile) {
+      return;
+    }
+
+    if (isTextPreview && modified) {
       setShowCloseConfirm(true);
       return;
     }
 
-    await cleanupCache(); // 清理缓存
-    onClose();
+    closeInProgressRef.current = true;
+    try {
+      await cleanupCache(); // 清理缓存
+      onClose();
+    } finally {
+      closeInProgressRef.current = false;
+    }
   };
 
   const handleDiscardAndClose = async () => {
@@ -2018,6 +2054,51 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       onClose();
     }
   };
+
+  useEffect(() => {
+    if (!open || showCloseConfirm) {
+      return undefined;
+    }
+
+    const selector = '[data-file-preview-dialog="true"]';
+    const handlePreviewEscape = (event) => {
+      if (
+        event.key !== "Escape" ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      const activeElement = document.activeElement;
+      const isInsideDialog =
+        (target &&
+          typeof target.closest === "function" &&
+          target.closest(selector)) ||
+        (activeElement &&
+          typeof activeElement.closest === "function" &&
+          activeElement.closest(selector));
+
+      if (!isInsideDialog) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
+      handleClose();
+    };
+
+    document.addEventListener("keydown", handlePreviewEscape, true);
+    return () => {
+      document.removeEventListener("keydown", handlePreviewEscape, true);
+    };
+  }, [handleClose, open, showCloseConfirm]);
 
   const renderSnapshotPanel = () => {
     if (!isTextPreview) {
@@ -2673,78 +2754,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             flexDirection: "column",
           }}
         >
-          {/* PDF控制栏 */}
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              p: 1,
-              borderBottom: `1px solid ${theme.palette.divider}`,
-              backgroundColor: theme.palette.background.paper,
-              flexWrap: "wrap", // 允许换行
-              gap: 1, // 添加间距
-              minHeight: "48px", // 确保最小高度
-            }}
-          >
-            <ButtonGroup size="small" variant="outlined">
-              <Tooltip title={t("filePreview.previousPage")}>
-                <span>
-                  <IconButton
-                    onClick={goToPrevPage}
-                    disabled={pageNumber <= 1}
-                    size="small"
-                    aria-label={t("filePreview.previousPage")}
-                  >
-                    <NavigateBeforeIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Tooltip title={t("filePreview.nextPage")}>
-                <span>
-                  <IconButton
-                    onClick={goToNextPage}
-                    disabled={pageNumber >= (numPages || 1)}
-                    size="small"
-                    aria-label={t("filePreview.nextPage")}
-                  >
-                    <NavigateNextIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </ButtonGroup>
-
-            <Typography variant="body2" sx={{ mx: 2 }}>
-              {t("filePreview.pageStatus", {
-                page: pageNumber,
-                total: numPages || 0,
-              })}
-            </Typography>
-
-            <ButtonGroup size="small" variant="outlined">
-              <Tooltip title={t("filePreview.zoomIn")}>
-                <IconButton
-                  onClick={zoomIn}
-                  disabled={scale >= 3.0}
-                  size="small"
-                  aria-label={t("filePreview.zoomIn")}
-                >
-                  <ZoomInIcon />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title={t("filePreview.zoomOut")}>
-                <IconButton
-                  onClick={zoomOut}
-                  disabled={scale <= 0.5}
-                  size="small"
-                  aria-label={t("filePreview.zoomOut")}
-                >
-                  <ZoomOutIcon />
-                </IconButton>
-              </Tooltip>
-            </ButtonGroup>
-          </Box>
-
           {/* PDF内容区域 */}
           <Box
             sx={{
@@ -2812,182 +2821,90 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       }}
     >
       <DialogTitle sx={{ px: 2.5, py: 2 }}>
-        <Stack spacing={1.5}>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            spacing={1.5}
-            alignItems={{ xs: "flex-start", md: "center" }}
-            justifyContent="space-between"
-          >
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography variant="h6" component="div" noWrap>
-                {file?.name}
-                {modified ? (
-                  <span style={{ color: theme.palette.warning.main }}> *</span>
-                ) : null}
-              </Typography>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{
-                  mt: 0.5,
-                  maxWidth: "100%",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {fullPath}
-              </Typography>
-            </Box>
-
-            <Stack
-              direction="row"
-              spacing={1}
-              alignItems="center"
-              flexWrap="wrap"
-              useFlexGap
+        <Stack
+          direction={{ xs: "column", md: "row" }}
+          spacing={1.5}
+          alignItems={{ xs: "flex-start", md: "center" }}
+          justifyContent="space-between"
+        >
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Typography variant="h6" component="div" noWrap>
+              {file?.name}
+              {modified ? (
+                <span style={{ color: theme.palette.warning.main }}> *</span>
+              ) : null}
+            </Typography>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                mt: 0.5,
+                maxWidth: "100%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
             >
-              {file?.size ? (
-                <Chip
-                  size="small"
-                  label={formatFileSize(file.size)}
-                  variant="outlined"
-                />
-              ) : null}
-              {isTextPreview && syntaxHighlightState.languageId ? (
-                <Chip
-                  size="small"
-                  color={syntaxHighlightState.error ? "error" : "info"}
-                  label={
-                    syntaxHighlightState.error
-                      ? "语法高亮加载失败"
-                      : syntaxHighlightState.loading
-                        ? "语法高亮加载中"
-                        : `${syntaxHighlightState.languageId} 高亮`
-                  }
-                  variant={syntaxHighlightState.loading ? "outlined" : "filled"}
-                />
-              ) : null}
-              {isTextPreview ? (
-                <Chip
-                  size="small"
-                  color={
-                    pendingRestoreSnapshot
-                      ? "info"
-                      : modified
-                        ? "warning"
-                        : isEditing
-                          ? "primary"
-                          : "default"
-                  }
-                  label={
-                    pendingRestoreSnapshot
-                      ? "差异对比中"
-                      : modified
-                        ? "有未保存修改"
-                        : isEditing
-                          ? "编辑中"
-                          : "只读预览中"
-                  }
-                  variant={
-                    pendingRestoreSnapshot || modified || isEditing
-                      ? "filled"
-                      : "outlined"
-                  }
-                />
-              ) : null}
-              <Tooltip title={t("common.close")}>
-                <IconButton
-                  onClick={handleClose}
-                  aria-label={t("common.close")}
-                >
-                  <CloseIcon />
-                </IconButton>
-              </Tooltip>
-            </Stack>
-          </Stack>
+              {fullPath}
+            </Typography>
+          </Box>
 
           <Stack
-            direction={{ xs: "column", lg: "row" }}
+            direction="row"
             spacing={1}
-            alignItems={{ xs: "stretch", lg: "center" }}
-            justifyContent="space-between"
+            alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
           >
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {isTextPreview ? (
-                <>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<SearchIcon />}
-                    onClick={handleOpenTextSearch}
-                    disabled={
-                      loading ||
-                      savingFile ||
-                      pendingRestoreSnapshot ||
-                      syntaxHighlightState.loading ||
-                      Boolean(syntaxHighlightState.error)
-                    }
-                  >
-                    搜索
-                  </Button>
-                  <ButtonGroup size="small" variant="outlined">
-                    <Button
-                      variant={!isEditing ? "contained" : "outlined"}
-                      startIcon={<VisibilityIcon />}
-                      onClick={switchToPreviewMode}
-                      disabled={
-                        loading ||
-                        savingFile ||
-                        syntaxHighlightState.loading ||
-                        Boolean(syntaxHighlightState.error)
-                      }
-                    >
-                      预览
-                    </Button>
-                    <Button
-                      variant={isEditing ? "contained" : "outlined"}
-                      startIcon={<EditIcon />}
-                      onClick={switchToEditMode}
-                      disabled={
-                        loading ||
-                        savingFile ||
-                        syntaxHighlightState.loading ||
-                        Boolean(syntaxHighlightState.error)
-                      }
-                    >
-                      编辑
-                    </Button>
-                  </ButtonGroup>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    startIcon={<SaveIcon />}
-                    onClick={handleSaveFile}
-                    disabled={
-                      !isEditing ||
-                      !modified ||
-                      savingFile ||
-                      loading ||
-                      syntaxHighlightState.loading ||
-                      Boolean(syntaxHighlightState.error)
-                    }
-                  >
-                    {savingFile ? "保存中..." : "保存"}
-                  </Button>
-                </>
-              ) : null}
-              <Button
+            {file?.size ? (
+              <Chip
                 size="small"
+                label={formatFileSize(file.size)}
                 variant="outlined"
-                startIcon={<DownloadIcon />}
-                onClick={handleDownload}
-                disabled={loading || savingFile}
-              >
-                {t("filePreview.download")}
-              </Button>
-            </Stack>
+              />
+            ) : null}
+            {isTextPreview && syntaxHighlightState.languageId ? (
+              <Chip
+                size="small"
+                color={syntaxHighlightState.error ? "error" : "info"}
+                label={
+                  syntaxHighlightState.error
+                    ? "语法高亮加载失败"
+                    : syntaxHighlightState.loading
+                      ? "语法高亮加载中"
+                      : `${syntaxHighlightState.languageId} 高亮`
+                }
+                variant={syntaxHighlightState.loading ? "outlined" : "filled"}
+              />
+            ) : null}
+            {isTextPreview ? (
+              <Chip
+                size="small"
+                color={
+                  pendingRestoreSnapshot
+                    ? "info"
+                    : modified
+                      ? "warning"
+                      : isEditing
+                        ? "primary"
+                        : "default"
+                }
+                label={
+                  pendingRestoreSnapshot
+                    ? "差异对比中"
+                    : modified
+                      ? "有未保存修改"
+                      : isEditing
+                        ? "编辑中"
+                        : "只读预览中"
+                }
+                variant={
+                  pendingRestoreSnapshot || modified || isEditing
+                    ? "filled"
+                    : "outlined"
+                }
+              />
+            ) : null}
           </Stack>
         </Stack>
       </DialogTitle>
@@ -3037,51 +2954,205 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           renderContent()
         )}
       </DialogContent>
-      <DialogActions sx={{ px: 2.5, py: 1.5 }}>
-        {pendingRestoreSnapshot ? (
-          <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
-            sx={{ mr: "auto" }}
-          >
+      <DialogActions
+        sx={{
+          px: 2.5,
+          py: 1.5,
+          gap: 1,
+          alignItems: { xs: "stretch", sm: "center" },
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+        }}
+      >
+        <Box sx={{ flex: "1 1 260px", minWidth: 0 }}>
+          {pendingRestoreSnapshot ? (
             <Typography variant="caption" color="text.secondary">
               {t("filePreview.selectedVersion", {
                 date: formatSnapshotDate(pendingRestoreSnapshot.createdAt),
               })}
             </Typography>
-            <Button
-              size="small"
-              onClick={handleClearSnapshotSelection}
-              disabled={Boolean(restoringSnapshotId) || loadingSelectedSnapshot}
-            >
-              {t("filePreview.clearSelection")}
-            </Button>
-          </Stack>
-        ) : (
-          <Box sx={{ mr: "auto" }} />
-        )}
-        {pendingRestoreSnapshot ? (
+          ) : null}
+        </Box>
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          justifyContent="flex-end"
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ flex: "1 1 auto", minWidth: 0 }}
+        >
+          {pendingRestoreSnapshot ? (
+            <>
+              <Button
+                size="small"
+                onClick={handleClearSnapshotSelection}
+                disabled={
+                  Boolean(restoringSnapshotId) || loadingSelectedSnapshot
+                }
+              >
+                {t("filePreview.clearSelection")}
+              </Button>
+              <Button
+                color="warning"
+                startIcon={<RestoreIcon />}
+                onClick={handleRestoreSnapshot}
+                disabled={
+                  Boolean(restoringSnapshotId) ||
+                  savingFile ||
+                  loadingSelectedSnapshot
+                }
+              >
+                {restoringSnapshotId
+                  ? t("filePreview.restoring")
+                  : loadingSelectedSnapshot
+                    ? t("filePreview.loadingDiff")
+                    : t("filePreview.restoreVersion")}
+              </Button>
+            </>
+          ) : null}
+          {isTextPreview ? (
+            <>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<SearchIcon />}
+                onClick={handleOpenTextSearch}
+                disabled={
+                  loading ||
+                  savingFile ||
+                  pendingRestoreSnapshot ||
+                  syntaxHighlightState.loading ||
+                  Boolean(syntaxHighlightState.error)
+                }
+              >
+                {t("filePreview.searchPanel.open")}
+              </Button>
+              <ButtonGroup size="small" variant="outlined">
+                <Button
+                  variant={!isEditing ? "contained" : "outlined"}
+                  startIcon={<VisibilityIcon />}
+                  onClick={switchToPreviewMode}
+                  disabled={
+                    loading ||
+                    savingFile ||
+                    syntaxHighlightState.loading ||
+                    Boolean(syntaxHighlightState.error)
+                  }
+                >
+                  预览
+                </Button>
+                <Button
+                  variant={isEditing ? "contained" : "outlined"}
+                  startIcon={<EditIcon />}
+                  onClick={switchToEditMode}
+                  disabled={
+                    loading ||
+                    savingFile ||
+                    syntaxHighlightState.loading ||
+                    Boolean(syntaxHighlightState.error)
+                  }
+                >
+                  编辑
+                </Button>
+              </ButtonGroup>
+              <Button
+                size="small"
+                variant="contained"
+                startIcon={<SaveIcon />}
+                onClick={handleSaveFile}
+                disabled={
+                  !isEditing ||
+                  !modified ||
+                  savingFile ||
+                  loading ||
+                  syntaxHighlightState.loading ||
+                  Boolean(syntaxHighlightState.error)
+                }
+              >
+                {savingFile ? "保存中..." : "保存"}
+              </Button>
+            </>
+          ) : null}
+          {isPdfFile(file?.name) ? (
+            <>
+              <ButtonGroup size="small" variant="outlined">
+                <Tooltip title={t("filePreview.previousPage")}>
+                  <span>
+                    <IconButton
+                      onClick={goToPrevPage}
+                      disabled={pageNumber <= 1}
+                      size="small"
+                      aria-label={t("filePreview.previousPage")}
+                    >
+                      <NavigateBeforeIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Tooltip title={t("filePreview.nextPage")}>
+                  <span>
+                    <IconButton
+                      onClick={goToNextPage}
+                      disabled={pageNumber >= (numPages || 1)}
+                      size="small"
+                      aria-label={t("filePreview.nextPage")}
+                    >
+                      <NavigateNextIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </ButtonGroup>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ px: 0.5, whiteSpace: "nowrap" }}
+              >
+                {t("filePreview.pageStatus", {
+                  page: pageNumber,
+                  total: numPages || 0,
+                })}
+              </Typography>
+              <ButtonGroup size="small" variant="outlined">
+                <Tooltip title={t("filePreview.zoomIn")}>
+                  <span>
+                    <IconButton
+                      onClick={zoomIn}
+                      disabled={scale >= 3.0}
+                      size="small"
+                      aria-label={t("filePreview.zoomIn")}
+                    >
+                      <ZoomInIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Tooltip title={t("filePreview.zoomOut")}>
+                  <span>
+                    <IconButton
+                      onClick={zoomOut}
+                      disabled={scale <= 0.5}
+                      size="small"
+                      aria-label={t("filePreview.zoomOut")}
+                    >
+                      <ZoomOutIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </ButtonGroup>
+            </>
+          ) : null}
           <Button
-            color="warning"
-            startIcon={<RestoreIcon />}
-            onClick={handleRestoreSnapshot}
-            disabled={
-              Boolean(restoringSnapshotId) ||
-              savingFile ||
-              loadingSelectedSnapshot
-            }
+            size="small"
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={handleDownload}
+            disabled={loading || savingFile}
           >
-            {restoringSnapshotId
-              ? t("filePreview.restoring")
-              : loadingSelectedSnapshot
-                ? t("filePreview.loadingDiff")
-                : t("filePreview.restoreVersion")}
+            {t("filePreview.download")}
           </Button>
-        ) : null}
-        <Button onClick={handleClose} disabled={savingFile}>
-          {t("common.close")}
-        </Button>
+          <Button size="small" onClick={handleClose} disabled={savingFile}>
+            {t("common.close")}
+          </Button>
+        </Stack>
       </DialogActions>
 
       <Dialog

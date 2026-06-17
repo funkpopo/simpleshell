@@ -829,7 +829,27 @@
       "unsavedMessage": "The current file still has unsaved content. You can save first, or close and discard these changes.",
       "discardChanges": "Discard Changes",
       "saving": "Saving...",
-      "saveAndClose": "Save and Close"
+      "saveAndClose": "Save and Close",
+      "searchPanel": {
+        "open": "Search",
+        "find": "Find",
+        "replace": "Replace",
+        "next": "Next",
+        "previous": "Previous",
+        "all": "All",
+        "matchCase": "Match case",
+        "regexp": "Regex",
+        "byWord": "Whole word",
+        "replaceAction": "Replace",
+        "replaceAll": "Replace all",
+        "close": "Close",
+        "currentMatch": "Current match",
+        "onLine": "on line",
+        "replacedMatchOnLine": "Replaced match on line $",
+        "replacedMatches": "Replaced $ matches",
+        "goToLine": "Go to line",
+        "go": "Go"
+      }
     },
     "fileManager": {
       "title": "File Manager",
