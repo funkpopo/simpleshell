@@ -623,10 +623,28 @@ function testDragAndDropUsesNativeValidatedLocalPaths() {
     "Folder download must show an immediate waiting-for-target-folder state.",
   );
 
-  assertContains(
+  assertNotContains(
     fileManagerSource,
     /window\.dialogAPI\.showMessageBox/,
-    "Remote overwrite confirmation must use a native message box.",
+    "Remote overwrite confirmation must use the project-styled renderer dialog.",
+  );
+
+  assertContains(
+    fileManagerSource,
+    /const showConfirmDialog = useCallback\(/,
+    "FileManager must provide an async project-styled confirmation dialog.",
+  );
+
+  assertContains(
+    fileManagerSource,
+    /confirmDialogResolveRef/,
+    "Async confirmation dialogs must resolve the caller after user choice.",
+  );
+
+  assertContains(
+    dragUploadSource,
+    /await confirmDroppedUploadConflicts\(/,
+    "Dropped uploads must await the project-styled overwrite confirmation.",
   );
 
   assertNotContains(

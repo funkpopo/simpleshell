@@ -44,6 +44,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import DeleteIcon from "@mui/icons-material/Delete";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import DownloadIcon from "@mui/icons-material/Download";
 import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutline";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
@@ -111,6 +112,27 @@ const FILE_LIST_SECONDARY_TEXT_SX = {
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
 };
+
+const CONFIRM_DIALOG_INITIAL_STATE = {
+  open: false,
+  title: "",
+  message: "",
+  detail: "",
+  onConfirm: null,
+  confirmText: "",
+  cancelText: "",
+  confirmColor: "primary",
+  defaultAction: "cancel",
+};
+
+const CONFIRM_DIALOG_COLORS = new Set([
+  "primary",
+  "secondary",
+  "success",
+  "error",
+  "info",
+  "warning",
+]);
 
 const joinPath = (basePath, childName) => {
   if (!childName) return basePath;
@@ -505,13 +527,64 @@ const FileManager = memo(
 
     // 确认对话框状态
     const [confirmDialog, setConfirmDialog] = useState({
-      open: false,
-      title: "",
-      message: "",
-      onConfirm: null,
-      confirmText: "",
-      confirmColor: "primary",
+      ...CONFIRM_DIALOG_INITIAL_STATE,
     });
+    const confirmDialogResolveRef = useRef(null);
+    const confirmDialogCancelButtonRef = useRef(null);
+    const confirmDialogConfirmButtonRef = useRef(null);
+
+    useEffect(
+      () => () => {
+        if (confirmDialogResolveRef.current) {
+          confirmDialogResolveRef.current(false);
+          confirmDialogResolveRef.current = null;
+        }
+      },
+      [],
+    );
+
+    const showConfirmDialog = useCallback((options) => {
+      if (confirmDialogResolveRef.current) {
+        confirmDialogResolveRef.current(false);
+      }
+
+      return new Promise((resolve) => {
+        confirmDialogResolveRef.current = resolve;
+        setConfirmDialog({
+          ...CONFIRM_DIALOG_INITIAL_STATE,
+          ...options,
+          open: true,
+          onConfirm: null,
+        });
+      });
+    }, []);
+
+    const closeConfirmDialog = useCallback((confirmed) => {
+      const resolver = confirmDialogResolveRef.current;
+      confirmDialogResolveRef.current = null;
+      setConfirmDialog((prev) => ({
+        ...prev,
+        open: false,
+        onConfirm: null,
+      }));
+
+      if (resolver) {
+        resolver(confirmed);
+      }
+    }, []);
+
+    const handleConfirmDialogCancel = useCallback(() => {
+      closeConfirmDialog(false);
+    }, [closeConfirmDialog]);
+
+    const handleConfirmDialogConfirm = useCallback(() => {
+      const onConfirm = confirmDialog.onConfirm;
+      closeConfirmDialog(true);
+
+      if (typeof onConfirm === "function") {
+        onConfirm();
+      }
+    }, [closeConfirmDialog, confirmDialog.onConfirm]);
 
     const clearSelection = useCallback(() => {
       setSelectedFiles([]);
@@ -4413,12 +4486,6 @@ const FileManager = memo(
           return true;
         }
 
-        if (!window.dialogAPI?.showMessageBox) {
-          throw new Error(
-            t("fileManager.errors.dragDropConflictDialogUnavailable"),
-          );
-        }
-
         const conflictItems = conflicts
           .slice(0, 12)
           .map((item) => item.remotePath || item.relativePath || item.name)
@@ -4432,15 +4499,7 @@ const FileManager = memo(
             ? `${conflictItems.join("\n")}\n... +${remainingCount}`
             : conflictItems.join("\n");
 
-        const confirmation = await window.dialogAPI.showMessageBox({
-          type: "warning",
-          buttons: [
-            t("fileManager.messages.dragDropConflictConfirm"),
-            t("fileManager.messages.dragDropConflictCancel"),
-          ],
-          defaultId: 1,
-          cancelId: 1,
-          noLink: true,
+        return showConfirmDialog({
           title: t("fileManager.messages.dragDropConflictTitle"),
           message: t("fileManager.messages.dragDropConflictMessage", {
             count: conflicts.length,
@@ -4448,11 +4507,13 @@ const FileManager = memo(
           detail: t("fileManager.messages.dragDropConflictDetail", {
             items: detailItems,
           }),
+          confirmText: t("fileManager.messages.dragDropConflictConfirm"),
+          cancelText: t("fileManager.messages.dragDropConflictCancel"),
+          confirmColor: "warning",
+          defaultAction: "cancel",
         });
-
-        return confirmation?.response === 0;
       },
-      [t],
+      [showConfirmDialog, t],
     );
 
     // 处理拖拽的文件和文件夹
@@ -6401,6 +6462,24 @@ const FileManager = memo(
       handleSortMenuClose();
     };
 
+    const confirmDialogColor = CONFIRM_DIALOG_COLORS.has(
+      confirmDialog.confirmColor,
+    )
+      ? confirmDialog.confirmColor
+      : "primary";
+    const confirmDialogPalette =
+      theme.palette[confirmDialogColor] || theme.palette.primary;
+    const ConfirmDialogIcon =
+      confirmDialogColor === "error"
+        ? DeleteIcon
+        : confirmDialogColor === "warning"
+          ? WarningAmberIcon
+          : InfoOutlinedIcon;
+    const confirmDialogDefaultRef =
+      confirmDialog.defaultAction === "confirm"
+        ? confirmDialogConfirmButtonRef
+        : confirmDialogCancelButtonRef;
+
     return (
       <Paper
         ref={fileManagerRootRef}
@@ -7490,43 +7569,143 @@ const FileManager = memo(
         {/* 确认对话框 */}
         <Dialog
           open={confirmDialog.open}
-          onClose={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+          onClose={handleConfirmDialogCancel}
           maxWidth="xs"
           fullWidth
+          initialFocusRef={confirmDialogDefaultRef}
+          defaultActionRef={confirmDialogDefaultRef}
           slotProps={{
             paper: {
               sx: {
                 borderRadius: 2,
+                border: `1px solid ${alpha(confirmDialogPalette.main, 0.22)}`,
+                bgcolor: "background.paper",
+                boxShadow:
+                  theme.palette.mode === "dark"
+                    ? "0 18px 50px rgba(0, 0, 0, 0.56)"
+                    : "0 18px 50px rgba(15, 23, 42, 0.18)",
+                overflow: "hidden",
+              },
+            },
+            backdrop: {
+              sx: {
+                bgcolor: alpha(
+                  theme.palette.common.black,
+                  theme.palette.mode === "dark" ? 0.58 : 0.32,
+                ),
+                backdropFilter: "blur(2px)",
               },
             },
           }}
         >
-          <DialogTitle>{confirmDialog.title}</DialogTitle>
-          <DialogContent>
-            <Typography sx={{ whiteSpace: "pre-wrap" }}>
+          <DialogTitle
+            sx={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 1.5,
+              px: 2.5,
+              pt: 2,
+              pb: 1.5,
+            }}
+          >
+            <Box
+              sx={{
+                width: 34,
+                height: 34,
+                flex: "0 0 auto",
+                borderRadius: 1.5,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: confirmDialogPalette.main,
+                bgcolor: alpha(confirmDialogPalette.main, 0.12),
+                border: `1px solid ${alpha(confirmDialogPalette.main, 0.2)}`,
+              }}
+            >
+              <ConfirmDialogIcon fontSize="small" />
+            </Box>
+            <Typography
+              component="span"
+              variant="subtitle1"
+              sx={{
+                minWidth: 0,
+                pt: 0.25,
+                color: "text.primary",
+                fontWeight: 600,
+                lineHeight: 1.35,
+              }}
+            >
+              {confirmDialog.title}
+            </Typography>
+          </DialogTitle>
+          <DialogContent sx={{ px: 2.5, pt: 0, pb: 0.5 }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}
+            >
               {confirmDialog.message}
             </Typography>
+            {confirmDialog.detail ? (
+              <Box
+                sx={{
+                  mt: 1.5,
+                  maxHeight: 176,
+                  overflow: "auto",
+                  borderRadius: 1,
+                  border: `1px solid ${theme.palette.divider}`,
+                  bgcolor:
+                    theme.palette.mode === "dark"
+                      ? alpha(theme.palette.common.white, 0.04)
+                      : alpha(theme.palette.common.black, 0.025),
+                  px: 1.5,
+                  py: 1,
+                }}
+              >
+                <Typography
+                  component="pre"
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{
+                    m: 0,
+                    fontFamily: "inherit",
+                    lineHeight: 1.6,
+                    whiteSpace: "pre-wrap",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {confirmDialog.detail}
+                </Typography>
+              </Box>
+            ) : null}
           </DialogContent>
-          <DialogActions sx={{ p: 2, gap: 1 }}>
+          <DialogActions
+            sx={{
+              px: 2.5,
+              py: 2,
+              gap: 1,
+              borderTop: `1px solid ${theme.palette.divider}`,
+            }}
+          >
             <Button
-              onClick={() =>
-                setConfirmDialog((prev) => ({ ...prev, open: false }))
-              }
+              ref={confirmDialogCancelButtonRef}
+              onClick={handleConfirmDialogCancel}
               color="inherit"
+              variant="outlined"
+              size="small"
+              sx={{ minWidth: 82 }}
             >
-              {t("common.cancel")}
+              {confirmDialog.cancelText || t("common.cancel")}
             </Button>
             <Button
-              onClick={() => {
-                setConfirmDialog((prev) => ({ ...prev, open: false }));
-                if (confirmDialog.onConfirm) {
-                  confirmDialog.onConfirm();
-                }
-              }}
+              ref={confirmDialogConfirmButtonRef}
+              onClick={handleConfirmDialogConfirm}
               variant="contained"
-              color={confirmDialog.confirmColor}
+              color={confirmDialogColor}
+              size="small"
+              sx={{ minWidth: 96 }}
             >
-              {confirmDialog.confirmText}
+              {confirmDialog.confirmText || t("common.confirm")}
             </Button>
           </DialogActions>
         </Dialog>
