@@ -47,78 +47,113 @@ export const RISK_LEVELS = {
   },
 };
 
+const RISK_LEVEL_ORDER = ["critical", "high", "medium", "low"];
+const CUSTOM_RULE_LEVELS = ["critical", "high", "medium", "low"];
+const MAX_CUSTOM_RULES_PER_LEVEL = 50;
+const MAX_CUSTOM_RULE_PATTERN_LENGTH = 200;
+
+const hasNestedQuantifier = (pattern) =>
+  /\((?:[^()\\]|\\.|\[[^\]]*\])*(?:[+*]|\{\d+(?:,\d*)?\})(?:[^()\\]|\\.|\[[^\]]*\])*\)(?:[+*]|\{\d+(?:,\d*)?\})/.test(
+    pattern,
+  );
+
+const hasRepeatedWildcard = (pattern) => /(?:\.\*){2,}/.test(pattern);
+
+const hasControlCharacter = (pattern) => /[\u0000-\u001f\u007f]/.test(pattern);
+
+const getRiskLevelByName = (riskName) => {
+  const normalizedName = String(riskName || "").toLowerCase();
+  return (
+    Object.values(RISK_LEVELS).find((risk) => risk.name === normalizedName) ||
+    RISK_LEVELS.SAFE
+  );
+};
+
+const maxRiskLevel = (firstRisk, secondRisk) =>
+  (firstRisk?.level || 0) >= (secondRisk?.level || 0) ? firstRisk : secondRisk;
+
+const findMatchingRiskLevel = (patternsByLevel, command) => {
+  for (const level of RISK_LEVEL_ORDER) {
+    for (const pattern of patternsByLevel[level] || []) {
+      if (pattern.test(command)) {
+        return getRiskLevelByName(level);
+      }
+    }
+  }
+
+  return RISK_LEVELS.SAFE;
+};
+
 // 危险命令模式 - 用于风险评估
 const DANGEROUS_PATTERNS = {
   // 极高风险 - 可能导致系统不可用
   critical: [
-    /rm\s+(-rf?|--recursive)\s+\//i, // rm -rf /
-    /rm\s+(-rf?|--recursive)\s+\/\*/i, // rm -rf /*
-    /mkfs\s+/i, // 格式化文件系统
-    /dd\s+.*of=\/dev\/[sh]d[a-z]/i, // 直接写磁盘
-    /:\(\)\{\s*:\|:\s*&\s*\}/i, // fork bomb
-    />\s*\/dev\/[sh]d[a-z]/i, // 覆盖磁盘
-    /shutdown\s+-(h|r)\s+now/i, // 立即关机/重启
-    /reboot\s+-(h|r)\s+now/i, // 立即重启
-    /init\s+0/i, // 关机
-    /halt/i, // 停机
-    /poweroff/i, // 关机
+    /\brm\b(?=[^;&|\n]*\s(?:-[\w-]*r[\w-]*|--recursive\b))(?=[^;&|\n]*\s(?:-[\w-]*f[\w-]*|--force\b))[^;&|\n]*(?:\s|^)(?:\/|\/\*|--no-preserve-root\b)(?:\s|$)/i, // rm -rf /, rm -fr /*
+    /\brm\b[^;&|\n]*--no-preserve-root\b/i, // 显式禁用根目录保护
+    /\bmkfs(?:\.\w+)?\s+/i, // 格式化文件系统
+    /\bdd\b[^;&|\n]*\bof=\/dev\/(?:[sh]d[a-z]|nvme\d+n\d+|mapper\/\S+)/i, // 直接写磁盘
+    /:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;?\s*:/i, // fork bomb
+    />\s*\/dev\/(?:[sh]d[a-z]|nvme\d+n\d+|mapper\/\S+)/i, // 覆盖磁盘
+    /\bshutdown\b[^;&|\n]*(?:\bnow\b|-h|-r)/i, // 立即关机/重启
+    /\breboot\b/i, // 立即重启
+    /\binit\s+0\b/i, // 关机
+    /\bhalt\b/i, // 停机
+    /\bpoweroff\b/i, // 关机
   ],
   // 高风险 - 可能导致服务中断或数据丢失
   high: [
-    /rm\s+(-r|--recursive)/i, // 递归删除
-    /rm\s+(-f|--force)/i, // 强制删除
-    /rm\s+.*\*/i, // 通配符删除
-    /chmod\s+(-R|--recursive)\s+777/i, // 递归修改为全权限
-    /chmod\s+(-R|--recursive)\s+000/i, // 递归移除所有权限
-    /chown\s+(-R|--recursive)/i, // 递归修改所有者
-    /kill\s+-9/i, // 强制杀进程
-    /pkill\s+-9/i, // 强制杀进程组
-    /killall/i, // 杀死所有同名进程
-    /systemctl\s+(stop|disable|mask)/i, // 停止服务
-    /service\s+\w+\s+stop/i, // 停止服务
-    /iptables\s+-F/i, // 清空防火墙规则
-    /iptables\s+-X/i, // 删除自定义链
-    /DROP|REJECT/i, // 防火墙丢弃规则
-    /reboot/i, // 重启
-    /shutdown/i, // 关机
-    /userdel/i, // 删除用户
-    /groupdel/i, // 删除组
-    /passwd\s+root/i, // 修改root密码
-    /visudo/i, // 编辑sudo配置
-    /crontab\s+-r/i, // 删除定时任务
-    /truncate/i, // 截断文件
-    /shred/i, // 安全删除
+    /\brm\b(?=[^;&|\n]*\s(?:-[\w-]*r[\w-]*|--recursive\b))/i, // 递归删除
+    /\brm\b(?=[^;&|\n]*\s(?:-[\w-]*f[\w-]*|--force\b))/i, // 强制删除
+    /\brm\b[^;&|\n]*\*/i, // 通配符删除
+    /\bchmod\b\s+(?:-[\w-]*R[\w-]*|--recursive)\s+(?:777|000)\b/i, // 递归修改为危险权限
+    /\bchown\b\s+(?:-[\w-]*R[\w-]*|--recursive)\b/i, // 递归修改所有者
+    /\b(?:kill|pkill)\b\s+-9\b/i, // 强制杀进程
+    /\bkillall\b/i, // 杀死所有同名进程
+    /\bsystemctl\b\s+(?:stop|disable|mask)\b/i, // 停止服务
+    /\bservice\b\s+\S+\s+stop\b/i, // 停止服务
+    /\b(?:iptables|ip6tables|nft)\b[^;&|\n]*(?:\s-F\b|\s-X\b|\bflush\b)/i, // 清空防火墙规则
+    /\b(?:DROP|REJECT)\b/i, // 防火墙丢弃规则
+    /\bshutdown\b/i, // 关机
+    /\buserdel\b/i, // 删除用户
+    /\bgroupdel\b/i, // 删除组
+    /\bpasswd\s+root\b/i, // 修改root密码
+    /\bvisudo\b/i, // 编辑sudo配置
+    /\bcrontab\s+-r\b/i, // 删除定时任务
+    /\btruncate\b/i, // 截断文件
+    /\bshred\b/i, // 安全删除
+    /\b(?:curl|wget)\b[^;&\n|]*\|\s*(?:sudo\s+)?(?:sh|bash|zsh|fish)\b/i, // 下载后直接执行
+    /\b(?:bash|sh|zsh|fish)\b\s+-c\s+["']?\$?\((?:curl|wget)\b/i, // 通过 shell 执行下载内容
   ],
   // 中风险 - 可能影响服务或数据
   medium: [
-    /mv\s+/i, // 移动文件
-    /cp\s+(-r|--recursive)/i, // 递归复制
-    /chmod\s+/i, // 修改权限
-    /chown\s+/i, // 修改所有者
-    /chgrp\s+/i, // 修改用户组
-    /systemctl\s+restart/i, // 重启服务
-    /service\s+\w+\s+restart/i, // 重启服务
+    /\bmv\s+/i, // 移动文件
+    /\bcp\b\s+(?:-[\w-]*r[\w-]*|--recursive)\b/i, // 递归复制
+    /\bchmod\s+/i, // 修改权限
+    /\bchown\s+/i, // 修改所有者
+    /\bchgrp\s+/i, // 修改用户组
+    /\bsystemctl\s+(?:restart|reload)\b/i, // 重启/重载服务
+    /\bservice\s+\S+\s+(?:restart|reload)\b/i, // 重启/重载服务
     /apt(-get)?\s+(remove|purge|autoremove)/i, // 卸载软件
     /yum\s+(remove|erase)/i, // 卸载软件
     /dnf\s+(remove|erase)/i, // 卸载软件
     /pip\s+uninstall/i, // 卸载Python包
     /npm\s+uninstall/i, // 卸载npm包
-    /docker\s+(rm|rmi|stop|kill)/i, // Docker容器/镜像操作
-    /kubectl\s+delete/i, // K8s删除资源
-    /git\s+(reset|revert|clean)/i, // Git重置操作
-    /mysql.*DROP/i, // 数据库删除
-    /psql.*DROP/i, // PostgreSQL删除
-    /mongo.*drop/i, // MongoDB删除
-    /sed\s+-i/i, // 原地编辑文件
-    /awk\s+-i\s+inplace/i, // 原地编辑
+    /\bdocker\s+(?:rm|rmi|stop|kill|prune)\b/i, // Docker容器/镜像操作
+    /\bkubectl\s+(?:delete|replace|apply)\b/i, // K8s修改资源
+    /\bgit\s+(?:reset|revert|clean)\b/i, // Git重置操作
+    /\bmysql\b[^;&|\n]*\bDROP\b/i, // 数据库删除
+    /\bpsql\b[^;&|\n]*\bDROP\b/i, // PostgreSQL删除
+    /\bmongo\b[^;&|\n]*\bdrop\b/i, // MongoDB删除
+    /\bsed\s+-[\w-]*i[\w-]*/i, // 原地编辑文件
+    /\bawk\s+-i\s+inplace\b/i, // 原地编辑
     />\s+[^|]/i, // 文件重定向覆盖
-    /wget\s+.*-O\s+/i, // wget覆盖文件
-    /curl\s+.*-o\s+/i, // curl覆盖文件
+    /\bwget\b[^;&|\n]*\s-O\s+/i, // wget覆盖文件
+    /\bcurl\b[^;&|\n]*\s-o\s+/i, // curl覆盖文件
   ],
   // 低风险 - 轻微修改
   low: [
-    /touch\s+/i, // 创建文件
-    /mkdir\s+/i, // 创建目录
+    /\btouch\s+/i, // 创建文件
+    /\bmkdir\s+/i, // 创建目录
     /echo\s+.*>>/i, // 追加内容
     /tee\s+-a/i, // 追加内容
     /apt(-get)?\s+install/i, // 安装软件
@@ -142,55 +177,87 @@ let customRules = {
   low: [],
 };
 
+export function validateCustomRiskPattern(pattern) {
+  const normalizedPattern = typeof pattern === "string" ? pattern.trim() : "";
+
+  if (!normalizedPattern) {
+    return { valid: false, reason: "empty" };
+  }
+
+  if (normalizedPattern.length > MAX_CUSTOM_RULE_PATTERN_LENGTH) {
+    return { valid: false, reason: "tooLong" };
+  }
+
+  if (hasControlCharacter(normalizedPattern)) {
+    return { valid: false, reason: "controlCharacter" };
+  }
+
+  if (
+    hasNestedQuantifier(normalizedPattern) ||
+    hasRepeatedWildcard(normalizedPattern)
+  ) {
+    return { valid: false, reason: "unsafeComplexity" };
+  }
+
+  try {
+    new RegExp(normalizedPattern, "i");
+  } catch {
+    return { valid: false, reason: "syntax" };
+  }
+
+  return { valid: true, pattern: normalizedPattern };
+}
+
+export function normalizeCustomRiskRules(rules) {
+  const normalizedRules = {
+    critical: [],
+    high: [],
+    medium: [],
+    low: [],
+  };
+
+  if (!rules || typeof rules !== "object") {
+    return normalizedRules;
+  }
+
+  for (const level of CUSTOM_RULE_LEVELS) {
+    const patterns = Array.isArray(rules[level]) ? rules[level] : [];
+    const seenPatterns = new Set();
+
+    for (const rawPattern of patterns) {
+      if (normalizedRules[level].length >= MAX_CUSTOM_RULES_PER_LEVEL) {
+        break;
+      }
+
+      const validation = validateCustomRiskPattern(rawPattern);
+      if (!validation.valid || seenPatterns.has(validation.pattern)) {
+        continue;
+      }
+
+      seenPatterns.add(validation.pattern);
+      normalizedRules[level].push(validation.pattern);
+    }
+  }
+
+  return normalizedRules;
+}
+
 /**
  * 设置自定义风险评估规则
  * @param {Object} rules - 自定义规则对象
  */
 export function setCustomRiskRules(rules) {
-  if (rules && typeof rules === "object") {
-    customRules = {
-      critical: (rules.critical || [])
-        .map((pattern) => {
-          try {
-            return new RegExp(pattern, "i");
-          } catch (e) {
-            console.error("Invalid regex pattern:", pattern, e);
-            return null;
-          }
-        })
-        .filter(Boolean),
-      high: (rules.high || [])
-        .map((pattern) => {
-          try {
-            return new RegExp(pattern, "i");
-          } catch (e) {
-            console.error("Invalid regex pattern:", pattern, e);
-            return null;
-          }
-        })
-        .filter(Boolean),
-      medium: (rules.medium || [])
-        .map((pattern) => {
-          try {
-            return new RegExp(pattern, "i");
-          } catch (e) {
-            console.error("Invalid regex pattern:", pattern, e);
-            return null;
-          }
-        })
-        .filter(Boolean),
-      low: (rules.low || [])
-        .map((pattern) => {
-          try {
-            return new RegExp(pattern, "i");
-          } catch (e) {
-            console.error("Invalid regex pattern:", pattern, e);
-            return null;
-          }
-        })
-        .filter(Boolean),
-    };
+  if (!rules || typeof rules !== "object") {
+    return;
   }
+
+  const normalizedRules = normalizeCustomRiskRules(rules);
+  customRules = Object.fromEntries(
+    CUSTOM_RULE_LEVELS.map((level) => [
+      level,
+      normalizedRules[level].map((pattern) => new RegExp(pattern, "i")),
+    ]),
+  );
 }
 
 /**
@@ -226,65 +293,13 @@ export function assessCommandRisk(command) {
 
   const normalizedCommand = command.trim();
 
-  // 先检查自定义规则（优先级高于内置规则）
-  // 检查自定义极高风险
-  for (const pattern of customRules.critical) {
-    if (pattern.test(normalizedCommand)) {
-      return RISK_LEVELS.CRITICAL;
-    }
-  }
+  const customRiskLevel = findMatchingRiskLevel(customRules, normalizedCommand);
+  const builtinRiskLevel = findMatchingRiskLevel(
+    DANGEROUS_PATTERNS,
+    normalizedCommand,
+  );
 
-  // 检查自定义高风险
-  for (const pattern of customRules.high) {
-    if (pattern.test(normalizedCommand)) {
-      return RISK_LEVELS.HIGH;
-    }
-  }
-
-  // 检查自定义中风险
-  for (const pattern of customRules.medium) {
-    if (pattern.test(normalizedCommand)) {
-      return RISK_LEVELS.MEDIUM;
-    }
-  }
-
-  // 检查自定义低风险
-  for (const pattern of customRules.low) {
-    if (pattern.test(normalizedCommand)) {
-      return RISK_LEVELS.LOW;
-    }
-  }
-
-  // 检查内置极高风险
-  for (const pattern of DANGEROUS_PATTERNS.critical) {
-    if (pattern.test(normalizedCommand)) {
-      return RISK_LEVELS.CRITICAL;
-    }
-  }
-
-  // 检查内置高风险
-  for (const pattern of DANGEROUS_PATTERNS.high) {
-    if (pattern.test(normalizedCommand)) {
-      return RISK_LEVELS.HIGH;
-    }
-  }
-
-  // 检查内置中风险
-  for (const pattern of DANGEROUS_PATTERNS.medium) {
-    if (pattern.test(normalizedCommand)) {
-      return RISK_LEVELS.MEDIUM;
-    }
-  }
-
-  // 检查内置低风险
-  for (const pattern of DANGEROUS_PATTERNS.low) {
-    if (pattern.test(normalizedCommand)) {
-      return RISK_LEVELS.LOW;
-    }
-  }
-
-  // 默认为安全
-  return RISK_LEVELS.SAFE;
+  return maxRiskLevel(customRiskLevel, builtinRiskLevel);
 }
 
 /**
@@ -495,19 +510,9 @@ export function parseCommandsFromResponse(content) {
     const riskName = match[1].toLowerCase();
     const command = match[2].trim();
 
-    // 根据风险名称获取风险等级
-    let riskLevel = RISK_LEVELS.SAFE;
-    for (const key of Object.keys(RISK_LEVELS)) {
-      if (RISK_LEVELS[key].name === riskName) {
-        riskLevel = RISK_LEVELS[key];
-        break;
-      }
-    }
-
-    // 如果AI没有正确标注风险，使用自动评估
-    if (riskLevel === RISK_LEVELS.SAFE && riskName !== "safe") {
-      riskLevel = assessCommandRisk(command);
-    }
+    const taggedRiskLevel = getRiskLevelByName(riskName);
+    const assessedRiskLevel = assessCommandRisk(command);
+    const riskLevel = maxRiskLevel(taggedRiskLevel, assessedRiskLevel);
 
     commands.push({
       command,
@@ -541,4 +546,6 @@ export default {
   setCustomRiskRules,
   getCustomRiskRules,
   getBuiltinRiskPatterns,
+  normalizeCustomRiskRules,
+  validateCustomRiskPattern,
 };

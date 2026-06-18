@@ -7,6 +7,75 @@ const {
   IPC_REQUEST_CHANNELS,
 } = require("../schema/channels");
 
+const CUSTOM_RULE_LEVELS = ["critical", "high", "medium", "low"];
+const MAX_CUSTOM_RULES_PER_LEVEL = 50;
+const MAX_CUSTOM_RULE_PATTERN_LENGTH = 200;
+
+const hasNestedQuantifier = (pattern) =>
+  /\((?:[^()\\]|\\.|\[[^\]]*\])*(?:[+*]|\{\d+(?:,\d*)?\})(?:[^()\\]|\\.|\[[^\]]*\])*\)(?:[+*]|\{\d+(?:,\d*)?\})/.test(
+    pattern,
+  );
+
+const hasRepeatedWildcard = (pattern) => /(?:\.\*){2,}/.test(pattern);
+
+const hasControlCharacter = (pattern) => /[\u0000-\u001f\u007f]/.test(pattern);
+
+const validateCustomRiskPattern = (pattern) => {
+  const normalizedPattern = typeof pattern === "string" ? pattern.trim() : "";
+
+  if (
+    !normalizedPattern ||
+    normalizedPattern.length > MAX_CUSTOM_RULE_PATTERN_LENGTH ||
+    hasControlCharacter(normalizedPattern) ||
+    hasNestedQuantifier(normalizedPattern) ||
+    hasRepeatedWildcard(normalizedPattern)
+  ) {
+    return null;
+  }
+
+  try {
+    new RegExp(normalizedPattern, "i");
+  } catch {
+    return null;
+  }
+
+  return normalizedPattern;
+};
+
+const normalizeCustomRiskRules = (rules) => {
+  const normalizedRules = {
+    critical: [],
+    high: [],
+    medium: [],
+    low: [],
+  };
+
+  if (!rules || typeof rules !== "object") {
+    return normalizedRules;
+  }
+
+  for (const level of CUSTOM_RULE_LEVELS) {
+    const patterns = Array.isArray(rules[level]) ? rules[level] : [];
+    const seenPatterns = new Set();
+
+    for (const rawPattern of patterns) {
+      if (normalizedRules[level].length >= MAX_CUSTOM_RULES_PER_LEVEL) {
+        break;
+      }
+
+      const pattern = validateCustomRiskPattern(rawPattern);
+      if (!pattern || seenPatterns.has(pattern)) {
+        continue;
+      }
+
+      seenPatterns.add(pattern);
+      normalizedRules[level].push(pattern);
+    }
+  }
+
+  return normalizedRules;
+};
+
 /**
  * AI相关的IPC处理器
  */
@@ -42,6 +111,10 @@ class AIHandlers {
       ? this._toRendererSafeApiConfig(safeSettings.current)
       : null;
 
+    safeSettings.customRiskRules = normalizeCustomRiskRules(
+      safeSettings.customRiskRules,
+    );
+
     return safeSettings;
   }
 
@@ -74,6 +147,17 @@ class AIHandlers {
     normalizedSettings.current = normalizedSettings.current
       ? this._stripApiConfigMeta(normalizedSettings.current)
       : null;
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        normalizedSettings,
+        "customRiskRules",
+      )
+    ) {
+      normalizedSettings.customRiskRules = normalizeCustomRiskRules(
+        normalizedSettings.customRiskRules,
+      );
+    }
 
     return normalizedSettings;
   }
@@ -553,7 +637,7 @@ class AIHandlers {
   async saveCustomRiskRules(event, rules) {
     try {
       const currentSettings = configService.loadAISettings() || {};
-      currentSettings.customRiskRules = rules;
+      currentSettings.customRiskRules = normalizeCustomRiskRules(rules);
       configService.saveAISettings(currentSettings);
       logToFile("Custom risk rules saved", "INFO");
       return { success: true };

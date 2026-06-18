@@ -41,6 +41,8 @@ import {
   RISK_LEVELS,
   setCustomRiskRules as applyCustomRiskRules,
   getBuiltinRiskPatterns,
+  normalizeCustomRiskRules,
+  validateCustomRiskPattern,
 } from "../utils/aiSystemPrompt";
 import LockIcon from "@mui/icons-material/Lock";
 
@@ -186,9 +188,12 @@ const AISettings = ({ open, onClose }) => {
 
         // 加载自定义风险规则
         if (settings.customRiskRules) {
-          setCustomRules(settings.customRiskRules);
+          const normalizedRules = normalizeCustomRiskRules(
+            settings.customRiskRules,
+          );
+          setCustomRules(normalizedRules);
           // 应用到风险评估模块
-          applyCustomRiskRules(settings.customRiskRules);
+          applyCustomRiskRules(normalizedRules);
         }
       }
     } catch {
@@ -535,22 +540,26 @@ const AISettings = ({ open, onClose }) => {
 
   // 添加自定义规则
   const handleAddRule = () => {
-    if (!newRulePattern.trim()) {
+    const validation = validateCustomRiskPattern(newRulePattern);
+
+    if (validation.reason === "empty") {
       setRuleError(t("aiSettings.rulePatternRequired"));
       return;
     }
 
-    // 验证正则表达式
-    try {
-      new RegExp(newRulePattern, "i");
-    } catch {
+    if (!validation.valid) {
+      setRuleError(t("aiSettings.invalidRegex"));
+      return;
+    }
+
+    if (customRules[newRuleLevel]?.includes(validation.pattern)) {
       setRuleError(t("aiSettings.invalidRegex"));
       return;
     }
 
     setCustomRules((prev) => ({
       ...prev,
-      [newRuleLevel]: [...prev[newRuleLevel], newRulePattern],
+      [newRuleLevel]: [...prev[newRuleLevel], validation.pattern],
     }));
     setNewRulePattern("");
     setRuleError("");
@@ -570,11 +579,13 @@ const AISettings = ({ open, onClose }) => {
     setError("");
     try {
       if (window.terminalAPI?.saveCustomRiskRules) {
+        const normalizedRules = normalizeCustomRiskRules(customRules);
         const result =
-          await window.terminalAPI.saveCustomRiskRules(customRules);
+          await window.terminalAPI.saveCustomRiskRules(normalizedRules);
         if (result) {
           // 应用到风险评估模块
-          applyCustomRiskRules(customRules);
+          setCustomRules(normalizedRules);
+          applyCustomRiskRules(normalizedRules);
           setSuccess(t("aiSettings.rulesSaved"));
         } else {
           setError(t("aiSettings.rulesSaveFailed"));
@@ -775,8 +786,8 @@ const AISettings = ({ open, onClose }) => {
                                       size="small"
                                       onClick={() => handleCloneApi(apiConfig)}
                                       color="primary"
-                                    
-                                      aria-label={t("aiSettings.cloneApi")}>
+                                      aria-label={t("aiSettings.cloneApi")}
+                                    >
                                       <ContentCopyIcon />
                                     </IconButton>
                                   </Tooltip>
@@ -797,8 +808,8 @@ const AISettings = ({ open, onClose }) => {
                                     <IconButton
                                       size="small"
                                       onClick={() => handleEditApi(apiConfig)}
-                                    
-                                      aria-label={t("aiSettings.editApi")}>
+                                      aria-label={t("aiSettings.editApi")}
+                                    >
                                       <EditIcon />
                                     </IconButton>
                                   </Tooltip>
@@ -809,8 +820,8 @@ const AISettings = ({ open, onClose }) => {
                                         handleDeleteApi(apiConfig.id)
                                       }
                                       color="error"
-                                    
-                                      aria-label={t("aiSettings.deleteApi")}>
+                                      aria-label={t("aiSettings.deleteApi")}
+                                    >
                                       <DeleteIcon />
                                     </IconButton>
                                   </Tooltip>
@@ -945,8 +956,8 @@ const AISettings = ({ open, onClose }) => {
                               !hasConfiguredApiKey(config)
                             }
                             sx={{ mt: 1 }}
-                          
-                            aria-label={t("aiSettings.fetchModels")}>
+                            aria-label={t("aiSettings.fetchModels")}
+                          >
                             {fetchingModels ? (
                               <CircularProgress size={20} />
                             ) : (
@@ -1065,8 +1076,8 @@ const AISettings = ({ open, onClose }) => {
                           onClick={handleAddRule}
                           color="primary"
                           sx={{ mt: 0.5 }}
-                        
-                          aria-label={t("aiSettings.addNewRule")}>
+                          aria-label={t("aiSettings.addNewRule")}
+                        >
                           <AddIcon />
                         </IconButton>
                       </Tooltip>
