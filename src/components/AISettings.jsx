@@ -923,14 +923,27 @@ const AISettings = ({ open, onClose }) => {
                         }}
                       >
                         <FormControl fullWidth variant="outlined" required>
-                          <InputLabel>{t("aiSettings.model")}</InputLabel>
+                          <InputLabel id="ai-settings-model-label" shrink>
+                            {t("aiSettings.model")}
+                          </InputLabel>
                           <Select
+                            labelId="ai-settings-model-label"
                             value={config.model}
                             onChange={(e) =>
                               handleConfigChange("model", e.target.value)
                             }
                             label={t("aiSettings.model")}
                             displayEmpty
+                            renderValue={(selected) =>
+                              selected || t("aiSettings.modelSelectPlaceholder")
+                            }
+                            sx={{
+                              "& .MuiSelect-select": {
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              },
+                            }}
                             MenuProps={{
                               sx: {
                                 zIndex: (theme) => theme.zIndex.modal + 210,
