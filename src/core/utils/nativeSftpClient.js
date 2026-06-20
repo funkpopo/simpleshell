@@ -6,6 +6,23 @@ const { processSSHPrivateKeyAsync } = require("./ssh-utils");
 const { logToFile } = require("./logger");
 const { recordCrashMarker } = require("./crashReporter");
 
+const NATIVE_SFTP_SCHEMA_VERSION = 1;
+let nativeRequestSequence = 0;
+
+function createNativeRequestId(operation) {
+  nativeRequestSequence = (nativeRequestSequence + 1) % Number.MAX_SAFE_INTEGER;
+  return `native-sftp-${operation || "request"}-${Date.now()}-${nativeRequestSequence}`;
+}
+
+function normalizeNativeRequest(request = {}) {
+  const operation = request?.operation || "unknown-operation";
+  return {
+    ...request,
+    schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
+    requestId: request.requestId || createNativeRequestId(operation),
+  };
+}
+
 function normalizeErrorMessage(error) {
   if (!error) return "Unknown error";
   if (typeof error === "string") return error;
@@ -63,6 +80,7 @@ function createNativeSidecarError(message, payload = {}) {
   error.retryable = payload.retryable === true;
   error.module = payload.module || "native-sidecar";
   error.operation = payload.operation || null;
+  error.requestId = payload.requestId || null;
   error.sidecarVersion = payload.sidecarVersion || null;
   error.raw = payload.raw || payload;
   return error;
@@ -101,6 +119,19 @@ function normalizeNativeErrorPayload(payload, fallbackMessage) {
     errorKind: "sidecar",
     retryable: false,
     module: "native-sidecar",
+  };
+}
+
+function normalizeNativeResultPayload(result, request) {
+  if (!result || typeof result !== "object") {
+    return result;
+  }
+
+  return {
+    schemaVersion: result.schemaVersion || NATIVE_SFTP_SCHEMA_VERSION,
+    requestId: result.requestId || request?.requestId || null,
+    operation: result.operation || request?.operation || null,
+    ...result,
   };
 }
 
@@ -184,6 +215,8 @@ function invokeNativeRequestWithConfig(
     );
   }
 
+  const normalizedRequest = normalizeNativeRequest(request);
+
   return new Promise((resolve, reject) => {
     const child = spawn(sidecarPath, ["sftp-request"], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -207,7 +240,7 @@ function invokeNativeRequestWithConfig(
       if (settled) return;
       settled = true;
       logToFile(
-        `Native SFTP: ${request?.operation || "unknown-operation"} failed - ${normalizeErrorMessage(error)}`,
+        `Native SFTP: ${normalizedRequest.operation || "unknown-operation"} failed - ${normalizeErrorMessage(error)}`,
         "ERROR",
       );
       reject(error);
@@ -223,12 +256,12 @@ function invokeNativeRequestWithConfig(
           : "WARN";
         const status = expectedFailure ? "expected error" : "error";
         logToFile(
-          `Native SFTP: ${request?.operation || "unknown-operation"} completed with ${status} - ${value?.error || "unknown error"}`,
+          `Native SFTP: ${normalizedRequest.operation || "unknown-operation"} completed with ${status} - ${value?.error || "unknown error"}`,
           level,
         );
       } else {
         logToFile(
-          `Native SFTP: ${request?.operation || "unknown-operation"} completed successfully`,
+          `Native SFTP: ${normalizedRequest.operation || "unknown-operation"} completed successfully`,
           "INFO",
         );
       }
@@ -249,7 +282,8 @@ function invokeNativeRequestWithConfig(
               errorCode: "NATIVE_SFTP_INVALID_SIDECAR_OUTPUT",
               errorKind: "internal",
               retryable: false,
-              operation: request?.operation || null,
+              operation: normalizedRequest.operation || null,
+              requestId: normalizedRequest.requestId,
               raw: { line },
             },
           ),
@@ -259,13 +293,20 @@ function invokeNativeRequestWithConfig(
 
       if (payload?.type === "progress") {
         if (typeof options.onProgress === "function") {
-          options.onProgress(payload);
+          options.onProgress({
+            requestId: normalizedRequest.requestId,
+            schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
+            ...payload,
+          });
         }
         return;
       }
 
       if (payload?.type === "result") {
-        finalResult = payload.result || null;
+        finalResult = normalizeNativeResultPayload(
+          payload.result || null,
+          normalizedRequest,
+        );
       }
     };
 
@@ -290,7 +331,8 @@ function invokeNativeRequestWithConfig(
             errorCode: "NATIVE_SFTP_SIDECAR_START_FAILED",
             errorKind: "sidecar",
             retryable: false,
-            operation: request?.operation || null,
+            operation: normalizedRequest.operation || null,
+            requestId: normalizedRequest.requestId,
             raw: error,
           },
         ),
@@ -314,9 +356,10 @@ function invokeNativeRequestWithConfig(
           type: "sidecar-exit",
           reason: structured.error,
           exitCode: code,
-          operation: request?.operation || null,
+          operation: normalizedRequest.operation || null,
           error: structured.error,
           extra: {
+            requestId: normalizedRequest.requestId,
             errorCode: structured.errorCode,
             errorKind: structured.errorKind,
             retryable: structured.retryable,
@@ -325,7 +368,9 @@ function invokeNativeRequestWithConfig(
         rejectOnce(
           createNativeSidecarError(structured.error, {
             ...structured,
-            operation: structured.operation || request?.operation || null,
+            operation:
+              structured.operation || normalizedRequest.operation || null,
+            requestId: structured.requestId || normalizedRequest.requestId,
             raw: { ...structured, exitCode: code },
           }),
         );
@@ -341,7 +386,8 @@ function invokeNativeRequestWithConfig(
               errorCode: "NATIVE_SFTP_MISSING_RESULT",
               errorKind: "internal",
               retryable: false,
-              operation: request?.operation || null,
+              operation: normalizedRequest.operation || null,
+              requestId: normalizedRequest.requestId,
             },
           ),
         );
@@ -357,8 +403,9 @@ function invokeNativeRequestWithConfig(
     });
 
     const envelope = JSON.stringify({
+      schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
       config,
-      request,
+      request: normalizedRequest,
     });
 
     child.stdin.end(envelope, "utf8");
@@ -425,6 +472,15 @@ function watchDirectoryWithConfig(
     let settled = false;
     let closedByClient = false;
     let runtimeErrorNotified = false;
+    const requestedIntervalMs = Math.floor(Number(options.intervalMs));
+    const request = normalizeNativeRequest({
+      operation: "watchDirectory",
+      path: remotePath,
+      watchIntervalMs:
+        Number.isFinite(requestedIntervalMs) && requestedIntervalMs > 0
+          ? requestedIntervalMs
+          : undefined,
+    });
 
     const notifyRuntimeError = (error) => {
       if (runtimeErrorNotified) {
@@ -475,6 +531,7 @@ function watchDirectoryWithConfig(
             errorKind: "internal",
             retryable: false,
             operation: "watchDirectory",
+            requestId: request.requestId,
             raw: { line },
           },
         );
@@ -499,7 +556,11 @@ function watchDirectoryWithConfig(
 
       if (eventName === "ready") {
         if (typeof options.onReady === "function") {
-          options.onReady(eventPayload);
+          options.onReady({
+            requestId: request.requestId,
+            schemaVersion: payload?.schemaVersion || NATIVE_SFTP_SCHEMA_VERSION,
+            ...eventPayload,
+          });
         }
         resolveOnce();
         return;
@@ -507,7 +568,11 @@ function watchDirectoryWithConfig(
 
       if (eventName === "changed") {
         if (typeof options.onChanged === "function") {
-          options.onChanged(eventPayload);
+          options.onChanged({
+            requestId: request.requestId,
+            schemaVersion: payload?.schemaVersion || NATIVE_SFTP_SCHEMA_VERSION,
+            ...eventPayload,
+          });
         }
         return;
       }
@@ -520,6 +585,7 @@ function watchDirectoryWithConfig(
         const wrapped = createNativeSidecarError(payloadError.error, {
           ...payloadError,
           operation: payloadError.operation || "watchDirectory",
+          requestId: payloadError.requestId || request.requestId,
         });
         if (settled) {
           notifyRuntimeError(wrapped);
@@ -551,6 +617,7 @@ function watchDirectoryWithConfig(
           errorKind: "sidecar",
           retryable: false,
           operation: "watchDirectory",
+          requestId: request.requestId,
           raw: error,
         },
       );
@@ -601,6 +668,7 @@ function watchDirectoryWithConfig(
           operation: "watchDirectory",
           error: structured.error,
           extra: {
+            requestId: structured.requestId || request.requestId,
             errorCode: structured.errorCode,
             errorKind: structured.errorKind,
             retryable: structured.retryable,
@@ -609,6 +677,7 @@ function watchDirectoryWithConfig(
         const wrapped = createNativeSidecarError(structured.error, {
           ...structured,
           operation: structured.operation || "watchDirectory",
+          requestId: structured.requestId || request.requestId,
           raw: { ...structured, exitCode: code, signal },
         });
         if (settled) {
@@ -629,6 +698,7 @@ function watchDirectoryWithConfig(
               errorKind: "sidecar",
               retryable: true,
               operation: "watchDirectory",
+              requestId: request.requestId,
             },
           ),
         );
@@ -644,23 +714,17 @@ function watchDirectoryWithConfig(
             errorKind: "sidecar",
             retryable: true,
             operation: "watchDirectory",
+            requestId: request.requestId,
           },
         ),
       );
       emitExit();
     });
 
-    const requestedIntervalMs = Math.floor(Number(options.intervalMs));
     const envelope = JSON.stringify({
+      schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
       config,
-      request: {
-        operation: "watchDirectory",
-        path: remotePath,
-        watchIntervalMs:
-          Number.isFinite(requestedIntervalMs) && requestedIntervalMs > 0
-            ? requestedIntervalMs
-            : undefined,
-      },
+      request,
     });
 
     child.stdin.end(envelope, "utf8");

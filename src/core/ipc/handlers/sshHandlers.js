@@ -1788,6 +1788,13 @@ class SSHHandlers {
           );
         }
 
+        if (connectionConfig.tabId) {
+          this._emitSshTabConnectionStatus(
+            connectionConfig.tabId,
+            connectionConfig,
+          );
+        }
+
         // 连接成功，如果用户选择了"下次自动登录"，保存凭据
         if (lastAuthResult?.autoLogin && sshConfig.id) {
           await this.updateConnectionCredentials(event, sshConfig.id, {

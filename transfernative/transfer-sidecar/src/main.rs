@@ -8,12 +8,12 @@ use russh::client::{self, Handle};
 use russh::keys::{decode_secret_key, PrivateKeyWithHashAlg, PublicKey};
 use russh::Disconnect;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::cmp::min;
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::panic;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -21,6 +21,8 @@ use tokio::fs::OpenOptions as TokioOpenOptions;
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 type SshHandle = Handle<AcceptAnyServerKey>;
+const SIDECAR_SCHEMA_VERSION: u32 = 1;
+const SIDECAR_PROCESS_TYPE: &str = "native-sidecar";
 const MODE_TYPE_MASK: u32 = 0o170000;
 const MODE_TYPE_DIRECTORY: u32 = 0o040000;
 const MODE_TYPE_FILE: u32 = 0o100000;
@@ -36,7 +38,7 @@ struct LocalFileEntry {
     mtime: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ScanError {
     path: String,
@@ -46,9 +48,21 @@ struct ScanError {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ScanResult {
+    schema_version: u32,
+    scan_id: String,
+    root_path: String,
+    relative_base: String,
+    generated_at: u64,
+    truncated: bool,
+    truncated_reason: Option<String>,
+    max_entries_hit: bool,
+    max_depth_hit: bool,
+    max_bytes_hit: bool,
     total_size: u64,
     file_count: usize,
+    directory_count: usize,
     files: Vec<LocalFileEntry>,
+    directories: Vec<String>,
     errors: Vec<ScanError>,
 }
 
@@ -66,6 +80,7 @@ struct SshConnectionConfig {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SftpEnvelope {
+    schema_version: Option<u32>,
     config: SshConnectionConfig,
     request: SftpRequest,
 }
@@ -73,6 +88,8 @@ struct SftpEnvelope {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SftpRequest {
+    schema_version: Option<u32>,
+    request_id: Option<String>,
     operation: String,
     path: Option<String>,
     local_path: Option<String>,
@@ -88,6 +105,9 @@ struct SftpRequest {
     remote_write_flags: Option<String>,
     local_write_flags: Option<String>,
     watch_interval_ms: Option<u64>,
+    max_entries: Option<usize>,
+    max_depth: Option<usize>,
+    max_bytes: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -129,10 +149,37 @@ struct RemoteFolderFileEntry {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RemoteFolderScanResult {
+    schema_version: u32,
+    scan_id: String,
+    root_path: String,
+    generated_at: u64,
+    truncated: bool,
+    truncated_reason: Option<String>,
+    max_entries_hit: bool,
+    max_depth_hit: bool,
+    max_bytes_hit: bool,
     total_bytes: u64,
     file_count: usize,
+    directory_count: usize,
     files: Vec<RemoteFolderFileEntry>,
     directories: Vec<String>,
+    errors: Vec<ScanError>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ScanLimits {
+    max_entries: Option<usize>,
+    max_depth: Option<usize>,
+    max_bytes: Option<u64>,
+}
+
+#[derive(Debug, Default)]
+struct ScanControl {
+    truncated: bool,
+    truncated_reason: Option<String>,
+    max_entries_hit: bool,
+    max_depth_hit: bool,
+    max_bytes_hit: bool,
 }
 
 #[derive(Debug)]
@@ -160,9 +207,9 @@ async fn main() {
 
 async fn run() -> Result<(), String> {
     let mut args = env::args().skip(1);
-    let command = args
-        .next()
-        .ok_or_else(|| "missing command, expected scan-folder, sftp-request, or sftp-watch".to_string())?;
+    let command = args.next().ok_or_else(|| {
+        "missing command, expected scan-folder, sftp-request, or sftp-watch".to_string()
+    })?;
 
     match command.as_str() {
         "scan-folder" => run_scan_folder(args),
@@ -179,6 +226,9 @@ async fn run() -> Result<(), String> {
 fn run_scan_folder(mut args: impl Iterator<Item = String>) -> Result<(), String> {
     let mut folder_path: Option<PathBuf> = None;
     let mut relative_base = String::new();
+    let mut max_entries: Option<usize> = None;
+    let mut max_depth: Option<usize> = None;
+    let mut max_bytes: Option<u64> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -193,6 +243,36 @@ fn run_scan_folder(mut args: impl Iterator<Item = String>) -> Result<(), String>
                     .next()
                     .ok_or_else(|| "--relative-base requires a value".to_string())?;
             }
+            "--max-entries" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| "--max-entries requires a value".to_string())?;
+                max_entries = Some(
+                    value
+                        .parse::<usize>()
+                        .map_err(|error| format!("invalid --max-entries: {error}"))?,
+                );
+            }
+            "--max-depth" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| "--max-depth requires a value".to_string())?;
+                max_depth = Some(
+                    value
+                        .parse::<usize>()
+                        .map_err(|error| format!("invalid --max-depth: {error}"))?,
+                );
+            }
+            "--max-bytes" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| "--max-bytes requires a value".to_string())?;
+                max_bytes = Some(
+                    value
+                        .parse::<u64>()
+                        .map_err(|error| format!("invalid --max-bytes: {error}"))?,
+                );
+            }
             "--version" => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
@@ -202,7 +282,15 @@ fn run_scan_folder(mut args: impl Iterator<Item = String>) -> Result<(), String>
     }
 
     let folder = folder_path.ok_or_else(|| "--path is required".to_string())?;
-    let result = scan_folder(&folder, &relative_base)?;
+    let result = scan_folder(
+        &folder,
+        &relative_base,
+        ScanLimits {
+            max_entries,
+            max_depth,
+            max_bytes,
+        },
+    )?;
     let json =
         serde_json::to_string(&result).map_err(|error| format!("failed to serialize: {error}"))?;
     println!("{json}");
@@ -220,16 +308,27 @@ async fn run_sftp_request() -> Result<(), String> {
     let envelope: SftpEnvelope = match serde_json::from_str(payload.trim()) {
         Ok(value) => value,
         Err(error) => {
-            emit_error_result(None, "native-sidecar", &format!("failed to parse request: {error}"))?;
+            emit_error_result(
+                None,
+                None,
+                SIDECAR_PROCESS_TYPE,
+                &format!("failed to parse request: {error}"),
+            )?;
             return Ok(());
         }
     };
     let operation = envelope.request.operation.clone();
+    let request_id = envelope.request.request_id.as_deref();
+    let _schema_version = envelope
+        .request
+        .schema_version
+        .or(envelope.schema_version)
+        .unwrap_or(SIDECAR_SCHEMA_VERSION);
 
     let (sftp, handle) = match connect_sftp(&envelope.config).await {
         Ok(value) => value,
         Err(error) => {
-            emit_error_result(Some(&operation), "native-sidecar", &error)?;
+            emit_error_result(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?;
             return Ok(());
         }
     };
@@ -242,14 +341,16 @@ async fn run_sftp_request() -> Result<(), String> {
 
     if let Err(error) = close_result {
         if result.is_ok() {
-            emit_error_result(Some(&operation), "native-sidecar", &error)?;
+            emit_error_result(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?;
             return Ok(());
         }
     }
 
     match result {
-        Ok(value) => emit_result(value)?,
-        Err(error) => emit_error_result(Some(&operation), "native-sidecar", &error)?,
+        Ok(value) => emit_result(Some(&operation), request_id, value)?,
+        Err(error) => {
+            emit_error_result(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?
+        }
     }
     Ok(())
 }
@@ -265,17 +366,27 @@ async fn run_sftp_watch() -> Result<(), String> {
     let envelope: SftpEnvelope = match serde_json::from_str(payload.trim()) {
         Ok(value) => value,
         Err(error) => {
-            emit_watch_error(None, "native-sidecar", &format!("failed to parse request: {error}"))?;
+            emit_watch_error(
+                None,
+                None,
+                SIDECAR_PROCESS_TYPE,
+                &format!("failed to parse request: {error}"),
+            )?;
             return Ok(());
         }
     };
     let operation = envelope.request.operation.clone();
+    let request_id = envelope.request.request_id.as_deref();
 
     if envelope.request.operation != "watchDirectory" {
         emit_watch_error(
             Some(&operation),
-            "native-sidecar",
-            &format!("unsupported watch operation: {}", envelope.request.operation),
+            request_id,
+            SIDECAR_PROCESS_TYPE,
+            &format!(
+                "unsupported watch operation: {}",
+                envelope.request.operation
+            ),
         )?;
         return Ok(());
     }
@@ -283,7 +394,7 @@ async fn run_sftp_watch() -> Result<(), String> {
     let (sftp, handle) = match connect_sftp(&envelope.config).await {
         Ok(value) => value,
         Err(error) => {
-            emit_watch_error(Some(&operation), "native-sidecar", &error)?;
+            emit_watch_error(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?;
             return Ok(());
         }
     };
@@ -295,11 +406,11 @@ async fn run_sftp_watch() -> Result<(), String> {
         .await;
 
     if let Err(error) = watch_result {
-        emit_watch_error(Some(&operation), "native-sidecar", &error)?;
+        emit_watch_error(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?;
         return Ok(());
     }
     if let Err(error) = close_result {
-        emit_watch_error(Some(&operation), "native-sidecar", &error)?;
+        emit_watch_error(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?;
     }
     Ok(())
 }
@@ -382,13 +493,34 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
         }
         "scanRemoteFolderTree" => {
             let path = resolve_directory_path(request.path.as_deref());
-            let result = scan_remote_folder_tree(sftp, &path).await?;
+            let result = scan_remote_folder_tree(
+                sftp,
+                &path,
+                ScanLimits {
+                    max_entries: request.max_entries,
+                    max_depth: request.max_depth,
+                    max_bytes: request.max_bytes,
+                },
+            )
+            .await?;
             Ok(json!({
                 "success": true,
+                "schemaVersion": result.schema_version,
+                "scanId": result.scan_id,
+                "rootPath": result.root_path,
+                "generatedAt": result.generated_at,
+                "truncated": result.truncated,
+                "truncatedReason": result.truncated_reason,
+                "maxFilesHit": result.max_entries_hit,
+                "maxEntriesHit": result.max_entries_hit,
+                "maxDepthHit": result.max_depth_hit,
+                "maxBytesHit": result.max_bytes_hit,
                 "totalBytes": result.total_bytes,
                 "fileCount": result.file_count,
+                "directoryCount": result.directory_count,
                 "files": result.files,
                 "directories": result.directories,
+                "errors": result.errors,
             }))
         }
         "copyFile" => {
@@ -491,6 +623,7 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
             let local_path = required_path(request.local_path.as_deref(), "localPath")?;
             let result = upload_local_file(
                 sftp,
+                request.request_id.as_deref(),
                 local_path,
                 remote_path,
                 request.segment_offset,
@@ -509,6 +642,7 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
             let local_path = required_path(request.local_path.as_deref(), "localPath")?;
             let result = download_remote_file(
                 sftp,
+                request.request_id.as_deref(),
                 remote_path,
                 local_path,
                 request.segment_offset,
@@ -668,11 +802,19 @@ fn local_download_open_options(flags: Option<&str>) -> TokioOpenOptions {
     options
 }
 
-fn emit_progress(delta_bytes: u64, transferred_bytes: u64, total_bytes: u64) -> Result<(), String> {
+fn emit_progress(
+    request_id: Option<&str>,
+    delta_bytes: u64,
+    transferred_bytes: u64,
+    total_bytes: u64,
+) -> Result<(), String> {
     println!(
         "{}",
         serde_json::to_string(&json!({
             "type": "progress",
+            "schemaVersion": SIDECAR_SCHEMA_VERSION,
+            "processType": SIDECAR_PROCESS_TYPE,
+            "requestId": request_id,
             "deltaBytes": delta_bytes,
             "transferredBytes": transferred_bytes,
             "totalBytes": total_bytes,
@@ -781,14 +923,48 @@ fn current_timestamp_ms() -> u64 {
         .as_millis() as u64
 }
 
+fn create_scan_id(prefix: &str) -> String {
+    format!("{prefix}-{}-{}", current_timestamp_ms(), process::id())
+}
+
+fn should_stop_scan(
+    file_count: usize,
+    directory_count: usize,
+    total_bytes: u64,
+    limits: ScanLimits,
+    control: &mut ScanControl,
+) -> bool {
+    if let Some(max_entries) = limits.max_entries {
+        if file_count.saturating_add(directory_count) >= max_entries {
+            control.truncated = true;
+            control.max_entries_hit = true;
+            control.truncated_reason = Some(format!("maxEntries {max_entries} reached"));
+            return true;
+        }
+    }
+
+    if let Some(max_bytes) = limits.max_bytes {
+        if total_bytes >= max_bytes {
+            control.truncated = true;
+            control.max_bytes_hit = true;
+            control.truncated_reason = Some(format!("maxBytes {max_bytes} reached"));
+            return true;
+        }
+    }
+
+    false
+}
+
 async fn watch_directory(sftp: &Sftp, request: &SftpRequest) -> Result<(), String> {
     let remote_path = resolve_directory_path(request.path.as_deref());
     let interval_ms = request.watch_interval_ms.unwrap_or(1500).clamp(500, 10_000);
+    let request_id = request.request_id.as_deref();
 
     let initial_entries = list_files(sftp, &remote_path).await?;
     let mut previous_signature = compute_directory_signature(&initial_entries);
 
     emit_watch_event(
+        request_id,
         "ready",
         json!({
             "path": &remote_path,
@@ -810,6 +986,7 @@ async fn watch_directory(sftp: &Sftp, request: &SftpRequest) -> Result<(), Strin
 
         previous_signature = next_signature.clone();
         emit_watch_event(
+            request_id,
             "changed",
             json!({
                 "path": &remote_path,
@@ -824,13 +1001,21 @@ async fn watch_directory(sftp: &Sftp, request: &SftpRequest) -> Result<(), Strin
 async fn scan_remote_folder_tree(
     sftp: &Sftp,
     remote_root_path: &str,
+    limits: ScanLimits,
 ) -> Result<RemoteFolderScanResult, String> {
-    let mut stack = vec![(remote_root_path.to_string(), String::new())];
+    let scan_id = create_scan_id("remote");
+    let mut stack = vec![(remote_root_path.to_string(), String::new(), 0usize)];
     let mut files = Vec::new();
     let mut directories = Vec::new();
     let mut total_bytes = 0u64;
+    let errors = Vec::new();
+    let mut control = ScanControl::default();
 
-    while let Some((current_path, relative_base)) = stack.pop() {
+    while let Some((current_path, relative_base, depth)) = stack.pop() {
+        if control.truncated {
+            break;
+        }
+
         let mut fs = sftp.fs();
         let dir = fs
             .open_dir(&current_path)
@@ -854,7 +1039,24 @@ async fn scan_remote_folder_tree(
 
             if is_directory {
                 directories.push(child_relative.clone());
-                stack.push((child_path, child_relative));
+                if should_stop_scan(
+                    files.len(),
+                    directories.len(),
+                    total_bytes,
+                    limits,
+                    &mut control,
+                ) {
+                    break;
+                }
+                if let Some(max_depth) = limits.max_depth {
+                    if depth >= max_depth {
+                        control.truncated = true;
+                        control.max_depth_hit = true;
+                        control.truncated_reason = Some(format!("maxDepth {max_depth} reached"));
+                        break;
+                    }
+                }
+                stack.push((child_path, child_relative, depth + 1));
                 continue;
             }
 
@@ -866,6 +1068,16 @@ async fn scan_remote_folder_tree(
                 file_name: name,
                 size,
             });
+
+            if should_stop_scan(
+                files.len(),
+                directories.len(),
+                total_bytes,
+                limits,
+                &mut control,
+            ) {
+                break;
+            }
         }
     }
 
@@ -873,10 +1085,21 @@ async fn scan_remote_folder_tree(
     files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
 
     Ok(RemoteFolderScanResult {
+        schema_version: SIDECAR_SCHEMA_VERSION,
+        scan_id,
+        root_path: remote_root_path.to_string(),
+        generated_at: current_timestamp_ms(),
+        truncated: control.truncated,
+        truncated_reason: control.truncated_reason,
+        max_entries_hit: control.max_entries_hit,
+        max_depth_hit: control.max_depth_hit,
+        max_bytes_hit: control.max_bytes_hit,
         total_bytes,
         file_count: files.len(),
+        directory_count: directories.len(),
         files,
         directories,
+        errors,
     })
 }
 
@@ -894,6 +1117,7 @@ async fn copy_file(sftp: &Sftp, source_path: &str, target_path: &str) -> Result<
 
 async fn upload_local_file(
     sftp: &Sftp,
+    request_id: Option<&str>,
     local_path: &str,
     remote_path: &str,
     segment_offset: Option<u64>,
@@ -951,7 +1175,7 @@ async fn upload_local_file(
             .await
             .map_err(|error| format!("write remote file failed: {error}"))?;
         transferred += bytes_read as u64;
-        emit_progress(bytes_read as u64, transferred, total_bytes)?;
+        emit_progress(request_id, bytes_read as u64, transferred, total_bytes)?;
     }
 
     remote_file
@@ -970,6 +1194,7 @@ async fn upload_local_file(
 
 async fn download_remote_file(
     sftp: &Sftp,
+    request_id: Option<&str>,
     remote_path: &str,
     local_path: &str,
     segment_offset: Option<u64>,
@@ -1033,7 +1258,7 @@ async fn download_remote_file(
             .await
             .map_err(|error| format!("write local file failed: {error}"))?;
         transferred += bytes_read as u64;
-        emit_progress(bytes_read as u64, transferred, total_bytes)?;
+        emit_progress(request_id, bytes_read as u64, transferred, total_bytes)?;
     }
 
     local_file
@@ -1295,27 +1520,78 @@ fn join_remote_relative_path(parent: &str, child: &str) -> String {
     format!("{parent}/{child}")
 }
 
-fn emit_result(result: serde_json::Value) -> Result<(), String> {
+fn enrich_result_metadata(
+    operation: Option<&str>,
+    request_id: Option<&str>,
+    result: Value,
+) -> Value {
+    match result {
+        Value::Object(mut map) => {
+            map.entry("schemaVersion".to_string())
+                .or_insert_with(|| json!(SIDECAR_SCHEMA_VERSION));
+            map.entry("operation".to_string())
+                .or_insert_with(|| json!(operation.unwrap_or("unknown")));
+            if let Some(id) = request_id {
+                map.entry("requestId".to_string())
+                    .or_insert_with(|| json!(id));
+            }
+            Value::Object(map)
+        }
+        other => json!({
+            "schemaVersion": SIDECAR_SCHEMA_VERSION,
+            "operation": operation.unwrap_or("unknown"),
+            "requestId": request_id,
+            "value": other,
+        }),
+    }
+}
+
+fn emit_result(
+    operation: Option<&str>,
+    request_id: Option<&str>,
+    result: serde_json::Value,
+) -> Result<(), String> {
+    let enriched = enrich_result_metadata(operation, request_id, result);
     println!(
         "{}",
         serde_json::to_string(&json!({
             "type": "result",
-            "result": result,
+            "schemaVersion": SIDECAR_SCHEMA_VERSION,
+            "processType": SIDECAR_PROCESS_TYPE,
+            "operation": operation.unwrap_or("unknown"),
+            "requestId": request_id,
+            "result": enriched,
         }))
         .map_err(|error| format!("failed to serialize result: {error}"))?
     );
     Ok(())
 }
 
-fn emit_error_result(operation: Option<&str>, module: &str, message: &str) -> Result<(), String> {
-    emit_result(structured_error_value(operation, module, message))
+fn emit_error_result(
+    operation: Option<&str>,
+    request_id: Option<&str>,
+    module: &str,
+    message: &str,
+) -> Result<(), String> {
+    emit_result(
+        operation,
+        request_id,
+        structured_error_value(operation, request_id, module, message),
+    )
 }
 
-fn emit_watch_event(event: &str, payload: serde_json::Value) -> Result<(), String> {
+fn emit_watch_event(
+    request_id: Option<&str>,
+    event: &str,
+    payload: serde_json::Value,
+) -> Result<(), String> {
     println!(
         "{}",
         serde_json::to_string(&json!({
             "type": "watch",
+            "schemaVersion": SIDECAR_SCHEMA_VERSION,
+            "processType": SIDECAR_PROCESS_TYPE,
+            "requestId": request_id,
             "event": event,
             "payload": payload,
         }))
@@ -1324,17 +1600,28 @@ fn emit_watch_event(event: &str, payload: serde_json::Value) -> Result<(), Strin
     Ok(())
 }
 
-fn emit_watch_error(operation: Option<&str>, module: &str, message: &str) -> Result<(), String> {
-    emit_watch_event("error", structured_error_value(operation, module, message))
+fn emit_watch_error(
+    operation: Option<&str>,
+    request_id: Option<&str>,
+    module: &str,
+    message: &str,
+) -> Result<(), String> {
+    emit_watch_event(
+        request_id,
+        "error",
+        structured_error_value(operation, request_id, module, message),
+    )
 }
 
 fn structured_error_value(
     operation: Option<&str>,
+    request_id: Option<&str>,
     module: &str,
     message: &str,
 ) -> serde_json::Value {
     let classification = classify_error(message);
     json!({
+        "schemaVersion": SIDECAR_SCHEMA_VERSION,
         "success": false,
         "error": message,
         "message": message,
@@ -1342,7 +1629,9 @@ fn structured_error_value(
         "errorKind": classification.error_kind,
         "retryable": classification.retryable,
         "module": module,
+        "processType": SIDECAR_PROCESS_TYPE,
         "operation": operation.unwrap_or("unknown"),
+        "requestId": request_id,
         "sidecarVersion": env!("CARGO_PKG_VERSION"),
         "platform": env::consts::OS,
         "arch": env::consts::ARCH,
@@ -1353,7 +1642,8 @@ fn structured_error_value(
 fn structured_stderr_error(message: &str, operation: Option<&str>) -> String {
     serde_json::to_string(&structured_error_value(
         operation,
-        "native-sidecar",
+        None,
+        SIDECAR_PROCESS_TYPE,
         message,
     ))
     .unwrap_or_else(|_| message.to_string())
@@ -1511,7 +1801,7 @@ fn install_panic_hook() {
     }));
 }
 
-fn scan_folder(root: &Path, relative_base: &str) -> Result<ScanResult, String> {
+fn scan_folder(root: &Path, relative_base: &str, limits: ScanLimits) -> Result<ScanResult, String> {
     let normalized_root = root
         .canonicalize()
         .map_err(|error| format!("failed to resolve folder: {error}"))?;
@@ -1524,12 +1814,18 @@ fn scan_folder(root: &Path, relative_base: &str) -> Result<ScanResult, String> {
     }
 
     let mut files = Vec::new();
+    let mut directories = Vec::new();
     let mut errors = Vec::new();
     let mut total_size = 0u64;
-    let mut stack = vec![normalized_root.clone()];
+    let mut stack = vec![(normalized_root.clone(), 0usize)];
     let normalized_base = normalize_relative_prefix(relative_base);
+    let mut control = ScanControl::default();
 
-    while let Some(current_dir) = stack.pop() {
+    while let Some((current_dir, depth)) = stack.pop() {
+        if control.truncated {
+            break;
+        }
+
         let read_dir = match fs::read_dir(&current_dir) {
             Ok(entries) => entries,
             Err(error) => {
@@ -1554,6 +1850,10 @@ fn scan_folder(root: &Path, relative_base: &str) -> Result<ScanResult, String> {
             };
 
             let entry_path = entry.path();
+            let relative_path = match entry_path.strip_prefix(&normalized_root) {
+                Ok(relative) => join_relative_path(&normalized_base, relative),
+                Err(_) => join_relative_path(&normalized_base, Path::new(&entry.file_name())),
+            };
             let metadata = match entry.metadata() {
                 Ok(metadata) => metadata,
                 Err(error) => {
@@ -1566,7 +1866,25 @@ fn scan_folder(root: &Path, relative_base: &str) -> Result<ScanResult, String> {
             };
 
             if metadata.is_dir() {
-                stack.push(entry_path);
+                directories.push(relative_path.clone());
+                if should_stop_scan(
+                    files.len(),
+                    directories.len(),
+                    total_size,
+                    limits,
+                    &mut control,
+                ) {
+                    break;
+                }
+                if let Some(max_depth) = limits.max_depth {
+                    if depth >= max_depth {
+                        control.truncated = true;
+                        control.max_depth_hit = true;
+                        control.truncated_reason = Some(format!("maxDepth {max_depth} reached"));
+                        break;
+                    }
+                }
+                stack.push((entry_path, depth + 1));
                 continue;
             }
 
@@ -1574,10 +1892,6 @@ fn scan_folder(root: &Path, relative_base: &str) -> Result<ScanResult, String> {
                 continue;
             }
 
-            let relative_path = match entry_path.strip_prefix(&normalized_root) {
-                Ok(relative) => join_relative_path(&normalized_base, relative),
-                Err(_) => join_relative_path(&normalized_base, Path::new(&entry.file_name())),
-            };
             let file_size = metadata.len();
             total_size += file_size;
 
@@ -1596,13 +1910,38 @@ fn scan_folder(root: &Path, relative_base: &str) -> Result<ScanResult, String> {
                 is_directory: false,
                 mtime,
             });
+
+            if should_stop_scan(
+                files.len(),
+                directories.len(),
+                total_size,
+                limits,
+                &mut control,
+            ) {
+                break;
+            }
         }
     }
 
+    directories.sort();
+    files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+
     Ok(ScanResult {
+        schema_version: SIDECAR_SCHEMA_VERSION,
+        scan_id: create_scan_id("local"),
+        root_path: normalized_root.to_string_lossy().to_string(),
+        relative_base: normalized_base,
+        generated_at: current_timestamp_ms(),
+        truncated: control.truncated,
+        truncated_reason: control.truncated_reason,
+        max_entries_hit: control.max_entries_hit,
+        max_depth_hit: control.max_depth_hit,
+        max_bytes_hit: control.max_bytes_hit,
         total_size,
         file_count: files.len(),
+        directory_count: directories.len(),
         files,
+        directories,
         errors,
     })
 }

@@ -390,6 +390,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       ipcRenderer.removeListener(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, wrappedCallback);
     };
   },
+  getTabConnectionStatus: (tabId) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONNECTION_GET_TAB_STATUS, tabId),
   removeReconnectListeners: () => {
     ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.RECONNECT_STARTED);
     ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.RECONNECT_PROGRESS);

@@ -2,6 +2,14 @@ const processManager = require("../../process/processManager");
 const { logToFile } = require("../../utils/logger");
 const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
+function isUsableSshStream(stream) {
+  if (!stream || typeof stream.write !== "function") return false;
+  if (stream.destroyed === true) return false;
+  if (stream.closed === true || stream._closed === true) return false;
+  if (stream.writable === false) return false;
+  return true;
+}
+
 /**
  * 连接状态相关的IPC处理器
  */
@@ -32,10 +40,11 @@ class ConnectionHandlers {
       }
 
       if (processInfo.type === "ssh2") {
+        const isConnected = isUsableSshStream(processInfo.stream);
         const connectionState = {
-          isConnected: processInfo.ready && !!processInfo.stream,
-          isConnecting: !processInfo.ready,
-          quality: processInfo.ready ? "excellent" : "offline",
+          isConnected,
+          isConnecting: !isConnected && processInfo.ready !== false,
+          quality: isConnected ? "excellent" : "offline",
           lastUpdate: Date.now(),
           connectionType: "SSH",
           host: processInfo.config?.host,

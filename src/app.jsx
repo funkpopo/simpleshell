@@ -707,6 +707,8 @@ function AppContent() {
   const topConnectionsRef = React.useRef(topConnections);
   const terminalInstancesRef = React.useRef(terminalInstances);
   const processCacheRef = React.useRef(processCache);
+  const [connectionStatusByTabId, setConnectionStatusByTabId] =
+    React.useState({});
 
   React.useEffect(() => {
     connectionsRef.current = connections;
@@ -840,6 +842,38 @@ function AppContent() {
     });
   }, []);
 
+  const loadTabConnectionStatus = useCallback(async (tabId) => {
+    if (!tabId || !window.terminalAPI?.getTabConnectionStatus) {
+      return;
+    }
+
+    try {
+      const response = await window.terminalAPI.getTabConnectionStatus(tabId);
+      const status = response?.success ? response.data : null;
+      setConnectionStatusByTabId((previous) => {
+        if (!status) {
+          if (!previous[tabId]) {
+            return previous;
+          }
+          const next = { ...previous };
+          delete next[tabId];
+          return next;
+        }
+
+        return {
+          ...previous,
+          [tabId]: {
+            ...(previous[tabId] || {}),
+            ...status,
+            lastUpdate: status.lastUpdate || Date.now(),
+          },
+        };
+      });
+    } catch (error) {
+      console.warn("Failed to load tab connection status:", error);
+    }
+  }, []);
+
   const loadReconnectStatus = useCallback(
     async (tabId) => {
       if (!tabId || !window.terminalAPI?.getReconnectStatus) {
@@ -876,6 +910,20 @@ function AppContent() {
   React.useEffect(() => {
     const activeTabIds = new Set(tabs.map((tab) => tab.id));
     setReconnectStateByTabId((previous) => {
+      let changed = false;
+      const next = {};
+
+      Object.entries(previous).forEach(([tabId, value]) => {
+        if (activeTabIds.has(tabId)) {
+          next[tabId] = value;
+        } else {
+          changed = true;
+        }
+      });
+
+      return changed ? next : previous;
+    });
+    setConnectionStatusByTabId((previous) => {
       let changed = false;
       const next = {};
 
@@ -1019,6 +1067,18 @@ function AppContent() {
       if (!payload?.tabId) {
         return;
       }
+
+      setConnectionStatusByTabId((previous) => ({
+        ...previous,
+        [payload.tabId]: {
+          ...(previous[payload.tabId] || {}),
+          ...(payload.connectionStatus || {}),
+          lastUpdate:
+            payload.connectionStatus?.lastUpdate ||
+            payload.timestamp ||
+            Date.now(),
+        },
+      }));
 
       if (shouldClearOnTabConnectionStatus(payload.connectionStatus)) {
         clearReconnectStatus(payload.tabId);
@@ -2450,6 +2510,22 @@ function AppContent() {
       const newTabs = [...tabs, newTab];
       dispatch(actions.setTabs(newTabs));
       dispatch(actions.setCurrentTab(newTabs.length - 1));
+
+      if ((connection.protocol || "ssh") === "ssh") {
+        setConnectionStatusByTabId((previous) => ({
+          ...previous,
+          [terminalId]: {
+            isConnected: false,
+            isConnecting: true,
+            quality: "connecting",
+            lastUpdate: Date.now(),
+            connectionType: "SSH",
+            host: connection.host,
+            port: connection.port,
+            username: connection.username,
+          },
+        }));
+      }
     },
     [tabs, terminalInstances, dispatch],
   );
@@ -2815,6 +2891,14 @@ function AppContent() {
 
   // 切换文件管理侧边栏
   const toggleFileManager = () => {
+    const currentPanelTab = getCurrentPanelTab();
+    if (!fileManagerOpen && !isCurrentPanelSshConnected) {
+      if (currentPanelTab?.type === "ssh") {
+        void loadTabConnectionStatus(currentPanelTab.id);
+      }
+      return;
+    }
+
     const willOpen = !fileManagerOpen;
     dispatch(actions.setFileManagerOpen(willOpen));
 
@@ -3201,6 +3285,57 @@ function AppContent() {
 
   // 计算右侧面板的当前标签页信息
   const currentPanelTab = getCurrentPanelTab();
+  const currentPanelConnectionStatus = currentPanelTab
+    ? connectionStatusByTabId[currentPanelTab.id]
+    : null;
+  const isCurrentPanelSshTab = currentPanelTab?.type === "ssh";
+  const isCurrentPanelSshConnected =
+    isCurrentPanelSshTab &&
+    currentPanelConnectionStatus?.isConnected === true &&
+    currentPanelConnectionStatus?.isConnecting !== true;
+
+  React.useEffect(() => {
+    if (!currentPanelTab || currentPanelTab.type !== "ssh") {
+      return;
+    }
+
+    loadTabConnectionStatus(currentPanelTab.id);
+  }, [currentPanelTab, loadTabConnectionStatus]);
+
+  React.useEffect(() => {
+    if (!fileManagerOpen) {
+      return;
+    }
+
+    const targetTabId = lockedFileManagerTabId || currentPanelTab?.id || null;
+    const targetTab = targetTabId
+      ? tabs.find((tab) => tab.id === targetTabId)
+      : null;
+    const targetStatus = targetTabId
+      ? connectionStatusByTabId[targetTabId]
+      : null;
+    const targetConnected =
+      targetTab?.type === "ssh" &&
+      targetStatus?.isConnected === true &&
+      targetStatus?.isConnecting !== true;
+
+    if (!targetConnected) {
+      dispatch(actions.setFileManagerOpen(false));
+      setFallbackSidebarAfterClose("file");
+      setLockedFileManagerTabId(null);
+      setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+      }, 15);
+    }
+  }, [
+    connectionStatusByTabId,
+    currentPanelTab,
+    dispatch,
+    fileManagerOpen,
+    lockedFileManagerTabId,
+    tabs,
+    setFallbackSidebarAfterClose,
+  ]);
 
   // 计算资源监控的currentTabId
   const resourceMonitorTabId = useMemo(() => {
@@ -3292,6 +3427,7 @@ function AppContent() {
   const isSSHButtonDisabled = useMemo(() => {
     return !currentPanelTab || currentPanelTab.type !== "ssh";
   }, [currentPanelTab]);
+  const isFileManagerButtonDisabled = !isCurrentPanelSshConnected;
 
   // React 19: 利用自动批处理特性优化设置变更处理
   React.useEffect(() => {
@@ -4334,7 +4470,11 @@ function AppContent() {
 
                 {/* 文件管理按钮 */}
                 <SidebarTooltip
-                  title={t("sidebar.files")}
+                  title={
+                    isFileManagerButtonDisabled
+                      ? t("fileManager.errors.connectionNotReady")
+                      : t("sidebar.files")
+                  }
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
@@ -4350,7 +4490,7 @@ function AppContent() {
                           : "action.hover",
                       },
                     }}
-                    disabled={isSSHButtonDisabled}
+                    disabled={isFileManagerButtonDisabled}
                   
                     aria-label={t("sidebar.files")}>
                     <FolderIcon />

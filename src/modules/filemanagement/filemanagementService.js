@@ -1764,7 +1764,7 @@ class FilemanagementService {
     }
   }
 
-  async _scanLocalFolderWithNativeSidecar(localFolderPath) {
+  async _scanLocalFolderWithNativeSidecar(localFolderPath, options = {}) {
     const scannerPath = getTransferNativeScannerPath();
     if (!scannerPath) {
       throw new Error(
@@ -1772,10 +1772,22 @@ class FilemanagementService {
       );
     }
 
+    const args = ["scan-folder", "--path", localFolderPath];
+    const appendPositiveIntegerArg = (flag, value) => {
+      const parsed = Math.floor(Number(value));
+      if (Number.isFinite(parsed) && parsed > 0) {
+        args.push(flag, String(parsed));
+      }
+    };
+
+    appendPositiveIntegerArg("--max-entries", options.maxEntries);
+    appendPositiveIntegerArg("--max-depth", options.maxDepth);
+    appendPositiveIntegerArg("--max-bytes", options.maxBytes);
+
     return new Promise((resolve, reject) => {
       execFile(
         scannerPath,
-        ["scan-folder", "--path", localFolderPath],
+        args,
         {
           windowsHide: true,
           maxBuffer: 128 * 1024 * 1024,
@@ -1845,8 +1857,21 @@ class FilemanagementService {
               );
 
       return {
+        schemaVersion: scanResult?.schemaVersion || null,
+        scanId: scanResult?.scanId || null,
+        rootPath: scanResult?.rootPath || normalizedRoot,
+        truncated: scanResult?.truncated === true,
+        truncatedReason: scanResult?.truncatedReason || null,
+        maxEntriesHit:
+          scanResult?.maxEntriesHit === true ||
+          scanResult?.maxFilesHit === true,
+        maxDepthHit: scanResult?.maxDepthHit === true,
+        maxBytesHit: scanResult?.maxBytesHit === true,
         files,
-        directories: [],
+        directories: Array.isArray(scanResult?.directories)
+          ? scanResult.directories.map((entry) => toPosixPath(entry || ""))
+          : [],
+        errors: Array.isArray(scanResult?.errors) ? scanResult.errors : [],
         totalBytes: totalBytesFromPayload,
       };
     };
@@ -1876,6 +1901,15 @@ class FilemanagementService {
       : [];
 
     return {
+      schemaVersion: result?.schemaVersion || null,
+      scanId: result?.scanId || null,
+      rootPath: result?.rootPath || rootPath,
+      truncated: result?.truncated === true,
+      truncatedReason: result?.truncatedReason || null,
+      maxEntriesHit:
+        result?.maxEntriesHit === true || result?.maxFilesHit === true,
+      maxDepthHit: result?.maxDepthHit === true,
+      maxBytesHit: result?.maxBytesHit === true,
       files: rawFiles.map((file) => ({
         remotePath: this._normalizeRemotePath(file?.remotePath || ""),
         relativePath: toPosixPath(file?.relativePath || ""),
@@ -1887,6 +1921,7 @@ class FilemanagementService {
         size: Number.isFinite(file?.size) ? file.size : 0,
       })),
       directories: rawDirectories.map((entry) => toPosixPath(entry || "")),
+      errors: Array.isArray(result?.errors) ? result.errors : [],
       totalBytes: Number.isFinite(result?.totalBytes)
         ? result.totalBytes
         : rawFiles.reduce(

@@ -14,6 +14,14 @@ const terminalProcesses = new Map();
 // 进程ID计数器
 let nextProcessId = 1;
 
+function isUsableSshStream(stream) {
+  if (!stream || typeof stream.write !== "function") return false;
+  if (stream.destroyed === true) return false;
+  if (stream.closed === true || stream._closed === true) return false;
+  if (stream.writable === false) return false;
+  return true;
+}
+
 /**
  * 获取下一个进程ID
  */
@@ -40,6 +48,10 @@ function getProcess(processId) {
   ) {
     if (proc.process !== proc.connectionInfo.client) {
       proc.process = proc.connectionInfo.client;
+    }
+    if (isUsableSshStream(proc.stream)) {
+      proc.ready = true;
+      return proc;
     }
     if (typeof proc.connectionInfo.ready === "boolean") {
       proc.ready = proc.connectionInfo.ready;
