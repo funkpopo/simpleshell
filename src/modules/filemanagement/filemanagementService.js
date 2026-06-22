@@ -15,6 +15,9 @@ const nativeSftpClient = require("../../core/utils/nativeSftpClient");
 const {
   getTrustedHostFingerprint,
 } = require("../../core/utils/sshHostKeyTrust");
+const {
+  resolveNativeSidecarNetworkPath,
+} = require("../../core/utils/nativeSidecarNetworkPath");
 const { logToFile } = require("../../core/utils/logger");
 const { IPC_EVENT_CHANNELS } = require("../../core/ipc/schema/channels");
 const connectionManager = require("../connection");
@@ -356,24 +359,12 @@ class FilemanagementService {
       delete sshConfig.privateKeyPath;
     }
 
-    const proxyManager = connectionManager?.sshConnectionPool?.proxyManager;
-    if (
-      proxyManager &&
-      typeof proxyManager.resolveProxyConfigAsync === "function"
-    ) {
-      try {
-        const resolvedProxy =
-          await proxyManager.resolveProxyConfigAsync(rawConfig);
-        if (resolvedProxy) {
-          sshConfig.proxy = resolvedProxy;
-        }
-      } catch (error) {
-        this._log(
-          `Resolve proxy for transfer tab=${tabId} failed: ${normalizeErrorMessage(error)}`,
-          "WARN",
-        );
-      }
-    }
+    const networkPath = await resolveNativeSidecarNetworkPath(rawConfig, {
+      proxyManager: connectionManager?.sshConnectionPool?.proxyManager,
+    });
+    sshConfig.proxy = networkPath.proxy || undefined;
+    sshConfig.proxyRequired = networkPath.proxyRequired;
+    sshConfig.networkPath = networkPath.networkPath;
 
     return sshConfig;
   }

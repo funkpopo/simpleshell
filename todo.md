@@ -7,6 +7,7 @@
 - [x] 2026-06-21：已实现 1.1/1.2/1.3 的首轮落地：sidecar 继续作为独立进程边界，SFTP 请求/进度/结果/watch 输出补齐 `schemaVersion`、`requestId`、`processType`、`operation` 元数据，扫描结果补齐 `scanId`、`rootPath`、`generatedAt`、`truncated`、`maxEntriesHit`、`maxDepthHit`、`maxBytesHit`、`errors` 等 manifest 字段，并在 JS wrapper/service 层保留这些字段。
 - [x] 2026-06-21：已调整文件管理侧边栏按钮触发机制：文件按钮不再只判断当前 tab 是否为 SSH，而是必须等待该 SSH tab 的主进程连接状态为 `isConnected=true` 且 `isConnecting=false` 后才可点击；连接失败、未就绪或断开时会禁用文件按钮，并阻止打开/继续展示文件管理侧边栏。
 - [x] 2026-06-22：已实现 2.1：主 SSH hostVerifier 确认后的 `SHA256:` 主机指纹会写入主进程内部信任状态，native SFTP/传输请求必须携带同一可信指纹；Rust sidecar 删除 `AcceptAnyServerKey`，握手时计算服务端公钥 SHA256 指纹并严格比对，缺失或不匹配时返回 hostKey 分类错误。
+- [x] 2026-06-22：已实现 2.2：native SFTP/传输请求通过 JS 侧 `proxyManager.resolveProxyConfigAsync` 解析连接项代理、默认代理和系统/PAC 代理，向 Rust sidecar 传入 `proxy`、`proxyRequired` 与脱敏 `networkPath`；Rust sidecar 支持 HTTP/HTTPS CONNECT、SOCKS5、SOCKS4/SOCKS4a 隧道并将 socket 交给 `russh::client::connect_stream`，代理必需但不可用时返回 proxy 分类错误且不回退直连；诊断包记录 direct/proxy type/source/hasAuth，不记录代理密码。
 
 ## 0. 当前项目判断
 
@@ -100,7 +101,7 @@ sidecar 的 `scan-folder` 和 `scanRemoteFolderTree` 先得到文件数量、总
 
 - sidecar 可信主机指纹与SSH连接保存的指纹使用一致
 
-### 2.2 Rust sidecar 的代理/VPN 路径要与主 SSH 连接一致
+### 2.2 Rust sidecar 的代理/VPN 路径要与主 SSH 连接一致 [x] 已完成
 
 主 SSH 连接池支持连接项代理、默认代理、系统代理/PAC 和 HTTP/SOCKS 隧道；Rust sidecar 当前自己直连 `host:port`，没有继承 JS 的代理路径。这在运维场景中可能导致：
 

@@ -1890,6 +1890,149 @@ async function testGNativeSidecarHostKeyVerification() {
   return true;
 }
 
+async function testHNativeSidecarProxyPathConsistency() {
+  const sidecarSource = fs.readFileSync(
+    path.join(ROOT, "transfernative", "transfer-sidecar", "src", "main.rs"),
+    "utf8",
+  );
+  const nativeClientSource = fs.readFileSync(
+    path.join(ROOT, "src", "core", "utils", "nativeSftpClient.js"),
+    "utf8",
+  );
+  const networkPathSource = fs.readFileSync(
+    path.join(ROOT, "src", "core", "utils", "nativeSidecarNetworkPath.js"),
+    "utf8",
+  );
+  const filemanagementSource = fs.readFileSync(
+    path.join(
+      ROOT,
+      "src",
+      "modules",
+      "filemanagement",
+      "filemanagementService.js",
+    ),
+    "utf8",
+  );
+  const diagnosticsSource = fs.readFileSync(
+    path.join(ROOT, "src", "core", "utils", "diagnostics.js"),
+    "utf8",
+  );
+
+  assert.match(
+    nativeClientSource,
+    /proxyRequired/,
+    "Native SFTP wrapper must pass proxyRequired to the sidecar",
+  );
+  assert.match(
+    nativeClientSource,
+    /networkPath/,
+    "Native SFTP wrapper must pass/record networkPath metadata",
+  );
+  assert.match(
+    nativeClientSource,
+    /NATIVE_SFTP_PROXY_REQUIRED/,
+    "Native SFTP wrapper must reject proxy-required requests with no resolved proxy",
+  );
+  assert.match(
+    networkPathSource,
+    /resolveNativeSidecarNetworkPath/,
+    "Native sidecar network path must be resolved through the JS proxy manager",
+  );
+  assert.match(
+    networkPathSource,
+    /hasAuth/,
+    "Diagnostic network path must expose only hasAuth, not proxy credentials",
+  );
+  assert.doesNotMatch(
+    networkPathSource,
+    /password:\s*normalized\.password/,
+    "Sanitized network path must not include proxy password",
+  );
+  assert.match(
+    filemanagementSource,
+    /resolveNativeSidecarNetworkPath/,
+    "Transfer process pool SSH configs must use the same proxy resolution path",
+  );
+  assert.doesNotMatch(
+    filemanagementSource,
+    /Resolve proxy for transfer[\s\S]*failed[\s\S]*WARN/,
+    "Transfer proxy resolution failures must not warn and continue direct",
+  );
+  assert.match(
+    sidecarSource,
+    /struct ProxyConfig/,
+    "Rust sidecar config must accept structured proxy settings",
+  );
+  assert.match(
+    sidecarSource,
+    /connect_via_http_proxy/,
+    "Rust sidecar must implement HTTP CONNECT proxy support",
+  );
+  assert.match(
+    sidecarSource,
+    /connect_via_socks5_proxy/,
+    "Rust sidecar must implement SOCKS5 proxy support",
+  );
+  assert.match(
+    sidecarSource,
+    /connect_via_socks4_proxy/,
+    "Rust sidecar must implement SOCKS4 proxy support",
+  );
+  assert.match(
+    sidecarSource,
+    /client::connect_stream/,
+    "Rust sidecar must pass the established direct/proxy stream to russh",
+  );
+  assert.match(
+    sidecarSource,
+    /proxy_required[\s\S]*no supported proxy was provided/,
+    "Rust sidecar must fail proxyRequired requests instead of silently connecting direct",
+  );
+  assert.match(
+    sidecarSource,
+    /NATIVE_SFTP_PROXY/,
+    "Rust sidecar must classify proxy failures separately",
+  );
+  assert.match(
+    sidecarSource,
+    /networkPath/,
+    "Rust sidecar results must include the network path used by transfer requests",
+  );
+  assert.match(
+    diagnosticsSource,
+    /transferNetworkPath/,
+    "Diagnostics package must include sidecar transfer network path",
+  );
+
+  const nativeSftpClientPath = path.join(
+    ROOT,
+    "src",
+    "core",
+    "utils",
+    "nativeSftpClient.js",
+  );
+  const nativeSftpClient = require(nativeSftpClientPath);
+  await assert.rejects(
+    nativeSftpClient.invokeNativeRequestWithConfig(
+      {
+        host: "127.0.0.1",
+        port: 22,
+        username: "user",
+        password: "pass",
+        expectedHostFingerprint: "SHA256:test",
+        proxyRequired: true,
+      },
+      { operation: "listFiles", path: "." },
+    ),
+    (error) =>
+      error?.errorCode === "NATIVE_SFTP_PROXY_REQUIRED" ||
+      error?.code === "NATIVE_SFTP_PROXY_REQUIRED",
+    "Native SFTP must reject proxyRequired configs without a resolved proxy before spawning sidecar",
+  );
+
+  return true;
+}
+
 async function run() {
   const results = [];
   const tasks = [
@@ -1942,6 +2085,11 @@ async function run() {
       id: "G1",
       name: "G. Rust sidecar SFTP 继承主 SSH 主机指纹校验",
       fn: testGNativeSidecarHostKeyVerification,
+    },
+    {
+      id: "H1",
+      name: "H. Rust sidecar SFTP 继承主 SSH 代理/VPN 路径",
+      fn: testHNativeSidecarProxyPathConsistency,
     },
   ];
 

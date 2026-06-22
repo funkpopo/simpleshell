@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 use std::cmp::min;
 use std::env;
 use std::fs;
+use std::net::IpAddr;
 use std::panic;
 use std::path::{Path, PathBuf};
 use std::process;
@@ -20,6 +21,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::fs::OpenOptions as TokioOpenOptions;
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
 
 type SshHandle = Handle<ExpectedServerKey>;
 const SIDECAR_SCHEMA_VERSION: u32 = 1;
@@ -77,6 +80,38 @@ struct SshConnectionConfig {
     private_key: Option<String>,
     passphrase: Option<String>,
     expected_host_fingerprint: Option<String>,
+    proxy: Option<ProxyConfig>,
+    proxy_required: Option<bool>,
+    network_path: Option<NetworkPath>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProxyConfig {
+    r#type: String,
+    host: String,
+    port: u16,
+    username: Option<String>,
+    password: Option<String>,
+    source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SafeProxyConfig {
+    r#type: String,
+    host: String,
+    port: u16,
+    source: Option<String>,
+    has_auth: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NetworkPath {
+    mode: String,
+    proxy_required: bool,
+    proxy: Option<SafeProxyConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -347,6 +382,7 @@ async fn run_sftp_request() -> Result<(), String> {
                 None,
                 SIDECAR_PROCESS_TYPE,
                 &format!("failed to parse request: {error}"),
+                None,
             )?;
             return Ok(());
         }
@@ -359,10 +395,18 @@ async fn run_sftp_request() -> Result<(), String> {
         .or(envelope.schema_version)
         .unwrap_or(SIDECAR_SCHEMA_VERSION);
 
+    let network_path = resolve_network_path(&envelope.config);
+
     let (sftp, handle) = match connect_sftp(&envelope.config).await {
         Ok(value) => value,
         Err(error) => {
-            emit_error_result(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?;
+            emit_error_result(
+                Some(&operation),
+                request_id,
+                SIDECAR_PROCESS_TYPE,
+                &error,
+                Some(&network_path),
+            )?;
             return Ok(());
         }
     };
@@ -375,16 +419,26 @@ async fn run_sftp_request() -> Result<(), String> {
 
     if let Err(error) = close_result {
         if result.is_ok() {
-            emit_error_result(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?;
+            emit_error_result(
+                Some(&operation),
+                request_id,
+                SIDECAR_PROCESS_TYPE,
+                &error,
+                Some(&network_path),
+            )?;
             return Ok(());
         }
     }
 
     match result {
-        Ok(value) => emit_result(Some(&operation), request_id, value)?,
-        Err(error) => {
-            emit_error_result(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?
-        }
+        Ok(value) => emit_result(Some(&operation), request_id, value, Some(&network_path))?,
+        Err(error) => emit_error_result(
+            Some(&operation),
+            request_id,
+            SIDECAR_PROCESS_TYPE,
+            &error,
+            Some(&network_path),
+        )?,
     }
     Ok(())
 }
@@ -405,6 +459,7 @@ async fn run_sftp_watch() -> Result<(), String> {
                 None,
                 SIDECAR_PROCESS_TYPE,
                 &format!("failed to parse request: {error}"),
+                None,
             )?;
             return Ok(());
         }
@@ -421,14 +476,23 @@ async fn run_sftp_watch() -> Result<(), String> {
                 "unsupported watch operation: {}",
                 envelope.request.operation
             ),
+            None,
         )?;
         return Ok(());
     }
 
+    let network_path = resolve_network_path(&envelope.config);
+
     let (sftp, handle) = match connect_sftp(&envelope.config).await {
         Ok(value) => value,
         Err(error) => {
-            emit_watch_error(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?;
+            emit_watch_error(
+                Some(&operation),
+                request_id,
+                SIDECAR_PROCESS_TYPE,
+                &error,
+                Some(&network_path),
+            )?;
             return Ok(());
         }
     };
@@ -440,13 +504,368 @@ async fn run_sftp_watch() -> Result<(), String> {
         .await;
 
     if let Err(error) = watch_result {
-        emit_watch_error(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?;
+        emit_watch_error(
+            Some(&operation),
+            request_id,
+            SIDECAR_PROCESS_TYPE,
+            &error,
+            Some(&network_path),
+        )?;
         return Ok(());
     }
     if let Err(error) = close_result {
-        emit_watch_error(Some(&operation), request_id, SIDECAR_PROCESS_TYPE, &error)?;
+        emit_watch_error(
+            Some(&operation),
+            request_id,
+            SIDECAR_PROCESS_TYPE,
+            &error,
+            Some(&network_path),
+        )?;
     }
     Ok(())
+}
+
+fn safe_proxy_config(proxy: &ProxyConfig) -> SafeProxyConfig {
+    SafeProxyConfig {
+        r#type: proxy.r#type.trim().to_ascii_lowercase(),
+        host: proxy.host.clone(),
+        port: proxy.port,
+        source: proxy.source.clone(),
+        has_auth: proxy
+            .username
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+            || proxy
+                .password
+                .as_deref()
+                .is_some_and(|value| !value.is_empty()),
+    }
+}
+
+fn direct_network_path(proxy_required: bool) -> NetworkPath {
+    NetworkPath {
+        mode: "direct".to_string(),
+        proxy_required,
+        proxy: None,
+    }
+}
+
+fn resolve_network_path(config: &SshConnectionConfig) -> NetworkPath {
+    if let Some(proxy) = config.proxy.as_ref() {
+        return NetworkPath {
+            mode: "proxy".to_string(),
+            proxy_required: true,
+            proxy: Some(safe_proxy_config(proxy)),
+        };
+    }
+
+    config
+        .network_path
+        .clone()
+        .unwrap_or_else(|| direct_network_path(config.proxy_required.unwrap_or(false)))
+}
+
+async fn open_ssh_transport(config: &SshConnectionConfig) -> Result<TcpStream, String> {
+    let target_port = config.port.unwrap_or(22);
+
+    if let Some(proxy) = config.proxy.as_ref() {
+        return connect_via_proxy(proxy, &config.host, target_port).await;
+    }
+
+    if config.proxy_required.unwrap_or(false) {
+        return Err(
+            "proxy required for native SFTP request, but no supported proxy was provided"
+                .to_string(),
+        );
+    }
+
+    connect_tcp(&config.host, target_port, "SSH target").await
+}
+
+const PROXY_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
+const HTTP_PROXY_HEADER_LIMIT: usize = 64 * 1024;
+
+async fn connect_tcp(host: &str, port: u16, label: &str) -> Result<TcpStream, String> {
+    let stream = timeout(PROXY_HANDSHAKE_TIMEOUT, TcpStream::connect((host, port)))
+        .await
+        .map_err(|_| format!("{label} TCP connect timed out"))?
+        .map_err(|error| format!("{label} TCP connect failed: {error}"))?;
+    let _ = stream.set_nodelay(true);
+    Ok(stream)
+}
+
+async fn connect_via_proxy(
+    proxy: &ProxyConfig,
+    target_host: &str,
+    target_port: u16,
+) -> Result<TcpStream, String> {
+    match proxy.r#type.trim().to_ascii_lowercase().as_str() {
+        "http" | "https" => connect_via_http_proxy(proxy, target_host, target_port).await,
+        "socks5" => connect_via_socks5_proxy(proxy, target_host, target_port).await,
+        "socks4" => connect_via_socks4_proxy(proxy, target_host, target_port).await,
+        other => Err(format!("unsupported proxy type for native SFTP: {other}")),
+    }
+}
+
+async fn write_all_proxy(socket: &mut TcpStream, bytes: &[u8], label: &str) -> Result<(), String> {
+    timeout(PROXY_HANDSHAKE_TIMEOUT, socket.write_all(bytes))
+        .await
+        .map_err(|_| format!("proxy handshake timed out while writing {label}"))?
+        .map_err(|error| format!("proxy handshake failed while writing {label}: {error}"))
+}
+
+async fn read_exact_proxy(
+    socket: &mut TcpStream,
+    bytes: &mut [u8],
+    label: &str,
+) -> Result<(), String> {
+    timeout(PROXY_HANDSHAKE_TIMEOUT, socket.read_exact(bytes))
+        .await
+        .map_err(|_| format!("proxy handshake timed out while reading {label}"))?
+        .map_err(|error| format!("proxy handshake failed while reading {label}: {error}"))?;
+    Ok(())
+}
+
+fn host_port_for_connect(host: &str, port: u16) -> String {
+    if host.parse::<IpAddr>().is_ok() && host.contains(':') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
+async fn read_http_proxy_header(socket: &mut TcpStream) -> Result<Vec<u8>, String> {
+    let mut header = Vec::with_capacity(256);
+    let mut byte = [0u8; 1];
+
+    loop {
+        read_exact_proxy(socket, &mut byte, "HTTP proxy CONNECT response").await?;
+        header.push(byte[0]);
+
+        if header.ends_with(b"\r\n\r\n") {
+            return Ok(header);
+        }
+
+        if header.len() > HTTP_PROXY_HEADER_LIMIT {
+            return Err("proxy HTTP CONNECT response header is too large".to_string());
+        }
+    }
+}
+
+async fn connect_via_http_proxy(
+    proxy: &ProxyConfig,
+    target_host: &str,
+    target_port: u16,
+) -> Result<TcpStream, String> {
+    let mut socket = connect_tcp(&proxy.host, proxy.port, "HTTP proxy").await?;
+    let target = host_port_for_connect(target_host, target_port);
+    let mut headers = vec![
+        format!("CONNECT {target} HTTP/1.1"),
+        format!("Host: {target}"),
+        "Proxy-Connection: Keep-Alive".to_string(),
+        "Connection: Keep-Alive".to_string(),
+    ];
+
+    if let Some(username) = proxy.username.as_deref().filter(|value| !value.is_empty()) {
+        let token = BASE64_STANDARD.encode(format!(
+            "{}:{}",
+            username,
+            proxy.password.as_deref().unwrap_or("")
+        ));
+        headers.push(format!("Proxy-Authorization: Basic {token}"));
+    }
+
+    let request = format!("{}\r\n\r\n", headers.join("\r\n"));
+    write_all_proxy(
+        &mut socket,
+        request.as_bytes(),
+        "HTTP proxy CONNECT request",
+    )
+    .await?;
+
+    let header = read_http_proxy_header(&mut socket).await?;
+    let header_text = String::from_utf8_lossy(&header);
+    let status_line = header_text.lines().next().unwrap_or("").trim();
+    let status_code = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(0);
+
+    if status_code != 200 {
+        if status_code == 407 {
+            return Err(format!(
+                "proxy HTTP CONNECT authentication required: {status_line}"
+            ));
+        }
+        return Err(format!("proxy HTTP CONNECT failed: {status_line}"));
+    }
+
+    Ok(socket)
+}
+
+async fn connect_via_socks5_proxy(
+    proxy: &ProxyConfig,
+    target_host: &str,
+    target_port: u16,
+) -> Result<TcpStream, String> {
+    let mut socket = connect_tcp(&proxy.host, proxy.port, "SOCKS5 proxy").await?;
+    let has_auth = proxy
+        .username
+        .as_deref()
+        .is_some_and(|value| !value.is_empty());
+    let greeting: Vec<u8> = if has_auth {
+        vec![0x05, 0x02, 0x02, 0x00]
+    } else {
+        vec![0x05, 0x01, 0x00]
+    };
+    write_all_proxy(&mut socket, &greeting, "SOCKS5 greeting").await?;
+
+    let mut method_response = [0u8; 2];
+    read_exact_proxy(&mut socket, &mut method_response, "SOCKS5 method response").await?;
+    if method_response[0] != 0x05 {
+        return Err("proxy SOCKS5 returned an invalid method response".to_string());
+    }
+    match method_response[1] {
+        0x00 => {}
+        0x02 => {
+            let username = proxy.username.as_deref().unwrap_or("");
+            let password = proxy.password.as_deref().unwrap_or("");
+            let username_bytes = username.as_bytes();
+            let password_bytes = password.as_bytes();
+            if username_bytes.len() > u8::MAX as usize || password_bytes.len() > u8::MAX as usize {
+                return Err("proxy SOCKS5 username/password is too long".to_string());
+            }
+
+            let mut auth = Vec::with_capacity(3 + username_bytes.len() + password_bytes.len());
+            auth.push(0x01);
+            auth.push(username_bytes.len() as u8);
+            auth.extend_from_slice(username_bytes);
+            auth.push(password_bytes.len() as u8);
+            auth.extend_from_slice(password_bytes);
+            write_all_proxy(&mut socket, &auth, "SOCKS5 authentication").await?;
+
+            let mut auth_response = [0u8; 2];
+            read_exact_proxy(
+                &mut socket,
+                &mut auth_response,
+                "SOCKS5 authentication response",
+            )
+            .await?;
+            if auth_response != [0x01, 0x00] {
+                return Err("proxy SOCKS5 authentication failed".to_string());
+            }
+        }
+        0xff => return Err("proxy SOCKS5 has no acceptable authentication method".to_string()),
+        method => {
+            return Err(format!(
+                "proxy SOCKS5 selected unsupported authentication method 0x{method:02x}"
+            ))
+        }
+    }
+
+    let mut request = vec![0x05, 0x01, 0x00];
+    match target_host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => {
+            request.push(0x01);
+            request.extend_from_slice(&ip.octets());
+        }
+        Ok(IpAddr::V6(ip)) => {
+            request.push(0x04);
+            request.extend_from_slice(&ip.octets());
+        }
+        Err(_) => {
+            let host_bytes = target_host.as_bytes();
+            if host_bytes.len() > u8::MAX as usize {
+                return Err("proxy SOCKS5 target host is too long".to_string());
+            }
+            request.push(0x03);
+            request.push(host_bytes.len() as u8);
+            request.extend_from_slice(host_bytes);
+        }
+    }
+    request.extend_from_slice(&target_port.to_be_bytes());
+    write_all_proxy(&mut socket, &request, "SOCKS5 CONNECT request").await?;
+
+    let mut response_head = [0u8; 4];
+    read_exact_proxy(&mut socket, &mut response_head, "SOCKS5 CONNECT response").await?;
+    if response_head[0] != 0x05 {
+        return Err("proxy SOCKS5 returned an invalid CONNECT response".to_string());
+    }
+    if response_head[1] != 0x00 {
+        return Err(format!(
+            "proxy SOCKS5 CONNECT failed with reply 0x{:02x}",
+            response_head[1]
+        ));
+    }
+
+    match response_head[3] {
+        0x01 => {
+            let mut rest = [0u8; 6];
+            read_exact_proxy(&mut socket, &mut rest, "SOCKS5 IPv4 bind address").await?;
+        }
+        0x04 => {
+            let mut rest = [0u8; 18];
+            read_exact_proxy(&mut socket, &mut rest, "SOCKS5 IPv6 bind address").await?;
+        }
+        0x03 => {
+            let mut len = [0u8; 1];
+            read_exact_proxy(&mut socket, &mut len, "SOCKS5 domain bind length").await?;
+            let mut rest = vec![0u8; len[0] as usize + 2];
+            read_exact_proxy(&mut socket, &mut rest, "SOCKS5 domain bind address").await?;
+        }
+        atyp => return Err(format!("proxy SOCKS5 returned invalid ATYP 0x{atyp:02x}")),
+    }
+
+    Ok(socket)
+}
+
+async fn connect_via_socks4_proxy(
+    proxy: &ProxyConfig,
+    target_host: &str,
+    target_port: u16,
+) -> Result<TcpStream, String> {
+    let mut socket = connect_tcp(&proxy.host, proxy.port, "SOCKS4 proxy").await?;
+    let user_id = proxy.username.as_deref().unwrap_or("").as_bytes();
+    if user_id.contains(&0) {
+        return Err("proxy SOCKS4 username contains a NUL byte".to_string());
+    }
+
+    let mut request = vec![0x04, 0x01];
+    request.extend_from_slice(&target_port.to_be_bytes());
+    match target_host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => {
+            request.extend_from_slice(&ip.octets());
+            request.extend_from_slice(user_id);
+            request.push(0x00);
+        }
+        _ => {
+            let host_bytes = target_host.as_bytes();
+            if host_bytes.contains(&0) {
+                return Err("proxy SOCKS4 target host contains a NUL byte".to_string());
+            }
+            request.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+            request.extend_from_slice(user_id);
+            request.push(0x00);
+            request.extend_from_slice(host_bytes);
+            request.push(0x00);
+        }
+    }
+
+    write_all_proxy(&mut socket, &request, "SOCKS4 CONNECT request").await?;
+    let mut response = [0u8; 8];
+    read_exact_proxy(&mut socket, &mut response, "SOCKS4 CONNECT response").await?;
+    if response[0] != 0x00 && response[0] != 0x04 {
+        return Err("proxy SOCKS4 returned an invalid response".to_string());
+    }
+    if response[1] != 0x5a {
+        return Err(format!(
+            "proxy SOCKS4 CONNECT failed with code 0x{:02x}",
+            response[1]
+        ));
+    }
+
+    Ok(socket)
 }
 
 async fn connect_sftp(config: &SshConnectionConfig) -> Result<(Sftp, SshHandle), String> {
@@ -462,9 +881,14 @@ async fn connect_sftp(config: &SshConnectionConfig) -> Result<(Sftp, SshHandle),
             "missing trusted SSH host fingerprint for native SFTP request".to_string()
         })?;
 
-    let mut handle = client::connect(
+    let socket = open_ssh_transport(config).await?;
+    if client_config.as_ref().nodelay {
+        let _ = socket.set_nodelay(true);
+    }
+
+    let mut handle = client::connect_stream(
         client_config,
-        (config.host.as_str(), config.port.unwrap_or(22)),
+        socket,
         ExpectedServerKey {
             expected_fingerprint: expected_fingerprint.clone(),
         },
@@ -1577,6 +2001,7 @@ fn enrich_result_metadata(
     operation: Option<&str>,
     request_id: Option<&str>,
     result: Value,
+    network_path: Option<&NetworkPath>,
 ) -> Value {
     match result {
         Value::Object(mut map) => {
@@ -1588,14 +2013,26 @@ fn enrich_result_metadata(
                 map.entry("requestId".to_string())
                     .or_insert_with(|| json!(id));
             }
+            if let Some(path) = network_path {
+                map.entry("networkPath".to_string())
+                    .or_insert_with(|| json!(path));
+            }
             Value::Object(map)
         }
-        other => json!({
+        other => {
+            let mut wrapped = json!({
             "schemaVersion": SIDECAR_SCHEMA_VERSION,
             "operation": operation.unwrap_or("unknown"),
             "requestId": request_id,
             "value": other,
-        }),
+            });
+            if let Some(path) = network_path {
+                if let Value::Object(ref mut map) = wrapped {
+                    map.insert("networkPath".to_string(), json!(path));
+                }
+            }
+            wrapped
+        }
     }
 }
 
@@ -1603,8 +2040,9 @@ fn emit_result(
     operation: Option<&str>,
     request_id: Option<&str>,
     result: serde_json::Value,
+    network_path: Option<&NetworkPath>,
 ) -> Result<(), String> {
-    let enriched = enrich_result_metadata(operation, request_id, result);
+    let enriched = enrich_result_metadata(operation, request_id, result, network_path);
     println!(
         "{}",
         serde_json::to_string(&json!({
@@ -1625,11 +2063,13 @@ fn emit_error_result(
     request_id: Option<&str>,
     module: &str,
     message: &str,
+    network_path: Option<&NetworkPath>,
 ) -> Result<(), String> {
     emit_result(
         operation,
         request_id,
-        structured_error_value(operation, request_id, module, message),
+        structured_error_value(operation, request_id, module, message, network_path),
+        network_path,
     )
 }
 
@@ -1658,11 +2098,12 @@ fn emit_watch_error(
     request_id: Option<&str>,
     module: &str,
     message: &str,
+    network_path: Option<&NetworkPath>,
 ) -> Result<(), String> {
     emit_watch_event(
         request_id,
         "error",
-        structured_error_value(operation, request_id, module, message),
+        structured_error_value(operation, request_id, module, message, network_path),
     )
 }
 
@@ -1671,9 +2112,10 @@ fn structured_error_value(
     request_id: Option<&str>,
     module: &str,
     message: &str,
+    network_path: Option<&NetworkPath>,
 ) -> serde_json::Value {
     let classification = classify_error(message);
-    json!({
+    let mut value = json!({
         "schemaVersion": SIDECAR_SCHEMA_VERSION,
         "success": false,
         "error": message,
@@ -1689,7 +2131,13 @@ fn structured_error_value(
         "platform": env::consts::OS,
         "arch": env::consts::ARCH,
         "timestamp": current_timestamp_ms(),
-    })
+    });
+    if let Some(path) = network_path {
+        if let Value::Object(ref mut map) = value {
+            map.insert("networkPath".to_string(), json!(path));
+        }
+    }
+    value
 }
 
 fn structured_stderr_error(message: &str, operation: Option<&str>) -> String {
@@ -1698,6 +2146,7 @@ fn structured_stderr_error(message: &str, operation: Option<&str>) -> String {
         None,
         SIDECAR_PROCESS_TYPE,
         message,
+        None,
     ))
     .unwrap_or_else(|_| message.to_string())
 }
@@ -1756,6 +2205,14 @@ fn classify_error(message: &str) -> ErrorClassification {
             error_code: "NATIVE_SFTP_HOST_KEY_VERIFICATION_FAILED",
             error_kind: "hostKey",
             retryable: false,
+        };
+    }
+
+    if lower.contains("proxy") || lower.contains("socks4") || lower.contains("socks5") {
+        return ErrorClassification {
+            error_code: "NATIVE_SFTP_PROXY",
+            error_kind: "proxy",
+            retryable: true,
         };
     }
 

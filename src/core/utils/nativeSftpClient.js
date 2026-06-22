@@ -6,6 +6,12 @@ const { processSSHPrivateKeyAsync } = require("./ssh-utils");
 const { getTrustedHostFingerprint } = require("./sshHostKeyTrust");
 const { logToFile } = require("./logger");
 const { recordCrashMarker } = require("./crashReporter");
+const {
+  normalizeProxyConfig,
+  buildNetworkPath,
+  recordNativeSidecarNetworkPath,
+  resolveNativeSidecarNetworkPath,
+} = require("./nativeSidecarNetworkPath");
 
 const NATIVE_SFTP_SCHEMA_VERSION = 1;
 let nativeRequestSequence = 0;
@@ -162,8 +168,35 @@ function resolveExpectedHostFingerprint(rawConfig, fallbackConfigs = []) {
 
 function prepareNativeSshConfig(config) {
   const expectedHostFingerprint = resolveExpectedHostFingerprint(config);
+  const proxy = normalizeProxyConfig(config?.proxy);
+  const proxyRequired =
+    config?.proxyRequired === true ||
+    config?.networkPath?.proxyRequired === true ||
+    config?.networkPath?.mode === "proxy" ||
+    Boolean(proxy);
+
+  if (proxyRequired && !proxy) {
+    throw createNativeSidecarError(
+      "Native sidecar transfer requires a proxy, but no supported proxy was resolved",
+      {
+        errorCode: "NATIVE_SFTP_PROXY_REQUIRED",
+        errorKind: "proxy",
+        retryable: true,
+        module: "native-sftp-client",
+      },
+    );
+  }
+
+  const networkPath =
+    config?.networkPath && typeof config.networkPath === "object"
+      ? config.networkPath
+      : buildNetworkPath(proxy, proxyRequired);
+
   return {
     ...config,
+    proxy: proxy || undefined,
+    proxyRequired,
+    networkPath,
     expectedHostFingerprint,
   };
 }
@@ -193,6 +226,7 @@ async function resolveSshConfig(tabId) {
     privateKeyPath: rawConfig.privateKeyPath || undefined,
     passphrase: rawConfig.passphrase || undefined,
   });
+  const networkPath = await resolveNativeSidecarNetworkPath(rawConfig);
 
   return {
     host: sshConfig.host,
@@ -201,6 +235,9 @@ async function resolveSshConfig(tabId) {
     password: sshConfig.password || undefined,
     privateKey: sshConfig.privateKey || undefined,
     passphrase: sshConfig.passphrase || undefined,
+    proxy: networkPath.proxy || undefined,
+    proxyRequired: networkPath.proxyRequired,
+    networkPath: networkPath.networkPath,
     expectedHostFingerprint,
   };
 }
@@ -256,6 +293,7 @@ function invokeNativeRequestWithConfig(
   let nativeConfig;
   try {
     nativeConfig = prepareNativeSshConfig(config);
+    recordNativeSidecarNetworkPath(nativeConfig.networkPath);
   } catch (error) {
     return Promise.reject(error);
   }
@@ -438,10 +476,16 @@ function invokeNativeRequestWithConfig(
       }
 
       if (finalResult.success === false) {
+        if (finalResult.networkPath) {
+          recordNativeSidecarNetworkPath(finalResult.networkPath);
+        }
         resolveOnce(finalResult);
         return;
       }
 
+      if (finalResult.networkPath) {
+        recordNativeSidecarNetworkPath(finalResult.networkPath);
+      }
       resolveOnce(finalResult);
     });
 
@@ -508,6 +552,7 @@ function watchDirectoryWithConfig(
     let nativeConfig;
     try {
       nativeConfig = prepareNativeSshConfig(config);
+      recordNativeSidecarNetworkPath(nativeConfig.networkPath);
     } catch (error) {
       reject(error);
       return;

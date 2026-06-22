@@ -8,6 +8,9 @@ const { getDiagnosticDirectory, getConfigPath } = require("./appPaths");
 const { getLogFilePath } = require("./logger");
 const { redactSensitiveText } = require("./log-sanitizer");
 const { getTransferNativeScannerPath } = require("./nativeTransferSidecar");
+const {
+  getLatestNativeSidecarNetworkPath,
+} = require("./nativeSidecarNetworkPath");
 const { getCrashReporterDiagnostics } = require("./crashReporter");
 
 const MAX_LOG_LINES = 400;
@@ -319,6 +322,7 @@ async function buildDiagnosticPayload(
       path: sidecarPath,
       exists: Boolean(sidecarPath && fs.existsSync(sidecarPath)),
       version: sidecarRuntimeVersion || readCargoSidecarVersion(),
+      transferNetworkPath: getLatestNativeSidecarNetworkPath(),
     },
     crashReporter: getCrashReporterDiagnostics(app),
     logs: {
