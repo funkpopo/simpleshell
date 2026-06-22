@@ -147,6 +147,55 @@ struct SftpRequest {
     max_bytes: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+enum SftpOperation {
+    #[serde(rename = "listFiles")]
+    ListFiles,
+    #[serde(rename = "scanRemoteFolderTree")]
+    ScanRemoteFolderTree,
+    #[serde(rename = "copyFile")]
+    CopyFile,
+    #[serde(rename = "moveFile")]
+    MoveFile,
+    #[serde(rename = "renameFile")]
+    RenameFile,
+    #[serde(rename = "deleteFile")]
+    DeleteFile,
+    #[serde(rename = "createFolder")]
+    CreateFolder,
+    #[serde(rename = "createRemoteFolders")]
+    CreateRemoteFolders,
+    #[serde(rename = "createFile")]
+    CreateFile,
+    #[serde(rename = "getFilePermissions")]
+    GetFilePermissions,
+    #[serde(rename = "getAbsolutePath")]
+    GetAbsolutePath,
+    #[serde(rename = "readFileContent")]
+    ReadFileContent,
+    #[serde(rename = "readFileAsBase64")]
+    ReadFileAsBase64,
+    #[serde(rename = "saveFileContent")]
+    SaveFileContent,
+    #[serde(rename = "uploadFileToRemote")]
+    UploadFileToRemote,
+    #[serde(rename = "downloadFileToLocal")]
+    DownloadFileToLocal,
+    #[serde(rename = "setFilePermissions")]
+    SetFilePermissions,
+    #[serde(rename = "setFileOwnership")]
+    SetFileOwnership,
+    #[serde(rename = "watchDirectory")]
+    WatchDirectory,
+}
+
+impl SftpOperation {
+    fn parse(value: &str) -> Result<Self, String> {
+        serde_json::from_value(json!(value))
+            .map_err(|_| format!("unsupported native SFTP operation: {value}"))
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RemoteFileEntry {
@@ -389,6 +438,19 @@ async fn run_sftp_request() -> Result<(), String> {
     };
     let operation = envelope.request.operation.clone();
     let request_id = envelope.request.request_id.as_deref();
+    let parsed_operation = match SftpOperation::parse(&operation) {
+        Ok(value) => value,
+        Err(error) => {
+            emit_error_result(
+                Some(&operation),
+                request_id,
+                SIDECAR_PROCESS_TYPE,
+                &error,
+                None,
+            )?;
+            return Ok(());
+        }
+    };
     let _schema_version = envelope
         .request
         .schema_version
@@ -410,7 +472,7 @@ async fn run_sftp_request() -> Result<(), String> {
             return Ok(());
         }
     };
-    let result = execute_request(&sftp, &envelope.request).await;
+    let result = execute_request(&sftp, &envelope.request, parsed_operation).await;
 
     let close_result = sftp.close().await.map_err(|error| error.to_string());
     let _ = handle
@@ -466,8 +528,21 @@ async fn run_sftp_watch() -> Result<(), String> {
     };
     let operation = envelope.request.operation.clone();
     let request_id = envelope.request.request_id.as_deref();
+    let parsed_operation = match SftpOperation::parse(&operation) {
+        Ok(value) => value,
+        Err(error) => {
+            emit_watch_error(
+                Some(&operation),
+                request_id,
+                SIDECAR_PROCESS_TYPE,
+                &error,
+                None,
+            )?;
+            return Ok(());
+        }
+    };
 
-    if envelope.request.operation != "watchDirectory" {
+    if parsed_operation != SftpOperation::WatchDirectory {
         emit_watch_error(
             Some(&operation),
             request_id,
@@ -958,9 +1033,13 @@ async fn connect_sftp(config: &SshConnectionConfig) -> Result<(Sftp, SshHandle),
     Ok((sftp, handle))
 }
 
-async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_json::Value, String> {
-    match request.operation.as_str() {
-        "listFiles" => {
+async fn execute_request(
+    sftp: &Sftp,
+    request: &SftpRequest,
+    operation: SftpOperation,
+) -> Result<serde_json::Value, String> {
+    match operation {
+        SftpOperation::ListFiles => {
             let path = resolve_directory_path(request.path.as_deref());
             let entries = list_files(sftp, &path).await?;
             Ok(json!({
@@ -968,7 +1047,7 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 "data": entries,
             }))
         }
-        "scanRemoteFolderTree" => {
+        SftpOperation::ScanRemoteFolderTree => {
             let path = resolve_directory_path(request.path.as_deref());
             let result = scan_remote_folder_tree(
                 sftp,
@@ -1000,13 +1079,13 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 "errors": result.errors,
             }))
         }
-        "copyFile" => {
+        SftpOperation::CopyFile => {
             let source = required_path(request.source_path.as_deref(), "sourcePath")?;
             let target = required_path(request.target_path.as_deref(), "targetPath")?;
             copy_file(sftp, source, target).await?;
             Ok(json!({ "success": true }))
         }
-        "moveFile" | "renameFile" => {
+        SftpOperation::MoveFile | SftpOperation::RenameFile => {
             let source = required_path(request.source_path.as_deref(), "sourcePath")?;
             let target = required_path(request.target_path.as_deref(), "targetPath")?;
             let mut fs = sftp.fs();
@@ -1015,22 +1094,22 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 .map_err(|error| format!("rename failed: {error}"))?;
             Ok(json!({ "success": true }))
         }
-        "deleteFile" => {
+        SftpOperation::DeleteFile => {
             let path = required_path(request.path.as_deref(), "path")?;
             delete_path_recursive(sftp, path, request.is_directory.unwrap_or(false)).await?;
             Ok(json!({ "success": true }))
         }
-        "createFolder" | "createRemoteFolders" => {
+        SftpOperation::CreateFolder | SftpOperation::CreateRemoteFolders => {
             let path = required_path(request.path.as_deref(), "path")?;
             create_remote_folders(sftp, path).await?;
             Ok(json!({ "success": true }))
         }
-        "createFile" => {
+        SftpOperation::CreateFile => {
             let path = required_path(request.path.as_deref(), "path")?;
             create_file(sftp, path).await?;
             Ok(json!({ "success": true }))
         }
-        "getFilePermissions" => {
+        SftpOperation::GetFilePermissions => {
             let path = required_path(request.path.as_deref(), "path")?;
             let stat = stat_path(sftp, path).await?;
             Ok(json!({
@@ -1042,7 +1121,7 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 "stats": stat,
             }))
         }
-        "getAbsolutePath" => {
+        SftpOperation::GetAbsolutePath => {
             let path = required_path(request.path.as_deref(), "path")?;
             let mut fs = sftp.fs();
             let absolute = fs
@@ -1054,7 +1133,7 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 "path": absolute.to_string_lossy(),
             }))
         }
-        "readFileContent" => {
+        SftpOperation::ReadFileContent => {
             let path = required_path(request.path.as_deref(), "path")?;
             let mut fs = sftp.fs();
             let content = fs
@@ -1068,7 +1147,7 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 "content": text,
             }))
         }
-        "readFileAsBase64" => {
+        SftpOperation::ReadFileAsBase64 => {
             let path = required_path(request.path.as_deref(), "path")?;
             let mut fs = sftp.fs();
             let content = fs
@@ -1080,7 +1159,7 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 "content": BASE64_STANDARD.encode(content),
             }))
         }
-        "saveFileContent" => {
+        SftpOperation::SaveFileContent => {
             let path = required_path(request.path.as_deref(), "path")?;
             let content = request
                 .content_base64
@@ -1095,7 +1174,7 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 .map_err(|error| format!("write failed: {error}"))?;
             Ok(json!({ "success": true }))
         }
-        "uploadFileToRemote" => {
+        SftpOperation::UploadFileToRemote => {
             let remote_path = required_path(request.path.as_deref(), "path")?;
             let local_path = required_path(request.local_path.as_deref(), "localPath")?;
             let result = upload_local_file(
@@ -1114,7 +1193,7 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 "totalBytes": result,
             }))
         }
-        "downloadFileToLocal" => {
+        SftpOperation::DownloadFileToLocal => {
             let remote_path = required_path(request.path.as_deref(), "path")?;
             let local_path = required_path(request.local_path.as_deref(), "localPath")?;
             let result = download_remote_file(
@@ -1133,7 +1212,7 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 "totalBytes": result,
             }))
         }
-        "setFilePermissions" => {
+        SftpOperation::SetFilePermissions => {
             let path = required_path(request.path.as_deref(), "path")?;
             let permissions = request
                 .permissions
@@ -1147,7 +1226,7 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 .map_err(|error| format!("chmod failed: {error}"))?;
             Ok(json!({ "success": true }))
         }
-        "setFileOwnership" => {
+        SftpOperation::SetFileOwnership => {
             let path = required_path(request.path.as_deref(), "path")?;
             let owner = request.owner.as_deref().map(parse_numeric_id).transpose()?;
             let group = request.group.as_deref().map(parse_numeric_id).transpose()?;
@@ -1168,10 +1247,9 @@ async fn execute_request(sftp: &Sftp, request: &SftpRequest) -> Result<serde_jso
                 .map_err(|error| format!("chown failed: {error}"))?;
             Ok(json!({ "success": true }))
         }
-        other => Ok(json!({
-            "success": false,
-            "error": format!("unsupported native SFTP operation: {other}"),
-        })),
+        SftpOperation::WatchDirectory => {
+            Err("unsupported native SFTP operation for request mode: watchDirectory".to_string())
+        }
     }
 }
 
