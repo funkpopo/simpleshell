@@ -12,6 +12,9 @@ const {
 } = require("../../core/utils/nativeTransferSidecar");
 const { processSSHPrivateKeyAsync } = require("../../core/utils/ssh-utils");
 const nativeSftpClient = require("../../core/utils/nativeSftpClient");
+const {
+  getTrustedHostFingerprint,
+} = require("../../core/utils/sshHostKeyTrust");
 const { logToFile } = require("../../core/utils/logger");
 const { IPC_EVENT_CHANNELS } = require("../../core/ipc/schema/channels");
 const connectionManager = require("../connection");
@@ -326,6 +329,15 @@ class FilemanagementService {
       throw new Error("SSH connection config is unavailable");
     }
 
+    const expectedHostFingerprint =
+      getTrustedHostFingerprint(rawConfig) ||
+      getTrustedHostFingerprint(processInfo?.connectionInfo?.config);
+    if (!expectedHostFingerprint) {
+      throw new Error(
+        "SSH host key has not been trusted by the main connection",
+      );
+    }
+
     const sshConfig = await processSSHPrivateKeyAsync({
       host: rawConfig.host,
       port: rawConfig.port || 22,
@@ -337,6 +349,7 @@ class FilemanagementService {
       readyTimeout: rawConfig.readyTimeout || undefined,
       keepaliveInterval: rawConfig.keepaliveInterval || undefined,
       keepaliveCountMax: rawConfig.keepaliveCountMax || undefined,
+      expectedHostFingerprint,
     });
 
     if (sshConfig?.privateKeyPath && sshConfig.privateKey) {

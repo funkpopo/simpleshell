@@ -6,6 +6,7 @@
 
 - [x] 2026-06-21：已实现 1.1/1.2/1.3 的首轮落地：sidecar 继续作为独立进程边界，SFTP 请求/进度/结果/watch 输出补齐 `schemaVersion`、`requestId`、`processType`、`operation` 元数据，扫描结果补齐 `scanId`、`rootPath`、`generatedAt`、`truncated`、`maxEntriesHit`、`maxDepthHit`、`maxBytesHit`、`errors` 等 manifest 字段，并在 JS wrapper/service 层保留这些字段。
 - [x] 2026-06-21：已调整文件管理侧边栏按钮触发机制：文件按钮不再只判断当前 tab 是否为 SSH，而是必须等待该 SSH tab 的主进程连接状态为 `isConnected=true` 且 `isConnecting=false` 后才可点击；连接失败、未就绪或断开时会禁用文件按钮，并阻止打开/继续展示文件管理侧边栏。
+- [x] 2026-06-22：已实现 2.1：主 SSH hostVerifier 确认后的 `SHA256:` 主机指纹会写入主进程内部信任状态，native SFTP/传输请求必须携带同一可信指纹；Rust sidecar 删除 `AcceptAnyServerKey`，握手时计算服务端公钥 SHA256 指纹并严格比对，缺失或不匹配时返回 hostKey 分类错误。
 
 ## 0. 当前项目判断
 
@@ -91,7 +92,7 @@ sidecar 的 `scan-folder` 和 `scanRemoteFolderTree` 先得到文件数量、总
 
 ## 2. 高优先级保守化调整
 
-### 2.1 Rust sidecar 必须补齐 SSH 主机密钥校验
+### 2.1 Rust sidecar 必须补齐 SSH 主机密钥校验 [x] 已完成
 
 当前 Rust sidecar 的 `AcceptAnyServerKey` 会接受任意服务端主机密钥，而主 SSH 连接在 JS 侧已有已知主机指纹缓存和用户确认流程。这会导致终端连接和 SFTP/传输连接的安全语义不一致：用户确认的是主连接，但 sidecar 传输可能接受另一个主机密钥。
 

@@ -21,6 +21,11 @@ const {
 const {
   classifyConnectionFailure,
 } = require("../../../shared/connectionErrorAdvice");
+const {
+  getHostCacheKey,
+  normalizeSshHostFingerprint,
+  setTrustedHostFingerprint,
+} = require("../../utils/sshHostKeyTrust");
 
 function isZhLanguage(language) {
   return String(language || "zh-CN")
@@ -382,27 +387,14 @@ class SSHHandlers {
    * 获取主机缓存键
    */
   _getHostCacheKey(host, port) {
-    return `${host}:${port || 22}`;
+    return getHostCacheKey(host, port);
   }
 
   /**
    * 规范化主机指纹
    */
   _normalizeFingerprint(fingerprint) {
-    if (typeof fingerprint !== "string") {
-      return null;
-    }
-
-    const trimmed = fingerprint.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    if (trimmed.toUpperCase().startsWith("SHA256:")) {
-      return `SHA256:${trimmed.slice(7)}`;
-    }
-
-    return `SHA256:${trimmed}`;
+    return normalizeSshHostFingerprint(fingerprint);
   }
 
   /**
@@ -606,6 +598,11 @@ class SSHHandlers {
 
     const hostKeyStatus = this._checkHostKey(host, port, normalizedFingerprint);
     if (hostKeyStatus.known && !hostKeyStatus.changed) {
+      setTrustedHostFingerprint(
+        sshConfig,
+        normalizedFingerprint,
+        hostKeyStatus.trustScope || "known",
+      );
       return true;
     }
     const isFirstConnection = !hostKeyStatus.known;
@@ -641,6 +638,11 @@ class SSHHandlers {
       this._saveHostKey(host, port, normalizedFingerprint, {
         persist: hostTrustMode === "permanent",
       });
+      setTrustedHostFingerprint(
+        sshConfig,
+        normalizedFingerprint,
+        hostTrustMode,
+      );
       return true;
     })();
 
@@ -681,11 +683,12 @@ class SSHHandlers {
    * 为 SSH 配置附加主机指纹校验能力
    */
   _attachHostVerificationConfig(sshConfig) {
-    return {
+    const connectionConfig = {
       ...sshConfig,
       hostHash: "sha256",
-      hostVerifier: this._createHostVerifier(sshConfig),
     };
+    connectionConfig.hostVerifier = this._createHostVerifier(connectionConfig);
+    return connectionConfig;
   }
 
   _getMainWindow() {

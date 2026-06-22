@@ -3,6 +3,7 @@ const { spawn } = require("child_process");
 const processManager = require("../process/processManager");
 const { getTransferNativeScannerPath } = require("./nativeTransferSidecar");
 const { processSSHPrivateKeyAsync } = require("./ssh-utils");
+const { getTrustedHostFingerprint } = require("./sshHostKeyTrust");
 const { logToFile } = require("./logger");
 const { recordCrashMarker } = require("./crashReporter");
 
@@ -135,6 +136,38 @@ function normalizeNativeResultPayload(result, request) {
   };
 }
 
+function resolveExpectedHostFingerprint(rawConfig, fallbackConfigs = []) {
+  const configs = [rawConfig, ...fallbackConfigs];
+  const fingerprint = configs
+    .filter(Boolean)
+    .map(
+      (config) =>
+        config?.expectedHostFingerprint || getTrustedHostFingerprint(config),
+    )
+    .find(Boolean);
+  if (fingerprint) {
+    return fingerprint;
+  }
+
+  throw createNativeSidecarError(
+    "SSH host key has not been trusted by the main connection",
+    {
+      errorCode: "NATIVE_SFTP_HOST_KEY_NOT_TRUSTED",
+      errorKind: "hostKey",
+      retryable: false,
+      module: "native-sftp-client",
+    },
+  );
+}
+
+function prepareNativeSshConfig(config) {
+  const expectedHostFingerprint = resolveExpectedHostFingerprint(config);
+  return {
+    ...config,
+    expectedHostFingerprint,
+  };
+}
+
 async function resolveSshConfig(tabId) {
   const processInfo = processManager.getProcess(tabId);
   const rawConfig = processInfo?.config;
@@ -148,6 +181,9 @@ async function resolveSshConfig(tabId) {
     });
   }
 
+  const expectedHostFingerprint = resolveExpectedHostFingerprint(rawConfig, [
+    processInfo?.connectionInfo?.config,
+  ]);
   const sshConfig = await processSSHPrivateKeyAsync({
     host: rawConfig.host,
     port: rawConfig.port || 22,
@@ -165,6 +201,7 @@ async function resolveSshConfig(tabId) {
     password: sshConfig.password || undefined,
     privateKey: sshConfig.privateKey || undefined,
     passphrase: sshConfig.passphrase || undefined,
+    expectedHostFingerprint,
   };
 }
 
@@ -216,6 +253,12 @@ function invokeNativeRequestWithConfig(
   }
 
   const normalizedRequest = normalizeNativeRequest(request);
+  let nativeConfig;
+  try {
+    nativeConfig = prepareNativeSshConfig(config);
+  } catch (error) {
+    return Promise.reject(error);
+  }
 
   return new Promise((resolve, reject) => {
     const child = spawn(sidecarPath, ["sftp-request"], {
@@ -404,7 +447,7 @@ function invokeNativeRequestWithConfig(
 
     const envelope = JSON.stringify({
       schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
-      config,
+      config: nativeConfig,
       request: normalizedRequest,
     });
 
@@ -462,6 +505,14 @@ function watchDirectoryWithConfig(
   }
 
   return new Promise((resolve, reject) => {
+    let nativeConfig;
+    try {
+      nativeConfig = prepareNativeSshConfig(config);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
     const child = spawn(sidecarPath, ["sftp-watch"], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -723,7 +774,7 @@ function watchDirectoryWithConfig(
 
     const envelope = JSON.stringify({
       schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
-      config,
+      config: nativeConfig,
       request,
     });
 

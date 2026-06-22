@@ -9,6 +9,7 @@ use russh::keys::{decode_secret_key, PrivateKeyWithHashAlg, PublicKey};
 use russh::Disconnect;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::cmp::min;
 use std::env;
 use std::fs;
@@ -20,7 +21,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::fs::OpenOptions as TokioOpenOptions;
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-type SshHandle = Handle<AcceptAnyServerKey>;
+type SshHandle = Handle<ExpectedServerKey>;
 const SIDECAR_SCHEMA_VERSION: u32 = 1;
 const SIDECAR_PROCESS_TYPE: &str = "native-sidecar";
 const MODE_TYPE_MASK: u32 = 0o170000;
@@ -75,6 +76,7 @@ struct SshConnectionConfig {
     password: Option<String>,
     private_key: Option<String>,
     passphrase: Option<String>,
+    expected_host_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -183,17 +185,49 @@ struct ScanControl {
 }
 
 #[derive(Debug)]
-struct AcceptAnyServerKey;
+struct ExpectedServerKey {
+    expected_fingerprint: String,
+}
 
-impl client::Handler for AcceptAnyServerKey {
+impl client::Handler for ExpectedServerKey {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &PublicKey,
+        server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        let actual_fingerprint = compute_sha256_host_fingerprint(server_public_key)?;
+        Ok(actual_fingerprint == self.expected_fingerprint)
     }
+}
+
+fn normalize_host_fingerprint(fingerprint: &str) -> Option<String> {
+    let trimmed = fingerprint.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if trimmed.len() >= 7 && trimmed[..7].eq_ignore_ascii_case("SHA256:") {
+        return Some(format!("SHA256:{}", &trimmed[7..]));
+    }
+
+    Some(format!("SHA256:{trimmed}"))
+}
+
+fn compute_sha256_host_fingerprint(server_public_key: &PublicKey) -> Result<String, russh::Error> {
+    let key_blob = server_public_key.to_bytes().map_err(russh::Error::from)?;
+    let digest = Sha256::digest(&key_blob);
+    Ok(format!("SHA256:{}", hex_lower(&digest)))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    output
 }
 
 #[tokio::main]
@@ -420,14 +454,33 @@ async fn connect_sftp(config: &SshConnectionConfig) -> Result<(Sftp, SshHandle),
         inactivity_timeout: Some(Duration::from_secs(30)),
         ..Default::default()
     });
+    let expected_fingerprint = config
+        .expected_host_fingerprint
+        .as_deref()
+        .and_then(normalize_host_fingerprint)
+        .ok_or_else(|| {
+            "missing trusted SSH host fingerprint for native SFTP request".to_string()
+        })?;
 
     let mut handle = client::connect(
         client_config,
         (config.host.as_str(), config.port.unwrap_or(22)),
-        AcceptAnyServerKey,
+        ExpectedServerKey {
+            expected_fingerprint: expected_fingerprint.clone(),
+        },
     )
     .await
-    .map_err(|error| format!("failed to connect SSH session: {error}"))?;
+    .map_err(|error| {
+        if matches!(error, russh::Error::UnknownKey) {
+            format!(
+                "SSH host key verification failed for {}:{}",
+                config.host,
+                config.port.unwrap_or(22)
+            )
+        } else {
+            format!("failed to connect SSH session: {error}")
+        }
+    })?;
 
     if let Some(private_key) = config.private_key.as_deref() {
         let key = decode_secret_key(private_key, config.passphrase.as_deref())
@@ -1690,6 +1743,18 @@ fn classify_error(message: &str) -> ErrorClassification {
         return ErrorClassification {
             error_code: "NATIVE_SFTP_AUTH_FAILED",
             error_kind: "authentication",
+            retryable: false,
+        };
+    }
+
+    if lower.contains("host key verification")
+        || lower.contains("host fingerprint")
+        || lower.contains("trusted ssh host fingerprint")
+        || lower.contains("unknown server key")
+    {
+        return ErrorClassification {
+            error_code: "NATIVE_SFTP_HOST_KEY_VERIFICATION_FAILED",
+            error_kind: "hostKey",
             retryable: false,
         };
     }

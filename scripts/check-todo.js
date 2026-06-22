@@ -1787,6 +1787,109 @@ async function testFUnifiedRuntimeFileLifecyclePolicy() {
   }
 }
 
+async function testGNativeSidecarHostKeyVerification() {
+  const sidecarSource = fs.readFileSync(
+    path.join(ROOT, "transfernative", "transfer-sidecar", "src", "main.rs"),
+    "utf8",
+  );
+  const nativeClientSource = fs.readFileSync(
+    path.join(ROOT, "src", "core", "utils", "nativeSftpClient.js"),
+    "utf8",
+  );
+  const sshHandlersSource = fs.readFileSync(
+    path.join(ROOT, "src", "core", "ipc", "handlers", "sshHandlers.js"),
+    "utf8",
+  );
+  const filemanagementSource = fs.readFileSync(
+    path.join(
+      ROOT,
+      "src",
+      "modules",
+      "filemanagement",
+      "filemanagementService.js",
+    ),
+    "utf8",
+  );
+
+  assert.equal(
+    sidecarSource.includes("AcceptAnyServerKey"),
+    false,
+    "Rust sidecar must not accept arbitrary SSH server keys",
+  );
+  assert.match(
+    sidecarSource,
+    /expected_host_fingerprint:\s*Option<String>/,
+    "Rust sidecar config must accept the trusted host fingerprint",
+  );
+  assert.match(
+    sidecarSource,
+    /compute_sha256_host_fingerprint/,
+    "Rust sidecar must compute the server host key SHA256 fingerprint",
+  );
+  assert.match(
+    sidecarSource,
+    /SSH host key verification failed/,
+    "Rust sidecar must reject host key mismatches with an explicit error",
+  );
+  assert.match(
+    sidecarSource,
+    /NATIVE_SFTP_HOST_KEY_VERIFICATION_FAILED/,
+    "Rust sidecar must classify host key failures separately",
+  );
+
+  assert.match(
+    sshHandlersSource,
+    /setTrustedHostFingerprint\(/,
+    "Main SSH host verifier must mark the verified fingerprint on the saved connection config",
+  );
+  assert.match(
+    sshHandlersSource,
+    /connectionConfig\.hostVerifier\s*=\s*this\._createHostVerifier\(connectionConfig\)/,
+    "Host verifier must close over the same config object saved for the terminal process",
+  );
+  assert.match(
+    nativeClientSource,
+    /expectedHostFingerprint/,
+    "Native SFTP wrapper must pass expectedHostFingerprint to the sidecar",
+  );
+  assert.match(
+    nativeClientSource,
+    /NATIVE_SFTP_HOST_KEY_NOT_TRUSTED/,
+    "Native SFTP wrapper must fail before spawning sidecar when no trusted fingerprint exists",
+  );
+  assert.match(
+    filemanagementSource,
+    /expectedHostFingerprint/,
+    "Transfer process pool SSH configs must include the trusted host fingerprint",
+  );
+
+  const nativeSftpClientPath = path.join(
+    ROOT,
+    "src",
+    "core",
+    "utils",
+    "nativeSftpClient.js",
+  );
+  const nativeSftpClient = require(nativeSftpClientPath);
+  await assert.rejects(
+    nativeSftpClient.invokeNativeRequestWithConfig(
+      {
+        host: "127.0.0.1",
+        port: 22,
+        username: "user",
+        password: "pass",
+      },
+      { operation: "listFiles", path: "." },
+    ),
+    (error) =>
+      error?.errorCode === "NATIVE_SFTP_HOST_KEY_NOT_TRUSTED" ||
+      error?.code === "NATIVE_SFTP_HOST_KEY_NOT_TRUSTED",
+    "Native SFTP must reject configs that were not trusted by the main SSH verifier",
+  );
+
+  return true;
+}
+
 async function run() {
   const results = [];
   const tasks = [
@@ -1834,6 +1937,11 @@ async function run() {
       id: "F1",
       name: "F. 统一运行时文件生命周期覆盖启动恢复、过期、大小上限、手动清理和活跃保护",
       fn: testFUnifiedRuntimeFileLifecyclePolicy,
+    },
+    {
+      id: "G1",
+      name: "G. Rust sidecar SFTP 继承主 SSH 主机指纹校验",
+      fn: testGNativeSidecarHostKeyVerification,
     },
   ];
 
