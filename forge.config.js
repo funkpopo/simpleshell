@@ -503,7 +503,6 @@ module.exports = async () => {
         OriginalFilename: `${PRODUCT_NAME}.exe`,
         ProductName: PRODUCT_NAME,
         InternalName: PRODUCT_NAME,
-        "requested-execution-level": "asInvoker",
       },
       asar: {
         unpackDir: `{${WORKER_UNPACK_DIRS.join(",")}}`,
