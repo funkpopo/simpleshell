@@ -20,6 +20,9 @@ const rules = baseRules.filter((rule) => {
 });
 const path = require("path");
 const fs = require("fs");
+const reactTransitionGroupContextPath = require.resolve(
+  "react-transition-group/esm/TransitionGroupContext.js",
+);
 
 rules.push({
   test: /\.css$/,
@@ -35,6 +38,10 @@ module.exports = {
     rules,
   },
   resolve: {
+    alias: {
+      "react-transition-group/TransitionGroupContext$":
+        reactTransitionGroupContextPath,
+    },
     extensions: [".js", ".jsx", ".json", ".ts", ".tsx", ".mjs"],
   },
   optimization: {

@@ -335,18 +335,8 @@ const keepOnlyRequiredLocalePaks = async (buildPath) => {
   await Promise.all(filesToRemove);
 };
 
-const cleanupLocalesHook = (
-  buildPath,
-  _electronVersion,
-  _platform,
-  _arch,
-  callback,
-) => {
-  keepOnlyRequiredLocalePaks(buildPath).then(
-    () => callback(),
-    (error) => callback(error),
-  );
-};
+const cleanupLocalesHook = ({ buildPath }) =>
+  keepOnlyRequiredLocalePaks(buildPath);
 
 const shouldRemovePackagedScript = (entry) =>
   entry.isFile() &&
@@ -392,18 +382,8 @@ const cleanupPackagedDevelopmentFiles = async (buildPath) => {
   );
 };
 
-const cleanupPackagedDevelopmentFilesHook = (
-  buildPath,
-  _electronVersion,
-  _platform,
-  _arch,
-  callback,
-) => {
-  cleanupPackagedDevelopmentFiles(buildPath).then(
-    () => callback(),
-    (error) => callback(error),
-  );
-};
+const cleanupPackagedDevelopmentFilesHook = ({ buildPath }) =>
+  cleanupPackagedDevelopmentFiles(buildPath);
 
 const buildMacSignConfig = () => {
   if (!process.env.MAC_CODESIGN_IDENTITY) {
