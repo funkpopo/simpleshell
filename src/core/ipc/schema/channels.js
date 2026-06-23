@@ -326,6 +326,14 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     NO_ARGS_SCHEMA,
   ),
   defineRequest(
+    "TERMINAL_GET_CONNECTION_PASSWORD",
+    "terminal:getConnectionPassword",
+    "terminal",
+    args([{}]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "credentials" },
+  ),
+  defineRequest(
     "TERMINAL_LOAD_TOP_CONNECTIONS",
     "terminal:loadTopConnections",
     "terminal",

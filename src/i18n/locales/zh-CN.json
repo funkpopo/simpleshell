@@ -428,6 +428,10 @@
       "testSuccess": "连接测试成功，用时 {{duration}} ms",
       "testFailed": "连接测试失败",
       "testUnavailable": "当前版本未提供连接测试接口",
+      "passwordRevealUnavailable": "当前版本未提供密码查看接口",
+      "passwordRevealRequiresMasterPassword": "未配置主密码，无法查看已保存的密码。",
+      "passwordRevealRequiresUnlock": "请先使用主密码解锁凭据存储。",
+      "passwordRevealFailed": "无法查看已保存的密码。",
       "validation": {
         "title": "逐步校验",
         "host": "Host",

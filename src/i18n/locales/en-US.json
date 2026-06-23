@@ -428,6 +428,10 @@
       "testSuccess": "Connection test succeeded in {{duration}} ms",
       "testFailed": "Connection test failed",
       "testUnavailable": "Connection test API is unavailable in this build",
+      "passwordRevealUnavailable": "Password reveal is unavailable in this build.",
+      "passwordRevealRequiresMasterPassword": "A master password must be configured to view saved passwords.",
+      "passwordRevealRequiresUnlock": "Unlock the credential store with the master password first.",
+      "passwordRevealFailed": "Unable to view the saved password.",
       "validation": {
         "title": "Step-by-step validation",
         "host": "Host",

@@ -488,6 +488,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 连接配置存储API
   loadConnections: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_LOAD_CONNECTIONS),
+  getConnectionPassword: (connectionId) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_GET_CONNECTION_PASSWORD, connectionId),
   saveConnections: (connections) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_SAVE_CONNECTIONS, connections),
   loadTopConnections: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_LOAD_TOP_CONNECTIONS),

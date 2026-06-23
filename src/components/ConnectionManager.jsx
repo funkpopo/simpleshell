@@ -52,6 +52,8 @@ import SearchIcon from "@mui/icons-material/Search";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
 import ErrorOutlinedIcon from "@mui/icons-material/ErrorOutlined";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import {
   DndContext,
   KeyboardSensor,
@@ -373,6 +375,7 @@ const isPortValid = (value) => {
 };
 
 const hasWhitespace = (value) => /\s/.test(String(value || ""));
+const SAVED_PASSWORD_MASK = "********";
 
 const buildConnectionPayloadFromForm = ({
   formData,
@@ -382,6 +385,12 @@ const buildConnectionPayloadFromForm = ({
 }) => {
   const protocol = formData.protocol || "ssh";
   const fallbackPort = protocol === "telnet" ? 23 : 22;
+
+  const shouldPreservePassword =
+    dialogMode === "edit" &&
+    selectedItem?.type === "connection" &&
+    (formData.passwordMasked === true || formData.passwordTouched !== true) &&
+    formData.passwordRevealed !== true;
 
   return {
     id:
@@ -394,7 +403,10 @@ const buildConnectionPayloadFromForm = ({
     host: String(formData.host || "").trim(),
     port: parsePortValue(formData.port, fallbackPort),
     username: String(formData.username || "").trim(),
-    password: formData.password || "",
+    password: shouldPreservePassword
+      ? selectedItem?.password || ""
+      : formData.password || "",
+    _preservePassword: shouldPreservePassword,
     authType: formData.authType || "password",
     privateKeyPath: String(formData.privateKeyPath || "").trim(),
     country: formData.country,
@@ -407,7 +419,12 @@ const buildConnectionPayloadFromForm = ({
           host: String(formData.proxyHost || "").trim(),
           port: parsePortValue(formData.proxyPort, 8080),
           username: formData.proxyUsername || undefined,
-          password: formData.proxyPassword || undefined,
+          password:
+            dialogMode === "edit" &&
+            selectedItem?.type === "connection" &&
+            formData.proxyPasswordTouched !== true
+              ? selectedItem?.proxy?.password || undefined
+              : formData.proxyPassword || undefined,
           useDefault: formData.proxyUseDefault,
         }
       : null,
@@ -1150,6 +1167,9 @@ const ConnectionManager = memo(
       os: "",
       connectionType: "",
       protocol: "ssh", // 新增：连接协议，默认为SSH
+      passwordTouched: false,
+      passwordRevealed: false,
+      passwordMasked: false,
       // 代理配置
       enableProxy: false,
       proxyType: "http",
@@ -1157,8 +1177,11 @@ const ConnectionManager = memo(
       proxyPort: 8080,
       proxyUsername: "",
       proxyPassword: "",
+      proxyPasswordTouched: false,
       proxyUseDefault: true, // 使用默认代理配置
     });
+    const [showPassword, setShowPassword] = useState(false);
+    const [revealingPassword, setRevealingPassword] = useState(false);
     const [privateKeyCheck, setPrivateKeyCheck] = useState({
       status: "idle",
       message: "",
@@ -1265,6 +1288,9 @@ const ConnectionManager = memo(
         os: "",
         connectionType: "",
         protocol: "ssh", // 默认为SSH
+        passwordTouched: false,
+        passwordRevealed: false,
+        passwordMasked: false,
         // 代理配置（保持字段完整，避免 undefined）
         enableProxy: false,
         proxyType: "http",
@@ -1272,8 +1298,10 @@ const ConnectionManager = memo(
         proxyPort: 8080,
         proxyUsername: "",
         proxyPassword: "",
+        proxyPasswordTouched: false,
         proxyUseDefault: true,
       });
+      setShowPassword(false);
       setDialogOpen(true);
     }, []);
 
@@ -1323,12 +1351,13 @@ const ConnectionManager = memo(
         setConnectionTestResult(null);
         // 确保端口值与协议类型匹配
         const port = item.port || (item.protocol === "telnet" ? 23 : 22);
+        const hasSavedPassword = Boolean(item.password);
         setFormData({
           name: item.name,
           host: item.host,
           port: port,
           username: item.username || "",
-          password: item.password || "",
+          password: hasSavedPassword ? SAVED_PASSWORD_MASK : "",
           authType: item.authType || "password",
           privateKeyPath: item.privateKeyPath || "",
           parentGroup: parentGroup ? parentGroup.id : "",
@@ -1336,18 +1365,23 @@ const ConnectionManager = memo(
           os: item.os || "",
           connectionType: item.connectionType || "",
           protocol: item.protocol || "ssh",
+          passwordTouched: false,
+          passwordRevealed: false,
+          passwordMasked: hasSavedPassword,
           // 代理配置
           enableProxy: !!item.proxy,
           proxyType: item.proxy?.type || "http",
           proxyHost: item.proxy?.host || "",
           proxyPort: item.proxy?.port || 8080,
           proxyUsername: item.proxy?.username || "",
-          proxyPassword: item.proxy?.password || "",
+          proxyPassword: "",
+          proxyPasswordTouched: false,
           proxyUseDefault:
             item.proxy?.useDefault !== undefined ? item.proxy.useDefault : true,
         });
       }
 
+      setShowPassword(false);
       setDialogOpen(true);
     }, []);
 
@@ -1575,6 +1609,7 @@ const ConnectionManager = memo(
     const handleDialogClose = useCallback(() => {
       setDialogOpen(false);
       setConnectionTestResult(null);
+      setShowPassword(false);
     }, []);
 
     const handleFormChange = useCallback((e) => {
@@ -1590,9 +1625,87 @@ const ConnectionManager = memo(
             return { ...prev, [name]: value, port: defaultPort };
           }
         }
+        if (name === "password") {
+          return {
+            ...prev,
+            [name]: value,
+            passwordTouched: true,
+            passwordRevealed: false,
+            passwordMasked: false,
+          };
+        }
+        if (name === "proxyPassword") {
+          return { ...prev, [name]: value, proxyPasswordTouched: true };
+        }
         return { ...prev, [name]: value };
       });
     }, []);
+
+    const handleTogglePasswordVisibility = useCallback(async () => {
+      if (showPassword) {
+        setShowPassword(false);
+        return;
+      }
+
+      if (dialogMode !== "edit" || !selectedItem?.id) {
+        setShowPassword(true);
+        return;
+      }
+
+      if (formData.passwordTouched && formData.passwordMasked !== true) {
+        setShowPassword(true);
+        return;
+      }
+
+      if (!window.terminalAPI?.getConnectionPassword) {
+        showError(t("connectionManager.passwordRevealUnavailable"));
+        return;
+      }
+
+      setRevealingPassword(true);
+      try {
+        const result = await window.terminalAPI.getConnectionPassword(
+          selectedItem.id,
+        );
+
+        if (result?.success) {
+          setFormData((prev) => ({
+            ...prev,
+            password: result.password || "",
+            passwordMasked: false,
+            passwordRevealed: true,
+          }));
+          setShowPassword(true);
+          return;
+        }
+
+        if (result?.code === "MASTER_PASSWORD_NOT_CONFIGURED") {
+          showError(t("connectionManager.passwordRevealRequiresMasterPassword"));
+          return;
+        }
+
+        if (result?.code === "CREDENTIAL_STORE_LOCKED") {
+          showError(t("connectionManager.passwordRevealRequiresUnlock"));
+          return;
+        }
+
+        showError(result?.error || t("connectionManager.passwordRevealFailed"));
+      } catch (error) {
+        showError(
+          error?.message || t("connectionManager.passwordRevealFailed"),
+        );
+      } finally {
+        setRevealingPassword(false);
+      }
+    }, [
+      dialogMode,
+      formData.passwordMasked,
+      formData.passwordTouched,
+      selectedItem,
+      showError,
+      showPassword,
+      t,
+    ]);
 
     useEffect(() => {
       if (
@@ -2815,19 +2928,62 @@ const ConnectionManager = memo(
                       size="small"
                     />
 
-                    <TextField
-                      label={t("connectionManager.password")}
-                      name="password"
-                      type="password"
-                      value={formData.password}
-                      onChange={handleFormChange}
-                      fullWidth
-                      size="small"
-                      disabled={
-                        formData.protocol === "ssh" &&
-                        formData.authType === "privateKey"
-                      }
-                    />
+                    <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                      <TextField
+                        label={t("connectionManager.password")}
+                        name="password"
+                        type={showPassword ? "text" : "password"}
+                        value={formData.password}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        disabled={
+                          formData.protocol === "ssh" &&
+                          formData.authType === "privateKey"
+                        }
+                        sx={{ flex: 1, minWidth: 0 }}
+                      />
+                      <Tooltip
+                        title={
+                          showPassword
+                            ? t("common.hidePassword")
+                            : t("common.showPassword")
+                        }
+                      >
+                        <span>
+                          <IconButton
+                            aria-label={
+                              showPassword
+                                ? t("common.hidePassword")
+                                : t("common.showPassword")
+                            }
+                            size="small"
+                            onClick={handleTogglePasswordVisibility}
+                            disabled={
+                              revealingPassword ||
+                              (formData.protocol === "ssh" &&
+                                formData.authType === "privateKey")
+                            }
+                            sx={{
+                              width: 40,
+                              height: 40,
+                              flexShrink: 0,
+                              border: 1,
+                              borderColor: "divider",
+                              borderRadius: 1,
+                            }}
+                          >
+                            {revealingPassword ? (
+                              <CircularProgress size={18} />
+                            ) : showPassword ? (
+                              <VisibilityOffIcon fontSize="small" />
+                            ) : (
+                              <VisibilityIcon fontSize="small" />
+                            )}
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </Box>
 
                     {formData.protocol === "ssh" && (
                       <FormControl fullWidth size="small" sx={{ mt: 1 }}>

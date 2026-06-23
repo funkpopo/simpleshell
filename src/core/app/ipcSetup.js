@@ -174,6 +174,11 @@ class IPCSetup {
       return configService.loadConnections();
     }, { category: "terminal" });
 
+    safeHandle(ipcMain, IPC_REQUEST_CHANNELS.TERMINAL_GET_CONNECTION_PASSWORD, async (event, connectionId) => {
+      void event;
+      return configService.getSavedConnectionPassword(connectionId);
+    }, { category: "terminal" });
+
     safeHandle(ipcMain, IPC_REQUEST_CHANNELS.TERMINAL_LOAD_TOP_CONNECTIONS, async () => {
       try {
         return configService.loadLastConnections();

@@ -825,9 +825,13 @@ class ConfigService {
     return items.map((item) => {
       const result = { ...item };
       if (item.type === "connection") {
-        if (item.password) {
+        if (item._passwordAlreadyEncrypted === true) {
+          result.password = item.password || "";
+        } else if (item.password) {
           result.password = this.crypto.encryptText(item.password);
         }
+        delete result._passwordAlreadyEncrypted;
+        delete result._preservePassword;
         if (item.privateKeyPath) {
           result.privateKeyPath = this.crypto.encryptText(item.privateKeyPath);
         }
@@ -905,6 +909,55 @@ class ConfigService {
     });
   }
 
+  _mergePreservedConnectionCredentials(items, existingItems) {
+    if (!Array.isArray(items)) {
+      return items;
+    }
+
+    const existingById = new Map();
+    const collectExisting = (entries = []) => {
+      entries.forEach((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return;
+        }
+        if (entry.type === "connection" && entry.id) {
+          existingById.set(entry.id, entry);
+          return;
+        }
+        if (entry.type === "group") {
+          collectExisting(entry.items || []);
+        }
+      });
+    };
+
+    collectExisting(existingItems || []);
+
+    const mergeItems = (entries = []) =>
+      entries.map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return entry;
+        }
+
+        const result = { ...entry };
+        if (result.type === "connection") {
+          const existing = result.id ? existingById.get(result.id) : null;
+          if (result._preservePassword === true && existing) {
+            result.password = existing.password || "";
+            result._passwordAlreadyEncrypted = true;
+          }
+          delete result._preservePassword;
+        }
+
+        if (result.type === "group" && Array.isArray(result.items)) {
+          result.items = mergeItems(result.items);
+        }
+
+        return result;
+      });
+
+    return mergeItems(items);
+  }
+
   /**
    * 加载连接配置
    * @returns {Array} 连接配置数组
@@ -932,6 +985,111 @@ class ConfigService {
     return [];
   }
 
+  _findConnectionById(items, connectionId) {
+    if (!Array.isArray(items) || !connectionId) {
+      return null;
+    }
+
+    for (const item of items) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+
+      if (item.type === "connection" && item.id === connectionId) {
+        return item;
+      }
+
+      if (item.type === "group") {
+        const found = this._findConnectionById(item.items || [], connectionId);
+        if (found) {
+          return found;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  getSavedConnectionPassword(connectionId) {
+    if (!this._initialized) {
+      return {
+        success: false,
+        error: "Config service is not initialized",
+      };
+    }
+
+    const securityStatus = this.getCredentialSecurityStatus();
+    if (securityStatus.masterPasswordEnabled !== true) {
+      return {
+        success: false,
+        error: "Master password is not configured",
+        code: "MASTER_PASSWORD_NOT_CONFIGURED",
+        status: securityStatus,
+      };
+    }
+
+    if (securityStatus.requiresUnlock || securityStatus.unlocked === false) {
+      return {
+        success: false,
+        error: "Credential store is locked",
+        code: "CREDENTIAL_STORE_LOCKED",
+        status: securityStatus,
+      };
+    }
+
+    try {
+      const config = this._readConfig();
+      const connection = this._findConnectionById(
+        config.connections || [],
+        connectionId,
+      );
+
+      if (!connection) {
+        return {
+          success: false,
+          error: "Connection not found",
+          code: "CONNECTION_NOT_FOUND",
+          status: securityStatus,
+        };
+      }
+
+      if (!connection.password) {
+        return {
+          success: true,
+          password: "",
+          status: securityStatus,
+        };
+      }
+
+      const password = this.crypto.decryptText(connection.password);
+      if (password === null) {
+        return {
+          success: false,
+          error: "Failed to decrypt password",
+          code: "DECRYPT_FAILED",
+          status: securityStatus,
+        };
+      }
+
+      return {
+        success: true,
+        password,
+        status: securityStatus,
+      };
+    } catch (error) {
+      this._log(
+        `ConfigService: Failed to get saved connection password - ${error.message}`,
+        "ERROR",
+      );
+      return {
+        success: false,
+        error: error.message,
+        code: "PASSWORD_READ_FAILED",
+        status: securityStatus,
+      };
+    }
+  }
+
   /**
    * 保存连接配置
    * @param {Array} connections - 连接配置数组
@@ -948,7 +1106,12 @@ class ConfigService {
 
     try {
       const config = this._readConfig();
-      const processedConnections = this._processConnectionsForSave(connections);
+      const mergedConnections = this._mergePreservedConnectionCredentials(
+        connections,
+        config.connections || [],
+      );
+      const processedConnections =
+        this._processConnectionsForSave(mergedConnections);
       config.connections = processedConnections;
 
       if (this._writeConfig(config)) {
@@ -1945,11 +2108,10 @@ class ConfigService {
           masterPasswordEnabled: true,
           masterPassword,
         })
-      : {
-          ...normalizedConfig.security,
+      : this.crypto.createSecurityConfig({
+          currentSecurity: normalizedConfig.security,
           masterPasswordEnabled: false,
-          masterPasswordVerifier: "",
-        };
+        });
 
     normalizedConfig.security = nextSecurity;
     this._applySecuritySettings(nextSecurity);
