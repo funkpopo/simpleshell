@@ -76,6 +76,7 @@ const FILE_LIST_ROW_HEIGHT = 36;
 const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
 const FILE_LIST_OVERSCAN = 12;
 const FILE_MANAGER_PATH_HISTORY_LIMIT = 50;
+const TRANSFER_CONFLICT_PREVIEW_LIMIT = 8;
 
 const FILE_LIST_ITEM_MIN_HEIGHT = 32;
 
@@ -118,6 +119,8 @@ const CONFIRM_DIALOG_INITIAL_STATE = {
   title: "",
   message: "",
   detail: "",
+  detailItems: [],
+  detailFooter: "",
   onConfirm: null,
   confirmText: "",
   cancelText: "",
@@ -4487,26 +4490,21 @@ const FileManager = memo(
         }
 
         const conflictItems = conflicts
-          .slice(0, 12)
+          .slice(0, TRANSFER_CONFLICT_PREVIEW_LIMIT)
           .map((item) => item.remotePath || item.relativePath || item.name)
           .filter(Boolean);
         const remainingCount = Math.max(
           0,
           conflicts.length - conflictItems.length,
         );
-        const detailItems =
-          remainingCount > 0
-            ? `${conflictItems.join("\n")}\n... +${remainingCount}`
-            : conflictItems.join("\n");
 
         return showConfirmDialog({
           title: t("fileManager.messages.dragDropConflictTitle"),
           message: t("fileManager.messages.dragDropConflictMessage", {
             count: conflicts.length,
           }),
-          detail: t("fileManager.messages.dragDropConflictDetail", {
-            items: detailItems,
-          }),
+          detailItems: conflictItems,
+          detailFooter: remainingCount > 0 ? `... +${remainingCount}` : "",
           confirmText: t("fileManager.messages.dragDropConflictConfirm"),
           cancelText: t("fileManager.messages.dragDropConflictCancel"),
           confirmColor: "warning",
@@ -6479,6 +6477,15 @@ const FileManager = memo(
       confirmDialog.defaultAction === "confirm"
         ? confirmDialogConfirmButtonRef
         : confirmDialogCancelButtonRef;
+    const confirmDialogDetailItems = Array.isArray(confirmDialog.detailItems)
+      ? confirmDialog.detailItems
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean)
+      : [];
+    const confirmDialogDetailText =
+      typeof confirmDialog.detail === "string"
+        ? confirmDialog.detail.trim()
+        : "";
 
     return (
       <Paper
@@ -7577,13 +7584,18 @@ const FileManager = memo(
           slotProps={{
             paper: {
               sx: {
-                borderRadius: 2,
+                width: "min(404px, calc(100vw - 32px))",
+                maxWidth: "calc(100vw - 32px)",
+                maxHeight: "min(390px, calc(100vh - 32px))",
+                display: "flex",
+                flexDirection: "column",
+                borderRadius: 1.5,
                 border: `1px solid ${alpha(confirmDialogPalette.main, 0.22)}`,
                 bgcolor: "background.paper",
                 boxShadow:
                   theme.palette.mode === "dark"
-                    ? "0 18px 50px rgba(0, 0, 0, 0.56)"
-                    : "0 18px 50px rgba(15, 23, 42, 0.18)",
+                    ? "0 14px 42px rgba(0, 0, 0, 0.54)"
+                    : "0 14px 42px rgba(15, 23, 42, 0.16)",
                 overflow: "hidden",
               },
             },
@@ -7602,18 +7614,19 @@ const FileManager = memo(
             sx={{
               display: "flex",
               alignItems: "flex-start",
-              gap: 1.5,
-              px: 2.5,
-              pt: 2,
-              pb: 1.5,
+              gap: 1,
+              px: 2,
+              pt: 1.5,
+              pb: 1,
+              flexShrink: 0,
             }}
           >
             <Box
               sx={{
-                width: 34,
-                height: 34,
+                width: 28,
+                height: 28,
                 flex: "0 0 auto",
-                borderRadius: 1.5,
+                borderRadius: 1,
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -7629,37 +7642,127 @@ const FileManager = memo(
               variant="subtitle1"
               sx={{
                 minWidth: 0,
-                pt: 0.25,
+                pt: 0.125,
                 color: "text.primary",
                 fontWeight: 600,
-                lineHeight: 1.35,
+                lineHeight: 1.25,
               }}
             >
               {confirmDialog.title}
             </Typography>
           </DialogTitle>
-          <DialogContent sx={{ px: 2.5, pt: 0, pb: 0.5 }}>
+          <DialogContent
+            sx={{
+              px: 2,
+              pt: 0,
+              pb: 1,
+              overflowX: "hidden",
+              overflowY: "auto",
+              flex: "0 1 auto",
+            }}
+          >
             <Typography
               variant="body2"
               color="text.secondary"
-              sx={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}
+              sx={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}
             >
               {confirmDialog.message}
             </Typography>
-            {confirmDialog.detail ? (
+            {confirmDialogDetailItems.length > 0 ? (
               <Box
                 sx={{
-                  mt: 1.5,
-                  maxHeight: 176,
+                  mt: 1,
+                  maxHeight: 124,
+                  overflowY: "auto",
+                  borderRadius: 1,
+                  border: `1px solid ${theme.palette.divider}`,
+                  bgcolor:
+                    theme.palette.mode === "dark"
+                      ? alpha(theme.palette.common.white, 0.035)
+                      : alpha(theme.palette.common.black, 0.022),
+                }}
+              >
+                {confirmDialogDetailItems.map((item, index) => (
+                  <Tooltip
+                    key={`${item}-${index}`}
+                    title={item}
+                    placement="top"
+                    disableInteractive
+                    enterDelay={500}
+                  >
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns: "auto minmax(0, 1fr)",
+                        alignItems: "center",
+                        columnGap: 0.75,
+                        minHeight: 24,
+                        px: 1,
+                        py: 0.25,
+                        borderTop:
+                          index === 0
+                            ? "none"
+                            : `1px solid ${theme.palette.divider}`,
+                      }}
+                    >
+                      <Box
+                        component="span"
+                        sx={{
+                          width: 4,
+                          height: 4,
+                          borderRadius: "50%",
+                          bgcolor: alpha(confirmDialogPalette.main, 0.68),
+                        }}
+                      />
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        color="text.secondary"
+                        noWrap
+                        sx={{
+                          minWidth: 0,
+                          lineHeight: 1.35,
+                        }}
+                      >
+                        {item}
+                      </Typography>
+                    </Box>
+                  </Tooltip>
+                ))}
+                {confirmDialog.detailFooter ? (
+                  <Box
+                    sx={{
+                      px: 1,
+                      py: 0.5,
+                      borderTop: `1px solid ${theme.palette.divider}`,
+                      bgcolor: alpha(confirmDialogPalette.main, 0.06),
+                    }}
+                  >
+                    <Typography
+                      component="span"
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ lineHeight: 1.35 }}
+                    >
+                      {confirmDialog.detailFooter}
+                    </Typography>
+                  </Box>
+                ) : null}
+              </Box>
+            ) : confirmDialogDetailText ? (
+              <Box
+                sx={{
+                  mt: 1,
+                  maxHeight: 124,
                   overflow: "auto",
                   borderRadius: 1,
                   border: `1px solid ${theme.palette.divider}`,
                   bgcolor:
                     theme.palette.mode === "dark"
-                      ? alpha(theme.palette.common.white, 0.04)
-                      : alpha(theme.palette.common.black, 0.025),
-                  px: 1.5,
-                  py: 1,
+                      ? alpha(theme.palette.common.white, 0.035)
+                      : alpha(theme.palette.common.black, 0.022),
+                  px: 1,
+                  py: 0.75,
                 }}
               >
                 <Typography
@@ -7669,21 +7772,22 @@ const FileManager = memo(
                   sx={{
                     m: 0,
                     fontFamily: "inherit",
-                    lineHeight: 1.6,
+                    lineHeight: 1.45,
                     whiteSpace: "pre-wrap",
                     overflowWrap: "anywhere",
                   }}
                 >
-                  {confirmDialog.detail}
+                  {confirmDialogDetailText}
                 </Typography>
               </Box>
             ) : null}
           </DialogContent>
           <DialogActions
             sx={{
-              px: 2.5,
-              py: 2,
-              gap: 1,
+              px: 2,
+              py: 1.25,
+              gap: 0.75,
+              flexShrink: 0,
               borderTop: `1px solid ${theme.palette.divider}`,
             }}
           >
@@ -7693,7 +7797,7 @@ const FileManager = memo(
               color="inherit"
               variant="outlined"
               size="small"
-              sx={{ minWidth: 82 }}
+              sx={{ minWidth: 72 }}
             >
               {confirmDialog.cancelText || t("common.cancel")}
             </Button>
@@ -7703,7 +7807,7 @@ const FileManager = memo(
               variant="contained"
               color={confirmDialogColor}
               size="small"
-              sx={{ minWidth: 96 }}
+              sx={{ minWidth: 90 }}
             >
               {confirmDialog.confirmText || t("common.confirm")}
             </Button>
