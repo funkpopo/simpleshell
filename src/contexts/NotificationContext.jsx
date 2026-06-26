@@ -4,6 +4,7 @@ import Alert from "@mui/material/Alert";
 import Typography from "@mui/material/Typography";
 
 const NotificationContext = createContext(null);
+const DEFAULT_AUTO_HIDE_DURATION_MS = 5000;
 
 export const useNotification = () => {
   const context = useContext(NotificationContext);
@@ -19,10 +20,10 @@ export const NotificationProvider = ({ children }) => {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [severity, setSeverity] = useState("info"); // 'success' | 'info' | 'warning' | 'error'
-  const [duration, setDuration] = useState(5000);
+  const [duration, setDuration] = useState(DEFAULT_AUTO_HIDE_DURATION_MS);
 
   const showNotification = useCallback((msg, type = "info", options = {}) => {
-    const { autoHideDuration = 5000 } = options;
+    const { autoHideDuration = DEFAULT_AUTO_HIDE_DURATION_MS } = options;
 
     setMessage(msg);
     setSeverity(type);
@@ -32,28 +33,40 @@ export const NotificationProvider = ({ children }) => {
 
   const showError = useCallback(
     (msg, options) => {
-      showNotification(msg, "error", { autoHideDuration: null, ...options }); // 红色通知不自动关闭
+      showNotification(msg, "error", {
+        autoHideDuration: DEFAULT_AUTO_HIDE_DURATION_MS,
+        ...options,
+      });
     },
     [showNotification],
   );
 
   const showSuccess = useCallback(
     (msg, options) => {
-      showNotification(msg, "success", { autoHideDuration: 5000, ...options });
+      showNotification(msg, "success", {
+        autoHideDuration: DEFAULT_AUTO_HIDE_DURATION_MS,
+        ...options,
+      });
     },
     [showNotification],
   );
 
   const showInfo = useCallback(
     (msg, options) => {
-      showNotification(msg, "info", { autoHideDuration: 5000, ...options });
+      showNotification(msg, "info", {
+        autoHideDuration: DEFAULT_AUTO_HIDE_DURATION_MS,
+        ...options,
+      });
     },
     [showNotification],
   );
 
   const showWarning = useCallback(
     (msg, options) => {
-      showNotification(msg, "warning", { autoHideDuration: 5000, ...options });
+      showNotification(msg, "warning", {
+        autoHideDuration: DEFAULT_AUTO_HIDE_DURATION_MS,
+        ...options,
+      });
     },
     [showNotification],
   );

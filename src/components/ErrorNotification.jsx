@@ -11,6 +11,8 @@ import {
   translateError,
 } from "../utils/errorTranslator";
 
+const AUTO_HIDE_DURATION_MS = 5000;
+
 /**
  * 错误通知组件
  * 用于显示应用内的错误提醒，替代系统原生的错误窗口
@@ -34,10 +36,8 @@ const ErrorNotification = ({ error, open, onClose }) => {
   const translatedError = translateError(error);
   const classification = classifyErrorForNotification(error);
 
-  // 红色通知(error)不自动关闭，橙色通知(warning)自动关闭
-  const isErrorSeverity =
-    classification.persistent || classification.severity === "error";
-  const autoHideDuration = isErrorSeverity ? null : showDetails ? null : 6000;
+  const autoHideDuration =
+    showDetails || actionBusy ? null : AUTO_HIDE_DURATION_MS;
 
   const handleCopyDiagnosticSummary = async () => {
     if (actionBusy) return;
