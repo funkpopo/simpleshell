@@ -7,10 +7,11 @@
   "scripts": {
     "format": "prettier --write .",
     "prepare:native-sidecar": "node scripts/prepare-rust-sidecar.js",
+    "prepare:winstaller-vendor": "node scripts/prepare-winstaller-vendor.js",
     "start": "npm run prepare:native-sidecar && set NODE_ENV=development && electron-forge start",
     "package": "npm run prepare:native-sidecar && electron-forge package",
-    "make": "npm run prepare:native-sidecar && electron-forge make",
-    "publish": "npm run prepare:native-sidecar && electron-forge publish",
+    "make": "npm run prepare:native-sidecar && npm run prepare:winstaller-vendor && electron-forge make",
+    "publish": "npm run prepare:native-sidecar && npm run prepare:winstaller-vendor && electron-forge publish",
     "check": "node scripts/run-checks.js",
     "check:i18n": "node scripts/check-i18n.js",
     "check:a11y": "node scripts/check-accessibility.js",
