@@ -274,6 +274,7 @@
       "ipQuery": "IP Address Query",
       "securityTool": "Security Tools",
       "localTerminal": "Local Terminal",
+      "resize": "Resize sidebar",
       "moveToLeft": "Move sidebar to left",
       "moveToRight": "Move sidebar to right",
       "aiApiUnreachable": "AI API unreachable"

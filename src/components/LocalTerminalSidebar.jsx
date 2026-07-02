@@ -546,7 +546,8 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       elevation={3}
       square={true}
       sx={{
-        width: 300,
+        width: "100%",
+        minWidth: 0,
         height: "100%",
         overflow: "hidden",
         display: "flex",

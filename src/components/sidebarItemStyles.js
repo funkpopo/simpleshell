@@ -46,9 +46,9 @@ export const sidebarListItemButtonSx = (theme, active = false) => ({
 });
 
 export const sidebarContentSx = (theme, open) => ({
-  width: 300,
-  minWidth: 300,
-  maxWidth: 300,
+  width: "100%",
+  minWidth: 0,
+  maxWidth: "100%",
   height: "100%",
   flexShrink: 0,
   boxSizing: "border-box",

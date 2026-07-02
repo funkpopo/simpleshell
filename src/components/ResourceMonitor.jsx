@@ -273,7 +273,8 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
   return (
     <Paper
       sx={{
-        width: 300,
+        width: "100%",
+        minWidth: 0,
         height: "100%",
         overflow: "hidden",
         borderLeft: `1px solid ${theme.palette.divider}`,

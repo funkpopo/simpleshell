@@ -1,4 +1,7 @@
 export const SIDEBAR_WIDTHS = {
+  DEFAULT: 300, // px
+  MIN: 240, // px
+  MAX: 560, // px
   AI_ASSISTANT: 300, // px
   RESOURCE_MONITOR: 300, // px
   CONNECTION_MANAGER: 300, // px

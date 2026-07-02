@@ -274,6 +274,7 @@
       "ipQuery": "IP 地址查询",
       "securityTool": "安全工具",
       "localTerminal": "本地终端",
+      "resize": "调整侧边栏宽度",
       "moveToLeft": "将侧边栏移动到左侧",
       "moveToRight": "将侧边栏移动到右侧",
       "aiApiUnreachable": "AI API 当前不可达"

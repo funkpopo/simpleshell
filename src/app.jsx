@@ -114,6 +114,7 @@ const SIDEBAR_TRANSITION_MS = 250;
 const SIDEBAR_UNMOUNT_DELAY_MS = SIDEBAR_TRANSITION_MS + 40;
 const UPDATE_REMINDER_STORAGE_KEY = "simpleshell.update.remindAt";
 const UPDATE_REMINDER_DELAY_MS = 4 * 60 * 60 * 1000;
+const DEFAULT_SIDEBAR_WIDTH = SIDEBAR_WIDTHS.DEFAULT;
 
 function useDelayedPresence(open, delay = SIDEBAR_UNMOUNT_DELAY_MS) {
   const [present, setPresent] = React.useState(open);
@@ -380,6 +381,18 @@ const buildRecentConnectionsSignature = (items) => {
 
 const normalizeSidebarPosition = (position) =>
   position === "left" ? "left" : "right";
+
+const normalizeSidebarWidth = (width) => {
+  const numericWidth = Number(width);
+  if (!Number.isFinite(numericWidth)) {
+    return DEFAULT_SIDEBAR_WIDTH;
+  }
+
+  return Math.min(
+    Math.max(Math.round(numericWidth), SIDEBAR_WIDTHS.MIN),
+    SIDEBAR_WIDTHS.MAX,
+  );
+};
 
 const getReconnectFailureReasonLabel = (t, failureReason) => {
   switch (String(failureReason || "").toLowerCase()) {
@@ -656,6 +669,9 @@ function AppContent() {
             setSidebarPosition(
               normalizeSidebarPosition(settings.sidebarPosition),
             );
+          }
+          if (settings?.sidebarWidth !== undefined) {
+            setSidebarWidth(normalizeSidebarWidth(settings.sidebarWidth));
           }
           // 暴露硬件加速标志给 globalTransferStore 等高频更新模块
           window.__hardwareAccelerationEnabled =
@@ -1294,6 +1310,10 @@ function AppContent() {
   const [transferBarMode, setTransferBarMode] = React.useState("bottom");
   // 侧边栏位置: "left" | "right"
   const [sidebarPosition, setSidebarPosition] = React.useState("right");
+  const [sidebarWidth, setSidebarWidth] = React.useState(
+    DEFAULT_SIDEBAR_WIDTH,
+  );
+  const [sidebarResizing, setSidebarResizing] = React.useState(false);
   // 传输侧边栏状态
   const [transferSidebarOpen, setTransferSidebarOpen] = React.useState(false);
   // 最后激活的浮动窗口（用于控制z-index层叠顺序）: "ai" | "transfer"
@@ -1309,6 +1329,9 @@ function AppContent() {
   const [hasTabOverflow, setHasTabOverflow] = React.useState(false);
   const dragRafRef = React.useRef(null);
   const pendingDragStateRef = React.useRef(null);
+  const sidebarResizeStateRef = React.useRef(null);
+  const sidebarWidthRef = React.useRef(DEFAULT_SIDEBAR_WIDTH);
+  const sidebarPositionRef = React.useRef(sidebarPosition);
   const sidebarTooltipPlacement = "top";
   const transferSidebarButtonRef = useRef(null);
   const aiChatButtonRef = useRef(null);
@@ -1376,6 +1399,129 @@ function AppContent() {
   );
   const isReconnectActionPending =
     Boolean(contextMenuTab?.id) && reconnectActionTabId === contextMenuTab.id;
+
+  React.useEffect(() => {
+    sidebarWidthRef.current = sidebarWidth;
+  }, [sidebarWidth]);
+
+  React.useEffect(() => {
+    sidebarPositionRef.current = sidebarPosition;
+  }, [sidebarPosition]);
+
+  const saveSidebarWidthSetting = useCallback(async (width) => {
+    if (!window.terminalAPI?.saveUISettings) {
+      return;
+    }
+
+    const nextWidth = normalizeSidebarWidth(width);
+
+    try {
+      let currentSettings = {};
+      if (window.terminalAPI?.loadUISettings) {
+        const loadedSettings = await window.terminalAPI.loadUISettings();
+        if (loadedSettings) {
+          currentSettings = loadedSettings;
+        }
+      }
+
+      const nextSettings = {
+        ...currentSettings,
+        sidebarWidth: nextWidth,
+      };
+
+      await window.terminalAPI.saveUISettings(nextSettings);
+      setUiSettingsSnapshot(nextSettings);
+    } catch (error) {
+      console.error("Failed to save sidebar width:", error);
+    }
+  }, []);
+
+  const finishSidebarResize = useCallback(() => {
+    const resizeState = sidebarResizeStateRef.current;
+    if (!resizeState) {
+      return;
+    }
+
+    sidebarResizeStateRef.current = null;
+    setSidebarResizing(false);
+
+    document.body.style.cursor = resizeState.bodyCursor || "";
+    document.body.style.userSelect = resizeState.bodyUserSelect || "";
+
+    const nextWidth = sidebarWidthRef.current;
+    void saveSidebarWidthSetting(nextWidth);
+
+    window.dispatchEvent(new Event("resize"));
+    window.dispatchEvent(
+      new CustomEvent("sidebarChanged", {
+        detail: {
+          margin:
+            nextWidth +
+            SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH +
+            SIDEBAR_WIDTHS.SAFETY_MARGIN,
+          sidebarWidth: nextWidth,
+          timestamp: Date.now(),
+        },
+      }),
+    );
+  }, [saveSidebarWidthSetting]);
+
+  const handleSidebarResizeMove = useCallback((event) => {
+    const resizeState = sidebarResizeStateRef.current;
+    if (!resizeState) {
+      return;
+    }
+
+    const delta =
+      resizeState.position === "left"
+        ? event.clientX - resizeState.startX
+        : resizeState.startX - event.clientX;
+    const nextWidth = normalizeSidebarWidth(resizeState.startWidth + delta);
+
+    if (nextWidth !== sidebarWidthRef.current) {
+      sidebarWidthRef.current = nextWidth;
+      setSidebarWidth(nextWidth);
+    }
+
+    event.preventDefault();
+  }, []);
+
+  const handleSidebarResizeStart = useCallback((event) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const startWidth = normalizeSidebarWidth(sidebarWidthRef.current);
+    sidebarResizeStateRef.current = {
+      startX: event.clientX,
+      startWidth,
+      position: sidebarPositionRef.current,
+      bodyCursor: document.body.style.cursor,
+      bodyUserSelect: document.body.style.userSelect,
+    };
+
+    setSidebarResizing(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  }, []);
+
+  React.useEffect(() => {
+    if (!sidebarResizing) {
+      return undefined;
+    }
+
+    document.addEventListener("pointermove", handleSidebarResizeMove);
+    document.addEventListener("pointerup", finishSidebarResize);
+    document.addEventListener("pointercancel", finishSidebarResize);
+
+    return () => {
+      document.removeEventListener("pointermove", handleSidebarResizeMove);
+      document.removeEventListener("pointerup", finishSidebarResize);
+      document.removeEventListener("pointercancel", finishSidebarResize);
+    };
+  }, [finishSidebarResize, handleSidebarResizeMove, sidebarResizing]);
 
   React.useEffect(() => {
     if (
@@ -1550,37 +1696,29 @@ function AppContent() {
         ? lastOpenedSidebar
         : findFallbackSidebar(null);
 
-      if (resourceMonitorOpen && activeSidebar === "resource") {
-        return SIDEBAR_WIDTHS.RESOURCE_MONITOR;
-      } else if (connectionManagerOpen && activeSidebar === "connection") {
-        return SIDEBAR_WIDTHS.CONNECTION_MANAGER;
-      } else if (fileManagerOpen && activeSidebar === "file") {
-        return SIDEBAR_WIDTHS.FILE_MANAGER;
-      } else if (shortcutCommandsOpen && activeSidebar === "shortcut") {
-        return SIDEBAR_WIDTHS.SHORTCUT_COMMANDS;
-      } else if (commandHistoryOpen && activeSidebar === "history") {
-        return SIDEBAR_WIDTHS.COMMAND_HISTORY;
-      } else if (ipAddressQueryOpen && activeSidebar === "ipquery") {
-        return SIDEBAR_WIDTHS.IP_ADDRESS_QUERY;
-      } else if (securityToolsOpen && activeSidebar === "password") {
-        return SIDEBAR_WIDTHS.SECURITY_TOOLS;
-      } else if (
-        localTerminalSidebarOpen &&
-        activeSidebar === "localTerminal"
+      if (
+        (resourceMonitorOpen && activeSidebar === "resource") ||
+        (connectionManagerOpen && activeSidebar === "connection") ||
+        (fileManagerOpen && activeSidebar === "file") ||
+        (shortcutCommandsOpen && activeSidebar === "shortcut") ||
+        (commandHistoryOpen && activeSidebar === "history") ||
+        (ipAddressQueryOpen && activeSidebar === "ipquery") ||
+        (securityToolsOpen && activeSidebar === "password") ||
+        (localTerminalSidebarOpen && activeSidebar === "localTerminal")
       ) {
-        return SIDEBAR_WIDTHS.LOCAL_TERMINAL_SIDEBAR;
+        return sidebarWidth;
       }
       return 0;
     };
 
-    const sidebarWidth = getSidebarWidth();
+    const activeSidebarWidth = getSidebarWidth();
     let calculatedMargin;
     // 始终为右侧按钮栏预留空间，即使没有侧边栏开启
     calculatedMargin = SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH;
 
-    if (sidebarWidth > 0) {
+    if (activeSidebarWidth > 0) {
       calculatedMargin =
-        sidebarWidth +
+        activeSidebarWidth +
         SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH +
         SIDEBAR_WIDTHS.SAFETY_MARGIN;
     }
@@ -1597,7 +1735,7 @@ function AppContent() {
           new CustomEvent("sidebarChanged", {
             detail: {
               margin: calculatedMargin,
-              sidebarWidth: sidebarWidth,
+              sidebarWidth: activeSidebarWidth,
               timestamp: Date.now(),
             },
           }),
@@ -1615,6 +1753,7 @@ function AppContent() {
     localTerminalSidebarOpen,
     lastOpenedSidebar,
     sidebarPosition,
+    sidebarWidth,
     SIDEBAR_WIDTHS,
     findFallbackSidebar,
   ]);
@@ -3428,6 +3567,11 @@ function AppContent() {
     return !currentPanelTab || currentPanelTab.type !== "ssh";
   }, [currentPanelTab]);
   const isFileManagerButtonDisabled = !isCurrentPanelSshConnected;
+  const hasVisibleSidebar =
+    activeSidebarMargin > SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH;
+  const activeSidebarContentWidth = hasVisibleSidebar
+    ? normalizeSidebarWidth(sidebarWidth)
+    : 0;
 
   // React 19: 利用自动批处理特性优化设置变更处理
   React.useEffect(() => {
@@ -3439,6 +3583,7 @@ function AppContent() {
         dnd,
         transferBarMode: newTransferBarMode,
         sidebarPosition: newSidebarPosition,
+        sidebarWidth: newSidebarWidth,
         performance: perf,
       } = event.detail;
 
@@ -3481,6 +3626,10 @@ function AppContent() {
       // 应用侧边栏位置设置
       if (newSidebarPosition) {
         setSidebarPosition(normalizeSidebarPosition(newSidebarPosition));
+      }
+
+      if (newSidebarWidth !== undefined) {
+        setSidebarWidth(normalizeSidebarWidth(newSidebarWidth));
       }
     };
 
@@ -3560,6 +3709,10 @@ function AppContent() {
               setSidebarPosition(
                 normalizeSidebarPosition(settings.sidebarPosition),
               );
+            }
+
+            if (settings.sidebarWidth !== undefined) {
+              setSidebarWidth(normalizeSidebarWidth(settings.sidebarWidth));
             }
 
             // 暴露硬件加速标志给 globalTransferStore 等高频更新模块
@@ -4199,23 +4352,67 @@ function AppContent() {
               {/* 侧边栏内容区域 - 根据是否有侧边栏打开来显示 */}
               <Box
                 sx={{
-                  width: `${
-                    activeSidebarMargin > SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH
-                      ? activeSidebarMargin -
-                        SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH
-                      : 0
-                  }px`,
+                  width: `${activeSidebarContentWidth}px`,
                   height: "100%",
                   position: "relative",
                   willChange: "width",
                   transition: (theme) =>
-                    theme.transitions.create("width", {
-                      easing: theme.transitions.easing.sharp,
-                      duration: theme.transitions.duration.enteringScreen,
-                    }),
+                    sidebarResizing
+                      ? "none"
+                      : theme.transitions.create("width", {
+                          easing: theme.transitions.easing.sharp,
+                          duration: theme.transitions.duration.enteringScreen,
+                        }),
                   overflow: "hidden",
                 }}
               >
+                {activeSidebarContentWidth > 0 && (
+                  <Box
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label={t("sidebar.resize")}
+                    tabIndex={-1}
+                    onPointerDown={handleSidebarResizeStart}
+                    sx={(theme) => ({
+                      position: "absolute",
+                      top: 0,
+                      bottom: 0,
+                      [sidebarPosition === "left" ? "right" : "left"]: 0,
+                      width: 8,
+                      cursor: "col-resize",
+                      zIndex: 120,
+                      touchAction: "none",
+                      outline: "none",
+                      transform:
+                        sidebarPosition === "left"
+                          ? "translateX(4px)"
+                          : "translateX(-4px)",
+                      "&::after": {
+                        content: '""',
+                        position: "absolute",
+                        top: 0,
+                        bottom: 0,
+                        left: "50%",
+                        width: 2,
+                        transform: "translateX(-50%)",
+                        bgcolor: sidebarResizing
+                          ? "primary.main"
+                          : "transparent",
+                        opacity: sidebarResizing ? 0.8 : 0,
+                        transition: theme.transitions.create(
+                          ["background-color", "opacity"],
+                          {
+                            duration: theme.transitions.duration.shortest,
+                          },
+                        ),
+                      },
+                      "&:hover::after": {
+                        bgcolor: "primary.main",
+                        opacity: 0.45,
+                      },
+                    })}
+                  />
+                )}
                 {/* 资源监控侧边栏 */}
                 <Box
                   sx={{
@@ -4223,6 +4420,7 @@ function AppContent() {
                     top: 0,
                     left: 0,
                     zIndex: lastOpenedSidebar === "resource" ? 101 : 98,
+                    width: "100%",
                     height: "100%",
                     display: "flex",
                   }}
@@ -4243,6 +4441,7 @@ function AppContent() {
                     top: 0,
                     left: 0,
                     zIndex: lastOpenedSidebar === "connection" ? 101 : 99,
+                    width: "100%",
                     height: "100%",
                     display: "flex",
                   }}
@@ -4269,6 +4468,7 @@ function AppContent() {
                     top: 0,
                     left: 0,
                     zIndex: lastOpenedSidebar === "file" ? 103 : 96,
+                    width: "100%",
                     height: "100%",
                     display: "flex",
                   }}
@@ -4296,6 +4496,7 @@ function AppContent() {
                     top: 0,
                     left: 0,
                     zIndex: lastOpenedSidebar === "shortcut" ? 104 : 95,
+                    width: "100%",
                     height: "100%",
                     display: "flex",
                   }}
@@ -4316,6 +4517,7 @@ function AppContent() {
                     top: 0,
                     left: 0,
                     zIndex: lastOpenedSidebar === "history" ? 105 : 94,
+                    width: "100%",
                     height: "100%",
                     display: "flex",
                   }}
@@ -4338,6 +4540,7 @@ function AppContent() {
                     top: 0,
                     left: 0,
                     zIndex: lastOpenedSidebar === "ipquery" ? 106 : 93,
+                    width: "100%",
                     height: "100%",
                     display: "flex",
                   }}
@@ -4357,6 +4560,7 @@ function AppContent() {
                     top: 0,
                     left: 0,
                     zIndex: lastOpenedSidebar === "password" ? 107 : 92,
+                    width: "100%",
                     height: "100%",
                     display: "flex",
                   }}
@@ -4379,6 +4583,7 @@ function AppContent() {
                     top: 0,
                     left: 0,
                     zIndex: lastOpenedSidebar === "localTerminal" ? 108 : 91,
+                    width: "100%",
                     height: "100%",
                     display: "flex",
                   }}

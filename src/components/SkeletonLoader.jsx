@@ -421,7 +421,8 @@ export const LocalTerminalSidebarSkeleton = memo((props) => {
   return (
     <Box
       sx={{
-        width: 300,
+        width: "100%",
+        minWidth: 0,
         height: "100%",
         display: "flex",
         flexDirection: "column",

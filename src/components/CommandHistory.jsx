@@ -741,8 +741,9 @@ function CommandHistory({ open, onClose, onSendCommand }) {
         onMouseDown={focusSidebarRoot}
         elevation={4}
         sx={{
-          width: 300,
-          height: "100vh",
+          width: "100%",
+          minWidth: 0,
+          height: "100%",
           overflow: "hidden",
           borderLeft: `1px solid ${theme.palette.divider}`,
           display: "flex",

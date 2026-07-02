@@ -159,6 +159,11 @@ class ConfigService {
           enum: ["left", "right"],
           default: "right",
         },
+        sidebarWidth: {
+          type: "number",
+          minimum: 240,
+          maximum: 560,
+        },
         terminalFont: { type: "string", default: "Fira Code" },
         terminalFontSize: {
           type: "number",
