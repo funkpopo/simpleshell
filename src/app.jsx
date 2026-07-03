@@ -1278,6 +1278,7 @@ function AppContent() {
   }, []);
 
   // 根据主题模式更新 body 类名
+  // data-mui-color-scheme 供 AIChatWindow.css / CodeHighlight.css 等属性选择器使用
   React.useEffect(() => {
     if (darkMode) {
       document.body.classList.add("dark-theme");
@@ -1286,6 +1287,10 @@ function AppContent() {
       document.body.classList.add("light-theme");
       document.body.classList.remove("dark-theme");
     }
+    document.body.setAttribute(
+      "data-mui-color-scheme",
+      darkMode ? "dark" : "light",
+    );
   }, [darkMode]);
 
   // ============ 保持本地状态(不在 reducer 中)============
@@ -3797,8 +3802,7 @@ function AppContent() {
             left: 0,
             right: 0,
             top: 0,
-            bgcolor: (theme) =>
-              theme.palette.mode === "light" ? "#f3f4f6" : "background.paper",
+            bgcolor: "background.paper",
             color: (theme) =>
               theme.palette.mode === "light" ? "text.primary" : "inherit",
             boxShadow: (theme) =>

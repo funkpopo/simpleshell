@@ -1,57 +1,12 @@
 import React, { memo, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Box, Typography, Tab, GlobalStyles, Tooltip } from "@mui/material";
+import { Box, Typography, Tab, Tooltip } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import { findGroupByTab } from "../core/syncInputGroups";
 
-// 添加拖拽指示器动画和磁吸效果的全局样式
-const dragIndicatorStyles = (
-  <GlobalStyles
-    styles={{
-      "@keyframes indicatorGlassIn": {
-        "0%": {
-          transform: "scaleY(0.25)",
-          opacity: 0,
-          filter: "blur(6px)",
-        },
-        "55%": {
-          transform: "scaleY(1.08)",
-          opacity: 1,
-          filter: "blur(0px)",
-        },
-        "100%": {
-          transform: "scaleY(1)",
-          opacity: 1,
-          filter: "blur(0px)",
-        },
-      },
-      "@keyframes indicatorGlowPulse": {
-        "0%, 100%": {
-          boxShadow:
-            "0 0 12px rgba(100, 180, 255, 0.45), 0 0 2px rgba(255, 255, 255, 0.6) inset",
-        },
-        "50%": {
-          boxShadow:
-            "0 0 18px rgba(130, 200, 255, 0.65), 0 0 3px rgba(255, 255, 255, 0.75) inset",
-        },
-      },
-      "@keyframes reconnectPulse": {
-        "0%": {
-          transform: "scale(0.9)",
-          opacity: 0.8,
-        },
-        "50%": {
-          transform: "scale(1.15)",
-          opacity: 1,
-        },
-        "100%": {
-          transform: "scale(0.9)",
-          opacity: 0.8,
-        },
-      },
-    }}
-  />
-);
+// 拖拽指示器与重连动画的 keyframes 定义在 styles/global.css 中
+// （indicatorGlassIn / indicatorGlowPulse / reconnectPulse）
 
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
@@ -256,7 +211,6 @@ const CustomTab = memo((props) => {
 
   return (
     <>
-      {dragIndicatorStyles}
       <Tab
         {...other}
         onClick={onClick}
@@ -357,21 +311,32 @@ const CustomTab = memo((props) => {
                 />
               ))}
             {onClose && (
-              <CloseIcon
+              <Box
+                component="span"
                 className="tab-close-icon"
-                fontSize="small"
+                onClick={handleCloseClick}
+                aria-hidden="true"
                 sx={{
-                  width: 16,
-                  height: 16,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 20,
+                  height: 20,
+                  borderRadius: "6px",
                   opacity: 0.35,
-                  transition: "opacity 0.2s ease, color 0.2s ease",
+                  flexShrink: 0,
+                  transition:
+                    "opacity 0.2s ease, color 0.2s ease, background-color 0.2s ease",
                   "&:hover": {
                     color: "error.main",
                     opacity: 1,
+                    backgroundColor: (theme) =>
+                      alpha(theme.palette.error.main, 0.12),
                   },
                 }}
-                onClick={handleCloseClick}
-              />
+              >
+                <CloseIcon sx={{ width: 15, height: 15 }} />
+              </Box>
             )}
           </Box>
         }

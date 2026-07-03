@@ -60,6 +60,54 @@ button,
   outline: none;
 }
 
+/* 标签页拖拽指示器与重连状态动画（全局注入一次，避免每个标签重复注入） */
+@keyframes indicatorGlassIn {
+  0% {
+    transform: scaleY(0.25);
+    opacity: 0;
+    filter: blur(6px);
+  }
+  55% {
+    transform: scaleY(1.08);
+    opacity: 1;
+    filter: blur(0px);
+  }
+  100% {
+    transform: scaleY(1);
+    opacity: 1;
+    filter: blur(0px);
+  }
+}
+
+@keyframes indicatorGlowPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 12px rgba(100, 180, 255, 0.45),
+      0 0 2px rgba(255, 255, 255, 0.6) inset;
+  }
+  50% {
+    box-shadow:
+      0 0 18px rgba(130, 200, 255, 0.65),
+      0 0 3px rgba(255, 255, 255, 0.75) inset;
+  }
+}
+
+@keyframes reconnectPulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+}
+
 :focus-visible,
 .Mui-focusVisible {
   outline: 2px solid var(--color-primary-main);

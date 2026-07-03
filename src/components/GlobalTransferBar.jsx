@@ -8,97 +8,36 @@ import {
   LinearProgress,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import {
-  FileUpload,
-  FileDownload,
-  Folder,
-  CheckCircle,
-  WarningAmber,
-  Error as ErrorIcon,
-  Cancel,
-  Close,
-  ExpandLess,
-  ExpandMore,
-} from "@mui/icons-material";
+import { Close, ExpandLess, ExpandMore } from "@mui/icons-material";
 import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
 import { useTranslation } from "react-i18next";
 import { sumTransferFileCount } from "../utils/transferCounts.js";
-
-/**
- * 获取传输类型图标
- */
-const getTransferIcon = (type) => {
-  switch (type) {
-    case "upload":
-    case "upload-multifile":
-      return <FileUpload sx={{ fontSize: 16 }} />;
-    case "upload-folder":
-      return <Folder sx={{ fontSize: 16 }} />;
-    case "download":
-      return <FileDownload sx={{ fontSize: 16 }} />;
-    case "download-folder":
-      return <Folder sx={{ fontSize: 16 }} />;
-    default:
-      return <FileUpload sx={{ fontSize: 16 }} />;
-  }
-};
-
-/**
- * 获取传输类型颜色
- */
-const getTransferColor = (type) => {
-  switch (type) {
-    case "upload":
-    case "upload-multifile":
-    case "upload-folder":
-      return "#2196f3"; // 蓝色
-    case "download":
-    case "download-folder":
-      return "#4caf50"; // 绿色
-    default:
-      return "#2196f3";
-  }
-};
-
-/**
- * 获取状态图标
- */
-const getStatusIcon = (transfer) => {
-  const { progress, isCancelled, error, warning } = transfer;
-
-  if (error) {
-    return <ErrorIcon sx={{ fontSize: 14, color: "#f44336" }} />;
-  }
-  if (warning) {
-    return <WarningAmber sx={{ fontSize: 14, color: "#ff9800" }} />;
-  }
-  if (isCancelled) {
-    return <Cancel sx={{ fontSize: 14, color: "#ff9800" }} />;
-  }
-  if (progress >= 100) {
-    return <CheckCircle sx={{ fontSize: 14, color: "#4caf50" }} />;
-  }
-  return null;
-};
+import {
+  getTransferIcon,
+  getStatusIcon,
+  getTransferStatusChipColors,
+  getDangerHoverSx,
+} from "./transferStatusStyles.jsx";
 
 /**
  * 单个传输任务标签
  */
 const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
+  const theme = useTheme();
   const { t } = useTranslation();
-  const { type, fileName, progress, isCancelled, error, warning, statusText } =
+  const { type, fileName, progress, isCancelled, error, statusText } =
     transfer;
 
   const isCompleted = progress >= 100;
   const hasError = !!error;
-  const hasWarning = !!warning;
-  const statusIcon = getStatusIcon(transfer);
+  const statusIcon = getStatusIcon(transfer, 14);
   const showDelete = isCompleted || hasError || isCancelled;
   const secondaryText = statusText || sshHost || "";
+  const chipColors = getTransferStatusChipColors(theme, transfer);
 
   return (
     <Chip
-      icon={getTransferIcon(type)}
+      icon={getTransferIcon(type, { fontSize: 16, color: "inherit" })}
       label={
         <Box
           sx={{
@@ -165,8 +104,7 @@ const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
                   opacity: 0.7,
                   "&:hover": {
                     opacity: 1,
-                    color: "#f44336",
-                    backgroundColor: "rgba(244, 67, 54, 0.1)",
+                    ...getDangerHoverSx(theme)["&:hover"],
                   },
                 }}
               >
@@ -179,39 +117,15 @@ const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
       onClick={() => onClickTag(transfer)}
       size="small"
       sx={{
-        height: isCompleted ? 36 : 28,
+        height: 34,
         fontSize: "0.75rem",
         paddingRight: showDelete ? 0.5 : undefined,
-        backgroundColor: hasError
-          ? "#ffebee"
-          : hasWarning
-            ? "#fff8e1"
-            : isCancelled
-              ? "#fff3e0"
-              : isCompleted
-                ? "#e8f5e8"
-                : `${getTransferColor(type)}15`,
-        color: hasError
-          ? "#f44336"
-          : hasWarning
-            ? "#ff9800"
-            : isCancelled
-              ? "#ff9800"
-              : isCompleted
-                ? "#4caf50"
-                : getTransferColor(type),
+        backgroundColor: chipColors.bgcolor,
+        color: chipColors.color,
         cursor: "pointer",
-        transition: "all 0.2s ease",
+        transition: "background-color 0.2s ease, color 0.2s ease",
         "&:hover": {
-          backgroundColor: hasError
-            ? "#ffcdd2"
-            : hasWarning
-              ? "#ffecb3"
-              : isCancelled
-                ? "#ffe0b2"
-                : isCompleted
-                  ? "#c8e6c9"
-                  : `${getTransferColor(type)}30`,
+          backgroundColor: chipColors.hoverBgcolor,
         },
         "& .MuiChip-label": {
           paddingLeft: 1,
@@ -335,22 +249,13 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
     >
       {/* 左侧：传输任务标签列表 */}
       <Box
+        className="app-scrollbar app-scrollbar-compact"
         sx={{
           display: "flex",
           alignItems: "center",
           gap: 1,
           flex: 1,
           overflow: "auto",
-          "&::-webkit-scrollbar": {
-            height: 4,
-          },
-          "&::-webkit-scrollbar-track": {
-            backgroundColor: "transparent",
-          },
-          "&::-webkit-scrollbar-thumb": {
-            backgroundColor: theme.palette.divider,
-            borderRadius: 2,
-          },
         }}
       >
         {allTransfers.map((transfer) => (

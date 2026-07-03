@@ -73,6 +73,7 @@ export const createUnifiedTheme = (darkMode) =>
       success: { main: darkMode ? "#4caf50" : "#2e7d32" },
       warning: { main: darkMode ? "#ff9800" : "#ed6c02" },
       error: { main: darkMode ? "#f44336" : "#d32f2f" },
+      info: { main: darkMode ? "#29b6f6" : "#0288d1" },
     },
     shape: {
       borderRadius: RADIUS_SM,

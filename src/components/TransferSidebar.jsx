@@ -20,13 +20,7 @@ import { RADIUS } from "../theme";
 import CloseIcon from "@mui/icons-material/Close";
 import MinimizeIcon from "@mui/icons-material/Minimize";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
-import FileUploadIcon from "@mui/icons-material/FileUpload";
-import FileDownloadIcon from "@mui/icons-material/FileDownload";
-import FolderIcon from "@mui/icons-material/Folder";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
-import ErrorIcon from "@mui/icons-material/Error";
-import CancelIcon from "@mui/icons-material/Cancel";
 import StopIcon from "@mui/icons-material/Stop";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -43,6 +37,11 @@ import {
 } from "../utils/transferCounts.js";
 import { useTranslation } from "react-i18next";
 import OverflowTooltipText from "./OverflowTooltipText.jsx";
+import {
+  getTransferIcon,
+  getStatusIcon,
+  getDangerHoverSx,
+} from "./transferStatusStyles.jsx";
 
 // 浮动窗口对话框样式（参考 AIChatWindow）
 const FloatingDialog = styled(Dialog)(
@@ -81,44 +80,6 @@ const FloatingDialog = styled(Dialog)(
 const DEFAULT_WIDTH = 320;
 const MIN_WIDTH = 280;
 const MAX_WIDTH = 500;
-
-/**
- * 获取传输类型图标
- */
-const getTransferIcon = (type) => {
-  switch (type) {
-    case "upload":
-    case "upload-multifile":
-      return <FileUploadIcon sx={{ color: "#2196f3" }} />;
-    case "upload-folder":
-      return <FolderIcon sx={{ color: "#2196f3" }} />;
-    case "download":
-      return <FileDownloadIcon sx={{ color: "#4caf50" }} />;
-    case "download-folder":
-      return <FolderIcon sx={{ color: "#4caf50" }} />;
-    default:
-      return <FileUploadIcon />;
-  }
-};
-
-/**
- * 获取状态图标
- */
-const getStatusIcon = (transfer) => {
-  if (transfer.error) {
-    return <ErrorIcon sx={{ fontSize: 16, color: "#f44336" }} />;
-  }
-  if (transfer.warning) {
-    return <WarningAmberIcon sx={{ fontSize: 16, color: "#ff9800" }} />;
-  }
-  if (transfer.isCancelled) {
-    return <CancelIcon sx={{ fontSize: 16, color: "#ff9800" }} />;
-  }
-  if (transfer.progress >= 100) {
-    return <CheckCircleIcon sx={{ fontSize: 16, color: "#4caf50" }} />;
-  }
-  return null;
-};
 
 /**
  * 格式化文件大小
@@ -228,10 +189,7 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
                 height: 20,
                 p: 0,
                 color: theme.palette.text.secondary,
-                "&:hover": {
-                  color: "#f44336",
-                  backgroundColor: "rgba(244,67,54,0.1)",
-                },
+                ...getDangerHoverSx(theme),
               }}
               aria-label={t("fileManager.transfer.deleteRecord")}
             >
@@ -275,12 +233,10 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
             display: "block",
             mt: 0.5,
             color: hasError
-              ? "#f44336"
-              : hasWarning
-                ? "#ff9800"
-                : isCancelled
-                  ? "#ff9800"
-                  : theme.palette.text.secondary,
+              ? theme.palette.error.main
+              : hasWarning || isCancelled
+                ? theme.palette.warning.main
+                : theme.palette.text.secondary,
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -379,10 +335,7 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
                 width: 20,
                 height: 20,
                 color: theme.palette.text.secondary,
-                "&:hover": {
-                  color: "#f44336",
-                  backgroundColor: "rgba(244,67,54,0.1)",
-                },
+                ...getDangerHoverSx(theme),
               }}
               aria-label={t("fileManager.transfer.stop")}
             >
@@ -415,7 +368,7 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
                   <ListItemIcon sx={{ minWidth: 24 }}>
                     {file.completed ? (
                       <CheckCircleIcon
-                        sx={{ fontSize: 14, color: "#4caf50" }}
+                        sx={{ fontSize: 14, color: "success.main" }}
                       />
                     ) : (
                       <InsertDriveFileIcon
@@ -779,7 +732,7 @@ const TransferSidebar = memo(
                   p: 4,
                 }}
               >
-                <FileUploadIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
+                <SwapVertIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
                 <Typography variant="body2">
                   {t("fileManager.transfer.noTransfers")}
                 </Typography>

@@ -11,23 +11,22 @@ import {
   LinearProgress,
   Chip,
 } from "@mui/material";
-import {
-  Close,
-  Minimize,
-  ExpandMore,
-  FileUpload,
-  FileDownload,
-  Folder,
-  CheckCircle,
-  WarningAmber,
-  Error as ErrorIcon,
-  Cancel,
-} from "@mui/icons-material";
-import { useTheme } from "@mui/material/styles";
+import { Close, Minimize, ExpandMore, SwapVert } from "@mui/icons-material";
+import { useTheme, alpha } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
 import { formatFileSize } from "../core/utils/formatters.js";
 import { sumTransferFileCount } from "../utils/transferCounts.js";
+import { RADIUS } from "../theme";
+import {
+  getTransferIcon,
+  getStatusIcon,
+  getTransferColor,
+  getTransferStatusColor,
+  getTransferStatusChipColors,
+  getProgressTrackColor,
+  getDangerHoverSx,
+} from "./transferStatusStyles.jsx";
 
 // 格式化传输速度
 const formatSpeed = (bytesPerSecond) => {
@@ -51,57 +50,6 @@ const formatTime = (seconds, t) => {
   return t("fileManager.transfer.timeHours", {
     count: Math.round(seconds / 3600),
   });
-};
-
-// 获取传输类型图标
-const getTransferIcon = (type) => {
-  switch (type) {
-    case "upload":
-    case "upload-multifile":
-      return <FileUpload sx={{ fontSize: 18 }} />;
-    case "upload-folder":
-      return <Folder sx={{ fontSize: 18 }} />;
-    case "download":
-      return <FileDownload sx={{ fontSize: 18 }} />;
-    case "download-folder":
-      return <Folder sx={{ fontSize: 18 }} />;
-    default:
-      return <FileUpload sx={{ fontSize: 18 }} />;
-  }
-};
-
-// 获取传输类型颜色
-const getTransferColor = (type) => {
-  switch (type) {
-    case "upload":
-    case "upload-multifile":
-    case "upload-folder":
-      return "#2196f3"; // 蓝色
-    case "download":
-    case "download-folder":
-      return "#4caf50"; // 绿色
-    default:
-      return "#2196f3";
-  }
-};
-
-// 获取状态图标
-const getStatusIcon = (transfer) => {
-  const { progress, isCancelled, error, warning } = transfer;
-
-  if (error) {
-    return <ErrorIcon sx={{ fontSize: 16, color: "#f44336" }} />;
-  }
-  if (warning) {
-    return <WarningAmber sx={{ fontSize: 16, color: "#ff9800" }} />;
-  }
-  if (isCancelled) {
-    return <Cancel sx={{ fontSize: 16, color: "#ff9800" }} />;
-  }
-  if (progress >= 100) {
-    return <CheckCircle sx={{ fontSize: 16, color: "#4caf50" }} />;
-  }
-  return null;
 };
 
 /**
@@ -132,7 +80,9 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
   const isCompleted = progress >= 100;
   const hasError = !!error;
   const hasWarning = !!warning;
-  const statusIcon = getStatusIcon(transfer);
+  const statusIcon = getStatusIcon(transfer, 16);
+  const chipColors = getTransferStatusChipColors(theme, transfer);
+  const statusColor = getTransferStatusColor(theme, transfer);
   const displayFileProgress =
     totalFiles > 0 && isCompleted && !hasError && !isCancelled
       ? totalFiles
@@ -170,13 +120,12 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
             height: 28,
             minWidth: 28,
             borderRadius: "50%",
-            backgroundColor: `${getTransferColor(type)}15`,
-            color: getTransferColor(type),
+            backgroundColor: alpha(getTransferColor(theme, type), 0.15),
             mr: 1.5,
             flexShrink: 0,
           }}
         >
-          {getTransferIcon(type)}
+          {getTransferIcon(type, { fontSize: 18 })}
         </Box>
 
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
@@ -203,12 +152,10 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
                   sx={{
                     fontSize: "0.75rem",
                     color: hasError
-                      ? "#f44336"
-                      : hasWarning
-                        ? "#ff9800"
-                        : isCancelled
-                          ? "#ff9800"
-                          : theme.palette.text.secondary,
+                      ? theme.palette.error.main
+                      : hasWarning || isCancelled
+                        ? theme.palette.warning.main
+                        : theme.palette.text.secondary,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -262,24 +209,8 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
               height: 24,
               fontSize: "0.75rem",
               fontWeight: 600,
-              backgroundColor: hasError
-                ? "#ffebee"
-                : hasWarning
-                  ? "#fff8e1"
-                  : isCancelled
-                    ? "#fff3e0"
-                    : isCompleted
-                      ? "#e8f5e8"
-                      : `${getTransferColor(type)}15`,
-              color: hasError
-                ? "#f44336"
-                : hasWarning
-                  ? "#ff9800"
-                  : isCancelled
-                    ? "#ff9800"
-                    : isCompleted
-                      ? "#4caf50"
-                      : getTransferColor(type),
+              backgroundColor: chipColors.bgcolor,
+              color: chipColors.color,
             }}
           />
 
@@ -293,13 +224,10 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
                   width: 28,
                   height: 28,
                   color: theme.palette.text.secondary,
-                  "&:hover": {
-                    color: "#f44336",
-                    backgroundColor: "#ffebee",
-                  },
+                  ...getDangerHoverSx(theme),
                 }}
-              
-                aria-label={t("fileManager.transfer.delete")}>
+                aria-label={t("fileManager.transfer.delete")}
+              >
                 <Close sx={{ fontSize: 16 }} />
               </IconButton>
             </Tooltip>
@@ -315,13 +243,10 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
                   width: 28,
                   height: 28,
                   color: theme.palette.text.secondary,
-                  "&:hover": {
-                    color: "#f44336",
-                    backgroundColor: "#ffebee",
-                  },
+                  ...getDangerHoverSx(theme),
                 }}
-              
-                aria-label={t("fileManager.transfer.stop")}>
+                aria-label={t("fileManager.transfer.stop")}
+              >
                 <Close sx={{ fontSize: 16 }} />
               </IconButton>
             </Tooltip>
@@ -337,15 +262,9 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
           sx={{
             height: 6, // 减小进度条高度
             borderRadius: 3,
-            backgroundColor: "rgba(0,0,0,0.08)",
+            backgroundColor: getProgressTrackColor(theme),
             "& .MuiLinearProgress-bar": {
-              backgroundColor: hasError
-                ? "#f44336"
-                : isCancelled
-                  ? "#ff9800"
-                  : isCompleted
-                    ? "#4caf50"
-                    : getTransferColor(type),
+              backgroundColor: statusColor,
               borderRadius: 3,
               transition: "transform 0.2s ease-in-out",
             },
@@ -391,11 +310,7 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
             sx={{
               fontSize: "0.75rem",
               fontWeight: 500,
-              color: hasError
-                ? "#f44336"
-                : hasWarning || isCancelled
-                  ? "#ff9800"
-                  : "#4caf50",
+              color: statusColor,
             }}
           >
             {hasError
@@ -533,7 +448,7 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
           maxHeight: isMinimized ? 60 : 500,
           zIndex: 1200, // 高于底部栏，确保可见
           overflow: "hidden",
-          borderRadius: 2,
+          borderRadius: `${RADIUS.LG}px`,
           backgroundColor: theme.palette.background.paper,
           border: `1px solid ${theme.palette.divider}`,
           transition: "all 0.3s ease-in-out",
@@ -546,21 +461,23 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            px: 2,
+            px: 1.5,
             py: 1,
-            backgroundColor: theme.palette.primary.main,
-            color: theme.palette.primary.contrastText,
+            borderBottom: `1px solid ${theme.palette.divider}`,
           }}
         >
-          <Typography
-            variant="subtitle2"
-            sx={{
-              fontWeight: 600,
-              fontSize: "0.9rem",
-            }}
-          >
-            {t("fileManager.transfer.title")}
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <SwapVert color="primary" sx={{ fontSize: 20 }} />
+            <Typography
+              variant="subtitle2"
+              sx={{
+                fontWeight: 600,
+                fontSize: "0.9rem",
+              }}
+            >
+              {t("fileManager.transfer.title")}
+            </Typography>
+          </Box>
 
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
             {/* 最小化/展开按钮 */}
@@ -574,16 +491,13 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
               <IconButton
                 size="small"
                 onClick={handleMinimizeToggle}
-                sx={{
-                  color: "inherit",
-                  width: 24,
-                  height: 24,
-                  "&:hover": {
-                    backgroundColor: "rgba(255,255,255,0.1)",
-                  },
-                }}
-              
-                aria-label={isMinimized ? t("fileManager.transfer.expand") : t("fileManager.transfer.minimize")}>
+                sx={{ width: 24, height: 24 }}
+                aria-label={
+                  isMinimized
+                    ? t("fileManager.transfer.expand")
+                    : t("fileManager.transfer.minimize")
+                }
+              >
                 {isMinimized ? (
                   <ExpandMore sx={{ fontSize: 18 }} />
                 ) : (
@@ -597,16 +511,9 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
               <IconButton
                 size="small"
                 onClick={onClose}
-                sx={{
-                  color: "inherit",
-                  width: 24,
-                  height: 24,
-                  "&:hover": {
-                    backgroundColor: "rgba(255,255,255,0.1)",
-                  },
-                }}
-              
-                aria-label={t("common.close")}>
+                sx={{ width: 24, height: 24 }}
+                aria-label={t("common.close")}
+              >
                 <Close sx={{ fontSize: 16 }} />
               </IconButton>
             </Tooltip>
@@ -656,23 +563,11 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
         {/* 传输列表内容 */}
         {!isMinimized && (
           <Box
+            className="app-scrollbar app-scrollbar-compact"
             sx={{
               maxHeight: 380,
               overflowY: "auto",
               overflowX: "hidden",
-              "&::-webkit-scrollbar": {
-                width: 6,
-              },
-              "&::-webkit-scrollbar-track": {
-                backgroundColor: "transparent",
-              },
-              "&::-webkit-scrollbar-thumb": {
-                backgroundColor: theme.palette.divider,
-                borderRadius: 3,
-              },
-              "&::-webkit-scrollbar-thumb:hover": {
-                backgroundColor: theme.palette.action.disabled,
-              },
             }}
           >
             {/* 直接渲染传输项列表，不使用TransferProgressFloat的外层容器 */}
