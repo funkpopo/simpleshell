@@ -818,6 +818,7 @@
       "changedCount": "变更 {{count}}",
       "addedCount": "新增 {{count}}",
       "removedCount": "删除 {{count}}",
+      "noDifferences": "该版本与当前内容完全一致，无需回退。",
       "previousPage": "上一页",
       "nextPage": "下一页",
       "pageStatus": "第 {{page}} 页，共 {{total}} 页",

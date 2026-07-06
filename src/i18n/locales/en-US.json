@@ -818,6 +818,7 @@
       "changedCount": "Changed {{count}}",
       "addedCount": "Added {{count}}",
       "removedCount": "Deleted {{count}}",
+      "noDifferences": "This version is identical to the current content; nothing to restore.",
       "previousPage": "Previous Page",
       "nextPage": "Next Page",
       "pageStatus": "Page {{page}} of {{total}}",

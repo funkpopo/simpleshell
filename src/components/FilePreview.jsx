@@ -601,6 +601,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const shouldRestoreTextEditorScrollRef = useRef(false);
   const textEditorScrollRestoreModeRef = useRef("always");
   const syncedContentRef = useRef(null);
+  const syncedContentTimestampRef = useRef(null);
   const closeInProgressRef = useRef(false);
 
   const [codemirrorLangExtensions, setCodemirrorLangExtensions] = useState([]);
@@ -767,6 +768,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       shouldRestoreTextEditorScrollRef.current = false;
       textEditorScrollRestoreModeRef.current = "always";
       syncedContentRef.current = null;
+      syncedContentTimestampRef.current = null;
     }
   }, [detachTextEditorScrollListener, open]);
 
@@ -1007,6 +1009,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setPendingRestoreSnapshot(null);
       setSnapshots([]);
       syncedContentRef.current = null;
+      syncedContentTimestampRef.current = null;
       textEditorScrollSnapshotRef.current = { top: 0, left: 0 };
       queueTextEditorScrollRestore();
 
@@ -1051,12 +1054,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 } else {
                   setContent(content);
                   syncedContentRef.current = content;
+                  syncedContentTimestampRef.current = new Date().toISOString();
                   // 重置修改状态
                   setModified(false);
                 }
               } else {
                 setContent(response.content);
                 syncedContentRef.current = response.content;
+                syncedContentTimestampRef.current = new Date().toISOString();
                 setModified(false);
               }
             } else {
@@ -1487,10 +1492,13 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setSavingFile(true);
       const saveClickedAt = new Date().toISOString();
       const baselineContent = syncedContentRef.current;
-      const shouldCreateInitialSnapshot =
-        visibleSnapshots.length === 0 &&
-        typeof baselineContent === "string" &&
-        baselineContent !== content;
+      const baselineCreatedAt =
+        syncedContentTimestampRef.current || saveClickedAt;
+      // 历史记录只保留被本次保存替换掉的旧版本；当前文件内容不进入历史，
+      // 避免出现与当前内容完全相同、diff 无差异的"已保存版本"记录。
+      const shouldSnapshotBaseline =
+        typeof baselineContent === "string" && baselineContent !== content;
+      const isFirstSnapshot = visibleSnapshots.length === 0;
 
       if (window.terminalAPI && window.terminalAPI.saveFileContent) {
         const response = await window.terminalAPI.saveFileContent(
@@ -1500,27 +1508,21 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         );
 
         if (response.success) {
-          if (shouldCreateInitialSnapshot) {
+          if (shouldSnapshotBaseline) {
             await createSnapshot(baselineContent, {
-              label: "初始版本",
-              type: "initial",
+              label: isFirstSnapshot ? "初始版本" : "已保存版本",
+              type: isFirstSnapshot ? "initial" : "save",
               silent: true,
-              createdAt: saveClickedAt,
-              force: true,
+              createdAt: baselineCreatedAt,
             });
           }
-          await createSnapshot(content, {
-            label: "已保存版本",
-            type: "save",
-            silent: true,
-            createdAt: saveClickedAt,
-            force: true,
-          });
           syncedContentRef.current = content;
+          syncedContentTimestampRef.current = saveClickedAt;
           setNotification({
-            message: shouldCreateInitialSnapshot
-              ? "文件保存成功，已保留初始版本"
-              : "文件保存成功",
+            message:
+              shouldSnapshotBaseline && isFirstSnapshot
+                ? "文件保存成功，已保留初始版本"
+                : "文件保存成功",
             severity: "success",
           });
           setModified(false);
@@ -1559,25 +1561,16 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   ]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || showCloseConfirm) return undefined;
 
-    const selector = '[data-file-preview-dialog="true"]';
+    // 预览对话框是模态窗口，打开期间焦点被限制在对话框内，
+    // 但初始焦点常落在 MUI Dialog 容器上（位于 Paper 之外），
+    // 因此这里不再要求事件目标位于对话框内部，直接接管通用快捷键。
     const handleKeyDown = (event) => {
       if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.defaultPrevented) return;
 
       const key = (event.key || "").toLowerCase();
-
-      const target = event.target;
-      const activeElement = document.activeElement;
-      const isInsideDialog =
-        (target &&
-          typeof target.closest === "function" &&
-          target.closest(selector)) ||
-        (activeElement &&
-          typeof activeElement.closest === "function" &&
-          activeElement.closest(selector));
-
-      if (!isInsideDialog) return;
 
       if (key === "f") {
         if (!isTextFile(file?.name) || pendingRestoreSnapshot) {
@@ -1591,10 +1584,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       }
 
       if (key === "s") {
+        if (!isTextFile(file?.name)) {
+          return;
+        }
+
         event.preventDefault();
         event.stopPropagation();
 
-        if (!isTextFile(file?.name) || !isEditing || savingFile || !modified) {
+        if (!modified || savingFile || pendingRestoreSnapshot) {
           return;
         }
 
@@ -1603,7 +1600,19 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       }
 
       if (key === "a") {
-        if (!isTextFile(file?.name) || isEditing) {
+        if (!isTextFile(file?.name) || pendingRestoreSnapshot) {
+          return;
+        }
+
+        // 焦点位于输入框或编辑器内时，交由原生/编辑器自身处理全选
+        const target = event.target;
+        const tagName = String(target?.tagName || "").toLowerCase();
+        if (
+          target?.isContentEditable ||
+          tagName === "input" ||
+          tagName === "textarea" ||
+          tagName === "select"
+        ) {
           return;
         }
 
@@ -1629,8 +1638,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     };
   }, [
     open,
+    showCloseConfirm,
     file,
-    isEditing,
     modified,
     savingFile,
     pendingRestoreSnapshot,
@@ -1684,6 +1693,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
       setContent(response.content);
       syncedContentRef.current = response.content;
+      syncedContentTimestampRef.current = new Date().toISOString();
       setModified(false);
       setIsEditing(true);
       setSnapshots(Array.isArray(response.snapshots) ? response.snapshots : []);
@@ -2171,64 +2181,106 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             >
               <CircularProgress size={24} />
             </Box>
-          ) : visibleSnapshots.length === 0 ? (
-            <Box sx={{ p: 2 }}>
-              <Typography variant="body2" color="text.secondary">
-                还没有可回退的已保存版本。
-              </Typography>
-            </Box>
           ) : (
             <List dense disablePadding>
-              {visibleSnapshots.map((snapshot, index) => (
-                <React.Fragment key={snapshot.id}>
-                  <ListItemButton
-                    alignItems="flex-start"
-                    onClick={() => handleSelectSnapshot(snapshot)}
-                    selected={pendingRestoreSnapshot?.id === snapshot.id}
-                    disabled={Boolean(restoringSnapshotId)}
-                    sx={{
-                      px: 1.5,
-                      py: 1.25,
-                      alignItems: "flex-start",
-                    }}
-                  >
-                    <ListItemText
-                      primary={snapshot.label || "时间点"}
-                      secondary={
-                        <Box
-                          component="span"
-                          sx={{
-                            mt: 0.5,
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 0.25,
-                          }}
-                        >
-                          <Typography
-                            component="span"
-                            variant="caption"
-                            color="text.secondary"
-                          >
-                            {formatSnapshotDate(snapshot.createdAt)}
-                          </Typography>
-                          <Typography
-                            component="span"
-                            variant="caption"
-                            color="text.secondary"
-                          >
-                            {formatFileSize(snapshot.size || 0)}
-                          </Typography>
-                        </Box>
-                      }
-                      primaryTypographyProps={{
-                        variant: "body2",
-                        fontWeight: 600,
+              {visibleSnapshots.map((snapshot, index) => {
+                const isSelected = pendingRestoreSnapshot?.id === snapshot.id;
+
+                return (
+                  <React.Fragment key={snapshot.id}>
+                    <ListItemButton
+                      alignItems="flex-start"
+                      onClick={() => handleSelectSnapshot(snapshot)}
+                      selected={isSelected}
+                      disabled={Boolean(restoringSnapshotId)}
+                      sx={{
+                        px: 1.5,
+                        py: 1.25,
+                        alignItems: "flex-start",
                       }}
-                    />
-                  </ListItemButton>
-                  {index < visibleSnapshots.length - 1 ? <Divider /> : null}
-                </React.Fragment>
-              ))}
+                    >
+                      <ListItemText
+                        primary={snapshot.label || "时间点"}
+                        secondary={
+                          <Box
+                            component="span"
+                            sx={{
+                              mt: 0.5,
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 0.25,
+                            }}
+                          >
+                            <Typography
+                              component="span"
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {formatSnapshotDate(snapshot.createdAt)}
+                            </Typography>
+                            <Typography
+                              component="span"
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {formatFileSize(snapshot.size || 0)}
+                            </Typography>
+                          </Box>
+                        }
+                        primaryTypographyProps={{
+                          variant: "body2",
+                          fontWeight: 600,
+                        }}
+                      />
+                    </ListItemButton>
+                    {isSelected ? (
+                      <Box
+                        sx={{
+                          px: 1.5,
+                          pt: 0.25,
+                          pb: 1.25,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 0.75,
+                        }}
+                      >
+                        <Button
+                          size="small"
+                          color="warning"
+                          variant="contained"
+                          startIcon={<RestoreIcon />}
+                          onClick={handleRestoreSnapshot}
+                          disabled={
+                            Boolean(restoringSnapshotId) ||
+                            savingFile ||
+                            loadingSelectedSnapshot ||
+                            Boolean(
+                              snapshotDiffData && !snapshotDiffData.hasChanges,
+                            )
+                          }
+                        >
+                          {restoringSnapshotId
+                            ? t("filePreview.restoring")
+                            : loadingSelectedSnapshot
+                              ? t("filePreview.loadingDiff")
+                              : t("filePreview.restoreVersion")}
+                        </Button>
+                        <Button
+                          size="small"
+                          onClick={handleClearSnapshotSelection}
+                          disabled={
+                            Boolean(restoringSnapshotId) ||
+                            loadingSelectedSnapshot
+                          }
+                        >
+                          {t("filePreview.clearSelection")}
+                        </Button>
+                      </Box>
+                    ) : null}
+                    {index < visibleSnapshots.length - 1 ? <Divider /> : null}
+                  </React.Fragment>
+                );
+              })}
             </List>
           )}
         </Box>
@@ -2485,6 +2537,21 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               暂时无法生成当前版本和已保存版本的差异。
             </Typography>
           </Box>
+        ) : !snapshotDiffData.hasChanges ? (
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              px: 3,
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              {t("filePreview.noDifferences")}
+            </Typography>
+          </Box>
         ) : (
           <Box
             sx={{
@@ -2623,6 +2690,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     }
 
     if (isTextFile(file?.name)) {
+      // 没有任何历史记录时自动折叠历史侧边栏，编辑区占满整行
+      const showHistoryPanel = visibleSnapshots.length > 0;
+
       const boxSx = {
         flex: "1 1 auto",
         display: "flex",
@@ -2648,10 +2718,10 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             display: "grid",
             gridTemplateColumns: {
               xs: "1fr",
-              lg: "minmax(0, 1fr) 280px",
+              lg: showHistoryPanel ? "minmax(0, 1fr) 280px" : "1fr",
             },
             gridTemplateRows: {
-              xs: "minmax(0, 1fr) 240px",
+              xs: showHistoryPanel ? "minmax(0, 1fr) 240px" : "1fr",
               lg: "1fr",
             },
           }}
@@ -2697,7 +2767,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               />
             )}
           </Box>
-          {renderSnapshotPanel()}
+          {showHistoryPanel ? renderSnapshotPanel() : null}
         </Box>
       );
     }
@@ -2959,20 +3029,20 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           px: 2.5,
           py: 1.5,
           gap: 1,
-          alignItems: { xs: "stretch", sm: "center" },
+          alignItems: "center",
           justifyContent: "space-between",
           flexWrap: "wrap",
         }}
       >
-        <Box sx={{ flex: "1 1 260px", minWidth: 0 }}>
-          {pendingRestoreSnapshot ? (
-            <Typography variant="caption" color="text.secondary">
-              {t("filePreview.selectedVersion", {
-                date: formatSnapshotDate(pendingRestoreSnapshot.createdAt),
-              })}
-            </Typography>
-          ) : null}
-        </Box>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<DownloadIcon />}
+          onClick={handleDownload}
+          disabled={loading || savingFile}
+        >
+          {t("filePreview.download")}
+        </Button>
         <Stack
           direction="row"
           spacing={1}
@@ -2980,37 +3050,8 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           justifyContent="flex-end"
           flexWrap="wrap"
           useFlexGap
-          sx={{ flex: "1 1 auto", minWidth: 0 }}
+          sx={{ minWidth: 0 }}
         >
-          {pendingRestoreSnapshot ? (
-            <>
-              <Button
-                size="small"
-                onClick={handleClearSnapshotSelection}
-                disabled={
-                  Boolean(restoringSnapshotId) || loadingSelectedSnapshot
-                }
-              >
-                {t("filePreview.clearSelection")}
-              </Button>
-              <Button
-                color="warning"
-                startIcon={<RestoreIcon />}
-                onClick={handleRestoreSnapshot}
-                disabled={
-                  Boolean(restoringSnapshotId) ||
-                  savingFile ||
-                  loadingSelectedSnapshot
-                }
-              >
-                {restoringSnapshotId
-                  ? t("filePreview.restoring")
-                  : loadingSelectedSnapshot
-                    ? t("filePreview.loadingDiff")
-                    : t("filePreview.restoreVersion")}
-              </Button>
-            </>
-          ) : null}
           {isTextPreview ? (
             <>
               <Button
@@ -3021,7 +3062,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 disabled={
                   loading ||
                   savingFile ||
-                  pendingRestoreSnapshot ||
+                  Boolean(pendingRestoreSnapshot) ||
                   syntaxHighlightState.loading ||
                   Boolean(syntaxHighlightState.error)
                 }
@@ -3036,6 +3077,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   disabled={
                     loading ||
                     savingFile ||
+                    Boolean(pendingRestoreSnapshot) ||
                     syntaxHighlightState.loading ||
                     Boolean(syntaxHighlightState.error)
                   }
@@ -3049,6 +3091,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   disabled={
                     loading ||
                     savingFile ||
+                    Boolean(pendingRestoreSnapshot) ||
                     syntaxHighlightState.loading ||
                     Boolean(syntaxHighlightState.error)
                   }
@@ -3062,10 +3105,10 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 startIcon={<SaveIcon />}
                 onClick={handleSaveFile}
                 disabled={
-                  !isEditing ||
                   !modified ||
                   savingFile ||
                   loading ||
+                  Boolean(pendingRestoreSnapshot) ||
                   syntaxHighlightState.loading ||
                   Boolean(syntaxHighlightState.error)
                 }
@@ -3140,15 +3183,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               </ButtonGroup>
             </>
           ) : null}
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<DownloadIcon />}
-            onClick={handleDownload}
-            disabled={loading || savingFile}
-          >
-            {t("filePreview.download")}
-          </Button>
           <Button size="small" onClick={handleClose} disabled={savingFile}>
             {t("common.close")}
           </Button>
