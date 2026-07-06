@@ -760,6 +760,118 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     ],
   );
 
+  const diffBaseViewRef = useRef(null);
+  const diffCurrentViewRef = useRef(null);
+  const diffScrollEchoRef = useRef(null);
+
+  // diff 双面板同步滚动：两侧行数一一对应，但开启自动换行后同一行
+  // 在两侧的显示高度可能不同，因此按“行块 + 块内偏移比例”映射，
+  // 而不是直接复制 scrollTop。
+  const syncDiffPaneScroll = useCallback((sourceView, targetView) => {
+    if (!sourceView?.scrollDOM || !targetView?.scrollDOM) {
+      return;
+    }
+
+    const sourceScroller = sourceView.scrollDOM;
+    const targetScroller = targetView.scrollDOM;
+
+    const echo = diffScrollEchoRef.current;
+    if (
+      echo &&
+      echo.scroller === sourceScroller &&
+      Math.abs(sourceScroller.scrollTop - echo.top) < 2
+    ) {
+      // 同步对侧面板时触发的回声事件，直接吞掉，避免两个面板互相拉扯
+      diffScrollEchoRef.current = null;
+      return;
+    }
+
+    const maxSourceTop = Math.max(
+      0,
+      sourceScroller.scrollHeight - sourceScroller.clientHeight,
+    );
+    const maxTargetTop = Math.max(
+      0,
+      targetScroller.scrollHeight - targetScroller.clientHeight,
+    );
+
+    let targetTop;
+    if (sourceScroller.scrollTop >= maxSourceTop - 1) {
+      // 源面板已滚动到底时目标面板也滚到底，保证底部对齐
+      targetTop = maxTargetTop;
+    } else {
+      const sourcePaddingTop = sourceView.documentPadding?.top ?? 0;
+      const targetPaddingTop = targetView.documentPadding?.top ?? 0;
+      const sourceY = Math.max(0, sourceScroller.scrollTop - sourcePaddingTop);
+      const sourceBlock = sourceView.lineBlockAtHeight(sourceY);
+      const sourceLine = sourceView.state.doc.lineAt(sourceBlock.from);
+      const blockFraction =
+        sourceBlock.height > 0
+          ? Math.max(
+              0,
+              Math.min(1, (sourceY - sourceBlock.top) / sourceBlock.height),
+            )
+          : 0;
+
+      const targetDoc = targetView.state.doc;
+      const targetLine = targetDoc.line(
+        Math.min(sourceLine.number, targetDoc.lines),
+      );
+      const targetBlock = targetView.lineBlockAt(targetLine.from);
+      targetTop = Math.max(
+        0,
+        Math.min(
+          targetBlock.top +
+            blockFraction * targetBlock.height +
+            targetPaddingTop,
+          maxTargetTop,
+        ),
+      );
+    }
+
+    if (Math.abs(targetScroller.scrollTop - targetTop) < 1) {
+      return;
+    }
+
+    diffScrollEchoRef.current = { scroller: targetScroller, top: targetTop };
+    targetScroller.scrollTop = targetTop;
+  }, []);
+
+  const attachDiffPaneScrollSync = useCallback(
+    (view, selfRef, otherRef) => {
+      selfRef.current = view;
+
+      if (!view?.scrollDOM) {
+        return;
+      }
+
+      const handleScroll = () => {
+        if (selfRef.current === view && otherRef.current) {
+          syncDiffPaneScroll(view, otherRef.current);
+        }
+      };
+
+      view.scrollDOM.addEventListener("scroll", handleScroll, {
+        passive: true,
+      });
+    },
+    [syncDiffPaneScroll],
+  );
+
+  const handleDiffBaseEditorCreate = useCallback(
+    (view) => {
+      attachDiffPaneScrollSync(view, diffBaseViewRef, diffCurrentViewRef);
+    },
+    [attachDiffPaneScrollSync],
+  );
+
+  const handleDiffCurrentEditorCreate = useCallback(
+    (view) => {
+      attachDiffPaneScrollSync(view, diffCurrentViewRef, diffBaseViewRef);
+    },
+    [attachDiffPaneScrollSync],
+  );
+
   useEffect(() => {
     if (!open) {
       detachTextEditorScrollListener();
@@ -769,6 +881,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       textEditorScrollRestoreModeRef.current = "always";
       syncedContentRef.current = null;
       syncedContentTimestampRef.current = null;
+      diffBaseViewRef.current = null;
+      diffCurrentViewRef.current = null;
+      diffScrollEchoRef.current = null;
     }
   }, [detachTextEditorScrollListener, open]);
 
@@ -2614,6 +2729,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   theme={theme.palette.mode}
                   style={diffPaneStyle}
                   className="file-preview-diff-pane file-preview-diff-pane-base"
+                  onCreateEditor={handleDiffBaseEditorCreate}
                 />
               </Box>
             </Box>
@@ -2655,6 +2771,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   theme={theme.palette.mode}
                   style={diffPaneStyle}
                   className="file-preview-diff-pane file-preview-diff-pane-current"
+                  onCreateEditor={handleDiffCurrentEditorCreate}
                 />
               </Box>
             </Box>
