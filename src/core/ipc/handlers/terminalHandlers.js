@@ -447,8 +447,24 @@ class TerminalHandlers {
 
         // 清理进程映射
         this.processManager.deleteProcess(processId);
+        if (proc.processId && proc.processId !== processId) {
+          this.processManager.deleteProcess(proc.processId);
+        }
         if (proc.config?.tabId && proc.config.tabId !== processId) {
           this.processManager.deleteProcess(proc.config.tabId);
+        }
+        if (typeof this.processManager.deleteTerminalProcess === "function") {
+          if (proc.config?.tabId) {
+            this.processManager.deleteTerminalProcess(proc.config.tabId);
+          }
+          if (proc.tabId && proc.tabId !== proc.config?.tabId) {
+            this.processManager.deleteTerminalProcess(proc.tabId);
+          }
+        }
+        if (this.terminalIOMailboxManager) {
+          this.terminalIOMailboxManager.destroyProcess(
+            proc.processId || processId,
+          );
         }
       } catch (error) {
         logToFile(`Error handling process kill: ${error.message}`, "ERROR");
@@ -607,10 +623,21 @@ class TerminalHandlers {
         }
 
         this.processManager.deleteProcess(processId);
+        if (processObj.processId && processObj.processId !== processId) {
+          this.processManager.deleteProcess(processObj.processId);
+        }
 
         // 如果有tabId也清理
         if (processObj.config && processObj.config.tabId) {
           this.processManager.deleteProcess(processObj.config.tabId);
+          if (typeof this.processManager.deleteTerminalProcess === "function") {
+            this.processManager.deleteTerminalProcess(processObj.config.tabId);
+          }
+        }
+        if (this.terminalIOMailboxManager) {
+          this.terminalIOMailboxManager.destroyProcess(
+            processObj.processId || processId,
+          );
         }
       }
 

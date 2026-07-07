@@ -214,8 +214,15 @@ function cleanupProcess(processId, options = {}) {
 
     // 删除进程映射
     childProcesses.delete(processId);
+    if (proc.processId && proc.processId !== processId) {
+      childProcesses.delete(proc.processId);
+    }
     if (proc.config?.tabId && proc.config.tabId !== processId) {
       childProcesses.delete(proc.config.tabId);
+    }
+    if (proc.tabId && proc.tabId !== processId) {
+      childProcesses.delete(proc.tabId);
+      terminalProcesses.delete(proc.tabId);
     }
   } catch (error) {
     logToFile(

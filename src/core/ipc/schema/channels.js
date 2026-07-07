@@ -501,10 +501,18 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
 
   defineRequest("LOCAL_TERMINALS_DETECT", "detectLocalTerminals", "local-terminal", args([optionalObjectArg()], { minItems: 0 })),
   defineRequest(
+    "LOCAL_TERMINAL_START_EMBEDDED",
+    "startLocalTerminal",
+    "local-terminal",
+    args([objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "process-control" },
+  ),
+  defineRequest(
     "LOCAL_TERMINAL_LAUNCH",
     "launchLocalTerminal",
     "local-terminal",
-    args([objectArg(), {}]),
+    args([objectArg(), {}, optionalObjectArg()], { minItems: 2, maxItems: 3 }),
     STANDARD_RESPONSE_SCHEMA,
     { permission: "process-control" },
   ),
@@ -514,7 +522,6 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
   defineRequest("LOCAL_TERMINAL_UPDATE_CUSTOM", "updateCustomTerminal", "local-terminal", args([{}, objectArg()])),
   defineRequest("LOCAL_TERMINAL_DELETE_CUSTOM", "deleteCustomTerminal", "local-terminal", args([{}])),
   defineRequest("LOCAL_TERMINAL_GET_CUSTOM", "getCustomTerminals", "local-terminal", NO_ARGS_SCHEMA),
-  defineRequest("LOCAL_TERMINAL_RESIZE_EMBEDDED", "resizeEmbeddedTerminal", "local-terminal", args([{}, objectArg()])),
   defineRequest("LOCAL_TERMINAL_GET_ALL_ACTIVE", "getAllActiveLocalTerminals", "local-terminal", NO_ARGS_SCHEMA),
   defineEvent("LOCAL_TERMINAL_STATUS", "localTerminalStatus", "local-terminal", args([objectArg()])),
 

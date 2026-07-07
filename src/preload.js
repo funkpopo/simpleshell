@@ -358,6 +358,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 本地终端API
   detectLocalTerminals: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINALS_DETECT),
+  startLocalTerminal: (localConfig) =>
+    ipcRenderer.invoke(
+      IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_START_EMBEDDED,
+      localConfig,
+    ),
   launchLocalTerminal: (terminalConfig, tabId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_LAUNCH, terminalConfig, tabId),
   closeLocalTerminal: (tabId) =>
@@ -409,8 +414,6 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   deleteCustomTerminal: (id) => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_DELETE_CUSTOM, id),
   getCustomTerminals: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_CUSTOM),
 
-  resizeEmbeddedTerminal: (tabId, bounds) =>
-    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_RESIZE_EMBEDDED, tabId, bounds),
   getAllActiveLocalTerminals: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_ALL_ACTIVE),
 

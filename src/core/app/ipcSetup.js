@@ -294,6 +294,10 @@ class IPCSetup {
       this.localTerminalHandlers = new LocalTerminalHandlers(
         mainWindow,
         ipcMain,
+        {
+          processManager,
+          terminalIOMailboxManager: this.terminalIOMailboxManager,
+        },
       );
       logToFile("本地终端处理器初始化成功", "INFO");
     } catch (error) {

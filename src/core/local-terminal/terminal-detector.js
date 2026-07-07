@@ -2,6 +2,12 @@ const path = require("path");
 const fs = require("fs").promises;
 const { exec } = require("child_process");
 const { promisify } = require("util");
+const {
+  POSIX_SHELL_CANDIDATES,
+  SUPPORTED_LOCAL_TERMINAL_TYPES,
+  getDefaultPosixShell,
+  isSupportedLocalTerminalType,
+} = require("./local-terminal-config");
 
 const execAsync = promisify(exec);
 
@@ -75,31 +81,39 @@ class TerminalDetector {
    */
   async detectWindowsTerminals() {
     const terminals = [
+      {
+        name: "PowerShell",
+        type: SUPPORTED_LOCAL_TERMINAL_TYPES.WINDOWS_POWERSHELL,
+        executable: "pwsh.exe",
+        systemCommand: "pwsh.exe",
+        priority: 13,
+        adminRequired: false,
+      },
+      {
+        name: "Windows PowerShell",
+        type: SUPPORTED_LOCAL_TERMINAL_TYPES.WINDOWS_POWERSHELL,
+        executable: "powershell.exe",
+        systemCommand: "powershell.exe",
+        priority: 12,
+        adminRequired: false,
+      },
+      {
+        name: "Command Prompt",
+        type: SUPPORTED_LOCAL_TERMINAL_TYPES.WINDOWS_CMD,
+        executable: "cmd.exe",
+        systemCommand: "cmd.exe",
+        priority: 11,
+        adminRequired: false,
+      },
       // WSL (Windows Subsystem for Linux)
       {
         name: "WSL (Ubuntu)",
-        type: "wsl",
+        type: SUPPORTED_LOCAL_TERMINAL_TYPES.WINDOWS_WSL,
         executable: "wsl.exe",
-        priority: 12,
+        systemCommand: "wsl.exe",
+        priority: 10,
         launchArgs: ["--distribution", "Ubuntu"],
         adminRequired: false,
-      },
-
-      // Windows Terminal
-      {
-        name: "Windows Terminal",
-        type: "windows-terminal",
-        executable: "wt.exe",
-        priority: 11,
-        systemCommand: "wt.exe",
-        checkPaths: [
-          path.join(
-            process.env.LOCALAPPDATA || "",
-            "Microsoft",
-            "WindowsApps",
-            "wt.exe",
-          ),
-        ],
       },
     ];
 
@@ -124,24 +138,13 @@ class TerminalDetector {
    * 检测 macOS 系统可用的终端
    */
   async detectMacOSTerminals() {
+    const shellPath = getDefaultPosixShell();
     const terminals = [
       {
-        name: "Terminal",
-        type: "terminal",
-        executable: "/System/Applications/Utilities/Terminal.app",
+        name: path.basename(shellPath),
+        type: SUPPORTED_LOCAL_TERMINAL_TYPES.POSIX_SHELL,
+        executable: shellPath,
         priority: 10,
-      },
-      {
-        name: "iTerm2",
-        type: "iterm2",
-        executable: "/Applications/iTerm.app",
-        priority: 9,
-      },
-      {
-        name: "Hyper",
-        type: "hyper",
-        executable: "/Applications/Hyper.app",
-        priority: 8,
       },
     ];
 
@@ -165,30 +168,13 @@ class TerminalDetector {
    * 检测 Linux 系统可用的终端
    */
   async detectLinuxTerminals() {
+    const shellPath = getDefaultPosixShell();
     const terminals = [
       {
-        name: "GNOME Terminal",
-        type: "gnome-terminal",
-        executable: "gnome-terminal",
+        name: path.basename(shellPath),
+        type: SUPPORTED_LOCAL_TERMINAL_TYPES.POSIX_SHELL,
+        executable: shellPath,
         priority: 10,
-      },
-      {
-        name: "Konsole",
-        type: "konsole",
-        executable: "konsole",
-        priority: 9,
-      },
-      {
-        name: "XFCE Terminal",
-        type: "xfce4-terminal",
-        executable: "xfce4-terminal",
-        priority: 8,
-      },
-      {
-        name: "Terminator",
-        type: "terminator",
-        executable: "terminator",
-        priority: 7,
       },
     ];
 
@@ -213,6 +199,10 @@ class TerminalDetector {
    */
   async checkTerminalAvailability(terminal) {
     try {
+      if (!isSupportedLocalTerminalType(terminal.type, process.platform)) {
+        return false;
+      }
+
       // 并行执行多个检查，返回第一个成功的结果
       const checks = [];
 
@@ -319,6 +309,28 @@ class TerminalDetector {
               }
             } catch {
               // 忽略
+            }
+            return false;
+          })(),
+        );
+      }
+
+      if (!this.isWindows && terminal.type === "shell") {
+        checks.push(
+          (async () => {
+            const candidatePaths = [
+              terminal.executable,
+              process.env.SHELL,
+              ...POSIX_SHELL_CANDIDATES,
+            ].filter(Boolean);
+
+            for (const candidatePath of candidatePaths) {
+              if (await this.fileExists(candidatePath)) {
+                terminal.executablePath = candidatePath;
+                terminal.executable = candidatePath;
+                terminal.name = path.basename(candidatePath);
+                return true;
+              }
             }
             return false;
           })(),

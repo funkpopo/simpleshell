@@ -1,439 +1,356 @@
-const { spawn } = require("child_process");
 const EventEmitter = require("events");
+const pty = require("node-pty");
+const { getTerminalProcessExitChannel } = require("../ipc/schema/channels");
+const { logToFile } = require("../utils/logger");
+const {
+  isSupportedLocalTerminalType,
+  normalizeLocalTerminalConfig,
+} = require("./local-terminal-config");
+
+const DEFAULT_COLS = 80;
+const DEFAULT_ROWS = 24;
+
+function normalizeDimension(value, fallback) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue < 1) {
+    return fallback;
+  }
+  return Math.floor(numericValue);
+}
+
+function serializeError(error, config = {}) {
+  return {
+    code: error?.code || "LOCAL_TERMINAL_START_FAILED",
+    message: error?.message || "Failed to start local terminal",
+    shell: config.name || null,
+    command: config.command || null,
+    args: Array.isArray(config.args) ? config.args : [],
+  };
+}
 
 class LocalTerminalManager extends EventEmitter {
-  constructor() {
+  constructor(options = {}) {
     super();
     this.activeTerminals = new Map();
-    this.isWindows = process.platform === "win32";
-    this.isMacOS = process.platform === "darwin";
-    this.isLinux = process.platform === "linux";
+    this.processManager = options.processManager;
+    this.terminalIOMailboxManager = options.terminalIOMailboxManager;
+    this.getMainWindow =
+      typeof options.getMainWindow === "function"
+        ? options.getMainWindow
+        : () => null;
   }
 
-  /**
-   * 启动本地终端
-   * @param {Object} terminalConfig - 终端配置
-   * @param {string} tabId - 标签页ID
-   * @param {Object} options - 启动选项 (adminMode, distribution, etc.)
-   */
-  async launchTerminal(terminalConfig, tabId, options = {}) {
-    try {
-      // 检查是否已经有相同类型的终端在运行
-      const existingTerminal = Array.from(this.activeTerminals.values()).find(
-        (terminal) =>
-          terminal.config && terminal.config.type === terminalConfig.type,
-      );
+  _getNextProcessId() {
+    if (
+      this.processManager &&
+      typeof this.processManager.getNextProcessId === "function"
+    ) {
+      return this.processManager.getNextProcessId();
+    }
+    return `local-${Date.now()}`;
+  }
 
-      if (existingTerminal && existingTerminal.status !== "exited") {
-        // Terminal of same type is already running
-        // 返回现有终端的信息，而不是启动新的
-        return existingTerminal;
-      }
+  _emitStatus(type, payload = {}) {
+    this.emit("terminalStatus", {
+      type,
+      ...payload,
+    });
+  }
 
-      // 如果当前tabId已经存在活动终端，先关闭它
-      if (this.activeTerminals.has(tabId)) {
-        await this.closeTerminal(tabId);
-      }
+  _registerProcess(processId, tabId, ptyProcess, config, metadata) {
+    if (!this.processManager) {
+      return;
+    }
 
-      const terminalInfo = {
-        config: terminalConfig,
+    const processInfo = {
+      type: "local-pty",
+      process: ptyProcess,
+      processId,
+      tabId,
+      config: {
+        ...config,
         tabId,
-        options,
-        process: null,
-        hwnd: null,
-        startTime: Date.now(),
-        status: "starting",
-        distribution: options.distribution || null,
-      };
-
-      // 根据操作系统启动相应的系统终端
-      if (this.isWindows) {
-        await this.launchWindowsTerminal(terminalInfo);
-      } else if (this.isMacOS) {
-        await this.launchMacOSTerminal(terminalInfo);
-      } else if (this.isLinux) {
-        await this.launchLinuxTerminal(terminalInfo);
-      }
-
-      this.activeTerminals.set(tabId, terminalInfo);
-      this.emit("terminalLaunched", { tabId, terminalInfo });
-
-      return terminalInfo;
-    } catch (error) {
-      this.emit("terminalError", { tabId, error });
-      throw error;
-    }
-  }
-
-  /**
-   * 启动Windows终端
-   */
-  async launchWindowsTerminal(terminalInfo) {
-    const { config, tabId, distribution } = terminalInfo;
-
-    // 统一字段名：支持 executable 和 executablePath
-    if (!config.executablePath && config.executable) {
-      config.executablePath = config.executable;
-    }
-
-    // 根据终端类型设置启动参数
-    let spawnArgs = [];
-    let spawnOptions = {
-      detached: true,
-      stdio: ["ignore", "ignore", "ignore"],
-      windowsHide: false,
-      env: { ...process.env },
+      },
+      commandBuffer: "",
+      editorMode: false,
+      isRemote: false,
+      ready: true,
+      localTerminal: true,
+      metadata,
     };
 
-    // 根据终端类型配置参数
-    switch (config.type) {
-      case "wsl": {
-        // WSL最好通过Windows Terminal启动以避免闪退
-        // 检查是否有Windows Terminal可用
-        const hasWindowsTerminal = await this.isWindowsTerminalAvailable();
-
-        if (hasWindowsTerminal) {
-          // 使用Windows Terminal启动WSL
-          config.executablePath = "wt.exe";
-          spawnArgs = ["new-tab"];
-
-          if (distribution) {
-            spawnArgs.push(
-              "--title",
-              `WSL-${distribution}`,
-              "wsl",
-              "-d",
-              distribution,
-            );
-          } else if (
-            config.availableDistributions &&
-            config.availableDistributions.length > 0
-          ) {
-            // 使用默认发行版或第一个可用发行版
-            const defaultDist =
-              config.availableDistributions.find((d) => d.isDefault) ||
-              config.availableDistributions[0];
-            spawnArgs.push(
-              "--title",
-              `WSL-${defaultDist.name}`,
-              "wsl",
-              "-d",
-              defaultDist.name,
-            );
-          } else if (
-            config.launchArgs &&
-            config.launchArgs.includes("--distribution")
-          ) {
-            const distIndex = config.launchArgs.indexOf("--distribution");
-            const distName = config.launchArgs[distIndex + 1];
-            spawnArgs.push("--title", `WSL-${distName}`, "wsl", "-d", distName);
-          } else {
-            spawnArgs.push("--title", "WSL", "wsl");
-          }
-
-          // Windows Terminal需要不同的spawn选项
-          spawnOptions.detached = false;
-          spawnOptions.stdio = ["ignore", "ignore", "ignore"];
-        } else {
-          // 回退方案：使用系统命令或默认路径
-          config.executablePath =
-            config.systemCommand || config.executable || "wsl.exe";
-          spawnArgs = [];
-          if (distribution) {
-            spawnArgs.push("--distribution", distribution);
-          } else if (
-            config.availableDistributions &&
-            config.availableDistributions.length > 0
-          ) {
-            const defaultDist =
-              config.availableDistributions.find((d) => d.isDefault) ||
-              config.availableDistributions[0];
-            spawnArgs.push("--distribution", defaultDist.name);
-          }
-        }
-        break;
-      }
-
-      case "cmd":
-        config.executablePath = config.executable || "cmd.exe";
-        spawnArgs = [];
-        break;
-
-      case "powershell":
-        config.executablePath = config.executable || "powershell.exe";
-        spawnArgs = [];
-        break;
-
-      case "windows-terminal":
-        config.executablePath = "wt.exe";
-        spawnArgs = ["new-tab"];
-        break;
-
-      default:
-        // 默认情况，确保有 executablePath
-        if (!config.executablePath && config.executable) {
-          config.executablePath = config.executable;
-        }
-        spawnArgs = config.args || [];
-        break;
+    this.processManager.setProcess(processId, processInfo);
+    if (tabId && tabId !== processId) {
+      this.processManager.setProcess(tabId, processInfo);
     }
-
-    if (!config.executablePath) {
-      throw new Error("未指定可执行文件路径");
+    if (typeof this.processManager.setTerminalProcess === "function") {
+      this.processManager.setTerminalProcess(tabId || processId, processInfo);
     }
+  }
 
-    // 检查文件是否存在
-    const fs = require("fs");
-    try {
-      if (!fs.existsSync(config.executablePath)) {
-        throw new Error(`可执行文件不存在: ${config.executablePath}`);
-      }
-    } catch {
-      // File check failed, continue with launch attempt
-    }
-
-    let childProcess;
-    try {
-      childProcess = spawn(config.executablePath, spawnArgs, spawnOptions);
-    } catch (spawnError) {
-      terminalInfo.status = "error";
-      this.emit("terminalError", {
-        tabId,
-        error: {
-          message: `无法启动应用程序: ${config.executablePath}\n错误: ${spawnError.message}`,
-          code: spawnError.code || "SPAWN_ERROR",
-          executable: config.executablePath,
-        },
-      });
+  _deleteProcessAliases(processId, tabId) {
+    if (!this.processManager) {
       return;
     }
 
-    if (!childProcess.pid) {
-      terminalInfo.status = "error";
-      this.emit("terminalError", {
-        tabId,
-        error: {
-          message: `进程启动失败: ${config.executablePath}`,
-          code: "NO_PID",
-          executable: config.executablePath,
-        },
-      });
+    this.processManager.deleteProcess(processId);
+    if (tabId && tabId !== processId) {
+      this.processManager.deleteProcess(tabId);
+    }
+    if (
+      tabId &&
+      typeof this.processManager.deleteTerminalProcess === "function"
+    ) {
+      this.processManager.deleteTerminalProcess(tabId);
+    }
+  }
+
+  _createMailbox(processId, tabId, ptyProcess) {
+    if (!this.terminalIOMailboxManager) {
+      return null;
+    }
+
+    return this.terminalIOMailboxManager.createMailbox(processId, {
+      aliases: tabId ? [tabId] : [],
+      getFlowControlTarget: () => ptyProcess,
+      applyResize: (cols, rows) => {
+        if (!ptyProcess || typeof ptyProcess.resize !== "function") {
+          return false;
+        }
+        ptyProcess.resize(
+          normalizeDimension(cols, DEFAULT_COLS),
+          normalizeDimension(rows, DEFAULT_ROWS),
+        );
+        return true;
+      },
+    });
+  }
+
+  _sendExitEvent(processId, exitCode, signal) {
+    const mainWindow = this.getMainWindow();
+    const exitChannel = getTerminalProcessExitChannel(processId);
+    if (!mainWindow || mainWindow.isDestroyed() || !exitChannel) {
       return;
     }
 
-    terminalInfo.process = childProcess;
-    terminalInfo.pid = childProcess.pid;
+    mainWindow.webContents.send(exitChannel, {
+      code: exitCode,
+      signal: signal || null,
+      processId,
+      terminalType: "local",
+    });
+  }
 
-    // 等待进程启动并获取窗口句柄
-    setTimeout(async () => {
-      try {
-        const hwnd = await this.findWindowByPid(childProcess.pid);
-        if (hwnd) {
-          terminalInfo.hwnd = hwnd;
-          terminalInfo.status = "ready";
-          this.emit("terminalReady", { tabId, hwnd, pid: childProcess.pid });
-        }
-      } catch {
-        // Error finding window handle
+  _getActiveByProcessId(processId) {
+    for (const terminalInfo of this.activeTerminals.values()) {
+      if (terminalInfo.processId === processId || terminalInfo.tabId === processId) {
+        return terminalInfo;
       }
-    }, 1000);
+    }
+    return null;
+  }
 
-    // 处理进程事件
-    childProcess.on("error", (error) => {
-      terminalInfo.status = "error";
-      this.emit("terminalError", { tabId, error });
+  async startEmbeddedTerminal(localConfig = {}, tabId, options = {}) {
+    const normalizedConfig = normalizeLocalTerminalConfig(localConfig);
+    const normalizedTabId =
+      tabId || localConfig.tabId || normalizedConfig.tabId || `local-${Date.now()}`;
+
+    if (!isSupportedLocalTerminalType(normalizedConfig.type, process.platform)) {
+      const error = new Error(
+        `Unsupported local terminal type: ${normalizedConfig.type}`,
+      );
+      error.code = "LOCAL_TERMINAL_UNSUPPORTED_TYPE";
+      throw error;
+    }
+
+    const processId = this._getNextProcessId();
+    const cols = normalizeDimension(options.cols, DEFAULT_COLS);
+    const rows = normalizeDimension(options.rows, DEFAULT_ROWS);
+    const startedAt = Date.now();
+
+    this._emitStatus("starting", {
+      tabId: normalizedTabId,
+      processId,
+      shell: normalizedConfig.name,
+      command: normalizedConfig.command,
+      args: normalizedConfig.args,
     });
 
-    childProcess.on("exit", (code) => {
+    let ptyProcess;
+    try {
+      ptyProcess = pty.spawn(normalizedConfig.command, normalizedConfig.args, {
+        name: options.name || "xterm-256color",
+        cols,
+        rows,
+        cwd: normalizedConfig.cwd,
+        env: normalizedConfig.env,
+      });
+    } catch (error) {
+      const serializedError = serializeError(error, normalizedConfig);
+      this._emitStatus("error", {
+        tabId: normalizedTabId,
+        processId,
+        error: serializedError,
+      });
+      throw Object.assign(error, serializedError);
+    }
+
+    const metadata = {
+      processId,
+      tabId: normalizedTabId,
+      pid: ptyProcess.pid,
+      status: "ready",
+      shell: normalizedConfig.name,
+      command: normalizedConfig.command,
+      args: normalizedConfig.args,
+      cwd: normalizedConfig.cwd,
+      startedAt,
+    };
+    const mailbox = this._createMailbox(processId, normalizedTabId, ptyProcess);
+    const terminalInfo = {
+      ...metadata,
+      config: normalizedConfig,
+      process: ptyProcess,
+      mailbox,
+    };
+
+    this.activeTerminals.set(normalizedTabId, terminalInfo);
+    this._registerProcess(
+      processId,
+      normalizedTabId,
+      ptyProcess,
+      normalizedConfig,
+      metadata,
+    );
+
+    ptyProcess.onData((data) => {
+      if (mailbox) {
+        mailbox.emitOutput(data);
+        return;
+      }
+      this.terminalIOMailboxManager?.emitOutput(processId, data);
+    });
+
+    ptyProcess.onExit(({ exitCode, signal }) => {
       terminalInfo.status = "exited";
-      this.activeTerminals.delete(tabId);
-      this.emit("terminalExited", { tabId, code });
-    });
-  }
-
-  /**
-   * 启动macOS终端
-   */
-  async launchMacOSTerminal(terminalInfo) {
-    const { config, tabId } = terminalInfo;
-
-    let spawnArgs = [];
-    let executablePath = config.executablePath;
-
-    if (config.type === "terminal") {
-      executablePath = "open";
-      spawnArgs = ["-a", "Terminal"];
-    } else if (config.type === "iterm") {
-      executablePath = "open";
-      spawnArgs = ["-a", "iTerm"];
-    }
-
-    const childProcess = spawn(executablePath, spawnArgs, {
-      detached: true,
-      stdio: "ignore",
-    });
-
-    terminalInfo.process = childProcess;
-    terminalInfo.pid = childProcess.pid;
-    terminalInfo.status = "ready";
-
-    this.emit("terminalReady", { tabId, pid: childProcess.pid });
-  }
-
-  /**
-   * 启动Linux终端
-   */
-  async launchLinuxTerminal(terminalInfo) {
-    const { config, tabId } = terminalInfo;
-
-    const childProcess = spawn(config.executablePath, [], {
-      detached: true,
-      stdio: "ignore",
-    });
-
-    terminalInfo.process = childProcess;
-    terminalInfo.pid = childProcess.pid;
-    terminalInfo.status = "ready";
-
-    this.emit("terminalReady", { tabId, pid: childProcess.pid });
-  }
-
-  /**
-   * 检查Windows Terminal是否可用
-   */
-  async isWindowsTerminalAvailable() {
-    return new Promise((resolve) => {
-      const testProcess = spawn("wt.exe", ["--version"], {
-        stdio: "ignore",
-        windowsHide: true,
+      mailbox?.emitOutput(
+        `\r\n\x1b[33mProcess exited with code ${exitCode ?? ""}\x1b[0m\r\n`,
+        { trackBackpressure: false },
+      );
+      mailbox?.destroy();
+      this.activeTerminals.delete(normalizedTabId);
+      this._deleteProcessAliases(processId, normalizedTabId);
+      this._sendExitEvent(processId, exitCode, signal);
+      this._emitStatus("exit", {
+        tabId: normalizedTabId,
+        processId,
+        pid: ptyProcess.pid,
+        exitCode,
+        signal: signal || null,
       });
-
-      testProcess.on("error", () => {
-        resolve(false);
-      });
-
-      testProcess.on("exit", (code) => {
-        resolve(code === 0);
-      });
-
-      // 超时处理
-      setTimeout(() => {
-        testProcess.kill();
-        resolve(false);
-      }, 3000);
-    });
-  }
-
-  /**
-   * 查找窗口句柄
-   */
-  async findWindowByPid(pid) {
-    if (!this.isWindows) return null;
-
-    return new Promise((resolve) => {
-      const { exec } = require("child_process");
-
-      // 使用 tasklist 命令获取进程信息
-      exec(`tasklist /FI "PID eq ${pid}" /FO CSV`, (error, stdout) => {
-        if (error) {
-          resolve(null);
-          return;
-        }
-
-        // 如果找到进程，返回PID作为句柄标识
-        if (stdout.includes(`"${pid}"`)) {
-          resolve(pid);
-        } else {
-          resolve(null);
-        }
+      this.emit("terminalExited", {
+        tabId: normalizedTabId,
+        processId,
+        code: exitCode,
+        signal: signal || null,
       });
     });
+
+    this._emitStatus("ready", metadata);
+    this.emit("terminalReady", metadata);
+    return metadata;
   }
 
-  /**
-   * 关闭终端
-   */
-  async closeTerminal(tabId) {
-    const terminalInfo = this.activeTerminals.get(tabId);
+  async launchTerminal(terminalConfig, tabId, options = {}) {
+    return this.startEmbeddedTerminal(terminalConfig, tabId, options);
+  }
+
+  async closeTerminal(identifier) {
+    const terminalInfo =
+      this.activeTerminals.get(identifier) || this._getActiveByProcessId(identifier);
+
     if (!terminalInfo) {
-      return;
+      return false;
     }
 
     try {
-      if (terminalInfo.process && !terminalInfo.process.killed) {
+      terminalInfo.status = "closing";
+      if (
+        terminalInfo.process &&
+        typeof terminalInfo.process.kill === "function"
+      ) {
         terminalInfo.process.kill();
       }
-
-      this.activeTerminals.delete(tabId);
-      this.emit("terminalClosed", { tabId });
-    } catch {
-      // Error closing terminal
+      terminalInfo.mailbox?.destroy();
+      this.activeTerminals.delete(terminalInfo.tabId);
+      this._deleteProcessAliases(terminalInfo.processId, terminalInfo.tabId);
+      this._emitStatus("exit", {
+        tabId: terminalInfo.tabId,
+        processId: terminalInfo.processId,
+        pid: terminalInfo.pid,
+        exitCode: null,
+        signal: "closed",
+      });
+      this.emit("terminalClosed", {
+        tabId: terminalInfo.tabId,
+        processId: terminalInfo.processId,
+      });
+      return true;
+    } catch (error) {
+      logToFile(`Error closing local terminal: ${error.message}`, "ERROR");
+      this._emitStatus("error", {
+        tabId: terminalInfo.tabId,
+        processId: terminalInfo.processId,
+        error: serializeError(error, terminalInfo.config),
+      });
+      return false;
     }
   }
 
-  /**
-   * 获取活动终端信息
-   */
   getActiveTerminals() {
-    return Array.from(this.activeTerminals.entries()).map(([tabId, info]) => ({
-      tabId,
+    return Array.from(this.activeTerminals.values()).map((info) => ({
+      tabId: info.tabId,
+      processId: info.processId,
       pid: info.pid,
       status: info.status,
       type: info.config.type,
-      startTime: info.startTime,
+      shell: info.shell,
+      cwd: info.cwd,
+      startedAt: info.startedAt,
     }));
   }
 
-  /**
-   * 获取终端信息
-   */
   getTerminalInfo(tabId) {
-    return this.activeTerminals.get(tabId);
+    return this.activeTerminals.get(tabId) || this._getActiveByProcessId(tabId);
   }
 
-  /**
-   * 检查终端是否活跃
-   */
-  isTerminalActive(tabId) {
-    const info = this.activeTerminals.get(tabId);
-    return info && info.status === "ready";
-  }
-
-  /**
-   * 获取所有活动终端
-   */
   getAllActiveTerminals() {
     return Array.from(this.activeTerminals.values());
   }
 
-  /**
-   * 获取单个活动终端
-   */
   getActiveTerminal(tabId) {
-    return this.activeTerminals.get(tabId);
+    return this.getTerminalInfo(tabId);
   }
 
-  /**
-   * 清理所有终端
-   */
-  async cleanup() {
-    try {
-      // 关闭所有活动的终端
-      for (const [, terminalInfo] of this.activeTerminals.entries()) {
-        try {
-          if (terminalInfo.process && !terminalInfo.process.killed) {
-            terminalInfo.process.kill();
-          }
-        } catch {
-          // Error closing individual terminal
-        }
-      }
+  isTerminalActive(tabId) {
+    const info = this.getTerminalInfo(tabId);
+    return Boolean(info && info.status === "ready");
+  }
 
-      this.activeTerminals.clear();
-      this.removeAllListeners();
-    } catch {
-      // Error during terminal manager cleanup
-    }
+  async cleanup() {
+    const terminals = Array.from(this.activeTerminals.values());
+    await Promise.all(
+      terminals.map((terminalInfo) =>
+        this.closeTerminal(terminalInfo.tabId).catch((error) => {
+          logToFile(
+            `Error during local terminal cleanup: ${error.message}`,
+            "ERROR",
+          );
+        }),
+      ),
+    );
+    this.activeTerminals.clear();
+    this.removeAllListeners();
   }
 }
 

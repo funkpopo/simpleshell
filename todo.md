@@ -1,246 +1,235 @@
-# SimpleShell 项目保守化设计 TODO
-
-> 目标：在保留当前 Electron/React 主体与 Rust transfer-sidecar 优势的前提下，把项目进一步收敛为一个更保守、可审计、可恢复、默认安全的运维工具。
-
-## 完成记录
-
-- [x] 2026-06-21：已实现 1.1/1.2/1.3 的首轮落地：sidecar 继续作为独立进程边界，SFTP 请求/进度/结果/watch 输出补齐 `schemaVersion`、`requestId`、`processType`、`operation` 元数据，扫描结果补齐 `scanId`、`rootPath`、`generatedAt`、`truncated`、`maxEntriesHit`、`maxDepthHit`、`maxBytesHit`、`errors` 等 manifest 字段，并在 JS wrapper/service 层保留这些字段。
-- [x] 2026-06-21：已调整文件管理侧边栏按钮触发机制：文件按钮不再只判断当前 tab 是否为 SSH，而是必须等待该 SSH tab 的主进程连接状态为 `isConnected=true` 且 `isConnecting=false` 后才可点击；连接失败、未就绪或断开时会禁用文件按钮，并阻止打开/继续展示文件管理侧边栏。
-- [x] 2026-06-22：已实现 2.1：主 SSH hostVerifier 确认后的 `SHA256:` 主机指纹会写入主进程内部信任状态，native SFTP/传输请求必须携带同一可信指纹；Rust sidecar 删除 `AcceptAnyServerKey`，握手时计算服务端公钥 SHA256 指纹并严格比对，缺失或不匹配时返回 hostKey 分类错误。
-- [x] 2026-06-22：已实现 2.2：native SFTP/传输请求通过 JS 侧 `proxyManager.resolveProxyConfigAsync` 解析连接项代理、默认代理和系统/PAC 代理，向 Rust sidecar 传入 `proxy`、`proxyRequired` 与脱敏 `networkPath`；Rust sidecar 支持 HTTP/HTTPS CONNECT、SOCKS5、SOCKS4/SOCKS4a 隧道并将 socket 交给 `russh::client::connect_stream`，代理必需但不可用时返回 proxy 分类错误且不回退直连；诊断包记录 direct/proxy type/source/hasAuth，不记录代理密码。
-- [x] 2026-06-23：已实现 4.1：Rust sidecar 保持 JS 请求里的字符串 `operation` 协议不变，但在入口处解析为 `SftpOperation` 枚举后再分派；未知 operation 直接返回结构化 `NATIVE_SFTP_UNSUPPORTED_OPERATION`，避免落入成功响应里的 `success:false` 分支。
-
-## 0. 当前项目判断
-
-SimpleShell 当前主体是 Electron 主进程 + React 渲染进程 + Node 工具层，终端连接、配置、IPC、安全边界和 UI 都集中在 JS 侧；Rust sidecar 位于 `transfernative/transfer-sidecar`，主要承担本地目录扫描、SFTP 文件操作、上传/下载传输、远程目录扫描与目录轮询监听。
-
-当前已经具备的稳健基础：
-
-- 主窗口安全边界较明确：`contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`、生产 CSP、禁止任意导航、外链协议白名单。
-- IPC 已有集中 channel 定义、AJV 校验、trace 记录与敏感字段脱敏，适合继续扩展成权限/审计模型。
-- 主 SSH 连接池已有主机指纹确认、代理/VPN 支持、重连状态机、健康检查、失败分类和延迟探测。
-- 配置服务已支持配置备份、损坏配置恢复、safeStorage/主密码加密、连接密码/私钥路径/API key 加密保存。
-- 文件传输层已有 native sidecar 进度流、分段传输、队列/并发控制、取消、运行时统计、外部编辑器临时文件生命周期和崩溃标记。
-- 更新服务已限制可信下载域名、校验安装包 hash、限定安装包后缀、使用受控临时目录。
-
-## 1. Rust sidecar 值得继续沿用的设计思路
-
-### 1.1 继续沿用“独立进程能力边界” [x] 已完成首轮落地
-
-现有 `nativeSftpClient.js` 通过 `spawn(sidecarPath, ["sftp-request"])` 或 `["sftp-watch"]` 调用 Rust，这个边界值得保留。
-
-原因：
-
-- 大文件传输、目录扫描、SFTP IO 与 Electron 主进程隔离，降低主进程卡顿和内存膨胀风险。
-- 取消传输可以通过杀掉对应 sidecar 子进程实现，语义直接，失败半径小。
-- sidecar panic/异常退出可以被主进程捕获并记录 crash marker，便于诊断。
-
-实现延续方向：
-
-- 新增 native 能力时优先走 sidecar 子命令或 JSON-RPC 风格请求，不把高负载 IO 再塞回 renderer 或主进程。
-- 对长耗时任务继续使用 stdout JSON Lines：`progress`、`result`、`watch`、`error` 分离。
-
-### 1.2 继续沿用结构化输出与结构化错误 [x] 已完成首轮落地
-
-Rust sidecar 当前返回：
-
-- `type: "progress"`：传输增量进度。
-- `type: "result"`：最终结果。
-- `type: "watch"`：目录监听事件。
-- 错误包含 `errorCode`、`errorKind`、`retryable`、`module`、`operation`、`sidecarVersion`、`platform`、`arch`、`timestamp`。
-
-这套设计适合继续沿用，并扩展为所有 native 操作的统一错误契约。
-
-实现延续方向：
-
-- 在 Rust 侧新增 `schemaVersion`，避免以后错误结构变更时 JS 解析困难。
-- 在 JS 的 `buildErrorResponse` / `nativeSftpClient` 中统一映射 native 错误到现有错误分类。
-- 所有 native 新操作都必须返回机器可读错误码，UI 文案在 JS/i18n 层翻译，避免 Rust 输出直接成为用户文案。
-
-### 1.3 继续沿用“本地扫描/远程扫描前置”的传输准备模型 [x] 已完成首轮落地
-
-sidecar 的 `scan-folder` 和 `scanRemoteFolderTree` 先得到文件数量、总字节数、路径列表，再由 JS 侧创建 transfer entry、计算并发与进度，这个思路适合保留。
-
-原因：
-
-- UI 可以提前展示总量和准备状态。
-- 传输前能做空间、覆盖、权限、根目录保护等预检。
-- 批量任务可拆分为可取消、可统计的任务单元。
-
-实现延续方向：
-
-- 为扫描结果加入 `scanId`、`rootPath`、`truncated`、`maxFilesHit`、`errors` 等字段。
-- 对远程扫描加入最大文件数/最大深度/最大总字节保护，确保无论远程目录有多大都可以成功展示。
-
-### 1.4 继续沿用“分段传输 + JS 调度”的大文件策略
-
-当前 sidecar 支持 `segmentOffset`、`segmentLength`、`remoteWriteFlags`、`localWriteFlags`，JS 侧决定是否拆块并发，这个边界清晰。
-
-实现延续方向：
-
-- 保持 Rust 只负责一个确定片段的读写，JS 负责并发数、重试、失败清理、UI 进度。
-- 为每个分段增加 `taskId`/`segmentIndex`/`segmentCount` 回传，减少 JS 侧根据 task metadata 反查。
-- 传输完成后可选做远端/本地 size 校验。
-
-### 1.5 继续沿用“运行时文件生命周期管理”
-
-`runtimeFileLifecycle` 对 file-cache、file-snapshots、external-editor-temp 等资源做启动恢复、周期清理、active 保护、大小上限清理，这个模型适合推广。
-
-实现延续方向：
-
-- 将 sidecar 临时 manifest、传输断点文件、诊断包草稿都注册为 runtime resource。
-- 每类临时文件都定义：rootPath、maxAge、maxBytes、startupCleanup、protectActive。
-- UI 设置禁止例如“退出时清理临时文件”“最大缓存大小”等设置。
-
-## 2. 高优先级保守化调整
-
-### 2.1 Rust sidecar 必须补齐 SSH 主机密钥校验 [x] 已完成
-
-当前 Rust sidecar 的 `AcceptAnyServerKey` 会接受任意服务端主机密钥，而主 SSH 连接在 JS 侧已有已知主机指纹缓存和用户确认流程。这会导致终端连接和 SFTP/传输连接的安全语义不一致：用户确认的是主连接，但 sidecar 传输可能接受另一个主机密钥。
-
-建议目标：
-
-- sidecar 可信主机指纹与SSH连接保存的指纹使用一致
-
-### 2.2 Rust sidecar 的代理/VPN 路径要与主 SSH 连接一致 [x] 已完成
-
-主 SSH 连接池支持连接项代理、默认代理、系统代理/PAC 和 HTTP/SOCKS 隧道；Rust sidecar 当前自己直连 `host:port`，没有继承 JS 的代理路径。这在运维场景中可能导致：
-
-- 终端能连，SFTP 失败。
-- 终端走代理/VPN，传输绕过代理直连。
-- 审计链路与真实访问路径不一致。
-
-建议目标：
-
-- sidecar 必须明确知道“本次连接是否需要代理”。
-- 代理未支持时宁可禁用 native transfer，也不静默直连。
-
-实现思路：
-
-- JS `resolveSshConfig` 中解析 `rawConfig.proxy` 和 `proxyManager.resolveProxyConfigAsync(rawConfig)`，传入 sidecar：
-  - `proxy: { type, host, port, username?, password? }`
-  - `proxyRequired: boolean`
-- 实现 Rust 代理支持：
-  - HTTP/HTTPS：实现 CONNECT 后把 socket 交给 russh。
-  - SOCKS5/SOCKS4：实现握手或引入成熟 crate。
-  - 代理认证字段进入 Rust 结构化配置，但日志必须脱敏。
-- 禁止fallback设计
-
-验收标准：
-
-- 配置了代理的连接，native sidecar 不再直连目标 host。
-- 代理不可用时错误分类为 proxy/network，可重试但不刷屏。
-- 诊断包能显示 sidecar transfer 使用的网络路径：direct/proxy type/source，不记录代理密码。
-
-### 2.4 收紧 IPC schema 与高风险通道权限
-
-IPC schema 已经集中，但仍有较多 `{}`、`ANY_SCHEMA`、宽松 object 参数，尤其是文件、进程控制、批量 invoke、设置和 runtime-files 通道。保守运维工具应尽量避免 renderer 能用任意 payload 触发主进程高权限行为。
-
-建议目标：
-
-- 高风险 IPC 参数必须严格 schema。
-- 批量 IPC 禁止调用高风险通道，或需要显式 allowlist。
-- 所有文件路径参数做长度、类型、归一化与路径越界约束。
-
-实现思路：
-
-- 将 `IPC_CHANNEL_DEFINITIONS` 中 high-risk/process-control/filesystem/credentials 通道逐步改为严格 schema：
-  - `tabId` 统一 `string | number`，但进入 handler 后立即 normalize 为 string。
-  - path 字段加 `minLength`、`maxLength`。
-  - enum 限制 operation/type/status。
-  - 禁止 `additionalProperties: true` 用在高危对象。
-- `batchInvokeHandlers` 增加 denylist：
-  - 禁止批量调用 `TERMINAL_START_SSH`、`TERMINAL_SEND_TO_PROCESS`、`FILE_DELETE`、`FILE_SET_PERMISSIONS`、`FILE_SET_OWNERSHIP`、`SETTINGS_UNLOCK_CREDENTIAL_STORE`、`APP_INSTALL_UPDATE`。
-- `safeHandle` / `wrapIpcHandler` 增加 permission 元数据记录，trace 输出 permission/category。
-- 增加检查脚本：高风险通道不得使用 `ANY_ARGS_SCHEMA` 或空 `{}` item。
-
-验收标准：
-
-- `npm run check` 能发现新增的宽松高危 IPC。
-- renderer 传入额外字段不会被 handler 隐式使用。
-- batch invoke 无法绕过高危操作确认。
-
-### 2.5 sidecar 请求协议增加超时、心跳与资源上限
-
-当前 JS 可杀 sidecar，但 Rust 侧对单次请求本身缺少显式 deadline、最大返回条目、最大扫描深度等参数。对运维工具来说，面对异常远端目录、符号链接、超大目录、慢速链路时应默认保守。
-
-建议目标：
-
-- 每个 native request 都有可见的 deadline 和最大资源消耗边界。
-- 长任务必须有心跳，主进程可区分“慢”和“卡死”。
-
-实现思路：
-
-- 扩展 `SftpRequest`：
-  - `requestId`
-  - `deadlineMs`
-  - `maxEntries`
-  - `maxDepth`
-  - `maxBytes`
-  - `emitHeartbeatIntervalMs`
-- Rust 用 `tokio::time::timeout` 包裹高风险操作。
-- `scan_folder` / `scanRemoteFolderTree` 达到上限时返回：
-  - `truncated: true`
-  - `truncatedReason`
-  - 已扫描统计
-- 传输 loop 中定期输出 `type: "heartbeat"`，包含 `requestId`、`operation`、`transferredBytes`。
-- JS 侧若 heartbeat 超时，标记 `NATIVE_SFTP_NO_PROGRESS_TIMEOUT` 并终止子进程。
-
-验收标准：
-
-- 扫描百万文件目录不会无限占用内存。
-- 远程卡死时 UI 显示“无进度超时”，取消后子进程退出。
-- 诊断能看到 requestId、deadline、最后 heartbeat。
-
-## 3. 中优先级功能/设计调整
-
-### 3.1 传输结果增加校验与可恢复策略
-
-当前传输完成主要依赖读写过程成功和字节数统计。保守运维场景中，关键文件传输需要更明确的完整性语义。
-
-实现思路：
-
-- 默认做轻量校验：上传/下载完成后 stat size，size 不一致判失败。
-- 可选强校验：
-  - 本地 sha256 由 Node/Rust 计算。
-  - 远端如果可执行命令，则通过 SSH shell 执行 `sha256sum`/`shasum`/`certutil`，否则提示“不支持远端 hash 校验”。
-- 对分段并发上传，失败后清理临时/目标文件，并输出 cleanup 结果。
-- 引入 `.simpleshell-transfer.json` manifest，用于断点续传和失败复盘。
-
-### 3.2 文件编辑/外部编辑器默认改为更保守
-
-外部编辑器当前会下载远程文件到本地临时目录、watch 本地改动并自动上传。这个能力很方便，但在运维场景属于高风险自动写回。
-
-建议调整：
-
-- 默认关闭自动上传，改为“检测到变更后提示上传”。
-- 提供 per-file 状态：本地已修改、待上传、上传成功、上传失败、远端可能已变化。
-- 上传前 stat 远端 mtime/size，如果远端已变化，要求用户选择覆盖/另存/放弃。
-- 临时文件目录和文件名继续使用 runtime lifecycle，但打开时显示本地临时路径和清理策略。
-
-## 4. 低优先级但值得排期
-
-### 4.1 sidecar 协议从字符串 operation 迁移到枚举 [x] 已完成
-
-Rust 当前用 `operation: String` 做 match。可以继续兼容字符串，但内部尽量转为 enum，减少拼写错误和 unsupported 分支遗漏。
-
-实现思路：
-
-- `enum SftpOperation` + `#[serde(rename = "...")]`。
-- 解析失败返回 `NATIVE_SFTP_UNSUPPORTED_OPERATION`。
-- JS wrapper 继续使用现有字符串，等协议稳定后再集中定义 operation 常量。
-
-## 5. 建议实施顺序
-
-1. 先做 `2.1 sidecar 主机密钥校验` 和 `2.2 sidecar 代理路径一致性`。这是当前 native SFTP 与主 SSH 安全语义不一致的核心问题。
-2. 再做 `2.3 高危文件操作 guard` 和 `2.4 IPC schema 收紧`。这两项会把“renderer 只是 UI，主进程负责最终安全决策”的边界固定下来。
-3. 然后做 `2.5 sidecar 超时/心跳/资源上限`，提升异常目录和慢链路下的可恢复性。
-4. 最后按产品取舍处理 AI 降权、外部编辑器写回策略、Telnet 默认禁用、更新签名等功能策略。
-
-## 6. 不建议改动的方向
-
-- 不建议把 Rust sidecar 合回 Electron 主进程。当前独立进程隔离对稳定性和取消语义有价值。
-- 不建议在 renderer 里做最终安全判断。renderer 只能负责展示确认，主进程/sidecar 必须重新校验。
-- 不建议为追求传输速度默认打开无限并发。当前按文件数/大小/CPU/会话上限选择并发的方向应保留，最多增加用户可见的“保守/均衡/激进”档位。
-- 不建议默认启用 Telnet 或 AI 直接执行命令。它们应作为显式开启的高级功能。
-- 不建议让 sidecar 在缺少 host key/proxy 支持时静默 fallback 到不安全直连。保守工具应明确失败并给出可操作提示。
+# 本地终端内置化实施规划
+
+## 背景与目标
+
+当前侧边栏「本地终端」入口由 `LocalTerminalSidebar.jsx` 检测系统终端后，通过 `window.terminalAPI.launchLocalTerminal()` 调用主进程 `localTerminalHandlers.js`，再由 `local-terminal-manager.js` 使用 `child_process.spawn()` 拉起外部 Windows Terminal、PowerShell、cmd、WSL 或系统终端。现有 `window-embedder` 路径尝试把外部窗口嵌入主窗口，但本质仍依赖外部窗口句柄，尺寸、焦点、输入法、生命周期和跨平台一致性都不可控。
+
+目标是将「本地终端」从拉起外部 Terminal 改造成应用内部标签页终端：主进程用 `node-pty` 启动本地 shell，renderer 复用现有 `WebTerminal` + xterm.js 渲染和输入输出链路，生命周期、关闭、resize、背压、主题、搜索、快捷输入等行为必须与 SSH/Telnet 标签保持一致。
+
+本规划禁止最小化实现，也禁止设计任何外部 Terminal 兜底机制。实施结果必须是完整的应用内终端能力：不能只支持单一 shell，不能只实现启动而遗漏关闭、resize、背压、退出事件、tab 生命周期、检查脚本和跨平台策略；如果某个平台或 shell 暂不可支持，应明确标记为未完成阻塞项，而不是转为外部打开。
+
+## 推荐总体方案
+
+- 保留 `TerminalDetector` 的检测能力，用于列出 PowerShell、cmd、WSL 发行版和可用 shell。
+- 新增真正的内置本地 PTY 会话，不再把 Windows Terminal、Terminal.app、GNOME Terminal 等外部 GUI 作为运行目标。
+- 侧边栏点击本地终端后创建一个应用内 tab，tab 类型新增为 `local` 或 `local-terminal`。
+- `WebTerminal` 支持按 tab 类型启动本地终端：SSH 走 `startSSH`，Telnet 走 `startTelnet`，本地终端走新增 `startLocalTerminal`。
+- 主进程本地终端输出进入现有 `TerminalIOMailboxManager`，renderer 继续通过 `RendererTerminalIOMailbox` 接收输出、发送输入、确认消费和 resize。
+- 删除旧的外部窗口启动和外部窗口嵌入路径，`WindowEmbedder` 不再参与本地终端功能。
+- 不设计外部 Terminal 兜底路径；`node-pty` 启动失败必须返回结构化错误并在应用内展示。
+- 不接受最小化交付；本地终端必须同时完成启动、输入、输出、resize、退出、关闭、清理、测试和文案。
+
+## 分阶段任务
+
+### 阶段 1：梳理协议和数据模型
+
+- [x] 明确本地 tab 数据结构：
+  - `type: "local"`
+  - `id: local-${timestamp}`
+  - `label`: 终端名称，例如 `PowerShell`、`cmd`、`Ubuntu`
+  - `localConfig`: `{ name, type, executable, executablePath, launchArgs, cwd, env, distribution }`
+- [x] 统一终端启动配置字段，避免 `executable` 和 `executablePath` 双字段散落：
+  - detector 输出保留原字段兼容；
+  - 启动前归一化为 `command`、`args`、`cwd`、`env`。
+- [x] 定义支持范围：
+  - Windows：`powershell.exe`、`pwsh.exe`、`cmd.exe`、`wsl.exe -d <distribution>`。
+- [x] 明确不再内置启动 GUI 终端：
+  - `windows-terminal`、`Terminal.app`、`iTerm`、`gnome-terminal` 不作为本地终端目标；
+  - 不提供「外部打开」替代路径；
+  - 检测列表只展示可通过 PTY 启动的 shell 或 WSL 发行版。
+- [x] 明确完整实现边界：
+  - Windows 必须覆盖 PowerShell、cmd、WSL；
+  - macOS/Linux 必须覆盖默认用户 shell；
+  - 任一目标未完成时，任务保持未完成状态，不以缩小范围方式验收。
+
+### 阶段 2：新增主进程 PTY 管理能力
+
+- [x] 新增或改造 `src/core/local-terminal/local-terminal-manager.js`：
+  - 引入 `node-pty`；
+  - 新增 `startEmbeddedTerminal(localConfig, tabId, options)`；
+  - 使用 `pty.spawn(command, args, { name, cols, rows, cwd, env })`；
+  - 返回 `{ processId, tabId, pid, status, shell, cwd, startedAt }`。
+- [x] 替换旧 `launchTerminal()` 的外部 GUI 启动语义：
+  - 删除或停止使用 `child_process.spawn()` 拉起 GUI 终端的路径；
+  - 将本地终端唯一启动入口改为 `startEmbeddedTerminal()`；
+  - 不新增 `launchExternalTerminal()` 之类的外部启动 API。
+- [x] 将本地 PTY 注册到全局 `processManager`：
+  - `processManager.setProcess(processId, { type: "local-pty", process: ptyProcess, tabId, config, isRemote: false })`；
+  - 同时用 `tabId` 建 alias，便于 renderer 现有 resize/input 逻辑继续按 tabId 或 processId 定位。
+- [x] 将 PTY 输出接入 `TerminalIOMailboxManager`：
+  - `ptyProcess.onData(data => mailbox.emitOutput(data))`；
+  - `ptyProcess.onExit(({ exitCode, signal }) => emit LOCAL_TERMINAL_STATUS/TERMINAL_EXIT)`；
+  - 使用 mailbox 的 `applyResize` 调用 `ptyProcess.resize(cols, rows)`。
+- [x] 输入写入统一走现有 `TerminalHandlers.writeToProcess()` 或等价路径：
+  - 对 `type: "local-pty"` 调用 `process.write(input)`；
+  - 避免使用 `stdin.write()`，因为 `node-pty` 进程对象不是普通 child_process。
+- [x] 关闭逻辑：
+  - 用户关闭 tab 时调用现有 `killProcess(processId)`；
+  - 对 PTY 调用 `kill()`；
+  - 清理 process map、mailbox、tab alias 和本地 active map。
+
+### 阶段 3：新增 IPC 通道和 preload API
+
+- [x] 在 `src/core/ipc/schema/channels.js` 增加请求：
+  - `LOCAL_TERMINAL_START_EMBEDDED` 或 `TERMINAL_START_LOCAL`；
+  - 入参为 `localConfig`；
+  - 返回标准响应 `{ success, data: processId }` 或保持与 `startSSH` 兼容直接返回 `processId`，建议使用标准响应再在前端 normalize。
+- [x] 在 `src/core/ipc/handlers/localTerminalHandlers.js` 注册新 handler：
+  - `startEmbeddedLocalTerminal(event, localConfig)`；
+  - 从 `localConfig.tabId` 读取 tab；
+  - 调用 `LocalTerminalManager.startEmbeddedTerminal()`；
+  - 返回 `processId` 和可序列化 metadata。
+- [x] 在 `src/preload.js` 暴露：
+  - `startLocalTerminal(localConfig)`；
+  - 删除或废弃现有 `launchLocalTerminal()` 外部打开 API；
+  - `closeLocalTerminal()` 逐步转为基于 processId/tabId 的关闭接口。
+- [x] 给 `LOCAL_TERMINAL_STATUS` 增加新事件类型：
+  - `starting`
+  - `ready`
+  - `exit`
+  - `error`
+- [x] 不增加外部兜底状态事件；所有失败都走 `error` 并携带结构化错误码、message、shell、command、args。
+
+### 阶段 4：改造侧边栏点击行为为创建应用内 tab
+
+- [ ] 修改 `src/app.jsx` 的 `handleLaunchLocalTerminal`：
+  - 不再只调用 `window.terminalAPI.launchLocalTerminal()`；
+  - 创建本地 tab；
+  - 写入 `terminalInstances[tabId] = true`；
+  - 写入 `terminalInstances[`${tabId}-config`] = normalizedLocalConfig` 或新增本地配置存储键；
+  - 切换当前 tab 到新建本地终端；
+  - 关闭或保留侧边栏按产品体验决定，建议点击后关闭侧边栏。
+- [ ] tab label 使用本地终端名称：
+  - WSL 发行版用 `Ubuntu`、`Debian` 等；
+  - PowerShell/cmd 使用检测项名称；
+  - 如果同类终端多开，追加序号或短时间戳避免混淆。
+- [ ] tab 类型判断从只支持 `ssh`/`telnet` 扩展为支持 `local`：
+  - 渲染 `WebTerminal`；
+  - 关闭 tab 时调用现有 cleanup/kill 流程；
+  - 不触发 SSH reconnect、latency、SFTP 等远程专属逻辑。
+- [ ] 侧边栏文案调整：
+  - 当前成功提示从「启动成功」改为「已打开本地终端标签页」；
+  - 失败提示必须说明应用内终端启动失败原因，不出现「已在外部终端打开」之类文案。
+
+### 阶段 5：改造 WebTerminal 支持本地终端启动
+
+- [ ] 扩展 `WebTerminal` props：
+  - 增加 `terminalType` 或直接从 config 判断；
+  - 增加 `localConfig`；
+  - 仍保留 `sshConfig` 兼容当前远程路径。
+- [ ] 启动连接逻辑改为三分支：
+  - `protocol === "telnet"`：`startTelnet(config)`；
+  - `type === "local"`：`startLocalTerminal(localConfig)`；
+  - 默认：`startSSH(config)`。
+- [ ] `terminalProcessIdUpdated` 事件增加 `protocol: "local"` 或 `terminalType: "local"`：
+  - 避免命令历史、快捷命令、监控、SFTP 等只适用于 SSH 的逻辑误判。
+- [ ] 本地终端启动成功后复用现有：
+  - `ensureTerminalMailbox(term)`；
+  - `setupDataListener(processId, term)`；
+  - `setupCommandDetection(...)`；
+  - resize、paste、search、copy、context menu。
+- [ ] 本地终端不应显示 SSH 连接成功、重连恢复、认证等文案。
+- [ ] 本地终端退出时在终端内打印简短提示：
+  - `Process exited with code <code>`；
+  - 保持 tab 可见，用户可关闭或重新打开。
+
+### 阶段 6：平台 shell 解析策略
+
+- [x] Windows PowerShell：
+  - command 优先 `pwsh.exe` 或检测到的 `powershell.exe`；
+  - args 默认可为空；
+  - env 合并 `process.env`。
+- [x] Windows cmd：
+  - command `cmd.exe`；
+  - args 可为空。
+- [x] Windows WSL：
+  - command `wsl.exe`；
+  - args 使用 `["-d", distribution]`；
+  - 如果没有 distribution，使用默认 WSL；
+  - 不再通过 `wt.exe new-tab wsl`。
+- [x] macOS/Linux：
+  - command 优先用户 shell：`process.env.SHELL`；
+  - 若 `process.env.SHELL` 不存在，则按 `/bin/zsh`、`/bin/bash`、`/bin/sh` 的确定性候选顺序选择第一个存在的 shell；
+  - cwd 默认用户 home。
+- [x] cwd 策略：
+  - 默认 `os.homedir()`；
+  - 后续可从设置项提供「启动目录」。
+
+### 阶段 7：删除外部窗口启动和嵌入路径
+
+- [ ] 删除本地终端外部启动路径：
+  - 删除或停用 `launchLocalTerminal()` 的外部 Terminal 行为；
+  - 删除 `LocalTerminalManager.launchWindowsTerminal()`、`launchMacOSTerminal()`、`launchLinuxTerminal()` 对 GUI 终端的启动语义；
+  - 删除 `wt.exe new-tab`、`open -a Terminal`、`gnome-terminal` 等 GUI 终端启动逻辑。
+- [ ] 删除外部窗口嵌入路径：
+  - 删除 `WindowEmbedder` 依赖；
+  - 删除 `resizeEmbeddedTerminal()`；
+  - 删除按主窗口估算 bounds 的 resize 逻辑；
+  - 删除外部窗口句柄 `hwnd` 作为主要状态的 UI 逻辑。
+- [ ] 删除外部兜底产品入口：
+  - 侧边栏不提供「外部打开」；
+  - IPC 不提供外部打开；
+  - 设置项不提供「启动失败时外部打开」；
+  - 代码中不得新增 external local terminal fallback 分支。
+
+## 重点风险与处理
+
+- [ ] `node-pty` 原生依赖风险：
+  - 当前 `package.json` 已有 `node-pty`，但 Electron 40/Node 24 的 rebuild 和打包必须验证；
+  - 确认 `@electron-forge/plugin-auto-unpack-natives` 能正确处理；
+  - 在 Windows 开发环境执行 `npm start` 和 `npm run package` 验证；
+  - 如果 `node-pty` 不可用，功能必须以结构化错误失败并阻塞验收，不允许转为外部 Terminal。
+- [ ] 输入输出背压风险：
+  - 必须复用 `TerminalIOMailboxManager`，不要新增一套直接 `webContents.send` 高频输出通道；
+  - 大量输出如 `dir /s`、`find /`、`yes` 场景要验证 UI 不冻结。
+- [ ] resize 风险：
+  - 本地 PTY 必须处理 xterm fit 后的 cols/rows；
+  - 首次渲染、侧边栏开关、窗口 resize、tab 切换都要触发 resize。
+- [ ] 生命周期风险：
+  - 关闭 tab 必须 kill PTY；
+  - 应用退出必须清理所有 PTY；
+  - PTY 自行退出后不能留下僵尸 process map 或 mailbox。
+- [ ] 远程专属功能误触发：
+  - 本地 tab 不应注册 SSH reconnect；
+  - 不应出现 SFTP、延迟、连接池、主机认证等远程状态；
+  - 快捷命令可以支持本地，但需明确命令发送目标。
+- [ ] WSL 特殊风险：
+  - `wsl.exe` 作为 PTY 子进程时退出、路径、编码和发行版参数需单独测；
+  - WSL 内的彩色输出、中文、Ctrl+C、Ctrl+D 要验证。
+- [ ] 最小化实现风险：
+  - 不允许只实现 PowerShell 或 cmd 后即验收；
+  - 不允许只实现启动，不实现 resize、关闭、退出事件、清理和测试；
+  - 不允许用外部打开覆盖未实现平台或失败路径。
+
+## 验收标准
+
+- [ ] 点击侧边栏「本地终端」中的 PowerShell/cmd/WSL 后，在应用内部新建终端 tab，而不是打开外部 Terminal 窗口。
+- [ ] 项目中不存在本地终端启动失败后转外部 Terminal 的兜底逻辑。
+- [ ] 本地 tab 能正常输入命令、显示输出、复制粘贴、搜索、清屏、右键菜单可用。
+- [ ] 窗口 resize、侧边栏展开/收起、tab 切换后，本地终端尺寸正确，无裁剪和错位。
+- [ ] 关闭本地 tab 后，对应 PTY 进程退出，`processManager` 和 mailbox 不残留。
+- [ ] PowerShell、cmd、至少一个 WSL 发行版通过手工验证。
+- [ ] macOS/Linux 默认 shell 路径有明确实现和检查；如果当前开发环境无法手工验证，需要补充代码级检查和待验证记录，不能从范围中移除。
+- [ ] SSH/Telnet 现有连接、重连、命令建议、搜索和快捷命令不回归。
+- [ ] `npm run check` 通过；如新增检查脚本，覆盖本地终端 IPC schema、tab 类型和 PTY 生命周期。
+- [ ] 检查脚本覆盖禁止项：不得出现新增的外部本地终端启动分支、`WindowEmbedder` 本地终端调用、`fallback-external` 状态或「外部打开」文案。
+
+## 建议提交顺序
+
+- [x] 提交 1：新增本地 PTY manager 和 IPC，并同步停用外部 Terminal 启动入口。
+- [ ] 提交 2：`WebTerminal` 支持 `local` 启动分支，并补齐 lifecycle/resize。
+- [ ] 提交 3：侧边栏点击改为创建本地 tab，删除外部打开文案和行为。
+- [ ] 提交 4：补充检查脚本和手工验证记录。
+- [ ] 提交 5：删除 `WindowEmbedder` 外部嵌入逻辑和相关 IPC/API。
+
+## 需要优先查看的代码位置
+
+- `src/components/LocalTerminalSidebar.jsx`：侧边栏检测和点击入口。
+- `src/app.jsx`：`handleLaunchLocalTerminal`、tab 创建、tab 渲染、tab 关闭。
+- `src/components/WebTerminal.jsx`：终端启动分支、mailbox 绑定、输入输出、resize。
+- `src/core/ipc/handlers/localTerminalHandlers.js`：本地终端 IPC handler。
+- `src/core/local-terminal/local-terminal-manager.js`：当前外部终端启动逻辑，后续改为唯一内置 PTY 路径。
+- `src/core/ipc/schema/channels.js`：新增本地 PTY IPC schema。
+- `src/preload.js`：暴露 `startLocalTerminal`。
+- `src/core/terminal/terminalIOMailboxManager.js`：输出、输入、resize、背压统一通道。
+- `src/core/process/processManager.js`：PTY 进程注册、关闭和清理。
