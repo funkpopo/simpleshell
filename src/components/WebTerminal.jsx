@@ -79,14 +79,35 @@ const getTerminalConfigSignature = (config) => {
   ].join("|");
 };
 
+const getLocalTerminalConfigSignature = (config) => {
+  if (!config) return "__NO_LOCAL_CONFIG__";
+
+  return [
+    config.id || "",
+    config.tabId || "",
+    config.name || "",
+    config.type || "",
+    config.command || "",
+    config.executablePath || "",
+    config.executable || "",
+    Array.isArray(config.args) ? config.args.join("\u001f") : "",
+    Array.isArray(config.launchArgs) ? config.launchArgs.join("\u001f") : "",
+    config.cwd || "",
+    config.distribution || "",
+  ].join("|");
+};
+
 const areWebTerminalPropsEqual = (prevProps, nextProps) => {
   if (prevProps.tabId !== nextProps.tabId) return false;
   if (prevProps.refreshKey !== nextProps.refreshKey) return false;
   if (prevProps.isActive !== nextProps.isActive) return false;
+  if (prevProps.terminalType !== nextProps.terminalType) return false;
 
   return (
     getTerminalConfigSignature(prevProps.sshConfig) ===
-    getTerminalConfigSignature(nextProps.sshConfig)
+      getTerminalConfigSignature(nextProps.sshConfig) &&
+    getLocalTerminalConfigSignature(prevProps.localConfig) ===
+      getLocalTerminalConfigSignature(nextProps.localConfig)
   );
 };
 
@@ -174,6 +195,8 @@ const WebTerminal = ({
   tabId,
   refreshKey,
   sshConfig = null,
+  terminalType = "ssh",
+  localConfig = null,
   isActive = true,
 }) => {
   const terminalRef = useRef(null);
@@ -2400,22 +2423,35 @@ const WebTerminal = ({
 
         scheduleTerminalLayoutSyncRef.current("terminal-created");
 
-        // 如果有SSH配置，则优先使用SSH连接
-        if (sshConfig && window.terminalAPI) {
-          const localizedSshConfig = {
-            ...sshConfig,
-            language: i18n.language,
-          };
-          // 检查是否是拆分重连模式
-          if (localizedSshConfig.splitReconnect) {
-            // 拆分重连模式：显示重连信息
+        const isLocalTerminal = terminalType === "local";
+        const hasTerminalConfig = isLocalTerminal ? localConfig : sshConfig;
+
+        // 如果有终端配置，则启动真实终端连接
+        if (hasTerminalConfig && window.terminalAPI) {
+          const localizedSshConfig = sshConfig
+            ? {
+                ...sshConfig,
+                language: i18n.language,
+              }
+            : null;
+          const localizedLocalConfig = localConfig
+            ? {
+                ...localConfig,
+                tabId,
+              }
+            : null;
+
+          if (isLocalTerminal) {
+            term.writeln(
+              `Starting ${localizedLocalConfig?.name || "local terminal"}...`,
+            );
+          } else if (localizedSshConfig.splitReconnect) {
             term.writeln(
               t("webTerminal.runtime.reconnecting", {
                 host: localizedSshConfig.host,
               }),
             );
           } else {
-            // 正常连接模式
             term.writeln(
               t("webTerminal.runtime.connecting", {
                 host: localizedSshConfig.host,
@@ -2426,6 +2462,11 @@ const WebTerminal = ({
           const formatConnectionError = (error) => {
             const errorObject =
               error && typeof error === "object" ? error : null;
+            const localError =
+              errorObject?.data?.error ||
+              errorObject?.error ||
+              errorObject?.message ||
+              error;
             const rawMessage =
               typeof errorObject?.error === "string" &&
               errorObject.error.trim()
@@ -2434,6 +2475,15 @@ const WebTerminal = ({
                     errorObject.message.trim()
                   ? errorObject.message
                 : String(error || "").trim();
+            if (isLocalTerminal) {
+              const message =
+                typeof localError === "string"
+                  ? localError
+                  : localError?.message || rawMessage;
+              return `\r\nLocal terminal failed to start: ${
+                message || t("webTerminal.runtime.unknownError")
+              }`;
+            }
             const isCancelled =
               /cancel(l)?ed/i.test(rawMessage) || rawMessage.includes("取消");
             if (isCancelled) {
@@ -2473,17 +2523,25 @@ const WebTerminal = ({
               if (!result.success) {
                 return { processId: null, error: result };
               }
-              return { processId: result.data ?? null, error: null };
+              const data = result.data ?? null;
+              const processId =
+                data && typeof data === "object" ? data.processId : data;
+              return { processId, metadata: data, error: null };
             }
-            return { processId: result, error: null };
+            return { processId: result, metadata: result, error: null };
           };
 
           try {
-            // 根据协议类型选择连接方式
-            const connectPromise =
-              localizedSshConfig.protocol === "telnet"
-                ? window.terminalAPI.startTelnet(localizedSshConfig)
-                : window.terminalAPI.startSSH(localizedSshConfig);
+            let connectPromise;
+            if (isLocalTerminal) {
+              connectPromise =
+                window.terminalAPI.startLocalTerminal(localizedLocalConfig);
+            } else {
+              connectPromise =
+                localizedSshConfig.protocol === "telnet"
+                  ? window.terminalAPI.startTelnet(localizedSshConfig)
+                  : window.terminalAPI.startSSH(localizedSshConfig);
+            }
 
             // 启动连接
             connectPromise
@@ -2514,9 +2572,12 @@ const WebTerminal = ({
                     detail: {
                       terminalId: tabId,
                       processId,
-                      protocol: localizedSshConfig.protocol || "ssh",
+                      protocol: isLocalTerminal
+                        ? "local"
+                        : localizedSshConfig.protocol || "ssh",
+                      terminalType: isLocalTerminal ? "local" : "remote",
                       splitReconnect:
-                        localizedSshConfig.splitReconnect || false,
+                        localizedSshConfig?.splitReconnect || false,
                     },
                   });
 
@@ -2563,7 +2624,7 @@ const WebTerminal = ({
                   scheduleTerminalLayoutSyncRef.current("connection-ready");
 
                   // 拆分重连成功后的额外处理
-                  if (localizedSshConfig.splitReconnect) {
+                  if (localizedSshConfig?.splitReconnect) {
                     term.writeln(
                       `\r\n${t("webTerminal.runtime.newConnectionEstablished")}`,
                     );
@@ -2576,13 +2637,15 @@ const WebTerminal = ({
                     }, 300);
                   }
                 } else {
-                  const errorMsg = localizedSshConfig.splitReconnect
+                  const errorMsg = localizedSshConfig?.splitReconnect
                     ? t("webTerminal.runtime.reconnectFailed", {
                         error: t("webTerminal.runtime.noProcessId"),
                       })
-                    : t("webTerminal.runtime.connectionFailed", {
-                        error: t("webTerminal.runtime.noProcessId"),
-                      });
+                    : isLocalTerminal
+                      ? "Local terminal failed to start: no process id"
+                      : t("webTerminal.runtime.connectionFailed", {
+                          error: t("webTerminal.runtime.noProcessId"),
+                        });
                   term.writeln(errorMsg);
                 }
               })
@@ -3214,6 +3277,8 @@ const WebTerminal = ({
     tabId,
     refreshKey,
     sshConfig,
+    terminalType,
+    localConfig,
     lifecycleEventManager,
     tryEnableWebglRenderer,
     disableWebglRenderer,
@@ -3862,6 +3927,8 @@ WebTerminal.propTypes = {
   tabId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
   refreshKey: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   sshConfig: PropTypes.object,
+  terminalType: PropTypes.oneOf(["ssh", "telnet", "local"]),
+  localConfig: PropTypes.object,
   isActive: PropTypes.bool,
 };
 

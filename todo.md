@@ -113,23 +113,23 @@
 
 ### 阶段 5：改造 WebTerminal 支持本地终端启动
 
-- [ ] 扩展 `WebTerminal` props：
+- [x] 扩展 `WebTerminal` props：
   - 增加 `terminalType` 或直接从 config 判断；
   - 增加 `localConfig`；
   - 仍保留 `sshConfig` 兼容当前远程路径。
-- [ ] 启动连接逻辑改为三分支：
+- [x] 启动连接逻辑改为三分支：
   - `protocol === "telnet"`：`startTelnet(config)`；
   - `type === "local"`：`startLocalTerminal(localConfig)`；
   - 默认：`startSSH(config)`。
-- [ ] `terminalProcessIdUpdated` 事件增加 `protocol: "local"` 或 `terminalType: "local"`：
+- [x] `terminalProcessIdUpdated` 事件增加 `protocol: "local"` 或 `terminalType: "local"`：
   - 避免命令历史、快捷命令、监控、SFTP 等只适用于 SSH 的逻辑误判。
-- [ ] 本地终端启动成功后复用现有：
+- [x] 本地终端启动成功后复用现有：
   - `ensureTerminalMailbox(term)`；
   - `setupDataListener(processId, term)`；
   - `setupCommandDetection(...)`；
   - resize、paste、search、copy、context menu。
-- [ ] 本地终端不应显示 SSH 连接成功、重连恢复、认证等文案。
-- [ ] 本地终端退出时在终端内打印简短提示：
+- [x] 本地终端不应显示 SSH 连接成功、重连恢复、认证等文案。
+- [x] 本地终端退出时在终端内打印简短提示：
   - `Process exited with code <code>`；
   - 保持 tab 可见，用户可关闭或重新打开。
 
@@ -217,7 +217,7 @@
 ## 建议提交顺序
 
 - [x] 提交 1：新增本地 PTY manager 和 IPC，并同步停用外部 Terminal 启动入口。
-- [ ] 提交 2：`WebTerminal` 支持 `local` 启动分支，并补齐 lifecycle/resize。
+- [x] 提交 2：`WebTerminal` 支持 `local` 启动分支，并补齐 lifecycle/resize。
 - [ ] 提交 3：侧边栏点击改为创建本地 tab，删除外部打开文案和行为。
 - [ ] 提交 4：补充检查脚本和手工验证记录。
 - [ ] 提交 5：删除 `WindowEmbedder` 外部嵌入逻辑和相关 IPC/API。
