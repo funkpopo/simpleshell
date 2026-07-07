@@ -218,6 +218,7 @@
 
 - [x] 2026-07-07：`npm run check` 通过，18 个检查脚本全部通过。
 - [x] 2026-07-07：新增 `scripts/check-local-terminal-embedded.js`，覆盖本地 PTY manager、IPC/preload、WebTerminal local 分支、app local tab 和禁止外部 fallback/WindowEmbedder/嵌入窗口 resize IPC。
+- [x] 2026-07-07：通过 `LocalTerminalManager.startEmbeddedTerminal()` 启动 `cmd.exe /c echo simpleshell-local-pty-smoke`，验证 `node-pty` 可启动、输出进入 mailbox、退出事件可达。
 - [ ] 2026-07-07：尚未执行 `npm run package`，`node-pty` Electron 40/Node 24 打包验证仍未完成。
 - [ ] 2026-07-07：尚未进行 PowerShell/cmd/WSL 交互式手工验收。
 

@@ -214,15 +214,6 @@ class LocalTerminalManager extends EventEmitter {
       mailbox,
     };
 
-    this.activeTerminals.set(normalizedTabId, terminalInfo);
-    this._registerProcess(
-      processId,
-      normalizedTabId,
-      ptyProcess,
-      normalizedConfig,
-      metadata,
-    );
-
     ptyProcess.onData((data) => {
       if (mailbox) {
         mailbox.emitOutput(data);
@@ -255,6 +246,15 @@ class LocalTerminalManager extends EventEmitter {
         signal: signal || null,
       });
     });
+
+    this.activeTerminals.set(normalizedTabId, terminalInfo);
+    this._registerProcess(
+      processId,
+      normalizedTabId,
+      ptyProcess,
+      normalizedConfig,
+      metadata,
+    );
 
     this._emitStatus("ready", metadata);
     this.emit("terminalReady", metadata);
