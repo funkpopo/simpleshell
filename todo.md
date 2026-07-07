@@ -157,16 +157,16 @@
 
 ### 阶段 7：删除外部窗口启动和嵌入路径
 
-- [ ] 删除本地终端外部启动路径：
+- [x] 删除本地终端外部启动路径：
   - 删除或停用 `launchLocalTerminal()` 的外部 Terminal 行为；
   - 删除 `LocalTerminalManager.launchWindowsTerminal()`、`launchMacOSTerminal()`、`launchLinuxTerminal()` 对 GUI 终端的启动语义；
   - 删除 `wt.exe new-tab`、`open -a Terminal`、`gnome-terminal` 等 GUI 终端启动逻辑。
-- [ ] 删除外部窗口嵌入路径：
+- [x] 删除外部窗口嵌入路径：
   - 删除 `WindowEmbedder` 依赖；
   - 删除 `resizeEmbeddedTerminal()`；
   - 删除按主窗口估算 bounds 的 resize 逻辑；
   - 删除外部窗口句柄 `hwnd` 作为主要状态的 UI 逻辑。
-- [ ] 删除外部兜底产品入口：
+- [x] 删除外部兜底产品入口：
   - 侧边栏不提供「外部打开」；
   - IPC 不提供外部打开；
   - 设置项不提供「启动失败时外部打开」；
@@ -204,13 +204,13 @@
 ## 验收标准
 
 - [ ] 点击侧边栏「本地终端」中的 PowerShell/cmd/WSL 后，在应用内部新建终端 tab，而不是打开外部 Terminal 窗口。
-- [ ] 项目中不存在本地终端启动失败后转外部 Terminal 的兜底逻辑。
+- [x] 项目中不存在本地终端启动失败后转外部 Terminal 的兜底逻辑。
 - [ ] 本地 tab 能正常输入命令、显示输出、复制粘贴、搜索、清屏、右键菜单可用。
 - [ ] 窗口 resize、侧边栏展开/收起、tab 切换后，本地终端尺寸正确，无裁剪和错位。
 - [ ] 关闭本地 tab 后，对应 PTY 进程退出，`processManager` 和 mailbox 不残留。
 - [ ] PowerShell、cmd、至少一个 WSL 发行版通过手工验证。
-- [ ] macOS/Linux 默认 shell 路径有明确实现和检查；如果当前开发环境无法手工验证，需要补充代码级检查和待验证记录，不能从范围中移除。
-- [ ] SSH/Telnet 现有连接、重连、命令建议、搜索和快捷命令不回归。
+- [x] macOS/Linux 默认 shell 路径有明确实现和检查；如果当前开发环境无法手工验证，需要补充代码级检查和待验证记录，不能从范围中移除。
+- [x] SSH/Telnet 现有连接、重连、命令建议、搜索和快捷命令不回归。
 - [x] `npm run check` 通过；如新增检查脚本，覆盖本地终端 IPC schema、tab 类型和 PTY 生命周期。
 - [x] 检查脚本覆盖禁止项：不得出现新增的外部本地终端启动分支、`WindowEmbedder` 本地终端调用、`fallback-external` 状态或「外部打开」文案。
 
@@ -227,7 +227,7 @@
 - [x] 提交 2：`WebTerminal` 支持 `local` 启动分支，并补齐 lifecycle/resize。
 - [x] 提交 3：侧边栏点击改为创建本地 tab，删除外部打开文案和行为。
 - [x] 提交 4：补充检查脚本和手工验证记录。
-- [ ] 提交 5：删除 `WindowEmbedder` 外部嵌入逻辑和相关 IPC/API。
+- [x] 提交 5：删除 `WindowEmbedder` 外部嵌入逻辑和相关 IPC/API。
 
 ## 需要优先查看的代码位置
 
