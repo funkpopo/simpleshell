@@ -211,15 +211,22 @@
 - [ ] PowerShell、cmd、至少一个 WSL 发行版通过手工验证。
 - [ ] macOS/Linux 默认 shell 路径有明确实现和检查；如果当前开发环境无法手工验证，需要补充代码级检查和待验证记录，不能从范围中移除。
 - [ ] SSH/Telnet 现有连接、重连、命令建议、搜索和快捷命令不回归。
-- [ ] `npm run check` 通过；如新增检查脚本，覆盖本地终端 IPC schema、tab 类型和 PTY 生命周期。
-- [ ] 检查脚本覆盖禁止项：不得出现新增的外部本地终端启动分支、`WindowEmbedder` 本地终端调用、`fallback-external` 状态或「外部打开」文案。
+- [x] `npm run check` 通过；如新增检查脚本，覆盖本地终端 IPC schema、tab 类型和 PTY 生命周期。
+- [x] 检查脚本覆盖禁止项：不得出现新增的外部本地终端启动分支、`WindowEmbedder` 本地终端调用、`fallback-external` 状态或「外部打开」文案。
+
+## 本轮验证记录
+
+- [x] 2026-07-07：`npm run check` 通过，18 个检查脚本全部通过。
+- [x] 2026-07-07：新增 `scripts/check-local-terminal-embedded.js`，覆盖本地 PTY manager、IPC/preload、WebTerminal local 分支、app local tab 和禁止外部 fallback/WindowEmbedder/嵌入窗口 resize IPC。
+- [ ] 2026-07-07：尚未执行 `npm run package`，`node-pty` Electron 40/Node 24 打包验证仍未完成。
+- [ ] 2026-07-07：尚未进行 PowerShell/cmd/WSL 交互式手工验收。
 
 ## 建议提交顺序
 
 - [x] 提交 1：新增本地 PTY manager 和 IPC，并同步停用外部 Terminal 启动入口。
 - [x] 提交 2：`WebTerminal` 支持 `local` 启动分支，并补齐 lifecycle/resize。
 - [x] 提交 3：侧边栏点击改为创建本地 tab，删除外部打开文案和行为。
-- [ ] 提交 4：补充检查脚本和手工验证记录。
+- [x] 提交 4：补充检查脚本和手工验证记录。
 - [ ] 提交 5：删除 `WindowEmbedder` 外部嵌入逻辑和相关 IPC/API。
 
 ## 需要优先查看的代码位置
