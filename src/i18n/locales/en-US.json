@@ -1171,7 +1171,7 @@
       "wslRunningSummary": "WSL running {{running}}/{{total}}",
       "detectSuccess": "Detected {{count}} terminals",
       "detectError": "Failed to detect terminals",
-      "launchSuccess": "Successfully launched {{name}}",
+      "launchSuccess": "Opened {{name}} in a local terminal tab",
       "launchError": "Failed to launch terminal: {{error}}",
       "stopSuccess": "Terminal stopped",
       "stopError": "Failed to stop terminal: {{error}}",

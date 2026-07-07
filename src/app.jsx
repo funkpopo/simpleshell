@@ -1851,8 +1851,8 @@ function AppContent() {
       }, 2000);
     }, 3000);
 
-    // 添加监听器，接收SSH进程ID更新事件
-    const handleSshProcessIdUpdate = (event) => {
+    // 添加监听器，接收终端进程ID更新事件
+    const handleTerminalProcessIdUpdate = (event) => {
       const { terminalId, processId } = event.detail;
       if (terminalId && processId) {
         // 更新终端实例中的进程ID
@@ -1876,7 +1876,12 @@ function AppContent() {
     const removeSshListener = eventManager.addEventListener(
       window,
       "sshProcessIdUpdated",
-      handleSshProcessIdUpdate,
+      handleTerminalProcessIdUpdate,
+    );
+    const removeTerminalListener = eventManager.addEventListener(
+      window,
+      "terminalProcessIdUpdated",
+      handleTerminalProcessIdUpdate,
     );
 
     return () => {
@@ -1884,6 +1889,7 @@ function AppContent() {
       clearTimeout(preloadTimer);
 
       removeSshListener();
+      removeTerminalListener();
     };
   }, [dispatch, eventManager]);
 
@@ -2701,10 +2707,16 @@ function AppContent() {
     const processId = processCache[tabToRemove.id];
     if (
       processId &&
-      (tabToRemove.type === "ssh" || tabToRemove.type === "telnet")
+      (tabToRemove.type === "ssh" ||
+        tabToRemove.type === "telnet" ||
+        tabToRemove.type === "local")
     ) {
       window.terminalAPI.killProcess(processId).catch((err) => {
         console.warn(`关闭连接时出错: ${err.message}`);
+      });
+    } else if (tabToRemove.type === "local") {
+      window.terminalAPI.closeLocalTerminal?.(tabToRemove.id).catch((err) => {
+        console.warn(`关闭本地终端时出错: ${err.message}`);
       });
     }
 
@@ -3360,45 +3372,81 @@ function AppContent() {
     }, 15);
   };
 
-  // 启动本地终端的处理函数（仅启动外部终端，不在应用中创建标签页）
-  const handleLaunchLocalTerminal = useCallback(async (terminalConfig) => {
-    try {
-      if (window.terminalAPI?.launchLocalTerminal) {
-        const terminalId = `local-${Date.now()}`;
-
-        // 确保传递完整的终端配置
-        const completeConfig = {
-          name: terminalConfig.name,
-          type: terminalConfig.type,
-          executablePath: terminalConfig.executablePath,
-          executable: terminalConfig.executable,
-          availableDistributions: terminalConfig.availableDistributions || [],
-          launchArgs: terminalConfig.launchArgs || [],
-        };
-
-        const result = await window.terminalAPI.launchLocalTerminal(
-          completeConfig,
-          terminalId,
-        );
-
-        // 检查API调用是否成功
-        if (!result.success) {
-          throw new Error(result.error || "Launch failed");
-        }
-
-        // 不创建标签页，只启动外部终端
-        // 终端将在系统中独立运行，不显示在应用界面中
-
-        return result;
+  // 创建应用内本地终端标签页
+  const handleLaunchLocalTerminal = useCallback(
+    async (terminalConfig) => {
+      if (!terminalConfig) {
+        throw new Error("No local terminal selected");
       }
-      throw new Error("Local terminal API not available");
-    } catch (error) {
-      if (!error) {
-        throw new Error("Local terminal launch failed");
-      }
-      throw error;
-    }
-  }, []);
+
+      const terminalId = `local-${Date.now()}`;
+      const defaultDistribution = Array.isArray(
+        terminalConfig.availableDistributions,
+      )
+        ? terminalConfig.availableDistributions.find((dist) => dist.isDefault) ||
+          terminalConfig.availableDistributions[0]
+        : null;
+      const distribution =
+        terminalConfig.distribution || defaultDistribution?.name || undefined;
+      const baseLabel =
+        terminalConfig.type === "wsl" && distribution
+          ? distribution
+          : terminalConfig.name || terminalConfig.executable || "Local";
+      const sameLabelCount = tabs.filter(
+        (tab) => tab.type === "local" && tab.label?.startsWith(baseLabel),
+      ).length;
+      const tabLabel =
+        sameLabelCount > 0 ? `${baseLabel} ${sameLabelCount + 1}` : baseLabel;
+
+      const completeConfig = {
+        name: tabLabel,
+        type: terminalConfig.type,
+        executablePath: terminalConfig.executablePath,
+        executable: terminalConfig.executable,
+        command: terminalConfig.command,
+        args: terminalConfig.args || terminalConfig.launchArgs || [],
+        launchArgs: terminalConfig.launchArgs || terminalConfig.args || [],
+        cwd: terminalConfig.cwd,
+        env: terminalConfig.env,
+        distribution,
+        availableDistributions: terminalConfig.availableDistributions || [],
+        tabId: terminalId,
+      };
+      const newTab = {
+        id: terminalId,
+        label: tabLabel,
+        type: "local",
+        localConfig: completeConfig,
+      };
+
+      dispatch(
+        actions.setTerminalInstances({
+          ...terminalInstances,
+          [terminalId]: true,
+          [`${terminalId}-config`]: completeConfig,
+          [`${terminalId}-processId`]: null,
+        }),
+      );
+
+      const newTabs = [...tabs, newTab];
+      dispatch(actions.setTabs(newTabs));
+      dispatch(actions.setCurrentTab(newTabs.length - 1));
+      setLocalTerminalSidebarOpen(false);
+      setFallbackSidebarAfterClose("localTerminal");
+
+      setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+      }, 15);
+
+      return { success: true, data: newTab };
+    },
+    [
+      dispatch,
+      setFallbackSidebarAfterClose,
+      tabs,
+      terminalInstances,
+    ],
+  );
 
   // 获取右侧面板应该使用的当前标签页信息
   const getCurrentPanelTab = useCallback(() => {
@@ -4328,8 +4376,15 @@ function AppContent() {
                           tabId={tab.id}
                           refreshKey={terminalInstances[`${tab.id}-refresh`]}
                           sshConfig={
-                            tab.type === "ssh"
+                            tab.type === "ssh" || tab.type === "telnet"
                               ? terminalInstances[`${tab.id}-config`]
+                              : null
+                          }
+                          terminalType={tab.type === "local" ? "local" : tab.type}
+                          localConfig={
+                            tab.type === "local"
+                              ? terminalInstances[`${tab.id}-config`] ||
+                                tab.localConfig
                               : null
                           }
                           isActive={isActive}

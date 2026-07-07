@@ -256,12 +256,10 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
     }
 
     const trackedTypes = new Set([
-      "launched",
+      "starting",
       "ready",
-      "closed",
+      "exit",
       "error",
-      "embedded",
-      "unembedded",
     ]);
 
     const handleLocalTerminalStatus = (statusData) => {

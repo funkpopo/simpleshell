@@ -1171,7 +1171,7 @@
       "wslRunningSummary": "WSL 运行中 {{running}}/{{total}}",
       "detectSuccess": "已检测到 {{count}} 个终端",
       "detectError": "检测终端失败",
-      "launchSuccess": "成功启动 {{name}}",
+      "launchSuccess": "已打开 {{name}} 本地终端标签页",
       "launchError": "启动终端失败：{{error}}",
       "stopSuccess": "终端已停止",
       "stopError": "停止终端失败：{{error}}",

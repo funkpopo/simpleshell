@@ -25,6 +25,7 @@ const topConnectionsChangedWrappers = new WeakMap();
 const connectionsChangedWrappers = new WeakMap();
 const commandHistoryChangedWrappers = new WeakMap();
 const localDataClearedWrappers = new WeakMap();
+const localTerminalStatusWrappers = new WeakMap();
 const streamWrappersByChannel = {
   [IPC_EVENT_CHANNELS.AI_STREAM_CHUNK]: new WeakMap(),
   [IPC_EVENT_CHANNELS.AI_STREAM_END]: new WeakMap(),
@@ -369,6 +370,33 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_CLOSE, tabId),
   getLocalTerminalInfo: (tabId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_INFO, tabId),
+  onLocalTerminalStatus: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_event, payload) => callback(payload);
+    localTerminalStatusWrappers.set(callback, wrappedCallback);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS, wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener(
+        IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS,
+        wrappedCallback,
+      );
+      localTerminalStatusWrappers.delete(callback);
+    };
+  },
+  offLocalTerminalStatus: (callback) => {
+    if (!callback) {
+      ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS);
+      return;
+    }
+    const wrappedCallback = localTerminalStatusWrappers.get(callback);
+    if (wrappedCallback) {
+      ipcRenderer.removeListener(
+        IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS,
+        wrappedCallback,
+      );
+      localTerminalStatusWrappers.delete(callback);
+    }
+  },
 
   // 重连管理API
   getReconnectStatus: (args) =>

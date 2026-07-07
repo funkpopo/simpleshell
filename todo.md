@@ -92,22 +92,22 @@
 
 ### 阶段 4：改造侧边栏点击行为为创建应用内 tab
 
-- [ ] 修改 `src/app.jsx` 的 `handleLaunchLocalTerminal`：
+- [x] 修改 `src/app.jsx` 的 `handleLaunchLocalTerminal`：
   - 不再只调用 `window.terminalAPI.launchLocalTerminal()`；
   - 创建本地 tab；
   - 写入 `terminalInstances[tabId] = true`；
   - 写入 `terminalInstances[`${tabId}-config`] = normalizedLocalConfig` 或新增本地配置存储键；
   - 切换当前 tab 到新建本地终端；
   - 关闭或保留侧边栏按产品体验决定，建议点击后关闭侧边栏。
-- [ ] tab label 使用本地终端名称：
+- [x] tab label 使用本地终端名称：
   - WSL 发行版用 `Ubuntu`、`Debian` 等；
   - PowerShell/cmd 使用检测项名称；
   - 如果同类终端多开，追加序号或短时间戳避免混淆。
-- [ ] tab 类型判断从只支持 `ssh`/`telnet` 扩展为支持 `local`：
+- [x] tab 类型判断从只支持 `ssh`/`telnet` 扩展为支持 `local`：
   - 渲染 `WebTerminal`；
   - 关闭 tab 时调用现有 cleanup/kill 流程；
   - 不触发 SSH reconnect、latency、SFTP 等远程专属逻辑。
-- [ ] 侧边栏文案调整：
+- [x] 侧边栏文案调整：
   - 当前成功提示从「启动成功」改为「已打开本地终端标签页」；
   - 失败提示必须说明应用内终端启动失败原因，不出现「已在外部终端打开」之类文案。
 
@@ -218,7 +218,7 @@
 
 - [x] 提交 1：新增本地 PTY manager 和 IPC，并同步停用外部 Terminal 启动入口。
 - [x] 提交 2：`WebTerminal` 支持 `local` 启动分支，并补齐 lifecycle/resize。
-- [ ] 提交 3：侧边栏点击改为创建本地 tab，删除外部打开文案和行为。
+- [x] 提交 3：侧边栏点击改为创建本地 tab，删除外部打开文案和行为。
 - [ ] 提交 4：补充检查脚本和手工验证记录。
 - [ ] 提交 5：删除 `WindowEmbedder` 外部嵌入逻辑和相关 IPC/API。
 
