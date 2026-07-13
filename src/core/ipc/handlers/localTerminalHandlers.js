@@ -119,30 +119,6 @@ class LocalTerminalHandlers {
 
     safeHandle(
       this.ipcMain,
-      IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_LAUNCH,
-      async (_event, terminalConfig, tabId, options = {}) => {
-        const localConfig = {
-          ...terminalConfig,
-          tabId,
-          cols: options.cols,
-          rows: options.rows,
-        };
-        const result = await this.terminalManager.startEmbeddedTerminal(
-          localConfig,
-          tabId,
-          options,
-        );
-
-        return {
-          success: true,
-          data: result,
-        };
-      },
-      { category: "local-terminal" },
-    );
-
-    safeHandle(
-      this.ipcMain,
       IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_CLOSE,
       async (_event, tabIdOrProcessId) => {
         const closed = await this.terminalManager.closeTerminal(tabIdOrProcessId);

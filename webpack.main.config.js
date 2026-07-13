@@ -1,6 +1,24 @@
 const path = require("path");
 const fs = require("fs");
 
+const copyDirectoryIfExists = (srcDir, destDir) => {
+  if (!fs.existsSync(srcDir)) {
+    return;
+  }
+
+  fs.rmSync(destDir, { recursive: true, force: true });
+  fs.cpSync(srcDir, destDir, { recursive: true });
+};
+
+const copyFileIfExists = (srcFile, destFile) => {
+  if (!fs.existsSync(srcFile)) {
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(destFile), { recursive: true });
+  fs.copyFileSync(srcFile, destFile);
+};
+
 module.exports = {
   devtool:
     process.env.NODE_ENV === "development"
@@ -64,6 +82,41 @@ module.exports = {
               }
             });
           }
+
+          // node-pty resolves native modules relative to the bundled main file.
+          // Keep the upstream directory layout so conpty.node and its helper
+          // files are available at runtime in Electron.
+          copyDirectoryIfExists(
+            path.join(__dirname, "node_modules", "node-pty", "prebuilds"),
+            path.join(__dirname, ".webpack", "main", "prebuilds"),
+          );
+          copyDirectoryIfExists(
+            path.join(__dirname, "node_modules", "node-pty", "lib", "worker"),
+            path.join(__dirname, ".webpack", "main", "worker"),
+          );
+          copyDirectoryIfExists(
+            path.join(__dirname, "node_modules", "node-pty", "lib", "shared"),
+            path.join(__dirname, ".webpack", "main", "shared"),
+          );
+          copyFileIfExists(
+            path.join(
+              __dirname,
+              "node_modules",
+              "node-pty",
+              "lib",
+              "conpty_console_list_agent.js",
+            ),
+            path.join(
+              __dirname,
+              ".webpack",
+              "main",
+              "conpty_console_list_agent.js",
+            ),
+          );
+          copyFileIfExists(
+            path.join(__dirname, "node_modules", "node-pty", "lib", "utils.js"),
+            path.join(__dirname, ".webpack", "main", "utils.js"),
+          );
         });
       },
     },

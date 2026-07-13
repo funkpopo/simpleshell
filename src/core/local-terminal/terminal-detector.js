@@ -394,7 +394,7 @@ class TerminalDetector {
         return null;
       }
 
-      // Windows App Execution Alias（例如 wt.exe）在 where 可解析时可直接使用
+      // Windows App Execution Alias 在 where 可解析时可直接使用
       if (this.isWindows) {
         return firstPath;
       }

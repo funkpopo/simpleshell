@@ -364,8 +364,6 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_START_EMBEDDED,
       localConfig,
     ),
-  launchLocalTerminal: (terminalConfig, tabId) =>
-    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_LAUNCH, terminalConfig, tabId),
   closeLocalTerminal: (tabId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_CLOSE, tabId),
   getLocalTerminalInfo: (tabId) =>

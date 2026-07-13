@@ -22,6 +22,16 @@ const LOCALE_PAKS_TO_KEEP = new Set(["en-US.pak", "zh-CN.pak"]);
 const WORKER_UNPACK_DIRS = [
   ".webpack/main/workers",
   ".webpack\\main\\workers",
+  ".webpack/main/prebuilds",
+  ".webpack\\main\\prebuilds",
+  ".webpack/main/worker",
+  ".webpack\\main\\worker",
+  ".webpack/main/shared",
+  ".webpack\\main\\shared",
+  ".webpack/main/conpty_console_list_agent.js",
+  ".webpack\\main\\conpty_console_list_agent.js",
+  ".webpack/main/utils.js",
+  ".webpack\\main\\utils.js",
   "src/workers",
   "src\\workers",
 ];

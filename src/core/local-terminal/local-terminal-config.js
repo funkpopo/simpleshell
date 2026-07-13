@@ -34,6 +34,10 @@ const POSIX_SHELL_CANDIDATES = Object.freeze([
   "/bin/sh",
 ]);
 
+const WINDOWS_POWERSHELL_COMMANDS = new Set(["powershell.exe", "pwsh.exe"]);
+const WINDOWS_CMD_COMMANDS = new Set(["cmd.exe"]);
+const WINDOWS_WSL_COMMANDS = new Set(["wsl.exe"]);
+
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -54,6 +58,22 @@ function normalizeArgs(value) {
   return value
     .filter((item) => item !== undefined && item !== null)
     .map((item) => String(item));
+}
+
+function getWindowsCommandName(command) {
+  const normalizedCommand = normalizeString(command).replace(/\\/g, "/");
+  const parts = normalizedCommand.split("/");
+  return (parts[parts.length - 1] || "").toLowerCase();
+}
+
+function selectAllowedWindowsCommand(command, allowedCommands, fallback) {
+  const normalizedCommand = normalizeString(command);
+  if (!normalizedCommand) {
+    return fallback;
+  }
+
+  const commandName = getWindowsCommandName(normalizedCommand);
+  return allowedCommands.has(commandName) ? normalizedCommand : fallback;
 }
 
 function parseDistributionFromArgs(args) {
@@ -116,21 +136,34 @@ function normalizeLocalTerminalConfig(localConfig = {}, options = {}) {
   const distribution =
     normalizeString(input.distribution) || parseDistributionFromArgs(launchArgs);
 
-  let command =
+  const requestedCommand =
     normalizeString(input.command) ||
     normalizeString(input.executablePath) ||
     normalizeString(input.executable);
+  let command = requestedCommand;
   let args = launchArgs;
 
   if (platform === "win32") {
     if (type === SUPPORTED_LOCAL_TERMINAL_TYPES.WINDOWS_CMD) {
-      command = command || "cmd.exe";
+      command = selectAllowedWindowsCommand(
+        requestedCommand,
+        WINDOWS_CMD_COMMANDS,
+        "cmd.exe",
+      );
       args = launchArgs;
     } else if (type === SUPPORTED_LOCAL_TERMINAL_TYPES.WINDOWS_WSL) {
-      command = command || "wsl.exe";
+      command = selectAllowedWindowsCommand(
+        requestedCommand,
+        WINDOWS_WSL_COMMANDS,
+        "wsl.exe",
+      );
       args = distribution ? ["-d", distribution] : [];
     } else {
-      command = command || "powershell.exe";
+      command = selectAllowedWindowsCommand(
+        requestedCommand,
+        WINDOWS_POWERSHELL_COMMANDS,
+        "powershell.exe",
+      );
       args = launchArgs;
     }
   } else {
@@ -153,8 +186,8 @@ function normalizeLocalTerminalConfig(localConfig = {}, options = {}) {
   return {
     name,
     type,
-    executable: normalizeString(input.executable) || command,
-    executablePath: normalizeString(input.executablePath) || command,
+    executable: command,
+    executablePath: command,
     launchArgs,
     cwd,
     env: mergedEnv,
