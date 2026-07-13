@@ -25,8 +25,14 @@ import {
   Chip,
   List,
   ListItemButton,
+  ListItemIcon,
   ListItemText,
+  Menu,
+  MenuItem,
 } from "@mui/material";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import ContentCutIcon from "@mui/icons-material/ContentCut";
+import ContentPasteIcon from "@mui/icons-material/ContentPaste";
 import DownloadIcon from "@mui/icons-material/Download";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
@@ -35,6 +41,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import RestoreIcon from "@mui/icons-material/Restore";
 import NavigateBeforeIcon from "@mui/icons-material/NavigateBefore";
 import NavigateNextIcon from "@mui/icons-material/NavigateNext";
+import SelectAllIcon from "@mui/icons-material/SelectAll";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import { useTheme, alpha } from "@mui/material/styles";
@@ -54,6 +61,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { formatFileSize } from "../core/utils/formatters.js";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
+import { compactContextMenuPaperSx } from "./contextMenuStyles";
 // 延迟导入 react-pdf 以避免 webpack 模块初始化问题
 let Document, Page, pdfjs;
 let reactPdfLoaded = false;
@@ -575,6 +583,17 @@ const buildDiffLineDecorations = (paneData) => {
   return builder.finish();
 };
 
+const getEditorSelectedText = (view) => {
+  if (!view?.state) {
+    return "";
+  }
+
+  return view.state.selection.ranges
+    .filter((range) => !range.empty)
+    .map((range) => view.state.doc.sliceString(range.from, range.to))
+    .join("\n");
+};
+
 const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const theme = useTheme();
   const { t } = useTranslation();
@@ -594,6 +613,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [selectedSnapshotContent, setSelectedSnapshotContent] = useState(null);
   const [loadingSelectedSnapshot, setLoadingSelectedSnapshot] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
   const textEditorRef = useRef(null);
   const textEditorScrollElementRef = useRef(null);
   const textEditorScrollListenerRef = useRef(null);
@@ -764,6 +784,188 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const diffCurrentViewRef = useRef(null);
   const diffScrollEchoRef = useRef(null);
 
+  const handleContextMenuClose = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  const getContextMenuEditorView = useCallback(() => {
+    switch (contextMenu?.kind) {
+      case "text":
+        return textEditorRef.current;
+      case "diff-base":
+        return diffBaseViewRef.current;
+      case "diff-current":
+        return diffCurrentViewRef.current;
+      default:
+        return null;
+    }
+  }, [contextMenu?.kind]);
+
+  const openPreviewContextMenu = useCallback((event, kind) => {
+    const target = event.target;
+    if (
+      target?.closest?.(
+        ".cm-panel.cm-search, input, textarea, select, button, [role='button']",
+      )
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    let resolvedKind = kind;
+    let view = null;
+
+    if (kind === "text") {
+      view = textEditorRef.current;
+    } else if (kind === "diff") {
+      if (target?.closest?.(".file-preview-diff-pane-base")) {
+        resolvedKind = "diff-base";
+        view = diffBaseViewRef.current;
+      } else {
+        resolvedKind = "diff-current";
+        view = diffCurrentViewRef.current;
+      }
+    }
+
+    setContextMenu({
+      mouseX: event.clientX + 2,
+      mouseY: event.clientY - 6,
+      kind: resolvedKind,
+      canCopy: Boolean(getEditorSelectedText(view)),
+    });
+  }, []);
+
+  const handleTextContextMenu = useCallback(
+    (event) => openPreviewContextMenu(event, "text"),
+    [openPreviewContextMenu],
+  );
+
+  const handleDiffContextMenu = useCallback(
+    (event) => openPreviewContextMenu(event, "diff"),
+    [openPreviewContextMenu],
+  );
+
+  const handleMediaContextMenu = useCallback((event) => {
+    const target = event.target;
+    if (target?.closest?.("button, [role='button']")) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({
+      mouseX: event.clientX + 2,
+      mouseY: event.clientY - 6,
+      kind: "media",
+      canCopy: false,
+    });
+  }, []);
+
+  const handleCopySelection = useCallback(async () => {
+    const view = getContextMenuEditorView();
+    const selectedText = getEditorSelectedText(view);
+    handleContextMenuClose();
+
+    if (!selectedText) {
+      return;
+    }
+
+    try {
+      await window.clipboardAPI?.writeText(selectedText);
+    } catch (_error) {
+      setNotification({
+        message: t("filePreview.contextMenu.copyFailed"),
+        severity: "error",
+      });
+    }
+  }, [getContextMenuEditorView, handleContextMenuClose, t]);
+
+  const handleCutSelection = useCallback(async () => {
+    const view = textEditorRef.current;
+    const selectedText = getEditorSelectedText(view);
+    handleContextMenuClose();
+
+    if (!view || !isEditing || pendingRestoreSnapshot || !selectedText) {
+      return;
+    }
+
+    try {
+      await window.clipboardAPI?.writeText(selectedText);
+      const ranges = view.state.selection.ranges.filter(
+        (range) => !range.empty,
+      );
+      const cursorPosition = ranges[0]?.from ?? 0;
+      view.dispatch({
+        changes: ranges.map((range) => ({
+          from: range.from,
+          to: range.to,
+          insert: "",
+        })),
+        selection: EditorSelection.cursor(cursorPosition),
+      });
+      setContent(view.state.doc.toString());
+      setModified(true);
+      view.focus();
+    } catch (_error) {
+      setNotification({
+        message: t("filePreview.contextMenu.cutFailed"),
+        severity: "error",
+      });
+    }
+  }, [handleContextMenuClose, isEditing, pendingRestoreSnapshot, t]);
+
+  const handlePasteText = useCallback(async () => {
+    const view = textEditorRef.current;
+    handleContextMenuClose();
+
+    if (!view || !isEditing || pendingRestoreSnapshot) {
+      return;
+    }
+
+    try {
+      const clipboardText = await window.clipboardAPI?.readText();
+      if (typeof clipboardText !== "string" || !clipboardText) {
+        view.focus();
+        return;
+      }
+
+      const ranges = view.state.selection.ranges;
+      const cursorPosition = (ranges[0]?.from ?? 0) + clipboardText.length;
+      view.dispatch({
+        changes: ranges.map((range) => ({
+          from: range.from,
+          to: range.to,
+          insert: clipboardText,
+        })),
+        selection: EditorSelection.cursor(cursorPosition),
+      });
+      setContent(view.state.doc.toString());
+      setModified(true);
+      view.focus();
+    } catch (_error) {
+      setNotification({
+        message: t("filePreview.contextMenu.pasteFailed"),
+        severity: "error",
+      });
+    }
+  }, [handleContextMenuClose, isEditing, pendingRestoreSnapshot, t]);
+
+  const handleSelectAllContent = useCallback(() => {
+    const view = getContextMenuEditorView();
+    handleContextMenuClose();
+
+    if (!view?.state) {
+      return;
+    }
+
+    view.focus();
+    view.dispatch({
+      selection: EditorSelection.single(0, view.state.doc.length),
+    });
+  }, [getContextMenuEditorView, handleContextMenuClose]);
+
   // diff 双面板同步滚动：两侧行数一一对应，但开启自动换行后同一行
   // 在两侧的显示高度可能不同，因此按“行块 + 块内偏移比例”映射，
   // 而不是直接复制 scrollTop。
@@ -898,6 +1100,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setPendingRestoreSnapshot(null);
       setSelectedSnapshotContent(null);
       setShowCloseConfirm(false);
+      setContextMenu(null);
       closeInProgressRef.current = false;
     }
   }, [open]);
@@ -953,14 +1156,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         setSyntaxHighlightState({
           languageId,
           loading: false,
-          error: error?.message || "语法高亮加载失败",
+          error: error?.message || t("filePreview.syntaxHighlightLoadFailed"),
         });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [open, isTextPreview, file?.name]);
+  }, [open, isTextPreview, file?.name, t]);
 
   // 加载全局编辑器字体设置
   useEffect(() => {
@@ -1038,11 +1241,15 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           Array.isArray(response.snapshots) ? response.snapshots : [],
         );
       } else {
-        throw new Error(response?.error || "加载快照列表失败");
+        throw new Error(
+          response?.error || t("filePreview.errors.loadSnapshotsFailed"),
+        );
       }
     } catch (error) {
       setNotification({
-        message: `加载时间点失败: ${error.message || "未知错误"}`,
+        message: t("filePreview.errors.loadSnapshotPointsFailed", {
+          error: error.message || t("fileManager.errors.unknownError"),
+        }),
         severity: "error",
       });
     } finally {
@@ -1054,10 +1261,10 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     async (
       snapshotContent,
       {
-        label = "已保存版本",
+        label = t("filePreview.savedVersionLabel"),
         type = "save",
         silent = false,
-        successMessage = "已创建时间点",
+        successMessage = t("filePreview.snapshotCreated"),
         createdAt,
         force = false,
       } = {},
@@ -1085,7 +1292,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         );
 
         if (!response?.success) {
-          throw new Error(response?.error || "创建快照失败");
+          throw new Error(
+            response?.error || t("filePreview.errors.createSnapshotFailed"),
+          );
         }
 
         await refreshSnapshots();
@@ -1093,7 +1302,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         if (!silent) {
           setNotification({
             message: response.deduplicated
-              ? "当前内容与最新时间点一致，未重复保存。"
+              ? t("filePreview.snapshotDeduplicated")
               : successMessage,
             severity: "success",
           });
@@ -1103,7 +1312,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       } catch (error) {
         if (!silent) {
           setNotification({
-            message: `创建时间点失败: ${error.message || "未知错误"}`,
+            message: t("filePreview.errors.createSnapshotPointFailed", {
+              error: error.message || t("fileManager.errors.unknownError"),
+            }),
             severity: "error",
           });
         }
@@ -1112,7 +1323,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         setCreatingSnapshot(false);
       }
     },
-    [isTextPreview, tabId, fullPath, refreshSnapshots],
+    [isTextPreview, tabId, fullPath, refreshSnapshots, t],
   );
 
   useEffect(() => {
@@ -1133,7 +1344,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         const maxFileSize = 10 * 1024 * 1024;
         if (file.size && file.size > maxFileSize) {
           setError(
-            `文件大小为 ${formatFileSize(file.size)}，超过了 10MB 的预览限制。请下载文件后在本地查看和编辑。`,
+            t("filePreview.errors.fileTooLarge", {
+              size: formatFileSize(file.size),
+            }),
           );
           setLoading(false);
           return;
@@ -1163,9 +1376,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
                 if (nonPrintableRatio > 0.3) {
                   // 如果不可打印字符超过30%，可能是二进制文件
-                  setError(
-                    "该文件可能包含二进制数据，无法安全地作为文本显示。您可以尝试下载文件以在本地查看。",
-                  );
+                  setError(t("filePreview.errors.binaryTextUnsafe"));
                 } else {
                   setContent(content);
                   syncedContentRef.current = content;
@@ -1181,19 +1392,20 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               }
             } else {
               // 如果读取失败，提供更友好的错误信息
-              const errorMsg = response.error || "读取文件内容失败";
+              const errorMsg =
+                response.error || t("filePreview.errors.readContentFailed");
               if (errorMsg.includes("binary") || errorMsg.includes("二进制")) {
-                setError(
-                  "该文件包含二进制数据，无法作为文本显示。您可以下载文件以在本地查看。",
-                );
+                setError(t("filePreview.errors.binaryTextBlocked"));
               } else {
                 setError(
-                  errorMsg + "。如果这是文本文件，您可以尝试下载后查看。",
+                  t("filePreview.errors.readContentFailedWithHint", {
+                    error: errorMsg,
+                  }),
                 );
               }
             }
           } else {
-            setError("文件读取API不可用");
+            setError(t("filePreview.errors.fileReadApiUnavailable"));
           }
         } else if (isImageFile(file.name)) {
           // 读取图片文件
@@ -1209,10 +1421,12 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 setCacheFilePath(response.cacheFilePath);
               }
             } else {
-              setError(response.error || "读取文件内容失败");
+              setError(
+                response.error || t("filePreview.errors.readContentFailed"),
+              );
             }
           } else {
-            setError("文件读取API不可用");
+            setError(t("filePreview.errors.fileReadApiUnavailable"));
           }
         } else if (isPdfFile(file.name)) {
           // 读取PDF文件
@@ -1221,7 +1435,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             await loadReactPdf();
             setPdfLibLoaded(true);
           } catch (err) {
-            setError("无法加载 PDF 预览库: " + err.message);
+            setError(
+              t("filePreview.errors.loadPdfPreviewFailed", {
+                error: err.message,
+              }),
+            );
             setLoading(false);
             return;
           }
@@ -1252,18 +1470,22 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               setNumPages(null);
               setScale(1.0);
             } else {
-              setError(response.error || "读取文件内容失败");
+              setError(
+                response.error || t("filePreview.errors.readContentFailed"),
+              );
             }
           } else {
-            setError("文件读取API不可用");
+            setError(t("filePreview.errors.fileReadApiUnavailable"));
           }
         } else {
-          setError(
-            "此文件类型被识别为二进制文件，无法作为文本预览。您可以下载文件在本地查看。",
-          );
+          setError(t("filePreview.errors.binaryPreviewBlocked"));
         }
       } catch (err) {
-        setError("预览文件失败: " + (err.message || "未知错误"));
+        setError(
+          t("filePreview.errors.previewFailed", {
+            error: err.message || t("fileManager.errors.unknownError"),
+          }),
+        );
       } finally {
         setLoading(false);
       }
@@ -1279,6 +1501,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     tabId,
     createSnapshot,
     queueTextEditorScrollRestore,
+    t,
   ]);
 
   useEffect(() => {
@@ -1329,7 +1552,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
     if (!window.terminalAPI?.getFileSnapshot) {
       setNotification({
-        message: "时间点读取API不可用",
+        message: t("filePreview.errors.snapshotReadApiUnavailable"),
         severity: "error",
       });
       setPendingRestoreSnapshot(null);
@@ -1352,7 +1575,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         );
 
         if (!response?.success) {
-          throw new Error(response?.error || "读取时间点失败");
+          throw new Error(
+            response?.error || t("filePreview.errors.readSnapshotFailed"),
+          );
         }
 
         if (!cancelled) {
@@ -1365,7 +1590,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       } catch (error) {
         if (!cancelled) {
           setNotification({
-            message: `加载差异失败: ${error.message || "未知错误"}`,
+            message: t("filePreview.errors.loadDiffFailed", {
+              error: error.message || t("fileManager.errors.unknownError"),
+            }),
             severity: "error",
           });
           setPendingRestoreSnapshot((current) =>
@@ -1385,7 +1612,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     return () => {
       cancelled = true;
     };
-  }, [pendingRestoreSnapshot, tabId, fullPath]);
+  }, [pendingRestoreSnapshot, tabId, fullPath, t]);
 
   // 清理缓存 - 组件卸载时
   useEffect(() => {
@@ -1568,6 +1795,16 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     syntaxHighlightState.loading,
   ]);
 
+  const handleSearchFromContextMenu = useCallback(() => {
+    handleContextMenuClose();
+    handleOpenTextSearch();
+  }, [handleContextMenuClose, handleOpenTextSearch]);
+
+  const handleDownloadFromContextMenu = useCallback(() => {
+    handleContextMenuClose();
+    handleDownload();
+  }, [handleContextMenuClose, handleDownload]);
+
   const handleSelectSnapshot = useCallback(
     (snapshot) => {
       if (!snapshot?.id || restoringSnapshotId) {
@@ -1625,7 +1862,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
         if (response.success) {
           if (shouldSnapshotBaseline) {
             await createSnapshot(baselineContent, {
-              label: isFirstSnapshot ? "初始版本" : "已保存版本",
+              label: isFirstSnapshot
+                ? t("filePreview.initialVersionLabel")
+                : t("filePreview.savedVersionLabel"),
               type: isFirstSnapshot ? "initial" : "save",
               silent: true,
               createdAt: baselineCreatedAt,
@@ -1636,29 +1875,33 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           setNotification({
             message:
               shouldSnapshotBaseline && isFirstSnapshot
-                ? "文件保存成功，已保留初始版本"
-                : "文件保存成功",
+                ? t("filePreview.saveSuccessWithInitial")
+                : t("filePreview.saveSuccess"),
             severity: "success",
           });
           setModified(false);
           return true;
         } else {
           setNotification({
-            message: `保存失败: ${response.error || "未知错误"}`,
+            message: t("filePreview.errors.saveFailed", {
+              error: response.error || t("fileManager.errors.unknownError"),
+            }),
             severity: "error",
           });
           return false;
         }
       } else {
         setNotification({
-          message: "文件保存API不可用",
+          message: t("filePreview.errors.saveApiUnavailable"),
           severity: "error",
         });
         return false;
       }
     } catch (error) {
       setNotification({
-        message: `保存失败: ${error.message || "未知错误"}`,
+        message: t("filePreview.errors.saveFailed", {
+          error: error.message || t("fileManager.errors.unknownError"),
+        }),
         severity: "error",
       });
       return false;
@@ -1673,6 +1916,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     fullPath,
     createSnapshot,
     visibleSnapshots.length,
+    t,
   ]);
 
   useEffect(() => {
@@ -1803,7 +2047,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       );
 
       if (!response?.success) {
-        throw new Error(response?.error || "回退失败");
+        throw new Error(
+          response?.error || t("filePreview.errors.restoreFailed"),
+        );
       }
 
       setContent(response.content);
@@ -1815,13 +2061,17 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       setSelectedSnapshotContent(null);
       queueTextEditorScrollRestore();
       setNotification({
-        message: `已回退到 ${formatSnapshotDate(pendingRestoreSnapshot.createdAt)}`,
+        message: t("filePreview.restoredToVersion", {
+          date: formatSnapshotDate(pendingRestoreSnapshot.createdAt),
+        }),
         severity: "success",
       });
       setPendingRestoreSnapshot(null);
     } catch (error) {
       setNotification({
-        message: `回退失败: ${error.message || "未知错误"}`,
+        message: t("filePreview.errors.restoreFailedWithMessage", {
+          error: error.message || t("fileManager.errors.unknownError"),
+        }),
         severity: "error",
       });
     } finally {
@@ -1833,6 +2083,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     fullPath,
     content,
     queueTextEditorScrollRestore,
+    t,
   ]);
 
   // 处理通知关闭
@@ -2097,7 +2348,11 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   };
 
   const onDocumentLoadError = (error) => {
-    setError("PDF加载失败: " + error.message);
+    setError(
+      t("filePreview.errors.pdfLoadFailed", {
+        error: error.message,
+      }),
+    );
   };
 
   const goToPrevPage = () => {
@@ -2315,7 +2570,10 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                       }}
                     >
                       <ListItemText
-                        primary={snapshot.label || "时间点"}
+                        primary={
+                          snapshot.label ||
+                          t("filePreview.snapshotFallbackLabel")
+                        }
                         secondary={
                           <Box
                             component="span"
@@ -2561,6 +2819,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
     return (
       <Box
+        onContextMenu={handleDiffContextMenu}
         sx={{
           flex: 1,
           minHeight: 0,
@@ -2649,7 +2908,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             }}
           >
             <Typography variant="body2" color="text.secondary">
-              暂时无法生成当前版本和已保存版本的差异。
+              {t("filePreview.diffUnavailable")}
             </Typography>
           </Box>
         ) : !snapshotDiffData.hasChanges ? (
@@ -2708,7 +2967,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 }}
               >
                 <Typography variant="caption" color="text.secondary">
-                  已保存版本
+                  {t("filePreview.savedVersionPane")}
                 </Typography>
               </Box>
               <Box
@@ -2750,7 +3009,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 }}
               >
                 <Typography variant="caption" color="text.secondary">
-                  当前内容
+                  {t("filePreview.currentContentPane")}
                 </Typography>
               </Box>
               <Box
@@ -2862,26 +3121,38 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
               >
                 <CircularProgress size={24} />
                 <Typography variant="body2" color="text.secondary">
-                  正在加载 {syntaxHighlightState.languageId} 语法高亮...
+                  {t("filePreview.loadingSyntaxHighlight", {
+                    language: syntaxHighlightState.languageId,
+                  })}
                 </Typography>
               </Box>
             ) : pendingRestoreSnapshot ? (
               renderSnapshotDiffView()
             ) : (
-              <CodeMirror
-                value={content || ""}
-                height="100%"
-                extensions={textEditorExtensions}
-                theme={theme.palette.mode}
-                editable
-                readOnly={!isEditing}
-                onChange={handleEditorChange}
-                style={cmStyle}
-                className={
-                  isEditing ? "file-preview-editor" : "file-preview-viewer"
-                }
-                onCreateEditor={handleTextEditorCreate}
-              />
+              <Box
+                onContextMenu={handleTextContextMenu}
+                sx={{
+                  height: "100%",
+                  flex: "1 1 auto",
+                  minHeight: 0,
+                  overflow: "hidden",
+                }}
+              >
+                <CodeMirror
+                  value={content || ""}
+                  height="100%"
+                  extensions={textEditorExtensions}
+                  theme={theme.palette.mode}
+                  editable
+                  readOnly={!isEditing}
+                  onChange={handleEditorChange}
+                  style={cmStyle}
+                  className={
+                    isEditing ? "file-preview-editor" : "file-preview-viewer"
+                  }
+                  onCreateEditor={handleTextEditorCreate}
+                />
+              </Box>
             )}
           </Box>
           {showHistoryPanel ? renderSnapshotPanel() : null}
@@ -2892,6 +3163,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     if (isImageFile(file?.name)) {
       return (
         <Box
+          onContextMenu={handleMediaContextMenu}
           sx={{
             display: "flex",
             justifyContent: "center",
@@ -2934,6 +3206,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
       return (
         <Box
+          onContextMenu={handleMediaContextMenu}
           sx={{
             width: "100%",
             height: "100%",
@@ -2976,15 +3249,36 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     }
 
     return (
-      <Box sx={{ p: 2 }}>
+      <Box onContextMenu={handleMediaContextMenu} sx={{ p: 2 }}>
         <Typography variant="body1">
-          无法预览此类型的文件。请下载后在本地查看。
+          {t("filePreview.unsupportedPreview")}
         </Typography>
       </Box>
     );
   };
 
   if (!file) return null;
+
+  const isTextContextMenu = contextMenu?.kind === "text";
+  const isEditorContextMenu =
+    isTextContextMenu ||
+    contextMenu?.kind === "diff-base" ||
+    contextMenu?.kind === "diff-current";
+  const canEditFromContextMenu =
+    isTextContextMenu &&
+    isEditing &&
+    !pendingRestoreSnapshot &&
+    !loading &&
+    !savingFile &&
+    !syntaxHighlightState.loading &&
+    !syntaxHighlightState.error;
+  const canSearchFromContextMenu =
+    isTextContextMenu &&
+    !pendingRestoreSnapshot &&
+    !loading &&
+    !savingFile &&
+    !syntaxHighlightState.loading &&
+    !syntaxHighlightState.error;
 
   return (
     <Dialog
@@ -3056,10 +3350,12 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 color={syntaxHighlightState.error ? "error" : "info"}
                 label={
                   syntaxHighlightState.error
-                    ? "语法高亮加载失败"
+                    ? t("filePreview.syntaxHighlightFailed")
                     : syntaxHighlightState.loading
-                      ? "语法高亮加载中"
-                      : `${syntaxHighlightState.languageId} 高亮`
+                      ? t("filePreview.syntaxHighlightLoading")
+                      : t("filePreview.syntaxHighlightReady", {
+                          language: syntaxHighlightState.languageId,
+                        })
                 }
                 variant={syntaxHighlightState.loading ? "outlined" : "filled"}
               />
@@ -3078,12 +3374,12 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                 }
                 label={
                   pendingRestoreSnapshot
-                    ? "差异对比中"
+                    ? t("filePreview.status.diff")
                     : modified
-                      ? "有未保存修改"
+                      ? t("filePreview.status.modified")
                       : isEditing
-                        ? "编辑中"
-                        : "只读预览中"
+                        ? t("filePreview.status.editing")
+                        : t("filePreview.status.readOnly")
                 }
                 variant={
                   pendingRestoreSnapshot || modified || isEditing
@@ -3199,7 +3495,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                     Boolean(syntaxHighlightState.error)
                   }
                 >
-                  预览
+                  {t("filePreview.previewMode")}
                 </Button>
                 <Button
                   variant={isEditing ? "contained" : "outlined"}
@@ -3213,7 +3509,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                     Boolean(syntaxHighlightState.error)
                   }
                 >
-                  编辑
+                  {t("filePreview.editMode")}
                 </Button>
               </ButtonGroup>
               <Button
@@ -3230,7 +3526,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
                   Boolean(syntaxHighlightState.error)
                 }
               >
-                {savingFile ? "保存中..." : "保存"}
+                {savingFile ? t("filePreview.saving") : t("common.save")}
               </Button>
             </>
           ) : null}
@@ -3305,6 +3601,109 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           </Button>
         </Stack>
       </DialogActions>
+
+      <Menu
+        open={Boolean(contextMenu)}
+        onClose={handleContextMenuClose}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          contextMenu
+            ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
+            : undefined
+        }
+        PaperProps={{
+          "data-file-preview-context-menu": "true",
+          sx: compactContextMenuPaperSx,
+        }}
+        transitionDuration={0}
+        disableAutoFocusItem
+        disableScrollLock
+      >
+        {isEditorContextMenu ? (
+          <>
+            {isTextContextMenu ? (
+              <MenuItem
+                onClick={handleCutSelection}
+                disabled={!canEditFromContextMenu || !contextMenu?.canCopy}
+              >
+                <ListItemIcon>
+                  <ContentCutIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t("filePreview.contextMenu.cut")}</ListItemText>
+                <Typography variant="caption" color="text.secondary">
+                  Ctrl+X
+                </Typography>
+              </MenuItem>
+            ) : null}
+            <MenuItem
+              onClick={handleCopySelection}
+              disabled={!contextMenu?.canCopy}
+            >
+              <ListItemIcon>
+                <ContentCopyIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>{t("filePreview.contextMenu.copy")}</ListItemText>
+              <Typography variant="caption" color="text.secondary">
+                Ctrl+C
+              </Typography>
+            </MenuItem>
+            {isTextContextMenu ? (
+              <MenuItem
+                onClick={handlePasteText}
+                disabled={!canEditFromContextMenu}
+              >
+                <ListItemIcon>
+                  <ContentPasteIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>
+                  {t("filePreview.contextMenu.paste")}
+                </ListItemText>
+                <Typography variant="caption" color="text.secondary">
+                  Ctrl+V
+                </Typography>
+              </MenuItem>
+            ) : null}
+            <Divider />
+            <MenuItem onClick={handleSelectAllContent}>
+              <ListItemIcon>
+                <SelectAllIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>
+                {t("filePreview.contextMenu.selectAll")}
+              </ListItemText>
+              <Typography variant="caption" color="text.secondary">
+                Ctrl+A
+              </Typography>
+            </MenuItem>
+            {isTextContextMenu ? (
+              <MenuItem
+                onClick={handleSearchFromContextMenu}
+                disabled={!canSearchFromContextMenu}
+              >
+                <ListItemIcon>
+                  <SearchIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>
+                  {t("filePreview.contextMenu.search")}
+                </ListItemText>
+                <Typography variant="caption" color="text.secondary">
+                  Ctrl+F
+                </Typography>
+              </MenuItem>
+            ) : null}
+            <Divider />
+          </>
+        ) : null}
+        <MenuItem
+          onClick={handleDownloadFromContextMenu}
+          disabled={loading || savingFile}
+        >
+          <ListItemIcon>
+            <DownloadIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t("filePreview.contextMenu.download")}</ListItemText>
+        </MenuItem>
+      </Menu>
 
       <Dialog
         open={showCloseConfirm}

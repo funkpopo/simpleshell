@@ -176,7 +176,7 @@ const getParentPath = (targetPath) => {
 const normalizeTransferName = (name) =>
   typeof name === "string" ? name.trim() : "";
 
-const buildTransferDisplayName = (names, itemLabel = "项目") => {
+const buildTransferDisplayName = (names, formatMultipleName) => {
   const normalizedNames = Array.from(
     new Set((names || []).map(normalizeTransferName).filter(Boolean)),
   );
@@ -189,7 +189,14 @@ const buildTransferDisplayName = (names, itemLabel = "项目") => {
     return normalizedNames[0];
   }
 
-  return `${normalizedNames[0]} 等 ${normalizedNames.length} 个${itemLabel}`;
+  if (typeof formatMultipleName === "function") {
+    return formatMultipleName({
+      firstName: normalizedNames[0],
+      count: normalizedNames.length,
+    });
+  }
+
+  return `${normalizedNames[0]} (${normalizedNames.length})`;
 };
 
 const getTopLevelTransferItemName = (targetPath) => {
@@ -3955,7 +3962,9 @@ const FileManager = memo(
             onClick={handleBlankClick}
           >
             <Typography variant="body2" color="text.secondary">
-              {searchTerm ? "未找到匹配的文件" : "当前目录为空"}
+              {searchTerm
+                ? t("fileManager.noSearchResults")
+                : t("fileManager.emptyDirectory")}
             </Typography>
           </Box>
         );
@@ -4735,7 +4744,12 @@ const FileManager = memo(
                 getTopLevelTransferItemName(folder.relativePath || folder.name),
               ),
             ],
-            "项目",
+            ({ firstName, count }) =>
+              t("fileManager.multipleItemsName", {
+                name: firstName,
+                count,
+                itemLabel: t("fileManager.itemLabels.items"),
+              }),
           ) || t("fileManager.messages.preparingUpload");
 
         updateTransferProgress(transferId, {
@@ -5416,7 +5430,12 @@ const FileManager = memo(
           const batchDisplayName =
             buildTransferDisplayName(
               filesToDownload.map((file) => file.name),
-              "文件",
+              ({ firstName, count }) =>
+                t("fileManager.multipleItemsName", {
+                  name: firstName,
+                  count,
+                  itemLabel: t("fileManager.itemLabels.files"),
+                }),
             ) ||
             t("fileManager.messages.batchDownloadTitle", {
               count: filesToDownload.length,
@@ -6884,8 +6903,10 @@ const FileManager = memo(
                 </ListItemIcon>
                 <ListItemText>
                   {menuItems.fileCount > 1
-                    ? `下载 ${menuItems.fileCount} 个文件`
-                    : "下载文件"}
+                    ? t("fileManager.downloadFiles", {
+                        count: menuItems.fileCount,
+                      })
+                    : t("fileManager.downloadFile")}
                 </ListItemText>
                 <Typography
                   variant="caption"
@@ -6904,8 +6925,10 @@ const FileManager = memo(
                 </ListItemIcon>
                 <ListItemText>
                   {menuItems.folderCount > 1
-                    ? `下载 ${menuItems.folderCount} 个文件夹`
-                    : "下载文件夹"}
+                    ? t("fileManager.downloadFolders", {
+                        count: menuItems.folderCount,
+                      })
+                    : t("fileManager.downloadFolder")}
                 </ListItemText>
                 <Typography
                   variant="caption"
@@ -7021,8 +7044,10 @@ const FileManager = memo(
                 {menuItems.isDeleting
                   ? t("fileManager.messages.operationInProgress")
                   : selectedFiles.length > 1
-                    ? `删除 ${selectedFiles.length} 个项目`
-                    : "删除"}
+                    ? t("fileManager.deleteItems", {
+                        count: selectedFiles.length,
+                      })
+                    : t("fileManager.delete")}
               </ListItemText>
               <Typography
                 variant="caption"
@@ -7475,7 +7500,7 @@ const FileManager = memo(
                       handleCloseNotification();
                     }}
                   >
-                    打开位置
+                    {t("fileManager.openLocation")}
                   </Button>
                 ) : null
               }
