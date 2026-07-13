@@ -174,7 +174,7 @@
 
 ## 重点风险与处理
 
-- [ ] `node-pty` 原生依赖风险：
+- [x] `node-pty` 原生依赖风险：
   - 当前 `package.json` 已有 `node-pty`，但 Electron 40/Node 24 的 rebuild 和打包必须验证；
   - 确认 `@electron-forge/plugin-auto-unpack-natives` 能正确处理；
   - 在 Windows 开发环境执行 `npm start` 和 `npm run package` 验证；
@@ -182,7 +182,7 @@
 - [ ] 输入输出背压风险：
   - 必须复用 `TerminalIOMailboxManager`，不要新增一套直接 `webContents.send` 高频输出通道；
   - 大量输出如 `dir /s`、`find /`、`yes` 场景要验证 UI 不冻结。
-- [ ] resize 风险：
+- [x] resize 风险：
   - 本地 PTY 必须处理 xterm fit 后的 cols/rows；
   - 首次渲染、侧边栏开关、窗口 resize、tab 切换都要触发 resize。
 - [ ] 生命周期风险：
@@ -203,12 +203,12 @@
 
 ## 验收标准
 
-- [ ] 点击侧边栏「本地终端」中的 PowerShell/cmd/WSL 后，在应用内部新建终端 tab，而不是打开外部 Terminal 窗口。
+- [x] 点击侧边栏「本地终端」中的 PowerShell/cmd/WSL 后，在应用内部新建终端 tab，而不是打开外部 Terminal 窗口。
 - [x] 项目中不存在本地终端启动失败后转外部 Terminal 的兜底逻辑。
-- [ ] 本地 tab 能正常输入命令、显示输出、复制粘贴、搜索、清屏、右键菜单可用。
-- [ ] 窗口 resize、侧边栏展开/收起、tab 切换后，本地终端尺寸正确，无裁剪和错位。
+- [x] 本地 tab 能正常输入命令、显示输出、复制粘贴、搜索、清屏、右键菜单可用。
+- [x] 窗口 resize、侧边栏展开/收起、tab 切换后，本地终端尺寸正确，无裁剪和错位。
 - [ ] 关闭本地 tab 后，对应 PTY 进程退出，`processManager` 和 mailbox 不残留。
-- [ ] PowerShell、cmd、至少一个 WSL 发行版通过手工验证。
+- [x] PowerShell、cmd、至少一个 WSL 发行版通过手工验证。
 - [x] macOS/Linux 默认 shell 路径有明确实现和检查；如果当前开发环境无法手工验证，需要补充代码级检查和待验证记录，不能从范围中移除。
 - [x] SSH/Telnet 现有连接、重连、命令建议、搜索和快捷命令不回归。
 - [x] `npm run check` 通过；如新增检查脚本，覆盖本地终端 IPC schema、tab 类型和 PTY 生命周期。
