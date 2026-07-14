@@ -2358,6 +2358,13 @@ const FileManager = memo(
       });
     }, []);
 
+    // 搜索框失焦时，若无搜索内容则自动收起为搜索图标；有内容时保持展开以显示过滤状态
+    const handleSearchBlur = useCallback(() => {
+      if (!searchTerm) {
+        setShowSearch(false);
+      }
+    }, [searchTerm]);
+
     // 多选文件管理函数 - 使用 Set 优化性能
     const selectedFilesSet = useMemo(() => {
       const set = new Set();
@@ -6722,6 +6729,7 @@ const FileManager = memo(
                     placeholder={t("fileManager.search")}
                     value={searchTerm}
                     onChange={handleSearchChange}
+                    onBlur={handleSearchBlur}
                     variant="outlined"
                     InputProps={{
                       startAdornment: (
@@ -6734,6 +6742,8 @@ const FileManager = memo(
                           <Tooltip title={t("common.clearSearch")}>
                             <IconButton
                               size="small"
+                              // 阻止 mousedown 抢占焦点，避免输入框先失焦收起导致点击落空
+                              onMouseDown={(event) => event.preventDefault()}
                               onClick={() => {
                                 if (searchTerm) {
                                   setSearchTerm("");
