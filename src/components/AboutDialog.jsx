@@ -302,10 +302,6 @@ const AboutDialog = memo(function AboutDialog({
   const canInstallDownloadedUpdate = hasDownloadedInstaller && !updateIsBusy;
   const shouldShowDownloadedInstallerNotice =
     hasDownloadedInstaller && updateStatus !== "downloaded" && !updateIsBusy;
-  const updateVersion =
-    displayUpdateInfo?.installerVersion ||
-    displayUpdateInfo?.latestVersion ||
-    "";
   const downloadSizeText = formatBytes(
     displayUpdateInfo?.size || displayUpdateInfo?.downloadSize,
   );
@@ -604,12 +600,6 @@ const AboutDialog = memo(function AboutDialog({
     }
 
     const metadataItems = [
-      updateVersion
-        ? {
-            label: t("update.newVersion"),
-            value: `v${updateVersion}`,
-          }
-        : null,
       downloadSizeText
         ? {
             label: t("update.downloadSize"),
@@ -715,21 +705,9 @@ const AboutDialog = memo(function AboutDialog({
       case "available":
         primaryContent = (
           <Box sx={updatePanelSx}>
-            <Box
-              display="flex"
-              alignItems="center"
-              justifyContent="space-between"
-              gap={1}
-            >
-              <Box display="flex" alignItems="center" gap={1}>
-                <UpdateIcon color="primary" />
-                <Typography variant="body2">{t("update.available")}</Typography>
-              </Box>
-              <Chip
-                label={`v${updateInfo?.latestVersion}`}
-                color="primary"
-                size="small"
-              />
+            <Box display="flex" alignItems="center" gap={1}>
+              <UpdateIcon color="primary" />
+              <Typography variant="body2">{t("update.available")}</Typography>
             </Box>
             <Typography
               variant="caption"
@@ -834,6 +812,30 @@ const AboutDialog = memo(function AboutDialog({
         primaryContent = null;
     }
 
+    // 单面板原则：idle 且已有下载好的安装包时，用「已准备好安装」作为唯一状态面板
+    if (!primaryContent && shouldShowDownloadedInstallerNotice) {
+      primaryContent = (
+        <Box sx={updatePanelSx}>
+          <Box display="flex" alignItems="center" gap={1}>
+            <CheckIcon color="success" />
+            <Typography variant="body2" color="success.main">
+              {t("update.readyToInstall")}
+            </Typography>
+          </Box>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: "block", mt: 1 }}
+          >
+            {t("update.currentVersion")}:{" "}
+            {downloadedInstallerInfo?.currentVersion || appVersion} →{" "}
+            {downloadedInstallerInfo?.installerVersion}
+          </Typography>
+          {renderUpdateMetadata()}
+        </Box>
+      );
+    }
+
     return (
       <>
         {error ? (
@@ -853,26 +855,6 @@ const AboutDialog = memo(function AboutDialog({
           </Alert>
         ) : null}
         {primaryContent}
-        {shouldShowDownloadedInstallerNotice ? (
-          <Box sx={updatePanelSx}>
-            <Box display="flex" alignItems="center" gap={1}>
-              <CheckIcon color="success" />
-              <Typography variant="body2" color="success.main">
-                {t("update.readyToInstall")}
-              </Typography>
-            </Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: "block", mt: 1 }}
-            >
-              {t("update.currentVersion")}:{" "}
-              {downloadedInstallerInfo?.currentVersion || appVersion} →{" "}
-              {downloadedInstallerInfo?.installerVersion}
-            </Typography>
-            {renderUpdateMetadata()}
-          </Box>
-        ) : null}
       </>
     );
   };
@@ -905,37 +887,31 @@ const AboutDialog = memo(function AboutDialog({
         </Button>
       ) : null;
 
+    const checkUpdateButton = (variant) => (
+      <Button
+        variant={variant}
+        onClick={handleCheckForUpdate}
+        disabled={checkingForUpdate}
+      >
+        {updateStatus === "error"
+          ? t("update.retryCheck")
+          : t("about.checkUpdateButton")}
+      </Button>
+    );
+
     switch (updateStatus) {
       case "idle":
-      case "error":
-        return (
+        return canInstallDownloadedUpdate ? (
           <>
-            <Button
-              variant="outlined"
-              onClick={handleCheckForUpdate}
-              disabled={checkingForUpdate}
-              startIcon={
-                checkingForUpdate ? <CircularProgress size={16} /> : null
-              }
-            >
-              {updateStatus === "error"
-                ? t("update.retryCheck")
-                : t("about.checkUpdateButton")}
-            </Button>
-            {canInstallDownloadedUpdate ? installButton : null}
-            {updateInfo?.hasUpdate && !canInstallDownloadedUpdate ? (
-              <Button
-                variant="contained"
-                onClick={downloadUpdate}
-                disabled={isDownloading}
-                startIcon={<DownloadIcon />}
-              >
-                {t("update.download")}
-              </Button>
-            ) : null}
-            {remindLaterButton}
+            {installButton}
+            {checkUpdateButton("text")}
           </>
+        ) : (
+          checkUpdateButton("outlined")
         );
+
+      case "error":
+        return checkUpdateButton("outlined");
 
       case "checking":
         return (
@@ -990,18 +966,7 @@ const AboutDialog = memo(function AboutDialog({
         );
 
       case "upToDate":
-        return (
-          <>
-            <Button
-              variant="outlined"
-              onClick={handleCheckForUpdate}
-              disabled={checkingForUpdate}
-            >
-              {t("update.retryCheck")}
-            </Button>
-            {installButton}
-          </>
-        );
+        return installButton || checkUpdateButton("outlined");
 
       default:
         return null;
@@ -1036,20 +1001,16 @@ const AboutDialog = memo(function AboutDialog({
       <DialogTitle>{t("about.title")}</DialogTitle>
       <DialogContent dividers>
         <Box sx={{ mb: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            SimpleShell
-          </Typography>
           <Typography variant="body1" gutterBottom>
             {t("about.version")}: {appVersion}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="text.secondary" gutterBottom>
             {t("about.description")}
           </Typography>
 
-          <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>
-            {t("about.author")}
+          <Typography variant="body2" sx={{ mt: 2 }}>
+            {t("about.author")}: funkpopo
           </Typography>
-          <Typography variant="body2">{t("about.author")}: funkpopo</Typography>
           <Typography variant="body2">
             {t("about.email")}:{" "}
             <Link
