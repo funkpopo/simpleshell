@@ -3926,10 +3926,6 @@ function AppContent() {
                   <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
                   {t("menu.settings")}
                 </MenuItem>
-                <MenuItem onClick={handleCheckForUpdates}>
-                  <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
-                  {t("menu.checkForUpdates")}
-                </MenuItem>
                 <MenuItem onClick={handleOpenLogDirectory}>
                   <FolderOpenIcon fontSize="small" sx={{ mr: 1 }} />
                   {t("menu.openLogs")}
