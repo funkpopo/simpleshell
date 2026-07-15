@@ -1304,6 +1304,7 @@
       "loadError": "加载地图数据失败"
     },
     "resourceMonitor": {
+      "title": "系统资源监控",
       "loading": "正在加载系统资源信息...",
       "localSystem": "本地系统",
       "remoteSystem": "远程系统",
@@ -1322,6 +1323,7 @@
       "processName": "进程",
       "cpuShort": "CPU",
       "memoryShort": "内存",
+      "topProcessesHint": "已按内存占用排序，仅显示前 {{count}} 个进程",
       "localInfo": "显示本机系统信息",
       "remoteInfo": "显示远程系统信息",
       "autoRefresh": "每 5 秒自动刷新",

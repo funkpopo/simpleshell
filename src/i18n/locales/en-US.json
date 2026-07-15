@@ -1304,6 +1304,7 @@
       "loadError": "Failed to load map data"
     },
     "resourceMonitor": {
+      "title": "System Resource Monitor",
       "loading": "Loading system resource information...",
       "localSystem": "Local System",
       "remoteSystem": "Remote System",
@@ -1322,6 +1323,7 @@
       "processName": "Process",
       "cpuShort": "CPU",
       "memoryShort": "Memory",
+      "topProcessesHint": "Sorted by memory usage, showing top {{count}} processes",
       "localInfo": "Showing local system info",
       "remoteInfo": "Showing remote system info",
       "autoRefresh": "Auto refresh every 5s",

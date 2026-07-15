@@ -22,8 +22,8 @@ import ListItem from "@mui/material/ListItem";
 import Memory from "@mui/icons-material/Memory"; // For Processes icon
 import { sidebarContentSx, sidebarListItemButtonSx } from "./sidebarItemStyles";
 
-/** 进程表内紧凑用量：数字对齐 + 底部分档色细条，比粗进度条更易扫读 */
-const CompactUsageMetric = memo(({ value, theme }) => {
+/** 进程行内紧凑用量：标签 + 数字 + 分档色细条，等分行宽自适应，窄侧边栏下不溢出 */
+const CompactUsageMetric = memo(({ label, value, theme }) => {
   const pct = Math.min(Math.max(Number(value) || 0, 0), 100);
   const barColor =
     pct >= 80
@@ -33,26 +33,47 @@ const CompactUsageMetric = memo(({ value, theme }) => {
         : theme.palette.success.main;
 
   return (
-    <Box sx={{ width: "100%", minWidth: 0 }}>
-      <Typography
-        variant="caption"
-        component="span"
-        sx={{
-          display: "block",
-          textAlign: "right",
-          fontWeight: 600,
-          fontVariantNumeric: "tabular-nums",
-          lineHeight: 1.0,
-          fontSize: "0.72rem",
-        }}
-      >
-        {pct.toFixed(1)}%
-      </Typography>
+    <Box sx={{ flex: 1, minWidth: 0 }}>
       <Box
         sx={{
-          mt: 0.06,
-          height: 2,
-          borderRadius: 0.2,
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 0.5,
+        }}
+      >
+        <Typography
+          variant="caption"
+          component="span"
+          noWrap
+          sx={{
+            minWidth: 0,
+            fontSize: "0.65rem",
+            lineHeight: 1.3,
+            color: "text.secondary",
+          }}
+        >
+          {label}
+        </Typography>
+        <Typography
+          variant="caption"
+          component="span"
+          sx={{
+            flexShrink: 0,
+            fontWeight: 600,
+            fontVariantNumeric: "tabular-nums",
+            lineHeight: 1.3,
+            fontSize: "0.7rem",
+          }}
+        >
+          {pct.toFixed(1)}%
+        </Typography>
+      </Box>
+      <Box
+        sx={{
+          mt: 0.25,
+          height: 3,
+          borderRadius: 1,
           bgcolor: "action.hover",
           overflow: "hidden",
         }}
@@ -73,6 +94,7 @@ const CompactUsageMetric = memo(({ value, theme }) => {
 
 CompactUsageMetric.displayName = "CompactUsageMetric";
 CompactUsageMetric.propTypes = {
+  label: PropTypes.node.isRequired,
   value: PropTypes.number.isRequired,
   theme: PropTypes.shape({
     palette: PropTypes.shape({
@@ -85,7 +107,8 @@ CompactUsageMetric.propTypes = {
   }).isRequired,
 };
 
-const SIDEBAR_TITLE_BAR_HEIGHT = 36;
+const SIDEBAR_TITLE_BAR_HEIGHT = 44;
+const MAX_VISIBLE_PROCESSES = 50;
 
 const AccordionHeader = ({ title, icon, expanded, onClick }) => {
   const theme = useTheme();
@@ -291,18 +314,14 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
             justifyContent: "space-between",
             alignItems: "center",
             px: 1.25,
-            py: 0.5,
+            py: 0.75,
             minHeight: SIDEBAR_TITLE_BAR_HEIGHT,
             flexShrink: 0,
             borderBottom: `1px solid ${theme.palette.divider}`,
           }}
         >
-          <Typography
-            variant="subtitle2"
-            fontWeight={600}
-            sx={{ fontSize: "0.8125rem", lineHeight: 1.2 }}
-          >
-            系统资源监控
+          <Typography variant="subtitle1" fontWeight="medium">
+            {t("resourceMonitor.title")}
           </Typography>
           <Box>
             <Tooltip title={t("common.refresh")} placement="top">
@@ -311,8 +330,8 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 onClick={handleRefresh}
                 disabled={loading}
                 sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-              
-                aria-label={t("common.refresh")}>
+                aria-label={t("common.refresh")}
+              >
                 <RefreshIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -511,7 +530,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                       px: 1.25,
                       pb: 1.25,
                       pt: 0,
-                      maxHeight: "min(380px, 42vh)",
+                      maxHeight: "min(420px, 48vh)",
                       overflowY: "auto",
                     }}
                   >
@@ -530,148 +549,96 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                         <CircularProgress size={24} />
                       </Box>
                     ) : (
-                      <List dense disablePadding sx={{ pb: 0.25 }}>
-                        <ListItem
-                          divider
-                          sx={{
-                            position: "sticky",
-                            top: 0,
-                            zIndex: 2,
-                            py: 0.18,
-                            px: 0.7,
-                            bgcolor: "background.paper",
-                            borderBottom: `1px solid ${theme.palette.divider}`,
-                          }}
-                        >
-                          <Box
-                            display="flex"
-                            width="100%"
-                            alignItems="center"
-                            gap={0.5}
-                          >
-                            <Box sx={{ flex: "0 0 40px" }}>
-                              <Typography
-                                variant="caption"
+                      <>
+                        <List dense disablePadding sx={{ pb: 0.25 }}>
+                          {processes
+                            .slice(0, MAX_VISIBLE_PROCESSES)
+                            .map((p) => (
+                              <ListItem
+                                key={p.pid}
+                                divider
                                 sx={{
-                                  fontWeight: 700,
-                                  fontSize: "0.7rem",
-                                  color: "text.secondary",
-                                  letterSpacing: "0.02em",
+                                  px: 0.75,
+                                  py: 0.6,
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  alignItems: "stretch",
+                                  gap: 0.4,
+                                  borderRadius: 1,
+                                  "&:hover": { bgcolor: "action.hover" },
                                 }}
                               >
-                                PID
-                              </Typography>
-                            </Box>
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                              <Typography
-                                variant="caption"
-                                sx={{
-                                  fontWeight: 700,
-                                  fontSize: "0.7rem",
-                                  color: "text.secondary",
-                                }}
-                              >
-                                {t("resourceMonitor.processName")}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ flex: "0 0 52px", textAlign: "right" }}>
-                              <Typography
-                                variant="caption"
-                                sx={{
-                                  fontWeight: 700,
-                                  fontSize: "0.7rem",
-                                  color: "text.secondary",
-                                }}
-                              >
-                                {t("resourceMonitor.cpuShort")}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ flex: "0 0 52px", textAlign: "right" }}>
-                              <Typography
-                                variant="caption"
-                                sx={{
-                                  fontWeight: 700,
-                                  fontSize: "0.7rem",
-                                  color: "text.secondary",
-                                }}
-                              >
-                                {t("resourceMonitor.memoryShort")}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </ListItem>
-                        {processes.slice(0, 50).map((p) => (
-                          <ListItem
-                            key={p.pid}
-                            divider
-                            sx={{
-                              py: 0.12,
-                              px: 0.7,
-                              alignItems: "center",
-                              borderRadius: 1,
-                              "&:hover": { bgcolor: "action.hover" },
-                            }}
-                          >
-                            <Box
-                              display="flex"
-                              width="100%"
-                              alignItems="center"
-                              gap={0.4}
-                            >
-                              <Box sx={{ flex: "0 0 40px" }}>
-                                <Typography
-                                  variant="caption"
+                                <Box
                                   sx={{
-                                    fontVariantNumeric: "tabular-nums",
-                                    fontSize: "0.68rem",
-                                    color: "text.secondary",
-                                    fontFamily: "ui-monospace, monospace",
+                                    display: "flex",
+                                    alignItems: "baseline",
+                                    gap: 0.75,
+                                    minWidth: 0,
                                   }}
                                 >
-                                  {p.pid}
-                                </Typography>
-                              </Box>
-                              <Box sx={{ flex: 1, minWidth: 0, pr: 0.25 }}>
-                                <Tooltip
-                                  title={`${p.name} (PID: ${p.pid})`}
-                                  placement="top-start"
-                                  enterDelay={400}
-                                >
+                                  <Tooltip
+                                    title={`${p.name} (PID: ${p.pid})`}
+                                    placement="top-start"
+                                    enterDelay={400}
+                                  >
+                                    <Typography
+                                      variant="caption"
+                                      noWrap
+                                      sx={{
+                                        flex: 1,
+                                        minWidth: 0,
+                                        fontSize: "0.75rem",
+                                        lineHeight: 1.4,
+                                        fontWeight: 500,
+                                        color: "text.primary",
+                                      }}
+                                    >
+                                      {p.name}
+                                    </Typography>
+                                  </Tooltip>
                                   <Typography
                                     variant="caption"
-                                    noWrap
                                     sx={{
-                                      fontSize: "0.78rem",
-                                      lineHeight: 0.98,
-                                      fontWeight: 650,
-                                      color: "text.primary",
-                                      display: "block",
-                                      maxWidth: "100%",
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap",
+                                      flexShrink: 0,
+                                      fontSize: "0.68rem",
+                                      lineHeight: 1.4,
+                                      color: "text.secondary",
+                                      fontFamily: "ui-monospace, monospace",
+                                      fontVariantNumeric: "tabular-nums",
                                     }}
                                   >
-                                    {p.name}
+                                    PID {p.pid}
                                   </Typography>
-                                </Tooltip>
-                              </Box>
-                              <Box sx={{ flex: "0 0 52px" }}>
-                                <CompactUsageMetric
-                                  value={p.cpu}
-                                  theme={theme}
-                                />
-                              </Box>
-                              <Box sx={{ flex: "0 0 52px" }}>
-                                <CompactUsageMetric
-                                  value={p.memory}
-                                  theme={theme}
-                                />
-                              </Box>
-                            </Box>
-                          </ListItem>
-                        ))}
-                      </List>
+                                </Box>
+                                <Box sx={{ display: "flex", gap: 1 }}>
+                                  <CompactUsageMetric
+                                    label={t("resourceMonitor.cpuShort")}
+                                    value={p.cpu}
+                                    theme={theme}
+                                  />
+                                  <CompactUsageMetric
+                                    label={t("resourceMonitor.memoryShort")}
+                                    value={p.memory}
+                                    theme={theme}
+                                  />
+                                </Box>
+                              </ListItem>
+                            ))}
+                        </List>
+                        {processes.length > MAX_VISIBLE_PROCESSES && (
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            align="center"
+                            display="block"
+                            sx={{ pt: 0.75, fontSize: "0.68rem" }}
+                          >
+                            {t("resourceMonitor.topProcessesHint", {
+                              count: MAX_VISIBLE_PROCESSES,
+                            })}
+                          </Typography>
+                        )}
+                      </>
                     )}
                   </Box>
                 </Collapse>
@@ -685,8 +652,11 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                   align="center"
                   display="block"
                 >
-                  {systemInfo.isLocal ? "显示本地系统信息" : "显示远程系统信息"}
-                  • 每5秒自动刷新
+                  {systemInfo.isLocal
+                    ? t("resourceMonitor.localInfo")
+                    : t("resourceMonitor.remoteInfo")}
+                  {" • "}
+                  {t("resourceMonitor.autoRefresh")}
                 </Typography>
               </Box>
             </Box>
