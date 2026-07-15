@@ -5,6 +5,26 @@ const SELECTED_HOVER_OPACITY = 0.16;
 
 export const SIDEBAR_ITEM_RADIUS = 1;
 
+export const SIDEBAR_TITLE_BAR_HEIGHT = 44;
+
+// 侧边栏展开后的标题栏统一样式（高度、内边距、分隔线）
+export const sidebarTitleBarSx = (theme) => ({
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  px: 1.25,
+  py: 0.75,
+  minHeight: SIDEBAR_TITLE_BAR_HEIGHT,
+  flexShrink: 0,
+  borderBottom: `1px solid ${theme.palette.divider}`,
+});
+
+// 标题栏内操作按钮（刷新/关闭等）统一尺寸
+export const sidebarTitleIconButtonSx = {
+  p: 0.5,
+  "& .MuiSvgIcon-root": { fontSize: 18 },
+};
+
 export const getSidebarItemSelectedBg = (theme) =>
   alpha(theme.palette.primary.main, SELECTED_OPACITY);
 

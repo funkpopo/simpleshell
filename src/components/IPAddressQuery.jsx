@@ -19,12 +19,16 @@ import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
 import ListItemButton from "@mui/material/ListItemButton";
-import Divider from "@mui/material/Divider";
 import HistoryIcon from "@mui/icons-material/History";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 import Collapse from "@mui/material/Collapse";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import { sidebarContentSx } from "./sidebarItemStyles";
+import {
+  sidebarContentSx,
+  sidebarListItemButtonSx,
+  sidebarTitleBarSx,
+  sidebarTitleIconButtonSx,
+} from "./sidebarItemStyles";
 // Common IP utilities (supports IPv4/IPv6 + private detection)
 // Use require for reliable CJS interop in both renderer and main bundles
 const ipUtils = require("../utils/ip");
@@ -451,18 +455,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
       elevation={4}
     >
       <Box sx={sidebarContentSx(theme, open)}>
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            px: 1.25,
-            py: 0.75,
-            minHeight: 44,
-            flexShrink: 0,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-          }}
-        >
+        <Box sx={sidebarTitleBarSx(theme)}>
           <Typography variant="subtitle1" fontWeight="medium">
             {t("ipAddressQuery.title")}
           </Typography>
@@ -472,7 +465,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
                 size="small"
                 onClick={onClose}
                 aria-label={t("common.close")}
-                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+                sx={sidebarTitleIconButtonSx}
               >
                 <CloseIcon fontSize="small" />
               </IconButton>
@@ -600,38 +593,38 @@ const IPAddressQuery = memo(({ open, onClose }) => {
               ) : (
                 <List dense disablePadding>
                   {history.map((h) => (
-                    <React.Fragment key={h.id}>
-                      <ListItem disableGutters disablePadding>
-                        <ListItemButton
-                          disabled={loading}
-                          onClick={() => fetchIPInfo(h.ip)}
-                          disableRipple
-                          sx={{
-                            minHeight: 44,
-                            py: 0.75,
-                            px: 1,
-                            alignItems: "flex-start",
-                            borderRadius: 1,
-                            overflow: "hidden",
+                    <ListItem
+                      key={h.id}
+                      disableGutters
+                      disablePadding
+                      sx={{ mb: 0.5 }}
+                    >
+                      <ListItemButton
+                        disabled={loading}
+                        onClick={() => fetchIPInfo(h.ip)}
+                        sx={{
+                          ...sidebarListItemButtonSx(theme),
+                          minHeight: 44,
+                          py: 0.75,
+                          px: 1,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <ListItemText
+                          primaryTypographyProps={{
+                            variant: "body2",
+                            noWrap: true,
                           }}
-                        >
-                          <ListItemText
-                            primaryTypographyProps={{
-                              variant: "body2",
-                              noWrap: true,
-                            }}
-                            secondaryTypographyProps={{
-                              variant: "caption",
-                              color: "text.secondary",
-                              noWrap: true,
-                            }}
-                            primary={h.ip || t("ipAddressQuery.myIp")}
-                            secondary={`${h.locationText || ""} ${new Date(h.time).toLocaleTimeString()}`}
-                          />
-                        </ListItemButton>
-                      </ListItem>
-                      <Divider component="li" />
-                    </React.Fragment>
+                          secondaryTypographyProps={{
+                            variant: "caption",
+                            color: "text.secondary",
+                            noWrap: true,
+                          }}
+                          primary={h.ip || t("ipAddressQuery.myIp")}
+                          secondary={`${h.locationText || ""} ${new Date(h.time).toLocaleTimeString()}`}
+                        />
+                      </ListItemButton>
+                    </ListItem>
                   ))}
                 </List>
               )}

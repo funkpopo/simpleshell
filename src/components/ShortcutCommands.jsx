@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Dialog from "./AccessibleDialog.jsx";
 import useAutoCleanup from "../hooks/useAutoCleanup";
-import {
-  List } from "react-window";
+import { List } from "react-window";
 import {
   Box,
   Paper,
@@ -52,6 +51,8 @@ import {
   getSidebarItemSurfaceBg,
   sidebarContentSx,
   sidebarListItemButtonSx,
+  sidebarTitleBarSx,
+  sidebarTitleIconButtonSx,
 } from "./sidebarItemStyles";
 
 const COMMAND_ITEM_HEIGHT = 48;
@@ -190,8 +191,9 @@ const CommandItem = React.memo(
                       bgcolor: "action.hover",
                     },
                   }}
-                
-                  aria-label={t("shortcutCommands.sendAndExecute")}>
+
+                  aria-label={t("shortcutCommands.sendAndExecute")}
+                >
                   <SendIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Tooltip>
@@ -212,8 +214,9 @@ const CommandItem = React.memo(
                       bgcolor: "action.hover",
                     },
                   }}
-                
-                  aria-label={t("shortcutCommands.copyCommand")}>
+
+                  aria-label={t("shortcutCommands.copyCommand")}
+                >
                   <ContentCopyIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Tooltip>
@@ -1020,8 +1023,11 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                                     bgcolor: "action.hover",
                                   },
                                 }}
-                              
-                                aria-label={t("shortcutCommands.sendAndExecute")}>
+
+                                aria-label={t(
+                                  "shortcutCommands.sendAndExecute",
+                                )}
+                              >
                                 <SendIcon sx={{ fontSize: 15 }} />
                               </IconButton>
                             </Tooltip>
@@ -1042,8 +1048,9 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                                     bgcolor: "action.hover",
                                   },
                                 }}
-                              
-                                aria-label={t("shortcutCommands.copyCommand")}>
+
+                                aria-label={t("shortcutCommands.copyCommand")}
+                              >
                                 <ContentCopyIcon sx={{ fontSize: 15 }} />
                               </IconButton>
                             </Tooltip>
@@ -1245,18 +1252,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     >
       <Box sx={sidebarContentSx(theme, open)}>
         {/* 标题栏 */}
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            px: 1.25,
-            py: 0.75,
-            minHeight: 44,
-            flexShrink: 0,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-          }}
-        >
+        <Box sx={sidebarTitleBarSx(theme)}>
           <Typography variant="subtitle1" fontWeight="medium">
             {t("shortcutCommands.title")}
           </Typography>
@@ -1265,9 +1261,10 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
               <IconButton
                 onClick={handleAddCommand}
                 size="small"
-                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-              
-                aria-label={t("shortcutCommands.addCommand")}>
+                sx={sidebarTitleIconButtonSx}
+
+                aria-label={t("shortcutCommands.addCommand")}
+              >
                 <AddIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -1276,7 +1273,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
                 onClick={onClose}
                 size="small"
                 aria-label={t("common.close")}
-                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+                sx={sidebarTitleIconButtonSx}
               >
                 <CloseIcon fontSize="small" />
               </IconButton>

@@ -7,8 +7,7 @@ import React, {
 } from "react";
 import Dialog from "./AccessibleDialog.jsx";
 import useAutoCleanup from "../hooks/useAutoCleanup";
-import {
-  List } from "react-window";
+import { List } from "react-window";
 import {
   Box,
   Paper,
@@ -49,6 +48,8 @@ import {
   getSidebarItemSelectedBg,
   sidebarContentSx,
   sidebarListItemButtonSx,
+  sidebarTitleBarSx,
+  sidebarTitleIconButtonSx,
 } from "./sidebarItemStyles";
 import { compactContextMenuPaperSx } from "./contextMenuStyles";
 
@@ -753,18 +754,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       >
         <Box sx={sidebarContentSx(theme, open)}>
           {/* 标题栏 */}
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              px: 1.25,
-              py: 0.75,
-              minHeight: 44,
-              flexShrink: 0,
-              borderBottom: `1px solid ${theme.palette.divider}`,
-            }}
-          >
+          <Box sx={sidebarTitleBarSx(theme)}>
             <Typography variant="subtitle1" fontWeight="medium">
               {t("commandHistory.title")}
             </Typography>
@@ -773,7 +763,7 @@ function CommandHistory({ open, onClose, onSendCommand }) {
                 onClick={onClose}
                 size="small"
                 aria-label={t("common.close")}
-                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+                sx={sidebarTitleIconButtonSx}
               >
                 <CloseIcon fontSize="small" />
               </IconButton>

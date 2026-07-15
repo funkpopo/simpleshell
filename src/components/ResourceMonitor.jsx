@@ -20,7 +20,13 @@ import Collapse from "@mui/material/Collapse";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import Memory from "@mui/icons-material/Memory"; // For Processes icon
-import { sidebarContentSx, sidebarListItemButtonSx } from "./sidebarItemStyles";
+import {
+  SIDEBAR_TITLE_BAR_HEIGHT,
+  sidebarContentSx,
+  sidebarListItemButtonSx,
+  sidebarTitleBarSx,
+  sidebarTitleIconButtonSx,
+} from "./sidebarItemStyles";
 
 /** 进程行内紧凑用量：标签 + 数字 + 分档色细条，等分行宽自适应，窄侧边栏下不溢出 */
 const CompactUsageMetric = memo(({ label, value, theme }) => {
@@ -107,7 +113,6 @@ CompactUsageMetric.propTypes = {
   }).isRequired,
 };
 
-const SIDEBAR_TITLE_BAR_HEIGHT = 44;
 const MAX_VISIBLE_PROCESSES = 50;
 
 const AccordionHeader = ({ title, icon, expanded, onClick }) => {
@@ -308,18 +313,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
       elevation={4}
     >
       <Box sx={sidebarContentSx(theme, open)}>
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            px: 1.25,
-            py: 0.75,
-            minHeight: SIDEBAR_TITLE_BAR_HEIGHT,
-            flexShrink: 0,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-          }}
-        >
+        <Box sx={sidebarTitleBarSx(theme)}>
           <Typography variant="subtitle1" fontWeight="medium">
             {t("resourceMonitor.title")}
           </Typography>
@@ -329,7 +323,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 size="small"
                 onClick={handleRefresh}
                 disabled={loading}
-                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+                sx={sidebarTitleIconButtonSx}
                 aria-label={t("common.refresh")}
               >
                 <RefreshIcon fontSize="small" />
@@ -340,7 +334,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
                 size="small"
                 onClick={onClose}
                 aria-label={t("common.close")}
-                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+                sx={sidebarTitleIconButtonSx}
               >
                 <CloseIcon fontSize="small" />
               </IconButton>

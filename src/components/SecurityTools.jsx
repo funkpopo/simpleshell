@@ -29,7 +29,11 @@ import CheckIcon from "@mui/icons-material/Check";
 import SaveIcon from "@mui/icons-material/Save";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import KeyIcon from "@mui/icons-material/Key";
-import { sidebarContentSx } from "./sidebarItemStyles";
+import {
+  sidebarContentSx,
+  sidebarTitleBarSx,
+  sidebarTitleIconButtonSx,
+} from "./sidebarItemStyles";
 
 const RandomPasswordGenerator = ({ open, onClose }) => {
   const { t } = useTranslation();
@@ -195,18 +199,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
       }}
     >
       <Box sx={sidebarContentSx(theme, open)}>
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            px: 1.25,
-            py: 0.75,
-            minHeight: 44,
-            flexShrink: 0,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-          }}
-        >
+        <Box sx={sidebarTitleBarSx(theme)}>
           <Typography variant="subtitle1" fontWeight="medium">
             {t("securityTools.title")}
           </Typography>
@@ -215,7 +208,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
               size="small"
               onClick={onClose}
               aria-label={t("common.close")}
-              sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+              sx={sidebarTitleIconButtonSx}
             >
               <CloseIcon fontSize="small" />
             </IconButton>
@@ -389,8 +382,13 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                       onClick={() => copyToClipboard(password, "password")}
                       size="small"
                       color="primary"
-                    
-                      aria-label={copySuccess.password ? t("randomPassword.copied") : t("randomPassword.copy")}>
+
+                      aria-label={
+                        copySuccess.password
+                          ? t("randomPassword.copied")
+                          : t("randomPassword.copy")
+                      }
+                    >
                       {copySuccess.password ? (
                         <CheckIcon color="success" />
                       ) : (
@@ -523,8 +521,13 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                           onClick={() =>
                             copyToClipboard(keyPair.publicKey, "publicKey")
                           }
-                        
-                          aria-label={copySuccess.publicKey ? t("sshKeyGenerator.copied") : t("sshKeyGenerator.copy")}>
+
+                          aria-label={
+                            copySuccess.publicKey
+                              ? t("sshKeyGenerator.copied")
+                              : t("sshKeyGenerator.copy")
+                          }
+                        >
                           {copySuccess.publicKey ? (
                             <CheckIcon color="success" fontSize="small" />
                           ) : (
@@ -538,8 +541,9 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                           onClick={() =>
                             saveToFile(keyPair.publicKey, `id_${keyType}.pub`)
                           }
-                        
-                          aria-label={t("sshKeyGenerator.savePublic")}>
+
+                          aria-label={t("sshKeyGenerator.savePublic")}
+                        >
                           <SaveIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
@@ -585,8 +589,13 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                           onClick={() =>
                             copyToClipboard(keyPair.privateKey, "privateKey")
                           }
-                        
-                          aria-label={copySuccess.privateKey ? t("sshKeyGenerator.copied") : t("sshKeyGenerator.copy")}>
+
+                          aria-label={
+                            copySuccess.privateKey
+                              ? t("sshKeyGenerator.copied")
+                              : t("sshKeyGenerator.copy")
+                          }
+                        >
                           {copySuccess.privateKey ? (
                             <CheckIcon color="success" fontSize="small" />
                           ) : (
@@ -600,8 +609,9 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
                           onClick={() =>
                             saveToFile(keyPair.privateKey, `id_${keyType}`)
                           }
-                        
-                          aria-label={t("sshKeyGenerator.savePrivate")}>
+
+                          aria-label={t("sshKeyGenerator.savePrivate")}
+                        >
                           <SaveIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>

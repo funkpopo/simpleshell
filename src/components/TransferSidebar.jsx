@@ -38,6 +38,10 @@ import {
 import { useTranslation } from "react-i18next";
 import OverflowTooltipText from "./OverflowTooltipText.jsx";
 import {
+  sidebarTitleBarSx,
+  sidebarTitleIconButtonSx,
+} from "./sidebarItemStyles";
+import {
   getTransferIcon,
   getStatusIcon,
   getDangerHoverSx,
@@ -570,15 +574,7 @@ const TransferSidebar = memo(
         />
 
         {/* 标题栏 */}
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            p: 1.5,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-          }}
-        >
+        <Box sx={sidebarTitleBarSx(theme)}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <SwapVertIcon color="primary" />
             <Typography variant="subtitle1" fontWeight="medium">
@@ -592,6 +588,7 @@ const TransferSidebar = memo(
                   onClick={onMinimize}
                   size="small"
                   aria-label={t("fileManager.transfer.minimize")}
+                  sx={sidebarTitleIconButtonSx}
                 >
                   <MinimizeIcon fontSize="small" />
                 </IconButton>
@@ -602,6 +599,7 @@ const TransferSidebar = memo(
                 onClick={onClose}
                 size="small"
                 aria-label={t("common.close")}
+                sx={sidebarTitleIconButtonSx}
               >
                 <CloseIcon fontSize="small" />
               </IconButton>

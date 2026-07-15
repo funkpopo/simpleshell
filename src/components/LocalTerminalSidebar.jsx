@@ -39,7 +39,12 @@ import { GrArchlinux } from "react-icons/gr";
 import { SiAlpinelinux } from "react-icons/si";
 import { useTranslation } from "react-i18next";
 import useAutoCleanup from "../hooks/useAutoCleanup";
-import { sidebarContentSx } from "./sidebarItemStyles";
+import {
+  sidebarContentSx,
+  sidebarListItemButtonSx,
+  sidebarTitleBarSx,
+  sidebarTitleIconButtonSx,
+} from "./sidebarItemStyles";
 
 const AUTO_REFRESH_COOLDOWN_MS = 2000;
 
@@ -255,12 +260,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       return undefined;
     }
 
-    const trackedTypes = new Set([
-      "starting",
-      "ready",
-      "exit",
-      "error",
-    ]);
+    const trackedTypes = new Set(["starting", "ready", "exit", "error"]);
 
     const handleLocalTerminalStatus = (statusData) => {
       if (!trackedTypes.has(statusData?.type)) {
@@ -412,13 +412,10 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
           <ListItemButton
             onClick={() => handleLaunchTerminal(terminal)}
             sx={{
-              borderRadius: 1,
+              ...sidebarListItemButtonSx(theme),
               minHeight: 48,
               py: 1,
               pr: 2,
-              "&:hover": {
-                backgroundColor: theme.palette.action.hover,
-              },
             }}
           >
             <ListItemIcon sx={{ minWidth: 40 }}>
@@ -497,13 +494,10 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       <ListItem disablePadding sx={{ mb: 0.5 }}>
         <ListItemButton
           sx={{
-            borderRadius: 1,
+            ...sidebarListItemButtonSx(theme),
             minHeight: 48,
             py: 1,
             pr: 2,
-            "&:hover": {
-              backgroundColor: theme.palette.action.hover,
-            },
           }}
         >
           <ListItemIcon sx={{ minWidth: 40 }}>
@@ -554,169 +548,160 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       }}
     >
       <Box sx={sidebarContentSx(theme, open)}>
-      {/* 头部 */}
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          px: 1.25,
-          py: 0.75,
-          minHeight: 44,
-          flexShrink: 0,
-          gap: 1,
-          borderBottom: `1px solid ${theme.palette.divider}`,
-        }}
-      >
-        <Typography
-          variant="subtitle1"
-          fontWeight="medium"
-          sx={{ flexGrow: 1 }}
-        >
-          {t("localTerminal.title")}
-        </Typography>
+        {/* 头部 */}
+        <Box sx={{ ...sidebarTitleBarSx(theme), gap: 1 }}>
+          <Typography
+            variant="subtitle1"
+            fontWeight="medium"
+            sx={{ flexGrow: 1 }}
+          >
+            {t("localTerminal.title")}
+          </Typography>
 
-        <Tooltip title={t("localTerminal.refresh")}>
-          <IconButton
-            size="small"
-            onClick={() => detectTerminals(true, { silent: false })}
-            disabled={isDetecting}
-            sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-          
-            aria-label={t("localTerminal.refresh")}>
-            {isDetecting ? (
-              <CircularProgress size={16} />
-            ) : (
-              <RefreshIcon fontSize="small" />
-            )}
-          </IconButton>
-        </Tooltip>
+          <Tooltip title={t("localTerminal.refresh")}>
+            <IconButton
+              size="small"
+              onClick={() => detectTerminals(true, { silent: false })}
+              disabled={isDetecting}
+              sx={sidebarTitleIconButtonSx}
 
-        <Tooltip title={t("common.close")}>
-          <IconButton
-            size="small"
-            onClick={onClose}
-            sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
-          
-            aria-label={t("common.close")}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Box>
-
-      {/* 搜索框 */}
-      <Box sx={{ p: 2, pb: 1 }}>
-        {isDetecting ? (
-          <Skeleton
-            variant="rectangular"
-            width="100%"
-            height={36}
-            sx={{ borderRadius: 2 }}
-          />
-        ) : (
-          <TextField
-            ref={searchInputRef}
-            fullWidth
-            size="small"
-            placeholder={t("localTerminal.searchPlaceholder")}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              ),
-              endAdornment: searchQuery && (
-                <InputAdornment position="end">
-                  <Tooltip title={t("common.clearSearch")}>
-                    <IconButton
-                      size="small"
-                      onClick={clearSearch}
-                      aria-label={t("common.clearSearch")}
-                    >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </InputAdornment>
-              ),
-            }}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                borderRadius: 2,
-              },
-            }}
-          />
-        )}
-      </Box>
-
-      {/* 可用终端列表 */}
-      <Box
-        sx={{
-          flexGrow: 1,
-          overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        <Box sx={{ px: 2, pb: 1 }}>
-          {isDetecting ? (
-            <Skeleton variant="text" width={150} height={20} />
-          ) : (
-            <Typography
-              variant="subtitle2"
-              color="text.secondary"
-              sx={{ fontWeight: 500 }}
+              aria-label={t("localTerminal.refresh")}
             >
-              {t("localTerminal.availableTerminals")} (
-              {filteredTerminals.length})
-            </Typography>
-          )}
+              {isDetecting ? (
+                <CircularProgress size={16} />
+              ) : (
+                <RefreshIcon fontSize="small" />
+              )}
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title={t("common.close")}>
+            <IconButton
+              size="small"
+              onClick={onClose}
+              sx={sidebarTitleIconButtonSx}
+
+              aria-label={t("common.close")}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Box>
 
-        <Box sx={{ px: 2, flex: 1, overflow: "auto" }}>
+        {/* 搜索框 */}
+        <Box sx={{ p: 2, pb: 1 }}>
           {isDetecting ? (
-            <List disablePadding>
-              {Array.from({ length: 6 }).map((_, index) => (
-                <TerminalItemSkeleton key={`skeleton-${index}`} />
-              ))}
-            </List>
-          ) : filteredTerminals.length > 0 ? (
-            <List disablePadding>
-              {filteredTerminals.map((terminal, index) => (
-                <TerminalItem
-                  key={terminal.id || terminal.type || `terminal-${index}`}
-                  terminal={terminal}
-                />
-              ))}
-            </List>
+            <Skeleton
+              variant="rectangular"
+              width="100%"
+              height={36}
+              sx={{ borderRadius: 2 }}
+            />
           ) : (
-            // 只有在初始检测完成后才显示提示信息
-            hasInitialDetection && (
-              <Alert severity="info" sx={{ mt: 1 }}>
-                {searchQuery
-                  ? t("localTerminal.noSearchResults")
-                  : t("localTerminal.noTerminals")}
-              </Alert>
-            )
+            <TextField
+              ref={searchInputRef}
+              fullWidth
+              size="small"
+              placeholder={t("localTerminal.searchPlaceholder")}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+                endAdornment: searchQuery && (
+                  <InputAdornment position="end">
+                    <Tooltip title={t("common.clearSearch")}>
+                      <IconButton
+                        size="small"
+                        onClick={clearSearch}
+                        aria-label={t("common.clearSearch")}
+                      >
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2,
+                },
+              }}
+            />
           )}
         </Box>
-      </Box>
 
-      {/* Snackbar消息提示 */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={4000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-          severity={snackbar.severity}
-          sx={{ width: "100%" }}
+        {/* 可用终端列表 */}
+        <Box
+          sx={{
+            flexGrow: 1,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+          }}
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
+          <Box sx={{ px: 2, pb: 1 }}>
+            {isDetecting ? (
+              <Skeleton variant="text" width={150} height={20} />
+            ) : (
+              <Typography
+                variant="subtitle2"
+                color="text.secondary"
+                sx={{ fontWeight: 500 }}
+              >
+                {t("localTerminal.availableTerminals")} (
+                {filteredTerminals.length})
+              </Typography>
+            )}
+          </Box>
+
+          <Box sx={{ px: 2, flex: 1, overflow: "auto" }}>
+            {isDetecting ? (
+              <List disablePadding>
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <TerminalItemSkeleton key={`skeleton-${index}`} />
+                ))}
+              </List>
+            ) : filteredTerminals.length > 0 ? (
+              <List disablePadding>
+                {filteredTerminals.map((terminal, index) => (
+                  <TerminalItem
+                    key={terminal.id || terminal.type || `terminal-${index}`}
+                    terminal={terminal}
+                  />
+                ))}
+              </List>
+            ) : (
+              // 只有在初始检测完成后才显示提示信息
+              hasInitialDetection && (
+                <Alert severity="info" sx={{ mt: 1 }}>
+                  {searchQuery
+                    ? t("localTerminal.noSearchResults")
+                    : t("localTerminal.noTerminals")}
+                </Alert>
+              )
+            )}
+          </Box>
+        </Box>
+
+        {/* Snackbar消息提示 */}
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={4000}
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        >
+          <Alert
+            onClose={() => setSnackbar({ ...snackbar, open: false })}
+            severity={snackbar.severity}
+            sx={{ width: "100%" }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
       </Box>
     </Paper>
   );

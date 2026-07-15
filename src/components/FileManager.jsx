@@ -69,7 +69,11 @@ import {
 import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
-import { sidebarContentSx } from "./sidebarItemStyles";
+import {
+  sidebarContentSx,
+  sidebarTitleBarSx,
+  sidebarTitleIconButtonSx,
+} from "./sidebarItemStyles";
 import { getSearchFieldMotionSx } from "../utils/searchFieldStyles";
 
 const FILE_LIST_ROW_HEIGHT = 36;
@@ -6542,20 +6546,7 @@ const FileManager = memo(
         elevation={4}
       >
         <Box sx={sidebarContentSx(theme, open)}>
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              px: 1.5,
-              py: 1.25,
-              borderBottom: `1px solid ${theme.palette.divider}`,
-              flexShrink: 0,
-              backgroundColor:
-                theme.palette.mode === "dark"
-                  ? alpha(theme.palette.background.paper, 0.8)
-                  : theme.palette.background.default,
-            }}
-          >
+          <Box sx={sidebarTitleBarSx(theme)}>
             <Typography
               variant="subtitle1"
               sx={{ flexGrow: 1 }}
@@ -6570,9 +6561,9 @@ const FileManager = memo(
                 <IconButton
                   size="small"
                   onClick={handleClose}
-                  edge="end"
                   disabled={isClosing}
                   aria-label={t("common.close")}
+                  sx={sidebarTitleIconButtonSx}
                 >
                   <CloseIcon fontSize="small" />
                 </IconButton>

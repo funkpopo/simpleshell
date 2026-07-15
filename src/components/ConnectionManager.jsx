@@ -7,8 +7,7 @@ import React, {
   useRef,
 } from "react";
 import Dialog from "./AccessibleDialog.jsx";
-import {
-  flushSync } from "react-dom";
+import { flushSync } from "react-dom";
 import {
   Box,
   Typography,
@@ -77,7 +76,12 @@ import { useTranslation } from "react-i18next";
 import { useNotification } from "../contexts/NotificationContext";
 import { ConnectionManagerSkeleton } from "./SkeletonLoader.jsx";
 import VirtualizedConnectionList from "./VirtualizedConnectionList.jsx";
-import { sidebarContentSx, sidebarListItemSx } from "./sidebarItemStyles";
+import {
+  sidebarContentSx,
+  sidebarListItemSx,
+  sidebarTitleBarSx,
+  sidebarTitleIconButtonSx,
+} from "./sidebarItemStyles";
 import { getSearchFieldMotionSx } from "../utils/searchFieldStyles";
 
 // 自定义比较函数
@@ -477,7 +481,9 @@ const getConnectionValidationSteps = (t, formData, privateKeyCheck) => {
     {
       key: "auth",
       title: t("connectionManager.validation.auth"),
-      ok: authType === "password" || (isPrivateKeyAuth && Boolean(privateKeyPath)),
+      ok:
+        authType === "password" ||
+        (isPrivateKeyAuth && Boolean(privateKeyPath)),
       message:
         authType === "password"
           ? t("connectionManager.validation.passwordAuthOk")
@@ -510,7 +516,9 @@ const getConnectionValidationSteps = (t, formData, privateKeyCheck) => {
         privateKeyCheck?.status === "ok" ||
         privateKeyCheck?.status === "warning",
       severity:
-        isPrivateKeyAuth && privateKeyUnsafe && privateKeyCheck?.status !== "error"
+        isPrivateKeyAuth &&
+        privateKeyUnsafe &&
+        privateKeyCheck?.status !== "error"
           ? "warning"
           : privateKeyCheck?.status === "checking"
             ? "checking"
@@ -1680,7 +1688,9 @@ const ConnectionManager = memo(
         }
 
         if (result?.code === "MASTER_PASSWORD_NOT_CONFIGURED") {
-          showError(t("connectionManager.passwordRevealRequiresMasterPassword"));
+          showError(
+            t("connectionManager.passwordRevealRequiresMasterPassword"),
+          );
           return;
         }
 
@@ -1745,7 +1755,9 @@ const ConnectionManager = memo(
             if (!cancelled) {
               setPrivateKeyCheck({
                 status: "warning",
-                message: t("connectionManager.validation.privateKeyCannotVerify"),
+                message: t(
+                  "connectionManager.validation.privateKeyCannotVerify",
+                ),
                 permissions: null,
               });
             }
@@ -1899,9 +1911,7 @@ const ConnectionManager = memo(
         }
 
         const message =
-          result?.advice ||
-          result?.error ||
-          t("connectionManager.testFailed");
+          result?.advice || result?.error || t("connectionManager.testFailed");
         setConnectionTestResult({
           success: false,
           message,
@@ -2527,19 +2537,7 @@ const ConnectionManager = memo(
       >
         <Box sx={sidebarContentSx(theme, open)}>
           {/* 头部 */}
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              px: 1.25,
-              py: 0.75,
-              minHeight: 44,
-              flexShrink: 0,
-              borderBottom: 1,
-              borderColor: "divider",
-            }}
-          >
+          <Box sx={sidebarTitleBarSx(theme)}>
             <Typography variant="subtitle1" fontWeight="medium">
               {t("connectionManager.title")}
             </Typography>
@@ -2548,7 +2546,7 @@ const ConnectionManager = memo(
                 size="small"
                 onClick={onClose}
                 aria-label={t("common.close")}
-                sx={{ p: 0.5, "& .MuiSvgIcon-root": { fontSize: 18 } }}
+                sx={sidebarTitleIconButtonSx}
               >
                 <CloseIcon fontSize="small" />
               </IconButton>
