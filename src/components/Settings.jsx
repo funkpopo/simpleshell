@@ -16,7 +16,6 @@ import InputLabel from "@mui/material/InputLabel";
 import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import Slider from "@mui/material/Slider";
-import Divider from "@mui/material/Divider";
 import TextField from "@mui/material/TextField";
 import InputAdornment from "@mui/material/InputAdornment";
 import Switch from "@mui/material/Switch";
@@ -27,7 +26,14 @@ import Chip from "@mui/material/Chip";
 import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
 import Grid from "@mui/material/Grid";
+import List from "@mui/material/List";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
 import TuneIcon from "@mui/icons-material/Tune";
+import SettingsIcon from "@mui/icons-material/Settings";
+import TerminalIcon from "@mui/icons-material/Terminal";
+import LockIcon from "@mui/icons-material/Lock";
 import ImageIcon from "@mui/icons-material/Image";
 import MemoryIcon from "@mui/icons-material/Memory";
 import CachedIcon from "@mui/icons-material/Cached";
@@ -54,13 +60,13 @@ const GlassDialog = styled(Dialog)(({ theme }) => ({
         ? "0 8px 32px 0 rgba(0, 0, 0, 0.37)"
         : "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
     border: "1px solid rgba(255, 255, 255, 0.18)",
-    maxHeight: "70vh",
+    maxHeight: "80vh",
   },
 }));
 
 const sectionCardSx = {
-  p: 2,
-  borderRadius: 2,
+  p: 1.5,
+  borderRadius: 1.5,
   border: "1px solid",
   borderColor: "divider",
   bgcolor: (theme) =>
@@ -73,11 +79,22 @@ const sectionTitleRowSx = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-  mb: 1.5,
+  mb: 1,
 };
 
 const compactFieldSx = {
-  mb: 1.75,
+  mb: 1,
+};
+
+const subSectionLabelSx = {
+  fontSize: "0.7rem",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.5px",
+  color: "text.secondary",
+  mb: 0.75,
+  mt: 1.5,
+  "&:first-of-type": { mt: 0 },
 };
 
 // Custom styled dialog title
@@ -167,6 +184,7 @@ const Settings = memo(({ open, onClose }) => {
   const [logLevel, setLogLevel] = React.useState("WARN");
   const [maxFileSize, setMaxFileSize] = React.useState(5);
   const [cleanupIntervalDays, setCleanupIntervalDays] = React.useState(7);
+  const [backupRetentionDays, setBackupRetentionDays] = React.useState(30);
   const [errorReportingEnabled, setErrorReportingEnabled] =
     React.useState(false);
   const [includeDiagnosticsInFeedback, setIncludeDiagnosticsInFeedback] =
@@ -201,6 +219,7 @@ const Settings = memo(({ open, onClose }) => {
 
   // 需要重启的设置变更标志
   const [needsRestart, setNeedsRestart] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState(0);
   const [originalPerformanceSettings, setOriginalPerformanceSettings] =
     React.useState({});
 
@@ -264,6 +283,11 @@ const Settings = memo(({ open, onClose }) => {
 
             // 传输栏显示模式
             setTransferBarMode(settings.transferBarMode || "bottom");
+
+            // 备份保留天数
+            if (settings.backupRetentionDays !== undefined) {
+              setBackupRetentionDays(settings.backupRetentionDays);
+            }
 
             setImageSupported(performanceSettings.imageSupported !== false);
             setCacheEnabled(performanceSettings.cacheEnabled !== false);
@@ -620,6 +644,7 @@ const Settings = memo(({ open, onClose }) => {
             closeToTray: trayEnabled && closeToTray,
           },
           transferBarMode,
+          backupRetentionDays,
           externalEditor: {
             enabled: externalEditorEnabled,
             command: externalEditorCommand.trim(),
@@ -715,6 +740,14 @@ const Settings = memo(({ open, onClose }) => {
     }
   };
 
+  const sidebarItems = [
+    { id: 0, label: t("settings.general"), icon: <SettingsIcon fontSize="small" /> },
+    { id: 1, label: t("settings.terminalAndLogs"), icon: <TerminalIcon fontSize="small" /> },
+    { id: 2, label: t("settings.performanceSettings"), icon: <TuneIcon fontSize="small" /> },
+    { id: 3, label: t("settings.security.title"), icon: <LockIcon fontSize="small" /> },
+    { id: 4, label: t("settings.feedback.title"), icon: <BugReportIcon fontSize="small" /> },
+  ];
+
   return (
     <GlassDialog
       open={open}
@@ -726,930 +759,1091 @@ const Settings = memo(({ open, onClose }) => {
       <BootstrapDialogTitle id="settings-dialog-title" onClose={onClose}>
         {t("settings.title")}
       </BootstrapDialogTitle>
-      <DialogContent dividers>
+      <DialogContent dividers sx={{ p: 0, overflow: "hidden" }}>
         {isLoading ? (
           <SettingsSkeleton />
         ) : (
-          <>
-            <Grid container spacing={2.25}>
-              {/* 左列 */}
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Box sx={sectionCardSx}>
-                  <Box sx={sectionTitleRowSx}>
-                    <Typography variant="subtitle1">
-                      {t("settings.title")}
-                    </Typography>
-                    <Chip
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                      label={t("settings.language")}
+          <Box sx={{ display: "flex", minHeight: 420, maxHeight: "65vh" }}>
+            {/* Sidebar */}
+            <Box
+              sx={{
+                width: 160,
+                flexShrink: 0,
+                borderRight: 1,
+                borderColor: "divider",
+                overflowY: "auto",
+              }}
+            >
+              <List dense component="nav" sx={{ pt: 1, pb: 1 }}>
+                {sidebarItems.map((item) => (
+                  <ListItemButton
+                    key={item.id}
+                    selected={activeTab === item.id}
+                    onClick={() => setActiveTab(item.id)}
+                  >
+                    <ListItemIcon sx={{ minWidth: 36 }}>
+                      {item.icon}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={item.label}
+                      primaryTypographyProps={{ variant: "body2" }}
                     />
-                  </Box>
-                  <Box sx={compactFieldSx}>
-                    <Typography variant="subtitle2" gutterBottom>
-                      {t("settings.language")}
-                    </Typography>
-                    <FormControl fullWidth variant="outlined" size="small">
-                      <Select value={language} onChange={handleLanguageChange}>
-                        {languages.map((lang) => (
-                          <MenuItem key={lang.code} value={lang.code}>
-                            {lang.name}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Box>
+                  </ListItemButton>
+                ))}
+              </List>
+            </Box>
 
-                  <Box sx={compactFieldSx}>
-                    <Typography variant="subtitle2" gutterBottom>
-                      {t("settings.theme")}
+            {/* Content Panel */}
+            <Box
+              sx={{
+                flex: 1,
+                overflowY: "auto",
+                p: 2,
+              }}
+            >
+              {/* Tab 0: General */}
+              {activeTab === 0 && (
+                <Grid container spacing={2}>
+                  {/* Left: Appearance */}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.appearance")}
                     </Typography>
-                    <FormControl fullWidth variant="outlined" size="small">
-                      <Select
-                        value={darkMode ? "dark" : "light"}
-                        onChange={handleDarkModeChange}
-                      >
-                        <MenuItem value="light">
-                          {t("settings.themeLight")}
-                        </MenuItem>
-                        <MenuItem value="dark">
-                          {t("settings.themeDark")}
-                        </MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Box>
+                    <Box sx={sectionCardSx}>
+                      <Box sx={compactFieldSx}>
+                        <Typography variant="subtitle2" gutterBottom>
+                          {t("settings.language")}
+                        </Typography>
+                        <FormControl fullWidth variant="outlined" size="small">
+                          <Select
+                            value={language}
+                            onChange={handleLanguageChange}
+                          >
+                            {languages.map((lang) => (
+                              <MenuItem key={lang.code} value={lang.code}>
+                                {lang.name}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Box>
 
-                  <Box sx={compactFieldSx}>
-                    <Typography variant="subtitle2" gutterBottom>
-                      {t("settings.fontSize")}
-                    </Typography>
-                    <Box sx={{ px: 1 }}>
-                      <Slider
-                        value={fontSize}
-                        onChange={handleFontSizeChange}
-                        step={null}
-                        marks={fontSizes.map((size) => ({
-                          value: size.value,
-                          label: size.label,
-                        }))}
-                        min={12}
-                        max={18}
-                        size="small"
-                      />
+                      <Box sx={compactFieldSx}>
+                        <Typography variant="subtitle2" gutterBottom>
+                          {t("settings.theme")}
+                        </Typography>
+                        <FormControl fullWidth variant="outlined" size="small">
+                          <Select
+                            value={darkMode ? "dark" : "light"}
+                            onChange={handleDarkModeChange}
+                          >
+                            <MenuItem value="light">
+                              {t("settings.themeLight")}
+                            </MenuItem>
+                            <MenuItem value="dark">
+                              {t("settings.themeDark")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <Typography variant="subtitle2" gutterBottom>
+                          {t("settings.fontSize")}
+                        </Typography>
+                        <Box sx={{ px: 1 }}>
+                          <Slider
+                            value={fontSize}
+                            onChange={handleFontSizeChange}
+                            step={null}
+                            marks={fontSizes.map((size) => ({
+                              value: size.value,
+                              label: size.label,
+                            }))}
+                            min={12}
+                            max={18}
+                            size="small"
+                          />
+                        </Box>
+                      </Box>
+
+                      <Box>
+                        <Typography variant="subtitle2" gutterBottom>
+                          {t("settings.transferDisplay")}
+                        </Typography>
+                        <FormControl fullWidth variant="outlined" size="small">
+                          <Select
+                            value={transferBarMode}
+                            onChange={(e) =>
+                              setTransferBarMode(e.target.value)
+                            }
+                          >
+                            <MenuItem value="bottom">
+                              {t("settings.transferDisplayBottom")}
+                            </MenuItem>
+                            <MenuItem value="sidebar">
+                              {t("settings.transferDisplaySidebar")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Box>
                     </Box>
-                  </Box>
+                  </Grid>
 
-                  <Box sx={{ mb: 0 }}>
-                    <Typography variant="subtitle2" gutterBottom>
-                      {t("settings.transferDisplay")}
-                    </Typography>
-                    <FormControl fullWidth variant="outlined" size="small">
-                      <Select
-                        value={transferBarMode}
-                        onChange={(e) => setTransferBarMode(e.target.value)}
-                      >
-                        <MenuItem value="bottom">
-                          {t("settings.transferDisplayBottom")}
-                        </MenuItem>
-                        <MenuItem value="sidebar">
-                          {t("settings.transferDisplaySidebar")}
-                        </MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Box>
-                </Box>
-              </Grid>
-
-              {/* 右列 */}
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Box sx={sectionCardSx}>
-                  <Box sx={sectionTitleRowSx}>
-                    <Typography variant="subtitle1">
+                  {/* Right: DnD + Desktop + Editor */}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography sx={subSectionLabelSx}>
                       {t("settings.dnd.title")}
                     </Typography>
-                  </Box>
-                  <Box sx={{ display: "flex", flexDirection: "column", mb: 1 }}>
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={dndEnabled}
-                          onChange={(e) => setDndEnabled(e.target.checked)}
-                          size="small"
-                        />
-                      }
-                      label={
-                        <Typography variant="body2">
-                          {t("settings.dnd.enable")}
-                        </Typography>
-                      }
-                    />
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={dndAutoScroll}
-                          onChange={(e) => setDndAutoScroll(e.target.checked)}
-                          disabled={!dndEnabled}
-                          size="small"
-                        />
-                      }
-                      label={
-                        <Typography variant="body2">
-                          {t("settings.dnd.autoScroll")}
-                        </Typography>
-                      }
-                    />
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={dndCompactPreview}
-                          onChange={(e) =>
-                            setDndCompactPreview(e.target.checked)
+                    <Box sx={{ ...sectionCardSx, mb: 1.5 }}>
+                      <Box sx={{ display: "flex", flexDirection: "column" }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={dndEnabled}
+                              onChange={(e) =>
+                                setDndEnabled(e.target.checked)
+                              }
+                              size="small"
+                            />
                           }
-                          disabled={!dndEnabled}
-                          size="small"
-                        />
-                      }
-                      label={
-                        <Typography variant="body2">
-                          {t("settings.dnd.compactPreview")}
-                        </Typography>
-                      }
-                    />
-                  </Box>
-
-                  <Divider sx={{ my: 1.25 }} />
-
-                  <Typography variant="subtitle2" gutterBottom>
-                    {t("settings.desktopIntegration.title")}
-                  </Typography>
-                  <Box sx={{ display: "flex", flexDirection: "column", mb: 1 }}>
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={trayEnabled}
-                          onChange={(e) => {
-                            setTrayEnabled(e.target.checked);
-                            if (!e.target.checked) {
-                              setCloseToTray(false);
-                            }
-                          }}
-                          size="small"
-                        />
-                      }
-                      label={
-                        <Typography variant="body2">
-                          {t("settings.desktopIntegration.trayEnabled")}
-                        </Typography>
-                      }
-                    />
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={closeToTray}
-                          onChange={(e) => setCloseToTray(e.target.checked)}
-                          disabled={!trayEnabled}
-                          size="small"
-                        />
-                      }
-                      label={
-                        <Typography variant="body2">
-                          {t("settings.desktopIntegration.closeToTray")}
-                        </Typography>
-                      }
-                    />
-                  </Box>
-
-                  <Divider sx={{ my: 1.25 }} />
-
-                  <Typography variant="subtitle2" gutterBottom>
-                    {t("settings.externalEditor.title")}
-                  </Typography>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={externalEditorEnabled}
-                        onChange={(e) =>
-                          setExternalEditorEnabled(e.target.checked)
-                        }
-                        size="small"
-                      />
-                    }
-                    label={
-                      <Typography variant="body2">
-                        {t("settings.externalEditor.enable")}
-                      </Typography>
-                    }
-                  />
-                  <TextField
-                    fullWidth
-                    size="small"
-                    placeholder={t(
-                      "settings.externalEditor.commandPlaceholder",
-                    )}
-                    value={externalEditorCommand}
-                    onChange={(e) => setExternalEditorCommand(e.target.value)}
-                    disabled={!externalEditorEnabled}
-                  />
-                </Box>
-
-                <Box sx={{ ...sectionCardSx, mt: 2.25 }}>
-                  <Box sx={sectionTitleRowSx}>
-                    <Typography variant="subtitle1">
-                      {t("settings.security.title")}
-                    </Typography>
-                  </Box>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mb: 1.5 }}
-                  >
-                    {t("settings.security.description")}
-                  </Typography>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={masterPasswordEnabled}
-                        onChange={(e) =>
-                          setMasterPasswordEnabled(e.target.checked)
-                        }
-                        size="small"
-                      />
-                    }
-                    label={
-                      <Typography variant="body2">
-                        {t("settings.security.enable")}
-                      </Typography>
-                    }
-                  />
-
-                  {masterPasswordEnabled ? (
-                    <Box sx={{ mt: 1.25 }}>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: "block", mb: 1.25 }}
-                      >
-                        {initialMasterPasswordEnabled
-                          ? t("settings.security.changeHint")
-                          : t("settings.security.createHint")}
-                      </Typography>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        type="password"
-                        label={t("settings.security.password")}
-                        value={masterPassword}
-                        onChange={(e) => setMasterPassword(e.target.value)}
-                        sx={{ mb: 1.25 }}
-                      />
-                      <TextField
-                        fullWidth
-                        size="small"
-                        type="password"
-                        label={t("settings.security.confirmPassword")}
-                        value={confirmMasterPassword}
-                        onChange={(e) =>
-                          setConfirmMasterPassword(e.target.value)
-                        }
-                      />
-                    </Box>
-                  ) : (
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ display: "block", mt: 0.75 }}
-                    >
-                      {t("settings.security.disableHint")}
-                    </Typography>
-                  )}
-                </Box>
-              </Grid>
-            </Grid>
-
-            <Box sx={{ ...sectionCardSx, mt: 2.25 }}>
-              <Box sx={sectionTitleRowSx}>
-                <Typography variant="subtitle1">
-                  {t("settings.terminalAndLogs")}
-                </Typography>
-              </Box>
-
-              <Grid container spacing={2} sx={{ mb: 1 }}>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <FormControl fullWidth variant="outlined" size="small">
-                    <InputLabel>{t("settings.terminalFontFamily")}</InputLabel>
-                    <Select
-                      value={terminalFont}
-                      onChange={handleTerminalFontChange}
-                      label={t("settings.terminalFontFamily")}
-                    >
-                      {terminalFonts.map((font) => (
-                        <MenuItem key={font.value} value={font.value}>
-                          <Typography style={{ fontFamily: font.value }}>
-                            {font.label}
-                          </Typography>
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <Typography variant="body2" sx={{ minWidth: 60 }}>
-                      {t("settings.fontWeight")}
-                    </Typography>
-                    <Slider
-                      value={terminalFontWeight}
-                      onChange={handleTerminalFontWeightChange}
-                      min={300}
-                      max={1000}
-                      size="small"
-                      sx={{ flex: 1 }}
-                    />
-                    <TextField
-                      value={terminalFontWeight}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        if (!isNaN(val)) setTerminalFontWeight(val);
-                      }}
-                      size="small"
-                      type="number"
-                      inputProps={{ min: 300, max: 1000 }}
-                      sx={{ width: 70 }}
-                    />
-                  </Box>
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="number"
-                    label={t("settings.terminalScrollbackLines")}
-                    helperText={t("settings.terminalScrollbackHelper")}
-                    value={terminalScrollbackLines}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value, 10);
-                      if (Number.isFinite(v)) {
-                        setTerminalScrollbackLines(v);
-                      }
-                    }}
-                    inputProps={{ min: 1000, max: 500000, step: 1000 }}
-                  />
-                </Grid>
-              </Grid>
-              <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Typography variant="body2" gutterBottom>
-                    {t("settings.terminalFontSizeLabel")}
-                  </Typography>
-                  <Box sx={{ px: 1 }}>
-                    <Slider
-                      value={terminalFontSize}
-                      onChange={handleTerminalFontSizeChange}
-                      step={null}
-                      marks={fontSizes.map((size) => ({
-                        value: size.value,
-                        label: size.label,
-                      }))}
-                      min={12}
-                      max={18}
-                      size="small"
-                    />
-                  </Box>
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Typography variant="body2" gutterBottom>
-                    {t("settings.logSettingsTitle")}
-                  </Typography>
-                  <Box sx={{ display: "flex", gap: 1 }}>
-                    <FormControl
-                      variant="outlined"
-                      size="small"
-                      sx={{ flex: 1 }}
-                    >
-                      <Select value={logLevel} onChange={handleLogLevelChange}>
-                        {logLevels.map((level) => (
-                          <MenuItem key={level.value} value={level.value}>
-                            {level.label}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                    <TextField
-                      size="small"
-                      type="number"
-                      value={maxFileSize}
-                      onChange={handleMaxFileSizeChange}
-                      InputProps={{
-                        endAdornment: (
-                          <InputAdornment position="end">MB</InputAdornment>
-                        ),
-                      }}
-                      inputProps={{ min: 1 }}
-                      sx={{ width: 100 }}
-                    />
-                  </Box>
-                  <Box
-                    sx={{
-                      display: "flex",
-                      gap: 1,
-                      mt: 1.5,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      startIcon={<FolderOpenIcon />}
-                      onClick={handleOpenLogDirectory}
-                    >
-                      {t("settings.openLogDirectory")}
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      startIcon={<BugReportIcon />}
-                      onClick={handleExportDiagnostics}
-                    >
-                      {t("settings.exportDiagnostics")}
-                    </Button>
-                  </Box>
-                </Grid>
-              </Grid>
-            </Box>
-
-            <Box sx={{ ...sectionCardSx, mt: 2.25 }}>
-              <Box sx={sectionTitleRowSx}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <BugReportIcon sx={{ color: "error.main" }} />
-                  <Typography variant="subtitle1">
-                    {t("settings.feedback.title")}
-                  </Typography>
-                </Box>
-                <Chip
-                  size="small"
-                  color={crashReporterStatus?.started ? "success" : "warning"}
-                  variant="outlined"
-                  label={
-                    crashReporterStatus?.started
-                      ? t("settings.feedback.localCrashCaptureOn")
-                      : t("settings.feedback.localCrashCaptureOff")
-                  }
-                />
-              </Box>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ mb: 1.5 }}
-              >
-                {t("settings.feedback.description")}
-              </Typography>
-              <Grid container spacing={1.5}>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={errorReportingEnabled}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setErrorReportingEnabled(checked);
-                          if (!checked) {
-                            setIncludeDiagnosticsInFeedback(false);
-                          } else {
-                            setIncludeDiagnosticsInFeedback(true);
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.dnd.enable")}
+                            </Typography>
                           }
-                        }}
-                        size="small"
-                      />
-                    }
-                    label={
-                      <Typography variant="body2">
-                        {t("settings.feedback.enable")}
-                      </Typography>
-                    }
-                  />
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mt: 0.25 }}
-                  >
-                    {t("settings.feedback.enableHelper")}
-                  </Typography>
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={
-                          errorReportingEnabled && includeDiagnosticsInFeedback
-                        }
-                        onChange={(e) =>
-                          setIncludeDiagnosticsInFeedback(e.target.checked)
-                        }
-                        disabled={!errorReportingEnabled}
-                        size="small"
-                      />
-                    }
-                    label={
-                      <Typography variant="body2">
-                        {t("settings.feedback.includeDiagnostics")}
-                      </Typography>
-                    }
-                  />
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: "block", mt: 0.25 }}
-                  >
-                    {t("settings.feedback.includeDiagnosticsHelper")}
-                  </Typography>
-                </Grid>
-              </Grid>
-              {crashReporterStatus?.crashDirectory ? (
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{
-                    display: "block",
-                    mt: 1,
-                    wordBreak: "break-all",
-                    fontFamily: "monospace",
-                  }}
-                >
-                  {t("settings.feedback.crashDirectory")}:{" "}
-                  {crashReporterStatus.crashDirectory}
-                </Typography>
-              ) : null}
-              <Box
-                sx={{
-                  display: "flex",
-                  gap: 1,
-                  mt: 1.5,
-                  flexWrap: "wrap",
-                }}
-              >
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<ContentCopyIcon />}
-                  onClick={handleCopyDiagnosticPackage}
-                >
-                  {t("settings.feedback.copyPackage")}
-                </Button>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<BugReportIcon />}
-                  onClick={handleExportDiagnostics}
-                >
-                  {t("settings.exportDiagnostics")}
-                </Button>
-                <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={<FeedbackIcon />}
-                  onClick={handleOpenFeedbackIssue}
-                >
-                  {t("settings.feedback.openIssue")}
-                </Button>
-              </Box>
-            </Box>
-
-            {/* 性能设置 */}
-            <Box sx={{ ...sectionCardSx, mt: 2.25, mb: 1 }}>
-              <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
-                <TuneIcon sx={{ mr: 1, color: "primary.main" }} />
-                <Typography variant="subtitle1">
-                  {t("settings.performanceSettings")}
-                </Typography>
-              </Box>
-
-              {/* 重启提示 */}
-              {needsRestart && (
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                  <AlertTitle>{t("settings.restartRequired")}</AlertTitle>
-                  {t("settings.restartMessage")}
-                </Alert>
-              )}
-
-              <Grid container spacing={2}>
-                {/* 硬件加速 (全局 GPU 开关) */}
-                <Grid
-                  size={{
-                    xs: 12,
-                    md: 6,
-                  }}
-                >
-                  <Card variant="outlined" sx={{ height: "100%" }}>
-                    <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 1,
-                          mb: 1,
-                        }}
-                      >
-                        <DisplaySettingsIcon sx={{ color: "info.main" }} />
-                        <Typography variant="subtitle1" component="div">
-                          {t("settings.hardwareAcceleration")}
-                        </Typography>
-                        {hardwareAccelerationEnabled !==
-                          (originalPerformanceSettings.hardwareAcceleration !==
-                            false) && (
-                          <Chip
-                            label={t("settings.needsRestart")}
-                            size="small"
-                            color="warning"
-                          />
-                        )}
+                        />
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={dndAutoScroll}
+                              onChange={(e) =>
+                                setDndAutoScroll(e.target.checked)
+                              }
+                              disabled={!dndEnabled}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.dnd.autoScroll")}
+                            </Typography>
+                          }
+                        />
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={dndCompactPreview}
+                              onChange={(e) =>
+                                setDndCompactPreview(e.target.checked)
+                              }
+                              disabled={!dndEnabled}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.dnd.compactPreview")}
+                            </Typography>
+                          }
+                        />
                       </Box>
+                    </Box>
+
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.desktopIntegration.title")}
+                    </Typography>
+                    <Box sx={{ ...sectionCardSx, mb: 1.5 }}>
+                      <Box sx={{ display: "flex", flexDirection: "column" }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={trayEnabled}
+                              onChange={(e) => {
+                                setTrayEnabled(e.target.checked);
+                                if (!e.target.checked) {
+                                  setCloseToTray(false);
+                                }
+                              }}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.desktopIntegration.trayEnabled")}
+                            </Typography>
+                          }
+                        />
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={closeToTray}
+                              onChange={(e) =>
+                                setCloseToTray(e.target.checked)
+                              }
+                              disabled={!trayEnabled}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.desktopIntegration.closeToTray")}
+                            </Typography>
+                          }
+                        />
+                      </Box>
+                    </Box>
+
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.externalEditor.title")}
+                    </Typography>
+                    <Box sx={sectionCardSx}>
                       <FormControlLabel
                         control={
                           <Switch
-                            checked={hardwareAccelerationEnabled}
+                            checked={externalEditorEnabled}
                             onChange={(e) =>
-                              handlePerformanceChange(
-                                "hardwareAcceleration",
-                                e.target.checked,
-                              )
+                              setExternalEditorEnabled(e.target.checked)
                             }
-                            color="primary"
+                            size="small"
                           />
                         }
-                        label={t("settings.enableHardwareAcceleration")}
+                        label={
+                          <Typography variant="body2">
+                            {t("settings.externalEditor.enable")}
+                          </Typography>
+                        }
+                        sx={{ mb: 0.75 }}
                       />
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ mt: 0.5 }}
-                      >
-                        {t("settings.hardwareAccelerationDescription")}
-                      </Typography>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        placeholder={t(
+                          "settings.externalEditor.commandPlaceholder",
+                        )}
+                        value={externalEditorCommand}
+                        onChange={(e) =>
+                          setExternalEditorCommand(e.target.value)
+                        }
+                        disabled={!externalEditorEnabled}
+                      />
+                    </Box>
+                  </Grid>
+                </Grid>
+              )}
 
-                      {/* GPU 信息 */}
-                      <Box
-                        sx={{
-                          mt: 1.5,
-                          p: 1.25,
-                          borderRadius: 1,
-                          bgcolor: (theme) =>
-                            theme.palette.mode === "dark"
-                              ? "rgba(255,255,255,0.04)"
-                              : "rgba(0,0,0,0.03)",
-                          fontFamily: "monospace",
-                          fontSize: 12,
-                        }}
-                      >
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ display: "block", mb: 0.5 }}
+              {/* Tab 1: Terminal & Logs */}
+              {activeTab === 1 && (
+                <Grid container spacing={2}>
+                  {/* Left: Terminal */}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.terminalFontSectionTitle")}
+                    </Typography>
+                    <Box sx={sectionCardSx}>
+                      <Box sx={compactFieldSx}>
+                        <FormControl fullWidth variant="outlined" size="small">
+                          <InputLabel>
+                            {t("settings.terminalFontFamily")}
+                          </InputLabel>
+                          <Select
+                            value={terminalFont}
+                            onChange={handleTerminalFontChange}
+                            label={t("settings.terminalFontFamily")}
+                          >
+                            {terminalFonts.map((font) => (
+                              <MenuItem key={font.value} value={font.value}>
+                                <Typography
+                                  style={{ fontFamily: font.value }}
+                                >
+                                  {font.label}
+                                </Typography>
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1,
+                          }}
                         >
-                          {t("settings.gpuInfo")}
-                        </Typography>
-                        {gpuInfoLoading && (
-                          <Typography variant="body2" color="text.secondary">
-                            {t("settings.gpuInfoLoading")}
+                          <Typography
+                            variant="body2"
+                            sx={{ minWidth: 52, fontSize: "0.8rem" }}
+                          >
+                            {t("settings.terminalFontSizeLabel")}
                           </Typography>
-                        )}
-                        {!gpuInfoLoading && !gpuInfo && (
-                          <Typography variant="body2" color="text.secondary">
-                            {t("settings.gpuInfoUnavailable")}
+                          <Slider
+                            value={terminalFontSize}
+                            onChange={handleTerminalFontSizeChange}
+                            step={null}
+                            marks={fontSizes.map((size) => ({
+                              value: size.value,
+                              label: size.label,
+                            }))}
+                            min={12}
+                            max={18}
+                            size="small"
+                            sx={{ flex: 1 }}
+                          />
+                        </Box>
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.5,
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            sx={{ minWidth: 44, fontSize: "0.8rem" }}
+                          >
+                            {t("settings.fontWeight")}
                           </Typography>
-                        )}
-                        {!gpuInfoLoading && gpuInfo && (
-                          <Box>
-                            <Box>
+                          <Slider
+                            value={terminalFontWeight}
+                            onChange={handleTerminalFontWeightChange}
+                            min={300}
+                            max={1000}
+                            size="small"
+                            sx={{ flex: 1 }}
+                          />
+                          <TextField
+                            value={terminalFontWeight}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              if (!isNaN(val)) setTerminalFontWeight(val);
+                            }}
+                            size="small"
+                            type="number"
+                            inputProps={{
+                              min: 300,
+                              max: 1000,
+                              style: { textAlign: "center" },
+                            }}
+                            sx={{ width: 64 }}
+                          />
+                        </Box>
+                      </Box>
+
+                      <Box>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="number"
+                          label={t("settings.terminalScrollbackLines")}
+                          value={terminalScrollbackLines}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            if (Number.isFinite(v)) {
+                              setTerminalScrollbackLines(v);
+                            }
+                          }}
+                          inputProps={{ min: 1000, max: 500000, step: 1000 }}
+                        />
+                      </Box>
+                    </Box>
+                  </Grid>
+
+                  {/* Right: Logs */}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.logSettingsTitle")}
+                    </Typography>
+                    <Box sx={sectionCardSx}>
+                      <Box sx={compactFieldSx}>
+                        <FormControl fullWidth variant="outlined" size="small">
+                          <Select
+                            value={logLevel}
+                            onChange={handleLogLevelChange}
+                          >
+                            {logLevels.map((level) => (
+                              <MenuItem key={level.value} value={level.value}>
+                                {level.label}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="number"
+                          label={t("settings.logFileSizeLimitLabel")}
+                          value={maxFileSize}
+                          onChange={handleMaxFileSizeChange}
+                          InputProps={{
+                            endAdornment: (
+                              <InputAdornment position="end">MB</InputAdornment>
+                            ),
+                          }}
+                          inputProps={{ min: 1 }}
+                        />
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="number"
+                          label={t("settings.logCleanupIntervalLabel")}
+                          value={cleanupIntervalDays}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            if (!isNaN(v) && v > 0) {
+                              setCleanupIntervalDays(v);
+                            }
+                          }}
+                          inputProps={{ min: 1 }}
+                        />
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="number"
+                          label={t("settings.backupRetentionLabel")}
+                          value={backupRetentionDays}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            if (!isNaN(v) && v > 0) {
+                              setBackupRetentionDays(v);
+                            }
+                          }}
+                          inputProps={{ min: 1, max: 365 }}
+                        />
+                      </Box>
+
+                      <Box
+                        sx={{ display: "flex", gap: 0.75, flexWrap: "wrap" }}
+                      >
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<FolderOpenIcon />}
+                          onClick={handleOpenLogDirectory}
+                        >
+                          {t("settings.openLogDirectory")}
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<BugReportIcon />}
+                          onClick={handleExportDiagnostics}
+                        >
+                          {t("settings.exportDiagnostics")}
+                        </Button>
+                      </Box>
+                    </Box>
+                  </Grid>
+                </Grid>
+              )}
+
+              {/* Tab 2: Performance */}
+              {activeTab === 2 && (
+                <Box>
+                  {needsRestart && (
+                    <Alert severity="warning" sx={{ mb: 1.5 }}>
+                      <AlertTitle>
+                        {t("settings.restartRequired")}
+                      </AlertTitle>
+                      {t("settings.restartMessage")}
+                    </Alert>
+                  )}
+                  <Grid container spacing={1.5}>
+                    {/* 硬件加速 (全局 GPU 开关) */}
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Card variant="outlined" sx={{ height: "100%" }}>
+                        <CardContent
+                          sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}
+                        >
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 0.75,
+                              mb: 0.75,
+                            }}
+                          >
+                            <DisplaySettingsIcon
+                              sx={{ color: "info.main", fontSize: 20 }}
+                            />
+                            <Typography variant="subtitle2" component="div">
+                              {t("settings.hardwareAcceleration")}
+                            </Typography>
+                            {hardwareAccelerationEnabled !==
+                              (originalPerformanceSettings.hardwareAcceleration !==
+                                false) && (
+                              <Chip
+                                label={t("settings.needsRestart")}
+                                size="small"
+                                color="warning"
+                              />
+                            )}
+                          </Box>
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={hardwareAccelerationEnabled}
+                                onChange={(e) =>
+                                  handlePerformanceChange(
+                                    "hardwareAcceleration",
+                                    e.target.checked,
+                                  )
+                                }
+                                color="primary"
+                              />
+                            }
+                            label={t("settings.enableHardwareAcceleration")}
+                          />
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: "block", mt: 0.5 }}
+                          >
+                            {t("settings.hardwareAccelerationDescription")}
+                          </Typography>
+
+                          {/* GPU 信息 */}
+                          <Box
+                            sx={{
+                              mt: 1,
+                              p: 1,
+                              borderRadius: 1,
+                              bgcolor: (theme) =>
+                                theme.palette.mode === "dark"
+                                  ? "rgba(255,255,255,0.04)"
+                                  : "rgba(0,0,0,0.03)",
+                              fontFamily: "monospace",
+                              fontSize: 12,
+                            }}
+                          >
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: "block", mb: 0.25 }}
+                            >
+                              {t("settings.gpuInfo")}
+                            </Typography>
+                            {gpuInfoLoading && (
                               <Typography
                                 variant="caption"
                                 color="text.secondary"
-                                component="span"
                               >
-                                {t("settings.gpuRenderer")}:{" "}
+                                {t("settings.gpuInfoLoading")}
                               </Typography>
+                            )}
+                            {!gpuInfoLoading && !gpuInfo && (
                               <Typography
                                 variant="caption"
-                                component="span"
-                                sx={{ wordBreak: "break-all" }}
+                                color="text.secondary"
                               >
-                                {gpuInfo.displayRenderer ||
-                                  gpuInfo.activeGpu?.deviceString ||
-                                  t("settings.gpuUnknown")}
+                                {t("settings.gpuInfoUnavailable")}
                               </Typography>
-                            </Box>
-                            {gpuInfo.displayVendor && (
-                              <Box>
-                                <Typography
-                                  variant="caption"
-                                  color="text.secondary"
-                                  component="span"
-                                >
-                                  {t("settings.gpuVendor")}:{" "}
-                                </Typography>
-                                <Typography variant="caption" component="span">
-                                  {gpuInfo.displayVendor}
-                                </Typography>
-                              </Box>
                             )}
-                            {gpuInfo.activeGpu &&
-                              (gpuInfo.activeGpu.vendorId ||
-                                gpuInfo.activeGpu.deviceId) && (
+                            {!gpuInfoLoading && gpuInfo && (
+                              <Box>
                                 <Box>
                                   <Typography
                                     variant="caption"
                                     color="text.secondary"
                                     component="span"
                                   >
-                                    {t("settings.gpuDeviceId")}:{" "}
+                                    {t("settings.gpuRenderer")}:{" "}
                                   </Typography>
                                   <Typography
                                     variant="caption"
                                     component="span"
+                                    sx={{ wordBreak: "break-all" }}
                                   >
-                                    {gpuInfo.activeGpu.vendorId || "?"}/
-                                    {gpuInfo.activeGpu.deviceId || "?"}
+                                    {gpuInfo.displayRenderer ||
+                                      gpuInfo.activeGpu?.deviceString ||
+                                      t("settings.gpuUnknown")}
                                   </Typography>
                                 </Box>
-                              )}
-                            <Box sx={{ mt: 0.5 }}>
-                              {gpuInfo.softwareRendering ? (
+                                {gpuInfo.displayVendor && (
+                                  <Box>
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                      component="span"
+                                    >
+                                      {t("settings.gpuVendor")}:{" "}
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      component="span"
+                                    >
+                                      {gpuInfo.displayVendor}
+                                    </Typography>
+                                  </Box>
+                                )}
+                                {gpuInfo.activeGpu &&
+                                  (gpuInfo.activeGpu.vendorId ||
+                                    gpuInfo.activeGpu.deviceId) && (
+                                    <Box>
+                                      <Typography
+                                        variant="caption"
+                                        color="text.secondary"
+                                        component="span"
+                                      >
+                                        {t("settings.gpuDeviceId")}:{" "}
+                                      </Typography>
+                                      <Typography
+                                        variant="caption"
+                                        component="span"
+                                      >
+                                        {gpuInfo.activeGpu.vendorId || "?"}/
+                                        {gpuInfo.activeGpu.deviceId || "?"}
+                                      </Typography>
+                                    </Box>
+                                  )}
+                                <Box sx={{ mt: 0.25 }}>
+                                  {gpuInfo.softwareRendering ? (
+                                    <Chip
+                                      size="small"
+                                      color="warning"
+                                      label={t(
+                                        "settings.gpuSoftwareFallback",
+                                      )}
+                                    />
+                                  ) : (
+                                    <Chip
+                                      size="small"
+                                      color="success"
+                                      label={t("settings.gpuHardwareActive")}
+                                    />
+                                  )}
+                                </Box>
+                              </Box>
+                            )}
+                          </Box>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+
+                    {/* 图像支持 */}
+                    <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                      <Card variant="outlined" sx={{ height: "100%" }}>
+                        <CardContent
+                          sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}
+                        >
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              mb: 0.75,
+                            }}
+                          >
+                            <ImageIcon
+                              sx={{
+                                mr: 0.75,
+                                color: "primary.main",
+                                fontSize: 20,
+                              }}
+                            />
+                            <Typography variant="subtitle2" component="div">
+                              {t("settings.imageSupport")}
+                            </Typography>
+                            {needsRestart &&
+                              imageSupported !==
+                                originalPerformanceSettings.imageSupported && (
                                 <Chip
+                                  label={t("settings.needsRestart")}
                                   size="small"
                                   color="warning"
-                                  label={t("settings.gpuSoftwareFallback")}
-                                />
-                              ) : (
-                                <Chip
-                                  size="small"
-                                  color="success"
-                                  label={t("settings.gpuHardwareActive")}
+                                  sx={{ ml: 0.5 }}
                                 />
                               )}
-                            </Box>
                           </Box>
-                        )}
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={imageSupported}
+                                onChange={(e) =>
+                                  handlePerformanceChange(
+                                    "imageSupported",
+                                    e.target.checked,
+                                  )
+                                }
+                                color="primary"
+                              />
+                            }
+                            label={t("settings.enableImageSupport")}
+                          />
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: "block", mt: 0.5 }}
+                          >
+                            {t("settings.imageDescription")}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
 
-                {/* 图像支持 */}
-                <Grid
-                  size={{
-                    xs: 12,
-                    sm: 6,
-                  }}
-                >
-                  <Card variant="outlined" sx={{ height: "100%" }}>
-                    <CardContent>
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", mb: 1 }}
-                      >
-                        <ImageIcon sx={{ mr: 1, color: "primary.main" }} />
-                        <Typography variant="h6" component="div">
-                          {t("settings.imageSupport")}
-                        </Typography>
-                        {needsRestart &&
-                          imageSupported !==
-                            originalPerformanceSettings.imageSupported && (
-                            <Chip
-                              label={t("settings.needsRestart")}
-                              size="small"
-                              color="warning"
-                              sx={{ ml: 1 }}
+                    {/* 智能缓存 */}
+                    <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                      <Card variant="outlined" sx={{ height: "100%" }}>
+                        <CardContent
+                          sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}
+                        >
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              mb: 0.75,
+                            }}
+                          >
+                            <MemoryIcon
+                              sx={{
+                                mr: 0.75,
+                                color: "success.main",
+                                fontSize: 20,
+                              }}
                             />
-                          )}
-                      </Box>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={imageSupported}
-                            onChange={(e) =>
-                              handlePerformanceChange(
-                                "imageSupported",
-                                e.target.checked,
-                              )
+                            <Typography variant="subtitle2" component="div">
+                              {t("settings.smartCache")}
+                            </Typography>
+                            <Chip
+                              label={t("settings.realTime")}
+                              size="small"
+                              color="success"
+                              sx={{ ml: 0.5 }}
+                            />
+                          </Box>
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={cacheEnabled}
+                                onChange={(e) =>
+                                  handlePerformanceChange(
+                                    "cacheEnabled",
+                                    e.target.checked,
+                                  )
+                                }
+                                color="primary"
+                              />
                             }
-                            color="primary"
+                            label={t("settings.enableCache")}
                           />
-                        }
-                        label={t("settings.enableImageSupport")}
-                      />
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{ mt: 1 }}
-                      >
-                        {t("settings.imageDescription")}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: "block", mt: 0.5 }}
+                          >
+                            {t("settings.cacheDescription")}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
 
-                {/* 智能缓存 */}
-                <Grid
-                  size={{
-                    xs: 12,
-                    sm: 6,
-                  }}
-                >
-                  <Card variant="outlined" sx={{ height: "100%" }}>
-                    <CardContent>
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", mb: 1 }}
-                      >
-                        <MemoryIcon sx={{ mr: 1, color: "success.main" }} />
-                        <Typography variant="h6" component="div">
-                          {t("settings.smartCache")}
-                        </Typography>
-                        <Chip
-                          label={t("settings.realTime")}
+                    {/* 智能预取 */}
+                    <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                      <Card variant="outlined" sx={{ height: "100%" }}>
+                        <CardContent
+                          sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}
+                        >
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              mb: 0.75,
+                            }}
+                          >
+                            <CachedIcon
+                              sx={{
+                                mr: 0.75,
+                                color: "success.main",
+                                fontSize: 20,
+                              }}
+                            />
+                            <Typography variant="subtitle2" component="div">
+                              {t("settings.smartPrefetch")}
+                            </Typography>
+                            <Chip
+                              label={t("settings.realTime")}
+                              size="small"
+                              color="success"
+                              sx={{ ml: 0.5 }}
+                            />
+                          </Box>
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={prefetchEnabled}
+                                onChange={(e) =>
+                                  handlePerformanceChange(
+                                    "prefetchEnabled",
+                                    e.target.checked,
+                                  )
+                                }
+                                color="primary"
+                              />
+                            }
+                            label={t("settings.enablePrefetch")}
+                          />
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: "block", mt: 0.5 }}
+                          >
+                            {t("settings.prefetchDescription")}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  </Grid>
+                </Box>
+              )}
+
+              {/* Tab 3: Security */}
+              {activeTab === 3 && (
+                <Box sx={{ maxWidth: 520 }}>
+                  <Box sx={sectionCardSx}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Typography variant="subtitle1">
+                        {t("settings.security.title")}
+                      </Typography>
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 0.75 }}
+                    >
+                      {t("settings.security.description")}
+                    </Typography>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={masterPasswordEnabled}
+                          onChange={(e) =>
+                            setMasterPasswordEnabled(e.target.checked)
+                          }
                           size="small"
-                          color="success"
-                          sx={{ ml: 1 }}
+                        />
+                      }
+                      label={
+                        <Typography variant="body2">
+                          {t("settings.security.enable")}
+                        </Typography>
+                      }
+                    />
+
+                    {masterPasswordEnabled ? (
+                      <Box sx={{ mt: 0.75 }}>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mb: 0.75 }}
+                        >
+                          {initialMasterPasswordEnabled
+                            ? t("settings.security.changeHint")
+                            : t("settings.security.createHint")}
+                        </Typography>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.security.password")}
+                          value={masterPassword}
+                          onChange={(e) => setMasterPassword(e.target.value)}
+                          sx={{ mb: 0.75 }}
+                        />
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.security.confirmPassword")}
+                          value={confirmMasterPassword}
+                          onChange={(e) =>
+                            setConfirmMasterPassword(e.target.value)
+                          }
                         />
                       </Box>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={cacheEnabled}
-                            onChange={(e) =>
-                              handlePerformanceChange(
-                                "cacheEnabled",
-                                e.target.checked,
-                              )
-                            }
-                            color="primary"
-                          />
-                        }
-                        label={t("settings.enableCache")}
-                      />
+                    ) : (
                       <Typography
-                        variant="body2"
+                        variant="caption"
                         color="text.secondary"
-                        sx={{ mt: 1 }}
+                        sx={{ display: "block", mt: 0.5 }}
                       >
-                        {t("settings.cacheDescription")}
+                        {t("settings.security.disableHint")}
                       </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
+                    )}
+                  </Box>
+                </Box>
+              )}
 
-                {/* 智能预取 */}
-                <Grid
-                  size={{
-                    xs: 12,
-                    sm: 6,
-                  }}
-                >
-                  <Card variant="outlined" sx={{ height: "100%" }}>
-                    <CardContent>
+              {/* Tab 4: Feedback */}
+              {activeTab === 4 && (
+                <Box sx={{ maxWidth: 600 }}>
+                  <Box sx={sectionCardSx}>
+                    <Box sx={sectionTitleRowSx}>
                       <Box
-                        sx={{ display: "flex", alignItems: "center", mb: 1 }}
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                        }}
                       >
-                        <CachedIcon sx={{ mr: 1, color: "success.main" }} />
-                        <Typography variant="h6" component="div">
-                          {t("settings.smartPrefetch")}
+                        <BugReportIcon sx={{ color: "error.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.feedback.title")}
                         </Typography>
-                        <Chip
-                          label={t("settings.realTime")}
-                          size="small"
-                          color="success"
-                          sx={{ ml: 1 }}
-                        />
                       </Box>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={prefetchEnabled}
-                            onChange={(e) =>
-                              handlePerformanceChange(
-                                "prefetchEnabled",
-                                e.target.checked,
-                              )
-                            }
-                            color="primary"
-                          />
+                      <Chip
+                        size="small"
+                        color={
+                          crashReporterStatus?.started
+                            ? "success"
+                            : "warning"
                         }
-                        label={t("settings.enablePrefetch")}
+                        variant="outlined"
+                        label={
+                          crashReporterStatus?.started
+                            ? t("settings.feedback.localCrashCaptureOn")
+                            : t("settings.feedback.localCrashCaptureOff")
+                        }
                       />
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 0.75 }}
+                    >
+                      {t("settings.feedback.description")}
+                    </Typography>
+                    <Grid container spacing={1}>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={errorReportingEnabled}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setErrorReportingEnabled(checked);
+                                if (!checked) {
+                                  setIncludeDiagnosticsInFeedback(false);
+                                } else {
+                                  setIncludeDiagnosticsInFeedback(true);
+                                }
+                              }}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.feedback.enable")}
+                            </Typography>
+                          }
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.25 }}
+                        >
+                          {t("settings.feedback.enableHelper")}
+                        </Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={
+                                errorReportingEnabled &&
+                                includeDiagnosticsInFeedback
+                              }
+                              onChange={(e) =>
+                                setIncludeDiagnosticsInFeedback(
+                                  e.target.checked,
+                                )
+                              }
+                              disabled={!errorReportingEnabled}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.feedback.includeDiagnostics")}
+                            </Typography>
+                          }
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.25 }}
+                        >
+                          {t("settings.feedback.includeDiagnosticsHelper")}
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                    {crashReporterStatus?.crashDirectory ? (
                       <Typography
-                        variant="body2"
+                        variant="caption"
                         color="text.secondary"
-                        sx={{ mt: 1 }}
+                        sx={{
+                          display: "block",
+                          mt: 0.75,
+                          wordBreak: "break-all",
+                          fontFamily: "monospace",
+                        }}
                       >
-                        {t("settings.prefetchDescription")}
+                        {t("settings.feedback.crashDirectory")}:{" "}
+                        {crashReporterStatus.crashDirectory}
                       </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              </Grid>
+                    ) : null}
+                    <Box
+                      sx={{
+                        display: "flex",
+                        gap: 0.75,
+                        mt: 1,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<ContentCopyIcon />}
+                        onClick={handleCopyDiagnosticPackage}
+                      >
+                        {t("settings.feedback.copyPackage")}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<BugReportIcon />}
+                        onClick={handleExportDiagnostics}
+                      >
+                        {t("settings.exportDiagnostics")}
+                      </Button>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<FeedbackIcon />}
+                        onClick={handleOpenFeedbackIssue}
+                      >
+                        {t("settings.feedback.openIssue")}
+                      </Button>
+                    </Box>
+                  </Box>
+                </Box>
+              )}
             </Box>
-          </>
+          </Box>
         )}
       </DialogContent>
-      <DialogActions sx={{ px: 3, py: 1.5, gap: 1 }}>
+      <DialogActions sx={{ px: 2, py: 1, gap: 0.75 }}>
         <Button onClick={onClose} color="primary" variant="outlined">
           {t("settings.cancel")}
         </Button>

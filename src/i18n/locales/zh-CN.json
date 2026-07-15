@@ -12,6 +12,8 @@
     },
     "settings": {
       "title": "设置",
+      "general": "通用",
+      "appearance": "外观",
       "language": "界面语言",
       "fontSize": "界面字号",
       "theme": "主题模式",
@@ -63,6 +65,8 @@
         "warn": "警告",
         "error": "错误"
       },
+      "backupRetentionLabel": "配置备份保留天数",
+      "backupRetentionHelper": "超过保留天数的配置文件备份将被自动清理",
       "openLogDirectory": "打开日志目录",
       "exportDiagnostics": "导出诊断包",
       "logDirectoryOpened": "日志目录已打开",

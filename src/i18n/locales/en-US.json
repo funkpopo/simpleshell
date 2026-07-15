@@ -12,6 +12,8 @@
     },
     "settings": {
       "title": "Settings",
+      "general": "General",
+      "appearance": "Appearance",
       "language": "Language",
       "fontSize": "Font Size",
       "theme": "Theme Mode",
@@ -63,6 +65,8 @@
         "warn": "Warn",
         "error": "Error"
       },
+      "backupRetentionLabel": "Config Backup Retention",
+      "backupRetentionHelper": "Backups older than this many days will be automatically cleaned up",
       "openLogDirectory": "Open Log Directory",
       "exportDiagnostics": "Export Diagnostics",
       "logDirectoryOpened": "Log directory opened",

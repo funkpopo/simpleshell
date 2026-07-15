@@ -164,6 +164,7 @@ class ConfigService {
           minimum: 240,
           maximum: 560,
         },
+        backupRetentionDays: { type: "number", minimum: 1, default: 30 },
         terminalFont: { type: "string", default: "Fira Code" },
         terminalFontSize: {
           type: "number",
@@ -345,6 +346,18 @@ class ConfigService {
       return;
     }
 
+    let backupRetentionDays = 30;
+    try {
+      const config = this._readConfig();
+      backupRetentionDays =
+        config?.uiSettings?.backupRetentionDays ?? 30;
+    } catch {
+      // use default
+    }
+
+    const now = Date.now();
+    const retentionMs = backupRetentionDays * 24 * 60 * 60 * 1000;
+
     const backupFiles = fs
       .readdirSync(backupDir, { withFileTypes: true })
       .filter(
@@ -359,7 +372,22 @@ class ConfigService {
       }))
       .sort((left, right) => right.mtimeMs - left.mtimeMs);
 
-    backupFiles.slice(MAX_CONFIG_BACKUPS).forEach((entry) => {
+    const toDelete = [];
+    for (const entry of backupFiles) {
+      if (now - entry.mtimeMs > retentionMs) {
+        toDelete.push(entry);
+      }
+    }
+
+    // also enforce count limit as a safety net
+    const remaining = backupFiles.filter((e) => !toDelete.includes(e));
+    if (remaining.length > MAX_CONFIG_BACKUPS) {
+      remaining.slice(MAX_CONFIG_BACKUPS).forEach((entry) => {
+        toDelete.push(entry);
+      });
+    }
+
+    toDelete.forEach((entry) => {
       try {
         fs.unlinkSync(entry.path);
       } catch (error) {
@@ -401,6 +429,7 @@ class ConfigService {
         },
         ipQueryHistory: [],
         windowBounds: {},
+        backupRetentionDays: 30,
       },
       aiSettings: {
         configs: [],
@@ -1422,6 +1451,7 @@ class ConfigService {
       },
       ipQueryHistory: [],
       windowBounds: {},
+      backupRetentionDays: 30,
     };
   }
 
