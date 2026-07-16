@@ -137,12 +137,17 @@ class SshKeyHandlers {
     try {
       const { content, filename } = options;
 
+      // 私钥文件无扩展名，过滤器不能包含扩展名，
+      // 否则 Windows 保存对话框会自动为无扩展名的文件名追加过滤器扩展名（如 .pub）
+      const isPublicKey = filename.endsWith(".pub");
       const result = await dialog.showSaveDialog({
         defaultPath: filename,
-        filters: [
-          { name: "SSH Key Files", extensions: ["pub", "pem", "key"] },
-          { name: "All Files", extensions: ["*"] },
-        ],
+        filters: isPublicKey
+          ? [
+              { name: "SSH Public Key", extensions: ["pub"] },
+              { name: "All Files", extensions: ["*"] },
+            ]
+          : [{ name: "All Files", extensions: ["*"] }],
       });
 
       if (!result.canceled && result.filePath) {
