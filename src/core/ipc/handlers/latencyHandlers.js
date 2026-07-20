@@ -1,5 +1,6 @@
 const NetworkLatencyService = require("../../services/networkLatencyService");
 const { logToFile } = require("../../utils/logger");
+const { broadcastToAllWindows } = require("../../window/windowManager");
 const {
   IPC_EVENT_CHANNELS,
   IPC_REQUEST_CHANNELS,
@@ -207,42 +208,21 @@ class LatencyHandlers {
    * 广播延迟更新到所有窗口
    */
   broadcastLatencyUpdate(data) {
-    const { BrowserWindow } = require("electron");
-    const windows = BrowserWindow.getAllWindows();
-
-    windows.forEach((window) => {
-      if (!window.isDestroyed()) {
-        window.webContents.send(IPC_EVENT_CHANNELS.LATENCY_UPDATED, data);
-      }
-    });
+    broadcastToAllWindows(IPC_EVENT_CHANNELS.LATENCY_UPDATED, data);
   }
 
   /**
    * 广播延迟错误到所有窗口
    */
   broadcastLatencyError(data) {
-    const { BrowserWindow } = require("electron");
-    const windows = BrowserWindow.getAllWindows();
-
-    windows.forEach((window) => {
-      if (!window.isDestroyed()) {
-        window.webContents.send(IPC_EVENT_CHANNELS.LATENCY_ERROR, data);
-      }
-    });
+    broadcastToAllWindows(IPC_EVENT_CHANNELS.LATENCY_ERROR, data);
   }
 
   /**
    * 广播连接断开到所有窗口
    */
   broadcastLatencyDisconnected(data) {
-    const { BrowserWindow } = require("electron");
-    const windows = BrowserWindow.getAllWindows();
-
-    windows.forEach((window) => {
-      if (!window.isDestroyed()) {
-        window.webContents.send(IPC_EVENT_CHANNELS.LATENCY_DISCONNECTED, data);
-      }
-    });
+    broadcastToAllWindows(IPC_EVENT_CHANNELS.LATENCY_DISCONNECTED, data);
   }
 
   /**

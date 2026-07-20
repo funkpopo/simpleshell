@@ -12,6 +12,7 @@ const {
   recordNativeSidecarNetworkPath,
   resolveNativeSidecarNetworkPath,
 } = require("./nativeSidecarNetworkPath");
+const { normalizeErrorMessage } = require("./errorResponse");
 
 const NATIVE_SFTP_SCHEMA_VERSION = 1;
 let nativeRequestSequence = 0;
@@ -28,12 +29,6 @@ function normalizeNativeRequest(request = {}) {
     schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
     requestId: request.requestId || createNativeRequestId(operation),
   };
-}
-
-function normalizeErrorMessage(error) {
-  if (!error) return "Unknown error";
-  if (typeof error === "string") return error;
-  return error.message || String(error);
 }
 
 function normalizeLogLevel(level, fallback = "WARN") {
@@ -201,10 +196,19 @@ function prepareNativeSshConfig(config) {
   };
 }
 
-async function resolveSshConfig(tabId) {
+async function resolveSshConfig(tabId, options = {}) {
+  const {
+    includeTimeouts = false,
+    plainErrors = false,
+    proxyManager = undefined,
+  } = options;
+
   const processInfo = processManager.getProcess(tabId);
   const rawConfig = processInfo?.config;
   if (!rawConfig?.host || !rawConfig?.username) {
+    if (plainErrors) {
+      throw new Error("SSH connection config is unavailable");
+    }
     logToFile(`Native SFTP: missing SSH config for tab ${tabId}`, "WARN");
     throw createNativeSidecarError("SSH connection config is unavailable", {
       errorCode: "NATIVE_SFTP_MISSING_CONFIG",
@@ -214,9 +218,22 @@ async function resolveSshConfig(tabId) {
     });
   }
 
-  const expectedHostFingerprint = resolveExpectedHostFingerprint(rawConfig, [
-    processInfo?.connectionInfo?.config,
-  ]);
+  let expectedHostFingerprint;
+  if (plainErrors) {
+    expectedHostFingerprint =
+      getTrustedHostFingerprint(rawConfig) ||
+      getTrustedHostFingerprint(processInfo?.connectionInfo?.config);
+    if (!expectedHostFingerprint) {
+      throw new Error(
+        "SSH host key has not been trusted by the main connection",
+      );
+    }
+  } else {
+    expectedHostFingerprint = resolveExpectedHostFingerprint(rawConfig, [
+      processInfo?.connectionInfo?.config,
+    ]);
+  }
+
   const sshConfig = await processSSHPrivateKeyAsync({
     host: rawConfig.host,
     port: rawConfig.port || 22,
@@ -225,8 +242,30 @@ async function resolveSshConfig(tabId) {
     privateKey: rawConfig.privateKey || undefined,
     privateKeyPath: rawConfig.privateKeyPath || undefined,
     passphrase: rawConfig.passphrase || undefined,
+    ...(includeTimeouts
+      ? {
+          readyTimeout: rawConfig.readyTimeout || undefined,
+          keepaliveInterval: rawConfig.keepaliveInterval || undefined,
+          keepaliveCountMax: rawConfig.keepaliveCountMax || undefined,
+          expectedHostFingerprint,
+        }
+      : {}),
   });
-  const networkPath = await resolveNativeSidecarNetworkPath(rawConfig);
+
+  const networkPath = await resolveNativeSidecarNetworkPath(
+    rawConfig,
+    proxyManager !== undefined ? { proxyManager } : {},
+  );
+
+  if (includeTimeouts) {
+    if (sshConfig?.privateKeyPath && sshConfig.privateKey) {
+      delete sshConfig.privateKeyPath;
+    }
+    sshConfig.proxy = networkPath.proxy || undefined;
+    sshConfig.proxyRequired = networkPath.proxyRequired;
+    sshConfig.networkPath = networkPath.networkPath;
+    return sshConfig;
+  }
 
   return {
     host: sshConfig.host,
@@ -268,6 +307,101 @@ function invokeNativeRequest(tabId, request, options = {}) {
   );
 }
 
+function buildInvalidSidecarOutputError(error, request, line) {
+  return createNativeSidecarError(
+    `Native SFTP sidecar returned invalid JSON: ${normalizeErrorMessage(error)}`,
+    {
+      errorCode: "NATIVE_SFTP_INVALID_SIDECAR_OUTPUT",
+      errorKind: "internal",
+      retryable: false,
+      operation: request.operation || null,
+      requestId: request.requestId,
+      raw: { line },
+    },
+  );
+}
+
+/**
+ * Spawns the native sidecar in the given mode ("sftp-request" | "sftp-watch"),
+ * wires up the shared plumbing (stdout line buffering, stderr accumulation,
+ * child-error wrapping, close flush) and writes the request envelope to stdin.
+ * Mode-specific semantics (single response vs long-lived stream) stay in the
+ * callers via the onLine/onChildError/onClose callbacks.
+ */
+function spawnSidecarSession({
+  sidecarPath,
+  mode,
+  nativeConfig,
+  request,
+  onSpawn,
+  onLine,
+  onChildError,
+  onClose,
+}) {
+  const child = spawn(sidecarPath, [mode], {
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
+  });
+
+  if (typeof onSpawn === "function") {
+    try {
+      onSpawn(child);
+    } catch {
+      // ignore callback failures
+    }
+  }
+
+  let stdoutBuffer = "";
+  let stderrBuffer = "";
+
+  child.stdout.on("data", (chunk) => {
+    stdoutBuffer += chunk.toString("utf8");
+    const lines = stdoutBuffer.split(/\r?\n/);
+    stdoutBuffer = lines.pop() || "";
+    for (const line of lines) {
+      onLine(line.trim());
+    }
+  });
+
+  child.stderr.on("data", (chunk) => {
+    stderrBuffer += chunk.toString("utf8");
+  });
+
+  child.on("error", (error) => {
+    onChildError(
+      createNativeSidecarError(
+        `Failed to start native SFTP sidecar: ${normalizeErrorMessage(error)}`,
+        {
+          errorCode: "NATIVE_SFTP_SIDECAR_START_FAILED",
+          errorKind: "sidecar",
+          retryable: false,
+          operation: request.operation || null,
+          requestId: request.requestId,
+          raw: error,
+        },
+      ),
+    );
+  });
+
+  child.on("close", (code, signal) => {
+    if (stdoutBuffer.trim()) {
+      onLine(stdoutBuffer.trim());
+    }
+    onClose(code, signal, stderrBuffer.trim());
+  });
+
+  child.stdin.end(
+    JSON.stringify({
+      schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
+      config: nativeConfig,
+      request,
+    }),
+    "utf8",
+  );
+
+  return child;
+}
+
 function invokeNativeRequestWithConfig(
   config,
   request,
@@ -299,21 +433,6 @@ function invokeNativeRequestWithConfig(
   }
 
   return new Promise((resolve, reject) => {
-    const child = spawn(sidecarPath, ["sftp-request"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
-
-    if (typeof options.onSpawn === "function") {
-      try {
-        options.onSpawn(child);
-      } catch {
-        // ignore callback failures
-      }
-    }
-
-    let stdoutBuffer = "";
-    let stderrBuffer = "";
     let settled = false;
     let finalResult = null;
 
@@ -357,17 +476,7 @@ function invokeNativeRequestWithConfig(
         payload = JSON.parse(line);
       } catch (error) {
         rejectOnce(
-          createNativeSidecarError(
-            `Native SFTP sidecar returned invalid JSON: ${normalizeErrorMessage(error)}`,
-            {
-              errorCode: "NATIVE_SFTP_INVALID_SIDECAR_OUTPUT",
-              errorKind: "internal",
-              retryable: false,
-              operation: normalizedRequest.operation || null,
-              requestId: normalizedRequest.requestId,
-              raw: { line },
-            },
-          ),
+          buildInvalidSidecarOutputError(error, normalizedRequest, line),
         );
         return;
       }
@@ -391,43 +500,10 @@ function invokeNativeRequestWithConfig(
       }
     };
 
-    child.stdout.on("data", (chunk) => {
-      stdoutBuffer += chunk.toString("utf8");
-      const lines = stdoutBuffer.split(/\r?\n/);
-      stdoutBuffer = lines.pop() || "";
-      for (const line of lines) {
-        handleOutputLine(line.trim());
-      }
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderrBuffer += chunk.toString("utf8");
-    });
-
-    child.on("error", (error) => {
-      rejectOnce(
-        createNativeSidecarError(
-          `Failed to start native SFTP sidecar: ${normalizeErrorMessage(error)}`,
-          {
-            errorCode: "NATIVE_SFTP_SIDECAR_START_FAILED",
-            errorKind: "sidecar",
-            retryable: false,
-            operation: normalizedRequest.operation || null,
-            requestId: normalizedRequest.requestId,
-            raw: error,
-          },
-        ),
-      );
-    });
-
-    child.on("close", (code) => {
-      if (stdoutBuffer.trim()) {
-        handleOutputLine(stdoutBuffer.trim());
-      }
-
+    const handleClose = (code, signal, stderrText) => {
       if (code !== 0) {
         const structured = normalizeNativeErrorPayload(
-          stderrBuffer.trim() || finalResult,
+          stderrText || finalResult,
           (finalResult && finalResult.error) ||
             `Native SFTP sidecar exited with code ${code}`,
         );
@@ -461,8 +537,7 @@ function invokeNativeRequestWithConfig(
       if (!finalResult) {
         rejectOnce(
           createNativeSidecarError(
-            stderrBuffer.trim() ||
-              "Native SFTP sidecar did not return a result payload",
+            stderrText || "Native SFTP sidecar did not return a result payload",
             {
               errorCode: "NATIVE_SFTP_MISSING_RESULT",
               errorKind: "internal",
@@ -487,15 +562,18 @@ function invokeNativeRequestWithConfig(
         recordNativeSidecarNetworkPath(finalResult.networkPath);
       }
       resolveOnce(finalResult);
-    });
+    };
 
-    const envelope = JSON.stringify({
-      schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
-      config: nativeConfig,
+    spawnSidecarSession({
+      sidecarPath,
+      mode: "sftp-request",
+      nativeConfig,
       request: normalizedRequest,
+      onSpawn: options.onSpawn,
+      onLine: handleOutputLine,
+      onChildError: rejectOnce,
+      onClose: handleClose,
     });
-
-    child.stdin.end(envelope, "utf8");
   });
 }
 
@@ -557,14 +635,7 @@ function watchDirectoryWithConfig(
       reject(error);
       return;
     }
-
-    const child = spawn(sidecarPath, ["sftp-watch"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
-
-    let stdoutBuffer = "";
-    let stderrBuffer = "";
+    let child = null;
     let settled = false;
     let closedByClient = false;
     let runtimeErrorNotified = false;
@@ -592,7 +663,7 @@ function watchDirectoryWithConfig(
       close: () => {
         closedByClient = true;
         try {
-          if (!child.killed) {
+          if (child && !child.killed) {
             child.kill();
           }
         } catch {
@@ -620,17 +691,7 @@ function watchDirectoryWithConfig(
       try {
         payload = JSON.parse(line);
       } catch (error) {
-        const wrapped = createNativeSidecarError(
-          `Native SFTP sidecar returned invalid JSON: ${normalizeErrorMessage(error)}`,
-          {
-            errorCode: "NATIVE_SFTP_INVALID_SIDECAR_OUTPUT",
-            errorKind: "internal",
-            retryable: false,
-            operation: "watchDirectory",
-            requestId: request.requestId,
-            raw: { line },
-          },
-        );
+        const wrapped = buildInvalidSidecarOutputError(error, request, line);
         if (settled) {
           notifyRuntimeError(wrapped);
           controller.close();
@@ -692,47 +753,19 @@ function watchDirectoryWithConfig(
       }
     };
 
-    child.stdout.on("data", (chunk) => {
-      stdoutBuffer += chunk.toString("utf8");
-      const lines = stdoutBuffer.split(/\r?\n/);
-      stdoutBuffer = lines.pop() || "";
-      for (const line of lines) {
-        handleOutputLine(line.trim());
-      }
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderrBuffer += chunk.toString("utf8");
-    });
-
-    child.on("error", (error) => {
-      const wrapped = createNativeSidecarError(
-        `Failed to start native SFTP sidecar: ${normalizeErrorMessage(error)}`,
-        {
-          errorCode: "NATIVE_SFTP_SIDECAR_START_FAILED",
-          errorKind: "sidecar",
-          retryable: false,
-          operation: "watchDirectory",
-          requestId: request.requestId,
-          raw: error,
-        },
-      );
+    const handleChildError = (wrapped) => {
       if (settled) {
         notifyRuntimeError(wrapped);
         return;
       }
       rejectOnce(wrapped);
-    });
+    };
 
-    child.on("close", (code, signal) => {
-      if (stdoutBuffer.trim()) {
-        handleOutputLine(stdoutBuffer.trim());
-      }
-
+    const handleClose = (code, signal, stderrText) => {
       const exitInfo = {
         code,
         signal,
-        stderr: stderrBuffer.trim(),
+        stderr: stderrText,
         closedByClient,
       };
       const emitExit = () => {
@@ -751,7 +784,7 @@ function watchDirectoryWithConfig(
 
       if (code !== 0) {
         const structured = normalizeNativeErrorPayload(
-          stderrBuffer.trim() ||
+          stderrText ||
             `Native SFTP directory watch exited with code ${code}`,
         );
         recordCrashMarker(null, {
@@ -815,15 +848,17 @@ function watchDirectoryWithConfig(
         ),
       );
       emitExit();
-    });
+    };
 
-    const envelope = JSON.stringify({
-      schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
-      config: nativeConfig,
+    child = spawnSidecarSession({
+      sidecarPath,
+      mode: "sftp-watch",
+      nativeConfig,
       request,
+      onLine: handleOutputLine,
+      onChildError: handleChildError,
+      onClose: handleClose,
     });
-
-    child.stdin.end(envelope, "utf8");
   });
 }
 
@@ -1017,6 +1052,7 @@ async function downloadFile(tabId, remotePath, localPath, options = {}) {
 }
 
 module.exports = {
+  resolveSshConfig,
   invokeNativeRequestWithConfig,
   listFiles,
   watchDirectory,

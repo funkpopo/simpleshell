@@ -12,6 +12,7 @@ const {
   getLatestNativeSidecarNetworkPath,
 } = require("./nativeSidecarNetworkPath");
 const { getCrashReporterDiagnostics } = require("./crashReporter");
+const { buildFileTimestamp } = require("./textUtils");
 
 const MAX_LOG_LINES = 400;
 const SIDECAR_VERSION_TIMEOUT_MS = 3000;
@@ -338,7 +339,7 @@ async function exportDiagnosticPackage(app, options = {}) {
 
   const payload = await buildDiagnosticPayload(app, options);
   const summary = buildDiagnosticSummary(payload);
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const stamp = buildFileTimestamp();
   const filePath = path.join(diagnosticsDir, `diagnostics.${stamp}.json`);
 
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");

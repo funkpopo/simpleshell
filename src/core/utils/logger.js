@@ -2,6 +2,7 @@ const path = require("path");
 const fs = require("fs");
 const zlib = require("zlib");
 const { getConfigPath, getLogDirectory } = require("./appPaths");
+const { escapeRegExp } = require("./textUtils");
 
 let logFile = null;
 let appInstance = null;
@@ -341,10 +342,6 @@ function extractRotationIndex(fileName, nameWithoutExt, ext) {
   );
   if (gz) return parseInt(gz[1], 10);
   return -1;
-}
-
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function gzipFileSync(srcPath, destPath) {

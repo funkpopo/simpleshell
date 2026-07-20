@@ -5,21 +5,10 @@ const { logToFile } = require("../../core/utils/logger");
 const {
   invokeNativeRequestWithConfig,
 } = require("../../core/utils/nativeSftpClient");
+const { normalizeErrorMessage } = require("../../core/utils/errorResponse");
+const { buildCancelledError } = require("./transferShared");
 
 const DEFAULT_MAX_QUEUE_SIZE = 20000;
-
-function normalizeErrorMessage(error) {
-  if (!error) return "Unknown error";
-  if (typeof error === "string") return error;
-  return error.message || String(error);
-}
-
-function buildCancelledError(message = "Transfer cancelled by user") {
-  const error = new Error(message);
-  error.cancelled = true;
-  error.userCancelled = true;
-  return error;
-}
 
 function createTaskRuntimeError(message, payload = {}) {
   const error = new Error(message || "Transfer task failed");

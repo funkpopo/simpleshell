@@ -84,27 +84,7 @@ const resolveAnsiColor = (color) => {
   );
 };
 
-const REGEX_META_CHARS = new Set([
-  ".",
-  "*",
-  "+",
-  "?",
-  "^",
-  "$",
-  "{",
-  "}",
-  "(",
-  ")",
-  "|",
-  "[",
-  "]",
-  "\\",
-]);
-
-const escapeRegex = (value = "") =>
-  [...String(value)]
-    .map((char) => (REGEX_META_CHARS.has(char) ? `\\${char}` : char))
-    .join("");
+const { escapeRegExp: escapeRegex } = require("../../core/utils/textUtils");
 
 const ensureGlobalRegexFlags = (flags = "") => {
   const normalized = typeof flags === "string" ? flags : "";

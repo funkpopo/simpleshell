@@ -1,4 +1,3 @@
-const { BrowserWindow } = require("electron");
 const { StringDecoder } = require("string_decoder");
 const { logToFile } = require("../../utils/logger");
 const terminalManager = require("../../../modules/terminal");
@@ -20,18 +19,22 @@ const {
 } = require("../schema/channels");
 const {
   classifyConnectionFailure,
+  isZhLanguage,
 } = require("../../../shared/connectionErrorAdvice");
+const { isAuthErrorMessage } = require("../../../shared/errorClassification");
 const {
   getHostCacheKey,
   normalizeSshHostFingerprint,
   setTrustedHostFingerprint,
 } = require("../../utils/sshHostKeyTrust");
-
-function isZhLanguage(language) {
-  return String(language || "zh-CN")
-    .toLowerCase()
-    .startsWith("zh");
-}
+const {
+  isSshStreamUsable,
+  extractTabIdFromSessionKey,
+} = require("../../utils/ssh-utils");
+const {
+  getPrimaryWindow,
+  broadcastToAllWindows,
+} = require("../../window/windowManager");
 
 function getTerminalLanguage(config) {
   return config?.language || "zh-CN";
@@ -93,12 +96,7 @@ function getTerminalText(config, key, params = {}) {
 }
 
 function extractTabIdFromConnectionKey(connectionKey) {
-  if (!connectionKey || !String(connectionKey).startsWith("tab:")) {
-    return null;
-  }
-
-  const parts = String(connectionKey).split(":");
-  return parts.length >= 2 ? parts[1] : null;
+  return extractTabIdFromSessionKey(connectionKey);
 }
 
 /**
@@ -347,12 +345,7 @@ class SSHHandlers {
         );
 
         // 通知前端连接配置已更改
-        const windows = BrowserWindow.getAllWindows();
-        for (const win of windows) {
-          if (win && !win.isDestroyed() && win.webContents) {
-            win.webContents.send(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
-          }
-        }
+        broadcastToAllWindows(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
 
         return { success: true };
       } else {
@@ -586,6 +579,28 @@ class SSHHandlers {
   }
 
   /**
+   * 请求用户输入连接凭据（认证对话框，首次与重试共用）
+   */
+  _requestCredentialsAuth(sshConfig, { existingUsername, isRetry, errorMessage } = {}) {
+    const authData = {
+      step: "hostVerify",
+      host: sshConfig.host,
+      port: sshConfig.port || 22,
+      serverVersion: null,
+      fingerprint: null,
+      fingerprintChanged: false,
+      requireCredentials: true,
+      connectionId: sshConfig.id,
+      existingUsername,
+      isRetry,
+    };
+    if (errorMessage !== undefined) {
+      authData.errorMessage = errorMessage;
+    }
+    return this._requestUserAuth(sshConfig.tabId, authData);
+  }
+
+  /**
    * 请求用户确认主机指纹
    */
   async _requestHostFingerprintApproval(sshConfig, fingerprint) {
@@ -692,11 +707,7 @@ class SSHHandlers {
   }
 
   _getMainWindow() {
-    const windows = BrowserWindow.getAllWindows();
-    if (!windows || windows.length === 0) return null;
-    const mainWindow = windows[0];
-    if (!mainWindow || mainWindow.isDestroyed()) return null;
-    return mainWindow;
+    return getPrimaryWindow();
   }
 
   _emitProcessOutput(processId, output) {
@@ -938,11 +949,7 @@ class SSHHandlers {
   }
 
   _isSSHStreamUsable(stream) {
-    if (!stream || typeof stream.write !== "function") return false;
-    if (stream.destroyed === true) return false;
-    if (stream.closed === true || stream._closed === true) return false;
-    if (stream.writable === false) return false;
-    return true;
+    return isSshStreamUsable(stream);
   }
 
   async _handleConnectionReconnected(connectionKey, connectionInfoFromPool) {
@@ -1136,15 +1143,10 @@ class SSHHandlers {
   _broadcastTopConnections() {
     try {
       const lastConnections = this.connectionManager.getLastConnections(5);
-      const windows = BrowserWindow.getAllWindows();
-      for (const win of windows) {
-        if (win && !win.isDestroyed() && win.webContents) {
-          win.webContents.send(
-            IPC_EVENT_CHANNELS.TOP_CONNECTIONS_CHANGED,
-            lastConnections,
-          );
-        }
-      }
+      broadcastToAllWindows(
+        IPC_EVENT_CHANNELS.TOP_CONNECTIONS_CHANGED,
+        lastConnections,
+      );
     } catch {
       // ignore broadcast errors
     }
@@ -1354,22 +1356,10 @@ class SSHHandlers {
 
       const mainWindow = this._getMainWindow();
 
-      if (sshConfig.tabId && mainWindow && !mainWindow.isDestroyed()) {
-        const connectionStatus = {
-          isConnected: false,
-          isConnecting: false,
-          quality: "offline",
-          lastUpdate: Date.now(),
-          connectionType: "SSH",
-          host: sshConfig.host,
-          port: sshConfig.port,
-          username: sshConfig.username,
-        };
-        mainWindow.webContents.send(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, {
-          tabId: sshConfig.tabId,
-          connectionStatus,
-        });
-      }
+      this._emitSshTabConnectionStatus(sshConfig.tabId, sshConfig, {
+        isConnected: false,
+        quality: "offline",
+      });
 
       const procInfo = this.childProcesses.get(processId);
       if (
@@ -1562,6 +1552,30 @@ class SSHHandlers {
   }
 
   /**
+   * 进程登记脚手架（startSSH 与 startTelnet 共用）：
+   * 登记tab引用、写入进程映射（含tabId别名）、创建IO邮箱
+   */
+  _registerConnectionProcess(processId, client, connectionInfo, config, type) {
+    if (config.tabId) {
+      this.connectionManager.addTabReference(config.tabId, connectionInfo.key);
+    }
+
+    // 存储进程信息
+    const procInfo = this._createProcessInfo(
+      client,
+      connectionInfo,
+      config,
+      type,
+    );
+    this.childProcesses.set(processId, procInfo);
+    if (config.tabId) {
+      this.childProcesses.set(config.tabId, { ...procInfo });
+    }
+    this._configureProcessMailbox(processId, config);
+    return procInfo;
+  }
+
+  /**
    * 检查错误是否为认证失败
    */
   _isAuthenticationError(error) {
@@ -1569,21 +1583,10 @@ class SSHHandlers {
       return false;
     }
 
-    const msg = String(error?.message || "").toLowerCase();
     return (
       error?.connectionFailureKind === "auth" ||
       error?.connectionFailureKind === "private-key-permission" ||
-      msg.includes("authentication") ||
-      msg.includes("auth fail") ||
-      msg.includes("all configured authentication methods failed") ||
-      msg.includes("permission denied") ||
-      msg.includes("publickey") ||
-      msg.includes("password") ||
-      msg.includes("keyboard-interactive") ||
-      msg.includes("认证失败") ||
-      msg.includes("身份验证") ||
-      msg.includes("密码") ||
-      msg.includes("私钥")
+      isAuthErrorMessage(error?.message)
     );
   }
 
@@ -1700,15 +1703,7 @@ class SSHHandlers {
 
           await this._assertSSHReachableBeforeAuth(sshConfig);
 
-          const authResult = await this._requestUserAuth(sshConfig.tabId, {
-            step: "hostVerify",
-            host: sshConfig.host,
-            port: sshConfig.port || 22,
-            serverVersion: null,
-            fingerprint: null,
-            fingerprintChanged: false,
-            requireCredentials: true,
-            connectionId: sshConfig.id,
+          const authResult = await this._requestCredentialsAuth(sshConfig, {
             existingUsername: sshConfig.username || "",
             isRetry: false,
           });
@@ -1736,25 +1731,13 @@ class SSHHandlers {
         this._broadcastTopConnections();
         const ssh = connectionInfo.client;
 
-        if (connectionConfig.tabId) {
-          this.connectionManager.addTabReference(
-            connectionConfig.tabId,
-            connectionInfo.key,
-          );
-        }
-
-        // 存储进程信息
-        const procInfo = this._createProcessInfo(
+        this._registerConnectionProcess(
+          processId,
           ssh,
           connectionInfo,
           connectionConfig,
           "ssh2",
         );
-        this.childProcesses.set(processId, procInfo);
-        if (connectionConfig.tabId) {
-          this.childProcesses.set(connectionConfig.tabId, { ...procInfo });
-        }
-        this._configureProcessMailbox(processId, connectionConfig);
         this._bindConnectionProcess(
           connectionInfo.key,
           processId,
@@ -1834,15 +1817,7 @@ class SSHHandlers {
 
           // 显示认证对话框让用户重新输入凭据
           try {
-            const authResult = await this._requestUserAuth(sshConfig.tabId, {
-              step: "hostVerify",
-              host: sshConfig.host,
-              port: sshConfig.port || 22,
-              serverVersion: null,
-              fingerprint: null,
-              fingerprintChanged: false,
-              requireCredentials: true,
-              connectionId: sshConfig.id,
+            const authResult = await this._requestCredentialsAuth(sshConfig, {
               existingUsername:
                 finalConfig.username || sshConfig.username || "",
               isRetry: true,
@@ -2042,25 +2017,7 @@ class SSHHandlers {
               const tabProcInfo = this.childProcesses.get(sshConfig.tabId);
               if (tabProcInfo) tabProcInfo.ready = true;
 
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                const connectionStatus = {
-                  isConnected: true,
-                  isConnecting: false,
-                  quality: "excellent",
-                  lastUpdate: Date.now(),
-                  connectionType: "SSH",
-                  host: sshConfig.host,
-                  port: sshConfig.port,
-                  username: sshConfig.username,
-                };
-                mainWindow.webContents.send(
-                  IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS,
-                  {
-                    tabId: sshConfig.tabId,
-                    connectionStatus,
-                  },
-                );
-              }
+              this._emitSshTabConnectionStatus(sshConfig.tabId, sshConfig);
             }
 
             if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2081,26 +2038,11 @@ class SSHHandlers {
               const tabProcInfo = this.childProcesses.get(sshConfig.tabId);
               if (tabProcInfo) tabProcInfo.ready = false;
 
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                const connectionStatus = {
-                  isConnected: false,
-                  isConnecting: false,
-                  quality: "offline",
-                  lastUpdate: Date.now(),
-                  connectionType: "SSH",
-                  host: sshConfig.host,
-                  port: sshConfig.port,
-                  username: sshConfig.username,
-                  error: error?.message || String(error),
-                };
-                mainWindow.webContents.send(
-                  IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS,
-                  {
-                    tabId: sshConfig.tabId,
-                    connectionStatus,
-                  },
-                );
-              }
+              this._emitSshTabConnectionStatus(sshConfig.tabId, sshConfig, {
+                isConnected: false,
+                quality: "offline",
+                error: error?.message || String(error),
+              });
             }
 
             reject(error);
@@ -2181,26 +2123,11 @@ class SSHHandlers {
           "ERROR",
         );
 
-        if (sshConfig.tabId && mainWindow && !mainWindow.isDestroyed()) {
-          const connectionStatus = {
-            isConnected: false,
-            isConnecting: false,
-            quality: "offline",
-            lastUpdate: Date.now(),
-            connectionType: "SSH",
-            host: sshConfig.host,
-            port: sshConfig.port,
-            username: sshConfig.username,
-            error: err?.message || String(err),
-          };
-          mainWindow.webContents.send(
-            IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS,
-            {
-              tabId: sshConfig.tabId,
-              connectionStatus,
-            },
-          );
-        }
+        this._emitSshTabConnectionStatus(sshConfig.tabId, sshConfig, {
+          isConnected: false,
+          quality: "offline",
+          error: err?.message || String(err),
+        });
 
         this.connectionManager.releaseSSHConnection(
           connectionInfo.key,
@@ -2263,25 +2190,13 @@ class SSHHandlers {
       this._broadcastTopConnections();
       const telnet = connectionInfo.client;
 
-      if (telnetConfig.tabId) {
-        this.connectionManager.addTabReference(
-          telnetConfig.tabId,
-          connectionInfo.key,
-        );
-      }
-
-      // 存储进程信息
-      const procInfo = this._createProcessInfo(
+      this._registerConnectionProcess(
+        processId,
         telnet,
         connectionInfo,
         telnetConfig,
         "telnet",
       );
-      this.childProcesses.set(processId, procInfo);
-      if (telnetConfig.tabId) {
-        this.childProcesses.set(telnetConfig.tabId, { ...procInfo });
-      }
-      this._configureProcessMailbox(processId, telnetConfig);
 
       if (connectionInfo.ready) {
         logToFile(`复用现有Telnet连接: ${connectionInfo.key}`, "INFO");

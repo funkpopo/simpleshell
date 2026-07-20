@@ -10,18 +10,17 @@ const processManager = require("../../core/process/processManager");
 const {
   getTransferNativeScannerPath,
 } = require("../../core/utils/nativeTransferSidecar");
-const { processSSHPrivateKeyAsync } = require("../../core/utils/ssh-utils");
 const nativeSftpClient = require("../../core/utils/nativeSftpClient");
-const {
-  getTrustedHostFingerprint,
-} = require("../../core/utils/sshHostKeyTrust");
-const {
-  resolveNativeSidecarNetworkPath,
-} = require("../../core/utils/nativeSidecarNetworkPath");
 const { logToFile } = require("../../core/utils/logger");
 const { IPC_EVENT_CHANNELS } = require("../../core/ipc/schema/channels");
 const connectionManager = require("../connection");
 const TransferProcessPool = require("./transferProcessPool");
+const {
+  buildCancelledError,
+  toPosixPath,
+  normalizeDroppedTransferRelativePath,
+} = require("./transferShared");
+const { normalizeErrorMessage } = require("../../core/utils/errorResponse");
 const { SESSION_CONFIG, TRANSFER_CONFIG } = require("../sftp/sftpConfig");
 
 const DIRECTORY_TYPE_MASK = 0o170000;
@@ -51,23 +50,10 @@ function buildEmptyTransferPoolStats() {
   };
 }
 
-function normalizeErrorMessage(error) {
-  if (!error) return "Unknown error";
-  if (typeof error === "string") return error;
-  return error.message || String(error);
-}
-
 function isDirectoryMode(mode) {
   return (
     typeof mode === "number" && (mode & DIRECTORY_TYPE_MASK) === DIRECTORY_MODE
   );
-}
-
-function buildCancelledError() {
-  const error = new Error("Transfer cancelled by user");
-  error.cancelled = true;
-  error.userCancelled = true;
-  return error;
 }
 
 function isCancelledError(error) {
@@ -91,10 +77,6 @@ function isPathExistsError(error) {
     message.includes("already exists") ||
     message.includes("failure code is 4")
   );
-}
-
-function toPosixPath(p) {
-  return String(p || "").replace(/\\/g, "/");
 }
 
 function normalizeTransferName(name) {
@@ -123,14 +105,6 @@ function getTopLevelTransferItemName(targetPath) {
 
   const [firstSegment] = normalizedPath.split("/").filter(Boolean);
   return firstSegment || "";
-}
-
-function normalizeDroppedTransferRelativePath(relativePath) {
-  return toPosixPath(relativePath || "")
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter((segment) => segment && segment !== "." && segment !== "..")
-    .join("/");
 }
 
 class FilemanagementService {
@@ -316,47 +290,11 @@ class FilemanagementService {
   }
 
   async _resolveTransferSshConfig(tabId) {
-    const processInfo = processManager.getProcess(tabId);
-    const rawConfig = processInfo?.config;
-    if (!rawConfig?.host || !rawConfig?.username) {
-      throw new Error("SSH connection config is unavailable");
-    }
-
-    const expectedHostFingerprint =
-      getTrustedHostFingerprint(rawConfig) ||
-      getTrustedHostFingerprint(processInfo?.connectionInfo?.config);
-    if (!expectedHostFingerprint) {
-      throw new Error(
-        "SSH host key has not been trusted by the main connection",
-      );
-    }
-
-    const sshConfig = await processSSHPrivateKeyAsync({
-      host: rawConfig.host,
-      port: rawConfig.port || 22,
-      username: rawConfig.username,
-      password: rawConfig.password || undefined,
-      privateKey: rawConfig.privateKey || undefined,
-      privateKeyPath: rawConfig.privateKeyPath || undefined,
-      passphrase: rawConfig.passphrase || undefined,
-      readyTimeout: rawConfig.readyTimeout || undefined,
-      keepaliveInterval: rawConfig.keepaliveInterval || undefined,
-      keepaliveCountMax: rawConfig.keepaliveCountMax || undefined,
-      expectedHostFingerprint,
-    });
-
-    if (sshConfig?.privateKeyPath && sshConfig.privateKey) {
-      delete sshConfig.privateKeyPath;
-    }
-
-    const networkPath = await resolveNativeSidecarNetworkPath(rawConfig, {
+    return nativeSftpClient.resolveSshConfig(tabId, {
+      includeTimeouts: true,
+      plainErrors: true,
       proxyManager: connectionManager?.sshConnectionPool?.proxyManager,
     });
-    sshConfig.proxy = networkPath.proxy || undefined;
-    sshConfig.proxyRequired = networkPath.proxyRequired;
-    sshConfig.networkPath = networkPath.networkPath;
-
-    return sshConfig;
   }
 
   async _materializeUploadEntry(entry, transferKey) {

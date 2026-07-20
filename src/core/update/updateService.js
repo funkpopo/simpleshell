@@ -1555,49 +1555,40 @@ class UpdateService {
     }
 
     if (fileExt === ".deb") {
-      await new Promise((resolve, reject) => {
-        const installer = this.spawn("pkexec", ["dpkg", "-i", filePath], {
-          stdio: "ignore",
-        });
-
-        installer.on("error", (error) => {
-          logToFile(`DEB installer error: ${error.message}`, "ERROR");
-          reject(error);
-        });
-
-        installer.on("close", (code) => {
-          if (code === 0) {
-            logToFile("DEB package installed successfully", "INFO");
-            resolve();
-          } else {
-            reject(new Error(`DEB installer exited with code ${code}`));
-          }
-        });
-      });
+      await this._installLinuxPackage(["dpkg", "-i", filePath], "DEB");
       return;
     }
 
     if (fileExt === ".rpm") {
-      await new Promise((resolve, reject) => {
-        const installer = this.spawn("pkexec", ["rpm", "-U", filePath], {
-          stdio: "ignore",
-        });
-
-        installer.on("error", (error) => {
-          logToFile(`RPM installer error: ${error.message}`, "ERROR");
-          reject(error);
-        });
-
-        installer.on("close", (code) => {
-          if (code === 0) {
-            logToFile("RPM package installed successfully", "INFO");
-            resolve();
-          } else {
-            reject(new Error(`RPM installer exited with code ${code}`));
-          }
-        });
-      });
+      await this._installLinuxPackage(["rpm", "-U", filePath], "RPM");
     }
+  }
+
+  /**
+   * 通过 pkexec 安装 Linux 软件包（DEB/RPM 公共实现）
+   * @param {string[]} args - 传给 pkexec 的安装命令及参数
+   * @param {string} label - 日志中使用的包类型名称（DEB/RPM）
+   */
+  _installLinuxPackage(args, label) {
+    return new Promise((resolve, reject) => {
+      const installer = this.spawn("pkexec", args, {
+        stdio: "ignore",
+      });
+
+      installer.on("error", (error) => {
+        logToFile(`${label} installer error: ${error.message}`, "ERROR");
+        reject(error);
+      });
+
+      installer.on("close", (code) => {
+        if (code === 0) {
+          logToFile(`${label} package installed successfully`, "INFO");
+          resolve();
+        } else {
+          reject(new Error(`${label} installer exited with code ${code}`));
+        }
+      });
+    });
   }
 
   /**

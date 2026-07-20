@@ -90,6 +90,61 @@ const FATAL_TYPES = new Set([
   "fatal",
 ]);
 
+// 认证类错误关键字（各处散落判定表的并集，统一小写匹配）
+const AUTH_ERROR_KEYWORDS = Object.freeze([
+  "authentication",
+  "auth fail",
+  "configured authentication methods failed",
+  "permission",
+  "publickey",
+  "password",
+  "private key",
+  "keyboard-interactive",
+  "认证失败",
+  "身份验证",
+  "密码",
+  "私钥",
+]);
+
+const TIMEOUT_ERROR_KEYWORDS = Object.freeze([
+  "etimedout",
+  "timed out",
+  "timeout",
+  "超时",
+]);
+
+const NETWORK_UNREACHABLE_KEYWORDS = Object.freeze([
+  "enetunreach",
+  "network unreachable",
+  "ehostunreach",
+  "host unreachable",
+  "network changed",
+  "internet disconnected",
+  "网络不可达",
+  "主机不可达",
+  "断网",
+]);
+
+function includesAnyKeyword(message, keywords) {
+  const lower = String(message || "").toLowerCase();
+  if (!lower) {
+    return false;
+  }
+  return keywords.some((keyword) => lower.includes(keyword));
+}
+
+function isAuthErrorMessage(message) {
+  return includesAnyKeyword(message, AUTH_ERROR_KEYWORDS);
+}
+
+function isTimeoutErrorMessage(message) {
+  return includesAnyKeyword(message, TIMEOUT_ERROR_KEYWORDS);
+}
+
+function isNetworkUnreachableMessage(message) {
+  return includesAnyKeyword(message, NETWORK_UNREACHABLE_KEYWORDS);
+}
+
 function toUpperCode(value) {
   if (typeof value !== "string" || !value.trim()) {
     return null;
@@ -428,4 +483,7 @@ module.exports = {
   classifyError,
   classifyErrorResponse,
   detectErrorType,
+  isAuthErrorMessage,
+  isTimeoutErrorMessage,
+  isNetworkUnreachableMessage,
 };

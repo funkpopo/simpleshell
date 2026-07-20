@@ -11,6 +11,7 @@ const {
 } = require("../../utils/logger");
 const { getTempDirectory } = require("../../utils/appPaths");
 const runtimeFileLifecycle = require("../../utils/runtimeFileLifecycle");
+const { broadcastToAllWindows } = require("../../window/windowManager");
 const {
   getErrorReportingStatus,
   saveErrorReportingSettings,
@@ -332,12 +333,7 @@ class SettingsHandlers {
   async updateCredentialSecurity(event, settings) {
     try {
       const status = configService.updateCredentialSecurity(settings);
-      const windows = BrowserWindow.getAllWindows();
-      for (const win of windows) {
-        if (win && !win.isDestroyed() && win.webContents) {
-          win.webContents.send(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
-        }
-      }
+      broadcastToAllWindows(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
       logToFile("Credential security settings updated", "INFO");
       return { success: true, status };
     } catch (error) {
@@ -404,25 +400,24 @@ class SettingsHandlers {
       timestamp: Date.now(),
     };
 
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (win && !win.isDestroyed() && win.webContents) {
-        win.webContents.send(IPC_EVENT_CHANNELS.SETTINGS_LOCAL_DATA_CLEARED, payload);
-        if (
-          sections.some((section) =>
-            ["connections", "credentials", "aiSettings"].includes(section),
-          )
-        ) {
-          win.webContents.send(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
-        }
-        if (sections.includes("commandHistory")) {
-          win.webContents.send(IPC_EVENT_CHANNELS.COMMAND_HISTORY_CHANGED, {
-            reason: "clear-local-data",
-            history: [],
-            count: 0,
-            timestamp: payload.timestamp,
-          });
-        }
-      }
+    broadcastToAllWindows(
+      IPC_EVENT_CHANNELS.SETTINGS_LOCAL_DATA_CLEARED,
+      payload,
+    );
+    if (
+      sections.some((section) =>
+        ["connections", "credentials", "aiSettings"].includes(section),
+      )
+    ) {
+      broadcastToAllWindows(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
+    }
+    if (sections.includes("commandHistory")) {
+      broadcastToAllWindows(IPC_EVENT_CHANNELS.COMMAND_HISTORY_CHANGED, {
+        reason: "clear-local-data",
+        history: [],
+        count: 0,
+        timestamp: payload.timestamp,
+      });
     }
   }
 

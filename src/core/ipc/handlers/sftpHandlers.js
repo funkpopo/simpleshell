@@ -1,5 +1,6 @@
 const fileSnapshotStore = require("../../utils/fileSnapshotStore");
 const nativeSftpClient = require("../../utils/nativeSftpClient");
+const connectionManager = require("../../../modules/connection");
 const { logToFile } = require("../../utils/logger");
 const { buildErrorResponse } = require("../../utils/errorResponse");
 const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
@@ -65,12 +66,14 @@ class SftpHandlers {
 
   async getSftpSession(event, tabId) {
     try {
+      // 复用 connectionManager 中的兼容存根（native 后端固定返回值）
+      const base = await connectionManager.getSftpSession(tabId);
       return {
-        success: true,
+        success: base.success,
         session: {
           tabId,
           backend: "rust-sidecar",
-          native: true,
+          native: base.native,
         },
       };
     } catch (error) {
@@ -82,9 +85,8 @@ class SftpHandlers {
   async enqueueSftpOperation(event, tabId, operation) {
     try {
       void event;
-      void tabId;
-      void operation;
-      return { success: true, queued: false, native: true };
+      // 复用 connectionManager 中的兼容存根（IPC 传入的 operation 不会是函数）
+      return await connectionManager.enqueueSftpOperation(tabId, operation);
     } catch (error) {
       logToFile(`Error enqueueing SFTP operation: ${error.message}`, "ERROR");
       return { success: false, error: error.message };

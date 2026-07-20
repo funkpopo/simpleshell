@@ -13,6 +13,7 @@ const {
   calculateRetryDelay,
   createManagedSshConnection,
 } = require("./ssh-retry-helper");
+const { isZhLanguage } = require("../../shared/connectionErrorAdvice");
 
 // 重连状态
 const RECONNECT_STATE = {
@@ -29,12 +30,6 @@ const FAILURE_PATTERN_GUARD = {
   windowMs: 2 * 60 * 1000, // 2分钟窗口
   maxConsecutive: 3, // 同类连续失败达到3次则停止自动重连
 };
-
-function isZhLanguage(language) {
-  return String(language || "zh-CN")
-    .toLowerCase()
-    .startsWith("zh");
-}
 
 function buildMaxRetriesMessage(maxRetries, language) {
   if (!isZhLanguage(language)) {
@@ -231,8 +226,21 @@ class ReconnectionManager extends EventEmitter {
     });
   }
 
-  // 处理连接错误
-  async handleConnectionError(session, error, sourceConnection) {
+  /**
+   * 统一处理连接中断事件（error/close/timeout 三类事件的共享守卫与调度序列）
+   * @private
+   */
+  async _handleConnectionInterruption(session, sourceConnection, options) {
+    const {
+      eventLabel,
+      error = null,
+      failureReason = null,
+      mainLogLevel,
+      onIntentionalClose,
+      recordPattern = false,
+      abandonWhenNotReconnectable = false,
+    } = options;
+
     // 仅处理“当前连接对象”的事件，避免旧连接残留事件干扰
     if (session.connection !== sourceConnection) {
       return;
@@ -243,7 +251,7 @@ class ReconnectionManager extends EventEmitter {
     }
 
     if (session.intentionalClose) {
-      logToFile(`忽略主动关闭连接错误: ${session.id}`, "DEBUG");
+      onIntentionalClose();
       return;
     }
 
@@ -254,120 +262,90 @@ class ReconnectionManager extends EventEmitter {
       session.state === RECONNECT_STATE.PAUSED
     ) {
       logToFile(
-        `忽略连接错误(状态: ${session.state}): ${session.id} - ${error.message}`,
+        `忽略${eventLabel}(状态: ${session.state}): ${session.id}${error ? ` - ${error.message}` : ""}`,
         "DEBUG",
       );
       return;
     }
 
-    logToFile(`连接错误 ${session.id}: ${error.message}`, "ERROR");
+    logToFile(
+      error
+        ? `${eventLabel} ${session.id}: ${error.message}`
+        : `${eventLabel}: ${session.id}`,
+      mainLogLevel,
+    );
 
-    session.lastError = error;
+    if (error) {
+      session.lastError = error;
+    }
     session.state = RECONNECT_STATE.PENDING;
 
-    // 分析错误原因
-    const failureReason = this.analyzeFailureReason(error);
-    session.failureReason = failureReason;
-    this._ensureReconnectWindowStarted(session);
+    // 分析/确定错误原因
+    const resolvedFailureReason =
+      failureReason || this.analyzeFailureReason(error);
+    session.failureReason = resolvedFailureReason;
 
-    // 记录失败模式
-    try {
-      this.recordFailurePattern(session.id, failureReason);
-    } catch (patternErr) {
-      // 失败模式统计不应影响断线/重连主流程
-      logToFile(
-        `记录失败模式异常(已忽略): ${session.id} - ${patternErr?.message || patternErr}`,
-        "WARN",
-      );
+    if (recordPattern) {
+      this._ensureReconnectWindowStarted(session);
+
+      // 记录失败模式
+      try {
+        this.recordFailurePattern(session.id, resolvedFailureReason);
+      } catch (patternErr) {
+        // 失败模式统计不应影响断线/重连主流程
+        logToFile(
+          `记录失败模式异常(已忽略): ${session.id} - ${patternErr?.message || patternErr}`,
+          "WARN",
+        );
+      }
     }
 
     // 决定是否需要重连
-    if (this.shouldReconnect(session, failureReason)) {
-      await this.scheduleReconnect(session, failureReason);
-    } else {
+    if (this.shouldReconnect(session, resolvedFailureReason)) {
+      this._ensureReconnectWindowStarted(session);
+      await this.scheduleReconnect(session, resolvedFailureReason);
+    } else if (abandonWhenNotReconnectable) {
       this.abandonReconnection(session, "不满足重连条件");
     }
   }
 
+  // 处理连接错误
+  async handleConnectionError(session, error, sourceConnection) {
+    return this._handleConnectionInterruption(session, sourceConnection, {
+      eventLabel: "连接错误",
+      error,
+      mainLogLevel: "ERROR",
+      onIntentionalClose: () => {
+        logToFile(`忽略主动关闭连接错误: ${session.id}`, "DEBUG");
+      },
+      recordPattern: true,
+      abandonWhenNotReconnectable: true,
+    });
+  }
+
   // 处理连接关闭
   async handleConnectionClose(session, sourceConnection) {
-    // 仅处理“当前连接对象”的事件，避免旧连接残留事件干扰
-    if (session.connection !== sourceConnection) {
-      return;
-    }
-
-    if (session.disposed) {
-      return;
-    }
-
-    if (session.intentionalClose) {
-      logToFile(`检测到主动关闭连接，清理重连会话: ${session.id}`, "DEBUG");
-      this.cancelSession(session.id, "intentional-close");
-      return;
-    }
-
-    // 如果已经处于重连中或已放弃，忽略
-    if (
-      session.state === RECONNECT_STATE.RECONNECTING ||
-      session.state === RECONNECT_STATE.ABANDONED ||
-      session.state === RECONNECT_STATE.PAUSED
-    ) {
-      logToFile(`忽略连接关闭(状态: ${session.state}): ${session.id}`, "DEBUG");
-      return;
-    }
-
-    logToFile(`连接关闭: ${session.id}`, "INFO");
-
-    session.state = RECONNECT_STATE.PENDING;
-
-    // 如果是意外断开，尝试重连
-    if (!session.intentionalClose) {
-      const failureReason = FAILURE_REASON.NETWORK;
-      session.failureReason = failureReason;
-      if (this.shouldReconnect(session, failureReason)) {
-        this._ensureReconnectWindowStarted(session);
-        await this.scheduleReconnect(session, failureReason);
-      }
-    }
+    return this._handleConnectionInterruption(session, sourceConnection, {
+      eventLabel: "连接关闭",
+      failureReason: FAILURE_REASON.NETWORK,
+      mainLogLevel: "INFO",
+      onIntentionalClose: () => {
+        logToFile(`检测到主动关闭连接，清理重连会话: ${session.id}`, "DEBUG");
+        this.cancelSession(session.id, "intentional-close");
+      },
+    });
   }
 
   // 处理连接超时
   async handleConnectionTimeout(session, sourceConnection) {
-    // 仅处理“当前连接对象”的事件，避免旧连接残留事件干扰
-    if (session.connection !== sourceConnection) {
-      return;
-    }
-
-    if (session.disposed) {
-      return;
-    }
-
-    if (session.intentionalClose) {
-      logToFile(`忽略主动关闭连接超时: ${session.id}`, "DEBUG");
-      return;
-    }
-
-    // 如果已经处于重连中或已放弃，忽略
-    if (
-      session.state === RECONNECT_STATE.RECONNECTING ||
-      session.state === RECONNECT_STATE.ABANDONED ||
-      session.state === RECONNECT_STATE.PAUSED
-    ) {
-      logToFile(`忽略连接超时(状态: ${session.state}): ${session.id}`, "DEBUG");
-      return;
-    }
-
-    logToFile(`连接超时: ${session.id}`, "WARN");
-
-    session.state = RECONNECT_STATE.PENDING;
-
-    const failureReason = FAILURE_REASON.TIMEOUT;
-    session.failureReason = failureReason;
-
-    if (this.shouldReconnect(session, failureReason)) {
-      this._ensureReconnectWindowStarted(session);
-      await this.scheduleReconnect(session, failureReason);
-    }
+    return this._handleConnectionInterruption(session, sourceConnection, {
+      eventLabel: "连接超时",
+      failureReason: FAILURE_REASON.TIMEOUT,
+      mainLogLevel: "WARN",
+      onIntentionalClose: () => {
+        logToFile(`忽略主动关闭连接超时: ${session.id}`, "DEBUG");
+      },
+    });
   }
 
   // 分析失败原因
@@ -610,13 +588,12 @@ class ReconnectionManager extends EventEmitter {
     return getEffectiveMaxRetries(this.config, session?.config, failureReason);
   }
 
-  // 计划重连 - 使用指数退避算法
-  async scheduleReconnect(session, failureReason) {
-    this._ensureReconnectWindowStarted(session);
-    session.failureReason = failureReason;
-    const maxRetries = this._getMaxRetriesForSession(session, failureReason);
-    const strategyFields = this._getRetryStrategyFields(session, failureReason);
-
+  /**
+   * 窗口过期或超过最大重试次数时终止重连（abandon + emit reconnectFailed）
+   * @returns {boolean} 是否已终止
+   * @private
+   */
+  _abandonIfExpired(session, maxRetries, strategyFields) {
     // 总耗时封顶：到期则停止自动重连
     if (this._isReconnectWindowExpired(session)) {
       session.isReconnecting = false;
@@ -634,11 +611,10 @@ class ReconnectionManager extends EventEmitter {
         maxRetries,
         ...strategyFields,
       });
-      return;
+      return true;
     }
 
-    const nextAttempt = session.retryCount + 1;
-    if (nextAttempt > maxRetries) {
+    if (session.retryCount + 1 > maxRetries) {
       session.isReconnecting = false;
       this.abandonReconnection(session, `达到最大重试次数(${maxRetries}次)`);
       this.emit("reconnectFailed", {
@@ -648,8 +624,24 @@ class ReconnectionManager extends EventEmitter {
         maxRetries,
         ...strategyFields,
       });
+      return true;
+    }
+
+    return false;
+  }
+
+  // 计划重连 - 使用指数退避算法
+  async scheduleReconnect(session, failureReason) {
+    this._ensureReconnectWindowStarted(session);
+    session.failureReason = failureReason;
+    const maxRetries = this._getMaxRetriesForSession(session, failureReason);
+    const strategyFields = this._getRetryStrategyFields(session, failureReason);
+
+    if (this._abandonIfExpired(session, maxRetries, strategyFields)) {
       return;
     }
+
+    const nextAttempt = session.retryCount + 1;
 
     // 计算延迟时间
     let delay = calculateRetryDelay({
@@ -794,40 +786,11 @@ class ReconnectionManager extends EventEmitter {
       return;
     }
 
-    // 总耗时封顶：到期则停止自动重连
-    if (this._isReconnectWindowExpired(session)) {
-      session.isReconnecting = false;
-      this.abandonReconnection(
-        session,
-        `自动重连超时(>${this.config.totalTimeCapMs}ms)`,
-      );
-      this.emit("reconnectFailed", {
-        sessionId: session.id,
-        error: buildReconnectTimeoutMessage(
-          this.config,
-          session?.config?.language,
-        ),
-        attempts: session.retryCount,
-        maxRetries,
-        ...strategyFields,
-      });
+    if (this._abandonIfExpired(session, maxRetries, strategyFields)) {
       return;
     }
 
     const attemptNumber = session.retryCount + 1;
-    if (attemptNumber > maxRetries) {
-      session.isReconnecting = false;
-      this.abandonReconnection(session, `达到最大重试次数(${maxRetries}次)`);
-      this.emit("reconnectFailed", {
-        sessionId: session.id,
-        error: buildMaxRetriesMessage(maxRetries, session?.config?.language),
-        attempts: session.retryCount,
-        maxRetries,
-        ...strategyFields,
-      });
-      return;
-    }
-
     session.retryCount = attemptNumber;
     session.lastAttempt = Date.now();
     session.state = RECONNECT_STATE.RECONNECTING;
@@ -1019,120 +982,89 @@ class ReconnectionManager extends EventEmitter {
     return createManagedSshConnection(config);
   }
 
+  /**
+   * 带超时的连接探测包装：runner 收到 finish(ok) 回调，超时或同步异常均视为失败
+   * @private
+   */
+  _probeWithTimeout(runner, timeoutMs) {
+    return new Promise((resolve) => {
+      let finished = false;
+      let timeoutId = null;
+      const finish = (ok) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeoutId);
+        resolve(ok);
+      };
+      timeoutId = setTimeout(() => finish(false), timeoutMs);
+
+      try {
+        runner(finish);
+      } catch {
+        finish(false);
+      }
+    });
+  }
+
   // 验证连接
   async validateConnection(connection) {
     const client = connection?.client || connection;
     const timeoutMs = 3000;
 
     const tryExec = () =>
-      new Promise((resolve) => {
-        let finished = false;
-        const finish = (ok) => {
-          if (finished) return;
-          finished = true;
-          resolve(ok);
-        };
-        const timeoutId = setTimeout(() => finish(false), timeoutMs);
+      this._probeWithTimeout((finish) => {
+        // 执行简单命令测试连接
+        client.exec("echo test", (err, stream) => {
+          if (err) {
+            finish(false);
+            return;
+          }
 
-        try {
-          // 执行简单命令测试连接
-          client.exec("echo test", (err, stream) => {
-            if (err) {
-              clearTimeout(timeoutId);
-              finish(false);
-              return;
-            }
-
-            stream.on("data", () => {
-              clearTimeout(timeoutId);
-              finish(true);
-            });
-
-            stream.on("error", () => {
-              clearTimeout(timeoutId);
-              finish(false);
-            });
-
-            stream.on("close", () => {
-              clearTimeout(timeoutId);
-              finish(false);
-            });
-          });
-        } catch {
-          clearTimeout(timeoutId);
-          finish(false);
-        }
-      });
+          stream.on("data", () => finish(true));
+          stream.on("error", () => finish(false));
+          stream.on("close", () => finish(false));
+        });
+      }, timeoutMs);
 
     const trySftp = () =>
-      new Promise((resolve) => {
-        let finished = false;
-        const finish = (ok) => {
-          if (finished) return;
-          finished = true;
-          resolve(ok);
-        };
-        const timeoutId = setTimeout(() => finish(false), timeoutMs);
+      this._probeWithTimeout((finish) => {
+        client.sftp((err, sftp) => {
+          if (err) {
+            finish(false);
+            return;
+          }
 
-        try {
-          client.sftp((err, sftp) => {
-            if (err) {
-              clearTimeout(timeoutId);
-              finish(false);
-              return;
+          try {
+            if (sftp && typeof sftp.end === "function") {
+              sftp.end();
             }
+          } catch {
+            /* intentionally ignored */
+          }
 
-            try {
-              if (sftp && typeof sftp.end === "function") {
-                sftp.end();
-              }
-            } catch {
-              /* intentionally ignored */
-            }
-
-            clearTimeout(timeoutId);
-            finish(true);
-          });
-        } catch {
-          clearTimeout(timeoutId);
-          finish(false);
-        }
-      });
+          finish(true);
+        });
+      }, timeoutMs);
 
     const tryShell = () =>
-      new Promise((resolve) => {
-        let finished = false;
-        const finish = (ok) => {
-          if (finished) return;
-          finished = true;
-          resolve(ok);
-        };
-        const timeoutId = setTimeout(() => finish(false), timeoutMs);
+      this._probeWithTimeout((finish) => {
+        client.shell((err, stream) => {
+          if (err) {
+            finish(false);
+            return;
+          }
 
-        try {
-          client.shell((err, stream) => {
-            if (err) {
-              clearTimeout(timeoutId);
-              finish(false);
-              return;
+          try {
+            if (stream && typeof stream.close === "function") {
+              stream.close();
             }
+          } catch {
+            /* intentionally ignored */
+          }
 
-            try {
-              if (stream && typeof stream.close === "function") {
-                stream.close();
-              }
-            } catch {
-              /* intentionally ignored */
-            }
-
-            clearTimeout(timeoutId);
-            finish(true);
-          });
-        } catch {
-          clearTimeout(timeoutId);
-          finish(false);
-        }
-      });
+          finish(true);
+        });
+      }, timeoutMs);
 
     if (await tryExec()) return true;
     if (await trySftp()) return true;
@@ -1232,6 +1164,28 @@ class ReconnectionManager extends EventEmitter {
     this.cleanupSession(session.id);
   }
 
+  /**
+   * 会话销毁的公共清理序列（差异动作：日志、连接关闭等留在调用方）
+   * @private
+   */
+  _teardownSession(session, reason) {
+    session.disposed = true;
+    session.isReconnecting = false;
+    session.nextReconnectAt = null;
+
+    // 取消待执行的重连任务
+    this.cancelPendingReconnect(session.id);
+
+    // 清理重连阶段新建但尚未接管的连接
+    this._clearPendingReconnectConnection(session, reason);
+
+    // 移除记录
+    this.sessions.delete(session.id);
+    this.reconnectQueues.delete(session.id);
+    this.failurePatterns.delete(session.id);
+    this.replacingSessions.delete(session.id);
+  }
+
   // 清理会话
   cleanupSession(sessionId) {
     const session = this.sessions.get(sessionId);
@@ -1239,15 +1193,7 @@ class ReconnectionManager extends EventEmitter {
       return;
     }
 
-    session.disposed = true;
-    session.isReconnecting = false;
-    session.nextReconnectAt = null;
-
-    // 取消待执行的重连任务
-    this.cancelPendingReconnect(sessionId);
-
-    // 清理重连阶段新建但尚未接管的连接
-    this._clearPendingReconnectConnection(session, "cleanup-session");
+    this._teardownSession(session, "cleanup-session");
 
     // 关闭连接
     try {
@@ -1255,12 +1201,6 @@ class ReconnectionManager extends EventEmitter {
     } catch {
       // 忽略错误
     }
-
-    // 移除记录
-    this.sessions.delete(sessionId);
-    this.reconnectQueues.delete(sessionId);
-    this.failurePatterns.delete(sessionId);
-    this.replacingSessions.delete(sessionId);
 
     logToFile(`清理重连会话: ${sessionId}`, "DEBUG");
   }
@@ -1271,21 +1211,12 @@ class ReconnectionManager extends EventEmitter {
       return false;
     }
 
-    session.disposed = true;
     session.intentionalClose = true;
     session.state = RECONNECT_STATE.IDLE;
-    session.isReconnecting = false;
     session.lastError = null;
     session.failureReason = null;
-    session.nextReconnectAt = null;
 
-    this.cancelPendingReconnect(sessionId);
-    this._clearPendingReconnectConnection(session, reason);
-
-    this.sessions.delete(sessionId);
-    this.reconnectQueues.delete(sessionId);
-    this.failurePatterns.delete(sessionId);
-    this.replacingSessions.delete(sessionId);
+    this._teardownSession(session, reason);
 
     logToFile(`取消重连会话: ${sessionId}, reason=${reason}`, "DEBUG");
     return true;

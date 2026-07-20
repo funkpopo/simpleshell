@@ -10,8 +10,10 @@ const {
   IPC_EVENT_CHANNELS,
   IPC_REQUEST_CHANNELS,
 } = require("../schema/channels");
-
-const toPosixPath = (targetPath = "") => String(targetPath).replace(/\\/g, "/");
+const {
+  toPosixPath,
+  normalizeDroppedTransferRelativePath,
+} = require("../../../modules/filemanagement/transferShared");
 
 const normalizeDroppedRemotePath = (remotePath) => {
   const raw = String(remotePath ?? "").trim();
@@ -31,15 +33,8 @@ const joinDroppedRemotePath = (basePath, childPath) => {
   return path.posix.join(base, child);
 };
 
-const normalizeDroppedRelativePath = (relativePath, name = "") => {
-  const normalized = toPosixPath(relativePath || name || "")
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter((segment) => segment && segment !== "." && segment !== "..")
-    .join("/");
-
-  return normalized;
-};
+const normalizeDroppedRelativePath = (relativePath, name = "") =>
+  normalizeDroppedTransferRelativePath(relativePath || name);
 
 const normalizeDroppedFolderRelativePath = (folderData) => {
   return normalizeDroppedRelativePath(folderData?.relativePath);

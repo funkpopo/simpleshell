@@ -8,6 +8,23 @@ const { safeOn } = require("../ipcResponse");
 const { IPC_EVENT_CHANNELS } = require("../schema/channels");
 
 /**
+ * 将批量消息逐条转发到指定channel
+ * @param {Electron.WebContents} sender - 目标sender
+ * @param {string} channel - 转发目标channel
+ * @param {Array} messages - 批量消息数组
+ * @param {Function} buildErrorLog - (error) => string，生成错误日志文案
+ */
+function forwardBatchMessages(sender, channel, messages, buildErrorLog) {
+  for (const message of messages) {
+    try {
+      sender.send(channel, message);
+    } catch (error) {
+      logToFile(buildErrorLog(error), "ERROR");
+    }
+  }
+}
+
+/**
  * 注册批量IPC消息处理器
  * @param {Electron.IpcMain} ipcMain - IPC主进程实例
  */
@@ -20,13 +37,12 @@ function registerBatchHandlers(ipcMain) {
     }
 
     // 转发每个进度消息到前端
-    for (const progressData of progressDataArray) {
-      try {
-        event.sender.send(IPC_EVENT_CHANNELS.TRANSFER_PROGRESS, progressData);
-      } catch (error) {
-        logToFile(`Error forwarding progress data: ${error.message}`, "ERROR");
-      }
-    }
+    forwardBatchMessages(
+      event.sender,
+      IPC_EVENT_CHANNELS.TRANSFER_PROGRESS,
+      progressDataArray,
+      (error) => `Error forwarding progress data: ${error.message}`,
+    );
   });
 
   // 通用批量消息处理器
@@ -38,16 +54,12 @@ function registerBatchHandlers(ipcMain) {
     }
 
     // 转发每条消息
-    for (const message of messages) {
-      try {
-        event.sender.send(channel, message);
-      } catch (error) {
-        logToFile(
-          `Error forwarding batch message to ${channel}: ${error.message}`,
-          "ERROR",
-        );
-      }
-    }
+    forwardBatchMessages(
+      event.sender,
+      channel,
+      messages,
+      (error) => `Error forwarding batch message to ${channel}: ${error.message}`,
+    );
   });
 
   // 监听所有 :batch 后缀的channel，自动解包并转发
@@ -81,16 +93,13 @@ function registerBatchHandlers(ipcMain) {
       }
 
       // 转发每条消息到基础channel
-      for (const message of messages) {
-        try {
-          event.sender.send(baseChannel, message);
-        } catch (error) {
-          logToFile(
-            `Error forwarding message from ${batchChannel} to ${baseChannel}: ${error.message}`,
-            "ERROR",
-          );
-        }
-      }
+      forwardBatchMessages(
+        event.sender,
+        baseChannel,
+        messages,
+        (error) =>
+          `Error forwarding message from ${batchChannel} to ${baseChannel}: ${error.message}`,
+      );
     });
   });
 

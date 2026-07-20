@@ -5,6 +5,9 @@ const {
   IPC_EVENT_CHANNELS,
   IPC_REQUEST_CHANNELS,
 } = require("../schema/channels");
+const { isZhLanguage } = require("../../../shared/connectionErrorAdvice");
+const { extractTabIdFromSessionKey } = require("../../utils/ssh-utils");
+const { broadcastToAllWindows } = require("../../window/windowManager");
 
 // 存储重连事件监听器
 const reconnectListeners = new Map();
@@ -13,12 +16,6 @@ let boundReconnectionManager = null;
 const recentReconnectTerminalEvents = new Map();
 
 const DUPLICATE_TERMINAL_EVENT_TTL_MS = 3000;
-
-function isZhLanguage(language) {
-  return String(language || "zh-CN")
-    .toLowerCase()
-    .startsWith("zh");
-}
 
 function getSessionLanguage(reconnectionManager, sessionId) {
   if (!reconnectionManager || !sessionId) {
@@ -132,6 +129,201 @@ function shouldSkipDuplicateTerminalEvent(channel, payload) {
   return false;
 }
 
+/**
+ * 注册"暂停/恢复重连"这类同构的切换处理器
+ * @param {Object} connectionPool - SSH连接池
+ * @param {string} channel - IPC请求channel
+ * @param {string} methodName - reconnectionManager 上调用的方法名
+ * @param {string} notAppliedError - 操作未生效时的默认错误文案
+ */
+function registerReconnectToggleHandler(
+  connectionPool,
+  channel,
+  methodName,
+  notAppliedError,
+) {
+  safeHandle(
+    ipcMain,
+    channel,
+    async (event, { tabId }) => {
+      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
+      if (connectionKey && connectionPool.reconnectionManager) {
+        const result =
+          connectionPool.reconnectionManager[methodName](connectionKey);
+        return {
+          success: result?.success === true,
+          connectionKey,
+          state: result?.state || null,
+          previousState: result?.previousState || null,
+          error:
+            result?.success === true ? null : result?.error || notAppliedError,
+        };
+      }
+      return { success: false, error: "连接未找到" };
+    },
+    { category: "reconnect" },
+  );
+}
+
+/**
+ * 重连事件转发表
+ * mapPayload: 由事件数据构造广播载荷
+ * dedupe: 是否跳过重复的终端事件
+ * skipLog: 跳过重复事件时的DEBUG日志
+ * emitLog: 广播前的日志（{ message, level }），可选
+ */
+const RECONNECT_EVENT_FORWARDERS = [
+  {
+    event: "reconnectStarted",
+    channel: IPC_EVENT_CHANNELS.RECONNECT_STARTED,
+    mapPayload: ({
+      sessionId,
+      attempt,
+      maxRetries,
+      failureReason,
+      effectiveMaxRetries,
+      windowExpiresAt,
+    }) =>
+      normalizeReconnectPayload(boundReconnectionManager, {
+        sessionId,
+        attempts: attempt,
+        failureReason,
+        effectiveMaxRetries,
+        windowExpiresAt,
+        maxAttempts: maxRetries,
+        error: null,
+      }),
+  },
+  {
+    event: "reconnectScheduled",
+    channel: IPC_EVENT_CHANNELS.RECONNECT_PROGRESS,
+    mapPayload: ({
+      sessionId,
+      delay,
+      retryCount,
+      maxRetries,
+      failureReason,
+      effectiveMaxRetries,
+      windowExpiresAt,
+    }) =>
+      normalizeReconnectPayload(boundReconnectionManager, {
+        sessionId,
+        attempts: retryCount,
+        failureReason,
+        effectiveMaxRetries,
+        windowExpiresAt,
+        maxAttempts: maxRetries,
+        delay,
+        error: null,
+      }),
+  },
+  {
+    event: "reconnectSuccess",
+    channel: IPC_EVENT_CHANNELS.RECONNECT_SUCCESS,
+    mapPayload: ({
+      sessionId,
+      attempts,
+      maxRetries,
+      failureReason,
+      effectiveMaxRetries,
+      windowExpiresAt,
+    }) =>
+      normalizeReconnectPayload(boundReconnectionManager, {
+        sessionId,
+        attempts,
+        failureReason,
+        effectiveMaxRetries,
+        windowExpiresAt,
+        maxAttempts: maxRetries,
+        error: null,
+      }),
+    emitLog: (payload) => ({
+      message: `重连成功通知前端: tabId=${payload.tabId}, attempts=${payload.attempts}`,
+      level: "INFO",
+    }),
+  },
+  {
+    event: "reconnectFailed",
+    channel: IPC_EVENT_CHANNELS.RECONNECT_FAILED,
+    mapPayload: ({
+      sessionId,
+      error,
+      attempts,
+      maxRetries,
+      failureReason,
+      effectiveMaxRetries,
+      windowExpiresAt,
+    }) =>
+      normalizeReconnectPayload(
+        boundReconnectionManager,
+        {
+          sessionId,
+          attempts,
+          failureReason,
+          effectiveMaxRetries,
+          windowExpiresAt,
+          maxAttempts: maxRetries,
+          error,
+        },
+        {
+          hint: getDefaultReconnectHint(
+            getSessionLanguage(boundReconnectionManager, sessionId),
+          ),
+        },
+      ),
+    dedupe: true,
+    skipLog: (payload) =>
+      `跳过重复重连失败广播: tabId=${payload.tabId}, attempts=${payload.attempts}`,
+    emitLog: (payload) => ({
+      message: `重连失败通知前端: tabId=${payload.tabId}, error=${payload.error}`,
+      level: "ERROR",
+    }),
+  },
+  {
+    event: "reconnectAbandoned",
+    channel: IPC_EVENT_CHANNELS.RECONNECT_ABANDONED,
+    mapPayload: ({
+      sessionId,
+      reason,
+      error,
+      attempts,
+      maxRetries,
+      failureReason,
+      effectiveMaxRetries,
+      windowExpiresAt,
+    }) => {
+      const language = getSessionLanguage(boundReconnectionManager, sessionId);
+      const finalError =
+        error ||
+        reason ||
+        (isZhLanguage(language)
+          ? "自动重连已放弃"
+          : "Automatic reconnect abandoned");
+      return normalizeReconnectPayload(
+        boundReconnectionManager,
+        {
+          sessionId,
+          attempts,
+          failureReason,
+          effectiveMaxRetries,
+          windowExpiresAt,
+          maxAttempts: maxRetries,
+          error: finalError,
+          reason,
+        },
+        { hint: getDefaultReconnectHint(language) },
+      );
+    },
+    dedupe: true,
+    skipLog: (payload) =>
+      `跳过重复重连放弃广播: tabId=${payload.tabId}, attempts=${payload.attempts}`,
+    emitLog: (payload) => ({
+      message: `重连放弃通知前端: tabId=${payload.tabId}, reason=${payload.error}`,
+      level: "WARN",
+    }),
+  },
+];
+
 // 注册重连相关的IPC处理器
 function registerReconnectHandlers(connectionPool) {
   if (!connectionPool) {
@@ -169,49 +361,19 @@ function registerReconnectHandlers(connectionPool) {
   );
 
   // 暂停重连
-  safeHandle(
-    ipcMain,
+  registerReconnectToggleHandler(
+    connectionPool,
     IPC_REQUEST_CHANNELS.RECONNECT_PAUSE,
-    async (event, { tabId }) => {
-      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
-      if (connectionKey && connectionPool.reconnectionManager) {
-        const result =
-          connectionPool.reconnectionManager.pauseReconnection(connectionKey);
-        return {
-          success: result?.success === true,
-          connectionKey,
-          state: result?.state || null,
-          previousState: result?.previousState || null,
-          error:
-            result?.success === true ? null : result?.error || "重连未暂停",
-        };
-      }
-      return { success: false, error: "连接未找到" };
-    },
-    { category: "reconnect" },
+    "pauseReconnection",
+    "重连未暂停",
   );
 
   // 恢复重连
-  safeHandle(
-    ipcMain,
+  registerReconnectToggleHandler(
+    connectionPool,
     IPC_REQUEST_CHANNELS.RECONNECT_RESUME,
-    async (event, { tabId }) => {
-      const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
-      if (connectionKey && connectionPool.reconnectionManager) {
-        const result =
-          connectionPool.reconnectionManager.resumeReconnection(connectionKey);
-        return {
-          success: result?.success === true,
-          connectionKey,
-          state: result?.state || null,
-          previousState: result?.previousState || null,
-          error:
-            result?.success === true ? null : result?.error || "重连未恢复",
-        };
-      }
-      return { success: false, error: "连接未找到" };
-    },
-    { category: "reconnect" },
+    "resumeReconnection",
+    "重连未恢复",
   );
 
   // 获取重连统计信息
@@ -227,203 +389,29 @@ function registerReconnectHandlers(connectionPool) {
     { category: "reconnect" },
   );
 
-  // 设置重连事件转发
+  // 设置重连事件转发（表驱动）
   if (boundReconnectionManager) {
-    // 重连开始事件
-    const onReconnectStarted = ({
-      sessionId,
-      attempt,
-      maxRetries,
-      failureReason,
-      effectiveMaxRetries,
-      windowExpiresAt,
-    }) => {
-      const payload = normalizeReconnectPayload(boundReconnectionManager, {
-        sessionId,
-        attempts: attempt,
-        failureReason,
-        effectiveMaxRetries,
-        windowExpiresAt,
-        maxAttempts: maxRetries,
-        error: null,
-      });
-      broadcastToRenderer(IPC_EVENT_CHANNELS.RECONNECT_STARTED, {
-        ...payload,
-        timestamp: Date.now(),
-      });
-    };
-    boundReconnectionManager.on("reconnectStarted", onReconnectStarted);
-    reconnectListeners.set("rm:reconnectStarted", onReconnectStarted);
-
-    // 重连进度事件
-    const onReconnectScheduled = ({
-      sessionId,
-      delay,
-      retryCount,
-      maxRetries,
-      failureReason,
-      effectiveMaxRetries,
-      windowExpiresAt,
-    }) => {
-      const payload = normalizeReconnectPayload(boundReconnectionManager, {
-        sessionId,
-        attempts: retryCount,
-        failureReason,
-        effectiveMaxRetries,
-        windowExpiresAt,
-        maxAttempts: maxRetries,
-        delay,
-        error: null,
-      });
-      broadcastToRenderer(IPC_EVENT_CHANNELS.RECONNECT_PROGRESS, {
-        ...payload,
-        timestamp: Date.now(),
-      });
-    };
-    boundReconnectionManager.on("reconnectScheduled", onReconnectScheduled);
-    reconnectListeners.set("rm:reconnectScheduled", onReconnectScheduled);
-
-    // 重连成功事件
-    const onReconnectSuccess = ({
-      sessionId,
-      attempts,
-      maxRetries,
-      failureReason,
-      effectiveMaxRetries,
-      windowExpiresAt,
-    }) => {
-      const payload = normalizeReconnectPayload(boundReconnectionManager, {
-        sessionId,
-        attempts,
-        failureReason,
-        effectiveMaxRetries,
-        windowExpiresAt,
-        maxAttempts: maxRetries,
-        error: null,
-      });
-      logToFile(
-        `重连成功通知前端: tabId=${payload.tabId}, attempts=${payload.attempts}`,
-        "INFO",
-      );
-
-      broadcastToRenderer(IPC_EVENT_CHANNELS.RECONNECT_SUCCESS, {
-        ...payload,
-        timestamp: Date.now(),
-      });
-    };
-    boundReconnectionManager.on("reconnectSuccess", onReconnectSuccess);
-    reconnectListeners.set("rm:reconnectSuccess", onReconnectSuccess);
-
-    // 重连失败事件
-    const onReconnectFailed = ({
-      sessionId,
-      error,
-      attempts,
-      maxRetries,
-      failureReason,
-      effectiveMaxRetries,
-      windowExpiresAt,
-    }) => {
-      const payload = normalizeReconnectPayload(
-        boundReconnectionManager,
-        {
-          sessionId,
-          attempts,
-          failureReason,
-          effectiveMaxRetries,
-          windowExpiresAt,
-          maxAttempts: maxRetries,
-          error,
-        },
-        {
-          hint: getDefaultReconnectHint(
-            getSessionLanguage(boundReconnectionManager, sessionId),
-          ),
-        },
-      );
-      if (
-        shouldSkipDuplicateTerminalEvent(
-          IPC_EVENT_CHANNELS.RECONNECT_FAILED,
-          payload,
-        )
-      ) {
-        logToFile(
-          `跳过重复重连失败广播: tabId=${payload.tabId}, attempts=${payload.attempts}`,
-          "DEBUG",
-        );
-        return;
-      }
-
-      logToFile(
-        `重连失败通知前端: tabId=${payload.tabId}, error=${payload.error}`,
-        "ERROR",
-      );
-
-      broadcastToRenderer(IPC_EVENT_CHANNELS.RECONNECT_FAILED, {
-        ...payload,
-        timestamp: Date.now(),
-      });
-    };
-    boundReconnectionManager.on("reconnectFailed", onReconnectFailed);
-    reconnectListeners.set("rm:reconnectFailed", onReconnectFailed);
-
-    // 重连放弃事件
-    const onReconnectAbandoned = ({
-      sessionId,
-      reason,
-      error,
-      attempts,
-      maxRetries,
-      failureReason,
-      effectiveMaxRetries,
-      windowExpiresAt,
-    }) => {
-      const language = getSessionLanguage(boundReconnectionManager, sessionId);
-      const finalError =
-        error ||
-        reason ||
-        (isZhLanguage(language)
-          ? "自动重连已放弃"
-          : "Automatic reconnect abandoned");
-      const payload = normalizeReconnectPayload(
-        boundReconnectionManager,
-        {
-          sessionId,
-          attempts,
-          failureReason,
-          effectiveMaxRetries,
-          windowExpiresAt,
-          maxAttempts: maxRetries,
-          error: finalError,
-          reason,
-        },
-        { hint: getDefaultReconnectHint(language) },
-      );
-      if (
-        shouldSkipDuplicateTerminalEvent(
-          IPC_EVENT_CHANNELS.RECONNECT_ABANDONED,
-          payload,
-        )
-      ) {
-        logToFile(
-          `跳过重复重连放弃广播: tabId=${payload.tabId}, attempts=${payload.attempts}`,
-          "DEBUG",
-        );
-        return;
-      }
-
-      logToFile(
-        `重连放弃通知前端: tabId=${payload.tabId}, reason=${payload.error}`,
-        "WARN",
-      );
-
-      broadcastToRenderer(IPC_EVENT_CHANNELS.RECONNECT_ABANDONED, {
-        ...payload,
-        timestamp: Date.now(),
-      });
-    };
-    boundReconnectionManager.on("reconnectAbandoned", onReconnectAbandoned);
-    reconnectListeners.set("rm:reconnectAbandoned", onReconnectAbandoned);
+    RECONNECT_EVENT_FORWARDERS.forEach(
+      ({ event, channel, mapPayload, dedupe, skipLog, emitLog }) => {
+        const listener = (data) => {
+          const payload = mapPayload(data);
+          if (dedupe && shouldSkipDuplicateTerminalEvent(channel, payload)) {
+            logToFile(skipLog(payload), "DEBUG");
+            return;
+          }
+          if (emitLog) {
+            const { message, level } = emitLog(payload);
+            logToFile(message, level);
+          }
+          broadcastToRenderer(channel, {
+            ...payload,
+            timestamp: Date.now(),
+          });
+        };
+        boundReconnectionManager.on(event, listener);
+        reconnectListeners.set(`rm:${event}`, listener);
+      },
+    );
   }
 
   // 连接丢失事件（实际由连接池发出，而非 reconnectionManager）
@@ -439,28 +427,15 @@ function registerReconnectHandlers(connectionPool) {
   reconnectListeners.set("pool:connectionLost", onPoolConnectionLost);
 }
 
-// 从sessionId提取tabId
+// 从sessionId提取tabId（无法解析时回退为原始sessionId）
 function extractTabIdFromSessionId(sessionId) {
   // sessionId格式: "tab:tabId:host:port:username"
-  if (sessionId && sessionId.startsWith("tab:")) {
-    const parts = sessionId.split(":");
-    if (parts.length >= 2) {
-      return parts[1];
-    }
-  }
-  return sessionId;
+  return extractTabIdFromSessionKey(sessionId) ?? sessionId;
 }
 
 // 广播事件到渲染进程
 function broadcastToRenderer(channel, data) {
-  const { BrowserWindow } = require("electron");
-  const windows = BrowserWindow.getAllWindows();
-
-  windows.forEach((window) => {
-    if (!window.isDestroyed()) {
-      window.webContents.send(channel, data);
-    }
-  });
+  broadcastToAllWindows(channel, data);
 }
 
 // 清理函数
@@ -478,18 +453,10 @@ function cleanupReconnectHandlers() {
 
   // 移除重连管理器事件监听器
   if (boundReconnectionManager) {
-    const reconnectEventBindings = [
-      ["reconnectStarted", "rm:reconnectStarted"],
-      ["reconnectScheduled", "rm:reconnectScheduled"],
-      ["reconnectSuccess", "rm:reconnectSuccess"],
-      ["reconnectFailed", "rm:reconnectFailed"],
-      ["reconnectAbandoned", "rm:reconnectAbandoned"],
-    ];
-
-    reconnectEventBindings.forEach(([eventName, listenerKey]) => {
-      const listener = reconnectListeners.get(listenerKey);
+    RECONNECT_EVENT_FORWARDERS.forEach(({ event }) => {
+      const listener = reconnectListeners.get(`rm:${event}`);
       if (listener) {
-        boundReconnectionManager.removeListener(eventName, listener);
+        boundReconnectionManager.removeListener(event, listener);
       }
     });
   }

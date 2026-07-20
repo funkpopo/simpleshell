@@ -317,4 +317,5 @@ module.exports = {
   CONNECTION_FAILURE_KINDS,
   classifyConnectionFailure,
   detectConnectionFailureKind,
+  isZhLanguage,
 };

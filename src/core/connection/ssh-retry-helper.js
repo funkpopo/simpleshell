@@ -3,11 +3,19 @@ const { Client } = require("ssh2");
 
 const proxyManager = require("../proxy/proxy-manager");
 const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
-const { processSSHPrivateKeyAsync } = require("../utils/ssh-utils");
+const {
+  processSSHPrivateKeyAsync,
+  buildSshConnectOptions,
+} = require("../utils/ssh-utils");
 const {
   resolveSshNetworkProfile,
   applySocketNetworkProfile,
 } = require("../utils/ssh-network-profile");
+const { isZhLanguage } = require("../../shared/connectionErrorAdvice");
+const {
+  isAuthErrorMessage,
+  isTimeoutErrorMessage,
+} = require("../../shared/errorClassification");
 
 const DEFAULT_SSH_RETRY_CONFIG = Object.freeze({
   maxRetries: 5,
@@ -110,17 +118,11 @@ function analyzeSshFailureReason(error) {
     return FAILURE_REASON.NETWORK;
   }
 
-  if (
-    errorMessage.includes("authentication") ||
-    errorMessage.includes("permission") ||
-    errorMessage.includes("password") ||
-    errorMessage.includes("private key") ||
-    errorMessage.includes("configured authentication methods failed")
-  ) {
+  if (isAuthErrorMessage(errorMessage)) {
     return FAILURE_REASON.AUTHENTICATION;
   }
 
-  if (errorMessage.includes("timeout") || errorCode === "ETIMEDOUT") {
+  if (isTimeoutErrorMessage(errorMessage) || errorCode === "ETIMEDOUT") {
     return FAILURE_REASON.TIMEOUT;
   }
 
@@ -204,12 +206,6 @@ function getRetryWindowExpiresAt(windowStartedAt, retryConfig) {
 function isRetryWindowExpired(windowStartedAt, retryConfig) {
   const remaining = getRemainingRetryWindowMs(windowStartedAt, retryConfig);
   return Number.isFinite(remaining) && remaining <= 0;
-}
-
-function isZhLanguage(language) {
-  return String(language || "zh-CN")
-    .toLowerCase()
-    .startsWith("zh");
 }
 
 function formatRetryWindowLabel(durationMs, language = "zh-CN") {
@@ -683,30 +679,16 @@ async function createManagedSshConnection(sshConfig, options = {}) {
     ssh.on("error", onError);
     ssh.on("close", onClose);
 
-    const connectionOptions = {
-      host: processedConfig.host,
-      port: processedConfig.port || 22,
-      username: processedConfig.username,
+    const connectionOptions = buildSshConnectOptions(processedConfig, {
+      networkProfile,
       algorithms: getBasicSSHAlgorithms(),
-      keepaliveInterval: networkProfile.keepaliveInterval,
-      keepaliveCountMax: networkProfile.keepaliveCountMax,
-      readyTimeout: networkProfile.readyTimeout,
-    };
+    });
 
-    if (processedConfig.password) {
-      connectionOptions.password = processedConfig.password;
-    }
-    if (processedConfig.privateKey) {
-      connectionOptions.privateKey = processedConfig.privateKey;
-    }
     if (processedConfig.passphrase) {
       connectionOptions.passphrase = processedConfig.passphrase;
     }
     if (processedConfig.hostHash) {
       connectionOptions.hostHash = processedConfig.hostHash;
-    }
-    if (typeof processedConfig.hostVerifier === "function") {
-      connectionOptions.hostVerifier = processedConfig.hostVerifier;
     }
 
     (async () => {

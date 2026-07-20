@@ -21,10 +21,6 @@ class TelnetConnectionPool extends BaseConnectionPool {
     super({
       ...config,
       protocolType: "Telnet",
-      maxConnections: config.maxConnections || 50,
-      idleTimeout: config.idleTimeout || 30 * 60 * 1000, // 30分钟
-      healthCheckInterval: config.healthCheckInterval || 5 * 60 * 1000, // 5分钟
-      connectionTimeout: config.connectionTimeout || 15 * 1000, // 15秒
     });
   }
 

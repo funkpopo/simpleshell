@@ -9,7 +9,11 @@ const CLOSE_REASON = BaseConnectionPool.CLOSE_REASON;
 const Client = require("ssh2").Client;
 const { getBasicSSHAlgorithms } = require("../../constants/sshAlgorithms");
 const proxyManager = require("../proxy/proxy-manager");
-const { createChannelPoolManager } = require("../utils/ssh-utils");
+const {
+  createChannelPoolManager,
+  processSSHPrivateKeyAsync,
+  buildSshConnectOptions,
+} = require("../utils/ssh-utils");
 const {
   resolveSshNetworkProfile,
   applySocketNetworkProfile,
@@ -17,6 +21,7 @@ const {
 const {
   classifyConnectionFailure,
 } = require("../../shared/connectionErrorAdvice");
+const { isAuthErrorMessage } = require("../../shared/errorClassification");
 const ReconnectionManager = require("./reconnection-manager");
 
 // 代理类型常量
@@ -40,10 +45,7 @@ class SSHPool extends BaseConnectionPool {
     super({
       ...config,
       protocolType: "SSH",
-      maxConnections: config.maxConnections || 50,
-      idleTimeout: config.idleTimeout || 30 * 60 * 1000, // 30分钟
       healthCheckInterval: config.healthCheckInterval || 15 * 1000, // 15秒，及时发现VPN/路由切换后的半开连接
-      connectionTimeout: config.connectionTimeout || 15 * 1000, // 15秒
     });
 
     // SSH特有的属性
@@ -134,12 +136,7 @@ class SSHPool extends BaseConnectionPool {
    */
   cleanup() {
     // 拒绝所有等待中的请求
-    while (this.requestQueue.length > 0) {
-      const request = this.requestQueue.shift();
-      if (request && request.reject) {
-        request.reject(new Error("连接池正在关闭"));
-      }
-    }
+    this._drainRequestQueue("连接池正在关闭");
 
     // 关闭重连管理器
     if (this.reconnectionManager) {
@@ -199,6 +196,9 @@ class SSHPool extends BaseConnectionPool {
   async createConnection(sshConfig, connectionKey) {
     this._logInfo(`创建新SSH连接: ${connectionKey}`);
     const networkProfile = resolveSshNetworkProfile(sshConfig);
+
+    // 处理私钥（读取privateKeyPath对应的文件内容）
+    const processedConfig = await processSSHPrivateKeyAsync(sshConfig);
 
     // 解析代理配置
     const resolvedProxyConfig =
@@ -273,21 +273,16 @@ class SSHPool extends BaseConnectionPool {
           `连接超时: ${sshConfig.host}:${sshConfig.port || 22}`,
         );
         // 初次连接超时：若可重试，则进入统一的自动重连状态机（1分钟封顶）
-        if (
-          this._shouldAutoReconnectOnInitialFailure(err, sshConfig, usingProxy)
-        ) {
-          void this._startInitialAutoReconnect(
-            connectionKey,
-            ssh,
-            sshConfig,
-            connectionInfo,
-            err,
-          );
-          finishResolve(connectionInfo);
-          return;
-        }
-        this.connections.delete(connectionKey);
-        finishReject(err);
+        this._failOrReconnectInitial(
+          err,
+          sshConfig,
+          usingProxy,
+          connectionKey,
+          ssh,
+          connectionInfo,
+          finishResolve,
+          finishReject,
+        );
       }, connectionTimeoutMs);
 
       // 监听就绪事件
@@ -325,29 +320,20 @@ class SSHPool extends BaseConnectionPool {
           connectionKey,
           usingProxy,
           resolvedProxyConfig,
+          processedConfig,
         );
 
         // 初次连接失败：若可重试，则进入统一的自动重连状态机（1分钟封顶）
-        if (
-          this._shouldAutoReconnectOnInitialFailure(
-            enhancedError,
-            sshConfig,
-            usingProxy,
-          )
-        ) {
-          void this._startInitialAutoReconnect(
-            connectionKey,
-            ssh,
-            sshConfig,
-            connectionInfo,
-            enhancedError,
-          );
-          finishResolve(connectionInfo);
-          return;
-        }
-
-        this.connections.delete(connectionKey);
-        finishReject(enhancedError);
+        this._failOrReconnectInitial(
+          enhancedError,
+          sshConfig,
+          usingProxy,
+          connectionKey,
+          ssh,
+          connectionInfo,
+          finishResolve,
+          finishReject,
+        );
       });
 
       // 监听关闭事件
@@ -357,7 +343,7 @@ class SSHPool extends BaseConnectionPool {
 
       // 建立连接
       const connectionOptions = this._buildSSHOptions(
-        sshConfig,
+        processedConfig,
         networkProfile,
       );
 
@@ -385,25 +371,16 @@ class SSHPool extends BaseConnectionPool {
               /* intentionally ignored */
             }
             // 代理隧道创建失败：多为本地代理/VPN未就绪，按可重试处理
-            if (
-              this._shouldAutoReconnectOnInitialFailure(
-                e,
-                sshConfig,
-                usingProxy,
-              )
-            ) {
-              void this._startInitialAutoReconnect(
-                connectionKey,
-                ssh,
-                sshConfig,
-                connectionInfo,
-                e,
-              );
-              finishResolve(connectionInfo);
-              return;
-            }
-            this.connections.delete(connectionKey);
-            finishReject(e);
+            this._failOrReconnectInitial(
+              e,
+              sshConfig,
+              usingProxy,
+              connectionKey,
+              ssh,
+              connectionInfo,
+              finishResolve,
+              finishReject,
+            );
           }
         })();
       } else {
@@ -429,11 +406,7 @@ class SSHPool extends BaseConnectionPool {
     // 若确有需要（例如外部凭据/私钥稍后才就绪），可显式开启：
     // - 连接配置：sshConfig.retryOnAuthFailure === true
     // - 连接池配置：this.config.enableAuthFailureAutoReconnect === true
-    if (
-      msg.includes("SSH认证失败") ||
-      msg.includes("All configured authentication methods failed") ||
-      msg.toLowerCase().includes("authentication")
-    ) {
+    if (isAuthErrorMessage(msg)) {
       const allowAuthRetry =
         sshConfig?.retryOnAuthFailure === true ||
         this.config?.enableAuthFailureAutoReconnect === true;
@@ -469,6 +442,50 @@ class SSHPool extends BaseConnectionPool {
     );
   }
 
+  /**
+   * 初次连接失败的统一处置：可重试则转入自动重连状态机，否则删除连接并拒绝
+   * settled 防重入语义由 finishResolve/finishReject 保证
+   * @private
+   */
+  _failOrReconnectInitial(
+    error,
+    sshConfig,
+    usingProxy,
+    connectionKey,
+    ssh,
+    connectionInfo,
+    finishResolve,
+    finishReject,
+  ) {
+    if (this._shouldAutoReconnectOnInitialFailure(error, sshConfig, usingProxy)) {
+      void this._startInitialAutoReconnect(
+        connectionKey,
+        ssh,
+        sshConfig,
+        connectionInfo,
+        error,
+      );
+      finishResolve(connectionInfo);
+      return;
+    }
+    this.connections.delete(connectionKey);
+    finishReject(error);
+  }
+
+  /**
+   * 注册自动重连会话（统一的 registerSession options）
+   * @private
+   */
+  _ensureReconnectSession(key, client, config, failureReason) {
+    this.reconnectionManager.registerSession(key, client, config, {
+      autoStart: true,
+      state: "pending",
+      failureReason,
+      intentionalClose: false,
+      replaceConnection: true,
+    });
+  }
+
   async _startInitialAutoReconnect(
     connectionKey,
     ssh,
@@ -483,18 +500,7 @@ class SSHPool extends BaseConnectionPool {
 
       const existing = this.reconnectionManager.getSessionStatus(connectionKey);
       if (!existing) {
-        this.reconnectionManager.registerSession(
-          connectionKey,
-          ssh,
-          sshConfig,
-          {
-            autoStart: true,
-            state: "pending",
-            failureReason: "network",
-            intentionalClose: false,
-            replaceConnection: true,
-          },
-        );
+        this._ensureReconnectSession(connectionKey, ssh, sshConfig, "network");
       } else {
         await this.reconnectionManager.requestAutoReconnect(
           connectionKey,
@@ -583,17 +589,11 @@ class SSHPool extends BaseConnectionPool {
     }
 
     try {
-      this.reconnectionManager.registerSession(
+      this._ensureReconnectSession(
         key,
         connectionInfo.client,
         connectionInfo.config,
-        {
-          autoStart: true,
-          state: "pending",
-          failureReason: reconnectReason,
-          intentionalClose: false,
-          replaceConnection: true,
-        },
+        reconnectReason,
       );
 
       this.emit("connectionLost", {
@@ -821,52 +821,35 @@ class SSHPool extends BaseConnectionPool {
 
   /**
    * 构建SSH连接选项
-   * @param {Object} sshConfig - SSH配置
+   * @param {Object} processedConfig - 已处理私钥的SSH配置（processSSHPrivateKeyAsync 的结果）
    * @param {Object|null} networkProfile - 网络参数（可选）
    * @returns {Object} SSH连接选项
    * @private
    */
-  _buildSSHOptions(sshConfig, networkProfile = null) {
-    const { processSSHPrivateKey } = require("../utils/ssh-utils");
-    const processedConfig = processSSHPrivateKey(sshConfig);
+  _buildSSHOptions(processedConfig, networkProfile = null) {
     const resolvedNetworkProfile =
       networkProfile || resolveSshNetworkProfile(processedConfig);
 
-    const options = {
-      host: sshConfig.host,
-      port: sshConfig.port || 22,
-      username: sshConfig.username,
+    const options = buildSshConnectOptions(processedConfig, {
+      networkProfile: resolvedNetworkProfile,
       algorithms: getBasicSSHAlgorithms(),
-      keepaliveInterval: resolvedNetworkProfile.keepaliveInterval,
-      keepaliveCountMax: resolvedNetworkProfile.keepaliveCountMax,
-      // 增加通道管理配置以支持更多并发操作
-      readyTimeout: resolvedNetworkProfile.readyTimeout,
-    };
+    });
 
-    if (typeof sshConfig.hostHash === "string" && sshConfig.hostHash.trim()) {
-      options.hostHash = sshConfig.hostHash.trim();
-    }
-
-    if (typeof sshConfig.hostVerifier === "function") {
-      options.hostVerifier = sshConfig.hostVerifier;
+    if (
+      typeof processedConfig.hostHash === "string" &&
+      processedConfig.hostHash.trim()
+    ) {
+      options.hostHash = processedConfig.hostHash.trim();
     }
 
     // 启用压缩（如果配置）
-    if (sshConfig && sshConfig.enableCompression === true) {
+    if (processedConfig && processedConfig.enableCompression === true) {
       options.compress = true;
       this._logInfo("SSH连接启用压缩(compress=true)");
     }
 
-    // 添加认证方式
-    if (processedConfig.password) {
-      options.password = processedConfig.password;
-    }
-
-    if (processedConfig.privateKey) {
-      options.privateKey = processedConfig.privateKey;
-      if (processedConfig.passphrase) {
-        options.passphrase = processedConfig.passphrase;
-      }
+    if (processedConfig.privateKey && processedConfig.passphrase) {
+      options.passphrase = processedConfig.passphrase;
     }
 
     return options;
@@ -879,6 +862,7 @@ class SSHPool extends BaseConnectionPool {
    * @param {string} connectionKey - 连接键
    * @param {boolean} usingProxy - 是否使用代理
    * @param {Object} resolvedProxyConfig - 解析后的代理配置
+   * @param {Object} processedConfig - 已处理私钥的SSH配置
    * @returns {Error} 增强的错误对象
    * @private
    */
@@ -888,9 +872,8 @@ class SSHPool extends BaseConnectionPool {
     connectionKey,
     usingProxy,
     resolvedProxyConfig,
+    processedConfig,
   ) {
-    const { processSSHPrivateKey } = require("../utils/ssh-utils");
-    const processedConfig = processSSHPrivateKey(sshConfig);
     const isZh = String(sshConfig?.language || "zh-CN")
       .toLowerCase()
       .startsWith("zh");
@@ -1081,17 +1064,11 @@ class SSHPool extends BaseConnectionPool {
             );
           });
       } else {
-        this.reconnectionManager.registerSession(
+        this._ensureReconnectSession(
           connectionKey,
           connectionInfo.client,
           connectionInfo.config,
-          {
-            state: "pending",
-            autoStart: true,
-            failureReason: reconnectReason,
-            intentionalClose: false,
-            replaceConnection: true,
-          },
+          reconnectReason,
         );
       }
 
@@ -1116,18 +1093,24 @@ class SSHPool extends BaseConnectionPool {
   async shutdown() {
     this._logInfo("开始关闭SSH连接池...");
 
-    // 拒绝所有等待中的请求
-    while (this.requestQueue.length > 0) {
-      const request = this.requestQueue.shift();
-      if (request && request.reject) {
-        request.reject(new Error("连接池正在关闭"));
-      }
-    }
-
-    // 调用父类cleanup
+    // cleanup() 内会统一排空等待队列
     this.cleanup();
 
     this._logInfo("SSH连接池已关闭");
+  }
+
+  /**
+   * 排空等待队列，拒绝所有等待中的请求
+   * @param {string} reason - 拒绝原因
+   * @private
+   */
+  _drainRequestQueue(reason) {
+    while (this.requestQueue.length > 0) {
+      const request = this.requestQueue.shift();
+      if (request && request.reject) {
+        request.reject(new Error(reason));
+      }
+    }
   }
 }
 

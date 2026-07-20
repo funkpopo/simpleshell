@@ -4,6 +4,10 @@ const {
 const {
   invokeNativeRequestWithConfig,
 } = require("../core/utils/nativeSftpClient");
+const { normalizeErrorMessage } = require("../core/utils/errorResponse");
+const {
+  buildCancelledError,
+} = require("../modules/filemanagement/transferShared");
 
 const HEARTBEAT_INTERVAL_MS = 2000;
 const parentPort = process.parentPort || null;
@@ -12,19 +16,6 @@ let currentTransferKey = null;
 let currentTabId = null;
 let currentTaskState = null;
 const cancelledTaskKeys = new Set();
-
-function normalizeErrorMessage(error) {
-  if (!error) return "Unknown error";
-  if (typeof error === "string") return error;
-  return error.message || String(error);
-}
-
-function buildCancelledError(message = "Transfer cancelled by user") {
-  const error = new Error(message);
-  error.cancelled = true;
-  error.userCancelled = true;
-  return error;
-}
 
 function serializeError(error) {
   if (!error) {

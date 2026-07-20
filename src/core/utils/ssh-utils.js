@@ -7,46 +7,6 @@ const { sanitizePathForLog } = require("./log-sanitizer");
  * @param {string} privateKeyPath - 私钥文件路径
  * @returns {string|null} 私钥内容，读取失败返回null
  */
-function readPrivateKeyFile(privateKeyPath) {
-  if (!privateKeyPath || typeof privateKeyPath !== "string") {
-    logToFile("私钥文件路径为空或无效", "ERROR");
-    return null;
-  }
-
-  const sanitizedPath = sanitizePathForLog(privateKeyPath);
-
-  try {
-    // 检查文件是否存在
-    if (!fs.existsSync(privateKeyPath)) {
-      logToFile(`私钥文件不存在: ${sanitizedPath}`, "ERROR");
-      return null;
-    }
-
-    // 检查文件是否可读
-    try {
-      fs.accessSync(privateKeyPath, fs.constants.R_OK);
-    } catch {
-      logToFile(`私钥文件无读取权限: ${sanitizedPath}`, "ERROR");
-      return null;
-    }
-
-    // 读取文件内容
-    const keyContent = fs.readFileSync(privateKeyPath, "utf8");
-
-    // 验证私钥格式
-    if (!validatePrivateKeyFormat(keyContent)) {
-      logToFile(`私钥文件格式无效: ${sanitizedPath}`, "ERROR");
-      return null;
-    }
-
-    logToFile(`成功读取私钥文件: ${sanitizedPath}`, "INFO");
-    return keyContent;
-  } catch (error) {
-    logToFile(`读取私钥文件失败: ${sanitizedPath} - ${error.message}`, "ERROR");
-    return null;
-  }
-}
-
 /**
  * 异步读取SSH私钥文件内容
  * @param {string} privateKeyPath - 私钥文件路径
@@ -137,43 +97,6 @@ function validatePrivateKeyFormat(keyContent) {
 }
 
 /**
- * 处理SSH配置中的私钥
- * @param {Object} sshConfig - SSH配置对象
- * @returns {Object} 处理后的SSH配置对象
- */
-function processSSHPrivateKey(sshConfig) {
-  if (!sshConfig) {
-    return sshConfig;
-  }
-
-  // 如果已经有privateKey内容，直接返回
-  if (sshConfig.privateKey) {
-    return sshConfig;
-  }
-
-  // 如果有privateKeyPath，读取文件内容
-  if (sshConfig.privateKeyPath) {
-    const keyContent = readPrivateKeyFile(sshConfig.privateKeyPath);
-    if (keyContent) {
-      // 创建新的配置对象，避免修改原对象
-      return {
-        ...sshConfig,
-        privateKey: keyContent,
-      };
-    } else {
-      logToFile(
-        `无法读取私钥文件，将尝试其他认证方式: ${sanitizePathForLog(
-          sshConfig.privateKeyPath,
-        )}`,
-        "WARN",
-      );
-    }
-  }
-
-  return sshConfig;
-}
-
-/**
  * 异步处理SSH配置中的私钥
  * @param {Object} sshConfig - SSH配置对象
  * @returns {Promise<Object>} 处理后的SSH配置对象
@@ -208,6 +131,84 @@ async function processSSHPrivateKeyAsync(sshConfig) {
   }
 
   return sshConfig;
+}
+
+/**
+ * 由处理后的SSH配置构建 ssh2 connect options 的公共字段
+ * 各调用方特有字段（如 sock、compress、hostHash 处理方式等）由调用方自行补充
+ * @param {Object} processedConfig - 已处理私钥的SSH配置对象
+ * @param {Object} extras - 附加参数
+ * @param {Object} extras.networkProfile - 网络参数（keepalive/readyTimeout）
+ * @param {Object} extras.algorithms - SSH算法配置
+ * @returns {Object} ssh2 connect options 对象
+ */
+function buildSshConnectOptions(
+  processedConfig,
+  { networkProfile, algorithms } = {},
+) {
+  const options = {
+    host: processedConfig.host,
+    port: processedConfig.port || 22,
+    username: processedConfig.username,
+    algorithms,
+    keepaliveInterval: networkProfile.keepaliveInterval,
+    keepaliveCountMax: networkProfile.keepaliveCountMax,
+    readyTimeout: networkProfile.readyTimeout,
+  };
+
+  if (processedConfig.password) {
+    options.password = processedConfig.password;
+  }
+  if (processedConfig.privateKey) {
+    options.privateKey = processedConfig.privateKey;
+  }
+  if (typeof processedConfig.hostVerifier === "function") {
+    options.hostVerifier = processedConfig.hostVerifier;
+  }
+
+  return options;
+}
+
+/**
+ * 判断SSH客户端连接是否仍然可用
+ * （与 src/modules/system-info/remote-system.js 内同名函数逻辑一致）
+ * @param {Object} sshClient - ssh2 客户端实例
+ * @returns {boolean} 是否可用
+ */
+function isSshClientUsable(sshClient) {
+  return Boolean(
+    sshClient &&
+      (!sshClient._readableState || !sshClient._readableState.ended) &&
+      (!sshClient._sock ||
+        (sshClient._sock.readable && sshClient._sock.writable)),
+  );
+}
+
+/**
+ * 判断SSH shell stream 是否仍然可写可用
+ * @param {Object} stream - ssh2 shell stream
+ * @returns {boolean} 是否可用
+ */
+function isSshStreamUsable(stream) {
+  if (!stream || typeof stream.write !== "function") return false;
+  if (stream.destroyed === true) return false;
+  if (stream.closed === true || stream._closed === true) return false;
+  if (stream.writable === false) return false;
+  return true;
+}
+
+/**
+ * 从会话/连接键中提取tabId
+ * 键格式: "tab:tabId:host:port:username"
+ * @param {string} key - 会话ID或连接键
+ * @returns {string|null} tabId，无法解析时返回null
+ */
+function extractTabIdFromSessionKey(key) {
+  if (!key || !String(key).startsWith("tab:")) {
+    return null;
+  }
+  const parts = String(key).split(":");
+  return parts.length >= 2 ? parts[1] : null;
 }
 
 /**
@@ -263,7 +264,10 @@ function createChannelPoolManager(maxChannels = 30) {
 }
 
 module.exports = {
-  processSSHPrivateKey,
+  isSshClientUsable,
+  isSshStreamUsable,
+  extractTabIdFromSessionKey,
   processSSHPrivateKeyAsync,
+  buildSshConnectOptions,
   createChannelPoolManager,
 };

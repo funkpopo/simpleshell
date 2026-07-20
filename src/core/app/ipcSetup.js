@@ -31,6 +31,66 @@ const TerminalIOMailboxManager = require("../terminal/terminalIOMailboxManager")
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
+const { getPrimaryWindow } = require("../window/windowManager");
+const { isSshClientUsable } = require("../utils/ssh-utils");
+
+// 关键处理器模块（在窗口创建前由 registerCriticalHandlers 统一注册）
+const CRITICAL_HANDLER_MODULES = [
+  { HandlersClass: SettingsHandlers, successLog: "Settings handlers registered" },
+  { HandlersClass: AppHandlers, successLog: "App handlers registered" },
+  { HandlersClass: DialogHandlers, successLog: "Dialog handlers registered" },
+  { HandlersClass: WindowHandlers, successLog: "Window handlers registered" },
+  { HandlersClass: ProxyHandlers, successLog: "Proxy handlers registered" },
+];
+
+// 纯样板处理器模块（new Class → getHandlers().forEach(safeHandle) → 日志）
+const BOILERPLATE_HANDLER_MODULES = [
+  {
+    HandlersClass: AIHandlers,
+    successLog: "AI handlers registered",
+    errorLabel: "AI处理器初始化失败",
+  },
+  {
+    HandlersClass: FileHandlers,
+    successLog: "File handlers registered",
+    errorLabel: "文件处理器初始化失败",
+  },
+  {
+    HandlersClass: SftpHandlers,
+    successLog: "SFTP handlers registered",
+    errorLabel: "SFTP处理器初始化失败",
+  },
+  {
+    HandlersClass: UtilityHandlers,
+    successLog: "Utility handlers registered",
+    errorLabel: "实用工具处理器初始化失败",
+  },
+  {
+    HandlersClass: ConnectionHandlers,
+    successLog: "Connection handlers registered",
+    errorLabel: "连接状态处理器初始化失败",
+  },
+  {
+    HandlersClass: SshKeyHandlers,
+    successLog: "SSH key handlers registered",
+    errorLabel: "SSH密钥处理器初始化失败",
+  },
+  {
+    HandlersClass: MemoryHandlers,
+    successLog: "Memory handlers registered",
+    errorLabel: "记忆处理器初始化失败",
+  },
+  {
+    HandlersClass: ExternalEditorHandlers,
+    successLog: "External editor handlers registered",
+    errorLabel: "外部编辑器处理器初始化失败",
+  },
+  {
+    HandlersClass: RuntimeFileHandlers,
+    successLog: "Runtime file lifecycle handlers registered",
+    errorLabel: "运行时文件生命周期处理器初始化失败",
+  },
+];
 
 /**
  * IPC设置模块
@@ -43,15 +103,7 @@ class IPCSetup {
     this.sshHandlers = null;
     this.terminalHandlers = null;
     this.terminalIOMailboxManager = new TerminalIOMailboxManager({
-      getMainWindow: () => {
-        const { BrowserWindow } = require("electron");
-        const windows = BrowserWindow.getAllWindows();
-        const mainWindow = Array.isArray(windows) ? windows[0] : null;
-        if (!mainWindow || mainWindow.isDestroyed()) {
-          return null;
-        }
-        return mainWindow;
-      },
+      getMainWindow: () => getPrimaryWindow(),
     });
   }
 
@@ -94,6 +146,29 @@ class IPCSetup {
   }
 
   /**
+   * 将处理器实例的所有handler注册到ipcMain
+   */
+  _registerHandlerInstance(handlersInstance) {
+    handlersInstance
+      .getHandlers()
+      .forEach(({ channel, category, handler }) => {
+        safeHandle(ipcMain, channel, handler, { category });
+      });
+  }
+
+  /**
+   * 通用样板处理器模块初始化（new → 注册 → 日志）
+   */
+  initializeHandlerModule({ HandlersClass, successLog, errorLabel }) {
+    try {
+      this._registerHandlerInstance(new HandlersClass());
+      logToFile(successLog, "INFO");
+    } catch (error) {
+      logToFile(`${errorLabel}: ${error.message}`, "ERROR");
+    }
+  }
+
+  /**
    * 初始化延迟处理器
    */
   initializeLatencyHandlers() {
@@ -116,40 +191,10 @@ class IPCSetup {
    */
   registerCriticalHandlers() {
     try {
-      // 注册设置处理器
-      const settingsHandlers = new SettingsHandlers();
-      settingsHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
+      CRITICAL_HANDLER_MODULES.forEach(({ HandlersClass, successLog }) => {
+        this._registerHandlerInstance(new HandlersClass());
+        logToFile(successLog, "INFO");
       });
-      logToFile("Settings handlers registered", "INFO");
-
-      // 注册应用处理器
-      const appHandlers = new AppHandlers();
-      appHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
-      logToFile("App handlers registered", "INFO");
-
-      // 注册对话框处理器
-      const dialogHandlers = new DialogHandlers();
-      dialogHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
-      logToFile("Dialog handlers registered", "INFO");
-
-      // 注册窗口处理器
-      const windowHandlers = new WindowHandlers();
-      windowHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
-      logToFile("Window handlers registered", "INFO");
-
-      // 注册代理处理器
-      const proxyHandlers = new ProxyHandlers();
-      proxyHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
-      logToFile("Proxy handlers registered", "INFO");
 
       // 注册基本终端处理器
       this.registerBasicTerminalHandlers();
@@ -164,6 +209,69 @@ class IPCSetup {
         "ERROR",
       );
     }
+  }
+
+  /**
+   * 创建"本地/远程二选一"的系统信息类处理器
+   * TERMINAL_GET_SYSTEM_INFO 与 TERMINAL_GET_PROCESS_LIST 除最终调用的函数外逻辑一致
+   */
+  _createRemoteAwareInfoHandler({
+    getLocal,
+    getRemote,
+    awaitLocal,
+    fallbackTarget,
+    failureSubject,
+    failureMessageZh,
+  }) {
+    // awaitLocal 保持与原实现一致：
+    // TERMINAL_GET_SYSTEM_INFO 原实现 `return await getLocalSystemInfo()`（本地调用的拒绝会被捕获并降级），
+    // TERMINAL_GET_PROCESS_LIST 原实现 `return getProcessList()`（拒绝直接向调用方传播）。
+    return async (event, processId) => {
+      try {
+        const systemInfo = require("../../modules/system-info");
+        if (!processId || !processManager.hasProcess(processId)) {
+          return awaitLocal
+            ? await getLocal(systemInfo)
+            : getLocal(systemInfo);
+        } else {
+          const processObj = processManager.getProcess(processId);
+          if (
+            (processObj.type === "ssh2" || processObj.type === "ssh") &&
+            (processObj.process || processObj.client || processObj.channel)
+          ) {
+            const sshClient =
+              processObj.client || processObj.process || processObj.channel;
+            if (!isSshClientUsable(sshClient)) {
+              logToFile(
+                `SSH connection not available for process ${processId}, falling back to ${fallbackTarget}`,
+                "WARN",
+              );
+              return awaitLocal
+                ? await getLocal(systemInfo)
+                : getLocal(systemInfo);
+            }
+            return getRemote(systemInfo, sshClient);
+          } else {
+            return awaitLocal
+              ? await getLocal(systemInfo)
+              : getLocal(systemInfo);
+          }
+        }
+      } catch (error) {
+        logToFile(`Failed to get ${failureSubject}: ${error.message}`, "ERROR");
+        try {
+          const systemInfo = require("../../modules/system-info");
+          return awaitLocal
+            ? await getLocal(systemInfo)
+            : getLocal(systemInfo);
+        } catch {
+          return {
+            error: failureMessageZh,
+            message: error.message,
+          };
+        }
+      }
+    };
   }
 
   /**
@@ -190,98 +298,30 @@ class IPCSetup {
     safeHandle(
       ipcMain,
       IPC_REQUEST_CHANNELS.TERMINAL_GET_SYSTEM_INFO,
-      async (event, processId) => {
-        try {
-          const systemInfo = require("../../modules/system-info");
-          if (!processId || !processManager.hasProcess(processId)) {
-            return await systemInfo.getLocalSystemInfo();
-          } else {
-            const processObj = processManager.getProcess(processId);
-            if (
-              (processObj.type === "ssh2" || processObj.type === "ssh") &&
-              (processObj.process || processObj.client || processObj.channel)
-            ) {
-              const sshClient =
-                processObj.client || processObj.process || processObj.channel;
-              if (
-                !sshClient ||
-                (sshClient._readableState && sshClient._readableState.ended) ||
-                (sshClient._sock &&
-                  (!sshClient._sock.readable || !sshClient._sock.writable))
-              ) {
-                logToFile(
-                  `SSH connection not available for process ${processId}, falling back to local system info`,
-                  "WARN",
-                );
-                return await systemInfo.getLocalSystemInfo();
-              }
-              return systemInfo.getRemoteSystemInfo(sshClient);
-            } else {
-              return await systemInfo.getLocalSystemInfo();
-            }
-          }
-        } catch (error) {
-          logToFile(`Failed to get system info: ${error.message}`, "ERROR");
-          try {
-            const systemInfo = require("../../modules/system-info");
-            return await systemInfo.getLocalSystemInfo();
-          } catch {
-            return {
-              error: "获取系统信息失败",
-              message: error.message,
-            };
-          }
-        }
-      },
+      this._createRemoteAwareInfoHandler({
+        getLocal: (systemInfo) => systemInfo.getLocalSystemInfo(),
+        getRemote: (systemInfo, sshClient) =>
+          systemInfo.getRemoteSystemInfo(sshClient),
+        awaitLocal: true,
+        fallbackTarget: "local system info",
+        failureSubject: "system info",
+        failureMessageZh: "获取系统信息失败",
+      }),
       { category: "terminal" },
     );
 
     safeHandle(
       ipcMain,
       IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_LIST,
-      async (event, processId) => {
-        try {
-          const systemInfo = require("../../modules/system-info");
-          if (!processId || !processManager.hasProcess(processId)) {
-            return systemInfo.getProcessList();
-          } else {
-            const processObj = processManager.getProcess(processId);
-            if (
-              (processObj.type === "ssh2" || processObj.type === "ssh") &&
-              (processObj.process || processObj.client || processObj.channel)
-            ) {
-              const sshClient =
-                processObj.client || processObj.process || processObj.channel;
-              if (
-                !sshClient ||
-                (sshClient._readableState && sshClient._readableState.ended) ||
-                (sshClient._sock &&
-                  (!sshClient._sock.readable || !sshClient._sock.writable))
-              ) {
-                logToFile(
-                  `SSH connection not available for process ${processId}, falling back to local process list`,
-                  "WARN",
-                );
-                return systemInfo.getProcessList();
-              }
-              return systemInfo.getRemoteProcessList(sshClient);
-            } else {
-              return systemInfo.getProcessList();
-            }
-          }
-        } catch (error) {
-          logToFile(`Failed to get process list: ${error.message}`, "ERROR");
-          try {
-            const systemInfo = require("../../modules/system-info");
-            return systemInfo.getProcessList();
-          } catch {
-            return {
-              error: "获取进程列表失败",
-              message: error.message,
-            };
-          }
-        }
-      },
+      this._createRemoteAwareInfoHandler({
+        getLocal: (systemInfo) => systemInfo.getProcessList(),
+        getRemote: (systemInfo, sshClient) =>
+          systemInfo.getRemoteProcessList(sshClient),
+        awaitLocal: false,
+        fallbackTarget: "local process list",
+        failureSubject: "process list",
+        failureMessageZh: "获取进程列表失败",
+      }),
       { category: "terminal" },
     );
   }
@@ -318,9 +358,7 @@ class IPCSetup {
         getLatencyHandlers: () => this.latencyHandlers,
         terminalIOMailboxManager: this.terminalIOMailboxManager,
       });
-      this.sshHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
+      this._registerHandlerInstance(this.sshHandlers);
       logToFile("SSH/Telnet handlers registered", "INFO");
     } catch (error) {
       logToFile(`SSH/Telnet处理器初始化失败: ${error.message}`, "ERROR");
@@ -338,11 +376,7 @@ class IPCSetup {
         getLatencyHandlers: () => this.latencyHandlers,
         terminalIOMailboxManager: this.terminalIOMailboxManager,
       });
-      this.terminalHandlers
-        .getHandlers()
-        .forEach(({ channel, category, handler }) => {
-          safeHandle(ipcMain, channel, handler, { category });
-        });
+      this._registerHandlerInstance(this.terminalHandlers);
       // 注册事件类型处理器（使用ipcMain.on）
       if (typeof this.terminalHandlers.getEventHandlers === "function") {
         this.terminalHandlers
@@ -358,150 +392,6 @@ class IPCSetup {
   }
 
   /**
-   * 初始化AI处理器
-   */
-  initializeAIHandlers() {
-    try {
-      const aiHandlers = new AIHandlers();
-      aiHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
-      logToFile("AI handlers registered", "INFO");
-    } catch (error) {
-      logToFile(`AI处理器初始化失败: ${error.message}`, "ERROR");
-    }
-  }
-
-  /**
-   * 初始化文件处理器
-   */
-  initializeFileHandlers() {
-    try {
-      const fileHandlers = new FileHandlers();
-      fileHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
-      logToFile("File handlers registered", "INFO");
-    } catch (error) {
-      logToFile(`文件处理器初始化失败: ${error.message}`, "ERROR");
-    }
-  }
-
-  /**
-   * 初始化SFTP处理器
-   */
-  initializeSftpHandlers() {
-    try {
-      const sftpHandlers = new SftpHandlers();
-      sftpHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
-      logToFile("SFTP handlers registered", "INFO");
-    } catch (error) {
-      logToFile(`SFTP处理器初始化失败: ${error.message}`, "ERROR");
-    }
-  }
-
-  /**
-   * 初始化实用工具处理器
-   */
-  initializeUtilityHandlers() {
-    try {
-      const utilityHandlers = new UtilityHandlers();
-      utilityHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
-      logToFile("Utility handlers registered", "INFO");
-    } catch (error) {
-      logToFile(`实用工具处理器初始化失败: ${error.message}`, "ERROR");
-    }
-  }
-
-  /**
-   * 初始化连接状态处理器
-   */
-  initializeConnectionHandlers() {
-    try {
-      const connectionHandlers = new ConnectionHandlers();
-      connectionHandlers
-        .getHandlers()
-        .forEach(({ channel, category, handler }) => {
-          safeHandle(ipcMain, channel, handler, { category });
-        });
-      logToFile("Connection handlers registered", "INFO");
-    } catch (error) {
-      logToFile(`连接状态处理器初始化失败: ${error.message}`, "ERROR");
-    }
-  }
-
-  /**
-   * 初始化SSH密钥处理器
-   */
-  initializeSshKeyHandlers() {
-    try {
-      const sshKeyHandlers = new SshKeyHandlers();
-      sshKeyHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
-      logToFile("SSH key handlers registered", "INFO");
-    } catch (error) {
-      logToFile(`SSH密钥处理器初始化失败: ${error.message}`, "ERROR");
-    }
-  }
-
-  /**
-   * 初始化记忆处理器
-   */
-  initializeMemoryHandlers() {
-    try {
-      const memoryHandlers = new MemoryHandlers();
-      memoryHandlers.getHandlers().forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
-      logToFile("Memory handlers registered", "INFO");
-    } catch (error) {
-      logToFile(`记忆处理器初始化失败: ${error.message}`, "ERROR");
-    }
-  }
-
-  /**
-   * 初始化外部编辑器处理器
-   */
-  initializeExternalEditorHandlers() {
-    try {
-      const externalEditorHandlers = new ExternalEditorHandlers();
-      externalEditorHandlers
-        .getHandlers()
-        .forEach(({ channel, category, handler }) => {
-          safeHandle(ipcMain, channel, handler, { category });
-        });
-      logToFile("External editor handlers registered", "INFO");
-    } catch (error) {
-      logToFile(`外部编辑器处理器初始化失败: ${error.message}`, "ERROR");
-    }
-  }
-
-  /**
-   * 初始化运行时文件生命周期处理器
-   */
-  initializeRuntimeFileHandlers() {
-    try {
-      const runtimeFileHandlers = new RuntimeFileHandlers();
-      runtimeFileHandlers
-        .getHandlers()
-        .forEach(({ channel, category, handler }) => {
-          safeHandle(ipcMain, channel, handler, { category });
-        });
-      logToFile("Runtime file lifecycle handlers registered", "INFO");
-    } catch (error) {
-      logToFile(
-        `运行时文件生命周期处理器初始化失败: ${error.message}`,
-        "ERROR",
-      );
-    }
-  }
-
-  /**
    * 在应用启动时执行的初始化（在窗口创建前）
    */
   initializeBeforeWindow() {
@@ -512,15 +402,9 @@ class IPCSetup {
     this.registerCriticalHandlers();
     this.initializeSSHHandlers();
     this.initializeTerminalHandlers();
-    this.initializeAIHandlers();
-    this.initializeFileHandlers();
-    this.initializeSftpHandlers();
-    this.initializeUtilityHandlers();
-    this.initializeConnectionHandlers();
-    this.initializeSshKeyHandlers();
-    this.initializeMemoryHandlers();
-    this.initializeExternalEditorHandlers();
-    this.initializeRuntimeFileHandlers();
+    BOILERPLATE_HANDLER_MODULES.forEach((module) => {
+      this.initializeHandlerModule(module);
+    });
   }
 
   /**

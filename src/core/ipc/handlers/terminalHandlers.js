@@ -1,5 +1,6 @@
-const { dialog, BrowserWindow } = require("electron");
+const { dialog } = require("electron");
 const { logToFile } = require("../../utils/logger");
+const { broadcastToAllWindows } = require("../../window/windowManager");
 const configService = require("../../../services/configService");
 const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
 const {
@@ -480,12 +481,7 @@ class TerminalHandlers {
 
     // 保存成功后,通知所有渲染进程连接配置已更新
     if (result) {
-      const windows = BrowserWindow.getAllWindows();
-      for (const win of windows) {
-        if (win && !win.isDestroyed() && win.webContents) {
-          win.webContents.send(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
-        }
-      }
+      broadcastToAllWindows(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
     }
 
     return result;

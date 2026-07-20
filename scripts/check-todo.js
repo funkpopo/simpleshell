@@ -1859,8 +1859,13 @@ async function testGNativeSidecarHostKeyVerification() {
   );
   assert.match(
     filemanagementSource,
-    /expectedHostFingerprint/,
+    /nativeSftpClient\.resolveSshConfig\(/,
     "Transfer process pool SSH configs must include the trusted host fingerprint",
+  );
+  assert.match(
+    nativeClientSource,
+    /includeTimeouts[\s\S]*expectedHostFingerprint/,
+    "Shared SSH config resolver must include the trusted host fingerprint for transfers",
   );
 
   const nativeSftpClientPath = path.join(
@@ -1950,8 +1955,13 @@ async function testHNativeSidecarProxyPathConsistency() {
   );
   assert.match(
     filemanagementSource,
-    /resolveNativeSidecarNetworkPath/,
+    /nativeSftpClient\.resolveSshConfig\(/,
     "Transfer process pool SSH configs must use the same proxy resolution path",
+  );
+  assert.match(
+    nativeClientSource,
+    /resolveNativeSidecarNetworkPath/,
+    "Shared SSH config resolver must resolve the sidecar network path",
   );
   assert.doesNotMatch(
     filemanagementSource,

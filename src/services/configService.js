@@ -7,6 +7,7 @@ const {
   getConfigBackupDirectory,
   getConfigPath,
 } = require("../core/utils/appPaths");
+const { buildFileTimestamp } = require("../core/utils/textUtils");
 
 const CURRENT_CONFIG_SCHEMA_VERSION = 1;
 const MAX_CONFIG_BACKUPS = 50;
@@ -309,7 +310,7 @@ class ConfigService {
   }
 
   _formatTimestampForFile(date = new Date()) {
-    return date.toISOString().replace(/[:.]/g, "-");
+    return buildFileTimestamp(date);
   }
 
   _safeJsonStringify(config) {
@@ -993,30 +994,104 @@ class ConfigService {
   }
 
   /**
-   * 加载连接配置
-   * @returns {Array} 连接配置数组
+   * 通用的配置段加载骨架
+   * @param {string} label - 日志文案中使用的小写段名（如 "UI settings"）
+   * @param {Object} options
+   * @param {Function} options.read - (config) => 结果；返回 undefined 表示走回退值
+   * @param {Function} options.fallback - () => 未初始化/读取失败/段缺失时的返回值
+   * @param {Function} [options.onStart] - 初始化检查通过后执行的钩子（如额外日志）
+   * @returns {*} 配置段数据
    */
-  loadConnections() {
+  _loadSection(label, { read, fallback, onStart }) {
     if (!this._initialized) {
       this._log(
-        "ConfigService: Service not initialized. Cannot load connections.",
+        `ConfigService: Service not initialized. Cannot load ${label}.`,
         "ERROR",
       );
-      return [];
+      return fallback();
+    }
+
+    if (onStart) {
+      onStart();
     }
 
     try {
       const config = this._readConfig();
-      if (config.connections && Array.isArray(config.connections)) {
-        return this._processConnectionsForLoad(config.connections);
+      const result = read(config);
+      if (result !== undefined) {
+        return result;
       }
     } catch (error) {
       this._log(
-        `ConfigService: Failed to load connections - ${error.message}`,
+        `ConfigService: Failed to load ${label} - ${error.message}`,
         "ERROR",
       );
     }
-    return [];
+    return fallback();
+  }
+
+  /**
+   * 通用的配置段保存骨架
+   * @param {string} label - 日志文案中使用的小写段名（如 "UI settings"）
+   * @param {Object} options
+   * @param {Function} options.write - (config) => 将新值写入 config；返回 false 表示中止
+   * @param {Function} [options.preValidate] - 读取配置前执行的校验；返回 false 表示中止
+   * @param {Function} [options.onStart] - 初始化检查通过后执行的钩子（如额外日志）
+   * @returns {boolean} 是否成功
+   */
+  _saveSection(label, { write, preValidate, onStart }) {
+    if (!this._initialized) {
+      this._log(
+        `ConfigService: Service not initialized. Cannot save ${label}.`,
+        "ERROR",
+      );
+      return false;
+    }
+
+    if (onStart) {
+      onStart();
+    }
+
+    try {
+      if (preValidate && !preValidate()) {
+        return false;
+      }
+
+      const config = this._readConfig();
+      if (write(config) === false) {
+        return false;
+      }
+
+      if (this._writeConfig(config)) {
+        this._log(
+          `ConfigService: ${label.charAt(0).toUpperCase()}${label.slice(1)} saved successfully.`,
+          "INFO",
+        );
+        return true;
+      }
+    } catch (error) {
+      this._log(
+        `ConfigService: Failed to save ${label} - ${error.message}`,
+        "ERROR",
+      );
+    }
+    return false;
+  }
+
+  /**
+   * 加载连接配置
+   * @returns {Array} 连接配置数组
+   */
+  loadConnections() {
+    return this._loadSection("connections", {
+      fallback: () => [],
+      read: (config) => {
+        if (config.connections && Array.isArray(config.connections)) {
+          return this._processConnectionsForLoad(config.connections);
+        }
+        return undefined;
+      },
+    });
   }
 
   _findConnectionById(items, connectionId) {
@@ -1130,35 +1205,17 @@ class ConfigService {
    * @returns {boolean} 是否成功
    */
   saveConnections(connections) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save connections.",
-        "ERROR",
-      );
-      return false;
-    }
-
-    try {
-      const config = this._readConfig();
-      const mergedConnections = this._mergePreservedConnectionCredentials(
-        connections,
-        config.connections || [],
-      );
-      const processedConnections =
-        this._processConnectionsForSave(mergedConnections);
-      config.connections = processedConnections;
-
-      if (this._writeConfig(config)) {
-        this._log("ConfigService: Connections saved successfully.", "INFO");
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save connections - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return false;
+    return this._saveSection("connections", {
+      write: (config) => {
+        const mergedConnections = this._mergePreservedConnectionCredentials(
+          connections,
+          config.connections || [],
+        );
+        const processedConnections =
+          this._processConnectionsForSave(mergedConnections);
+        config.connections = processedConnections;
+      },
+    });
   }
 
   /**
@@ -1312,47 +1369,35 @@ class ConfigService {
    * @returns {Object} AI 设置对象
    */
   loadAISettings() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load AI settings.",
-        "ERROR",
-      );
-      return {
-        configs: [],
-        current: { apiUrl: "", apiKey: "", model: "", streamEnabled: true },
-      };
-    }
-
-    this._log(
-      `ConfigService: Loading AI settings from ${this.mainConfigPath}`,
-      "INFO",
-    );
-
-    try {
-      const config = this._readConfig();
-      if (config.aiSettings) {
-        const settings = this._processAISettingsForLoad(config.aiSettings);
-
-        // 验证加载的数据
-        this._validate("aiSettings", settings);
-
-        this._log(
-          `ConfigService: Loaded ${settings.configs?.length || 0} AI configurations.`,
-          "INFO",
-        );
-        return settings;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load AI settings - ${error.message}`,
-        "ERROR",
-      );
-    }
-
-    return {
+    const fallback = () => ({
       configs: [],
       current: { apiUrl: "", apiKey: "", model: "", streamEnabled: true },
-    };
+    });
+
+    return this._loadSection("AI settings", {
+      fallback,
+      onStart: () => {
+        this._log(
+          `ConfigService: Loading AI settings from ${this.mainConfigPath}`,
+          "INFO",
+        );
+      },
+      read: (config) => {
+        if (config.aiSettings) {
+          const settings = this._processAISettingsForLoad(config.aiSettings);
+
+          // 验证加载的数据
+          this._validate("aiSettings", settings);
+
+          this._log(
+            `ConfigService: Loaded ${settings.configs?.length || 0} AI configurations.`,
+            "INFO",
+          );
+          return settings;
+        }
+        return undefined;
+      },
+    });
   }
 
   /**
@@ -1361,36 +1406,17 @@ class ConfigService {
    * @returns {boolean} 是否成功
    */
   saveAISettings(settings) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save AI settings.",
-        "ERROR",
-      );
-      return false;
-    }
-
-    this._log(
-      `ConfigService: Saving AI settings to ${this.mainConfigPath}`,
-      "INFO",
-    );
-
-    try {
-      const config = this._readConfig();
-      const settingsToSave = this._processAISettingsForSave(settings);
-
-      config.aiSettings = settingsToSave;
-
-      if (this._writeConfig(config)) {
-        this._log("ConfigService: AI settings saved successfully.", "INFO");
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save AI settings - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return false;
+    return this._saveSection("AI settings", {
+      onStart: () => {
+        this._log(
+          `ConfigService: Saving AI settings to ${this.mainConfigPath}`,
+          "INFO",
+        );
+      },
+      write: (config) => {
+        config.aiSettings = this._processAISettingsForSave(settings);
+      },
+    });
   }
 
   /**
@@ -1398,31 +1424,20 @@ class ConfigService {
    * @returns {Object} UI 设置对象
    */
   loadUISettings() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load UI settings.",
-        "ERROR",
-      );
-      return this._getDefaultUISettings();
-    }
-
-    try {
-      const config = this._readConfig();
-      if (config.uiSettings) {
-        const settings = {
-          ...this._getDefaultUISettings(),
-          ...config.uiSettings,
-        };
-        this._validate("uiSettings", settings);
-        return settings;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load UI settings - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return this._getDefaultUISettings();
+    return this._loadSection("UI settings", {
+      fallback: () => this._getDefaultUISettings(),
+      read: (config) => {
+        if (config.uiSettings) {
+          const settings = {
+            ...this._getDefaultUISettings(),
+            ...config.uiSettings,
+          };
+          this._validate("uiSettings", settings);
+          return settings;
+        }
+        return undefined;
+      },
+    });
   }
 
   /**
@@ -1461,40 +1476,22 @@ class ConfigService {
    * @returns {boolean} 是否成功
    */
   saveUISettings(settings) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save UI settings.",
-        "ERROR",
-      );
-      return false;
-    }
+    return this._saveSection("UI settings", {
+      write: (config) => {
+        const mergedSettings = {
+          ...this._getDefaultUISettings(),
+          ...(config.uiSettings || {}),
+          ...settings,
+        };
 
-    try {
-      const config = this._readConfig();
-      const mergedSettings = {
-        ...this._getDefaultUISettings(),
-        ...(config.uiSettings || {}),
-        ...settings,
-      };
+        // 验证数据
+        if (!this._validate("uiSettings", mergedSettings)) {
+          return false;
+        }
 
-      // 验证数据
-      if (!this._validate("uiSettings", mergedSettings)) {
-        return false;
-      }
-
-      config.uiSettings = mergedSettings;
-
-      if (this._writeConfig(config)) {
-        this._log("ConfigService: UI settings saved successfully.", "INFO");
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save UI settings - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return false;
+        config.uiSettings = mergedSettings;
+      },
+    });
   }
 
   /**
@@ -1502,31 +1499,20 @@ class ConfigService {
    * @returns {Object} 日志设置对象
    */
   loadLogSettings() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load log settings.",
-        "ERROR",
-      );
-      return this._getDefaultLogSettings();
-    }
-
-    try {
-      const config = this._readConfig();
-      if (config.logSettings) {
-        const settings = {
-          ...this._getDefaultLogSettings(),
-          ...config.logSettings,
-        };
-        this._validate("logSettings", settings);
-        return settings;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load log settings - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return this._getDefaultLogSettings();
+    return this._loadSection("log settings", {
+      fallback: () => this._getDefaultLogSettings(),
+      read: (config) => {
+        if (config.logSettings) {
+          const settings = {
+            ...this._getDefaultLogSettings(),
+            ...config.logSettings,
+          };
+          this._validate("logSettings", settings);
+          return settings;
+        }
+        return undefined;
+      },
+    });
   }
 
   /**
@@ -1549,34 +1535,13 @@ class ConfigService {
    * @returns {boolean} 是否成功
    */
   saveLogSettings(settings) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save log settings.",
-        "ERROR",
-      );
-      return false;
-    }
-
-    try {
-      // 验证数据
-      if (!this._validate("logSettings", settings)) {
-        return false;
-      }
-
-      const config = this._readConfig();
-      config.logSettings = settings;
-
-      if (this._writeConfig(config)) {
-        this._log("ConfigService: Log settings saved successfully.", "INFO");
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save log settings - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return false;
+    return this._saveSection("log settings", {
+      // 验证数据（原实现在读取配置前校验）
+      preValidate: () => this._validate("logSettings", settings),
+      write: (config) => {
+        config.logSettings = settings;
+      },
+    });
   }
 
   /**
@@ -1584,29 +1549,18 @@ class ConfigService {
    * @returns {Object} 快捷命令对象
    */
   loadShortcutCommands() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load shortcut commands.",
-        "ERROR",
-      );
-      return {};
-    }
-
-    try {
-      const config = this._readConfig();
-      if (config.shortcutCommands) {
-        if (typeof config.shortcutCommands === "string") {
-          return JSON.parse(config.shortcutCommands);
+    return this._loadSection("shortcut commands", {
+      fallback: () => ({}),
+      read: (config) => {
+        if (config.shortcutCommands) {
+          if (typeof config.shortcutCommands === "string") {
+            return JSON.parse(config.shortcutCommands);
+          }
+          return config.shortcutCommands;
         }
-        return config.shortcutCommands;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load shortcut commands - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return {};
+        return undefined;
+      },
+    });
   }
 
   /**
@@ -1615,32 +1569,11 @@ class ConfigService {
    * @returns {boolean} 是否成功
    */
   saveShortcutCommands(commands) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save shortcut commands.",
-        "ERROR",
-      );
-      return false;
-    }
-
-    try {
-      const config = this._readConfig();
-      config.shortcutCommands = JSON.stringify(commands);
-
-      if (this._writeConfig(config)) {
-        this._log(
-          "ConfigService: Shortcut commands saved successfully.",
-          "INFO",
-        );
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save shortcut commands - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return false;
+    return this._saveSection("shortcut commands", {
+      write: (config) => {
+        config.shortcutCommands = JSON.stringify(commands);
+      },
+    });
   }
 
   /**
@@ -1813,35 +1746,24 @@ class ConfigService {
    * @returns {Array} 命令历史数组
    */
   loadCommandHistory() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load command history.",
-        "ERROR",
-      );
-      return [];
-    }
-
-    try {
-      const config = this._readConfig();
-      if (config.commandHistory) {
-        // 支持旧格式（未压缩的数组）
-        if (Array.isArray(config.commandHistory)) {
-          this._log(
-            "ConfigService: Migrating old command history format to compressed format.",
-            "INFO",
-          );
-          return config.commandHistory;
+    return this._loadSection("command history", {
+      fallback: () => [],
+      read: (config) => {
+        if (config.commandHistory) {
+          // 支持旧格式（未压缩的数组）
+          if (Array.isArray(config.commandHistory)) {
+            this._log(
+              "ConfigService: Migrating old command history format to compressed format.",
+              "INFO",
+            );
+            return config.commandHistory;
+          }
+          // 新格式（压缩对象）
+          return this._decompressCommandHistory(config.commandHistory);
         }
-        // 新格式（压缩对象）
-        return this._decompressCommandHistory(config.commandHistory);
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load command history - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return [];
+        return undefined;
+      },
+    });
   }
 
   /**
@@ -1850,29 +1772,11 @@ class ConfigService {
    * @returns {boolean} 是否成功
    */
   saveCommandHistory(history) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save command history.",
-        "ERROR",
-      );
-      return false;
-    }
-
-    try {
-      const config = this._readConfig();
-      config.commandHistory = this._compressCommandHistory(history);
-
-      if (this._writeConfig(config)) {
-        this._log("ConfigService: Command history saved successfully.", "INFO");
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save command history - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return false;
+    return this._saveSection("command history", {
+      write: (config) => {
+        config.commandHistory = this._compressCommandHistory(history);
+      },
+    });
   }
 
   /**
@@ -1880,26 +1784,15 @@ class ConfigService {
    * @returns {Array} 热门连接数组
    */
   loadTopConnections() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load top connections.",
-        "ERROR",
-      );
-      return [];
-    }
-
-    try {
-      const config = this._readConfig();
-      if (config.topConnections && Array.isArray(config.topConnections)) {
-        return this._processConnectionsForLoad(config.topConnections);
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load top connections - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return [];
+    return this._loadSection("top connections", {
+      fallback: () => [],
+      read: (config) => {
+        if (config.topConnections && Array.isArray(config.topConnections)) {
+          return this._processConnectionsForLoad(config.topConnections);
+        }
+        return undefined;
+      },
+    });
   }
 
   /**
@@ -1908,29 +1801,11 @@ class ConfigService {
    * @returns {boolean} 是否成功
    */
   saveTopConnections(connections) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save top connections.",
-        "ERROR",
-      );
-      return false;
-    }
-
-    try {
-      const config = this._readConfig();
-      config.topConnections = this._processConnectionsForSave(connections);
-
-      if (this._writeConfig(config)) {
-        this._log("ConfigService: Top connections saved successfully.", "INFO");
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save top connections - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return false;
+    return this._saveSection("top connections", {
+      write: (config) => {
+        config.topConnections = this._processConnectionsForSave(connections);
+      },
+    });
   }
 
   /**
@@ -1938,26 +1813,15 @@ class ConfigService {
    * @returns {Array} 最近连接数组
    */
   loadLastConnections() {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot load last connections.",
-        "ERROR",
-      );
-      return [];
-    }
-
-    try {
-      const config = this._readConfig();
-      if (config.lastConnections && Array.isArray(config.lastConnections)) {
-        return this._processConnectionsForLoad(config.lastConnections);
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to load last connections - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return [];
+    return this._loadSection("last connections", {
+      fallback: () => [],
+      read: (config) => {
+        if (config.lastConnections && Array.isArray(config.lastConnections)) {
+          return this._processConnectionsForLoad(config.lastConnections);
+        }
+        return undefined;
+      },
+    });
   }
 
   /**
@@ -1966,32 +1830,11 @@ class ConfigService {
    * @returns {boolean} 是否成功
    */
   saveLastConnections(connections) {
-    if (!this._initialized) {
-      this._log(
-        "ConfigService: Service not initialized. Cannot save last connections.",
-        "ERROR",
-      );
-      return false;
-    }
-
-    try {
-      const config = this._readConfig();
-      config.lastConnections = this._processConnectionsForSave(connections);
-
-      if (this._writeConfig(config)) {
-        this._log(
-          "ConfigService: Last connections saved successfully.",
-          "INFO",
-        );
-        return true;
-      }
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to save last connections - ${error.message}`,
-        "ERROR",
-      );
-    }
-    return false;
+    return this._saveSection("last connections", {
+      write: (config) => {
+        config.lastConnections = this._processConnectionsForSave(connections);
+      },
+    });
   }
 
   /**

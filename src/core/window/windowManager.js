@@ -16,10 +16,17 @@ const WINDOW_BOUNDS_SAVE_DELAY_MS = 500;
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
 /**
+ * 惰性获取BrowserWindow，保证在electron被按需mock/替换时也能取到当前实现
+ */
+function getBrowserWindow() {
+  return require("electron").BrowserWindow;
+}
+
+/**
  * 获取主窗口实例
  */
 function getPrimaryWindow() {
-  const windows = BrowserWindow.getAllWindows();
+  const windows = getBrowserWindow().getAllWindows();
   if (!windows || windows.length === 0) {
     return null;
   }
@@ -42,6 +49,18 @@ function safeSendToRenderer(channel, ...args) {
   ) {
     targetWindow.webContents.send(channel, ...args);
   }
+}
+
+/**
+ * 向所有未销毁的窗口广播消息
+ */
+function broadcastToAllWindows(channel, ...args) {
+  const windows = getBrowserWindow().getAllWindows();
+  windows.forEach((win) => {
+    if (win && !win.isDestroyed() && win.webContents) {
+      win.webContents.send(channel, ...args);
+    }
+  });
 }
 
 /**
@@ -377,6 +396,7 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
 module.exports = {
   getPrimaryWindow,
   safeSendToRenderer,
+  broadcastToAllWindows,
   getStartupBackgroundColor,
   createWindow,
 };

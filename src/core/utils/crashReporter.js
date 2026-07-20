@@ -7,6 +7,7 @@ const configService = require("../../services/configService");
 const { getConfigPath, getCrashReportDirectory } = require("./appPaths");
 const { redactSensitiveText } = require("./log-sanitizer");
 const { buildErrorResponse } = require("./errorResponse");
+const { buildFileTimestamp } = require("./textUtils");
 
 const ERROR_REPORTING_CONFIG_KEY = "errorReporting";
 const MAX_RECENT_CRASH_RECORDS = 12;
@@ -128,7 +129,7 @@ function initializeCrashReporter(app) {
 }
 
 function formatTimestampForFile(date = new Date()) {
-  return date.toISOString().replace(/[:.]/g, "-");
+  return buildFileTimestamp(date);
 }
 
 function normalizeSerializableError(error) {

@@ -105,97 +105,73 @@ class ProxyManager {
   }
 
   /**
-   * Windows系统代理检测
+   * 从环境变量检测系统代理（Windows/macOS/Linux 共用实现）
+   * @param {string} platformLabel - 日志中使用的平台名称
+   * @param {object} options
+   * @param {boolean} options.includeSocks - 是否额外检查 SOCKS_PROXY 环境变量（Linux）
    */
-  detectWindowsProxy() {
+  detectEnvProxy(platformLabel, { includeSocks = false } = {}) {
     try {
       // 检查环境变量
       const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
       const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+      const socksProxy = includeSocks
+        ? process.env.SOCKS_PROXY || process.env.socks_proxy
+        : undefined;
 
-      if (httpProxy || httpsProxy) {
-        const proxyUrl = new URL(httpProxy || httpsProxy);
-        this.systemProxyConfig = {
-          type: proxyUrl.protocol.replace(":", ""),
-          host: proxyUrl.hostname,
-          port:
-            parseInt(proxyUrl.port) ||
-            (proxyUrl.protocol === "http:" ? 80 : 443),
-          username: proxyUrl.username || undefined,
-          password: proxyUrl.password || undefined,
-          source: "environment",
-        };
-        logToFile(
-          "Windows system proxy detected from environment variables",
-          "INFO",
-        );
+      const candidate = httpProxy || httpsProxy || socksProxy;
+      if (!includeSocks && !candidate) {
+        return;
       }
+
+      // 注意：includeSocks（Linux）路径下 candidate 为空时 new URL 抛错，
+      // 由 catch 记录 ERROR 日志，与原实现行为一致
+      const proxyUrl = new URL(candidate);
+      this.systemProxyConfig = {
+        type: proxyUrl.protocol.replace(":", ""),
+        host: proxyUrl.hostname,
+        port:
+          parseInt(proxyUrl.port) ||
+          (includeSocks
+            ? this.getDefaultPortForProtocol(proxyUrl.protocol)
+            : proxyUrl.protocol === "http:"
+              ? 80
+              : 443),
+        username: proxyUrl.username || undefined,
+        password: proxyUrl.password || undefined,
+        source: "environment",
+      };
+      logToFile(
+        `${platformLabel} system proxy detected from environment variables`,
+        "INFO",
+      );
     } catch (error) {
-      logToFile(`Windows proxy detection error: ${error.message}`, "ERROR");
+      logToFile(
+        `${platformLabel} proxy detection error: ${error.message}`,
+        "ERROR",
+      );
     }
+  }
+
+  /**
+   * Windows系统代理检测
+   */
+  detectWindowsProxy() {
+    this.detectEnvProxy("Windows");
   }
 
   /**
    * macOS系统代理检测
    */
   detectMacOSProxy() {
-    try {
-      // 检查环境变量
-      const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
-      const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
-
-      if (httpProxy || httpsProxy) {
-        const proxyUrl = new URL(httpProxy || httpsProxy);
-        this.systemProxyConfig = {
-          type: proxyUrl.protocol.replace(":", ""),
-          host: proxyUrl.hostname,
-          port:
-            parseInt(proxyUrl.port) ||
-            (proxyUrl.protocol === "http:" ? 80 : 443),
-          username: proxyUrl.username || undefined,
-          password: proxyUrl.password || undefined,
-          source: "environment",
-        };
-        logToFile(
-          "macOS system proxy detected from environment variables",
-          "INFO",
-        );
-      }
-    } catch (error) {
-      logToFile(`macOS proxy detection error: ${error.message}`, "ERROR");
-    }
+    this.detectEnvProxy("macOS");
   }
 
   /**
    * Linux系统代理检测
    */
   detectLinuxProxy() {
-    try {
-      // 检查环境变量
-      const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
-      const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
-      const socksProxy = process.env.SOCKS_PROXY || process.env.socks_proxy;
-
-      const proxyUrl = new URL(httpProxy || httpsProxy || socksProxy);
-      if (proxyUrl) {
-        this.systemProxyConfig = {
-          type: proxyUrl.protocol.replace(":", ""),
-          host: proxyUrl.hostname,
-          port:
-            parseInt(proxyUrl.port) ||
-            this.getDefaultPortForProtocol(proxyUrl.protocol),
-          username: proxyUrl.username || undefined,
-          password: proxyUrl.password || undefined,
-          source: "environment",
-        };
-        logToFile(
-          "Linux system proxy detected from environment variables",
-          "INFO",
-        );
-      }
-    } catch (error) {
-      logToFile(`Linux proxy detection error: ${error.message}`, "ERROR");
-    }
+    this.detectEnvProxy("Linux", { includeSocks: true });
   }
 
   /**
