@@ -1017,7 +1017,6 @@ async function downloadFile(tabId, remotePath, localPath, options = {}) {
 }
 
 module.exports = {
-  invokeNativeRequest,
   invokeNativeRequestWithConfig,
   listFiles,
   watchDirectory,

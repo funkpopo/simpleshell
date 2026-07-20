@@ -45,7 +45,6 @@ const shouldArmSystemShortcutRecovery = (
 };
 
 module.exports = {
-  SYSTEM_SHORTCUT_RECOVERY_KEYS,
   isSystemShortcutRecoveryKey,
   shouldArmSystemShortcutRecovery,
 };

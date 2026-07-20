@@ -9,9 +9,6 @@ const SOURCE_EXTENSIONS = new Set([".js", ".jsx"]);
 const ALLOWED_NATIVE_DIALOG_FILES = new Set([
   path.normalize(path.join("src", "components", "AccessibleDialog.jsx")),
 ]);
-const ALLOWED_NATIVE_ICON_BUTTON_FILES = new Set([
-  path.normalize(path.join("src", "components", "AccessibleIconButton.jsx")),
-]);
 
 const readSourceFiles = (dir, output = []) => {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -183,10 +180,6 @@ const main = () => {
   for (const filePath of readSourceFiles(SRC_DIR)) {
     const relativePath = path.normalize(path.relative(ROOT, filePath));
     const ast = parseSource(filePath);
-    const accessibleIconButtonLocals = collectImportedLocalsByBasename(
-      ast,
-      "AccessibleIconButton.jsx",
-    );
     const accessibleDialogLocals = collectImportedLocalsByBasename(
       ast,
       "AccessibleDialog.jsx",
@@ -224,28 +217,16 @@ const main = () => {
         const name = getJsxName(pathRef.node.name);
         const line = pathRef.node.loc?.start.line || 1;
 
-        if (accessibleIconButtonLocals.has(name)) {
-          if (!isTranslatedAttribute(getAttribute(pathRef.node, "label"))) {
-            issues.push(
-              `${relativePath}:${line} AccessibleIconButton label must be t("...")`,
-            );
-          }
-          return;
-        }
-
-        if (
-          (name === "IconButton" || name === "Fab") &&
-          !ALLOWED_NATIVE_ICON_BUTTON_FILES.has(relativePath)
-        ) {
+        if (name === "IconButton" || name === "Fab") {
           if (!isTranslatedAttribute(getAttribute(pathRef.node, "aria-label"))) {
             issues.push(
-              `${relativePath}:${line} ${name} requires a translated aria-label or AccessibleIconButton`,
+              `${relativePath}:${line} ${name} requires a translated aria-label`,
             );
           }
 
           if (!hasTranslatedTooltipAncestor(pathRef)) {
             issues.push(
-              `${relativePath}:${line} ${name} requires a translated tooltip or AccessibleIconButton`,
+              `${relativePath}:${line} ${name} requires a translated tooltip`,
             );
           }
         }

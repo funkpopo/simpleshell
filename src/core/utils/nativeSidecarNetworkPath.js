@@ -145,12 +145,9 @@ async function resolveNativeSidecarNetworkPath(rawConfig, options = {}) {
 }
 
 module.exports = {
-  SUPPORTED_PROXY_TYPES,
   normalizeProxyConfig,
-  sanitizeProxyConfig,
   buildNetworkPath,
   recordNativeSidecarNetworkPath,
   getLatestNativeSidecarNetworkPath,
-  hasProxyIntent,
   resolveNativeSidecarNetworkPath,
 };

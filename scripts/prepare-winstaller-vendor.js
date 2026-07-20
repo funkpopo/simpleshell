@@ -10,7 +10,7 @@ function log(message) {
 function getElectronWinstallerRoot() {
   try {
     return path.dirname(require.resolve("electron-winstaller/package.json"));
-  } catch (error) {
+  } catch (_error) {
     throw new Error(
       "electron-winstaller is required to make Windows Squirrel installers",
     );

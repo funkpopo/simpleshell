@@ -261,14 +261,6 @@ export function setCustomRiskRules(rules) {
 }
 
 /**
- * 获取当前自定义规则
- * @returns {Object} 当前的自定义规则
- */
-export function getCustomRiskRules() {
-  return customRules;
-}
-
-/**
  * 获取内置风险规则模式（用于UI展示）
  * @returns {Object} 内置规则模式字符串
  */
@@ -286,7 +278,7 @@ export function getBuiltinRiskPatterns() {
  * @param {string} command - 要评估的命令
  * @returns {Object} 风险等级对象
  */
-export function assessCommandRisk(command) {
+function assessCommandRisk(command) {
   if (!command || typeof command !== "string") {
     return RISK_LEVELS.SAFE;
   }
@@ -343,52 +335,6 @@ Key points: ${memory.keyPoints?.join(", ") || "None"}
 ${memory.pendingTasks?.length ? `Pending tasks: ${memory.pendingTasks.join(", ")}` : ""}
 
 `;
-}
-
-export function generateMemorySummaryPrompt(messages, language = "zh-CN") {
-  const isZhCN = language === "zh-CN" || language.startsWith("zh");
-  const conversationText = messages
-    .map((message) => {
-      const role = message.role === "user" ? (isZhCN ? "用户" : "User") : "AI";
-      return `${role}: ${message.content}`;
-    })
-    .join("\n\n");
-
-  if (isZhCN) {
-    return `请对以下对话历史进行摘要，提取关键信息：
-1. 用户的主要意图和需求
-2. 已完成的操作和结果
-3. 重要的上下文信息（如文件路径、配置等）
-4. 未完成的任务或待处理事项
-
-请以JSON格式返回（不要包含markdown代码块标记），并保持以下字段名不变：
-{
-  "summary": "对话摘要",
-  "keyPoints": ["关键点1", "关键点2"],
-  "pendingTasks": ["待处理任务"],
-  "context": { "重要上下文键值对": "值" }
-}
-
-对话历史：
-${conversationText}`;
-  }
-
-  return `Summarize the following conversation history and extract the key information:
-1. The user's main intent and requirements
-2. Completed actions and results
-3. Important context such as file paths, configuration, and decisions
-4. Unfinished or pending tasks
-
-Return JSON only without markdown code fences, and keep these field names unchanged:
-{
-  "summary": "conversation summary",
-  "keyPoints": ["key point 1", "key point 2"],
-  "pendingTasks": ["pending task"],
-  "context": { "important context key": "value" }
-}
-
-Conversation history:
-${conversationText}`;
 }
 
 function generateZhCNPrompt(connectionInfo) {
@@ -540,11 +486,9 @@ export default {
   assessCommandRisk,
   generateSystemPrompt,
   generateMemoryContext,
-  generateMemorySummaryPrompt,
   parseCommandsFromResponse,
   requiresConfirmation,
   setCustomRiskRules,
-  getCustomRiskRules,
   getBuiltinRiskPatterns,
   normalizeCustomRiskRules,
   validateCustomRiskPattern,

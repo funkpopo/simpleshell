@@ -2,7 +2,7 @@ export const terminalCache = {};
 export const fitAddonCache = {};
 export const processCache = {};
 export const disposablesCache = {};
-export const terminalIOMailboxCache = {};
+const terminalIOMailboxCache = {};
 
 export const clearGeometryFor = (processId, tabId) => {
   void processId;

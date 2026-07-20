@@ -12,7 +12,7 @@ export const debounce = (func, wait, immediate = false) => {
   };
 };
 
-export const throttle = (func, limit) => {
+const throttle = (func, limit) => {
   let inThrottle;
   return function executedFunction(...args) {
     if (!inThrottle) {
@@ -53,45 +53,6 @@ export const createResizeObserver = (element, callback, options = {}) => {
   };
 };
 
-export const batchProcess = (func, delay = 16) => {
-  let pending = false;
-  let args = [];
-
-  return function (...newArgs) {
-    args.push(...newArgs);
-
-    if (!pending) {
-      pending = true;
-      setTimeout(() => {
-        func.apply(this, args);
-        args = [];
-        pending = false;
-      }, delay);
-    }
-  };
-};
-
-export const smartDelay = (func, baseDelay = 100) => {
-  return new Promise((resolve) => {
-    // 使用requestIdleCallback优化性能
-    if (window.requestIdleCallback) {
-      window.requestIdleCallback(
-        () => {
-          const result = func();
-          resolve(result);
-        },
-        { timeout: baseDelay },
-      );
-    } else {
-      // 降级到setTimeout
-      setTimeout(() => {
-        const result = func();
-        resolve(result);
-      }, baseDelay);
-    }
-  });
-};
-
 export const isElementVisible = (element) => {
   if (!element) return false;
 
@@ -113,16 +74,4 @@ export const isElementVisible = (element) => {
   // 检查元素是否在视口内
   const rect = element.getBoundingClientRect();
   return rect.width > 0 && rect.height > 0;
-};
-
-export const performanceMonitor = {
-  measure: (func, label = "function") => {
-    void label;
-    return func();
-  },
-
-  measureAsync: async (asyncFunc, label = "async function") => {
-    void label;
-    return asyncFunc();
-  },
 };

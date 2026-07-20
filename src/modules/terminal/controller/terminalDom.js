@@ -1,10 +1,5 @@
 const ESC_CHAR = String.fromCharCode(27);
 
-export const ANSI_CSI_SEQUENCE_REGEX = new RegExp(
-  ESC_CHAR + "[[][0-9;]*[a-zA-Z]",
-  "g",
-);
-
 export const TERMINAL_RESIZE_QUERY_REGEX = new RegExp(
   ESC_CHAR + "[[]8;[0-9]+;[0-9]+t",
 );

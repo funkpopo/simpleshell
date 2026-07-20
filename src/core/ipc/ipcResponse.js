@@ -18,14 +18,6 @@ function serializeError(error) {
   return normalizeErrorMessage(error);
 }
 
-function success(data) {
-  return { success: true, data };
-}
-
-function failure(error) {
-  return buildErrorResponse(error);
-}
-
 function normalizeFailureResponse(result, options = {}) {
   if (!isStandardResponse(result) || result.success !== false) {
     return result;
@@ -214,8 +206,6 @@ function safeOn(ipcMain, channel, handler, _options = {}) {
 }
 
 module.exports = {
-  success,
-  failure,
   wrapIpcHandler,
   safeOn,
   safeHandle,

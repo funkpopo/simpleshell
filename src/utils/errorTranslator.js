@@ -17,7 +17,7 @@ const {
 /**
  * 错误类型定义
  */
-export const ErrorType = SharedErrorTypes;
+const ErrorType = SharedErrorTypes;
 
 const getClassificationLabel = (category) => {
   switch (category) {
@@ -279,24 +279,4 @@ export function translateError(error) {
   }
 
   return getClassifiedErrorTranslation(error, classification);
-}
-
-/**
- * 获取简短的错误提示
- * @param {Error|string} error - 错误对象或错误消息
- * @returns {string} - 简短的错误提示
- */
-export function getErrorSummary(error) {
-  const translated = translateError(error);
-  return translated.title;
-}
-
-/**
- * 获取错误的详细建议
- * @param {Error|string} error - 错误对象或错误消息
- * @returns {Array<string>} - 解决方案数组
- */
-export function getErrorSolutions(error) {
-  const translated = translateError(error);
-  return translated.solutions;
 }

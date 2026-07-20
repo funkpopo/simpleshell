@@ -593,4 +593,3 @@ class RuntimeFileLifecycleManager {
 }
 
 module.exports = new RuntimeFileLifecycleManager();
-module.exports.DEFAULT_RESOURCE_POLICIES = DEFAULT_RESOURCE_POLICIES;

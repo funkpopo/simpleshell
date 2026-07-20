@@ -263,9 +263,6 @@ function createChannelPoolManager(maxChannels = 30) {
 }
 
 module.exports = {
-  readPrivateKeyFile,
-  readPrivateKeyFileAsync,
-  validatePrivateKeyFormat,
   processSSHPrivateKey,
   processSSHPrivateKeyAsync,
   createChannelPoolManager,

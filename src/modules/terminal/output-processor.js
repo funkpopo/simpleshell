@@ -665,6 +665,3 @@ class OutputProcessor {
 const outputProcessor = new OutputProcessor();
 
 module.exports = outputProcessor;
-module.exports.__TEST_ONLY__ = {
-  escapeRegex,
-};

@@ -131,19 +131,7 @@ function isPrivateOrSpecial(ip) {
   return false;
 }
 
-function parseIpType(ip) {
-  const v = isIP(ip);
-  if (v === 4) return "ipv4";
-  if (v === 6) return "ipv6";
-  return null;
-}
-
 module.exports = {
-  isValidIPv4,
-  isValidIPv6,
   isIP,
-  parseIpType,
   isPrivateOrSpecial,
-  isPrivateOrSpecialIPv4,
-  isPrivateOrSpecialIPv6,
 };

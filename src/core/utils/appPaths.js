@@ -52,7 +52,5 @@ module.exports = {
   getCrashReportDirectory,
   getDiagnosticDirectory,
   getLogDirectory,
-  getRuntimeBaseDirectory,
   getTempDirectory,
-  isDevelopment,
 };

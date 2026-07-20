@@ -26,22 +26,6 @@ const SESSION_CONFIG = {
 };
 
 // ========================================================================================
-// OPERATION TIMEOUT CONFIGURATION
-// ========================================================================================
-
-const TIMEOUT_CONFIG = {
-  // Base operation timeouts
-  BASE_OPERATION_TIMEOUT: 86400000, // 基础操作超时 (24 小时)
-  LARGE_FILE_TIMEOUT: 86400000, // 大文件传输超时 (24 小时)
-  LARGE_FILE_THRESHOLD: 100 * 1024 * 1024, // 大文件阈值 (100 MB)
-
-  // No-progress watchdog timeouts (用于检测传输卡死)
-  SMALL_FILE_NO_PROGRESS_TIMEOUT: 60000, // 小文件无进度超时 (60 秒)
-  LARGE_FILE_NO_PROGRESS_TIMEOUT: 300000, // 大文件无进度超时 (5 分钟，适应慢速网络)
-  NO_PROGRESS_THRESHOLD: 100 * 1024 * 1024, // 判断大文件的阈值 (100 MB)
-};
-
-// ========================================================================================
 // TRANSFER PERFORMANCE TUNING
 // ========================================================================================
 
@@ -122,112 +106,8 @@ const RETRY_CONFIG = {
 };
 
 // ========================================================================================
-// OPERATION QUEUE CONFIGURATION
-// ========================================================================================
-
-const QUEUE_CONFIG = {
-  // Priority values (higher = more important)
-  PRIORITY_HIGH: 10,
-  PRIORITY_NORMAL: 5,
-  PRIORITY_LOW: 1,
-};
-
-// ========================================================================================
 // HELPER FUNCTIONS
 // ========================================================================================
-
-/**
- * 根据文件大小动态选择合适的块大小
- * @param {number} totalBytes - 文件总大小(字节)
- * @returns {number} - 推荐的块大小(字节)
- */
-function chooseChunkSize(totalBytes) {
-  if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
-    return TRANSFER_CONFIG.CHUNK_SIZE_MEDIUM;
-  }
-
-  if (totalBytes <= TRANSFER_CONFIG.SMALL_FILE_THRESHOLD) {
-    return TRANSFER_CONFIG.CHUNK_SIZE_SMALL;
-  }
-
-  if (totalBytes <= TRANSFER_CONFIG.MEDIUM_FILE_THRESHOLD) {
-    return TRANSFER_CONFIG.CHUNK_SIZE_MEDIUM;
-  }
-
-  return TRANSFER_CONFIG.CHUNK_SIZE_LARGE;
-}
-
-/**
- * 根据文件大小动态计算超时时间
- * @param {number} fileSize - 文件大小(字节)
- * @param {number} [baseTimeout] - 基础超时时间(毫秒)
- * @returns {number} - 计算后的超时时间(毫秒)
- */
-function calculateDynamicTimeout(
-  fileSize,
-  baseTimeout = TIMEOUT_CONFIG.BASE_OPERATION_TIMEOUT,
-) {
-  if (!fileSize || fileSize <= 0) {
-    return baseTimeout;
-  }
-
-  // 大文件使用更长的超时时间
-  if (fileSize >= TIMEOUT_CONFIG.LARGE_FILE_THRESHOLD) {
-    return TIMEOUT_CONFIG.LARGE_FILE_TIMEOUT;
-  }
-
-  // 中等文件按传输速度动态调整
-  // 假设传输速度为 1MB/s,给 3 倍缓冲时间
-  const estimatedTransferTime = (fileSize / (1024 * 1024)) * 1000; // 毫秒
-  const dynamicTimeout = Math.max(baseTimeout, estimatedTransferTime * 3);
-
-  // 限制最大超时时间
-  return Math.min(dynamicTimeout, TIMEOUT_CONFIG.LARGE_FILE_TIMEOUT);
-}
-
-/**
- * 根据文件大小选择无进度超时时间
- * @param {number} fileSize - 文件大小(字节)
- * @returns {number} - 无进度超时时间(毫秒)
- */
-function getNoProgressTimeout(fileSize) {
-  if (!fileSize || fileSize <= TIMEOUT_CONFIG.NO_PROGRESS_THRESHOLD) {
-    return TIMEOUT_CONFIG.SMALL_FILE_NO_PROGRESS_TIMEOUT;
-  }
-  return TIMEOUT_CONFIG.LARGE_FILE_NO_PROGRESS_TIMEOUT;
-}
-
-/**
- * 根据文件数量和平均大小动态调整并发度
- * @param {number} totalFiles - 文件总数
- * @param {number} totalBytes - 总字节数
- * @param {boolean} [isUpload=true] - 是否为上传操作
- * @returns {number} - 推荐的并发度
- */
-function chooseConcurrency(totalFiles, totalBytes, isUpload = true) {
-  const avgFileSize = totalFiles > 0 ? Math.floor(totalBytes / totalFiles) : 0;
-  const baseConcurrency = isUpload
-    ? TRANSFER_CONFIG.PARALLEL_FILES_UPLOAD
-    : TRANSFER_CONFIG.PARALLEL_FILES_DOWNLOAD;
-  const sessionCap = Number.isFinite(SESSION_CONFIG.MAX_SESSIONS_PER_TAB)
-    ? SESSION_CONFIG.MAX_SESSIONS_PER_TAB
-    : totalFiles;
-
-  let recommended = baseConcurrency;
-
-  // Many small files: increase concurrency.
-  if (totalFiles >= 8 && avgFileSize <= TRANSFER_CONFIG.SMALL_FILE_THRESHOLD) {
-    recommended = TRANSFER_CONFIG.HIGH_CONCURRENCY;
-  } else if (avgFileSize > TRANSFER_CONFIG.MEDIUM_FILE_THRESHOLD) {
-    // Very large files: lower concurrency.
-    recommended = TRANSFER_CONFIG.LOW_CONCURRENCY;
-  } else if (avgFileSize > TRANSFER_CONFIG.SMALL_FILE_THRESHOLD) {
-    // Medium files: use medium concurrency.
-    recommended = TRANSFER_CONFIG.MEDIUM_CONCURRENCY;
-  }
-
-  return Math.min(recommended, totalFiles, sessionCap);
-}
 
 /**
  * 计算重试延迟(指数退避)
@@ -240,50 +120,6 @@ function calculateRetryDelay(attempt) {
   return base * Math.pow(multiplier, Math.max(0, attempt - 1));
 }
 
-/**
- * 检查错误是否可重试
- * @param {Error} error - 错误对象
- * @returns {boolean} - 是否可重试
- */
-function isRetryableError(error) {
-  if (!error || !error.message) return false;
-
-  const message = error.message.toLowerCase();
-  return RETRY_CONFIG.RETRYABLE_ERRORS.some((pattern) =>
-    message.includes(pattern.toLowerCase()),
-  );
-}
-
-/**
- * 检查是否为会话相关错误(需要重新建立会话)
- * @param {Error} error - 错误对象
- * @returns {boolean} - 是否为会话错误
- */
-function isSessionError(error) {
-  if (!error || !error.message) return false;
-
-  const message = error.message.toLowerCase();
-  return RETRY_CONFIG.SESSION_ERRORS.some((pattern) =>
-    message.includes(pattern.toLowerCase()),
-  );
-}
-
-/**
- * 解析优先级字符串到数值
- * @param {string} priority - 优先级字符串 ('high'|'normal'|'low')
- * @returns {number} - 优先级数值
- */
-function parsePriority(priority) {
-  switch (priority) {
-    case "high":
-      return QUEUE_CONFIG.PRIORITY_HIGH;
-    case "low":
-      return QUEUE_CONFIG.PRIORITY_LOW;
-    default:
-      return QUEUE_CONFIG.PRIORITY_NORMAL;
-  }
-}
-
 // ========================================================================================
 // EXPORTS
 // ========================================================================================
@@ -291,18 +127,8 @@ function parsePriority(priority) {
 module.exports = {
   // Configuration objects
   SESSION_CONFIG,
-  TIMEOUT_CONFIG,
   TRANSFER_CONFIG,
-  RETRY_CONFIG,
-  QUEUE_CONFIG,
 
   // Helper functions
-  chooseChunkSize,
-  calculateDynamicTimeout,
-  getNoProgressTimeout,
-  chooseConcurrency,
   calculateRetryDelay,
-  isRetryableError,
-  isSessionError,
-  parsePriority,
 };

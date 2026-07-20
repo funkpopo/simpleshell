@@ -295,13 +295,9 @@ function getCrashReporterDiagnostics(app = crashReporterApp) {
 }
 
 module.exports = {
-  DEFAULT_ERROR_REPORTING_SETTINGS,
   getCrashReporterDiagnostics,
   getErrorReportingStatus,
   initializeCrashReporter,
-  listRecentCrashRecords,
-  loadErrorReportingSettings,
-  normalizeErrorReportingSettings,
   recordCrashMarker,
   saveErrorReportingSettings,
 };

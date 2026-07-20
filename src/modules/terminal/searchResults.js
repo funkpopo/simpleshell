@@ -183,9 +183,6 @@ const collectTerminalSearchMatches = (term, rawTerm, options = {}) => {
   return matches;
 };
 
-const countTerminalSearchMatches = (term, rawTerm, options = {}) =>
-  collectTerminalSearchMatches(term, rawTerm, options).length;
-
 const getSelectionStart = (selectionRange) => {
   if (!selectionRange || typeof selectionRange !== "object") {
     return null;
@@ -228,6 +225,5 @@ const findSelectedTerminalSearchMatchIndex = (term, matches = []) => {
 
 module.exports = {
   collectTerminalSearchMatches,
-  countTerminalSearchMatches,
   findSelectedTerminalSearchMatchIndex,
 };

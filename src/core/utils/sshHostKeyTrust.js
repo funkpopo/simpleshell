@@ -65,20 +65,9 @@ function getTrustedHostFingerprint(config) {
   return normalizeSshHostFingerprint(config[TRUSTED_HOST_FINGERPRINT_SYMBOL]);
 }
 
-function getTrustedHostScope(config) {
-  if (!config || typeof config !== "object") {
-    return null;
-  }
-
-  return config[TRUSTED_HOST_SCOPE_SYMBOL] || null;
-}
-
 module.exports = {
-  TRUSTED_HOST_FINGERPRINT_SYMBOL,
-  TRUSTED_HOST_SCOPE_SYMBOL,
   normalizeSshHostFingerprint,
   getHostCacheKey,
   setTrustedHostFingerprint,
   getTrustedHostFingerprint,
-  getTrustedHostScope,
 };

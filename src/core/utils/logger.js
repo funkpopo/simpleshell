@@ -308,14 +308,7 @@ const logToFile = (message, type = "INFO") => {
   logToFileInternal(message, type, false);
 };
 
-const logInfo = (message) => logToFile(message, "INFO");
-const logWarn = (message) => logToFile(message, "WARN");
 const logError = (message) => logToFile(message, "ERROR");
-const logDebug = (message) => logToFile(message, "DEBUG");
-
-function getLogConfig() {
-  return { ...logConfig };
-}
 
 function updateLogConfig(newConfig) {
   if (newConfig && typeof newConfig === "object") {
@@ -394,13 +387,8 @@ setupProcessFlushHooks();
 module.exports = {
   logToFile,
   initLogger,
-  logInfo,
-  logWarn,
   logError,
-  logDebug,
-  getLogConfig,
   getLogDirectoryPath,
   getLogFilePath,
   updateLogConfig,
-  cleanupOldLogEntries,
 };

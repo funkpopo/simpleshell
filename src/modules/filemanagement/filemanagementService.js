@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 const { execFile } = require("child_process");
 const crypto = require("crypto");
-const { app, dialog, shell, BrowserWindow } = require("electron");
+const { app, dialog, BrowserWindow } = require("electron");
 
 const processManager = require("../../core/process/processManager");
 const {
@@ -61,16 +61,6 @@ function isDirectoryMode(mode) {
   return (
     typeof mode === "number" && (mode & DIRECTORY_TYPE_MASK) === DIRECTORY_MODE
   );
-}
-
-function hasKnownRemoteEntryType(mode) {
-  return typeof mode === "number" && (mode & DIRECTORY_TYPE_MASK) !== 0;
-}
-
-function isRootPath(targetPath) {
-  if (!targetPath || typeof targetPath !== "string") return false;
-  const trimmed = targetPath.trim();
-  return trimmed === "/" || trimmed === "\\";
 }
 
 function buildCancelledError() {
@@ -517,18 +507,6 @@ class FilemanagementService {
           })
           .catch(callback);
       },
-      lstat: (remotePath, callback) => {
-        nativeSftpClient
-          .getFilePermissions(tabId, remotePath)
-          .then((result) => {
-            if (!result?.success) {
-              callback(new Error(result?.error || "lstat failed"));
-              return;
-            }
-            callback(null, this._toShimStats(result));
-          })
-          .catch(callback);
-      },
       readdir: (remotePath, callback) => {
         nativeSftpClient
           .listFiles(tabId, remotePath)
@@ -546,16 +524,6 @@ class FilemanagementService {
           })
           .catch(callback);
       },
-      rename: (sourcePath, targetPath, callback) => {
-        nativeSftpClient
-          .renameFile(tabId, sourcePath, targetPath)
-          .then((result) =>
-            result?.success
-              ? callback(null)
-              : callback(new Error(result?.error || "rename failed")),
-          )
-          .catch(callback);
-      },
       unlink: (remotePath, callback) => {
         nativeSftpClient
           .deleteFile(tabId, remotePath, false)
@@ -566,16 +534,6 @@ class FilemanagementService {
           )
           .catch(callback);
       },
-      rmdir: (remotePath, callback) => {
-        nativeSftpClient
-          .deleteFile(tabId, remotePath, true)
-          .then((result) =>
-            result?.success
-              ? callback(null)
-              : callback(new Error(result?.error || "rmdir failed")),
-          )
-          .catch(callback);
-      },
       mkdir: (remotePath, callback) => {
         nativeSftpClient
           .createFolder(tabId, remotePath)
@@ -583,30 +541,6 @@ class FilemanagementService {
             result?.success
               ? callback(null)
               : callback(new Error(result?.error || "mkdir failed")),
-          )
-          .catch(callback);
-      },
-      chmod: (remotePath, mode, callback) => {
-        nativeSftpClient
-          .setFilePermissions(
-            tabId,
-            remotePath,
-            (mode & 0o7777).toString(8).padStart(3, "0"),
-          )
-          .then((result) =>
-            result?.success
-              ? callback(null)
-              : callback(new Error(result?.error || "chmod failed")),
-          )
-          .catch(callback);
-      },
-      chown: (remotePath, uid, gid, callback) => {
-        nativeSftpClient
-          .setFileOwnership(tabId, remotePath, uid, gid)
-          .then((result) =>
-            result?.success
-              ? callback(null)
-              : callback(new Error(result?.error || "chown failed")),
           )
           .catch(callback);
       },
@@ -628,15 +562,6 @@ class FilemanagementService {
 
   async _withBorrowedSftp(tabId, worker) {
     return worker(this._createNativeSftpShim(tabId), null);
-  }
-
-  _chooseChunkSize(totalBytes) {
-    const bytes = Number.isFinite(totalBytes) ? totalBytes : 0;
-    if (bytes >= 4 * 1024 * 1024 * 1024) return 4 * 1024 * 1024;
-    if (bytes >= 512 * 1024 * 1024) return 2 * 1024 * 1024;
-    if (bytes >= 64 * 1024 * 1024) return 1024 * 1024;
-    if (bytes >= 8 * 1024 * 1024) return 512 * 1024;
-    return 256 * 1024;
   }
 
   _chooseConcurrency(
@@ -762,38 +687,6 @@ class FilemanagementService {
     await Promise.allSettled(
       uniquePaths.map((filePath) => fsp.rm(filePath, { force: true })),
     );
-  }
-
-  async _runConcurrent(tasks, concurrency, shouldStop = null) {
-    const errors = [];
-    let index = 0;
-    const workers = [];
-    const workerCount = Math.max(
-      1,
-      Math.min(concurrency || 1, tasks.length || 1),
-    );
-
-    const runWorker = async () => {
-      while (true) {
-        if (shouldStop && shouldStop()) break;
-        const currentIndex = index;
-        index += 1;
-        if (currentIndex >= tasks.length) break;
-
-        try {
-          await tasks[currentIndex]();
-        } catch (error) {
-          errors.push({ index: currentIndex, error });
-        }
-      }
-    };
-
-    for (let i = 0; i < workerCount; i += 1) {
-      workers.push(runWorker());
-    }
-
-    await Promise.all(workers);
-    return { errors };
   }
 
   _registerTransfer({
@@ -1041,61 +934,11 @@ class FilemanagementService {
     });
   }
 
-  async _lstat(sftp, remotePath) {
-    return new Promise((resolve, reject) => {
-      sftp.lstat(remotePath, (error, stats) => {
-        if (error) reject(error);
-        else resolve(stats);
-      });
-    });
-  }
-
   async _readdir(sftp, remotePath) {
     return new Promise((resolve, reject) => {
       sftp.readdir(remotePath, (error, list) => {
         if (error) reject(error);
         else resolve(Array.isArray(list) ? list : []);
-      });
-    });
-  }
-
-  async _resolveRemoteEntryAttrs(sftp, remotePath, item = null) {
-    const baseAttrs =
-      item?.attrs && typeof item.attrs === "object" ? item.attrs : {};
-    let resolvedAttrs = { ...baseAttrs };
-
-    if (
-      hasKnownRemoteEntryType(resolvedAttrs.mode) &&
-      Number.isFinite(resolvedAttrs.size)
-    ) {
-      return resolvedAttrs;
-    }
-
-    const lstatResult = await this._lstat(sftp, remotePath).catch(() => null);
-    if (lstatResult && typeof lstatResult === "object") {
-      resolvedAttrs = { ...resolvedAttrs, ...lstatResult };
-    }
-
-    if (
-      hasKnownRemoteEntryType(resolvedAttrs.mode) &&
-      Number.isFinite(resolvedAttrs.size)
-    ) {
-      return resolvedAttrs;
-    }
-
-    const statResult = await this._stat(sftp, remotePath).catch(() => null);
-    if (statResult && typeof statResult === "object") {
-      resolvedAttrs = { ...resolvedAttrs, ...statResult };
-    }
-
-    return resolvedAttrs;
-  }
-
-  async _rename(sftp, sourcePath, targetPath) {
-    return new Promise((resolve, reject) => {
-      sftp.rename(sourcePath, targetPath, (error) => {
-        if (error) reject(error);
-        else resolve();
       });
     });
   }
@@ -1109,36 +952,9 @@ class FilemanagementService {
     });
   }
 
-  async _rmdir(sftp, remotePath) {
-    return new Promise((resolve, reject) => {
-      sftp.rmdir(remotePath, (error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  }
-
   async _mkdir(sftp, remotePath) {
     return new Promise((resolve, reject) => {
       sftp.mkdir(remotePath, (error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  }
-
-  async _chmod(sftp, remotePath, mode) {
-    return new Promise((resolve, reject) => {
-      sftp.chmod(remotePath, mode, (error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  }
-
-  async _chown(sftp, remotePath, uid, gid) {
-    return new Promise((resolve, reject) => {
-      sftp.chown(remotePath, uid, gid, (error) => {
         if (error) reject(error);
         else resolve();
       });
@@ -1185,40 +1001,6 @@ class FilemanagementService {
       }
       throw mkdirError;
     }
-  }
-
-  async _mkdirRecursiveWithSession(sftp, remotePath) {
-    const normalizedPath = this._normalizeRemotePath(remotePath);
-    if (!normalizedPath || normalizedPath === "." || normalizedPath === "/") {
-      return;
-    }
-
-    const isAbsolute = normalizedPath.startsWith("/");
-    const parts = normalizedPath.split("/").filter(Boolean);
-    let currentPath = isAbsolute ? "/" : "";
-
-    for (const part of parts) {
-      currentPath = currentPath ? path.posix.join(currentPath, part) : part;
-      await this._mkdirIfNeeded(sftp, currentPath);
-    }
-  }
-
-  async _deleteRemoteDirectoryRecursive(sftp, remotePath) {
-    const entries = await this._readdir(sftp, remotePath);
-    for (const item of entries) {
-      const name = item?.filename;
-      if (!name || name === "." || name === "..") continue;
-
-      const childPath = path.posix.join(remotePath, name);
-      const attrs = await this._resolveRemoteEntryAttrs(sftp, childPath, item);
-      const mode = attrs?.mode;
-      if (isDirectoryMode(mode)) {
-        await this._deleteRemoteDirectoryRecursive(sftp, childPath);
-      } else {
-        await this._unlink(sftp, childPath);
-      }
-    }
-    await this._rmdir(sftp, remotePath);
   }
 
   _buildFileListEntry(item) {
@@ -1353,165 +1135,6 @@ class FilemanagementService {
     }
   }
 
-  async copyFile(event, tabId, sourcePath, targetPath) {
-    try {
-      const source = this._normalizeRemotePath(sourcePath);
-      const target = this._normalizeRemotePath(targetPath);
-      return await nativeSftpClient.copyFile(tabId, source, target);
-    } catch (error) {
-      this._log(`copyFile failed: ${normalizeErrorMessage(error)}`, "ERROR");
-      return { success: false, error: normalizeErrorMessage(error) };
-    }
-  }
-
-  async moveFile(event, tabId, sourcePath, targetPath) {
-    if (!sourcePath || !targetPath) {
-      return { success: false, error: "Invalid source or target path" };
-    }
-    if (isRootPath(sourcePath)) {
-      return { success: false, error: "Cannot move root directory" };
-    }
-
-    try {
-      const source = this._normalizeRemotePath(sourcePath);
-      const target = this._normalizeRemotePath(targetPath);
-      await this._withBorrowedSftp(tabId, (sftp) =>
-        this._rename(sftp, source, target),
-      );
-      return { success: true };
-    } catch (error) {
-      this._log(`moveFile failed: ${normalizeErrorMessage(error)}`, "ERROR");
-      return { success: false, error: normalizeErrorMessage(error) };
-    }
-  }
-
-  async deleteFile(event, tabId, remotePath, isDirectory) {
-    if (!remotePath || typeof remotePath !== "string") {
-      return { success: false, error: "Invalid file path" };
-    }
-    if (isRootPath(remotePath)) {
-      return { success: false, error: "Cannot delete root directory" };
-    }
-
-    try {
-      const normalizedPath = this._normalizeRemotePath(remotePath);
-      await this._withBorrowedSftp(tabId, async (sftp) => {
-        if (isDirectory) {
-          await this._deleteRemoteDirectoryRecursive(sftp, normalizedPath);
-        } else {
-          await this._unlink(sftp, normalizedPath);
-        }
-      });
-      return { success: true };
-    } catch (error) {
-      this._log(`deleteFile failed: ${normalizeErrorMessage(error)}`, "ERROR");
-      return { success: false, error: normalizeErrorMessage(error) };
-    }
-  }
-
-  async createFolder(event, tabId, folderPath) {
-    try {
-      const normalizedPath = this._normalizeRemotePath(folderPath);
-      await this._withBorrowedSftp(tabId, (sftp) =>
-        this._mkdirRecursiveWithSession(sftp, normalizedPath),
-      );
-      return { success: true };
-    } catch (error) {
-      this._log(
-        `createFolder failed: ${normalizeErrorMessage(error)}`,
-        "ERROR",
-      );
-      return { success: false, error: normalizeErrorMessage(error) };
-    }
-  }
-
-  async createFile(event, tabId, filePath) {
-    try {
-      const normalizedPath = this._normalizeRemotePath(filePath);
-      await this._withBorrowedSftp(tabId, async (sftp) => {
-        const handle = await this._openFileHandle(sftp, normalizedPath, "w");
-        await this._closeFileHandle(sftp, handle);
-      });
-      return { success: true };
-    } catch (error) {
-      this._log(`createFile failed: ${normalizeErrorMessage(error)}`, "ERROR");
-      return { success: false, error: normalizeErrorMessage(error) };
-    }
-  }
-
-  async renameFile(event, tabId, oldPath, newName) {
-    if (!oldPath || !newName) {
-      return { success: false, error: "Invalid old path or new name" };
-    }
-    if (isRootPath(oldPath)) {
-      return { success: false, error: "Cannot rename root directory" };
-    }
-
-    try {
-      const normalizedOldPath = this._normalizeRemotePath(oldPath);
-      const newPath = path.posix.join(
-        path.posix.dirname(normalizedOldPath),
-        newName,
-      );
-      await this._withBorrowedSftp(tabId, (sftp) =>
-        this._rename(sftp, normalizedOldPath, newPath),
-      );
-      return { success: true };
-    } catch (error) {
-      this._log(`renameFile failed: ${normalizeErrorMessage(error)}`, "ERROR");
-      return { success: false, error: normalizeErrorMessage(error) };
-    }
-  }
-
-  async getFilePermissions(event, tabId, remotePath) {
-    try {
-      const normalizedPath = this._normalizeRemotePath(remotePath);
-      return await this._withBorrowedSftp(tabId, async (sftp) => {
-        const stats = await this._stat(sftp, normalizedPath);
-        const mode = stats.mode;
-        const permissions = (mode & parseInt("777", 8))
-          .toString(8)
-          .padStart(3, "0");
-        return {
-          success: true,
-          permissions,
-          mode,
-          uid: stats.uid,
-          gid: stats.gid,
-          stats,
-        };
-      });
-    } catch (error) {
-      return { success: false, error: normalizeErrorMessage(error) };
-    }
-  }
-
-  async getAbsolutePath(event, tabId, remotePath) {
-    try {
-      return await nativeSftpClient.getAbsolutePath(tabId, remotePath);
-    } catch (error) {
-      return { success: false, error: normalizeErrorMessage(error) };
-    }
-  }
-
-  async checkPathExists(event, checkPath) {
-    try {
-      const exists = fs.existsSync(checkPath);
-      return { success: true, exists };
-    } catch (error) {
-      return { success: false, error: normalizeErrorMessage(error) };
-    }
-  }
-
-  async showItemInFolder(event, itemPath) {
-    try {
-      shell.showItemInFolder(itemPath);
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: normalizeErrorMessage(error) };
-    }
-  }
-
   async cancelTransfer(event, tabId, transferKey) {
     const transfer = this._getTransfer(transferKey);
     if (!transfer) {
@@ -1574,125 +1197,6 @@ class FilemanagementService {
       cleanedCount,
       message: `Cleaned ${cleanedCount} transfer(s) for tab ${tabId}`,
     };
-  }
-
-  async setFilePermissions(event, tabId, remotePath, permissions) {
-    try {
-      const permissionStr = String(permissions || "").trim();
-      const mode = parseInt(permissionStr, 8);
-      if (!permissionStr || Number.isNaN(mode)) {
-        return { success: false, error: "无效的权限值" };
-      }
-
-      const normalizedPath = this._normalizeRemotePath(remotePath);
-      await this._withBorrowedSftp(tabId, (sftp) =>
-        this._chmod(sftp, normalizedPath, mode),
-      );
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: `设置权限失败: ${normalizeErrorMessage(error)}`,
-      };
-    }
-  }
-
-  async getFilePermissionsBatch(event, tabId, filePaths) {
-    try {
-      if (!Array.isArray(filePaths) || filePaths.length === 0) {
-        return { success: true, results: [] };
-      }
-
-      const normalizedPaths = filePaths.map((p) =>
-        this._normalizeRemotePath(p),
-      );
-      const results = [];
-
-      await this._withBorrowedSftp(tabId, async (sftp) => {
-        const tasks = normalizedPaths.map((filePath, index) => async () => {
-          try {
-            const stats = await this._stat(sftp, filePath);
-            const mode = stats.mode;
-            const permissions = (mode & parseInt("777", 8))
-              .toString(8)
-              .padStart(3, "0");
-            results[index] = {
-              path: filePath,
-              success: true,
-              permissions,
-              mode,
-              stats,
-            };
-          } catch (error) {
-            results[index] = {
-              path: filePath,
-              success: false,
-              error: normalizeErrorMessage(error),
-            };
-          }
-        });
-
-        await this._runConcurrent(tasks, 12);
-      });
-
-      return { success: true, results };
-    } catch (error) {
-      return {
-        success: false,
-        error: `批量获取权限失败: ${normalizeErrorMessage(error)}`,
-      };
-    }
-  }
-
-  async setFileOwnership(event, tabId, remotePath, owner, group) {
-    try {
-      const ownerStr = String(owner ?? "").trim();
-      const groupStr = String(group ?? "").trim();
-      if (!ownerStr && !groupStr) return { success: true };
-
-      const ownerId =
-        ownerStr && /^\d+$/.test(ownerStr) ? parseInt(ownerStr, 10) : null;
-      const groupId =
-        groupStr && /^\d+$/.test(groupStr) ? parseInt(groupStr, 10) : null;
-
-      if (ownerStr && ownerId === null) {
-        return { success: false, error: "所有者必须是数字UID" };
-      }
-      if (groupStr && groupId === null) {
-        return { success: false, error: "组必须是数字GID" };
-      }
-
-      const normalizedPath = this._normalizeRemotePath(remotePath);
-      await this._withBorrowedSftp(tabId, async (sftp) => {
-        let finalUid = ownerId;
-        let finalGid = groupId;
-        if (finalUid === null || finalGid === null) {
-          const stats = await this._stat(sftp, normalizedPath);
-          if (finalUid === null) finalUid = stats.uid;
-          if (finalGid === null) finalGid = stats.gid;
-        }
-        await this._chown(sftp, normalizedPath, finalUid, finalGid);
-      });
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: `设置所有者/组失败: ${normalizeErrorMessage(error)}`,
-      };
-    }
-  }
-
-  async createRemoteFolders(event, tabId, folderPath) {
-    try {
-      const normalizedPath = this._normalizeRemotePath(folderPath);
-      await this._withBorrowedSftp(tabId, async (sftp) => {
-        await this._mkdirRecursiveWithSession(sftp, normalizedPath);
-      });
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: normalizeErrorMessage(error) };
-    }
   }
 
   async _ensureRemoteDirectories(

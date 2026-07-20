@@ -130,7 +130,6 @@ const applySocketNetworkProfile = (
 };
 
 module.exports = {
-  DEFAULT_SSH_NETWORK_PROFILE,
   resolveSshNetworkProfile,
   applySocketNetworkProfile,
 };

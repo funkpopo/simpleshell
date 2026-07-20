@@ -396,51 +396,7 @@ class ProxyManager {
   }
 
   /**
-   * 解析连接的代理配置
-   * @param {object} sshConfig - SSH连接配置
-   * @returns {object|null} 最终使用的代理配置
-   */
-  resolveProxyConfig(sshConfig) {
-    // 只有当连接项显式启用代理（存在 proxy 字段）时，才应用任何代理策略
-    if (!sshConfig || !sshConfig.proxy) {
-      return null;
-    }
-
-    // 如果连接明确配置了代理（自定义 host/port）
-    if (sshConfig.proxy && !sshConfig.proxy.useDefault) {
-      logToFile(
-        `Using connection-specific proxy: ${sshConfig.proxy.host}:${sshConfig.proxy.port}`,
-        "INFO",
-      );
-      return sshConfig.proxy;
-    }
-
-    // 如果连接配置了使用默认代理或没有配置代理信息
-    if (sshConfig.proxy.useDefault) {
-      // 优先使用默认配置
-      if (this.defaultProxyConfig) {
-        logToFile(
-          `Using default proxy config: ${this.defaultProxyConfig.host}:${this.defaultProxyConfig.port}`,
-          "INFO",
-        );
-        return this.defaultProxyConfig;
-      }
-
-      // 其次使用系统代理配置
-      if (this.systemProxyConfig) {
-        logToFile(
-          `Using system proxy config: ${this.systemProxyConfig.host}:${this.systemProxyConfig.port}`,
-          "INFO",
-        );
-        return this.systemProxyConfig;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * resolveProxyConfig 的异步版本：当需要“系统代理”时，会尝试异步解析（Electron/PAC）
+   * 解析连接的代理配置（当需要“系统代理”时，会尝试异步解析 Electron/PAC）
    * @param {object} sshConfig
    * @returns {Promise<object|null>}
    */

@@ -37,7 +37,6 @@ class BaseConnectionPool extends EventEmitter {
 
     // 通用数据结构
     this.connections = new Map(); // 所有活跃连接
-    this.connectionQueue = new Map(); // 连接请求队列
     this.tabReferences = new Map(); // 标签页引用关系
     this.connectionUsage = new Map(); // 连接使用统计
     this.lastConnections = []; // 最近连接列表（存储连接ID）
@@ -90,7 +89,6 @@ class BaseConnectionPool extends EventEmitter {
 
     // 清理数据结构
     this.connections.clear();
-    this.connectionQueue.clear();
     this.tabReferences.clear();
 
     this.isInitialized = false;

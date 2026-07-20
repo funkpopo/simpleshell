@@ -140,5 +140,4 @@ module.exports = {
   buildErrorEvent,
   buildErrorResponse,
   normalizeErrorMessage,
-  normalizeResponseOptions,
 };

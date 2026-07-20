@@ -43,27 +43,3 @@ export const createAnchoredTransition = (anchorEl) => {
     },
   };
 };
-
-/**
- * 计算从锚点到目标位置的 transform-origin
- * @param {HTMLElement|null} anchorEl - 锚点元素
- * @param {HTMLElement|null} targetEl - 目标元素（Dialog paper）
- * @returns {string} CSS transform-origin 值
- */
-export const calculateTransformOrigin = (anchorEl, targetEl) => {
-  if (!anchorEl || !targetEl) {
-    return "center center";
-  }
-
-  const anchorRect = anchorEl.getBoundingClientRect();
-  const targetRect = targetEl.getBoundingClientRect();
-
-  // 计算锚点中心相对于目标元素的位置
-  const anchorCenterX = anchorRect.left + anchorRect.width / 2;
-  const anchorCenterY = anchorRect.top + anchorRect.height / 2;
-
-  const relativeX = anchorCenterX - targetRect.left;
-  const relativeY = anchorCenterY - targetRect.top;
-
-  return `${relativeX}px ${relativeY}px`;
-};
