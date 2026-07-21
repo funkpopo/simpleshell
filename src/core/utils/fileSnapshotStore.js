@@ -3,6 +3,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { getTempDirectory } = require("./appPaths");
 const runtimeFileLifecycle = require("./runtimeFileLifecycle");
+const { generateId } = require("../../shared/common");
 
 const DEFAULT_MAX_SNAPSHOTS_PER_FILE = 50;
 const DEFAULT_SNAPSHOT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -191,7 +192,7 @@ class FileSnapshotStore {
     const snapshotId =
       typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
-        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+        : generateId();
     const createdAt = (() => {
       if (typeof options.createdAt !== "string") {
         return new Date().toISOString();

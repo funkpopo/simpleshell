@@ -12,6 +12,7 @@ const {
   applySocketNetworkProfile,
 } = require("../utils/ssh-network-profile");
 const { isZhLanguage } = require("../../shared/connectionErrorAdvice");
+const { sleep } = require("../../shared/common");
 const {
   isAuthErrorMessage,
   isTimeoutErrorMessage,
@@ -252,10 +253,6 @@ function buildReconnectWaitMessage(retryConfig, language = "zh-CN") {
     return `Reconnecting, waiting up to ${duration} for network/VPN...`;
   }
   return `正在重连，最多等待网络/VPN ${duration}...`;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function probeTcp(host, port, timeoutMs) {

@@ -50,6 +50,7 @@ import {
 import SidebarPanel from "./SidebarPanel.jsx";
 import useSidebarPanel from "../hooks/useSidebarPanel";
 import useContextMenuRetarget from "../hooks/useContextMenuRetarget";
+import { generateId } from "../shared/common";
 import { useNotification } from "../contexts/NotificationContext";
 
 const COMMAND_ITEM_HEIGHT = 48;
@@ -309,11 +310,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     }
   };
 
-  // 生成唯一ID
-  const generateUniqueId = (prefix = "") => {
-    return `${prefix}${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  };
-
   // 处理搜索输入变化
   const handleSearchChange = (event) => {
     setSearchTerm(event.target.value);
@@ -480,7 +476,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     if (dialogAction === "add") {
       const newCommand = {
         ...currentCommand,
-        id: generateUniqueId("cmd-"),
+        id: generateId("cmd"),
       };
       newCommands.push(newCommand);
     } else {
@@ -501,7 +497,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     if (dialogAction === "add") {
       const newCategory = {
         ...currentCategory,
-        id: generateUniqueId("cat-"),
+        id: generateId("cat"),
       };
       newCategories.push(newCategory);
 

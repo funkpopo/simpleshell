@@ -74,6 +74,11 @@ import useSidebarPanel from "../hooks/useSidebarPanel";
 import useContextMenuRetarget from "../hooks/useContextMenuRetarget";
 import { useNotification } from "../contexts/NotificationContext";
 import { getSearchFieldMotionSx } from "../utils/searchFieldStyles";
+import {
+  buildTransferDisplayName,
+  getTopLevelTransferItemName,
+} from "../shared/transferNameUtils";
+import { sleep } from "../shared/common";
 
 const FILE_LIST_ROW_HEIGHT = 36;
 const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
@@ -192,8 +197,7 @@ const withSftpRetry = async (operation, options = {}) => {
     formatCaughtError = (error) => error?.message || fallbackError,
   } = options;
 
-  const waitBeforeRetry = (attempt) =>
-    new Promise((resolve) => setTimeout(resolve, baseDelay * (attempt + 1)));
+  const waitBeforeRetry = (attempt) => sleep(baseDelay * (attempt + 1));
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -228,46 +232,6 @@ const withSftpRetry = async (operation, options = {}) => {
   }
 
   return { success: false, error: fallbackError };
-};
-
-const normalizeTransferName = (name) =>
-  typeof name === "string" ? name.trim() : "";
-
-const buildTransferDisplayName = (names, formatMultipleName) => {
-  const normalizedNames = Array.from(
-    new Set((names || []).map(normalizeTransferName).filter(Boolean)),
-  );
-
-  if (normalizedNames.length === 0) {
-    return "";
-  }
-
-  if (normalizedNames.length === 1) {
-    return normalizedNames[0];
-  }
-
-  if (typeof formatMultipleName === "function") {
-    return formatMultipleName({
-      firstName: normalizedNames[0],
-      count: normalizedNames.length,
-    });
-  }
-
-  return `${normalizedNames[0]} (${normalizedNames.length})`;
-};
-
-const getTopLevelTransferItemName = (targetPath) => {
-  const normalizedPath = String(targetPath || "")
-    .replace(/\\/g, "/")
-    .trim()
-    .replace(/^\/+/, "");
-
-  if (!normalizedPath) {
-    return "";
-  }
-
-  const [firstSegment] = normalizedPath.split("/").filter(Boolean);
-  return firstSegment || "";
 };
 
 const getLocalPathBaseName = (localPath) => {

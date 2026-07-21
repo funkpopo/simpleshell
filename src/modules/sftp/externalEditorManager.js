@@ -3,6 +3,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const nativeSftpClient = require("../../core/utils/nativeSftpClient");
 const runtimeFileLifecycle = require("../../core/utils/runtimeFileLifecycle");
+const { sleep } = require("../../shared/common");
 
 const FILE_PLACEHOLDER = "%FILE%";
 const DEFAULT_DEBOUNCE_MS = 700;
@@ -281,7 +282,7 @@ async function uploadFile(tabId, remotePath, localPath) {
       if (!RETRYABLE_ERRORS.has(error.code)) {
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      await sleep(500 * (attempt + 1));
     }
   }
   if (lastError) {

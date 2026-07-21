@@ -22,6 +22,11 @@ const {
 } = require("./transferShared");
 const { normalizeErrorMessage } = require("../../core/utils/errorResponse");
 const { SESSION_CONFIG, TRANSFER_CONFIG } = require("../sftp/sftpConfig");
+const {
+  normalizeTransferName,
+  buildTransferDisplayName: buildSharedTransferDisplayName,
+  getTopLevelTransferItemName,
+} = require("../../shared/transferNameUtils");
 
 const DIRECTORY_TYPE_MASK = 0o170000;
 const DIRECTORY_MODE = 0o040000;
@@ -79,32 +84,11 @@ function isPathExistsError(error) {
   );
 }
 
-function normalizeTransferName(name) {
-  return typeof name === "string" ? name.trim() : "";
-}
-
 function buildTransferDisplayName(names, itemLabel = "项目") {
-  const normalizedNames = Array.from(
-    new Set((names || []).map(normalizeTransferName).filter(Boolean)),
+  return buildSharedTransferDisplayName(
+    names,
+    ({ firstName, count }) => `${firstName} 等 ${count} 个${itemLabel}`,
   );
-
-  if (normalizedNames.length === 0) {
-    return "";
-  }
-
-  if (normalizedNames.length === 1) {
-    return normalizedNames[0];
-  }
-
-  return `${normalizedNames[0]} 等 ${normalizedNames.length} 个${itemLabel}`;
-}
-
-function getTopLevelTransferItemName(targetPath) {
-  const normalizedPath = toPosixPath(targetPath).trim().replace(/^\/+/, "");
-  if (!normalizedPath) return "";
-
-  const [firstSegment] = normalizedPath.split("/").filter(Boolean);
-  return firstSegment || "";
 }
 
 class FilemanagementService {

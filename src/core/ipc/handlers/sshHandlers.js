@@ -22,6 +22,7 @@ const {
   isZhLanguage,
 } = require("../../../shared/connectionErrorAdvice");
 const { isAuthErrorMessage } = require("../../../shared/errorClassification");
+const { generateId } = require("../../../shared/common");
 const {
   getHostCacheKey,
   normalizeSshHostFingerprint,
@@ -539,7 +540,7 @@ class SSHHandlers {
       throw new Error("No main window available for authentication");
     }
 
-    const requestId = `auth_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const requestId = generateId("auth");
 
     return new Promise((resolve, reject) => {
       // 设置超时（5分钟）
@@ -581,7 +582,10 @@ class SSHHandlers {
   /**
    * 请求用户输入连接凭据（认证对话框，首次与重试共用）
    */
-  _requestCredentialsAuth(sshConfig, { existingUsername, isRetry, errorMessage } = {}) {
+  _requestCredentialsAuth(
+    sshConfig,
+    { existingUsername, isRetry, errorMessage } = {},
+  ) {
     const authData = {
       step: "hostVerify",
       host: sshConfig.host,

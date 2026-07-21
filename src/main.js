@@ -24,6 +24,7 @@ const aiWorkerManager = require("./core/workers/aiWorkerManager");
 const { createWindow } = require("./core/window/windowManager");
 const setupIPC = require("./core/ipc/setupIPC");
 const { buildErrorEvent } = require("./core/utils/errorResponse");
+const { sleep } = require("./shared/common");
 
 const PRODUCT_NAME = "SimpleShell";
 
@@ -61,10 +62,7 @@ if (require("electron-squirrel-startup")) {
     }
 
     cleanupStarted = true;
-    Promise.race([
-      updateService.cleanupConsumedInstaller(),
-      new Promise((resolve) => setTimeout(resolve, 10000)),
-    ])
+    Promise.race([updateService.cleanupConsumedInstaller(), sleep(10000)])
       .catch((error) => {
         logToFile(
           `Squirrel update installer cleanup failed: ${error.message}`,

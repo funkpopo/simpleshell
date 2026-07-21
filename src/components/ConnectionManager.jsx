@@ -78,6 +78,7 @@ import SidebarPanel from "./SidebarPanel.jsx";
 import useSidebarPanel from "../hooks/useSidebarPanel";
 import useContextMenuRetarget from "../hooks/useContextMenuRetarget";
 import { getSearchFieldMotionSx } from "../utils/searchFieldStyles";
+import { generateId } from "../shared/common";
 
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
@@ -395,8 +396,8 @@ const buildConnectionPayloadFromForm = ({
     id:
       id ||
       (dialogMode === "add"
-        ? `conn_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
-        : selectedItem?.id || `conn_${Date.now()}`),
+        ? generateId("conn")
+        : selectedItem?.id || generateId("conn")),
     type: "connection",
     name: String(formData.name || "").trim(),
     host: String(formData.host || "").trim(),

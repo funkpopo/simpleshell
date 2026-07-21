@@ -2,6 +2,7 @@ const filemanagementService = require("../../../modules/filemanagement/filemanag
 const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
 const { buildErrorResponse } = require("../../utils/errorResponse");
+const { generateId } = require("../../../shared/common");
 const processManager = require("../../process/processManager");
 const path = require("path");
 const fs = require("fs");
@@ -239,9 +240,7 @@ class FileHandlers {
   }
 
   _generateDirectoryWatchId() {
-    return `${Date.now().toString(36)}-${Math.random()
-      .toString(36)
-      .slice(2, 10)}`;
+    return generateId();
   }
 
   _getDirectoryWatchOwnerKey(sender, tabId) {
@@ -319,9 +318,7 @@ class FileHandlers {
           typeof options.chunkSize === "number" && options.chunkSize > 0
             ? Math.floor(options.chunkSize)
             : 300;
-        const token = `${Date.now().toString(36)}-${Math.random()
-          .toString(36)
-          .slice(2, 8)}`;
+        const token = generateId();
 
         // Fire-and-forget chunk producer
         Promise.resolve()
