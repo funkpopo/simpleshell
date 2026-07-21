@@ -369,17 +369,11 @@ function testDragAndDropUsesNativeValidatedLocalPaths() {
     "const handleDrop = useCallback",
     "FileManager handleDroppedItems",
   );
-  const uploadFileSource = sliceBetween(
+  const uploadTransferSource = sliceBetween(
     fileManagerSource,
-    "const handleUploadFile = async",
-    "const handleUploadFolder = async",
-    "FileManager handleUploadFile",
-  );
-  const uploadFolderSource = sliceBetween(
-    fileManagerSource,
-    "const handleUploadFolder = async",
+    "const runUploadTransfer = async",
     "const handleCopyAbsolutePath = async",
-    "FileManager handleUploadFolder",
+    "FileManager runUploadTransfer",
   );
   const downloadSource = sliceBetween(
     fileManagerSource,
@@ -558,30 +552,23 @@ function testDragAndDropUsesNativeValidatedLocalPaths() {
     "Drag upload must switch the transfer entry to uploading once progress begins.",
   );
 
-  assertBefore(
-    uploadFileSource,
-    /activeUploadTransferId = addTransferProgress\(/,
-    /await window\.terminalAPI\.uploadFile\(/,
-    "Manual file upload must create a transfer entry before invoking upload IPC.",
+  assertContains(
+    uploadTransferSource,
+    /window\.terminalAPI\?\.uploadFolder[\s\S]*window\.terminalAPI\?\.uploadFile/,
+    "Manual upload must route through the terminal upload IPC APIs.",
   );
 
   assertBefore(
-    uploadFolderSource,
+    uploadTransferSource,
     /activeUploadTransferId = addTransferProgress\(/,
-    /await window\.terminalAPI\.uploadFolder\(/,
-    "Manual folder upload must create a transfer entry before invoking upload IPC.",
+    /await api\(tabId, targetPath/,
+    "Manual upload must create a transfer entry before invoking upload IPC.",
   );
 
   assertContains(
-    uploadFileSource,
+    uploadTransferSource,
     /fileManager\.transfer\.status\.preparingUpload/,
-    "Manual file upload must show a preparing upload transfer status immediately.",
-  );
-
-  assertContains(
-    uploadFolderSource,
-    /fileManager\.transfer\.status\.preparingUpload/,
-    "Manual folder upload must show a preparing upload transfer status immediately.",
+    "Manual upload must show a preparing upload transfer status immediately.",
   );
 
   assertBefore(

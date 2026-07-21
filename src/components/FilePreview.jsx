@@ -69,6 +69,10 @@ import {
   SPACE_MONO_FONT_FAMILY,
 } from "../utils/fonts.js";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
+import {
+  normalizeTransferProgress,
+  createTransferUiHelpers,
+} from "../utils/transferTaskHelpers.js";
 import { compactContextMenuPaperSx } from "./contextMenuStyles";
 // 延迟导入 react-pdf 以避免 webpack 模块初始化问题
 let Document, Page, pdfjs;
@@ -660,6 +664,15 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     updateTransferProgress,
     scheduleTransferCleanup,
   } = useGlobalTransfers(tabId);
+  const { markTransferCancelled, markTransferFailed, markTransferCompleted } =
+    useMemo(
+      () =>
+        createTransferUiHelpers({
+          updateTransferProgress,
+          scheduleTransferCleanup,
+        }),
+      [updateTransferProgress, scheduleTransferCleanup],
+    );
   const isTextPreview = isTextFile(file?.name);
   const visibleSnapshots = useMemo(
     () => snapshots.filter((snapshot) => snapshot?.type !== "rollback-backup"),
@@ -1687,30 +1700,28 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           }
 
           updateTransferProgress(transferId, {
-            progress: Math.max(0, Math.min(100, progress || 0)),
+            ...normalizeTransferProgress({
+              progress,
+              transferredBytes,
+              totalBytes,
+              transferSpeed,
+              remainingTime,
+              processedFiles,
+              transferKey,
+            }),
             fileName: fileName || file.name,
             statusText: t("fileManager.transfer.status.downloading"),
             currentFile: fileName || file.name,
-            transferredBytes: Math.max(0, transferredBytes || 0),
-            totalBytes: Math.max(0, totalBytes || 0),
-            transferSpeed: Math.max(0, transferSpeed || 0),
-            remainingTime: Math.max(0, remainingTime || 0),
-            processedFiles: Math.max(0, processedFiles || 0),
             totalFiles: Math.max(1, totalFiles || 1),
-            transferKey: transferKey || "",
           });
         },
       );
 
       if (result?.cancelled) {
-        if (transferId) {
-          updateTransferProgress(transferId, {
-            isCancelled: true,
-            statusText: t("fileManager.transfer.status.downloadCancelled"),
-            cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
-          });
-          scheduleTransferCleanup(transferId, 3000);
-        }
+        markTransferCancelled(transferId, {
+          statusText: t("fileManager.transfer.status.downloadCancelled"),
+          cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
+        });
         setNotification({
           message: t("fileManager.errors.downloadCancelledByUser"),
           severity: "info",
@@ -1719,18 +1730,14 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
       }
 
       if (result?.success) {
-        if (transferId) {
-          updateTransferProgress(transferId, {
-            progress: 100,
-            fileName: file.name,
-            statusText: t("fileManager.transfer.status.completed"),
-            currentFile: "",
-            processedFiles: 1,
-            totalFiles: 1,
-            downloadPath: result.downloadPath || "",
-          });
-          scheduleTransferCleanup(transferId, 3000);
-        }
+        markTransferCompleted(transferId, {
+          fileName: file.name,
+          statusText: t("fileManager.transfer.status.completed"),
+          currentFile: "",
+          processedFiles: 1,
+          totalFiles: 1,
+          downloadPath: result.downloadPath || "",
+        });
         setNotification({
           message: t("fileManager.messages.downloadCompleted", {
             name: file.name,
@@ -1742,13 +1749,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
 
       const errorMessage =
         result?.error || t("fileManager.errors.downloadFailed");
-      if (transferId) {
-        updateTransferProgress(transferId, {
-          error: errorMessage,
-          statusText: t("fileManager.transfer.status.downloadFailed"),
-        });
-        scheduleTransferCleanup(transferId, 5000);
-      }
+      markTransferFailed(transferId, errorMessage, {
+        statusText: t("fileManager.transfer.status.downloadFailed"),
+      });
       setNotification({
         message: `${t("fileManager.errors.downloadFailed")}: ${errorMessage}`,
         severity: "error",
@@ -1756,13 +1759,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     } catch (error) {
       const errorMessage =
         error?.message || t("fileManager.errors.downloadFailed");
-      if (transferId) {
-        updateTransferProgress(transferId, {
-          error: errorMessage,
-          statusText: t("fileManager.transfer.status.downloadFailed"),
-        });
-        scheduleTransferCleanup(transferId, 5000);
-      }
+      markTransferFailed(transferId, errorMessage, {
+        statusText: t("fileManager.transfer.status.downloadFailed"),
+      });
       setNotification({
         message: `${t("fileManager.errors.downloadFailed")}: ${errorMessage}`,
         severity: "error",

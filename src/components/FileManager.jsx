@@ -68,6 +68,11 @@ import {
 import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
+import {
+  normalizeTransferProgress,
+  isSilentIpcReplyError,
+  createTransferUiHelpers,
+} from "../utils/transferTaskHelpers.js";
 import { sidebarContentSx, sidebarPaperSx } from "./sidebarItemStyles";
 import { SidebarTitleBar } from "./SidebarPanel.jsx";
 import useSidebarPanel from "../hooks/useSidebarPanel";
@@ -870,6 +875,16 @@ const FileManager = memo(
       updateTransferProgress: storeUpdateTransferProgress,
       scheduleTransferCleanup: storeScheduleTransferCleanup,
     } = useGlobalTransfers(tabId);
+
+    const { markTransferCancelled, markTransferFailed, markTransferCompleted } =
+      useMemo(
+        () =>
+          createTransferUiHelpers({
+            updateTransferProgress: storeUpdateTransferProgress,
+            scheduleTransferCleanup: storeScheduleTransferCleanup,
+          }),
+        [storeUpdateTransferProgress, storeScheduleTransferCleanup],
+      );
 
     const transferProgressList = transferList;
 
@@ -3222,9 +3237,14 @@ const FileManager = memo(
       handleBatchDelete();
     }, [handleBatchDelete]);
 
-    // 处理上传文件到当前目录
-    // 辅助函数：正确拼接路径，避免重复斜杠
-    const handleUploadFile = async () => {
+    // 处理上传文件/文件夹到当前目录
+    // 两条流程仅 API、进度回调签名与传输类型不同,合并为同一实现
+    const runUploadTransfer = async (mode) => {
+      const isFolder = mode === "folder";
+      const api = isFolder
+        ? window.terminalAPI?.uploadFolder
+        : window.terminalAPI?.uploadFile;
+
       handleContextMenuClose();
       handleBlankContextMenuClose();
 
@@ -3238,19 +3258,26 @@ const FileManager = memo(
       // 保存当前路径状态
       const savedCurrentPath = currentPath;
       const savedSelectedFile = selectedFile;
+      const transferType = isFolder ? "upload-folder" : "upload-multifile";
       let didForegroundRefresh = false;
       let activeUploadTransferId = null;
 
-      try {
-        let targetPath;
-        // 使用保存的状态而非实时状态
-        if (savedSelectedFile && savedSelectedFile.isDirectory) {
-          targetPath = joinPath(savedCurrentPath, savedSelectedFile.name);
-        } else {
-          targetPath = savedCurrentPath;
-        }
+      const markUploadCancelled = () => {
+        setTransferCancelled(true);
+        markTransferCancelled(activeUploadTransferId, {
+          statusText: t("fileManager.transfer.status.transferCancelled"),
+          cancelMessage: t("fileManager.errors.userCancelled"),
+        });
+      };
 
-        if (window.terminalAPI && window.terminalAPI.uploadFile) {
+      try {
+        // 使用保存的状态而非实时状态
+        const targetPath =
+          savedSelectedFile && savedSelectedFile.isDirectory
+            ? joinPath(savedCurrentPath, savedSelectedFile.name)
+            : savedCurrentPath;
+
+        if (api) {
           // 触发应用内状态提示（与拖拽上传保持一致）
           showNotification(
             t("fileManager.messages.preparingUpload"),
@@ -3259,7 +3286,7 @@ const FileManager = memo(
           );
 
           activeUploadTransferId = addTransferProgress({
-            type: "upload-multifile",
+            type: transferType,
             progress: 0,
             fileName: t("fileManager.messages.preparingUpload"),
             statusText: t("fileManager.transfer.status.preparingUpload"),
@@ -3268,108 +3295,86 @@ const FileManager = memo(
             totalBytes: 0,
             transferSpeed: 0,
             remainingTime: 0,
-            currentFileIndex: 0,
+            ...(isFolder ? {} : { currentFileIndex: 0 }),
             processedFiles: 0,
             totalFiles: 1,
             transferKey: "",
             fileList: null,
           });
 
-          // 使用progressCallback处理进度更新
-          const result = await window.terminalAPI.uploadFile(
-            tabId,
-            targetPath,
-            (
-              progress,
-              fileName,
-              transferredBytes,
-              totalBytes,
-              transferSpeed,
-              remainingTime,
-              currentFileIndex,
-              processedFiles,
-              totalFiles,
-              transferKey,
-              fileList,
-            ) => {
-              // 验证并标准化进度数据
-              const validProgress = Math.max(0, Math.min(100, progress || 0));
-              const validTransferredBytes = Math.max(0, transferredBytes || 0);
-              const validTotalBytes = Math.max(0, totalBytes || 0);
-              const validTransferSpeed = Math.max(0, transferSpeed || 0);
-              const validRemainingTime = Math.max(0, remainingTime || 0);
-              const validCurrentFileIndex = Math.max(0, currentFileIndex || 0);
-              const validProcessedFiles = Math.max(0, processedFiles || 0);
-              const validTotalFiles = Math.max(0, totalFiles || 0);
+          // 使用progressCallback处理进度更新;两个 API 的回调签名不同,先解包成同一结构
+          const result = await api(tabId, targetPath, (...args) => {
+            const raw = isFolder
+              ? {
+                  progress: args[0],
+                  fileName: args[1],
+                  currentFile: args[2],
+                  transferredBytes: args[3],
+                  totalBytes: args[4],
+                  transferSpeed: args[5],
+                  remainingTime: args[6],
+                  processedFiles: args[7],
+                  totalFiles: args[8],
+                  transferKey: args[9],
+                  fileList: args[10],
+                }
+              : {
+                  progress: args[0],
+                  fileName: args[1],
+                  currentFile: args[1],
+                  transferredBytes: args[2],
+                  totalBytes: args[3],
+                  transferSpeed: args[4],
+                  remainingTime: args[5],
+                  currentFileIndex: args[6],
+                  processedFiles: args[7],
+                  totalFiles: args[8],
+                  transferKey: args[9],
+                  fileList: args[10],
+                };
 
-              if (!activeUploadTransferId) {
-                activeUploadTransferId = addTransferProgress({
-                  type: "upload-multifile",
-                  progress: validProgress,
-                  fileName:
-                    fileName || t("fileManager.messages.preparingUpload"),
-                  statusText: t("fileManager.transfer.status.uploading"),
-                  currentFile: fileName || "",
-                  transferredBytes: validTransferredBytes,
-                  totalBytes: validTotalBytes,
-                  transferSpeed: validTransferSpeed,
-                  remainingTime: validRemainingTime,
-                  currentFileIndex: validCurrentFileIndex,
-                  processedFiles: validProcessedFiles,
-                  totalFiles: validTotalFiles || 1,
-                  transferKey: transferKey || "",
-                  fileList: fileList || null,
-                });
-              }
+            const normalized = normalizeTransferProgress(raw);
+            const update = {
+              ...normalized,
+              fileName: raw.fileName || t("fileManager.messages.preparingUpload"),
+              statusText: t("fileManager.transfer.status.uploading"),
+              currentFile: raw.currentFile || "",
+              fileList: raw.fileList || null,
+            };
 
-              updateTransferProgress(activeUploadTransferId, {
-                progress: validProgress,
-                fileName: fileName || t("fileManager.messages.preparingUpload"),
-                statusText: t("fileManager.transfer.status.uploading"),
-                currentFile: fileName || "",
-                transferredBytes: validTransferredBytes,
-                totalBytes: validTotalBytes,
-                transferSpeed: validTransferSpeed,
-                remainingTime: validRemainingTime,
-                currentFileIndex: validCurrentFileIndex,
-                processedFiles: validProcessedFiles,
-                totalFiles: validTotalFiles,
-                transferKey: transferKey || "",
-                fileList: fileList || null,
+            if (!activeUploadTransferId) {
+              activeUploadTransferId = addTransferProgress({
+                type: transferType,
+                ...update,
+                totalFiles: isFolder
+                  ? normalized.totalFiles
+                  : normalized.totalFiles || 1,
               });
-            },
-          );
+            }
+
+            updateTransferProgress(activeUploadTransferId, update);
+          });
 
           if (isUserCancellationError(result)) {
-            setTransferCancelled(true);
-            if (activeUploadTransferId) {
-              updateTransferProgress(activeUploadTransferId, {
-                isCancelled: true,
-                statusText: t("fileManager.transfer.status.transferCancelled"),
-                cancelMessage: t("fileManager.errors.userCancelled"),
-              });
-              storeScheduleTransferCleanup(activeUploadTransferId, 3000);
-            }
+            markUploadCancelled();
           } else if (result?.success) {
-            // 标记传输完成
-            if (activeUploadTransferId) {
-              updateTransferProgress(activeUploadTransferId, {
-                progress: 100,
-                fileName:
-                  result.message || t("fileManager.messages.uploadComplete"),
-                statusText: t("fileManager.transfer.status.completed"),
-                currentFile: "",
-                processedFiles: Math.max(
-                  0,
-                  result.successfulFiles ?? result.totalFiles ?? 0,
-                ),
-                currentFileIndex: Math.max(0, result.totalFiles || 0),
-                totalFiles: Math.max(0, result.totalFiles || 0),
-              });
-
-              // 传输完成后延迟移除
-              storeScheduleTransferCleanup(activeUploadTransferId, 3000);
-            }
+            // 标记传输完成,完成后延迟移除
+            markTransferCompleted(activeUploadTransferId, {
+              fileName:
+                result.message || t("fileManager.messages.uploadComplete"),
+              statusText: t("fileManager.transfer.status.completed"),
+              currentFile: "",
+              ...(isFolder
+                ? {}
+                : {
+                    processedFiles: Math.max(
+                      0,
+                      result.successfulFiles ?? result.totalFiles ?? 0,
+                    ),
+                    currentFileIndex: Math.max(0, result.totalFiles || 0),
+                    totalFiles: Math.max(0, result.totalFiles || 0),
+                  }),
+            });
 
             // 如果是上传到选中的文件夹，刷新当前目录即可
             // 不需要切换到目标文件夹
@@ -3395,25 +3400,13 @@ const FileManager = memo(
                 "error",
                 6000,
               );
-              if (activeUploadTransferId) {
-                updateTransferProgress(activeUploadTransferId, {
-                  error: result.error || t("fileManager.errors.uploadFailed"),
-                  statusText: t("fileManager.transfer.status.failed"),
-                });
-                storeScheduleTransferCleanup(activeUploadTransferId, 5000);
-              }
+              markTransferFailed(
+                activeUploadTransferId,
+                result.error || t("fileManager.errors.uploadFailed"),
+                { statusText: t("fileManager.transfer.status.failed") },
+              );
             } else {
-              setTransferCancelled(true);
-              if (activeUploadTransferId) {
-                updateTransferProgress(activeUploadTransferId, {
-                  isCancelled: true,
-                  statusText: t(
-                    "fileManager.transfer.status.transferCancelled",
-                  ),
-                  cancelMessage: t("fileManager.errors.userCancelled"),
-                });
-                storeScheduleTransferCleanup(activeUploadTransferId, 3000);
-              }
+              markUploadCancelled();
             }
           }
 
@@ -3423,13 +3416,11 @@ const FileManager = memo(
           }
         }
       } catch (error) {
-        // 上传文件失败
-
         // 只有在不是用户主动取消的情况下才显示错误
         if (
           !transferCancelled &&
           !isUserCancellationError(error) &&
-          !error?.message?.includes("reply was never sent")
+          !isSilentIpcReplyError(error)
         ) {
           showNotification(
             (error && (error.message || error.error)) ||
@@ -3437,16 +3428,14 @@ const FileManager = memo(
             "error",
             6000,
           );
-          // 更新所有未完成的传输为错误状态
           const errorMessage =
             error?.message || t("fileManager.errors.unknownError");
           if (activeUploadTransferId) {
-            updateTransferProgress(activeUploadTransferId, {
-              error: errorMessage,
+            markTransferFailed(activeUploadTransferId, errorMessage, {
               statusText: t("fileManager.transfer.status.failed"),
             });
-            storeScheduleTransferCleanup(activeUploadTransferId, 5000);
           } else {
+            // 更新所有未完成的传输为错误状态
             transferProgressList
               .filter(
                 (transfer) => transfer.progress < 100 && !transfer.isCancelled,
@@ -3461,12 +3450,10 @@ const FileManager = memo(
         } else {
           setTransferCancelled(true);
           if (activeUploadTransferId) {
-            updateTransferProgress(activeUploadTransferId, {
-              isCancelled: true,
+            markTransferCancelled(activeUploadTransferId, {
               statusText: t("fileManager.transfer.status.transferCancelled"),
               cancelMessage: t("fileManager.errors.userCancelled"),
             });
-            storeScheduleTransferCleanup(activeUploadTransferId, 3000);
           } else {
             // 标记所有未完成的传输为取消状态
             transferProgressList
@@ -3489,237 +3476,9 @@ const FileManager = memo(
       }
     };
 
-    // 处理上传文件夹到当前目录
-    const handleUploadFolder = async () => {
-      handleContextMenuClose();
-      handleBlankContextMenuClose();
+    const handleUploadFile = () => runUploadTransfer("file");
+    const handleUploadFolder = () => runUploadTransfer("folder");
 
-      if (!sshConnection) {
-        showNotification(t("fileManager.errors.noConnection"), "warning");
-        return;
-      }
-
-      setTransferCancelled(false);
-
-      // 保存当前路径状态
-      const savedCurrentPath = currentPath;
-      const savedSelectedFile = selectedFile;
-      let didForegroundRefresh = false;
-      let activeUploadTransferId = null;
-
-      try {
-        let targetPath;
-        // 使用保存的状态而非实时状态
-        if (savedSelectedFile && savedSelectedFile.isDirectory) {
-          targetPath = joinPath(savedCurrentPath, savedSelectedFile.name);
-        } else {
-          targetPath = savedCurrentPath;
-        }
-
-        if (window.terminalAPI && window.terminalAPI.uploadFolder) {
-          // 触发应用内状态提示（与拖拽上传保持一致）
-          showNotification(
-            t("fileManager.messages.preparingUpload"),
-            "info",
-            2000,
-          );
-
-          activeUploadTransferId = addTransferProgress({
-            type: "upload-folder",
-            progress: 0,
-            fileName: t("fileManager.messages.preparingUpload"),
-            statusText: t("fileManager.transfer.status.preparingUpload"),
-            currentFile: "",
-            transferredBytes: 0,
-            totalBytes: 0,
-            transferSpeed: 0,
-            remainingTime: 0,
-            processedFiles: 0,
-            totalFiles: 1,
-            transferKey: "",
-            fileList: null,
-          });
-
-          // 使用progressCallback处理进度更新
-          const result = await window.terminalAPI.uploadFolder(
-            tabId,
-            targetPath,
-            (
-              progress,
-              fileName,
-              currentFile,
-              transferredBytes,
-              totalBytes,
-              transferSpeed,
-              remainingTime,
-              processedFiles,
-              totalFiles,
-              transferKey,
-              fileList,
-            ) => {
-              // 验证并标准化进度数据
-              const validProgress = Math.max(0, Math.min(100, progress || 0));
-              const validTransferredBytes = Math.max(0, transferredBytes || 0);
-              const validTotalBytes = Math.max(0, totalBytes || 0);
-              const validTransferSpeed = Math.max(0, transferSpeed || 0);
-              const validRemainingTime = Math.max(0, remainingTime || 0);
-              const validProcessedFiles = Math.max(0, processedFiles || 0);
-              const validTotalFiles = Math.max(0, totalFiles || 0);
-
-              if (!activeUploadTransferId) {
-                activeUploadTransferId = addTransferProgress({
-                  type: "upload-folder",
-                  progress: validProgress,
-                  fileName:
-                    fileName || t("fileManager.messages.preparingUpload"),
-                  statusText: t("fileManager.transfer.status.uploading"),
-                  currentFile: currentFile || "",
-                  transferredBytes: validTransferredBytes,
-                  totalBytes: validTotalBytes,
-                  transferSpeed: validTransferSpeed,
-                  remainingTime: validRemainingTime,
-                  processedFiles: validProcessedFiles,
-                  totalFiles: validTotalFiles,
-                  transferKey: transferKey || "",
-                  fileList: fileList || null,
-                });
-              }
-
-              updateTransferProgress(activeUploadTransferId, {
-                progress: validProgress,
-                fileName: fileName || t("fileManager.messages.preparingUpload"),
-                statusText: t("fileManager.transfer.status.uploading"),
-                currentFile: currentFile || "",
-                transferredBytes: validTransferredBytes,
-                totalBytes: validTotalBytes,
-                transferSpeed: validTransferSpeed,
-                remainingTime: validRemainingTime,
-                processedFiles: validProcessedFiles,
-                totalFiles: validTotalFiles,
-                transferKey: transferKey || "", // 添加transferKey到状态
-                fileList: fileList || null,
-              });
-            },
-          );
-
-          if (isUserCancellationError(result)) {
-            setTransferCancelled(true);
-            if (activeUploadTransferId) {
-              updateTransferProgress(activeUploadTransferId, {
-                isCancelled: true,
-                statusText: t("fileManager.transfer.status.transferCancelled"),
-                cancelMessage: t("fileManager.errors.userCancelled"),
-              });
-              storeScheduleTransferCleanup(activeUploadTransferId, 3000);
-            }
-          } else if (result?.success) {
-            // 标记传输完成
-            if (activeUploadTransferId) {
-              updateTransferProgress(activeUploadTransferId, {
-                progress: 100,
-                fileName:
-                  result.message || t("fileManager.messages.uploadComplete"),
-                statusText: t("fileManager.transfer.status.completed"),
-                currentFile: "",
-              });
-
-              // 传输完成后延迟移除
-              storeScheduleTransferCleanup(activeUploadTransferId, 3000);
-            }
-
-            // 如果是上传到选中的文件夹，刷新当前目录即可
-            // 不需要切换到目标文件夹
-            await loadDirectory(savedCurrentPath, 0, true); // 强制刷新当前目录
-            didForegroundRefresh = true;
-
-            // 如果有警告信息（部分文件上传失败），显示给用户
-            if (result.partialSuccess && result.warning) {
-              showNotification(result.warning, "warning", 6000);
-            } else {
-              showNotification(
-                t("fileManager.messages.uploadSuccess"),
-                "success",
-                2000,
-              );
-            }
-          } else if (!transferCancelled) {
-            // 检查是否是取消操作相关的错误
-            if (!isUserCancellationError(result)) {
-              // 只有在不是用户主动取消的情况下才显示错误
-              showNotification(
-                result.error || t("fileManager.errors.uploadFailed"),
-                "error",
-                6000,
-              );
-              if (activeUploadTransferId) {
-                updateTransferProgress(activeUploadTransferId, {
-                  error: result.error || t("fileManager.errors.uploadFailed"),
-                  statusText: t("fileManager.transfer.status.failed"),
-                });
-                storeScheduleTransferCleanup(activeUploadTransferId, 5000);
-              }
-            } else {
-              setTransferCancelled(true);
-              if (activeUploadTransferId) {
-                updateTransferProgress(activeUploadTransferId, {
-                  isCancelled: true,
-                  statusText: t(
-                    "fileManager.transfer.status.transferCancelled",
-                  ),
-                  cancelMessage: t("fileManager.errors.userCancelled"),
-                });
-                storeScheduleTransferCleanup(activeUploadTransferId, 3000);
-              }
-            }
-          }
-
-          // 上传没有前台刷新结果时，提交一次静默刷新同步列表
-          if (!didForegroundRefresh) {
-            refreshAfterUserActivity();
-          }
-        }
-      } catch (error) {
-        // t("fileManager.errors.uploadFailed")
-
-        // 只有在不是用户主动取消的情况下才显示错误
-        if (
-          !transferCancelled &&
-          !isUserCancellationError(error) &&
-          !error?.message?.includes("reply was never sent")
-        ) {
-          showNotification(
-            (error && (error.message || error.error)) ||
-              t("fileManager.errors.uploadFailed"),
-            "error",
-            6000,
-          );
-          if (activeUploadTransferId) {
-            const errorMessage =
-              error?.message || t("fileManager.errors.unknownError");
-            updateTransferProgress(activeUploadTransferId, {
-              error: errorMessage,
-              statusText: t("fileManager.transfer.status.failed"),
-            });
-            storeScheduleTransferCleanup(activeUploadTransferId, 5000);
-          }
-        } else {
-          setTransferCancelled(true);
-          if (activeUploadTransferId) {
-            updateTransferProgress(activeUploadTransferId, {
-              isCancelled: true,
-              statusText: t("fileManager.transfer.status.transferCancelled"),
-              cancelMessage: t("fileManager.errors.userCancelled"),
-            });
-            storeScheduleTransferCleanup(activeUploadTransferId, 3000);
-          }
-        }
-
-        // 异常分支如果尚未前台刷新，提交静默刷新同步列表
-        if (!didForegroundRefresh) {
-          refreshAfterUserActivity();
-        }
-      }
-    };
 
     // 复制绝对路径
     const handleCopyAbsolutePath = async () => {
@@ -4434,11 +4193,10 @@ const FileManager = memo(
 
         if (droppedItems.length === 0) {
           const message = t("fileManager.errors.noFilesSelected");
-          updateTransferProgress(transferId, {
-            error: message,
+          markTransferFailed(transferId, message, {
             statusText: t("fileManager.transfer.status.failed"),
+            cleanupDelay: 3000,
           });
-          storeScheduleTransferCleanup(transferId, 3000);
           setNotification({
             message,
             severity: "warning",
@@ -4450,11 +4208,9 @@ const FileManager = memo(
           await window.terminalAPI.validateDroppedItems(droppedItems);
         if (!validation?.success || validation.rejected?.length > 0) {
           const message = getDropValidationMessage(validation?.rejected?.[0]);
-          updateTransferProgress(transferId, {
-            error: message,
+          markTransferFailed(transferId, message, {
             statusText: t("fileManager.transfer.status.failed"),
           });
-          storeScheduleTransferCleanup(transferId, 5000);
           setNotification({
             message,
             severity: "error",
@@ -4487,11 +4243,10 @@ const FileManager = memo(
 
         if (filesDataForUpload.length === 0 && foldersForUpload.length === 0) {
           const message = t("fileManager.errors.noFilesSelected");
-          updateTransferProgress(transferId, {
-            error: message,
+          markTransferFailed(transferId, message, {
             statusText: t("fileManager.transfer.status.failed"),
+            cleanupDelay: 3000,
           });
-          storeScheduleTransferCleanup(transferId, 3000);
           setNotification({
             message,
             severity: "warning",
@@ -4554,14 +4309,12 @@ const FileManager = memo(
               conflictResult.conflicts,
             );
             if (!confirmed) {
-              updateTransferProgress(transferId, {
-                isCancelled: true,
+              markTransferCancelled(transferId, {
                 statusText: t("fileManager.transfer.status.transferCancelled"),
                 cancelMessage: t(
                   "fileManager.errors.dragDropConflictCancelled",
                 ),
               });
-              storeScheduleTransferCleanup(transferId, 3000);
               setNotification({
                 message: t("fileManager.errors.dragDropConflictCancelled"),
                 severity: "warning",
@@ -4588,32 +4341,25 @@ const FileManager = memo(
               operationComplete,
               fileList,
             ) => {
-              const validProgress = Math.max(0, Math.min(100, progress || 0));
-              const validTransferredBytes = Math.max(0, transferredBytes || 0);
-              const validTotalBytes = Math.max(0, totalBytes || 0);
-              const validTransferSpeed = Math.max(0, transferSpeed || 0);
-              const validRemainingTime = Math.max(0, remainingTime || 0);
-              const validCurrentFileIndex = Math.max(0, currentFileIndex || 0);
-              const validProcessedFiles = Math.max(0, processedFiles || 0);
-              const validTotalFiles = Math.max(0, totalFiles || 0);
-
               if (transferCancelled) {
                 return;
               }
 
               updateTransferProgress(transferId, {
-                progress: validProgress,
+                ...normalizeTransferProgress({
+                  progress,
+                  transferredBytes,
+                  totalBytes,
+                  transferSpeed,
+                  remainingTime,
+                  currentFileIndex,
+                  processedFiles,
+                  totalFiles,
+                  transferKey,
+                }),
                 fileName: fileName || droppedDisplayName,
                 statusText: t("fileManager.transfer.status.uploading"),
                 currentFile: fileName || "",
-                transferredBytes: validTransferredBytes,
-                totalBytes: validTotalBytes,
-                transferSpeed: validTransferSpeed,
-                remainingTime: validRemainingTime,
-                currentFileIndex: validCurrentFileIndex,
-                processedFiles: validProcessedFiles,
-                totalFiles: validTotalFiles,
-                transferKey: transferKey || "",
                 isCompleted: operationComplete === true,
                 fileList: fileList || null,
               });
@@ -4622,15 +4368,12 @@ const FileManager = memo(
 
           if (isUserCancellationError(result)) {
             setTransferCancelled(true);
-            updateTransferProgress(transferId, {
-              isCancelled: true,
+            markTransferCancelled(transferId, {
               statusText: t("fileManager.transfer.status.transferCancelled"),
               cancelMessage: t("fileManager.errors.userCancelled"),
             });
-            storeScheduleTransferCleanup(transferId, 3000);
           } else if (result?.success) {
-            updateTransferProgress(transferId, {
-              progress: 100,
+            markTransferCompleted(transferId, {
               fileName:
                 result.message || t("fileManager.messages.uploadComplete"),
               statusText: t("fileManager.transfer.status.completed"),
@@ -4646,8 +4389,6 @@ const FileManager = memo(
               currentFileIndex: Math.max(0, result.totalFiles || 0),
               totalFiles: Math.max(0, result.totalFiles || 0),
             });
-
-            storeScheduleTransferCleanup(transferId, 3000);
 
             updateCurrentPath(targetPath);
             setPathInput(targetPath);
@@ -4722,6 +4463,9 @@ const FileManager = memo(
         setPathInput,
         loadDirectory,
         storeScheduleTransferCleanup,
+        markTransferCancelled,
+        markTransferFailed,
+        markTransferCompleted,
         getDropValidationMessage,
         confirmDroppedUploadConflicts,
       ],
@@ -5087,37 +4831,36 @@ const FileManager = memo(
               transferKey,
             ) => {
               updateTransferProgress(transferId, {
-                progress: Math.max(0, Math.min(100, progress || 0)),
+                ...normalizeTransferProgress({
+                  progress,
+                  transferredBytes,
+                  totalBytes,
+                  transferSpeed,
+                  remainingTime,
+                  processedFiles,
+                  transferKey,
+                }),
                 fileName: fileName || savedSelectedFile.name,
                 statusText: t("fileManager.transfer.status.downloading"),
                 currentFile: fileName || savedSelectedFile.name,
-                transferredBytes: Math.max(0, transferredBytes || 0),
-                totalBytes: Math.max(0, totalBytes || 0),
-                transferSpeed: Math.max(0, transferSpeed || 0),
-                remainingTime: Math.max(0, remainingTime || 0),
-                processedFiles: Math.max(0, processedFiles || 0),
                 totalFiles: Math.max(1, totalFiles || 1),
-                transferKey: transferKey || "",
               });
             },
           );
 
           if (result?.cancelled || isUserCancellationError(result)) {
             setTransferCancelled(true);
-            updateTransferProgress(transferId, {
-              isCancelled: true,
+            markTransferCancelled(transferId, {
               statusText: t("fileManager.transfer.status.downloadCancelled"),
               cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
             });
-            storeScheduleTransferCleanup(transferId, 3000);
             showNotification(
               t("fileManager.errors.downloadCancelledByUser"),
               "info",
               3000,
             );
           } else if (result?.success) {
-            updateTransferProgress(transferId, {
-              progress: 100,
+            markTransferCompleted(transferId, {
               fileName: savedSelectedFile.name,
               statusText: t("fileManager.transfer.status.completed"),
               currentFile: "",
@@ -5125,7 +4868,6 @@ const FileManager = memo(
               totalFiles: 1,
               downloadPath: result.downloadPath || "",
             });
-            storeScheduleTransferCleanup(transferId, 3000);
             void showDownloadedLocationNotification({
               itemName: savedSelectedFile.name,
               downloadPath: result.downloadPath,
@@ -5136,11 +4878,9 @@ const FileManager = memo(
           } else {
             const errorMessage =
               result?.error || t("fileManager.errors.downloadFailed");
-            updateTransferProgress(transferId, {
-              error: errorMessage,
+            markTransferFailed(transferId, errorMessage, {
               statusText: t("fileManager.transfer.status.downloadFailed"),
             });
-            storeScheduleTransferCleanup(transferId, 5000);
             showNotification(
               `${t("fileManager.errors.downloadFailed")}: ${errorMessage}`,
               "error",
@@ -5153,27 +4893,19 @@ const FileManager = memo(
 
           if (isUserCancellationError(error)) {
             setTransferCancelled(true);
-            if (activeDownloadTransferId) {
-              updateTransferProgress(activeDownloadTransferId, {
-                isCancelled: true,
-                statusText: t("fileManager.transfer.status.downloadCancelled"),
-                cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
-              });
-              storeScheduleTransferCleanup(activeDownloadTransferId, 3000);
-            }
+            markTransferCancelled(activeDownloadTransferId, {
+              statusText: t("fileManager.transfer.status.downloadCancelled"),
+              cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
+            });
             showNotification(
               t("fileManager.errors.downloadCancelledByUser"),
               "info",
               3000,
             );
           } else if (!errorMessage.includes("reply was never sent")) {
-            if (activeDownloadTransferId) {
-              updateTransferProgress(activeDownloadTransferId, {
-                error: errorMessage,
-                statusText: t("fileManager.transfer.status.downloadFailed"),
-              });
-              storeScheduleTransferCleanup(activeDownloadTransferId, 5000);
-            }
+            markTransferFailed(activeDownloadTransferId, errorMessage, {
+              statusText: t("fileManager.transfer.status.downloadFailed"),
+            });
             showNotification(
               `${t("fileManager.errors.downloadFailed")}: ${errorMessage}`,
               "error",
@@ -5248,7 +4980,15 @@ const FileManager = memo(
               transferKey,
             ) => {
               updateTransferProgress(batchTransferId, {
-                progress: Math.max(0, Math.min(100, progress || 0)),
+                ...normalizeTransferProgress({
+                  progress,
+                  transferredBytes,
+                  totalBytes,
+                  transferSpeed,
+                  remainingTime,
+                  processedFiles,
+                  transferKey,
+                }),
                 fileName: fileName || batchDisplayName,
                 statusText: buildBatchDownloadStatusText({
                   processedFiles,
@@ -5256,27 +4996,19 @@ const FileManager = memo(
                   currentFile: fileName,
                 }),
                 currentFile: fileName || "",
-                transferredBytes: Math.max(0, transferredBytes || 0),
-                totalBytes: Math.max(0, totalBytes || 0),
-                transferSpeed: Math.max(0, transferSpeed || 0),
-                remainingTime: Math.max(0, remainingTime || 0),
-                processedFiles: Math.max(0, processedFiles || 0),
                 totalFiles: Math.max(1, totalFiles || filesToDownload.length),
-                transferKey: transferKey || "",
               });
             },
           );
 
           if (result?.cancelled || isUserCancellationError(result)) {
             setTransferCancelled(true);
-            updateTransferProgress(batchTransferId, {
-              isCancelled: true,
+            markTransferCancelled(batchTransferId, {
               statusText: t(
                 "fileManager.transfer.status.batchDownloadCancelled",
               ),
               cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
             });
-            storeScheduleTransferCleanup(batchTransferId, 3000);
             showNotification(
               t("fileManager.errors.downloadCancelledByUser"),
               "info",
@@ -5292,16 +5024,18 @@ const FileManager = memo(
                 total: completedCount + failedCount,
               },
             );
-            updateTransferProgress(batchTransferId, {
-              progress: 100,
-              fileName: batchDisplayName,
-              statusText: warningMessage,
-              warning: warningMessage,
-              currentFile: "",
-              processedFiles: completedCount + failedCount,
-              totalFiles: Math.max(1, filesToDownload.length),
-            });
-            storeScheduleTransferCleanup(batchTransferId, 6000);
+            markTransferCompleted(
+              batchTransferId,
+              {
+                fileName: batchDisplayName,
+                statusText: warningMessage,
+                warning: warningMessage,
+                currentFile: "",
+                processedFiles: completedCount + failedCount,
+                totalFiles: Math.max(1, filesToDownload.length),
+              },
+              6000,
+            );
             showNotification(warningMessage, "warning", 6000);
             void showDownloadedLocationNotification({
               itemName: t("fileManager.messages.batchDownloadItemName"),
@@ -5318,8 +5052,7 @@ const FileManager = memo(
               0,
               result.completed || filesToDownload.length,
             );
-            updateTransferProgress(batchTransferId, {
-              progress: 100,
+            markTransferCompleted(batchTransferId, {
               fileName: t("fileManager.messages.batchDownloadCompleteTitle", {
                 count: completedCount,
               }),
@@ -5334,7 +5067,6 @@ const FileManager = memo(
               processedFiles: completedCount,
               totalFiles: filesToDownload.length,
             });
-            storeScheduleTransferCleanup(batchTransferId, 3000);
             showNotification(
               t("fileManager.messages.downloadSuccessCount", {
                 count: completedCount,
@@ -5356,11 +5088,9 @@ const FileManager = memo(
           } else {
             const errorMessage =
               result?.error || t("fileManager.errors.batchDownloadFailed");
-            updateTransferProgress(batchTransferId, {
-              error: errorMessage,
+            markTransferFailed(batchTransferId, errorMessage, {
               statusText: t("fileManager.transfer.status.batchDownloadFailed"),
             });
-            storeScheduleTransferCleanup(batchTransferId, 5000);
             showNotification(
               `${t("fileManager.errors.batchDownloadFailed")}: ${errorMessage}`,
               "error",
@@ -5373,31 +5103,21 @@ const FileManager = memo(
 
           if (isUserCancellationError(error)) {
             setTransferCancelled(true);
-            if (batchTransferId) {
-              updateTransferProgress(batchTransferId, {
-                isCancelled: true,
-                statusText: t(
-                  "fileManager.transfer.status.batchDownloadCancelled",
-                ),
-                cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
-              });
-              storeScheduleTransferCleanup(batchTransferId, 3000);
-            }
+            markTransferCancelled(batchTransferId, {
+              statusText: t(
+                "fileManager.transfer.status.batchDownloadCancelled",
+              ),
+              cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
+            });
             showNotification(
               t("fileManager.errors.downloadCancelledByUser"),
               "info",
               3000,
             );
           } else if (!errorMessage.includes("reply was never sent")) {
-            if (batchTransferId) {
-              updateTransferProgress(batchTransferId, {
-                error: errorMessage,
-                statusText: t(
-                  "fileManager.transfer.status.batchDownloadFailed",
-                ),
-              });
-              storeScheduleTransferCleanup(batchTransferId, 5000);
-            }
+            markTransferFailed(batchTransferId, errorMessage, {
+              statusText: t("fileManager.transfer.status.batchDownloadFailed"),
+            });
             showNotification(
               `${t("fileManager.errors.batchDownloadFailed")}: ${errorMessage}`,
               "error",
@@ -5477,7 +5197,16 @@ const FileManager = memo(
               transferKey,
             ) => {
               updateTransferProgress(transferId, {
-                progress: Math.max(0, Math.min(100, progress || 0)),
+                ...normalizeTransferProgress({
+                  progress,
+                  transferredBytes,
+                  totalBytes,
+                  transferSpeed,
+                  remainingTime,
+                  processedFiles,
+                  totalFiles,
+                  transferKey,
+                }),
                 fileName: displayName,
                 statusText: buildFolderDownloadStatusText({
                   currentFile,
@@ -5485,26 +5214,17 @@ const FileManager = memo(
                   totalFiles,
                 }),
                 currentFile: currentFile || "",
-                transferredBytes: Math.max(0, transferredBytes || 0),
-                totalBytes: Math.max(0, totalBytes || 0),
-                transferSpeed: Math.max(0, transferSpeed || 0),
-                remainingTime: Math.max(0, remainingTime || 0),
-                processedFiles: Math.max(0, processedFiles || 0),
-                totalFiles: Math.max(0, totalFiles || 0),
-                transferKey: transferKey || "",
               });
             },
           );
 
           if (result?.cancelled || isUserCancellationError(result)) {
-            updateTransferProgress(transferId, {
-              isCancelled: true,
+            markTransferCancelled(transferId, {
               statusText: t(
                 "fileManager.transfer.status.folderDownloadCancelled",
               ),
               cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
             });
-            storeScheduleTransferCleanup(transferId, 3000);
             return {
               state: "cancelled",
               transferId,
@@ -5522,17 +5242,19 @@ const FileManager = memo(
                 total: completedCount + failedCount,
               },
             );
-            updateTransferProgress(transferId, {
-              progress: 100,
-              fileName: displayName,
-              statusText: warningMessage,
-              warning: warningMessage,
-              currentFile: "",
-              processedFiles: completedCount + failedCount,
-              totalFiles: completedCount + failedCount,
-              downloadPath: result.downloadPath || "",
-            });
-            storeScheduleTransferCleanup(transferId, 6000);
+            markTransferCompleted(
+              transferId,
+              {
+                fileName: displayName,
+                statusText: warningMessage,
+                warning: warningMessage,
+                currentFile: "",
+                processedFiles: completedCount + failedCount,
+                totalFiles: completedCount + failedCount,
+                downloadPath: result.downloadPath || "",
+              },
+              6000,
+            );
             return {
               state: "warning",
               transferId,
@@ -5543,8 +5265,7 @@ const FileManager = memo(
 
           if (result?.success) {
             const completedCount = Math.max(0, result.completed || 0);
-            updateTransferProgress(transferId, {
-              progress: 100,
+            markTransferCompleted(transferId, {
               fileName: displayName,
               statusText: t("fileManager.transfer.status.completed"),
               currentFile: "",
@@ -5552,7 +5273,6 @@ const FileManager = memo(
               totalFiles: completedCount,
               downloadPath: result.downloadPath || "",
             });
-            storeScheduleTransferCleanup(transferId, 3000);
             return {
               state: "success",
               transferId,
@@ -5562,11 +5282,9 @@ const FileManager = memo(
 
           const errorMessage =
             result?.error || t("fileManager.messages.downloadFolderFailed");
-          updateTransferProgress(transferId, {
-            error: errorMessage,
+          markTransferFailed(transferId, errorMessage, {
             statusText: t("fileManager.transfer.status.folderDownloadFailed"),
           });
-          storeScheduleTransferCleanup(transferId, 5000);
           return {
             state: "error",
             transferId,
@@ -5578,14 +5296,12 @@ const FileManager = memo(
             error?.message || t("fileManager.errors.unknownError");
 
           if (isUserCancellationError(error)) {
-            updateTransferProgress(transferId, {
-              isCancelled: true,
+            markTransferCancelled(transferId, {
               statusText: t(
                 "fileManager.transfer.status.folderDownloadCancelled",
               ),
               cancelMessage: t("fileManager.errors.downloadCancelledByUser"),
             });
-            storeScheduleTransferCleanup(transferId, 3000);
             return {
               state: "cancelled",
               transferId,
@@ -5593,11 +5309,9 @@ const FileManager = memo(
             };
           }
 
-          updateTransferProgress(transferId, {
-            error: errorMessage,
+          markTransferFailed(transferId, errorMessage, {
             statusText: t("fileManager.transfer.status.folderDownloadFailed"),
           });
-          storeScheduleTransferCleanup(transferId, 5000);
           return {
             state: "error",
             transferId,
