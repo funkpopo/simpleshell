@@ -1,7 +1,6 @@
 import * as React from "react";
-import Dialog from "./AccessibleDialog.jsx";
+import { GlassDialog } from "./styledDialogs.jsx";
 import { memo } from "react";
-import { styled } from "@mui/material/styles";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
@@ -46,23 +45,11 @@ import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../i18n/i18n";
 import { SettingsSkeleton } from "./SkeletonLoader.jsx";
 import { useNotification } from "../contexts/NotificationContext";
-
-// 自定义磨砂玻璃效果的Dialog组件
-const GlassDialog = styled(Dialog)(({ theme }) => ({
-  "& .MuiDialog-paper": {
-    backgroundColor:
-      theme.palette.mode === "dark"
-        ? "rgba(40, 44, 52, 0.75)"
-        : "rgba(255, 255, 255, 0.75)",
-    backdropFilter: "blur(10px)",
-    boxShadow:
-      theme.palette.mode === "dark"
-        ? "0 8px 32px 0 rgba(0, 0, 0, 0.37)"
-        : "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
-    border: "1px solid rgba(255, 255, 255, 0.18)",
-    maxHeight: "80vh",
-  },
-}));
+import {
+  openLogDirectory,
+  exportDiagnostics,
+  openFeedbackIssue,
+} from "../utils/diagnosticsActions.js";
 
 const sectionCardSx = {
   p: 1.5,
@@ -418,33 +405,11 @@ const Settings = memo(({ open, onClose }) => {
     }
   };
 
-  const handleOpenLogDirectory = async () => {
-    try {
-      const result = await window.terminalAPI?.openLogDirectory?.();
-      if (result?.success === false) {
-        throw new Error(result.error || t("settings.openLogDirectoryFailed"));
-      }
-      showSuccess(t("settings.logDirectoryOpened"));
-    } catch (error) {
-      showError(error?.message || t("settings.openLogDirectoryFailed"));
-    }
-  };
+  const handleOpenLogDirectory = () =>
+    openLogDirectory({ t, showSuccess, showError });
 
-  const handleExportDiagnostics = async () => {
-    try {
-      const result = await window.terminalAPI?.exportDiagnostics?.();
-      if (result?.success === false) {
-        throw new Error(result.error || t("settings.exportDiagnosticsFailed"));
-      }
-      showSuccess(
-        t("settings.diagnosticsExported", {
-          path: result?.filePath || "",
-        }),
-      );
-    } catch (error) {
-      showError(error?.message || t("settings.exportDiagnosticsFailed"));
-    }
-  };
+  const handleExportDiagnostics = () =>
+    exportDiagnostics({ t, showSuccess, showError });
 
   const handleCopyDiagnosticPackage = async () => {
     try {
@@ -463,42 +428,14 @@ const Settings = memo(({ open, onClose }) => {
     }
   };
 
-  const handleOpenFeedbackIssue = async () => {
-    try {
-      if (!window.dialogAPI?.showMessageBox) {
-        throw new Error(t("settings.feedback.dialogUnavailable"));
-      }
-
-      const confirmation = await window.dialogAPI.showMessageBox({
-        type: "info",
-        buttons: [
-          t("settings.feedback.cancel"),
-          t("settings.feedback.openIssue"),
-        ],
-        defaultId: 1,
-        cancelId: 0,
-        title: t("settings.feedback.confirmTitle"),
-        message: t("settings.feedback.confirmMessage"),
-        detail: t("settings.feedback.confirmDetail"),
-        noLink: true,
-      });
-
-      if (confirmation?.response !== 1) {
-        return;
-      }
-
-      const result = await window.terminalAPI?.openFeedbackIssue?.({
-        source: "settings",
-        title: t("settings.feedback.defaultTitle"),
-      });
-      if (result?.success === false) {
-        throw new Error(result.error || t("settings.feedback.openIssueFailed"));
-      }
-      showSuccess(t("settings.feedback.issueOpened"));
-    } catch (error) {
-      showError(error?.message || t("settings.feedback.openIssueFailed"));
-    }
-  };
+  const handleOpenFeedbackIssue = () =>
+    openFeedbackIssue({
+      t,
+      showSuccess,
+      showError,
+      source: "settings",
+      confirmButtonLabel: t("settings.feedback.openIssue"),
+    });
 
   // 检查性能设置是否需要重启
   const checkIfRestartNeeded = (newSettings) => {
@@ -755,6 +692,7 @@ const Settings = memo(({ open, onClose }) => {
       aria-labelledby="settings-dialog-title"
       maxWidth="md"
       fullWidth
+      paperMaxHeight="80vh"
     >
       <BootstrapDialogTitle id="settings-dialog-title" onClose={onClose}>
         {t("settings.title")}

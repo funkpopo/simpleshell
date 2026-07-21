@@ -7,7 +7,6 @@ import React, {
   useRef,
 } from "react";
 import Dialog from "./AccessibleDialog.jsx";
-import { flushSync } from "react-dom";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import {
   Box,
@@ -24,8 +23,6 @@ import {
   Menu,
   MenuItem,
   Button,
-  Alert,
-  Snackbar,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -41,7 +38,6 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import HomeIcon from "@mui/icons-material/Home";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import SearchIcon from "@mui/icons-material/Search";
-import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import DeleteIcon from "@mui/icons-material/Delete";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
@@ -57,6 +53,7 @@ import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import FilePreview from "./FilePreview.jsx";
 import OverflowTooltipText from "./OverflowTooltipText.jsx";
+import NameInputDialog from "./NameInputDialog.jsx";
 // TransferProgressFloat 已移至全局显示,不再导入
 import FilePermissionEditor from "./FilePermissionEditor.jsx";
 import { List, ListItem, ListItemButton } from "@mui/material";
@@ -65,15 +62,17 @@ import { InsertDriveFile as InsertDriveFileIcon } from "@mui/icons-material";
 import {
   formatLastRefreshTime,
   formatFileSize,
+  formatDate,
+  formatAbsoluteDateTime,
 } from "../core/utils/formatters.js";
 import { debounce } from "../core/utils/performance.js";
 import { useTranslation } from "react-i18next";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
-import {
-  sidebarContentSx,
-  sidebarTitleBarSx,
-  sidebarTitleIconButtonSx,
-} from "./sidebarItemStyles";
+import { sidebarContentSx, sidebarPaperSx } from "./sidebarItemStyles";
+import { SidebarTitleBar } from "./SidebarPanel.jsx";
+import useSidebarPanel from "../hooks/useSidebarPanel";
+import useContextMenuRetarget from "../hooks/useContextMenuRetarget";
+import { useNotification } from "../contexts/NotificationContext";
 import { getSearchFieldMotionSx } from "../utils/searchFieldStyles";
 
 const FILE_LIST_ROW_HEIGHT = 36;
@@ -175,6 +174,60 @@ const getParentPath = (targetPath) => {
   }
 
   return normalizedPath.slice(0, lastSlashIndex);
+};
+
+// SFTP 操作通用重试骨架：统一 "SFTP错误" 判定与线性退避（baseDelay * 第N次重试）
+// - operation: 返回 { success, error } 响应的异步操作
+// - fallbackError: 响应缺少 error 时（以及理论上循环耗尽时）的默认错误文本
+// - treatErrorAsSuccess: 命中时将该错误响应视为成功（如"已存在"）
+// - onRetry(current, max): 每次重试等待前的通知（用于更新对话框提示）
+// - formatCaughtError(error): 最后一次尝试抛出异常时的错误文本
+const withSftpRetry = async (operation, options = {}) => {
+  const {
+    maxRetries = 2,
+    baseDelay = 300,
+    fallbackError = "",
+    treatErrorAsSuccess = null,
+    onRetry = null,
+    formatCaughtError = (error) => error?.message || fallbackError,
+  } = options;
+
+  const waitBeforeRetry = (attempt) =>
+    new Promise((resolve) => setTimeout(resolve, baseDelay * (attempt + 1)));
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await operation();
+
+      if (response?.success) {
+        return { success: true, response };
+      }
+
+      const responseError = response?.error || fallbackError;
+
+      if (treatErrorAsSuccess && treatErrorAsSuccess(responseError)) {
+        return { success: true, response };
+      }
+
+      if (responseError.includes("SFTP错误") && attempt < maxRetries) {
+        onRetry?.(attempt + 1, maxRetries);
+        await waitBeforeRetry(attempt);
+        continue;
+      }
+
+      return { success: false, error: responseError };
+    } catch (error) {
+      if (attempt < maxRetries) {
+        onRetry?.(attempt + 1, maxRetries);
+        await waitBeforeRetry(attempt);
+        continue;
+      }
+
+      return { success: false, error: formatCaughtError(error) };
+    }
+  }
+
+  return { success: false, error: fallbackError };
 };
 
 const normalizeTransferName = (name) =>
@@ -441,7 +494,6 @@ const FileManager = memo(
     }, []);
     const [contextMenu, setContextMenu] = useState(null);
     const fileManagerRootRef = useRef(null);
-    const contextMenuRedispatchingRef = useRef(false);
     const [searchTerm, setSearchTerm] = useState("");
     const searchInputRef = useRef(null);
     const [showSearch, setShowSearch] = useState(false);
@@ -481,7 +533,6 @@ const FileManager = memo(
     const [pathInput, setPathInput] = useState(normalizedInitialPath);
     const [transferCancelled, setTransferCancelled] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
-    const [notification, setNotification] = useState(null);
     const [createMenuAnchor, setCreateMenuAnchor] = useState(null);
     const [uploadMenuAnchor, setUploadMenuAnchor] = useState(null);
     const [externalEditorEnabled, setExternalEditorEnabled] = useState(false);
@@ -730,58 +781,31 @@ const FileManager = memo(
       fileManagerRootRef.current?.focus({ preventScroll: true });
     };
 
-    // 键盘快捷键处理
-    useEffect(() => {
-      const handleKeyDown = (e) => {
-        // 只在文件管理器打开时处理快捷键
-        if (!open || showPreview) return;
-
+    // 键盘快捷键处理（Ctrl+/ 与 Ctrl+F 聚焦搜索框）
+    useSidebarPanel({
+      open,
+      rootRef: fileManagerRootRef,
+      shouldIgnoreKeydown: (e) => {
+        if (showPreview) return true;
         const targetElement = e.target || document.activeElement;
-        if (
+        return Boolean(
           targetElement &&
           typeof targetElement.closest === "function" &&
-          targetElement.closest('[data-file-preview-dialog="true"]')
-        ) {
-          return;
+          targetElement.closest('[data-file-preview-dialog="true"]'),
+        );
+      },
+      onSearchShortcut: () => {
+        if (!showSearch) {
+          setShowSearch(true);
         }
-
-        // 检查当前焦点是否在终端区域内，如果是则不处理侧边栏快捷键
-        const activeElement = document.activeElement;
-        const isInTerminal =
-          activeElement &&
-          (activeElement.classList.contains("xterm-helper-textarea") ||
-            activeElement.classList.contains("xterm-screen"));
-
-        // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
-        if (isInTerminal) return;
-
-        const isFocusInSidebar =
-          activeElement && fileManagerRootRef.current?.contains(activeElement);
-
-        // Ctrl+/ 全局聚焦搜索框；Ctrl+F 仅在焦点位于侧边栏内时接管浏览器查找
-        if (
-          e.ctrlKey &&
-          (e.key === "/" || (e.key.toLowerCase() === "f" && isFocusInSidebar))
-        ) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (!showSearch) {
-            setShowSearch(true);
+        // 等待一帧后聚焦，确保输入框已渲染
+        setTimeout(() => {
+          if (searchInputRef.current) {
+            searchInputRef.current.focus();
           }
-          // 等待一帧后聚焦，确保输入框已渲染
-          setTimeout(() => {
-            if (searchInputRef.current) {
-              searchInputRef.current.focus();
-            }
-          }, 0);
-        }
-      };
-
-      document.addEventListener("keydown", handleKeyDown);
-      return () => {
-        document.removeEventListener("keydown", handleKeyDown);
-      };
-    }, [open, showSearch, showPreview]);
+        }, 0);
+      },
+    });
 
     // 使用自动清理Hook
     const { addEventListener, addTimeout } = useAutoCleanup();
@@ -832,6 +856,8 @@ const FileManager = memo(
       // useEffect 不应该返回 addEventListener 的返回值
     }, [addEventListener]);
 
+    const { showNotification: showGlobalNotification } = useNotification();
+
     const showNotification = useCallback(
       (
         message,
@@ -840,19 +866,38 @@ const FileManager = memo(
         showAction = false,
         actionCallback = null,
       ) => {
-        setNotification({
-          message,
-          severity,
-          duration,
-          showAction,
-          actionCallback,
+        showGlobalNotification(message, severity, {
+          // 错误通知不自动关闭，需手动关闭
+          autoHideDuration: severity === "error" ? null : duration || 3000,
+          anchorOrigin: { vertical: "bottom", horizontal: "center" },
+          variant: "standard",
+          action:
+            showAction && typeof actionCallback === "function"
+              ? {
+                  label: t("fileManager.openLocation"),
+                  onClick: actionCallback,
+                }
+              : null,
         });
-
-        if (severity !== "error" && duration > 0) {
-          addTimeout(() => setNotification(null), duration);
-        }
       },
-      [addTimeout],
+      [showGlobalNotification, t],
+    );
+
+    // 兼容旧的 setNotification({ message, severity, ... }) 调用
+    const setNotification = useCallback(
+      (notification) => {
+        if (!notification) {
+          return;
+        }
+        showNotification(
+          notification.message,
+          notification.severity || "info",
+          notification.duration ?? 3000,
+          notification.showAction,
+          notification.actionCallback,
+        );
+      },
+      [showNotification],
     );
 
     const {
@@ -2427,30 +2472,6 @@ const FileManager = memo(
       });
     }, [files, searchTerm, sortMode, isChunking]);
 
-    // 格式化日期函数
-    const formatDate = useCallback((date) => {
-      const now = new Date();
-      const diff = now - date;
-      const day = 24 * 60 * 60 * 1000;
-
-      // 如果是今天的文件，显示时间
-      if (diff < day && date.getDate() === now.getDate()) {
-        return date.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-      }
-
-      // 如果是最近一周的文件，显示星期几
-      if (diff < 7 * day) {
-        const days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-        return days[date.getDay()];
-      }
-
-      // 其他情况显示年-月-日
-      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    }, []);
-
     // 文件渲染数据预处理，避免 render 阶段重复做格式化
     const displayFileRows = useMemo(() => {
       return displayFiles.map((file, index) => {
@@ -2470,7 +2491,7 @@ const FileManager = memo(
             .join(" · "),
         };
       });
-    }, [displayFiles, formatDate, t]);
+    }, [displayFiles, t]);
 
     // 过滤和排序文件列表（根据搜索词） - 优化版本，使用useMemo缓存
 
@@ -2661,162 +2682,47 @@ const FileManager = memo(
     }, []);
 
     const deleteFileWithRetry = useCallback(
-      async (targetPath, isDirectory) => {
-        const maxRetries = 3;
-
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          try {
-            const response = await window.terminalAPI.deleteFile(
-              tabId,
-              targetPath,
-              isDirectory,
-            );
-
-            if (response?.success) {
-              return { success: true };
-            }
-
-            const responseError =
-              response?.error || t("fileManager.errors.deleteFailed");
-            const shouldRetry =
-              responseError.includes("SFTP错误") && attempt < maxRetries;
-
-            if (shouldRetry) {
-              await new Promise((resolve) =>
-                setTimeout(resolve, 500 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            return { success: false, error: responseError };
-          } catch (error) {
-            if (attempt < maxRetries) {
-              await new Promise((resolve) =>
-                setTimeout(resolve, 500 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            return {
-              success: false,
-              error: error?.message || t("fileManager.errors.unknownError"),
-            };
-          }
-        }
-
-        return {
-          success: false,
-          error: t("fileManager.errors.deleteFailed"),
-        };
-      },
+      (targetPath, isDirectory) =>
+        withSftpRetry(
+          () => window.terminalAPI.deleteFile(tabId, targetPath, isDirectory),
+          {
+            maxRetries: 3,
+            baseDelay: 500,
+            fallbackError: t("fileManager.errors.deleteFailed"),
+            formatCaughtError: (error) =>
+              error?.message || t("fileManager.errors.unknownError"),
+          },
+        ),
       [t, tabId],
     );
 
     const createFolderWithRetry = useCallback(
-      async (folderPath) => {
-        const maxRetries = 2;
-
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          try {
-            const response = await window.terminalAPI.createFolder(
-              tabId,
-              folderPath,
-            );
-
-            if (response?.success) {
-              return { success: true };
-            }
-
-            const responseError =
-              response?.error || t("fileManager.errors.createFolderFailed");
-            const alreadyExists =
+      (folderPath) =>
+        withSftpRetry(
+          () => window.terminalAPI.createFolder(tabId, folderPath),
+          {
+            maxRetries: 2,
+            baseDelay: 300,
+            fallbackError: t("fileManager.errors.createFolderFailed"),
+            treatErrorAsSuccess: (responseError) =>
               responseError.includes("already exists") ||
               responseError.includes("已存在") ||
-              responseError.includes("File exists");
-
-            if (alreadyExists) {
-              return { success: true };
-            }
-
-            if (responseError.includes("SFTP错误") && attempt < maxRetries) {
-              await new Promise((resolve) =>
-                setTimeout(resolve, 300 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            return { success: false, error: responseError };
-          } catch (error) {
-            if (attempt < maxRetries) {
-              await new Promise((resolve) =>
-                setTimeout(resolve, 300 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            return {
-              success: false,
-              error:
-                error?.message || t("fileManager.errors.createFolderFailed"),
-            };
-          }
-        }
-
-        return {
-          success: false,
-          error: t("fileManager.errors.createFolderFailed"),
-        };
-      },
+              responseError.includes("File exists"),
+          },
+        ),
       [t, tabId],
     );
 
     const moveFileWithRetry = useCallback(
-      async (sourcePath, targetPath) => {
-        const maxRetries = 2;
-
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          try {
-            const response = await window.terminalAPI.moveFile(
-              tabId,
-              sourcePath,
-              targetPath,
-            );
-
-            if (response?.success) {
-              return { success: true };
-            }
-
-            const responseError =
-              response?.error || t("fileManager.errors.deleteFailed");
-
-            if (responseError.includes("SFTP错误") && attempt < maxRetries) {
-              await new Promise((resolve) =>
-                setTimeout(resolve, 300 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            return { success: false, error: responseError };
-          } catch (error) {
-            if (attempt < maxRetries) {
-              await new Promise((resolve) =>
-                setTimeout(resolve, 300 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            return {
-              success: false,
-              error: error?.message || t("fileManager.errors.deleteFailed"),
-            };
-          }
-        }
-
-        return {
-          success: false,
-          error: t("fileManager.errors.deleteFailed"),
-        };
-      },
+      (sourcePath, targetPath) =>
+        withSftpRetry(
+          () => window.terminalAPI.moveFile(tabId, sourcePath, targetPath),
+          {
+            maxRetries: 2,
+            baseDelay: 300,
+            fallbackError: t("fileManager.errors.deleteFailed"),
+          },
+        ),
       [t, tabId],
     );
 
@@ -3085,12 +2991,11 @@ const FileManager = memo(
     );
 
     const formatAbsoluteTime = useCallback(
-      (timestamp) => {
-        if (!Number.isFinite(timestamp) || timestamp <= 0) {
-          return t("fileManager.propertiesDialog.notAvailable");
-        }
-        return new Date(timestamp).toLocaleString();
-      },
+      (timestamp) =>
+        formatAbsoluteDateTime(timestamp, {
+          fallback: t("fileManager.propertiesDialog.notAvailable"),
+          requirePositiveNumber: true,
+        }),
       [t],
     );
 
@@ -4167,115 +4072,21 @@ const FileManager = memo(
       setBlankContextMenu(null);
     };
 
-    useEffect(() => {
-      if (!contextMenu && !blankContextMenu) {
-        return;
-      }
-
-      const getContextMenuRetargetElement = (event) => {
-        const root = fileManagerRootRef.current;
-        if (!root) {
-          return null;
-        }
-
-        const rawTarget = event.target;
-        if (
-          rawTarget instanceof Element &&
-          (rawTarget.closest('[data-file-manager-context-menu="true"]') ||
-            rawTarget.closest('[role="menu"]'))
-        ) {
-          return null;
-        }
-
-        if (rawTarget instanceof Element && root.contains(rawTarget)) {
-          return rawTarget;
-        }
-
-        const elementsAtPoint =
-          typeof document.elementsFromPoint === "function"
-            ? document.elementsFromPoint(event.clientX, event.clientY)
-            : [];
-
-        return (
-          elementsAtPoint.find(
-            (element) =>
-              root.contains(element) &&
-              !element.closest('[data-file-manager-context-menu="true"]') &&
-              !element.closest('[role="menu"]'),
-          ) || null
-        );
-      };
-
-      const handleContextMenuRetarget = (event) => {
-        if (contextMenuRedispatchingRef.current) {
-          return;
-        }
-
-        const retargetElement = getContextMenuRetargetElement(event);
-        if (!retargetElement) {
-          return;
-        }
-
-        // 尽量把事件派发到“行级”元素，确保 React 的 onContextMenu 回调能稳定命中
-        const itemEl =
-          retargetElement.closest('[data-file-item="true"]') ||
-          retargetElement.closest("li") ||
-          retargetElement;
-
-        if (!itemEl) return;
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        const mouseEventInit = {
-          bubbles: true,
-          cancelable: true,
-          view: window,
-          button: 2,
-          buttons: 2,
-          clientX: event.clientX,
-          clientY: event.clientY,
-          screenX: event.screenX,
-          screenY: event.screenY,
-          ctrlKey: event.ctrlKey,
-          shiftKey: event.shiftKey,
-          altKey: event.altKey,
-          metaKey: event.metaKey,
-        };
-
-        flushSync(() => {
-          setContextMenu(null);
-          setBlankContextMenu(null);
-        });
-
-        if (!itemEl.isConnected) {
-          return;
-        }
-
-        // 尝试把焦点交给对应行（避免需要左键才能更新“焦点态”）
-        try {
-          itemEl.focus?.();
-        } catch (_) {
-          // ignore
-        }
-
-        contextMenuRedispatchingRef.current = true;
-        try {
-          itemEl.dispatchEvent(new MouseEvent("contextmenu", mouseEventInit));
-        } finally {
-          contextMenuRedispatchingRef.current = false;
-        }
-      };
-
-      document.addEventListener("contextmenu", handleContextMenuRetarget, true);
-      return () => {
-        document.removeEventListener(
-          "contextmenu",
-          handleContextMenuRetarget,
-          true,
-        );
-      };
-    }, [contextMenu, blankContextMenu]);
+    useContextMenuRetarget({
+      enabled: Boolean(contextMenu || blankContextMenu),
+      rootRef: fileManagerRootRef,
+      menuSelector: '[data-file-manager-context-menu="true"]',
+      mode: "redispatch",
+      // 尽量把事件派发到"行级"元素，确保 React 的 onContextMenu 回调能稳定命中
+      resolveItemElement: (retargetElement) =>
+        retargetElement.closest('[data-file-item="true"]') ||
+        retargetElement.closest("li") ||
+        retargetElement,
+      onCloseMenus: () => {
+        setContextMenu(null);
+        setBlankContextMenu(null);
+      },
+    });
 
     // 处理创建文件夹
     const handleCreateFolder = () => {
@@ -4295,30 +4106,40 @@ const FileManager = memo(
       setCreateFolderDialogError("");
     }, [createFolderSubmitting]);
 
+    // 名称输入对话框共用的提交前置校验（空名/连接/文件 API 可用性）
+    const getNameInputPrereqError = useCallback(
+      (name, apiMethodName) => {
+        if (!name) {
+          return t("fileManager.errors.emptyName");
+        }
+
+        if (!sshConnection) {
+          return t("fileManager.errors.noConnection");
+        }
+
+        if (!window.terminalAPI || !window.terminalAPI[apiMethodName]) {
+          return t("fileManager.errors.fileApiNotAvailable");
+        }
+
+        return null;
+      },
+      [sshConnection, t],
+    );
+
     // 处理创建文件夹提交
     const handleCreateFolderSubmit = async (e) => {
       e.preventDefault();
 
       const folderName = newFolderName.trim();
+      const prereqError = getNameInputPrereqError(folderName, "createFolder");
 
-      if (!folderName) {
-        setCreateFolderDialogError(t("fileManager.errors.emptyName"));
-        return;
-      }
-
-      if (!sshConnection) {
-        setCreateFolderDialogError(t("fileManager.errors.noConnection"));
-        return;
-      }
-
-      if (!window.terminalAPI || !window.terminalAPI.createFolder) {
-        setCreateFolderDialogError(t("fileManager.errors.fileApiNotAvailable"));
+      if (prereqError) {
+        setCreateFolderDialogError(prereqError);
         return;
       }
 
       const fullPath =
         currentPath === "/" ? "/" + folderName : currentPath + "/" + folderName;
-      const maxRetries = 3;
 
       setCreateFolderSubmitting(true);
       setLoading(true);
@@ -4326,8 +4147,8 @@ const FileManager = memo(
       setCreateFolderDialogError("");
 
       try {
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          try {
+        const result = await withSftpRetry(
+          async () => {
             const response = await window.terminalAPI.createFolder(
               tabId,
               fullPath,
@@ -4335,53 +4156,35 @@ const FileManager = memo(
 
             if (response?.success) {
               await loadDirectory(currentPath, 0, true);
-              setShowCreateFolderDialog(false);
-              setNewFolderName("");
-              return;
             }
 
-            const responseError =
-              response?.error || t("fileManager.errors.createFolderFailed");
-            const shouldRetry =
-              responseError.includes("SFTP错误") && attempt < maxRetries;
-
-            if (shouldRetry) {
+            return response;
+          },
+          {
+            maxRetries: 3,
+            baseDelay: 500,
+            fallbackError: t("fileManager.errors.createFolderFailed"),
+            onRetry: (current, max) =>
               setCreateFolderDialogError(
                 t("fileManager.messages.createFolderFailedRetrying", {
-                  current: attempt + 1,
-                  max: maxRetries,
+                  current,
+                  max,
                 }),
-              );
-              await new Promise((resolve) =>
-                setTimeout(resolve, 500 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            setCreateFolderDialogError(responseError);
-            return;
-          } catch (error) {
-            if (attempt < maxRetries) {
-              setCreateFolderDialogError(
-                t("fileManager.messages.createFolderFailedRetrying", {
-                  current: attempt + 1,
-                  max: maxRetries,
-                }),
-              );
-              await new Promise((resolve) =>
-                setTimeout(resolve, 500 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            setCreateFolderDialogError(
+              ),
+            formatCaughtError: (error) =>
               t("fileManager.errors.createFolderFailed") +
-                ": " +
-                (error.message || t("fileManager.errors.unknownError")),
-            );
-            return;
-          }
+              ": " +
+              (error.message || t("fileManager.errors.unknownError")),
+          },
+        );
+
+        if (result.success) {
+          setShowCreateFolderDialog(false);
+          setNewFolderName("");
+          return;
         }
+
+        setCreateFolderDialogError(result.error);
       } finally {
         setLoading(false);
         setCreateFolderSubmitting(false);
@@ -4411,19 +4214,10 @@ const FileManager = memo(
       e.preventDefault();
 
       const fileName = newFileName.trim();
+      const prereqError = getNameInputPrereqError(fileName, "createFile");
 
-      if (!fileName) {
-        setCreateFileDialogError(t("fileManager.errors.emptyName"));
-        return;
-      }
-
-      if (!sshConnection) {
-        setCreateFileDialogError(t("fileManager.errors.noConnection"));
-        return;
-      }
-
-      if (!window.terminalAPI || !window.terminalAPI.createFile) {
-        setCreateFileDialogError(t("fileManager.errors.fileApiNotAvailable"));
+      if (prereqError) {
+        setCreateFileDialogError(prereqError);
         return;
       }
 
@@ -5652,12 +5446,6 @@ const FileManager = memo(
       handleContextMenuClose();
     };
 
-    // 显示通知的辅助函数，增强版
-    // 关闭通知
-    const handleCloseNotification = () => {
-      setNotification(null);
-    };
-
     // 修改 setError 的使用，使用通知系统
     useEffect(() => {
       if (error) {
@@ -6058,18 +5846,10 @@ const FileManager = memo(
 
       if (!selectedFile) return;
 
-      if (!newName.trim()) {
-        setRenameDialogError(t("fileManager.errors.emptyName"));
-        return;
-      }
+      const prereqError = getNameInputPrereqError(newName.trim(), "renameFile");
 
-      if (!sshConnection) {
-        setRenameDialogError(t("fileManager.errors.noConnection"));
-        return;
-      }
-
-      if (!window.terminalAPI || !window.terminalAPI.renameFile) {
-        setRenameDialogError(t("fileManager.errors.fileApiNotAvailable"));
+      if (prereqError) {
+        setRenameDialogError(prereqError);
         return;
       }
 
@@ -6086,7 +5866,6 @@ const FileManager = memo(
           : currentPath
             ? currentPath + "/" + selectedFile.name
             : selectedFile.name;
-      const maxRetries = 3;
 
       setRenameSubmitting(true);
       setLoading(true);
@@ -6094,8 +5873,8 @@ const FileManager = memo(
       setRenameDialogError("");
 
       try {
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          try {
+        const result = await withSftpRetry(
+          async () => {
             const renameResponse = await window.terminalAPI.renameFile(
               tabId,
               oldPath,
@@ -6104,50 +5883,32 @@ const FileManager = memo(
 
             if (renameResponse?.success) {
               await loadDirectory(currentPath, 0, true);
-              setShowRenameDialog(false);
-              return;
             }
 
-            const responseError =
-              renameResponse?.error || t("fileManager.errors.renameFailed");
-            const shouldRetry =
-              responseError.includes("SFTP错误") && attempt < maxRetries;
-
-            if (shouldRetry) {
+            return renameResponse;
+          },
+          {
+            maxRetries: 3,
+            baseDelay: 500,
+            fallbackError: t("fileManager.errors.renameFailed"),
+            onRetry: (current, max) =>
               setRenameDialogError(
                 t("fileManager.messages.updateFailedRetrying", {
-                  current: attempt + 1,
-                  max: maxRetries,
+                  current,
+                  max,
                 }),
-              );
-              await new Promise((resolve) =>
-                setTimeout(resolve, 500 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            setRenameDialogError(responseError);
-            return;
-          } catch (error) {
-            if (attempt < maxRetries) {
-              setRenameDialogError(
-                t("fileManager.messages.updateFailedRetrying", {
-                  current: attempt + 1,
-                  max: maxRetries,
-                }),
-              );
-              await new Promise((resolve) =>
-                setTimeout(resolve, 500 * (attempt + 1)),
-              );
-              continue;
-            }
-
-            setRenameDialogError(
+              ),
+            formatCaughtError: (error) =>
               `${t("fileManager.errors.updateFailed")}: ${error.message || t("fileManager.errors.unknownError")}`,
-            );
-            return;
-          }
+          },
+        );
+
+        if (result.success) {
+          setShowRenameDialog(false);
+          return;
         }
+
+        setRenameDialogError(result.error);
       } finally {
         setLoading(false);
         setRenameSubmitting(false);
@@ -6527,15 +6288,8 @@ const FileManager = memo(
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         sx={{
-          width: "100%",
-          minWidth: 0,
-          height: "100%",
-          overflow: "hidden",
-          borderLeft: `1px solid ${theme.palette.divider}`,
-          display: "flex",
-          flexDirection: "column",
+          ...sidebarPaperSx(theme),
           position: "relative",
-          borderRadius: 0,
           // 拖拽时的视觉反馈
           ...(isDragging && {
             backgroundColor: theme.palette.action.hover,
@@ -6546,30 +6300,16 @@ const FileManager = memo(
         elevation={4}
       >
         <Box sx={sidebarContentSx(theme, open)}>
-          <Box sx={sidebarTitleBarSx(theme)}>
-            <Typography
-              variant="subtitle1"
-              sx={{ flexGrow: 1 }}
-              fontWeight="medium"
-            >
-              {tabName
+          <SidebarTitleBar
+            title={
+              tabName
                 ? `${t("fileManager.title")} - ${tabName}`
-                : t("fileManager.title")}
-            </Typography>
-            <Tooltip title={t("common.close")}>
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={handleClose}
-                  disabled={isClosing}
-                  aria-label={t("common.close")}
-                  sx={sidebarTitleIconButtonSx}
-                >
-                  <CloseIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-          </Box>
+                : t("fileManager.title")
+            }
+            titleSx={{ flexGrow: 1 }}
+            onClose={handleClose}
+            closeDisabled={isClosing}
+          />
 
           <Box
             sx={{
@@ -7138,51 +6878,18 @@ const FileManager = memo(
         </Menu>
 
         {showRenameDialog && (
-          <Dialog
+          <NameInputDialog
             open={showRenameDialog}
             onClose={handleCloseRenameDialog}
+            onSubmit={handleRenameSubmit}
+            title={t("fileManager.editFileOrFolder")}
+            label={t("fileManager.newName")}
+            value={newName}
+            onValueChange={setNewName}
+            errorText={renameDialogError}
+            submitting={renameSubmitting}
             maxWidth="sm"
-            fullWidth
-          >
-            <Box component="form" onSubmit={handleRenameSubmit}>
-              <DialogTitle>{t("fileManager.editFileOrFolder")}</DialogTitle>
-              <DialogContent dividers>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  {renameDialogError ? (
-                    <Alert severity="error">{renameDialogError}</Alert>
-                  ) : null}
-                  <TextField
-                    fullWidth
-                    label={t("fileManager.newName")}
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    autoFocus
-                    variant="outlined"
-                    size="small"
-                  />
-                </Box>
-              </DialogContent>
-              <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button
-                  onClick={handleCloseRenameDialog}
-                  color="inherit"
-                  size="small"
-                  disabled={renameSubmitting}
-                >
-                  {t("common.cancel")}
-                </Button>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  color="primary"
-                  size="small"
-                  disabled={renameSubmitting}
-                >
-                  {t("common.save")}
-                </Button>
-              </DialogActions>
-            </Box>
-          </Dialog>
+          />
         )}
 
         {showPermissionDialog && (
@@ -7369,99 +7076,31 @@ const FileManager = memo(
         )}
 
         {showCreateFolderDialog && (
-          <Dialog
+          <NameInputDialog
             open={showCreateFolderDialog}
             onClose={handleCloseCreateFolderDialog}
-            maxWidth="xs"
-            fullWidth
-          >
-            <Box component="form" onSubmit={handleCreateFolderSubmit}>
-              <DialogTitle>{t("fileManager.createFolder")}</DialogTitle>
-              <DialogContent dividers>
-                {createFolderDialogError ? (
-                  <Alert severity="error" sx={{ mb: 2 }}>
-                    {createFolderDialogError}
-                  </Alert>
-                ) : null}
-                <TextField
-                  fullWidth
-                  label={t("fileManager.createFolder")}
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  autoFocus
-                  variant="outlined"
-                  size="small"
-                />
-              </DialogContent>
-              <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button
-                  onClick={handleCloseCreateFolderDialog}
-                  color="inherit"
-                  size="small"
-                  disabled={createFolderSubmitting}
-                >
-                  {t("common.cancel")}
-                </Button>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  color="primary"
-                  size="small"
-                  disabled={createFolderSubmitting}
-                >
-                  {t("common.save")}
-                </Button>
-              </DialogActions>
-            </Box>
-          </Dialog>
+            onSubmit={handleCreateFolderSubmit}
+            title={t("fileManager.createFolder")}
+            label={t("fileManager.createFolder")}
+            value={newFolderName}
+            onValueChange={setNewFolderName}
+            errorText={createFolderDialogError}
+            submitting={createFolderSubmitting}
+          />
         )}
 
         {showCreateFileDialog && (
-          <Dialog
+          <NameInputDialog
             open={showCreateFileDialog}
             onClose={handleCloseCreateFileDialog}
-            maxWidth="xs"
-            fullWidth
-          >
-            <Box component="form" onSubmit={handleCreateFileSubmit}>
-              <DialogTitle>{t("fileManager.createFile")}</DialogTitle>
-              <DialogContent dividers>
-                {createFileDialogError ? (
-                  <Alert severity="error" sx={{ mb: 2 }}>
-                    {createFileDialogError}
-                  </Alert>
-                ) : null}
-                <TextField
-                  fullWidth
-                  label={t("fileManager.createFile")}
-                  value={newFileName}
-                  onChange={(e) => setNewFileName(e.target.value)}
-                  autoFocus
-                  variant="outlined"
-                  size="small"
-                />
-              </DialogContent>
-              <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button
-                  onClick={handleCloseCreateFileDialog}
-                  color="inherit"
-                  size="small"
-                  disabled={createFileSubmitting}
-                >
-                  {t("common.cancel")}
-                </Button>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  color="primary"
-                  size="small"
-                  disabled={createFileSubmitting}
-                >
-                  {t("common.save")}
-                </Button>
-              </DialogActions>
-            </Box>
-          </Dialog>
+            onSubmit={handleCreateFileSubmit}
+            title={t("fileManager.createFile")}
+            label={t("fileManager.createFile")}
+            value={newFileName}
+            onValueChange={setNewFileName}
+            errorText={createFileDialogError}
+            submitting={createFileSubmitting}
+          />
         )}
 
         {showPreview && filePreview && (
@@ -7473,43 +7112,6 @@ const FileManager = memo(
             tabId={tabId}
           />
         )}
-
-        <Snackbar
-          open={notification !== null}
-          autoHideDuration={
-            notification?.severity === "error"
-              ? null
-              : notification?.duration || 3000
-          }
-          onClose={handleCloseNotification}
-          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        >
-          {notification && (
-            <Alert
-              onClose={handleCloseNotification}
-              severity={notification.severity}
-              sx={{ width: "100%" }}
-              action={
-                notification.showAction && notification.actionCallback ? (
-                  <Button
-                    color="inherit"
-                    size="small"
-                    onClick={() => {
-                      if (typeof notification.actionCallback === "function") {
-                        notification.actionCallback();
-                      }
-                      handleCloseNotification();
-                    }}
-                  >
-                    {t("fileManager.openLocation")}
-                  </Button>
-                ) : null
-              }
-            >
-              {notification.message}
-            </Alert>
-          )}
-        </Snackbar>
 
         {/* TransferProgressFloat已移至全局底部栏,不再在侧边栏内显示 */}
 

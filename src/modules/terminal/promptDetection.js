@@ -7,12 +7,14 @@ const SHELL_PROMPT_PATTERNS = Object.freeze([
   /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[A-Za-z]:\\[^\r\n>]*>\s*$/,
 ]);
 
+// 输入行模式统一带捕获组：WebTerminal 通过 match[1] 提取当前命令输入，
+// 本模块自身仅用 .test() 判定，捕获组不影响判定结果。
 const SHELL_PROMPT_INPUT_PATTERNS = Object.freeze([
-  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[\w.-]+@[\w.-]+(?::[^\r\n#$%>]*)?)[#$%]\s+.+$/,
-  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[~./][^\r\n#$%>]*)[#$%]\s+.+$/,
-  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[#$%]\s+.+$/,
-  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*PS [^\r\n>]+>\s+.+$/,
-  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[A-Za-z]:\\[^\r\n>]*>\s+.+$/,
+  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[\w.-]+@[\w.-]+(?::[^\r\n#$%>]*)?)[#$%]\s+(.+)$/,
+  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[~./][^\r\n#$%>]*)[#$%]\s+(.+)$/,
+  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[#$%]\s+(.+)$/,
+  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*PS [^\r\n>]+>\s+(.+)$/,
+  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[A-Za-z]:\\[^\r\n>]*>\s+(.+)$/,
 ]);
 
 const DATABASE_PROMPT_PATTERNS = Object.freeze([
@@ -22,9 +24,15 @@ const DATABASE_PROMPT_PATTERNS = Object.freeze([
 ]);
 
 const DATABASE_PROMPT_INPUT_PATTERNS = Object.freeze([
-  /^(?:mysql|sqlite|duckdb)>\s+.+$/i,
-  /^MariaDB \[[^\]\r\n]*\]>\s+.+$/i,
-  /^[^\s\r\n]+(?:=>|=#)\s+.+$/,
+  /^(?:mysql|sqlite|duckdb)>\s+(.+)$/i,
+  /^MariaDB \[[^\]\r\n]*\]>\s+(.+)$/i,
+  /^[^\s\r\n]+(?:=>|=#)\s+(.+)$/,
+]);
+
+// 供 WebTerminal 等消费方使用的完整"提示符 + 输入"模式列表（shell 在前、数据库在后）
+const TERMINAL_PROMPT_INPUT_PATTERNS = Object.freeze([
+  ...SHELL_PROMPT_INPUT_PATTERNS,
+  ...DATABASE_PROMPT_INPUT_PATTERNS,
 ]);
 
 const CONTINUATION_PROMPT_PATTERNS = Object.freeze([
@@ -104,6 +112,7 @@ const isPromptReadyFromTerminal = (term) => {
 };
 
 module.exports = {
+  TERMINAL_PROMPT_INPUT_PATTERNS,
   getLogicalLineUntilCursor,
   isLikelyPromptLine,
   isPromptReadyFromTerminal,

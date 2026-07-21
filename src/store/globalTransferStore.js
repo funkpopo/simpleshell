@@ -267,6 +267,52 @@ const subscribe = (listener) => {
   };
 };
 
+/**
+ * 取消传输并把状态标记为「已取消」。
+ * TransferSidebar 与 GlobalTransferFloat 的取消按钮共用；
+ * GlobalTransferFloat 额外把进度重置为 0（resetProgress）。
+ */
+export const cancelTransferWithNotice = (
+  tabId,
+  transfer,
+  cancelledText,
+  { resetProgress = false } = {},
+) => {
+  if (!tabId || !transfer?.transferKey || !window.terminalAPI?.cancelTransfer) {
+    return;
+  }
+
+  const markCancelled = () => {
+    updateTransfer(tabId, transfer.transferId, {
+      ...(resetProgress ? { progress: 0 } : {}),
+      isCancelled: true,
+      statusText: cancelledText,
+      cancelMessage: cancelledText,
+    });
+  };
+
+  window.terminalAPI
+    .cancelTransfer(tabId, transfer.transferKey)
+    .then((result) => {
+      if (result.success) {
+        markCancelled();
+      }
+    })
+    .catch(() => {
+      markCancelled();
+    });
+};
+
+/**
+ * 清除所有标签页的已完成传输。
+ * TransferSidebar 与 GlobalTransferBar 的「清除已完成」按钮共用。
+ */
+export const clearCompletedTransfersForAllTabs = () => {
+  for (const tabId of [...transferState.keys()]) {
+    clearCompletedTransfers(tabId);
+  }
+};
+
 // 用于深比较两个传输对象是否相等
 const isTransferEqual = (a, b) => {
   if (a === b) return true;

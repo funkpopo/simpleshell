@@ -6,11 +6,9 @@ import React, {
   useCallback,
 } from "react";
 import Dialog from "./AccessibleDialog.jsx";
-import useAutoCleanup from "../hooks/useAutoCleanup";
 import { List } from "react-window";
 import {
   Box,
-  Paper,
   Typography,
   IconButton,
   ListItem,
@@ -27,13 +25,10 @@ import {
   DialogActions,
   InputAdornment,
   CircularProgress,
-  Snackbar,
-  Alert,
   Checkbox,
   Tooltip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import SearchIcon from "@mui/icons-material/Search";
 import SendIcon from "@mui/icons-material/Send";
@@ -46,11 +41,12 @@ import SelectAllIcon from "@mui/icons-material/SelectAll";
 import { useTranslation } from "react-i18next";
 import {
   getSidebarItemSelectedBg,
-  sidebarContentSx,
   sidebarListItemButtonSx,
-  sidebarTitleBarSx,
-  sidebarTitleIconButtonSx,
 } from "./sidebarItemStyles";
+import SidebarPanel from "./SidebarPanel.jsx";
+import useSidebarPanel from "../hooks/useSidebarPanel";
+import useContextMenuRetarget from "../hooks/useContextMenuRetarget";
+import { useNotification } from "../contexts/NotificationContext";
 import { compactContextMenuPaperSx } from "./contextMenuStyles";
 
 const HISTORY_ITEM_HEIGHT = 48;
@@ -240,61 +236,14 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   const searchInputRef = useRef(null);
   const [selectedCommands, setSelectedCommands] = useState(new Set());
   const [selectMode, setSelectMode] = useState(false);
-  const [containerHeight, setContainerHeight] = useState(400);
   const sidebarRootRef = useRef(null);
-  const containerRef = useRef(null);
-  const contextMenuRetargetingRef = useRef(false);
 
-  const focusSidebarRoot = (event) => {
-    if (!(event.target instanceof Element)) {
-      return;
-    }
-    const focusableTarget = event.target.closest(
-      'input, textarea, select, button, [role="button"], [tabindex]',
-    );
-    if (focusableTarget && focusableTarget !== sidebarRootRef.current) {
-      return;
-    }
-    sidebarRootRef.current?.focus({ preventScroll: true });
-  };
-
-  // 键盘快捷键处理
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      // 只在历史命令管理器打开时处理快捷键
-      if (!open) return;
-
-      // 检查当前焦点是否在终端区域内，如果是则不处理侧边栏快捷键
-      const activeElement = document.activeElement;
-      const isInTerminal =
-        activeElement &&
-        (activeElement.classList.contains("xterm-helper-textarea") ||
-          activeElement.classList.contains("xterm-screen"));
-
-      // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
-      if (isInTerminal) return;
-
-      const isFocusInSidebar =
-        activeElement && sidebarRootRef.current?.contains(activeElement);
-
-      // Ctrl+/ 全局聚焦搜索框；Ctrl+F 仅在焦点位于侧边栏内时接管浏览器查找
-      if (
-        e.ctrlKey &&
-        (e.key === "/" || (e.key.toLowerCase() === "f" && isFocusInSidebar))
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (searchInputRef.current) {
-          searchInputRef.current.focus();
-        }
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
+  const { containerRef, containerHeight } = useSidebarPanel({
+    open,
+    rootRef: sidebarRootRef,
+    searchInputRef,
+    measureHeight: true,
+  });
 
   // 对话框状态
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -306,12 +255,8 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   const [menuTargetCommand, setMenuTargetCommand] = useState(null);
   const menuOpen = Boolean(contextMenu);
 
-  // 通知状态
-  const [notification, setNotification] = useState({
-    open: false,
-    message: "",
-    severity: "success",
-  });
+  // 通知（使用全局通知系统）
+  const { showNotification: showGlobalNotification } = useNotification();
 
   // 加载历史记录
   useEffect(() => {
@@ -319,30 +264,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
       loadHistory();
     }
   }, [open]);
-
-  // 使用自动清理Hook
-  const { addResizeObserver } = useAutoCleanup();
-
-  // 动态计算容器高度
-  useEffect(() => {
-    const updateHeight = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        if (rect.height > 0) {
-          setContainerHeight(rect.height);
-        }
-      }
-    };
-
-    updateHeight();
-
-    // 使用 addResizeObserver 自动管理观察器，组件卸载时自动清理
-    // addResizeObserver 返回资源ID，我们不需要在 useEffect 中返回它
-    if (containerRef.current) {
-      addResizeObserver(updateHeight, containerRef.current);
-    }
-    // useEffect 不应该返回 addResizeObserver 的返回值
-  }, [open, addResizeObserver]);
 
   // 加载历史记录
   const loadHistory = async () => {
@@ -377,18 +298,16 @@ function CommandHistory({ open, onClose, onSendCommand }) {
   }, [open]);
 
   // 显示通知
-  const showNotification = useCallback((message, severity = "success") => {
-    setNotification({
-      open: true,
-      message,
-      severity,
-    });
-  }, []);
-
-  // 关闭通知
-  const handleCloseNotification = () => {
-    setNotification((prev) => ({ ...prev, open: false }));
-  };
+  const showNotification = useCallback(
+    (message, severity = "success") => {
+      showGlobalNotification(message, severity, {
+        autoHideDuration: 3000,
+        anchorOrigin: { vertical: "bottom", horizontal: "center" },
+        variant: "standard",
+      });
+    },
+    [showGlobalNotification],
+  );
 
   // 处理搜索输入变化
   const handleSearchChange = useCallback((event) => {
@@ -429,86 +348,26 @@ function CommandHistory({ open, onClose, onSendCommand }) {
     setMenuTargetCommand(null);
   }, []);
 
-  useEffect(() => {
-    if (!open || !contextMenu) {
-      return undefined;
-    }
-
-    const getHistoryItemFromPoint = (event) => {
-      const root = sidebarRootRef.current;
-      if (!root) {
-        return null;
-      }
-
-      const rawTarget = event.target;
-      if (
-        rawTarget instanceof Element &&
-        (rawTarget.closest('[data-command-history-context-menu="true"]') ||
-          rawTarget.closest('[role="menu"]'))
-      ) {
-        return null;
-      }
-
-      if (rawTarget instanceof Element && root.contains(rawTarget)) {
-        return rawTarget.closest('[data-command-history-item="true"]');
-      }
-
-      const elementsAtPoint =
-        typeof document.elementsFromPoint === "function"
-          ? document.elementsFromPoint(event.clientX, event.clientY)
-          : [];
-
-      const element = elementsAtPoint.find(
-        (candidate) =>
-          root.contains(candidate) &&
-          !candidate.closest('[data-command-history-context-menu="true"]') &&
-          !candidate.closest('[role="menu"]'),
-      );
-
-      return element?.closest?.('[data-command-history-item="true"]') || null;
-    };
-
-    const handleContextMenuRetarget = (event) => {
-      if (contextMenuRetargetingRef.current || selectMode) {
-        return;
-      }
-
-      const itemElement = getHistoryItemFromPoint(event);
-      if (!itemElement) {
-        return;
-      }
-
+  useContextMenuRetarget({
+    enabled: Boolean(open && contextMenu && !selectMode),
+    rootRef: sidebarRootRef,
+    menuSelector: '[data-command-history-context-menu="true"]',
+    mode: "select",
+    itemSelector: '[data-command-history-item="true"]',
+    getRetargetPayload: (itemElement) => {
       const itemIndex = Number(itemElement.dataset.commandHistoryIndex);
-      const item = Number.isInteger(itemIndex)
-        ? filteredHistory[itemIndex]
+      return Number.isInteger(itemIndex)
+        ? filteredHistory[itemIndex] || null
         : null;
-      if (!item) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      contextMenuRetargetingRef.current = true;
+    },
+    onRetarget: (item, event) => {
       setMenuTargetCommand(item);
       setContextMenu({
         mouseX: event.clientX,
         mouseY: event.clientY,
       });
-      queueMicrotask(() => {
-        contextMenuRetargetingRef.current = false;
-      });
-    };
-
-    document.addEventListener("contextmenu", handleContextMenuRetarget, true);
-    return () => {
-      document.removeEventListener(
-        "contextmenu",
-        handleContextMenuRetarget,
-        true,
-      );
-    };
-  }, [contextMenu, filteredHistory, open, selectMode]);
+    },
+  });
 
   // 处理发送命令
   const handleSendCommand = useCallback(
@@ -736,207 +595,176 @@ function CommandHistory({ open, onClose, onSendCommand }) {
 
   return (
     <>
-      <Paper
-        ref={sidebarRootRef}
-        tabIndex={-1}
-        onMouseDown={focusSidebarRoot}
-        elevation={4}
-        sx={{
-          width: "100%",
-          minWidth: 0,
-          height: "100%",
-          overflow: "hidden",
-          borderLeft: `1px solid ${theme.palette.divider}`,
-          display: "flex",
-          flexDirection: "column",
-          borderRadius: 0,
-        }}
+      <SidebarPanel
+        open={open}
+        rootRef={sidebarRootRef}
+        title={t("commandHistory.title")}
+        onClose={onClose}
       >
-        <Box sx={sidebarContentSx(theme, open)}>
-          {/* 标题栏 */}
-          <Box sx={sidebarTitleBarSx(theme)}>
-            <Typography variant="subtitle1" fontWeight="medium">
-              {t("commandHistory.title")}
-            </Typography>
-            <Tooltip title={t("common.close")}>
-              <IconButton
-                onClick={onClose}
-                size="small"
-                aria-label={t("common.close")}
-                sx={sidebarTitleIconButtonSx}
-              >
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Box>
+        {/* 搜索栏和工具栏 */}
+        <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}` }}>
+          <TextField
+            inputRef={searchInputRef}
+            fullWidth
+            size="small"
+            placeholder={t("commandHistory.search")}
+            value={searchTerm}
+            onChange={handleSearchChange}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+              endAdornment: searchTerm && (
+                <InputAdornment position="end">
+                  <Tooltip title={t("common.clearSearch")}>
+                    <IconButton
+                      size="small"
+                      onClick={() => setSearchTerm("")}
+                      edge="end"
+                      aria-label={t("common.clearSearch")}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              mb: 2,
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 2,
+              },
+            }}
+          />
 
-          {/* 搜索栏和工具栏 */}
-          <Box
-            sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}` }}
-          >
-            <TextField
-              inputRef={searchInputRef}
-              fullWidth
+          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+            <Button
               size="small"
-              placeholder={t("commandHistory.search")}
-              value={searchTerm}
-              onChange={handleSearchChange}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon />
-                  </InputAdornment>
-                ),
-                endAdornment: searchTerm && (
-                  <InputAdornment position="end">
-                    <Tooltip title={t("common.clearSearch")}>
-                      <IconButton
-                        size="small"
-                        onClick={() => setSearchTerm("")}
-                        edge="end"
-                        aria-label={t("common.clearSearch")}
-                      >
-                        <ClearIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                mb: 2,
-                "& .MuiOutlinedInput-root": {
-                  borderRadius: 2,
-                },
-              }}
-            />
+              variant={selectMode ? "contained" : "outlined"}
+              onClick={toggleSelectMode}
+              startIcon={<SelectAllIcon />}
+            >
+              {selectMode
+                ? t("commandHistory.exitSelect")
+                : t("commandHistory.selectMode")}
+            </Button>
 
-            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-              <Button
-                size="small"
-                variant={selectMode ? "contained" : "outlined"}
-                onClick={toggleSelectMode}
-                startIcon={<SelectAllIcon />}
-              >
-                {selectMode
-                  ? t("commandHistory.exitSelect")
-                  : t("commandHistory.selectMode")}
-              </Button>
+            {selectMode && (
+              <>
+                <Button
+                  size="small"
+                  onClick={toggleSelectAll}
+                  startIcon={<SelectAllIcon />}
+                >
+                  {selectedCommands.size === filteredHistory.length
+                    ? t("commandHistory.deselectAll")
+                    : t("commandHistory.selectAll")}
+                </Button>
 
-              {selectMode && (
-                <>
+                {selectedCommands.size > 0 && (
                   <Button
                     size="small"
-                    onClick={toggleSelectAll}
-                    startIcon={<SelectAllIcon />}
+                    color="error"
+                    onClick={handleDeleteSelected}
+                    startIcon={<DeleteIcon />}
                   >
-                    {selectedCommands.size === filteredHistory.length
-                      ? t("commandHistory.deselectAll")
-                      : t("commandHistory.selectAll")}
+                    {t("commandHistory.deleteSelected")} (
+                    {selectedCommands.size})
                   </Button>
-
-                  {selectedCommands.size > 0 && (
-                    <Button
-                      size="small"
-                      color="error"
-                      onClick={handleDeleteSelected}
-                      startIcon={<DeleteIcon />}
-                    >
-                      {t("commandHistory.deleteSelected")} (
-                      {selectedCommands.size})
-                    </Button>
-                  )}
-                </>
-              )}
-
-              <Button
-                size="small"
-                color="error"
-                onClick={handleClearAll}
-                startIcon={<ClearAllIcon />}
-                disabled={history.length === 0}
-              >
-                {t("commandHistory.clearAll")}
-              </Button>
-            </Box>
-          </Box>
-
-          {/* 历史记录列表 */}
-          <Box
-            ref={containerRef}
-            className="app-scrollbar app-scrollbar-compact"
-            sx={{
-              flex: 1,
-              overflow: "auto",
-              bgcolor:
-                theme.palette.mode === "dark" ? "background.paper" : "grey.50",
-            }}
-          >
-            {loading ? (
-              <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-                <CircularProgress />
-              </Box>
-            ) : filteredHistory.length === 0 ? (
-              <Box sx={{ p: 4, textAlign: "center", color: "text.secondary" }}>
-                <HistoryIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
-                <Typography>
-                  {searchTerm
-                    ? t("commandHistory.noCommandsFound")
-                    : t("commandHistory.noCommands")}
-                </Typography>
-              </Box>
-            ) : filteredHistory.length < 50 ? (
-              // 对于少量数据，使用传统渲染以避免虚拟化开销
-              <Box
-                className="app-scrollbar app-scrollbar-compact"
-                sx={{ height: "100%", overflow: "visible" }}
-              >
-                {filteredHistory.map((item, index) => (
-                  <HistoryItem
-                    key={`${item.command}-${item.timestamp}-${index}`}
-                    index={index}
-                    style={{ height: HISTORY_ITEM_HEIGHT }}
-                    {...listItemData}
-                  />
-                ))}
-              </Box>
-            ) : (
-              // 对于大量数据，使用虚拟化渲染
-              containerHeight > 0 && (
-                <List
-                  className="app-scrollbar app-scrollbar-compact"
-                  style={{ height: containerHeight, width: "100%" }}
-                  rowCount={filteredHistory.length}
-                  rowHeight={HISTORY_ITEM_HEIGHT}
-                  rowProps={listItemData}
-                  overscanCount={15}
-                  rowComponent={HistoryItem}
-                />
-              )
+                )}
+              </>
             )}
-          </Box>
 
-          {/* 状态栏 */}
-          <Box
-            sx={{
-              p: 1,
-              borderTop: `1px solid ${theme.palette.divider}`,
-              bgcolor: "background.default",
-            }}
-          >
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              align="center"
-              display="block"
+            <Button
+              size="small"
+              color="error"
+              onClick={handleClearAll}
+              startIcon={<ClearAllIcon />}
+              disabled={history.length === 0}
             >
-              {t("commandHistory.totalCommands", {
-                count: filteredHistory.length,
-              })}
-              {searchTerm && ` / ${history.length} 总计`}
-            </Typography>
+              {t("commandHistory.clearAll")}
+            </Button>
           </Box>
         </Box>
-      </Paper>
+
+        {/* 历史记录列表 */}
+        <Box
+          ref={containerRef}
+          className="app-scrollbar app-scrollbar-compact"
+          sx={{
+            flex: 1,
+            overflow: "auto",
+            bgcolor:
+              theme.palette.mode === "dark" ? "background.paper" : "grey.50",
+          }}
+        >
+          {loading ? (
+            <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : filteredHistory.length === 0 ? (
+            <Box sx={{ p: 4, textAlign: "center", color: "text.secondary" }}>
+              <HistoryIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
+              <Typography>
+                {searchTerm
+                  ? t("commandHistory.noCommandsFound")
+                  : t("commandHistory.noCommands")}
+              </Typography>
+            </Box>
+          ) : filteredHistory.length < 50 ? (
+            // 对于少量数据，使用传统渲染以避免虚拟化开销
+            <Box
+              className="app-scrollbar app-scrollbar-compact"
+              sx={{ height: "100%", overflow: "visible" }}
+            >
+              {filteredHistory.map((item, index) => (
+                <HistoryItem
+                  key={`${item.command}-${item.timestamp}-${index}`}
+                  index={index}
+                  style={{ height: HISTORY_ITEM_HEIGHT }}
+                  {...listItemData}
+                />
+              ))}
+            </Box>
+          ) : (
+            // 对于大量数据，使用虚拟化渲染
+            containerHeight > 0 && (
+              <List
+                className="app-scrollbar app-scrollbar-compact"
+                style={{ height: containerHeight, width: "100%" }}
+                rowCount={filteredHistory.length}
+                rowHeight={HISTORY_ITEM_HEIGHT}
+                rowProps={listItemData}
+                overscanCount={15}
+                rowComponent={HistoryItem}
+              />
+            )
+          )}
+        </Box>
+
+        {/* 状态栏 */}
+        <Box
+          sx={{
+            p: 1,
+            borderTop: `1px solid ${theme.palette.divider}`,
+            bgcolor: "background.default",
+          }}
+        >
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            align="center"
+            display="block"
+          >
+            {t("commandHistory.totalCommands", {
+              count: filteredHistory.length,
+            })}
+            {searchTerm && ` / ${history.length} 总计`}
+          </Typography>
+        </Box>
+      </SidebarPanel>
 
       {/* 上下文菜单 */}
       <Menu
@@ -1009,22 +837,6 @@ function CommandHistory({ open, onClose, onSendCommand }) {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* 通知 */}
-      <Snackbar
-        open={notification.open}
-        autoHideDuration={3000}
-        onClose={handleCloseNotification}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert
-          onClose={handleCloseNotification}
-          severity={notification.severity}
-          sx={{ width: "100%" }}
-        >
-          {notification.message}
-        </Alert>
-      </Snackbar>
     </>
   );
 }

@@ -7,11 +7,9 @@ import React, {
   useRef,
 } from "react";
 import Dialog from "./AccessibleDialog.jsx";
-import { flushSync } from "react-dom";
 import {
   Box,
   Typography,
-  Paper,
   List,
   ListItem,
   ListItemText,
@@ -45,7 +43,6 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import SearchIcon from "@mui/icons-material/Search";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
@@ -76,12 +73,10 @@ import { useTranslation } from "react-i18next";
 import { useNotification } from "../contexts/NotificationContext";
 import { ConnectionManagerSkeleton } from "./SkeletonLoader.jsx";
 import VirtualizedConnectionList from "./VirtualizedConnectionList.jsx";
-import {
-  sidebarContentSx,
-  sidebarListItemSx,
-  sidebarTitleBarSx,
-  sidebarTitleIconButtonSx,
-} from "./sidebarItemStyles";
+import { sidebarListItemSx } from "./sidebarItemStyles";
+import SidebarPanel from "./SidebarPanel.jsx";
+import useSidebarPanel from "../hooks/useSidebarPanel";
+import useContextMenuRetarget from "../hooks/useContextMenuRetarget";
 import { getSearchFieldMotionSx } from "../utils/searchFieldStyles";
 
 // 自定义比较函数
@@ -959,63 +954,17 @@ const ConnectionManager = memo(
     const [connectionListContextMenu, setConnectionListContextMenu] =
       useState(null);
     const connectionManagerListRootRef = useRef(null);
-    const connectionContextMenuRedispatchingRef = useRef(false);
 
-    const focusSidebarRoot = (event) => {
-      if (!(event.target instanceof Element)) {
-        return;
-      }
-      const focusableTarget = event.target.closest(
-        'input, textarea, select, button, [role="button"], [tabindex]',
-      );
-      if (focusableTarget && focusableTarget !== sidebarRootRef.current) {
-        return;
-      }
-      sidebarRootRef.current?.focus({ preventScroll: true });
-    };
+    useSidebarPanel({
+      open,
+      rootRef: sidebarRootRef,
+      searchInputRef,
+    });
 
     useEffect(() => {
       if (!open) {
         setConnectionListContextMenu(null);
       }
-    }, [open]);
-
-    // 键盘快捷键处理
-    useEffect(() => {
-      const handleKeyDown = (e) => {
-        // 只在连接管理器打开时处理快捷键
-        if (!open) return;
-
-        // 检查当前焦点是否在终端区域内，如果是则不处理侧边栏快捷键
-        const activeElement = document.activeElement;
-        const isInTerminal =
-          activeElement &&
-          (activeElement.classList.contains("xterm-helper-textarea") ||
-            activeElement.classList.contains("xterm-screen"));
-
-        // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
-        if (isInTerminal) return;
-
-        const isFocusInSidebar =
-          activeElement && sidebarRootRef.current?.contains(activeElement);
-
-        // Ctrl+/ 全局聚焦搜索框；Ctrl+F 仅在焦点位于侧边栏内时接管浏览器查找
-        if (
-          e.ctrlKey &&
-          (e.key === "/" || (e.key.toLowerCase() === "f" && isFocusInSidebar))
-        ) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (searchInputRef.current) {
-            searchInputRef.current.focus();
-          }
-        }
-      };
-
-      document.addEventListener("keydown", handleKeyDown);
-      return () => {
-        document.removeEventListener("keydown", handleKeyDown);
-      };
     }, [open]);
 
     // 初始加载数据
@@ -1503,116 +1452,19 @@ const ConnectionManager = memo(
       [openConnectionContextMenuFromEvent, openGroupContextMenuFromEvent],
     );
 
-    useEffect(() => {
-      if (!open || !connectionListContextMenu) {
-        return;
-      }
-
-      const getContextMenuRetargetElement = (event) => {
-        const root = connectionManagerListRootRef.current;
-        if (!root) {
-          return null;
-        }
-
-        const rawTarget = event.target;
-        if (
-          rawTarget instanceof Element &&
-          (rawTarget.closest('[data-connection-manager-context-menu="true"]') ||
-            rawTarget.closest('[role="menu"]'))
-        ) {
-          return null;
-        }
-
-        if (rawTarget instanceof Element && root.contains(rawTarget)) {
-          return rawTarget;
-        }
-
-        const elementsAtPoint =
-          typeof document.elementsFromPoint === "function"
-            ? document.elementsFromPoint(event.clientX, event.clientY)
-            : [];
-
-        return (
-          elementsAtPoint.find(
-            (element) =>
-              root.contains(element) &&
-              !element.closest(
-                '[data-connection-manager-context-menu="true"]',
-              ) &&
-              !element.closest('[role="menu"]'),
-          ) || null
-        );
-      };
-
-      const handleContextMenuRetarget = (event) => {
-        if (connectionContextMenuRedispatchingRef.current) {
-          return;
-        }
-
-        const retargetElement = getContextMenuRetargetElement(event);
-        if (!retargetElement) {
-          return;
-        }
-
-        const itemEl =
-          retargetElement.closest("[data-connection-manager-item]") ||
-          retargetElement.closest(".MuiListItem-root") ||
-          retargetElement;
-
-        if (!itemEl) {
-          return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        const mouseEventInit = {
-          bubbles: true,
-          cancelable: true,
-          view: window,
-          button: 2,
-          buttons: 2,
-          clientX: event.clientX,
-          clientY: event.clientY,
-          screenX: event.screenX,
-          screenY: event.screenY,
-          ctrlKey: event.ctrlKey,
-          shiftKey: event.shiftKey,
-          altKey: event.altKey,
-          metaKey: event.metaKey,
-        };
-
-        flushSync(() => {
-          setConnectionListContextMenu(null);
-        });
-
-        if (!itemEl.isConnected) {
-          return;
-        }
-
-        try {
-          itemEl.focus?.();
-        } catch (_) {
-          // ignore
-        }
-
-        connectionContextMenuRedispatchingRef.current = true;
-        try {
-          itemEl.dispatchEvent(new MouseEvent("contextmenu", mouseEventInit));
-        } finally {
-          connectionContextMenuRedispatchingRef.current = false;
-        }
-      };
-
-      document.addEventListener("contextmenu", handleContextMenuRetarget, true);
-      return () => {
-        document.removeEventListener(
-          "contextmenu",
-          handleContextMenuRetarget,
-          true,
-        );
-      };
-    }, [connectionListContextMenu, open]);
+    useContextMenuRetarget({
+      enabled: Boolean(open && connectionListContextMenu),
+      rootRef: connectionManagerListRootRef,
+      menuSelector: '[data-connection-manager-context-menu="true"]',
+      mode: "redispatch",
+      resolveItemElement: (retargetElement) =>
+        retargetElement.closest("[data-connection-manager-item]") ||
+        retargetElement.closest(".MuiListItem-root") ||
+        retargetElement,
+      onCloseMenus: () => {
+        setConnectionListContextMenu(null);
+      },
+    });
 
     const handleDialogClose = useCallback(() => {
       setDialogOpen(false);
@@ -2519,835 +2371,798 @@ const ConnectionManager = memo(
     };
 
     return (
-      <Paper
-        ref={sidebarRootRef}
-        tabIndex={-1}
-        onMouseDown={focusSidebarRoot}
-        sx={{
-          width: "100%",
-          minWidth: 0,
-          height: "100%",
-          overflow: "hidden",
-          borderLeft: `1px solid ${theme.palette.divider}`,
-          display: "flex",
-          flexDirection: "column",
-          borderRadius: 0,
-        }}
-        elevation={4}
+      <SidebarPanel
+        open={open}
+        rootRef={sidebarRootRef}
+        title={t("connectionManager.title")}
+        onClose={onClose}
       >
-        <Box sx={sidebarContentSx(theme, open)}>
-          {/* 头部 */}
-          <Box sx={sidebarTitleBarSx(theme)}>
-            <Typography variant="subtitle1" fontWeight="medium">
-              {t("connectionManager.title")}
-            </Typography>
-            <Tooltip title={t("common.close")}>
-              <IconButton
-                size="small"
-                onClick={onClose}
-                aria-label={t("common.close")}
-                sx={sidebarTitleIconButtonSx}
-              >
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Box>
-
-          {/* 操作按钮区 */}
-          <Box
-            sx={{
-              p: 1,
-              display: "flex",
-              justifyContent: "flex-end",
-              borderBottom: 1,
-              borderColor: "divider",
-              gap: 1,
-            }}
+        {/* 操作按钮区 */}
+        <Box
+          sx={{
+            p: 1,
+            display: "flex",
+            justifyContent: "flex-end",
+            borderBottom: 1,
+            borderColor: "divider",
+            gap: 1,
+          }}
+        >
+          <Button
+            size="small"
+            startIcon={<AddIcon />}
+            onClick={() => handleAddConnection()}
+            sx={{ fontSize: "0.75rem" }}
           >
-            <Button
-              size="small"
-              startIcon={<AddIcon />}
-              onClick={() => handleAddConnection()}
-              sx={{ fontSize: "0.75rem" }}
-            >
-              {t("connectionManager.newConnection")}
-            </Button>
-            <Button
-              size="small"
-              startIcon={<FolderIcon />}
-              onClick={handleAddGroup}
-              sx={{ fontSize: "0.75rem" }}
-            >
-              {t("connectionManager.newGroup")}
-            </Button>
-          </Box>
-
-          {/* 搜索框 */}
-          <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
-            <TextField
-              inputRef={searchInputRef}
-              placeholder={t("connectionManager.search")}
-              variant="outlined"
-              size="small"
-              fullWidth
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-                endAdornment: searchQuery && (
-                  <InputAdornment position="end">
-                    <Tooltip title={t("common.clearSearch")}>
-                      <IconButton
-                        size="small"
-                        onClick={() => setSearchQuery("")}
-                        edge="end"
-                        aria-label={t("common.clearSearch")}
-                      >
-                        <ClearIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                ...getSearchFieldMotionSx(theme, {
-                  borderRadius: 2,
-                  enableScale: true,
-                }),
-              }}
-            />
-          </Box>
-
-          {/* 连接列表区域 */}
-          <Box
-            ref={connectionManagerListRootRef}
-            sx={{
-              flexGrow: 1,
-              overflow: "auto",
-              height: "calc(100% - 160px)", // 调整高度以适应搜索框
-            }}
+            {t("connectionManager.newConnection")}
+          </Button>
+          <Button
+            size="small"
+            startIcon={<FolderIcon />}
+            onClick={handleAddGroup}
+            sx={{ fontSize: "0.75rem" }}
           >
-            {isLoading ? (
-              <List dense sx={{ p: 1 }}>
-                <ConnectionManagerSkeleton />
-              </List>
-            ) : useVirtualizedConnectionList ? (
-              <VirtualizedConnectionList
-                className="connection-manager-virtualized-list"
-                connections={filteredItems}
-                selectedItem={
-                  connectionListContextMenu?.kind === "connection"
-                    ? connectionListContextMenu.connection
-                    : connectionListContextMenu?.kind === "group"
-                      ? connectionListContextMenu.group
-                      : null
-                }
-                onToggleGroup={handleToggleGroup}
-                onSelectConnection={handleOpenConnection}
-                onDoubleClick={handleOpenConnection}
-                onItemContextMenu={handleVirtualizedItemContextMenu}
-                height="100%"
-                itemHeight={36}
-                enableVirtualization
-                emptyMessage="没有连接项"
-              />
-            ) : (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-              >
-                <List
-                  dense
-                  ref={setRootDroppableRef}
-                  sx={{
-                    p: 1,
-                    backgroundColor: isRootDraggingOver
-                      ? theme.palette.mode === "dark"
-                        ? alpha(theme.palette.primary.main, 0.2)
-                        : alpha(theme.palette.primary.main, 0.15)
-                      : "transparent",
-                    transition: "background-color 0.2s ease",
-                  }}
-                >
-                  <>
-                    {connectionsList}
-                    {filteredItems.length === 0 && (
-                      <ListItem>
-                        <ListItemText
-                          primary="没有连接项"
-                          primaryTypographyProps={{
-                            variant: "body2",
-                            sx: {
-                              fontStyle: "italic",
-                              color: "text.secondary",
-                              textAlign: "center",
-                            },
-                          }}
-                        />
-                      </ListItem>
-                    )}
-                  </>
-                </List>
-              </DndContext>
-            )}
-          </Box>
+            {t("connectionManager.newGroup")}
+          </Button>
+        </Box>
 
-          <Menu
-            open={Boolean(connectionListContextMenu)}
-            onClose={handleConnectionListContextMenuClose}
-            anchorReference="anchorPosition"
-            anchorPosition={
-              connectionListContextMenu
-                ? {
-                    top: connectionListContextMenu.mouseY,
-                    left: connectionListContextMenu.mouseX,
-                  }
-                : undefined
-            }
-            transitionDuration={0}
-            disableAutoFocusItem
-            disableScrollLock
-            PaperProps={{
-              "data-connection-manager-context-menu": "true",
-              sx: compactContextMenuPaperSx,
-            }}
-          >
-            {connectionListContextMenu?.kind === "connection" && (
-              <>
-                <MenuItem
-                  disabled={
-                    !getHostForClipboard(connectionListContextMenu.connection)
-                  }
-                  onClick={() => {
-                    const ctx = connectionListContextMenu;
-                    if (!ctx || ctx.kind !== "connection") {
-                      handleConnectionListContextMenuClose();
-                      return;
-                    }
-                    const text = getHostForClipboard(ctx.connection);
-                    if (!text) {
-                      handleConnectionListContextMenuClose();
-                      return;
-                    }
-                    handleConnectionListContextMenuClose();
-                    window.clipboardAPI?.writeText(text).catch(() => {
-                      showError(t("connectionManager.copyFailed"));
-                    });
-                  }}
-                >
-                  <ListItemIcon>
-                    <ContentCopyIcon fontSize="small" />
-                  </ListItemIcon>
-                  {t("connectionManager.contextCopyIp")}
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    const ctx = connectionListContextMenu;
-                    if (!ctx || ctx.kind !== "connection") {
-                      handleConnectionListContextMenuClose();
-                      return;
-                    }
-                    const { connection, parentGroup } = ctx;
-                    handleConnectionListContextMenuClose();
-                    handleEdit(connection, parentGroup ?? null);
-                  }}
-                >
-                  <ListItemIcon>
-                    <EditIcon fontSize="small" />
-                  </ListItemIcon>
-                  {t("common.edit")}
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    const ctx = connectionListContextMenu;
-                    if (!ctx || ctx.kind !== "connection") {
-                      handleConnectionListContextMenuClose();
-                      return;
-                    }
-                    const { connection, parentGroup } = ctx;
-                    handleConnectionListContextMenuClose();
-                    handleDelete(connection.id, parentGroup ?? null);
-                  }}
-                >
-                  <ListItemIcon>
-                    <DeleteIcon fontSize="small" />
-                  </ListItemIcon>
-                  {t("connectionManager.delete")}
-                </MenuItem>
-              </>
-            )}
-            {connectionListContextMenu?.kind === "group" && (
-              <>
-                <MenuItem
-                  onClick={() => {
-                    const ctx = connectionListContextMenu;
-                    if (!ctx || ctx.kind !== "group") {
-                      handleConnectionListContextMenuClose();
-                      return;
-                    }
-                    const groupId = ctx.group.id;
-                    handleConnectionListContextMenuClose();
-                    handleAddConnection(groupId);
-                  }}
-                >
-                  <ListItemIcon>
-                    <AddIcon fontSize="small" />
-                  </ListItemIcon>
-                  {t("connectionManager.contextAddConnection")}
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    const ctx = connectionListContextMenu;
-                    if (!ctx || ctx.kind !== "group") {
-                      handleConnectionListContextMenuClose();
-                      return;
-                    }
-                    const { group } = ctx;
-                    handleConnectionListContextMenuClose();
-                    handleEdit(group);
-                  }}
-                >
-                  <ListItemIcon>
-                    <EditIcon fontSize="small" />
-                  </ListItemIcon>
-                  {t("common.edit")}
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    const ctx = connectionListContextMenu;
-                    if (!ctx || ctx.kind !== "group") {
-                      handleConnectionListContextMenuClose();
-                      return;
-                    }
-                    const groupId = ctx.group.id;
-                    handleConnectionListContextMenuClose();
-                    handleDelete(groupId);
-                  }}
-                >
-                  <ListItemIcon>
-                    <DeleteIcon fontSize="small" />
-                  </ListItemIcon>
-                  {t("connectionManager.delete")}
-                </MenuItem>
-              </>
-            )}
-          </Menu>
-
-          {/* 添加/编辑对话框 */}
-          <Dialog
-            open={dialogOpen}
-            onClose={handleDialogClose}
-            maxWidth="sm"
+        {/* 搜索框 */}
+        <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
+          <TextField
+            inputRef={searchInputRef}
+            placeholder={t("connectionManager.search")}
+            variant="outlined"
+            size="small"
             fullWidth
-            slotProps={{
-              paper: {
-                sx: {
-                  maxHeight: "90vh",
-                },
-              },
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+              endAdornment: searchQuery && (
+                <InputAdornment position="end">
+                  <Tooltip title={t("common.clearSearch")}>
+                    <IconButton
+                      size="small"
+                      onClick={() => setSearchQuery("")}
+                      edge="end"
+                      aria-label={t("common.clearSearch")}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </InputAdornment>
+              ),
             }}
-          >
-            <DialogTitle>
-              {dialogMode === "add" ? "新建" : "编辑"}{" "}
-              {dialogType === "connection" ? "连接" : "分组"}
-            </DialogTitle>
-            <DialogContent
-              dividers
-              sx={{
-                overflow: "auto",
-                maxHeight: "calc(90vh - 120px)",
-              }}
+            sx={{
+              ...getSearchFieldMotionSx(theme, {
+                borderRadius: 2,
+                enableScale: true,
+              }),
+            }}
+          />
+        </Box>
+
+        {/* 连接列表区域 */}
+        <Box
+          ref={connectionManagerListRootRef}
+          sx={{
+            flexGrow: 1,
+            overflow: "auto",
+            height: "calc(100% - 160px)", // 调整高度以适应搜索框
+          }}
+        >
+          {isLoading ? (
+            <List dense sx={{ p: 1 }}>
+              <ConnectionManagerSkeleton />
+            </List>
+          ) : useVirtualizedConnectionList ? (
+            <VirtualizedConnectionList
+              className="connection-manager-virtualized-list"
+              connections={filteredItems}
+              selectedItem={
+                connectionListContextMenu?.kind === "connection"
+                  ? connectionListContextMenu.connection
+                  : connectionListContextMenu?.kind === "group"
+                    ? connectionListContextMenu.group
+                    : null
+              }
+              onToggleGroup={handleToggleGroup}
+              onSelectConnection={handleOpenConnection}
+              onDoubleClick={handleOpenConnection}
+              onItemContextMenu={handleVirtualizedItemContextMenu}
+              height="100%"
+              itemHeight={36}
+              enableVirtualization
+              emptyMessage="没有连接项"
+            />
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
             >
-              <Box
-                component="form"
+              <List
+                dense
+                ref={setRootDroppableRef}
                 sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 1.5,
-                  py: 1,
+                  p: 1,
+                  backgroundColor: isRootDraggingOver
+                    ? theme.palette.mode === "dark"
+                      ? alpha(theme.palette.primary.main, 0.2)
+                      : alpha(theme.palette.primary.main, 0.15)
+                    : "transparent",
+                  transition: "background-color 0.2s ease",
                 }}
               >
-                <TextField
-                  label={t("common.name")}
-                  name="name"
-                  value={formData.name}
-                  onChange={handleFormChange}
-                  fullWidth
-                  size="small"
-                  required
-                />
-
-                {dialogType === "connection" && (
-                  <>
-                    <FormControl fullWidth size="small">
-                      <InputLabel>{t("connectionManager.protocol")}</InputLabel>
-                      <Select
-                        name="protocol"
-                        value={formData.protocol || "ssh"}
-                        label={t("connectionManager.protocol")}
-                        onChange={handleFormChange}
-                      >
-                        <MenuItem value="ssh">SSH</MenuItem>
-                        <MenuItem value="telnet">Telnet</MenuItem>
-                      </Select>
-                    </FormControl>
-
-                    <TextField
-                      label={t("connectionManager.hostAddress")}
-                      name="host"
-                      value={formData.host}
-                      onChange={handleFormChange}
-                      fullWidth
-                      size="small"
-                      required
-                    />
-
-                    <TextField
-                      label={t("connectionManager.port")}
-                      name="port"
-                      type="number"
-                      value={formData.port}
-                      onChange={handleFormChange}
-                      fullWidth
-                      size="small"
-                      placeholder={formData.protocol === "telnet" ? "23" : "22"}
-                    />
-
-                    <TextField
-                      label={t("connectionManager.username")}
-                      name="username"
-                      value={formData.username}
-                      onChange={handleFormChange}
-                      fullWidth
-                      size="small"
-                    />
-
-                    <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                      <TextField
-                        label={t("connectionManager.password")}
-                        name="password"
-                        type={showPassword ? "text" : "password"}
-                        value={formData.password}
-                        onChange={handleFormChange}
-                        fullWidth
-                        size="small"
-                        disabled={
-                          formData.protocol === "ssh" &&
-                          formData.authType === "privateKey"
-                        }
-                        sx={{ flex: 1, minWidth: 0 }}
-                      />
-                      <Tooltip
-                        title={
-                          showPassword
-                            ? t("common.hidePassword")
-                            : t("common.showPassword")
-                        }
-                      >
-                        <span>
-                          <IconButton
-                            aria-label={
-                              showPassword
-                                ? t("common.hidePassword")
-                                : t("common.showPassword")
-                            }
-                            size="small"
-                            onClick={handleTogglePasswordVisibility}
-                            disabled={
-                              revealingPassword ||
-                              (formData.protocol === "ssh" &&
-                                formData.authType === "privateKey")
-                            }
-                            sx={{
-                              width: 40,
-                              height: 40,
-                              flexShrink: 0,
-                              border: 1,
-                              borderColor: "divider",
-                              borderRadius: 1,
-                            }}
-                          >
-                            {revealingPassword ? (
-                              <CircularProgress size={18} />
-                            ) : showPassword ? (
-                              <VisibilityOffIcon fontSize="small" />
-                            ) : (
-                              <VisibilityIcon fontSize="small" />
-                            )}
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    </Box>
-
-                    {formData.protocol === "ssh" && (
-                      <FormControl fullWidth size="small" sx={{ mt: 1 }}>
-                        <InputLabel>
-                          {t("connectionManager.authType")}
-                        </InputLabel>
-                        <Select
-                          name="authType"
-                          value={formData.authType || "password"}
-                          label={t("connectionManager.authType")}
-                          onChange={handleFormChange}
-                        >
-                          <MenuItem value="password">
-                            {t("connectionManager.passwordAuth")}
-                          </MenuItem>
-                          <MenuItem value="privateKey">
-                            {t("connectionManager.privateKeyAuth")}
-                          </MenuItem>
-                        </Select>
-                      </FormControl>
-                    )}
-
-                    {formData.protocol === "ssh" &&
-                      formData.authType === "privateKey" && (
-                        <Box sx={{ display: "flex", mt: 1 }}>
-                          <TextField
-                            label={t("connectionManager.privateKeyPath")}
-                            name="privateKeyPath"
-                            value={formData.privateKeyPath}
-                            onChange={handleFormChange}
-                            fullWidth
-                            size="small"
-                            sx={{ flexGrow: 1 }}
-                          />
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            sx={{ ml: 1 }}
-                            onClick={() => {
-                              if (
-                                window.terminalAPI &&
-                                window.terminalAPI.selectKeyFile
-                              ) {
-                                window.terminalAPI
-                                  .selectKeyFile()
-                                  .then((result) => {
-                                    if (
-                                      result &&
-                                      result.success &&
-                                      result.path
-                                    ) {
-                                      setFormData((prev) => ({
-                                        ...prev,
-                                        privateKeyPath: result.path,
-                                      }));
-                                    }
-                                  });
-                              }
-                            }}
-                          >
-                            {t("connectionManager.browse")}
-                          </Button>
-                        </Box>
-                      )}
-
-                    <FormControl fullWidth size="small">
-                      <InputLabel>{t("connectionManager.group")}</InputLabel>
-                      <Select
-                        name="parentGroup"
-                        value={formData.parentGroup || ""}
-                        label={t("connectionManager.group")}
-                        onChange={handleFormChange}
-                      >
-                        <MenuItem value="">
-                          <em>{t("connectionManager.noGroup")}</em>
-                        </MenuItem>
-                        {groupOptions}
-                      </Select>
-                    </FormControl>
-
-                    <FormControl fullWidth size="small">
-                      <InputLabel>{t("connectionManager.type")}</InputLabel>
-                      <Select
-                        name="connectionType"
-                        value={formData.connectionType || ""}
-                        label={t("connectionManager.type")}
-                        onChange={handleFormChange}
-                      >
-                        <MenuItem value="">
-                          <em>{t("common.none")}</em>
-                        </MenuItem>
-                        <MenuItem value="VPS">VPS</MenuItem>
-                        <MenuItem value="NAS">NAS</MenuItem>
-                        <MenuItem value="BareMetal">
-                          {t("connectionManager.bareMetal")}
-                        </MenuItem>
-                        <MenuItem value="Other">{t("common.other")}</MenuItem>
-                      </Select>
-                    </FormControl>
-
-                    <FormControl fullWidth size="small">
-                      <InputLabel>{t("connectionManager.os")}</InputLabel>
-                      <Select
-                        name="os"
-                        value={formData.os || ""}
-                        label={t("connectionManager.os")}
-                        onChange={handleFormChange}
-                      >
-                        <MenuItem value="">
-                          <em>{t("common.none")}</em>
-                        </MenuItem>
-                        <MenuItem value="Linux">Linux</MenuItem>
-                        <MenuItem value="Windows">Windows</MenuItem>
-                        <MenuItem value="macOS">macOS</MenuItem>
-                        <MenuItem value="Other">{t("common.other")}</MenuItem>
-                      </Select>
-                    </FormControl>
-
-                    <FormControl fullWidth size="small">
-                      <InputLabel>
-                        {t("connectionManager.countryRegion")}
-                      </InputLabel>
-                      <Select
-                        name="country"
-                        value={formData.country || ""}
-                        label={t("connectionManager.countryRegion")}
-                        onChange={handleFormChange}
-                        MenuProps={{
-                          PaperProps: {
-                            style: {
-                              maxHeight: 200,
-                            },
+                <>
+                  {connectionsList}
+                  {filteredItems.length === 0 && (
+                    <ListItem>
+                      <ListItemText
+                        primary="没有连接项"
+                        primaryTypographyProps={{
+                          variant: "body2",
+                          sx: {
+                            fontStyle: "italic",
+                            color: "text.secondary",
+                            textAlign: "center",
                           },
                         }}
-                      >
-                        <MenuItem value="">
-                          <em>{t("common.none")}</em>
-                        </MenuItem>
-                        {countryOptions}
-                      </Select>
-                    </FormControl>
+                      />
+                    </ListItem>
+                  )}
+                </>
+              </List>
+            </DndContext>
+          )}
+        </Box>
 
-                    {/* 代理配置分割线 */}
-                    <Divider sx={{ my: 1 }}>
-                      <Typography variant="caption" color="text.secondary">
-                        {t("connectionManager.proxyConfig")}
-                      </Typography>
-                    </Divider>
+        <Menu
+          open={Boolean(connectionListContextMenu)}
+          onClose={handleConnectionListContextMenuClose}
+          anchorReference="anchorPosition"
+          anchorPosition={
+            connectionListContextMenu
+              ? {
+                  top: connectionListContextMenu.mouseY,
+                  left: connectionListContextMenu.mouseX,
+                }
+              : undefined
+          }
+          transitionDuration={0}
+          disableAutoFocusItem
+          disableScrollLock
+          PaperProps={{
+            "data-connection-manager-context-menu": "true",
+            sx: compactContextMenuPaperSx,
+          }}
+        >
+          {connectionListContextMenu?.kind === "connection" && (
+            <>
+              <MenuItem
+                disabled={
+                  !getHostForClipboard(connectionListContextMenu.connection)
+                }
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "connection") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const text = getHostForClipboard(ctx.connection);
+                  if (!text) {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  handleConnectionListContextMenuClose();
+                  window.clipboardAPI?.writeText(text).catch(() => {
+                    showError(t("connectionManager.copyFailed"));
+                  });
+                }}
+              >
+                <ListItemIcon>
+                  <ContentCopyIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.contextCopyIp")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "connection") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const { connection, parentGroup } = ctx;
+                  handleConnectionListContextMenuClose();
+                  handleEdit(connection, parentGroup ?? null);
+                }}
+              >
+                <ListItemIcon>
+                  <EditIcon fontSize="small" />
+                </ListItemIcon>
+                {t("common.edit")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "connection") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const { connection, parentGroup } = ctx;
+                  handleConnectionListContextMenuClose();
+                  handleDelete(connection.id, parentGroup ?? null);
+                }}
+              >
+                <ListItemIcon>
+                  <DeleteIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.delete")}
+              </MenuItem>
+            </>
+          )}
+          {connectionListContextMenu?.kind === "group" && (
+            <>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "group") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const groupId = ctx.group.id;
+                  handleConnectionListContextMenuClose();
+                  handleAddConnection(groupId);
+                }}
+              >
+                <ListItemIcon>
+                  <AddIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.contextAddConnection")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "group") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const { group } = ctx;
+                  handleConnectionListContextMenuClose();
+                  handleEdit(group);
+                }}
+              >
+                <ListItemIcon>
+                  <EditIcon fontSize="small" />
+                </ListItemIcon>
+                {t("common.edit")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "group") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const groupId = ctx.group.id;
+                  handleConnectionListContextMenuClose();
+                  handleDelete(groupId);
+                }}
+              >
+                <ListItemIcon>
+                  <DeleteIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.delete")}
+              </MenuItem>
+            </>
+          )}
+        </Menu>
 
-                    {/* 启用代理开关 */}
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={formData.enableProxy}
-                          onChange={(e) =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              enableProxy: e.target.checked,
-                            }))
+        {/* 添加/编辑对话框 */}
+        <Dialog
+          open={dialogOpen}
+          onClose={handleDialogClose}
+          maxWidth="sm"
+          fullWidth
+          slotProps={{
+            paper: {
+              sx: {
+                maxHeight: "90vh",
+              },
+            },
+          }}
+        >
+          <DialogTitle>
+            {dialogMode === "add" ? "新建" : "编辑"}{" "}
+            {dialogType === "connection" ? "连接" : "分组"}
+          </DialogTitle>
+          <DialogContent
+            dividers
+            sx={{
+              overflow: "auto",
+              maxHeight: "calc(90vh - 120px)",
+            }}
+          >
+            <Box
+              component="form"
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 1.5,
+                py: 1,
+              }}
+            >
+              <TextField
+                label={t("common.name")}
+                name="name"
+                value={formData.name}
+                onChange={handleFormChange}
+                fullWidth
+                size="small"
+                required
+              />
+
+              {dialogType === "connection" && (
+                <>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>{t("connectionManager.protocol")}</InputLabel>
+                    <Select
+                      name="protocol"
+                      value={formData.protocol || "ssh"}
+                      label={t("connectionManager.protocol")}
+                      onChange={handleFormChange}
+                    >
+                      <MenuItem value="ssh">SSH</MenuItem>
+                      <MenuItem value="telnet">Telnet</MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  <TextField
+                    label={t("connectionManager.hostAddress")}
+                    name="host"
+                    value={formData.host}
+                    onChange={handleFormChange}
+                    fullWidth
+                    size="small"
+                    required
+                  />
+
+                  <TextField
+                    label={t("connectionManager.port")}
+                    name="port"
+                    type="number"
+                    value={formData.port}
+                    onChange={handleFormChange}
+                    fullWidth
+                    size="small"
+                    placeholder={formData.protocol === "telnet" ? "23" : "22"}
+                  />
+
+                  <TextField
+                    label={t("connectionManager.username")}
+                    name="username"
+                    value={formData.username}
+                    onChange={handleFormChange}
+                    fullWidth
+                    size="small"
+                  />
+
+                  <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                    <TextField
+                      label={t("connectionManager.password")}
+                      name="password"
+                      type={showPassword ? "text" : "password"}
+                      value={formData.password}
+                      onChange={handleFormChange}
+                      fullWidth
+                      size="small"
+                      disabled={
+                        formData.protocol === "ssh" &&
+                        formData.authType === "privateKey"
+                      }
+                      sx={{ flex: 1, minWidth: 0 }}
+                    />
+                    <Tooltip
+                      title={
+                        showPassword
+                          ? t("common.hidePassword")
+                          : t("common.showPassword")
+                      }
+                    >
+                      <span>
+                        <IconButton
+                          aria-label={
+                            showPassword
+                              ? t("common.hidePassword")
+                              : t("common.showPassword")
                           }
                           size="small"
-                        />
-                      }
-                      label={t("connectionManager.enableProxy")}
-                    />
-
-                    {/* 代理配置表单 */}
-                    {formData.enableProxy && (
-                      <>
-                        <FormControlLabel
-                          control={
-                            <Switch
-                              checked={formData.proxyUseDefault}
-                              onChange={(e) =>
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  proxyUseDefault: e.target.checked,
-                                }))
-                              }
-                              size="small"
-                            />
+                          onClick={handleTogglePasswordVisibility}
+                          disabled={
+                            revealingPassword ||
+                            (formData.protocol === "ssh" &&
+                              formData.authType === "privateKey")
                           }
-                          label={t("connectionManager.useSystemProxy")}
-                        />
-
-                        {!formData.proxyUseDefault && (
-                          <Box
-                            sx={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 1.5,
-                              pl: 2,
-                              borderLeft: 2,
-                              borderColor: "divider",
-                            }}
-                          >
-                            <Box sx={{ display: "flex", gap: 1 }}>
-                              <FormControl size="small" sx={{ minWidth: 100 }}>
-                                <InputLabel>
-                                  {t("connectionManager.type")}
-                                </InputLabel>
-                                <Select
-                                  name="proxyType"
-                                  value={formData.proxyType}
-                                  label={t("connectionManager.type")}
-                                  onChange={handleFormChange}
-                                >
-                                  <MenuItem value="http">HTTP</MenuItem>
-                                  <MenuItem value="https">HTTPS</MenuItem>
-                                  <MenuItem value="socks4">SOCKS4</MenuItem>
-                                  <MenuItem value="socks5">SOCKS5</MenuItem>
-                                </Select>
-                              </FormControl>
-                              <TextField
-                                label={t("connectionManager.proxyHost")}
-                                name="proxyHost"
-                                value={formData.proxyHost}
-                                onChange={handleFormChange}
-                                size="small"
-                                sx={{ flexGrow: 1 }}
-                                placeholder="127.0.0.1"
-                              />
-                              <TextField
-                                label={t("connectionManager.proxyPort")}
-                                name="proxyPort"
-                                type="number"
-                                value={formData.proxyPort}
-                                onChange={handleFormChange}
-                                size="small"
-                                sx={{ width: 90 }}
-                                placeholder="8080"
-                              />
-                            </Box>
-
-                            <Box sx={{ display: "flex", gap: 1 }}>
-                              <TextField
-                                label={t("connectionManager.proxyUsername")}
-                                name="proxyUsername"
-                                value={formData.proxyUsername}
-                                onChange={handleFormChange}
-                                size="small"
-                                sx={{ flexGrow: 1 }}
-                              />
-                              <TextField
-                                label={t("connectionManager.proxyPassword")}
-                                name="proxyPassword"
-                                type="password"
-                                value={formData.proxyPassword}
-                                onChange={handleFormChange}
-                                size="small"
-                                sx={{ flexGrow: 1 }}
-                              />
-                            </Box>
-                          </Box>
-                        )}
-                      </>
-                    )}
-
-                    {formData.protocol === "ssh" && (
-                      <Box
-                        sx={{
-                          border: 1,
-                          borderColor: "divider",
-                          borderRadius: 1,
-                          p: 1.25,
-                          bgcolor: "background.default",
-                        }}
-                      >
-                        <Typography
-                          variant="caption"
                           sx={{
-                            fontWeight: 700,
-                            display: "block",
-                            mb: 0.5,
+                            width: 40,
+                            height: 40,
+                            flexShrink: 0,
+                            border: 1,
+                            borderColor: "divider",
+                            borderRadius: 1,
                           }}
                         >
-                          {t("connectionManager.validation.title")}
-                        </Typography>
-                        <Box>{validationSteps.map(renderValidationStep)}</Box>
+                          {revealingPassword ? (
+                            <CircularProgress size={18} />
+                          ) : showPassword ? (
+                            <VisibilityOffIcon fontSize="small" />
+                          ) : (
+                            <VisibilityIcon fontSize="small" />
+                          )}
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </Box>
 
-                        {connectionTestResult ? (
-                          <Alert
-                            severity={
-                              connectionTestResult.success
-                                ? "success"
-                                : "warning"
+                  {formData.protocol === "ssh" && (
+                    <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+                      <InputLabel>{t("connectionManager.authType")}</InputLabel>
+                      <Select
+                        name="authType"
+                        value={formData.authType || "password"}
+                        label={t("connectionManager.authType")}
+                        onChange={handleFormChange}
+                      >
+                        <MenuItem value="password">
+                          {t("connectionManager.passwordAuth")}
+                        </MenuItem>
+                        <MenuItem value="privateKey">
+                          {t("connectionManager.privateKeyAuth")}
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
+                  )}
+
+                  {formData.protocol === "ssh" &&
+                    formData.authType === "privateKey" && (
+                      <Box sx={{ display: "flex", mt: 1 }}>
+                        <TextField
+                          label={t("connectionManager.privateKeyPath")}
+                          name="privateKeyPath"
+                          value={formData.privateKeyPath}
+                          onChange={handleFormChange}
+                          fullWidth
+                          size="small"
+                          sx={{ flexGrow: 1 }}
+                        />
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          sx={{ ml: 1 }}
+                          onClick={() => {
+                            if (
+                              window.terminalAPI &&
+                              window.terminalAPI.selectKeyFile
+                            ) {
+                              window.terminalAPI
+                                .selectKeyFile()
+                                .then((result) => {
+                                  if (result && result.success && result.path) {
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      privateKeyPath: result.path,
+                                    }));
+                                  }
+                                });
                             }
-                            variant="outlined"
-                            sx={{ mt: 1 }}
-                          >
-                            <Typography variant="body2">
-                              {connectionTestResult.message}
-                            </Typography>
-                            {connectionTestResult.detail ? (
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                                sx={{ display: "block", mt: 0.25 }}
-                              >
-                                {connectionTestResult.detail}
-                              </Typography>
-                            ) : null}
-                          </Alert>
-                        ) : null}
+                          }}
+                        >
+                          {t("connectionManager.browse")}
+                        </Button>
                       </Box>
                     )}
-                  </>
-                )}
-              </Box>
-            </DialogContent>
-            <DialogActions>
-              {dialogType === "connection" && formData.protocol === "ssh" && (
-                <Button
-                  onClick={handleTestConnection}
-                  disabled={!canTestConnection}
-                  startIcon={
-                    testingConnection ? <CircularProgress size={16} /> : null
-                  }
-                >
-                  {testingConnection
-                    ? t("connectionManager.testing")
-                    : t("connectionManager.testConnection")}
-                </Button>
-              )}
-              <Button onClick={handleDialogClose}>{t("common.cancel")}</Button>
-              <Button onClick={handleSave} variant="contained">
-                {t("common.save")}
-              </Button>
-            </DialogActions>
-          </Dialog>
 
-          {/* 删除确认对话框 */}
-          <Dialog
-            open={deleteConfirmOpen}
-            onClose={handleCancelDelete}
-            maxWidth="xs"
-          >
-            <DialogTitle>{t("connectionManager.confirmDelete")}</DialogTitle>
-            <DialogContent>
-              <Typography>
-                {deleteItem?.item?.type === "group"
-                  ? t("connectionManager.deleteGroupConfirm", {
-                      name: deleteItem?.item?.name,
-                    })
-                  : t("connectionManager.deleteConnectionConfirm", {
-                      name: deleteItem?.item?.name,
-                    })}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                {t("connectionManager.cannotUndo")}
-              </Typography>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={handleCancelDelete}>{t("common.cancel")}</Button>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>{t("connectionManager.group")}</InputLabel>
+                    <Select
+                      name="parentGroup"
+                      value={formData.parentGroup || ""}
+                      label={t("connectionManager.group")}
+                      onChange={handleFormChange}
+                    >
+                      <MenuItem value="">
+                        <em>{t("connectionManager.noGroup")}</em>
+                      </MenuItem>
+                      {groupOptions}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl fullWidth size="small">
+                    <InputLabel>{t("connectionManager.type")}</InputLabel>
+                    <Select
+                      name="connectionType"
+                      value={formData.connectionType || ""}
+                      label={t("connectionManager.type")}
+                      onChange={handleFormChange}
+                    >
+                      <MenuItem value="">
+                        <em>{t("common.none")}</em>
+                      </MenuItem>
+                      <MenuItem value="VPS">VPS</MenuItem>
+                      <MenuItem value="NAS">NAS</MenuItem>
+                      <MenuItem value="BareMetal">
+                        {t("connectionManager.bareMetal")}
+                      </MenuItem>
+                      <MenuItem value="Other">{t("common.other")}</MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  <FormControl fullWidth size="small">
+                    <InputLabel>{t("connectionManager.os")}</InputLabel>
+                    <Select
+                      name="os"
+                      value={formData.os || ""}
+                      label={t("connectionManager.os")}
+                      onChange={handleFormChange}
+                    >
+                      <MenuItem value="">
+                        <em>{t("common.none")}</em>
+                      </MenuItem>
+                      <MenuItem value="Linux">Linux</MenuItem>
+                      <MenuItem value="Windows">Windows</MenuItem>
+                      <MenuItem value="macOS">macOS</MenuItem>
+                      <MenuItem value="Other">{t("common.other")}</MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  <FormControl fullWidth size="small">
+                    <InputLabel>
+                      {t("connectionManager.countryRegion")}
+                    </InputLabel>
+                    <Select
+                      name="country"
+                      value={formData.country || ""}
+                      label={t("connectionManager.countryRegion")}
+                      onChange={handleFormChange}
+                      MenuProps={{
+                        PaperProps: {
+                          style: {
+                            maxHeight: 200,
+                          },
+                        },
+                      }}
+                    >
+                      <MenuItem value="">
+                        <em>{t("common.none")}</em>
+                      </MenuItem>
+                      {countryOptions}
+                    </Select>
+                  </FormControl>
+
+                  {/* 代理配置分割线 */}
+                  <Divider sx={{ my: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("connectionManager.proxyConfig")}
+                    </Typography>
+                  </Divider>
+
+                  {/* 启用代理开关 */}
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={formData.enableProxy}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            enableProxy: e.target.checked,
+                          }))
+                        }
+                        size="small"
+                      />
+                    }
+                    label={t("connectionManager.enableProxy")}
+                  />
+
+                  {/* 代理配置表单 */}
+                  {formData.enableProxy && (
+                    <>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={formData.proxyUseDefault}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                proxyUseDefault: e.target.checked,
+                              }))
+                            }
+                            size="small"
+                          />
+                        }
+                        label={t("connectionManager.useSystemProxy")}
+                      />
+
+                      {!formData.proxyUseDefault && (
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 1.5,
+                            pl: 2,
+                            borderLeft: 2,
+                            borderColor: "divider",
+                          }}
+                        >
+                          <Box sx={{ display: "flex", gap: 1 }}>
+                            <FormControl size="small" sx={{ minWidth: 100 }}>
+                              <InputLabel>
+                                {t("connectionManager.type")}
+                              </InputLabel>
+                              <Select
+                                name="proxyType"
+                                value={formData.proxyType}
+                                label={t("connectionManager.type")}
+                                onChange={handleFormChange}
+                              >
+                                <MenuItem value="http">HTTP</MenuItem>
+                                <MenuItem value="https">HTTPS</MenuItem>
+                                <MenuItem value="socks4">SOCKS4</MenuItem>
+                                <MenuItem value="socks5">SOCKS5</MenuItem>
+                              </Select>
+                            </FormControl>
+                            <TextField
+                              label={t("connectionManager.proxyHost")}
+                              name="proxyHost"
+                              value={formData.proxyHost}
+                              onChange={handleFormChange}
+                              size="small"
+                              sx={{ flexGrow: 1 }}
+                              placeholder="127.0.0.1"
+                            />
+                            <TextField
+                              label={t("connectionManager.proxyPort")}
+                              name="proxyPort"
+                              type="number"
+                              value={formData.proxyPort}
+                              onChange={handleFormChange}
+                              size="small"
+                              sx={{ width: 90 }}
+                              placeholder="8080"
+                            />
+                          </Box>
+
+                          <Box sx={{ display: "flex", gap: 1 }}>
+                            <TextField
+                              label={t("connectionManager.proxyUsername")}
+                              name="proxyUsername"
+                              value={formData.proxyUsername}
+                              onChange={handleFormChange}
+                              size="small"
+                              sx={{ flexGrow: 1 }}
+                            />
+                            <TextField
+                              label={t("connectionManager.proxyPassword")}
+                              name="proxyPassword"
+                              type="password"
+                              value={formData.proxyPassword}
+                              onChange={handleFormChange}
+                              size="small"
+                              sx={{ flexGrow: 1 }}
+                            />
+                          </Box>
+                        </Box>
+                      )}
+                    </>
+                  )}
+
+                  {formData.protocol === "ssh" && (
+                    <Box
+                      sx={{
+                        border: 1,
+                        borderColor: "divider",
+                        borderRadius: 1,
+                        p: 1.25,
+                        bgcolor: "background.default",
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 700,
+                          display: "block",
+                          mb: 0.5,
+                        }}
+                      >
+                        {t("connectionManager.validation.title")}
+                      </Typography>
+                      <Box>{validationSteps.map(renderValidationStep)}</Box>
+
+                      {connectionTestResult ? (
+                        <Alert
+                          severity={
+                            connectionTestResult.success ? "success" : "warning"
+                          }
+                          variant="outlined"
+                          sx={{ mt: 1 }}
+                        >
+                          <Typography variant="body2">
+                            {connectionTestResult.message}
+                          </Typography>
+                          {connectionTestResult.detail ? (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: "block", mt: 0.25 }}
+                            >
+                              {connectionTestResult.detail}
+                            </Typography>
+                          ) : null}
+                        </Alert>
+                      ) : null}
+                    </Box>
+                  )}
+                </>
+              )}
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            {dialogType === "connection" && formData.protocol === "ssh" && (
               <Button
-                onClick={handleConfirmDelete}
-                variant="contained"
-                color="error"
+                onClick={handleTestConnection}
+                disabled={!canTestConnection}
+                startIcon={
+                  testingConnection ? <CircularProgress size={16} /> : null
+                }
               >
-                {t("common.delete")}
+                {testingConnection
+                  ? t("connectionManager.testing")
+                  : t("connectionManager.testConnection")}
               </Button>
-            </DialogActions>
-          </Dialog>
-        </Box>
-      </Paper>
+            )}
+            <Button onClick={handleDialogClose}>{t("common.cancel")}</Button>
+            <Button onClick={handleSave} variant="contained">
+              {t("common.save")}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* 删除确认对话框 */}
+        <Dialog
+          open={deleteConfirmOpen}
+          onClose={handleCancelDelete}
+          maxWidth="xs"
+        >
+          <DialogTitle>{t("connectionManager.confirmDelete")}</DialogTitle>
+          <DialogContent>
+            <Typography>
+              {deleteItem?.item?.type === "group"
+                ? t("connectionManager.deleteGroupConfirm", {
+                    name: deleteItem?.item?.name,
+                  })
+                : t("connectionManager.deleteConnectionConfirm", {
+                    name: deleteItem?.item?.name,
+                  })}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {t("connectionManager.cannotUndo")}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCancelDelete}>{t("common.cancel")}</Button>
+            <Button
+              onClick={handleConfirmDelete}
+              variant="contained"
+              color="error"
+            >
+              {t("common.delete")}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </SidebarPanel>
     );
   },
   areEqual,

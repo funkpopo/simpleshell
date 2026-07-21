@@ -7,6 +7,18 @@ export const SIDEBAR_ITEM_RADIUS = 1;
 
 export const SIDEBAR_TITLE_BAR_HEIGHT = 44;
 
+// 侧边栏 Paper 外壳统一样式
+export const sidebarPaperSx = (theme, { borderLeft = true } = {}) => ({
+  width: "100%",
+  minWidth: 0,
+  height: "100%",
+  overflow: "hidden",
+  ...(borderLeft ? { borderLeft: `1px solid ${theme.palette.divider}` } : {}),
+  display: "flex",
+  flexDirection: "column",
+  borderRadius: 0,
+});
+
 // 侧边栏展开后的标题栏统一样式（高度、内边距、分隔线）
 export const sidebarTitleBarSx = (theme) => ({
   display: "flex",

@@ -7,7 +7,6 @@ import React, {
 } from "react";
 import {
   Box,
-  Paper,
   Typography,
   IconButton,
   List,
@@ -19,13 +18,11 @@ import {
   Tooltip,
   CircularProgress,
   Alert,
-  Snackbar,
   InputAdornment,
   Skeleton,
   Chip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
 import ClearIcon from "@mui/icons-material/Clear";
@@ -40,11 +37,12 @@ import { SiAlpinelinux } from "react-icons/si";
 import { useTranslation } from "react-i18next";
 import useAutoCleanup from "../hooks/useAutoCleanup";
 import {
-  sidebarContentSx,
   sidebarListItemButtonSx,
-  sidebarTitleBarSx,
   sidebarTitleIconButtonSx,
 } from "./sidebarItemStyles";
+import SidebarPanel from "./SidebarPanel.jsx";
+import useSidebarPanel from "../hooks/useSidebarPanel";
+import { useNotification } from "../contexts/NotificationContext";
 
 const AUTO_REFRESH_COOLDOWN_MS = 2000;
 
@@ -77,11 +75,18 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   const [isDetecting, setIsDetecting] = useState(true); // 初始状态设为检测中
   const [searchQuery, setSearchQuery] = useState("");
   const [hasInitialDetection, setHasInitialDetection] = useState(false); // 跟踪是否已进行初始检测
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: "",
-    severity: "info",
-  });
+  const { showNotification: showGlobalNotification } = useNotification();
+
+  const setSnackbar = useCallback(
+    ({ message, severity }) => {
+      showGlobalNotification(message, severity, {
+        autoHideDuration: 4000,
+        anchorOrigin: { vertical: "bottom", horizontal: "center" },
+        variant: "standard",
+      });
+    },
+    [showGlobalNotification],
+  );
 
   const searchInputRef = useRef(null);
   const sidebarRef = useRef(null);
@@ -90,55 +95,11 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   // 清理资源的自定义hook - useAutoCleanup不接受参数
   useAutoCleanup();
 
-  const focusSidebarRoot = (event) => {
-    if (!(event.target instanceof Element)) {
-      return;
-    }
-    const focusableTarget = event.target.closest(
-      'input, textarea, select, button, [role="button"], [tabindex]',
-    );
-    if (focusableTarget && focusableTarget !== sidebarRef.current) {
-      return;
-    }
-    sidebarRef.current?.focus({ preventScroll: true });
-  };
-
-  // 键盘快捷键处理
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (!open) return;
-
-      // 检查当前焦点是否在终端区域内，如果是则不处理侧边栏快捷键
-      const activeElement = document.activeElement;
-      const isInTerminal =
-        activeElement &&
-        (activeElement.classList.contains("xterm-helper-textarea") ||
-          activeElement.classList.contains("xterm-screen"));
-
-      // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
-      if (isInTerminal) return;
-
-      const isFocusInSidebar =
-        activeElement && sidebarRef.current?.contains(activeElement);
-
-      // Ctrl+/ 全局聚焦搜索框；Ctrl+F 仅在焦点位于侧边栏内时接管浏览器查找
-      if (
-        e.ctrlKey &&
-        (e.key === "/" || (e.key.toLowerCase() === "f" && isFocusInSidebar))
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (searchInputRef.current) {
-          searchInputRef.current.focus();
-        }
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
+  useSidebarPanel({
+    open,
+    rootRef: sidebarRef,
+    searchInputRef,
+  });
 
   // 检测可用终端
   const detectTerminals = useCallback(
@@ -193,7 +154,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         }
       }
     },
-    [t, hasInitialDetection],
+    [t, hasInitialDetection, setSnackbar],
   );
 
   // 侧边栏打开时检测终端；首次显示骨架，后续无感刷新
@@ -338,7 +299,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
         });
       }
     },
-    [onLaunchTerminal, t],
+    [onLaunchTerminal, t, setSnackbar],
   );
 
   // 处理右键菜单
@@ -531,179 +492,135 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
   }, [theme]);
 
   return (
-    <Paper
-      ref={sidebarRef}
-      tabIndex={-1}
-      onMouseDown={focusSidebarRoot}
+    <SidebarPanel
+      open={open}
+      rootRef={sidebarRef}
+      title={t("localTerminal.title")}
+      onClose={onClose}
       elevation={3}
       square={true}
-      sx={{
-        width: "100%",
-        minWidth: 0,
-        height: "100%",
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-        borderRadius: 0,
-      }}
-    >
-      <Box sx={sidebarContentSx(theme, open)}>
-        {/* 头部 */}
-        <Box sx={{ ...sidebarTitleBarSx(theme), gap: 1 }}>
-          <Typography
-            variant="subtitle1"
-            fontWeight="medium"
-            sx={{ flexGrow: 1 }}
+      borderLeft={false}
+      titleBarSx={{ gap: 1 }}
+      titleSx={{ flexGrow: 1 }}
+      actionsSx={{ display: "flex", alignItems: "center", gap: 1 }}
+      actions={
+        <Tooltip title={t("localTerminal.refresh")}>
+          <IconButton
+            size="small"
+            onClick={() => detectTerminals(true, { silent: false })}
+            disabled={isDetecting}
+            sx={sidebarTitleIconButtonSx}
+
+            aria-label={t("localTerminal.refresh")}
           >
-            {t("localTerminal.title")}
-          </Typography>
+            {isDetecting ? (
+              <CircularProgress size={16} />
+            ) : (
+              <RefreshIcon fontSize="small" />
+            )}
+          </IconButton>
+        </Tooltip>
+      }
+    >
+      {/* 搜索框 */}
+      <Box sx={{ p: 2, pb: 1 }}>
+        {isDetecting ? (
+          <Skeleton
+            variant="rectangular"
+            width="100%"
+            height={36}
+            sx={{ borderRadius: 2 }}
+          />
+        ) : (
+          <TextField
+            ref={searchInputRef}
+            fullWidth
+            size="small"
+            placeholder={t("localTerminal.searchPlaceholder")}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+              endAdornment: searchQuery && (
+                <InputAdornment position="end">
+                  <Tooltip title={t("common.clearSearch")}>
+                    <IconButton
+                      size="small"
+                      onClick={clearSearch}
+                      aria-label={t("common.clearSearch")}
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 2,
+              },
+            }}
+          />
+        )}
+      </Box>
 
-          <Tooltip title={t("localTerminal.refresh")}>
-            <IconButton
-              size="small"
-              onClick={() => detectTerminals(true, { silent: false })}
-              disabled={isDetecting}
-              sx={sidebarTitleIconButtonSx}
-
-              aria-label={t("localTerminal.refresh")}
-            >
-              {isDetecting ? (
-                <CircularProgress size={16} />
-              ) : (
-                <RefreshIcon fontSize="small" />
-              )}
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title={t("common.close")}>
-            <IconButton
-              size="small"
-              onClick={onClose}
-              sx={sidebarTitleIconButtonSx}
-
-              aria-label={t("common.close")}
-            >
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Box>
-
-        {/* 搜索框 */}
-        <Box sx={{ p: 2, pb: 1 }}>
+      {/* 可用终端列表 */}
+      <Box
+        sx={{
+          flexGrow: 1,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <Box sx={{ px: 2, pb: 1 }}>
           {isDetecting ? (
-            <Skeleton
-              variant="rectangular"
-              width="100%"
-              height={36}
-              sx={{ borderRadius: 2 }}
-            />
+            <Skeleton variant="text" width={150} height={20} />
           ) : (
-            <TextField
-              ref={searchInputRef}
-              fullWidth
-              size="small"
-              placeholder={t("localTerminal.searchPlaceholder")}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-                endAdornment: searchQuery && (
-                  <InputAdornment position="end">
-                    <Tooltip title={t("common.clearSearch")}>
-                      <IconButton
-                        size="small"
-                        onClick={clearSearch}
-                        aria-label={t("common.clearSearch")}
-                      >
-                        <ClearIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  borderRadius: 2,
-                },
-              }}
-            />
+            <Typography
+              variant="subtitle2"
+              color="text.secondary"
+              sx={{ fontWeight: 500 }}
+            >
+              {t("localTerminal.availableTerminals")} (
+              {filteredTerminals.length})
+            </Typography>
           )}
         </Box>
 
-        {/* 可用终端列表 */}
-        <Box
-          sx={{
-            flexGrow: 1,
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          <Box sx={{ px: 2, pb: 1 }}>
-            {isDetecting ? (
-              <Skeleton variant="text" width={150} height={20} />
-            ) : (
-              <Typography
-                variant="subtitle2"
-                color="text.secondary"
-                sx={{ fontWeight: 500 }}
-              >
-                {t("localTerminal.availableTerminals")} (
-                {filteredTerminals.length})
-              </Typography>
-            )}
-          </Box>
-
-          <Box sx={{ px: 2, flex: 1, overflow: "auto" }}>
-            {isDetecting ? (
-              <List disablePadding>
-                {Array.from({ length: 6 }).map((_, index) => (
-                  <TerminalItemSkeleton key={`skeleton-${index}`} />
-                ))}
-              </List>
-            ) : filteredTerminals.length > 0 ? (
-              <List disablePadding>
-                {filteredTerminals.map((terminal, index) => (
-                  <TerminalItem
-                    key={terminal.id || terminal.type || `terminal-${index}`}
-                    terminal={terminal}
-                  />
-                ))}
-              </List>
-            ) : (
-              // 只有在初始检测完成后才显示提示信息
-              hasInitialDetection && (
-                <Alert severity="info" sx={{ mt: 1 }}>
-                  {searchQuery
-                    ? t("localTerminal.noSearchResults")
-                    : t("localTerminal.noTerminals")}
-                </Alert>
-              )
-            )}
-          </Box>
+        <Box sx={{ px: 2, flex: 1, overflow: "auto" }}>
+          {isDetecting ? (
+            <List disablePadding>
+              {Array.from({ length: 6 }).map((_, index) => (
+                <TerminalItemSkeleton key={`skeleton-${index}`} />
+              ))}
+            </List>
+          ) : filteredTerminals.length > 0 ? (
+            <List disablePadding>
+              {filteredTerminals.map((terminal, index) => (
+                <TerminalItem
+                  key={terminal.id || terminal.type || `terminal-${index}`}
+                  terminal={terminal}
+                />
+              ))}
+            </List>
+          ) : (
+            // 只有在初始检测完成后才显示提示信息
+            hasInitialDetection && (
+              <Alert severity="info" sx={{ mt: 1 }}>
+                {searchQuery
+                  ? t("localTerminal.noSearchResults")
+                  : t("localTerminal.noTerminals")}
+              </Alert>
+            )
+          )}
         </Box>
-
-        {/* Snackbar消息提示 */}
-        <Snackbar
-          open={snackbar.open}
-          autoHideDuration={4000}
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        >
-          <Alert
-            onClose={() => setSnackbar({ ...snackbar, open: false })}
-            severity={snackbar.severity}
-            sx={{ width: "100%" }}
-          >
-            {snackbar.message}
-          </Alert>
-        </Snackbar>
       </Box>
-    </Paper>
+    </SidebarPanel>
   );
 };
 

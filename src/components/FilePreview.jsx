@@ -17,8 +17,6 @@ import {
   Box,
   CircularProgress,
   Tooltip,
-  Snackbar,
-  Alert,
   ButtonGroup,
   Divider,
   Stack,
@@ -30,6 +28,7 @@ import {
   Menu,
   MenuItem,
 } from "@mui/material";
+import { useNotification } from "../contexts/NotificationContext";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ContentCutIcon from "@mui/icons-material/ContentCut";
 import ContentPasteIcon from "@mui/icons-material/ContentPaste";
@@ -56,10 +55,19 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { openSearchPanel, search } from "@codemirror/search";
 import {
   getCodemirrorLanguageIdFromFilename,
+  getFileExtension,
   loadCodemirrorLanguageExtension,
 } from "../utils/filePreviewCodemirrorLanguages.js";
 import { useTranslation } from "react-i18next";
-import { formatFileSize } from "../core/utils/formatters.js";
+import {
+  formatAbsoluteDateTime,
+  formatFileSize,
+} from "../core/utils/formatters.js";
+import {
+  CONSOLAS_FONT_FAMILY,
+  FIRA_CODE_FONT_FAMILY,
+  SPACE_MONO_FONT_FAMILY,
+} from "../utils/fonts.js";
 import { useGlobalTransfers } from "../store/globalTransferStore.js";
 import { compactContextMenuPaperSx } from "./contextMenuStyles";
 // 延迟导入 react-pdf 以避免 webpack 模块初始化问题
@@ -98,13 +106,6 @@ const loadReactPdf = async () => {
     console.error("Failed to load react-pdf:", error);
     throw error;
   }
-};
-
-// 获取文件扩展名
-const getFileExtension = (filename) => {
-  return filename
-    .slice(((filename.lastIndexOf(".") - 1) >>> 0) + 2)
-    .toLowerCase();
 };
 
 // 判断是否是文本文件 - 支持绝大多数文件类型
@@ -269,14 +270,14 @@ const normalizeEditorFontSetting = (fontSetting) => {
 const getFontFamily = (fontSetting) => {
   switch (normalizeEditorFontSetting(fontSetting)) {
     case "fira-code":
-      return '"Fira Code", "Consolas", "Monaco", "Courier New", monospace';
+      return FIRA_CODE_FONT_FAMILY;
     case "consolas":
-      return '"Consolas", "Monaco", "Courier New", monospace';
+      return CONSOLAS_FONT_FAMILY;
     case "space-mono":
-      return '"Space Mono", "Consolas", "Monaco", "Courier New", monospace';
+      return SPACE_MONO_FONT_FAMILY;
     case "system":
     default:
-      return '"Consolas", "Monaco", "Courier New", monospace';
+      return CONSOLAS_FONT_FAMILY;
   }
 };
 
@@ -293,15 +294,8 @@ const resolveGlobalEditorFontSetting = (settings) => {
   return settings.terminalFont || normalizedEditorFont;
 };
 
-const formatSnapshotDate = (value) => {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return String(value || "");
-  }
-
-  return date.toLocaleString();
-};
+const formatSnapshotDate = (value) =>
+  formatAbsoluteDateTime(value, { fallback: String(value || "") });
 
 const splitTextLines = (value) => String(value ?? "").split("\n");
 
@@ -603,7 +597,27 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [modified, setModified] = useState(false);
   const [savingFile, setSavingFile] = useState(false);
-  const [notification, setNotification] = useState(null);
+  const { showNotification: showGlobalNotification } = useNotification();
+
+  // 通知适配器：沿用原本地 Snackbar 的行为（3 秒自动关闭、底部居中、标准样式）
+  const setNotification = useCallback(
+    (notification) => {
+      if (!notification) {
+        return;
+      }
+      showGlobalNotification(
+        notification.message,
+        notification.severity || "info",
+        {
+          autoHideDuration: 3000,
+          anchorOrigin: { vertical: "bottom", horizontal: "center" },
+          variant: "standard",
+        },
+      );
+    },
+    [showGlobalNotification],
+  );
+
   const [globalEditorFont, setGlobalEditorFont] = useState("system");
   const [snapshots, setSnapshots] = useState([]);
   const [loadingSnapshots, setLoadingSnapshots] = useState(false);
@@ -2085,11 +2099,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
     queueTextEditorScrollRestore,
     t,
   ]);
-
-  // 处理通知关闭
-  const handleCloseNotification = () => {
-    setNotification(null);
-  };
 
   const textEditorExtensions = useMemo(() => {
     if (!isTextPreview) {
@@ -3747,24 +3756,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* 通知消息 */}
-      <Snackbar
-        open={notification !== null}
-        autoHideDuration={3000}
-        onClose={handleCloseNotification}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        {notification && (
-          <Alert
-            onClose={handleCloseNotification}
-            severity={notification.severity}
-            sx={{ width: "100%" }}
-          >
-            {notification.message}
-          </Alert>
-        )}
-      </Snackbar>
     </Dialog>
   );
 };

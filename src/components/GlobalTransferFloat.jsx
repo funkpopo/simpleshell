@@ -14,9 +14,15 @@ import {
 import { Close, Minimize, ExpandMore, SwapVert } from "@mui/icons-material";
 import { useTheme, alpha } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
-import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
+import {
+  useAllGlobalTransfers,
+  cancelTransferWithNotice,
+} from "../store/globalTransferStore.js";
 import { formatFileSize } from "../core/utils/formatters.js";
-import { sumTransferFileCount } from "../utils/transferCounts.js";
+import {
+  sumTransferFileCount,
+  getDisplayCompletedFileCount,
+} from "../utils/transferCounts.js";
 import { RADIUS } from "../theme";
 import {
   getTransferIcon,
@@ -24,6 +30,7 @@ import {
   getTransferColor,
   getTransferStatusColor,
   getTransferStatusChipColors,
+  getTransferStatusTextColor,
   getProgressTrackColor,
   getDangerHoverSx,
 } from "./transferStatusStyles.jsx";
@@ -69,10 +76,8 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
     totalBytes = 0,
     transferSpeed = 0,
     remainingTime = 0,
-    currentFileIndex = 0,
     totalFiles = 0,
     currentFile,
-    processedFiles = 0,
     statusText = "",
     warning = "",
   } = transfer;
@@ -83,18 +88,9 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
   const statusIcon = getStatusIcon(transfer, 16);
   const chipColors = getTransferStatusChipColors(theme, transfer);
   const statusColor = getTransferStatusColor(theme, transfer);
-  const displayFileProgress =
-    totalFiles > 0 && isCompleted && !hasError && !isCancelled
-      ? totalFiles
-      : type === "upload-multifile"
-        ? Math.min(Math.max(0, currentFileIndex || 0), totalFiles)
-        : Math.min(
-            Math.max(
-              Number(processedFiles) || 0,
-              Math.max(0, (currentFileIndex || 1) - 1),
-            ),
-            totalFiles,
-          );
+  const displayFileProgress = getDisplayCompletedFileCount(transfer, {
+    multiFileUsesCurrentIndex: true,
+  });
 
   return (
     <Box
@@ -151,11 +147,7 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
                   variant="caption"
                   sx={{
                     fontSize: "0.75rem",
-                    color: hasError
-                      ? theme.palette.error.main
-                      : hasWarning || isCancelled
-                        ? theme.palette.warning.main
-                        : theme.palette.text.secondary,
+                    color: getTransferStatusTextColor(theme, transfer),
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -336,8 +328,7 @@ TransferItem.displayName = "TransferItem";
 const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { allTransfers, updateTransferProgress, removeTransferProgress } =
-    useAllGlobalTransfers();
+  const { allTransfers, removeTransferProgress } = useAllGlobalTransfers();
   const [isMinimized, setIsMinimized] = useState(false);
   const [selectedTabId, setSelectedTabId] = useState(null);
 
@@ -390,34 +381,16 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
   };
 
   const handleCancelTransfer = (transferId) => {
-    if (selectedTabId && window.terminalAPI?.cancelTransfer) {
+    if (selectedTabId) {
       const transfer = allTransfers.find(
         (t) => t.tabId === selectedTabId && t.transferId === transferId,
       );
-      if (transfer && transfer.transferKey) {
-        window.terminalAPI
-          .cancelTransfer(selectedTabId, transfer.transferKey)
-          .then((result) => {
-            if (result.success) {
-              updateTransferProgress(selectedTabId, transferId, {
-                progress: 0,
-                isCancelled: true,
-                statusText: t("fileManager.transfer.status.transferCancelled"),
-                cancelMessage: t(
-                  "fileManager.transfer.status.transferCancelled",
-                ),
-              });
-            }
-          })
-          .catch(() => {
-            updateTransferProgress(selectedTabId, transferId, {
-              progress: 0,
-              isCancelled: true,
-              statusText: t("fileManager.transfer.status.transferCancelled"),
-              cancelMessage: t("fileManager.transfer.status.transferCancelled"),
-            });
-          });
-      }
+      cancelTransferWithNotice(
+        selectedTabId,
+        transfer,
+        t("fileManager.transfer.status.transferCancelled"),
+        { resetProgress: true },
+      );
     }
   };
 

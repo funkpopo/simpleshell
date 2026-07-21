@@ -55,6 +55,24 @@ export const formatDate = (date, options = {}) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
+// 将时间值格式化为本地化的绝对日期时间字符串（toLocaleString）
+// - fallback：值无法解析为有效日期时返回的文本
+// - requirePositiveNumber：为 true 时仅接受正的有限数字时间戳（属性面板等场景）
+export const formatAbsoluteDateTime = (value, options = {}) => {
+  const { fallback = "", requirePositiveNumber = false } = options;
+
+  if (requirePositiveNumber && (!Number.isFinite(value) || value <= 0)) {
+    return fallback;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return fallback;
+  }
+
+  return date.toLocaleString();
+};
+
 export const formatLastRefreshTime = (timestamp) => {
   if (!timestamp) return "未知";
 

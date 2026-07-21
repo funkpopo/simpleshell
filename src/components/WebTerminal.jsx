@@ -6,8 +6,12 @@ import Box from "@mui/material/Box";
 import { useTheme } from "@mui/material/styles";
 import "@xterm/xterm/css/xterm.css";
 import "./WebTerminal.css";
-import { debounce, createResizeObserver } from "../core/utils/performance.js";
-import { useEventManager } from "../core/utils/eventManager.js";
+import {
+  debounce,
+  createResizeObserver,
+  isElementVisible,
+} from "../core/utils/performance.js";
+import { useCleanupManager } from "../hooks/useAutoCleanup.js";
 import { useTerminalRender } from "../hooks/useTerminalRender.js";
 import { useTerminalSearch } from "../hooks/useTerminalSearch.js";
 import { useTerminalSuggestions } from "../hooks/useTerminalSuggestions.js";
@@ -20,6 +24,7 @@ import WebTerminalSearchOverlay from "./web-terminal/WebTerminalSearchOverlay.js
 import WebTerminalContextMenu from "./web-terminal/WebTerminalContextMenu.jsx";
 import { RendererTerminalIOMailbox } from "../modules/terminal/io/RendererTerminalIOMailbox.js";
 import {
+  TERMINAL_PROMPT_INPUT_PATTERNS,
   getLogicalLineUntilCursor,
   isPromptReadyFromTerminal,
 } from "../modules/terminal/promptDetection.js";
@@ -61,6 +66,10 @@ import {
   shouldChunkInputPayload,
 } from "../modules/terminal/controller/terminalInput.js";
 import { useTranslation } from "react-i18next";
+import {
+  FIRA_CODE_FONT_FAMILY,
+  getTerminalFontFamily,
+} from "../utils/fonts.js";
 
 const getTerminalConfigSignature = (config) => {
   if (!config) return "__NO_CONFIG__";
@@ -113,16 +122,6 @@ const areWebTerminalPropsEqual = (prevProps, nextProps) => {
 
 const TERMINAL_COMMAND_LINE_REGEX =
   /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.+)$/;
-const TERMINAL_PROMPT_INPUT_PATTERNS = Object.freeze([
-  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[\w.-]+@[\w.-]+(?::[^\r\n#$%>]*)?)[#$%]\s+(.+)$/,
-  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*(?:[~./][^\r\n#$%>]*)[#$%]\s+(.+)$/,
-  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[#$%]\s+(.+)$/,
-  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*PS [^\r\n>]+>\s+(.+)$/,
-  /^(?:\([^()\r\n]*\)\s*)*(?:\[[^\]\r\n]*\]\s*)*[A-Za-z]:\\[^\r\n>]*>\s+(.+)$/,
-  /^(?:mysql|sqlite|duckdb)>\s+(.+)$/i,
-  /^MariaDB \[[^\]\r\n]*\]>\s+(.+)$/i,
-  /^[^\s\r\n]+(?:=>|=#)\s+(.+)$/,
-]);
 const FULLSCREEN_COMMAND_REGEX =
   /\b(top|htop|vi|vim|nano|less|more|watch|tail -f)\b/;
 // 服务端关闭回显后的密码/口令/密钥短语提示识别
@@ -211,8 +210,8 @@ const WebTerminal = ({
 
   const theme = useTheme();
   const { t, i18n } = useTranslation();
-  const eventManager = useEventManager(); // 使用统一的事件管理器
-  const lifecycleEventManager = useEventManager(); // 生命周期重资源单独管理
+  const eventManager = useCleanupManager(); // 使用统一的事件管理器
+  const lifecycleEventManager = useCleanupManager(); // 生命周期重资源单独管理
   // 添加内容更新标志，用于跟踪终端内容是否有更新
   const [contentUpdated, setContentUpdated] = useState(false);
   const contentUpdatedStateRef = useRef(false);
@@ -1790,18 +1789,6 @@ const WebTerminal = ({
     brightWhite: theme.palette.mode === "light" ? "#8c959f" : "#f0f6fc",
   };
 
-  // 根据字体名称生成完整的字体族字符串
-  const getFontFamilyString = (fontName) => {
-    const fontFamilyMap = {
-      "Fira Code":
-        '"Fira Code", "Consolas", "Monaco", "Courier New", monospace',
-      "Space Mono":
-        '"Space Mono", "Consolas", "Monaco", "Courier New", monospace',
-      Consolas: '"Consolas", "Monaco", "Courier New", monospace',
-    };
-    return fontFamilyMap[fontName] || fontFamilyMap["Fira Code"];
-  };
-
   // 获取存储的字体大小和字体族或使用默认值
   const getFontSettings = async () => {
     try {
@@ -1819,7 +1806,9 @@ const WebTerminal = ({
           : 50000;
         return {
           fontSize: settings.terminalFontSize || 14,
-          fontFamily: getFontFamilyString(settings.terminalFont || "Fira Code"),
+          fontFamily: getTerminalFontFamily(
+            settings.terminalFont || "Fira Code",
+          ),
           fontWeight: settings.terminalFontWeight || 500,
           terminalScrollbackLines,
         };
@@ -1831,7 +1820,7 @@ const WebTerminal = ({
     setWebglRendererEnabled(true);
     return {
       fontSize: 14,
-      fontFamily: getFontFamilyString("Fira Code"),
+      fontFamily: getTerminalFontFamily("Fira Code"),
       fontWeight: 500,
       terminalScrollbackLines: 50000,
     };
@@ -1930,7 +1919,7 @@ const WebTerminal = ({
         }
         if (terminalFont !== undefined) {
           terminalCache[tabId].options.fontFamily =
-            getFontFamilyString(terminalFont);
+            getTerminalFontFamily(terminalFont);
         }
         if (terminalFontWeight !== undefined) {
           terminalCache[tabId].options.fontWeight = parseInt(
@@ -2106,8 +2095,7 @@ const WebTerminal = ({
           cursorBlink: true,
           cursorStyle: "block", // 明确指定光标样式
           theme: terminalTheme,
-          fontFamily:
-            '"Fira Code", "Consolas", "Monaco", "Courier New", monospace',
+          fontFamily: FIRA_CODE_FONT_FAMILY,
           fontSize: 14,
           fontWeight: 500, // 字重优化，提高清晰度
           fontWeightBold: 700,
@@ -3151,30 +3139,6 @@ const WebTerminal = ({
             }, 10);
           }
         }
-      };
-
-      // 添加一个检查元素可见性的函数
-      const isElementVisible = (element) => {
-        if (!element) return false;
-
-        // 检查元素及其所有父元素的可见性
-        let current = element;
-        while (current) {
-          const style = window.getComputedStyle(current);
-          if (
-            style.display === "none" ||
-            style.visibility === "hidden" ||
-            style.opacity === "0" ||
-            current.getAttribute("aria-hidden") === "true"
-          ) {
-            return false;
-          }
-          current = current.parentElement;
-        }
-
-        // 检查元素是否在视口内
-        const rect = element.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
       };
 
       // 使用EventManager管理定期检查终端可见性的定时器

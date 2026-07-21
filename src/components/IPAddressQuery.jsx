@@ -1,4 +1,11 @@
-import React, { useState, useEffect, memo, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
@@ -7,7 +14,6 @@ import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
-import CloseIcon from "@mui/icons-material/Close";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PublicIcon from "@mui/icons-material/Public";
 import { useTheme } from "@mui/material/styles";
@@ -23,12 +29,9 @@ import HistoryIcon from "@mui/icons-material/History";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 import Collapse from "@mui/material/Collapse";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import {
-  sidebarContentSx,
-  sidebarListItemButtonSx,
-  sidebarTitleBarSx,
-  sidebarTitleIconButtonSx,
-} from "./sidebarItemStyles";
+import { sidebarListItemButtonSx } from "./sidebarItemStyles";
+import SidebarPanel from "./SidebarPanel.jsx";
+import { debounce } from "../core/utils/performance.js";
 // Common IP utilities (supports IPv4/IPv6 + private detection)
 // Use require for reliable CJS interop in both renderer and main bundles
 const ipUtils = require("../utils/ip");
@@ -120,7 +123,6 @@ const IPAddressQuery = memo(({ open, onClose }) => {
   const [history, setHistory] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const requestIdRef = useRef(0);
-  const debounceTimerRef = useRef(null);
 
   useEffect(() => {
     if (!open || !window.terminalAPI?.loadUISettings) {
@@ -259,25 +261,27 @@ const IPAddressQuery = memo(({ open, onClose }) => {
   }, [open, ipInfo, loading, error, handleQueryMyIP]);
 
   // 处理回车键按下事件
+  // Debounce Enter-triggered query to avoid duplicates
+  const debouncedEnterQuery = useMemo(
+    () => debounce(handleQuery, 250),
+    [handleQuery],
+  );
+
+  useEffect(() => {
+    return () => {
+      debouncedEnterQuery.cancel();
+    };
+  }, [debouncedEnterQuery]);
+
   const handleKeyDown = (e) => {
     if (e.key === "Enter") {
-      // Debounce Enter-triggered query to avoid duplicates
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      debounceTimerRef.current = setTimeout(() => {
-        handleQuery();
-      }, 250);
+      debouncedEnterQuery();
     }
   };
 
-  // Clear pending debounce on unmount
+  // Invalidate any in-flight response on unmount
   useEffect(() => {
     return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      // Invalidate any in-flight response
       requestIdRef.current++;
     };
   }, []);
@@ -441,198 +445,168 @@ const IPAddressQuery = memo(({ open, onClose }) => {
   };
 
   return (
-    <Paper
-      sx={{
-        width: "100%",
-        minWidth: 0,
-        height: "100%",
-        overflow: "hidden",
-        borderLeft: `1px solid ${theme.palette.divider}`,
-        display: "flex",
-        flexDirection: "column",
-        borderRadius: 0,
-      }}
-      elevation={4}
+    <SidebarPanel
+      open={open}
+      title={t("ipAddressQuery.title")}
+      onClose={onClose}
     >
-      <Box sx={sidebarContentSx(theme, open)}>
-        <Box sx={sidebarTitleBarSx(theme)}>
-          <Typography variant="subtitle1" fontWeight="medium">
-            {t("ipAddressQuery.title")}
-          </Typography>
-          <Box>
-            <Tooltip title={t("common.close")}>
+      <Box
+        sx={{
+          p: 2,
+          borderBottom: `1px solid ${theme.palette.divider}`,
+        }}
+      >
+        <TextField
+          fullWidth
+          size="small"
+          variant="outlined"
+          label={t("ipAddressQuery.ipAddress")}
+          placeholder={t("ipAddressQuery.inputPlaceholder")}
+          value={ipAddress}
+          onChange={(e) => setIpAddress(e.target.value)}
+          onKeyDown={handleKeyDown}
+          sx={{ mb: 1 }}
+        />
+        <Box sx={{ display: "flex", gap: 1 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleQuery}
+            disabled={loading}
+            sx={{ flex: 1 }}
+          >
+            {loading ? (
+              <CircularProgress size={24} color="inherit" />
+            ) : (
+              t("ipAddressQuery.queryButton")
+            )}
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={handleQueryMyIP}
+            disabled={loading}
+            sx={{ flex: 1 }}
+          >
+            {t("ipAddressQuery.queryYourIP")}
+          </Button>
+        </Box>
+      </Box>
+
+      <Box
+        sx={{
+          flexGrow: 1,
+          overflow: "auto",
+        }}
+      >
+        {renderResult()}
+      </Box>
+      <Box
+        sx={{
+          borderTop: `1px solid ${theme.palette.divider}`,
+          p: 1.5,
+          display: "flex",
+          flexDirection: "column",
+          gap: 1,
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <HistoryIcon fontSize="small" color="action" />
+            <Typography variant="subtitle2">
+              {t("ipAddressQuery.historyTitle")}
+            </Typography>
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Tooltip title={t("ipAddressQuery.toggleHistory")}>
               <IconButton
                 size="small"
-                onClick={onClose}
-                aria-label={t("common.close")}
-                sx={sidebarTitleIconButtonSx}
+                onClick={() => setHistoryOpen((v) => !v)}
+                aria-expanded={historyOpen}
+                aria-label={t("ipAddressQuery.toggleHistory")}
               >
-                <CloseIcon fontSize="small" />
+                <ExpandMoreIcon
+                  fontSize="small"
+                  sx={{
+                    transform: historyOpen ? "rotate(0deg)" : "rotate(180deg)",
+                    transition: theme.transitions.create("transform", {
+                      duration: theme.transitions.duration.shortest,
+                    }),
+                  }}
+                />
               </IconButton>
+            </Tooltip>
+            <Tooltip title={t("ipAddressQuery.clearHistory")}>
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={handleClearHistory}
+                  disabled={history.length === 0 || loading}
+                  aria-label={t("ipAddressQuery.clearHistory")}
+                >
+                  <DeleteSweepIcon fontSize="small" />
+                </IconButton>
+              </span>
             </Tooltip>
           </Box>
         </Box>
-
-        <Box
-          sx={{
-            p: 2,
-            borderBottom: `1px solid ${theme.palette.divider}`,
-          }}
-        >
-          <TextField
-            fullWidth
-            size="small"
-            variant="outlined"
-            label={t("ipAddressQuery.ipAddress")}
-            placeholder={t("ipAddressQuery.inputPlaceholder")}
-            value={ipAddress}
-            onChange={(e) => setIpAddress(e.target.value)}
-            onKeyDown={handleKeyDown}
-            sx={{ mb: 1 }}
-          />
-          <Box sx={{ display: "flex", gap: 1 }}>
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={handleQuery}
-              disabled={loading}
-              sx={{ flex: 1 }}
-            >
-              {loading ? (
-                <CircularProgress size={24} color="inherit" />
-              ) : (
-                t("ipAddressQuery.queryButton")
-              )}
-            </Button>
-            <Button
-              variant="outlined"
-              onClick={handleQueryMyIP}
-              disabled={loading}
-              sx={{ flex: 1 }}
-            >
-              {t("ipAddressQuery.queryYourIP")}
-            </Button>
-          </Box>
-        </Box>
-
-        <Box
-          sx={{
-            flexGrow: 1,
-            overflow: "auto",
-          }}
-        >
-          {renderResult()}
-        </Box>
-        <Box
-          sx={{
-            borderTop: `1px solid ${theme.palette.divider}`,
-            p: 1.5,
-            display: "flex",
-            flexDirection: "column",
-            gap: 1,
-          }}
-        >
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <HistoryIcon fontSize="small" color="action" />
-              <Typography variant="subtitle2">
-                {t("ipAddressQuery.historyTitle")}
+        <Collapse in={historyOpen} timeout="auto" unmountOnExit>
+          <Box sx={{ maxHeight: 160, overflow: "auto" }}>
+            {history.length === 0 ? (
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ px: 1, py: 0.5 }}
+              >
+                {t("ipAddressQuery.noHistory")}
               </Typography>
-            </Box>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Tooltip title={t("ipAddressQuery.toggleHistory")}>
-                <IconButton
-                  size="small"
-                  onClick={() => setHistoryOpen((v) => !v)}
-                  aria-expanded={historyOpen}
-                  aria-label={t("ipAddressQuery.toggleHistory")}
-                >
-                  <ExpandMoreIcon
-                    fontSize="small"
-                    sx={{
-                      transform: historyOpen
-                        ? "rotate(0deg)"
-                        : "rotate(180deg)",
-                      transition: theme.transitions.create("transform", {
-                        duration: theme.transitions.duration.shortest,
-                      }),
-                    }}
-                  />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title={t("ipAddressQuery.clearHistory")}>
-                <span>
-                  <IconButton
-                    size="small"
-                    onClick={handleClearHistory}
-                    disabled={history.length === 0 || loading}
-                    aria-label={t("ipAddressQuery.clearHistory")}
+            ) : (
+              <List dense disablePadding>
+                {history.map((h) => (
+                  <ListItem
+                    key={h.id}
+                    disableGutters
+                    disablePadding
+                    sx={{ mb: 0.5 }}
                   >
-                    <DeleteSweepIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </Box>
-          </Box>
-          <Collapse in={historyOpen} timeout="auto" unmountOnExit>
-            <Box sx={{ maxHeight: 160, overflow: "auto" }}>
-              {history.length === 0 ? (
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ px: 1, py: 0.5 }}
-                >
-                  {t("ipAddressQuery.noHistory")}
-                </Typography>
-              ) : (
-                <List dense disablePadding>
-                  {history.map((h) => (
-                    <ListItem
-                      key={h.id}
-                      disableGutters
-                      disablePadding
-                      sx={{ mb: 0.5 }}
+                    <ListItemButton
+                      disabled={loading}
+                      onClick={() => fetchIPInfo(h.ip)}
+                      sx={{
+                        ...sidebarListItemButtonSx(theme),
+                        minHeight: 44,
+                        py: 0.75,
+                        px: 1,
+                        overflow: "hidden",
+                      }}
                     >
-                      <ListItemButton
-                        disabled={loading}
-                        onClick={() => fetchIPInfo(h.ip)}
-                        sx={{
-                          ...sidebarListItemButtonSx(theme),
-                          minHeight: 44,
-                          py: 0.75,
-                          px: 1,
-                          overflow: "hidden",
+                      <ListItemText
+                        primaryTypographyProps={{
+                          variant: "body2",
+                          noWrap: true,
                         }}
-                      >
-                        <ListItemText
-                          primaryTypographyProps={{
-                            variant: "body2",
-                            noWrap: true,
-                          }}
-                          secondaryTypographyProps={{
-                            variant: "caption",
-                            color: "text.secondary",
-                            noWrap: true,
-                          }}
-                          primary={h.ip || t("ipAddressQuery.myIp")}
-                          secondary={`${h.locationText || ""} ${new Date(h.time).toLocaleTimeString()}`}
-                        />
-                      </ListItemButton>
-                    </ListItem>
-                  ))}
-                </List>
-              )}
-            </Box>
-          </Collapse>
-        </Box>
+                        secondaryTypographyProps={{
+                          variant: "caption",
+                          color: "text.secondary",
+                          noWrap: true,
+                        }}
+                        primary={h.ip || t("ipAddressQuery.myIp")}
+                        secondary={`${h.locationText || ""} ${new Date(h.time).toLocaleTimeString()}`}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                ))}
+              </List>
+            )}
+          </Box>
+        </Collapse>
       </Box>
-    </Paper>
+    </SidebarPanel>
   );
 });
 

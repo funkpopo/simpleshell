@@ -7,7 +7,8 @@ import React, {
   memo,
   useTransition,
 } from "react";
-import Dialog from "./AccessibleDialog.jsx";
+import { createFloatingDialog } from "./styledDialogs.jsx";
+import useDragResize from "../hooks/useDragResize.js";
 import {
   DialogTitle,
   DialogContent,
@@ -53,6 +54,10 @@ import {
   setCustomRiskRules,
 } from "../utils/aiSystemPrompt";
 import { createAnchoredTransition } from "../utils/launchAnimation.js";
+import {
+  hasConfiguredApiKey,
+  buildInlineApiKeyPayload,
+} from "../utils/aiKeyUtils.js";
 import "./AIChatWindow.css";
 import "./CodeHighlight.css";
 
@@ -91,15 +96,6 @@ const MARKDOWN_ALLOWED_ELEMENTS = [
   "hr",
   "br",
 ];
-
-const hasConfiguredApiKey = (apiConfig) =>
-  Boolean(apiConfig?.apiKey?.trim()) || Boolean(apiConfig?.hasApiKey);
-
-const buildInlineApiKeyPayload = (apiConfig) => {
-  const apiKey =
-    typeof apiConfig?.apiKey === "string" ? apiConfig.apiKey.trim() : "";
-  return apiKey ? { apiKey } : {};
-};
 
 const pickApiErrorMessage = (errorLike, fallback) => {
   if (typeof errorLike === "string") {
@@ -262,39 +258,17 @@ const normalizeWindowSize = (size) => {
 };
 
 // 自定义浮动窗口对话框（支持动态宽高和z-index）
-const FloatingDialog = styled(Dialog)(
-  ({ theme, customwidth, customheight, customzindex }) => ({
-    pointerEvents: "none",
-    zIndex: customzindex || 1300,
-    "& .MuiDialog-container": {
-      pointerEvents: "none",
-    },
-    "& .MuiDialog-paper": {
-      pointerEvents: "auto",
-      position: "fixed",
-      right: DIALOG_RIGHT_GAP,
-      bottom: DIALOG_BOTTOM_GAP,
-      margin: 0,
-      width: customwidth || DEFAULT_WIDTH,
-      minWidth: MIN_WIDTH,
-      maxWidth: `calc(100vw - ${DIALOG_RIGHT_GAP * 2}px)`,
-      height: customheight || DEFAULT_HEIGHT,
-      minHeight: MIN_HEIGHT,
-      maxHeight: `calc(100vh - ${DIALOG_BOTTOM_GAP + DIALOG_TOP_GAP}px)`,
-      backgroundColor:
-        theme.palette.mode === "dark"
-          ? "rgba(30, 30, 30, 0.95)"
-          : "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(10px)",
-      borderRadius: DIALOG_PAPER_RADIUS,
-      boxShadow:
-        theme.palette.mode === "dark"
-          ? "0 10px 40px rgba(0, 0, 0, 0.6)"
-          : "0 10px 40px rgba(0, 0, 0, 0.2)",
-      overflow: "visible",
-    },
-  }),
-);
+const FloatingDialog = createFloatingDialog({
+  right: DIALOG_RIGHT_GAP,
+  bottom: DIALOG_BOTTOM_GAP,
+  width: DEFAULT_WIDTH,
+  minWidth: MIN_WIDTH,
+  maxWidth: `calc(100vw - ${DIALOG_RIGHT_GAP * 2}px)`,
+  height: DEFAULT_HEIGHT,
+  minHeight: MIN_HEIGHT,
+  maxHeight: `calc(100vh - ${DIALOG_BOTTOM_GAP + DIALOG_TOP_GAP}px)`,
+  borderRadius: DIALOG_PAPER_RADIUS,
+});
 
 // 消息气泡组件
 const MessageBubble = styled(Paper)(({ theme, isUser }) => ({
@@ -387,7 +361,6 @@ const AIChatWindow = ({
   const messageRefsMap = useRef({});
   const inputRef = useRef(null);
   const dialogRef = useRef(null);
-  const resizeListenersRef = useRef({ move: null, up: null });
 
   // 滚动到指定消息
   const scrollToMessage = useCallback((messageId) => {
@@ -435,26 +408,6 @@ const AIChatWindow = ({
     return clampValue(viewportLimit, MIN_HEIGHT, MAX_HEIGHT);
   }, []);
 
-  const clearResizeListeners = useCallback(() => {
-    const { move, up } = resizeListenersRef.current;
-    if (move) {
-      document.removeEventListener("mousemove", move);
-    }
-    if (up) {
-      document.removeEventListener("mouseup", up);
-    }
-    resizeListenersRef.current = { move: null, up: null };
-    document.body.style.userSelect = "";
-    document.body.style.cursor = "";
-  }, []);
-
-  useEffect(
-    () => () => {
-      clearResizeListeners();
-    },
-    [clearResizeListeners],
-  );
-
   // 窗口尺寸变化时，确保浮窗不会超过当前视口
   useEffect(() => {
     const syncSizeWithViewport = () => {
@@ -496,75 +449,29 @@ const AIChatWindow = ({
   }, []);
 
   // 拖拽调整宽高
-  const handleResizeStart = useCallback(
-    (mode) => (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      clearResizeListeners();
-      setIsResizing(mode);
-
-      const startX = e.clientX;
-      const startY = e.clientY;
-      const startWidth = windowWidth;
-      const startHeight = windowHeight;
-      const maxWidth = getWidthLimit();
-      const maxHeight = getHeightLimit();
-      let latestWidth = startWidth;
-      let latestHeight = startHeight;
-
-      const handleMouseMove = (moveEvent) => {
-        if (mode === "width" || mode === "both") {
-          const deltaX = startX - moveEvent.clientX;
-          const nextWidth = clampValue(
-            startWidth + deltaX,
-            MIN_WIDTH,
-            maxWidth,
-          );
-          latestWidth = nextWidth;
-          setWindowWidth(nextWidth);
-        }
-
-        if (mode === "height" || mode === "both") {
-          const deltaY = startY - moveEvent.clientY;
-          const nextHeight = clampValue(
-            startHeight + deltaY,
-            MIN_HEIGHT,
-            maxHeight,
-          );
-          latestHeight = nextHeight;
-          setWindowHeight(nextHeight);
-        }
-      };
-
-      const handleMouseUp = () => {
-        setIsResizing(null);
-        clearResizeListeners();
-        persistWindowSize(latestWidth, latestHeight);
-      };
-
-      resizeListenersRef.current = {
-        move: handleMouseMove,
-        up: handleMouseUp,
-      };
-      document.body.style.userSelect = "none";
-      document.body.style.cursor =
-        mode === "both"
-          ? "nwse-resize"
-          : mode === "height"
-            ? "ns-resize"
-            : "ew-resize";
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
+  const handleResizeStart = useDragResize({
+    getStart: () => ({ width: windowWidth, height: windowHeight }),
+    getBounds: () => ({
+      minWidth: MIN_WIDTH,
+      maxWidth: getWidthLimit(),
+      minHeight: MIN_HEIGHT,
+      maxHeight: getHeightLimit(),
+    }),
+    onResize: ({ width, height }) => {
+      if (width !== undefined) {
+        setWindowWidth(width);
+      }
+      if (height !== undefined) {
+        setWindowHeight(height);
+      }
     },
-    [
-      clearResizeListeners,
-      getHeightLimit,
-      getWidthLimit,
-      persistWindowSize,
-      windowHeight,
-      windowWidth,
-    ],
-  );
+    onStateChange: setIsResizing,
+    onEnd: ({ width, height }) => {
+      persistWindowSize(width, height);
+    },
+    stopPropagation: true,
+    manageBodyStyles: true,
+  });
 
   // 加载API配置
   const loadApiSettings = async () => {

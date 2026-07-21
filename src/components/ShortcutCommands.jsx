@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Dialog from "./AccessibleDialog.jsx";
-import useAutoCleanup from "../hooks/useAutoCleanup";
 import { List } from "react-window";
 import {
   Box,
-  Paper,
   Typography,
   IconButton,
   ListItem,
@@ -27,12 +25,9 @@ import {
   InputAdornment,
   CircularProgress,
   Collapse,
-  Snackbar,
-  Alert,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { compactContextMenuPaperSx } from "./contextMenuStyles";
-import CloseIcon from "@mui/icons-material/Close";
 import ClearIcon from "@mui/icons-material/Clear";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
@@ -49,11 +44,13 @@ import { useTranslation } from "react-i18next";
 import {
   getSidebarItemSelectedBg,
   getSidebarItemSurfaceBg,
-  sidebarContentSx,
   sidebarListItemButtonSx,
-  sidebarTitleBarSx,
   sidebarTitleIconButtonSx,
 } from "./sidebarItemStyles";
+import SidebarPanel from "./SidebarPanel.jsx";
+import useSidebarPanel from "../hooks/useSidebarPanel";
+import useContextMenuRetarget from "../hooks/useContextMenuRetarget";
+import { useNotification } from "../contexts/NotificationContext";
 
 const COMMAND_ITEM_HEIGHT = 48;
 
@@ -231,7 +228,6 @@ const CommandItem = React.memo(
 function ShortcutCommands({ open, onClose, onSendCommand }) {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { addResizeObserver } = useAutoCleanup();
   const [commands, setCommands] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -240,61 +236,14 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   const [selectedCategory] = useState("all");
   const [tabValue, setTabValue] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState({});
-  const [containerHeight, setContainerHeight] = useState(400);
   const sidebarRootRef = useRef(null);
-  const containerRef = useRef(null);
-  const contextMenuRetargetingRef = useRef(false);
 
-  const focusSidebarRoot = (event) => {
-    if (!(event.target instanceof Element)) {
-      return;
-    }
-    const focusableTarget = event.target.closest(
-      'input, textarea, select, button, [role="button"], [tabindex]',
-    );
-    if (focusableTarget && focusableTarget !== sidebarRootRef.current) {
-      return;
-    }
-    sidebarRootRef.current?.focus({ preventScroll: true });
-  };
-
-  // 键盘快捷键处理
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      // 只在快捷命令管理器打开时处理快捷键
-      if (!open) return;
-
-      // 检查当前焦点是否在终端区域内，如果是则不处理侧边栏快捷键
-      const activeElement = document.activeElement;
-      const isInTerminal =
-        activeElement &&
-        (activeElement.classList.contains("xterm-helper-textarea") ||
-          activeElement.classList.contains("xterm-screen"));
-
-      // 如果焦点在终端的输入区域内，则不处理侧边栏的快捷键
-      if (isInTerminal) return;
-
-      const isFocusInSidebar =
-        activeElement && sidebarRootRef.current?.contains(activeElement);
-
-      // Ctrl+/ 全局聚焦搜索框；Ctrl+F 仅在焦点位于侧边栏内时接管浏览器查找
-      if (
-        e.ctrlKey &&
-        (e.key === "/" || (e.key.toLowerCase() === "f" && isFocusInSidebar))
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (searchInputRef.current) {
-          searchInputRef.current.focus();
-        }
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
+  const { containerRef, containerHeight } = useSidebarPanel({
+    open,
+    rootRef: sidebarRootRef,
+    searchInputRef,
+    measureHeight: true,
+  });
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -308,12 +257,8 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
   const [menuTargetId, setMenuTargetId] = useState(null);
   const menuOpen = Boolean(contextMenu);
 
-  // 添加通知状态
-  const [notification, setNotification] = useState({
-    open: false,
-    message: "",
-    severity: "success",
-  });
+  // 通知（使用全局通知系统）
+  const { showNotification: showGlobalNotification } = useNotification();
 
   // 加载命令数据
   useEffect(() => {
@@ -321,27 +266,6 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       loadCommands();
     }
   }, [open]);
-
-  // 动态计算容器高度
-  useEffect(() => {
-    const updateHeight = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        if (rect.height > 0) {
-          setContainerHeight(rect.height);
-        }
-      }
-    };
-
-    updateHeight();
-
-    // 使用 addResizeObserver 自动管理观察器，组件卸载时自动清理
-    // addResizeObserver 返回资源ID，我们不需要在 useEffect 中返回它
-    if (containerRef.current) {
-      addResizeObserver(updateHeight, containerRef.current);
-    }
-    // useEffect 不应该返回 addResizeObserver 的返回值
-  }, [open, addResizeObserver]);
 
   // 加载命令数据
   const loadCommands = async () => {
@@ -426,84 +350,32 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     setMenuTargetId(null);
   };
 
-  useEffect(() => {
-    if (!open || !contextMenu) {
-      return undefined;
-    }
-
-    const getShortcutMenuTargetFromPoint = (event) => {
-      const root = sidebarRootRef.current;
-      if (!root) {
-        return null;
-      }
-
-      const rawTarget = event.target;
-      if (
-        rawTarget instanceof Element &&
-        (rawTarget.closest('[data-shortcut-commands-context-menu="true"]') ||
-          rawTarget.closest('[role="menu"]'))
-      ) {
-        return null;
-      }
-
-      if (rawTarget instanceof Element && root.contains(rawTarget)) {
-        return rawTarget.closest("[data-shortcut-menu-target]");
-      }
-
-      const elementsAtPoint =
-        typeof document.elementsFromPoint === "function"
-          ? document.elementsFromPoint(event.clientX, event.clientY)
-          : [];
-
-      const element = elementsAtPoint.find(
-        (candidate) =>
-          root.contains(candidate) &&
-          !candidate.closest('[data-shortcut-commands-context-menu="true"]') &&
-          !candidate.closest('[role="menu"]'),
-      );
-
-      return element?.closest?.("[data-shortcut-menu-target]") || null;
-    };
-
-    const handleContextMenuRetarget = (event) => {
-      if (contextMenuRetargetingRef.current) {
-        return;
-      }
-
-      const targetElement = getShortcutMenuTargetFromPoint(event);
+  useContextMenuRetarget({
+    enabled: Boolean(open && contextMenu),
+    rootRef: sidebarRootRef,
+    menuSelector: '[data-shortcut-commands-context-menu="true"]',
+    mode: "select",
+    itemSelector: "[data-shortcut-menu-target]",
+    getRetargetPayload: (targetElement) => {
       const targetId = targetElement?.dataset.shortcutMenuId;
       const targetType = targetElement?.dataset.shortcutMenuType;
       if (!targetId || !targetType) {
-        return;
+        return null;
       }
       if (targetType === "category" && targetId === "uncategorized") {
-        return;
+        return null;
       }
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      contextMenuRetargetingRef.current = true;
+      return { targetId, targetType };
+    },
+    onRetarget: ({ targetId, targetType }, event) => {
       setContextMenu({
         mouseX: event.clientX,
         mouseY: event.clientY,
       });
       setMenuTargetId(targetId);
       setDialogType(targetType);
-      queueMicrotask(() => {
-        contextMenuRetargetingRef.current = false;
-      });
-    };
-
-    document.addEventListener("contextmenu", handleContextMenuRetarget, true);
-    return () => {
-      document.removeEventListener(
-        "contextmenu",
-        handleContextMenuRetarget,
-        true,
-      );
-    };
-  }, [contextMenu, open]);
+    },
+  });
 
   // 处理添加命令
   const handleAddCommand = () => {
@@ -651,33 +523,37 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
 
   // 处理发送命令
   const handleSendCommand = (command, options = {}) => {
+    const showNotification = (message, severity) => {
+      showGlobalNotification(message, severity, {
+        autoHideDuration: 3000,
+        anchorOrigin: { vertical: "bottom", horizontal: "center" },
+        variant: "standard",
+      });
+    };
     // 需要tabId，假设通过props.currentTabId传递
     if (onSendCommand && typeof onSendCommand === "function") {
       try {
         onSendCommand(command, options);
         // 显示成功通知
-        setNotification({
-          open: true,
-          message: t("shortcutCommands.commandSent", { command }),
-          severity: "success",
-        });
+        showNotification(
+          t("shortcutCommands.commandSent", { command }),
+          "success",
+        );
       } catch (error) {
         // 显示错误通知
-        setNotification({
-          open: true,
-          message: t("shortcutCommands.sendCommandFailed", {
+        showNotification(
+          t("shortcutCommands.sendCommandFailed", {
             error: error.message,
           }),
-          severity: "error",
-        });
+          "error",
+        );
         // 错误已通过UI通知显示给用户
       }
     } else {
-      setNotification({
-        open: true,
-        message: t("shortcutCommands.sendCommandHandlerMissing"),
-        severity: "warning",
-      });
+      showNotification(
+        t("shortcutCommands.sendCommandHandlerMissing"),
+        "warning",
+      );
       // 警告已通过UI通知显示给用户
     }
   };
@@ -1224,214 +1100,161 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     </Menu>
   );
 
-  // 处理通知关闭
-  const handleCloseNotification = () => {
-    setNotification((prev) => ({
-      ...prev,
-      open: false,
-    }));
-  };
-
   // 渲染组件主体
   return (
-    <Paper
-      ref={sidebarRootRef}
-      tabIndex={-1}
-      onMouseDown={focusSidebarRoot}
-      sx={{
-        width: "100%",
-        minWidth: 0,
-        height: "100%",
-        overflow: "hidden",
-        borderLeft: `1px solid ${theme.palette.divider}`,
-        display: "flex",
-        flexDirection: "column",
-        borderRadius: 0,
-      }}
-      elevation={4}
-    >
-      <Box sx={sidebarContentSx(theme, open)}>
-        {/* 标题栏 */}
-        <Box sx={sidebarTitleBarSx(theme)}>
-          <Typography variant="subtitle1" fontWeight="medium">
-            {t("shortcutCommands.title")}
-          </Typography>
-          <Box>
-            <Tooltip title={t("shortcutCommands.addCommand")}>
-              <IconButton
-                onClick={handleAddCommand}
-                size="small"
-                sx={sidebarTitleIconButtonSx}
-
-                aria-label={t("shortcutCommands.addCommand")}
-              >
-                <AddIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t("common.close")}>
-              <IconButton
-                onClick={onClose}
-                size="small"
-                aria-label={t("common.close")}
-                sx={sidebarTitleIconButtonSx}
-              >
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Box>
-        </Box>
-
-        {/* 搜索框 */}
-        <Box sx={{ p: 1, borderBottom: `1px solid ${theme.palette.divider}` }}>
-          <TextField
-            inputRef={searchInputRef}
-            placeholder={t("shortcutCommands.search")}
-            variant="outlined"
+    <SidebarPanel
+      open={open}
+      rootRef={sidebarRootRef}
+      title={t("shortcutCommands.title")}
+      onClose={onClose}
+      actions={
+        <Tooltip title={t("shortcutCommands.addCommand")}>
+          <IconButton
+            onClick={handleAddCommand}
             size="small"
-            fullWidth
-            value={searchTerm}
-            onChange={handleSearchChange}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-              endAdornment: searchTerm && (
-                <InputAdornment position="end">
-                  <Tooltip title={t("common.clearSearch")}>
-                    <IconButton
-                      size="small"
-                      onClick={() => setSearchTerm("")}
-                      aria-label={t("common.clearSearch")}
-                    >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </InputAdornment>
-              ),
-            }}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                borderRadius: 2,
-              },
-            }}
-          />
-        </Box>
+            sx={sidebarTitleIconButtonSx}
 
-        {/* 标签页 */}
-        <Box sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}>
-          <Tabs
-            value={tabValue}
-            onChange={handleTabChange}
-            variant="fullWidth"
-            sx={{ minHeight: 40 }}
+            aria-label={t("shortcutCommands.addCommand")}
           >
-            <Tab
-              label={t("shortcutCommands.allCommands")}
-              id="commands-tab-0"
-              aria-controls="commands-tabpanel-0"
-              sx={{ minHeight: 40, py: 0 }}
-            />
-            <Tab
-              label={t("shortcutCommands.categories")}
-              id="commands-tab-1"
-              aria-controls="commands-tabpanel-1"
-              sx={{ minHeight: 40, py: 0 }}
-            />
-          </Tabs>
-        </Box>
-
-        {/* 内容区域 */}
-        <Box
-          ref={containerRef}
-          className="app-scrollbar"
-          sx={{
-            flexGrow: 1,
-            overflow: "auto",
-            bgcolor:
-              theme.palette.mode === "dark" ? "background.paper" : "grey.50",
-          }}
-        >
-          <div
-            role="tabpanel"
-            hidden={tabValue !== 0}
-            id="commands-tabpanel-0"
-            aria-labelledby="commands-tab-0"
-          >
-            {tabValue === 0 && renderCommandList()}
-          </div>
-          <div
-            role="tabpanel"
-            hidden={tabValue !== 1}
-            id="commands-tabpanel-1"
-            aria-labelledby="commands-tab-1"
-          >
-            {tabValue === 1 && (
-              <Box>
-                <Box sx={{ p: 1, textAlign: "right" }}>
-                  <Button
-                    startIcon={<CategoryIcon />}
+            <AddIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      }
+    >
+      {/* 搜索框 */}
+      <Box sx={{ p: 1, borderBottom: `1px solid ${theme.palette.divider}` }}>
+        <TextField
+          inputRef={searchInputRef}
+          placeholder={t("shortcutCommands.search")}
+          variant="outlined"
+          size="small"
+          fullWidth
+          value={searchTerm}
+          onChange={handleSearchChange}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+            endAdornment: searchTerm && (
+              <InputAdornment position="end">
+                <Tooltip title={t("common.clearSearch")}>
+                  <IconButton
                     size="small"
-                    onClick={handleAddCategory}
+                    onClick={() => setSearchTerm("")}
+                    aria-label={t("common.clearSearch")}
                   >
-                    {t("shortcutCommands.addCategory")}
-                  </Button>
-                </Box>
-                {renderCategoriesView()}
-              </Box>
-            )}
-          </div>
-        </Box>
-
-        {/* 底部操作区 */}
-        <Box
-          sx={{
-            p: 1,
-            borderTop: `1px solid ${theme.palette.divider}`,
-            display: "flex",
-            justifyContent: "flex-end",
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </InputAdornment>
+            ),
           }}
-        >
-          <Typography
-            variant="caption"
-            color="textSecondary"
-            sx={{ flexGrow: 1, alignSelf: "center" }}
-          >
-            {loading
-              ? t("shortcutCommands.loading")
-              : commands.length > 0
-                ? t("shortcutCommands.totalCommands", {
-                    count: commands.length,
-                  })
-                : ""}
-          </Typography>
-        </Box>
-
-        {/* 对话框 */}
-        {renderCommandDialog()}
-        {renderCategoryDialog()}
-
-        {/* 菜单 */}
-        {renderMenu()}
-
-        {/* 添加通知组件 */}
-        <Snackbar
-          open={notification.open}
-          autoHideDuration={3000}
-          onClose={handleCloseNotification}
-          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        >
-          <Alert
-            onClose={handleCloseNotification}
-            severity={notification.severity}
-            sx={{ width: "100%" }}
-          >
-            {notification.message}
-          </Alert>
-        </Snackbar>
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 2,
+            },
+          }}
+        />
       </Box>
-    </Paper>
+
+      {/* 标签页 */}
+      <Box sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}>
+        <Tabs
+          value={tabValue}
+          onChange={handleTabChange}
+          variant="fullWidth"
+          sx={{ minHeight: 40 }}
+        >
+          <Tab
+            label={t("shortcutCommands.allCommands")}
+            id="commands-tab-0"
+            aria-controls="commands-tabpanel-0"
+            sx={{ minHeight: 40, py: 0 }}
+          />
+          <Tab
+            label={t("shortcutCommands.categories")}
+            id="commands-tab-1"
+            aria-controls="commands-tabpanel-1"
+            sx={{ minHeight: 40, py: 0 }}
+          />
+        </Tabs>
+      </Box>
+
+      {/* 内容区域 */}
+      <Box
+        ref={containerRef}
+        className="app-scrollbar"
+        sx={{
+          flexGrow: 1,
+          overflow: "auto",
+          bgcolor:
+            theme.palette.mode === "dark" ? "background.paper" : "grey.50",
+        }}
+      >
+        <div
+          role="tabpanel"
+          hidden={tabValue !== 0}
+          id="commands-tabpanel-0"
+          aria-labelledby="commands-tab-0"
+        >
+          {tabValue === 0 && renderCommandList()}
+        </div>
+        <div
+          role="tabpanel"
+          hidden={tabValue !== 1}
+          id="commands-tabpanel-1"
+          aria-labelledby="commands-tab-1"
+        >
+          {tabValue === 1 && (
+            <Box>
+              <Box sx={{ p: 1, textAlign: "right" }}>
+                <Button
+                  startIcon={<CategoryIcon />}
+                  size="small"
+                  onClick={handleAddCategory}
+                >
+                  {t("shortcutCommands.addCategory")}
+                </Button>
+              </Box>
+              {renderCategoriesView()}
+            </Box>
+          )}
+        </div>
+      </Box>
+
+      {/* 底部操作区 */}
+      <Box
+        sx={{
+          p: 1,
+          borderTop: `1px solid ${theme.palette.divider}`,
+          display: "flex",
+          justifyContent: "flex-end",
+        }}
+      >
+        <Typography
+          variant="caption"
+          color="textSecondary"
+          sx={{ flexGrow: 1, alignSelf: "center" }}
+        >
+          {loading
+            ? t("shortcutCommands.loading")
+            : commands.length > 0
+              ? t("shortcutCommands.totalCommands", {
+                  count: commands.length,
+                })
+              : ""}
+        </Typography>
+      </Box>
+
+      {/* 对话框 */}
+      {renderCommandDialog()}
+      {renderCategoryDialog()}
+
+      {/* 菜单 */}
+      {renderMenu()}
+    </SidebarPanel>
   );
 }
 

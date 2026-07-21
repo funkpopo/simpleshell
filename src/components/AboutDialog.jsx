@@ -1,6 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from "react";
-import Dialog from "./AccessibleDialog.jsx";
-import { styled } from "@mui/material/styles";
+import { GlassDialog } from "./styledDialogs.jsx";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
@@ -25,22 +24,6 @@ import {
   Cancel as CancelIcon,
   Schedule as ScheduleIcon,
 } from "@mui/icons-material";
-
-// 自定义磨砂玻璃效果的Dialog组件
-const GlassDialog = styled(Dialog)(({ theme }) => ({
-  "& .MuiDialog-paper": {
-    backgroundColor:
-      theme.palette.mode === "dark"
-        ? "rgba(40, 44, 52, 0.75)"
-        : "rgba(255, 255, 255, 0.75)",
-    backdropFilter: "blur(10px)",
-    boxShadow:
-      theme.palette.mode === "dark"
-        ? "0 8px 32px 0 rgba(0, 0, 0, 0.37)"
-        : "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
-    border: "1px solid rgba(255, 255, 255, 0.18)",
-  },
-}));
 
 const updatePanelSx = {
   mt: 1,

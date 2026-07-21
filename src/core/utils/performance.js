@@ -1,6 +1,6 @@
 export const debounce = (func, wait, immediate = false) => {
   let timeout;
-  return function executedFunction(...args) {
+  const executedFunction = function (...args) {
     const later = () => {
       timeout = null;
       if (!immediate) func.apply(this, args);
@@ -10,6 +10,11 @@ export const debounce = (func, wait, immediate = false) => {
     timeout = setTimeout(later, wait);
     if (callNow) func.apply(this, args);
   };
+  executedFunction.cancel = () => {
+    clearTimeout(timeout);
+    timeout = null;
+  };
+  return executedFunction;
 };
 
 const throttle = (func, limit) => {

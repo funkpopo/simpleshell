@@ -384,7 +384,7 @@ function testDragAndDropUsesNativeValidatedLocalPaths() {
   const downloadSource = sliceBetween(
     fileManagerSource,
     "const handleDownload = async",
-    "const handleCloseNotification = () =>",
+    "// 修改 setError 的使用，使用通知系统",
     "FileManager handleDownload",
   );
   const downloadFolderSource = sliceBetween(

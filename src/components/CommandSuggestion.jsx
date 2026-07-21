@@ -16,9 +16,9 @@ import { useTheme } from "@mui/material/styles";
 import { useConditionalWindowEvent } from "../hooks/useWindowEvent.js";
 import { shouldIgnoreCommandSuggestionKeyEvent } from "../modules/terminal/commandSuggestionState.js";
 import { resolveCommandSuggestionWindowPosition } from "../modules/terminal/commandSuggestionPosition.js";
+import { FIRA_CODE_FONT_FAMILY } from "../utils/fonts.js";
 
-const COMMAND_FONT =
-  '13px "Fira Code", "Consolas", "Monaco", "Courier New", monospace';
+const COMMAND_FONT = `13px ${FIRA_CODE_FONT_FAMILY}`;
 
 const measureCommandText = (() => {
   let canvas = null;
@@ -496,8 +496,7 @@ const CommandSuggestion = ({
                 <Typography
                   variant="body2"
                   sx={{
-                    fontFamily:
-                      '"Fira Code", "Consolas", "Monaco", "Courier New", monospace',
+                    fontFamily: FIRA_CODE_FONT_FAMILY,
                     fontSize: "12px",
                     color: theme.palette.text.primary,
                     lineHeight: 1.2,

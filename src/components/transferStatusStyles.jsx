@@ -66,6 +66,14 @@ export const getTransferStatusColor = (theme, transfer) => {
   return getTransferColor(theme, type);
 };
 
+/** 状态文本颜色：错误=error，警告/取消=warning，否则次级文字色 */
+export const getTransferStatusTextColor = (theme, transfer) =>
+  transfer?.error
+    ? theme.palette.error.main
+    : transfer?.warning || transfer?.isCancelled
+      ? theme.palette.warning.main
+      : theme.palette.text.secondary;
+
 /**
  * 状态标签（Chip 等）的配色：半透明 tint 背景 + 主色文字，
  * 替代原先仅适配浅色模式的粉彩硬编码背景。

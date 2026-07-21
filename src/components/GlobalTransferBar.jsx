@@ -9,7 +9,10 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { Close, ExpandLess, ExpandMore } from "@mui/icons-material";
-import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
+import {
+  useAllGlobalTransfers,
+  clearCompletedTransfersForAllTabs,
+} from "../store/globalTransferStore.js";
 import { useTranslation } from "react-i18next";
 import { sumTransferFileCount } from "../utils/transferCounts.js";
 import {
@@ -145,8 +148,7 @@ TransferTag.displayName = "TransferTag";
 const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { allTransfers, clearCompletedTransfers, removeTransferProgress } =
-    useAllGlobalTransfers();
+  const { allTransfers, removeTransferProgress } = useAllGlobalTransfers();
   const [sshHostMap, setSshHostMap] = useState({});
 
   // 获取SSH主机信息
@@ -199,13 +201,8 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
 
   const handleClearCompleted = useCallback(() => {
     // 清除所有已完成的传输任务
-    const uniqueTabIds = [...new Set(allTransfers.map((t) => t.tabId))];
-    uniqueTabIds.forEach((tabId) => {
-      if (tabId) {
-        clearCompletedTransfers(tabId);
-      }
-    });
-  }, [allTransfers, clearCompletedTransfers]);
+    clearCompletedTransfersForAllTabs();
+  }, []);
 
   // 如果没有传输任务，不显示底部栏
   if (!allTransfers || allTransfers.length === 0) {

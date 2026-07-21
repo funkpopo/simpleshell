@@ -4,7 +4,7 @@
  * Bundled by webpack into async chunks; safe for packaged Electron (no Node.js on user PC).
  */
 
-const getFileExtension = (filename) =>
+export const getFileExtension = (filename) =>
   filename
     .slice(((filename.lastIndexOf(".") - 1) >>> 0) + 2)
     .toLowerCase();

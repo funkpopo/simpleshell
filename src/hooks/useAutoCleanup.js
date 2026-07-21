@@ -147,6 +147,11 @@ class CleanupManager {
     this.resources.delete(id);
   }
 
+  // 从托管列表中移除资源但不执行其清理函数
+  discardResource(id) {
+    this.resources.delete(id);
+  }
+
   // 注册一次性定时器
   addTimeout(callback, delay) {
     if (this.isDestroyed) return () => {};
@@ -356,8 +361,8 @@ class CleanupManager {
     return size;
   }
 
-  // 释放当前管理器中的所有资源
-  cleanup() {
+  // 释放当前管理器中的所有资源，但保留实例可继续复用
+  reset() {
     if (this.isDestroyed) return;
 
     // 逆序清理，尽量先清理后创建的资源
@@ -367,6 +372,13 @@ class CleanupManager {
     }
 
     this.resources.clear();
+  }
+
+  // 释放当前管理器中的所有资源
+  cleanup() {
+    if (this.isDestroyed) return;
+
+    this.reset();
     this.isDestroyed = true;
   }
 
@@ -424,6 +436,77 @@ export function useEffectWithCleanup(effect, deps) {
       manager.cleanup();
     };
   }, deps);
+}
+
+/**
+ * 基于 CleanupManager 的事件/定时器/观察者统一管理适配层
+ * （原 src/core/utils/eventManager.js 的 EventManager 已合并至此）。
+ *
+ * 各注册方法均返回“移除函数”，reset() 释放全部资源但保留实例可复用，
+ * destroy() 释放全部资源并使实例失效。
+ */
+export function createManagedCleanup() {
+  const manager = new CleanupManager();
+
+  const toRemover = (id) => () => manager.removeResource(id);
+
+  return {
+    addEventListener: (target, event, handler, options = {}) =>
+      toRemover(manager.addEventListener(target, event, handler, options)),
+    setTimeout: (callback, delay) =>
+      toRemover(manager.addTimeout(callback, delay)),
+    setInterval: (callback, interval) =>
+      toRemover(manager.addInterval(callback, interval)),
+    // 托管一个已创建的观察者（ResizeObserver / IntersectionObserver 等），
+    // 清理时自动 disconnect
+    addObserver: (observer) => {
+      if (!observer || manager.isDestroyed) {
+        return () => {};
+      }
+      return toRemover(
+        manager.addResource("observer", observer, () => {
+          if (typeof observer.disconnect === "function") {
+            observer.disconnect();
+          }
+        }),
+      );
+    },
+    // 注册自定义清理函数；返回的移除函数只解除托管、不执行清理
+    addCleanup: (cleanupFn) => {
+      const id = manager.addCleanup(cleanupFn);
+      return () => manager.discardResource(id);
+    },
+    getStats: () => manager.getStats(),
+    reset: () => manager.reset(),
+    destroy: () => manager.cleanup(),
+    get isDestroyed() {
+      return manager.isDestroyed;
+    },
+  };
+}
+
+/**
+ * 返回跨渲染稳定的 createManagedCleanup 实例，
+ * 组件卸载时自动 destroy（原 useEventManager 的替代品）。
+ */
+export function useCleanupManager() {
+  const adapterRef = useRef(null);
+
+  if (!adapterRef.current) {
+    adapterRef.current = createManagedCleanup();
+  }
+
+  useEffect(() => {
+    const adapter = adapterRef.current;
+
+    return () => {
+      if (adapter && !adapter.isDestroyed) {
+        adapter.destroy();
+      }
+    };
+  }, []);
+
+  return adapterRef.current;
 }
 
 export default useAutoCleanup;

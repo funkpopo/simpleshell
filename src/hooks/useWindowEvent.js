@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
-import { useEventManager } from "../core/utils/eventManager.js";
+import { useCleanupManager } from "./useAutoCleanup.js";
 
 /**
  * 自定义 Hook：监听 window 事件
@@ -26,7 +26,7 @@ import { useEventManager } from "../core/utils/eventManager.js";
  * });
  */
 export function useWindowEvent(eventName, handler, options = {}) {
-  const eventManager = useEventManager();
+  const eventManager = useCleanupManager();
   const handlerRef = useRef(handler);
 
   // 保持 handler 引用最新，避免闭包问题
@@ -67,7 +67,7 @@ export function useWindowEvent(eventName, handler, options = {}) {
  * });
  */
 export function useWindowEvents(eventHandlers, options = {}) {
-  const eventManager = useEventManager();
+  const eventManager = useCleanupManager();
   const handlersRef = useRef(eventHandlers);
 
   // 保持 handlers 引用最新
@@ -123,7 +123,7 @@ export function useWindowEvents(eventHandlers, options = {}) {
  * useElementEvent(scrollerRef, 'wheel', handleWheel, { passive: false });
  */
 export function useElementEvent(elementRef, eventName, handler, options = {}) {
-  const eventManager = useEventManager();
+  const eventManager = useCleanupManager();
   const handlerRef = useRef(handler);
 
   // 保持 handler 引用最新
@@ -170,7 +170,7 @@ export function useConditionalWindowEvent(
   enabled = true,
   options = {},
 ) {
-  const eventManager = useEventManager();
+  const eventManager = useCleanupManager();
   const handlerRef = useRef(handler);
 
   useEffect(() => {
@@ -251,7 +251,7 @@ export function useThrottledWindowEvent(
   delay = 200,
   options = {},
 ) {
-  const eventManager = useEventManager();
+  const eventManager = useCleanupManager();
   const handlerRef = useRef(handler);
   const lastCallRef = useRef(0);
   const timeoutRef = useRef(null);
@@ -318,7 +318,7 @@ export function useDebouncedWindowEvent(
   delay = 300,
   options = {},
 ) {
-  const eventManager = useEventManager();
+  const eventManager = useCleanupManager();
   const handlerRef = useRef(handler);
   const timeoutRef = useRef(null);
 

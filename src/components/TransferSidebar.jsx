@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useCallback, useState } from "react";
-import Dialog from "./AccessibleDialog.jsx";
+import { createFloatingDialog } from "./styledDialogs.jsx";
 import {
   Box,
   Typography,
@@ -15,7 +15,7 @@ import {
   ListItemIcon,
   ListItemText,
 } from "@mui/material";
-import { styled, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import { RADIUS } from "../theme";
 import CloseIcon from "@mui/icons-material/Close";
 import MinimizeIcon from "@mui/icons-material/Minimize";
@@ -29,11 +29,15 @@ import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import {
   useAllGlobalTransfers,
   useTransferHistory,
+  cancelTransferWithNotice,
+  clearCompletedTransfersForAllTabs,
 } from "../store/globalTransferStore.js";
 import { createAnchoredTransition } from "../utils/launchAnimation.js";
+import useDragResize from "../hooks/useDragResize.js";
 import {
   getNormalizedTransferFileCount,
   sumTransferFileCount,
+  getDisplayCompletedFileCount,
 } from "../utils/transferCounts.js";
 import { useTranslation } from "react-i18next";
 import OverflowTooltipText from "./OverflowTooltipText.jsx";
@@ -45,45 +49,24 @@ import {
   getTransferIcon,
   getStatusIcon,
   getDangerHoverSx,
+  getTransferStatusTextColor,
 } from "./transferStatusStyles.jsx";
-
-// 浮动窗口对话框样式（参考 AIChatWindow）
-const FloatingDialog = styled(Dialog)(
-  ({ theme, customwidth, customzindex }) => ({
-    pointerEvents: "none",
-    zIndex: customzindex || 1300,
-    "& .MuiDialog-container": {
-      pointerEvents: "none",
-    },
-    "& .MuiDialog-paper": {
-      pointerEvents: "auto",
-      position: "fixed",
-      right: 50,
-      bottom: 20,
-      margin: 0,
-      width: customwidth || 320,
-      maxWidth: "90vw",
-      height: 500,
-      maxHeight: "70vh",
-      backgroundColor:
-        theme.palette.mode === "dark"
-          ? "rgba(30, 30, 30, 0.95)"
-          : "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(10px)",
-      borderRadius: RADIUS.LG,
-      boxShadow:
-        theme.palette.mode === "dark"
-          ? "0 10px 40px rgba(0, 0, 0, 0.6)"
-          : "0 10px 40px rgba(0, 0, 0, 0.2)",
-      overflow: "visible",
-    },
-  }),
-);
 
 // 默认和限制宽度
 const DEFAULT_WIDTH = 320;
 const MIN_WIDTH = 280;
 const MAX_WIDTH = 500;
+
+// 浮动窗口对话框样式（参考 AIChatWindow）
+const FloatingDialog = createFloatingDialog({
+  right: 50,
+  bottom: 20,
+  width: DEFAULT_WIDTH,
+  maxWidth: "90vw",
+  height: 500,
+  maxHeight: "70vh",
+  borderRadius: RADIUS.LG,
+});
 
 /**
  * 格式化文件大小
@@ -131,15 +114,7 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
   const canExpand = hasFileList || transferFileCount > 1;
 
   const totalFiles = transfer.totalFiles || 0;
-  const completedFiles =
-    isCompleted && !hasError && !isCancelled && totalFiles > 0
-      ? totalFiles
-      : Math.max(
-          Number(transfer.processedFiles) || 0,
-          Math.max(0, (transfer.currentFileIndex || 1) - 1),
-        );
-  // 确保已完成数不超过总数
-  const displayCompleted = Math.min(completedFiles, totalFiles);
+  const displayCompleted = getDisplayCompletedFileCount(transfer);
 
   return (
     <Box
@@ -236,11 +211,7 @@ const TransferItem = memo(({ transfer, isActive, onCancel, onDelete }) => {
           sx={{
             display: "block",
             mt: 0.5,
-            color: hasError
-              ? theme.palette.error.main
-              : hasWarning || isCancelled
-                ? theme.palette.warning.main
-                : theme.palette.text.secondary,
+            color: getTransferStatusTextColor(theme, transfer),
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -424,8 +395,7 @@ const TransferSidebar = memo(
   ({ open, onClose, onMinimize, zIndex, onFocus, anchorEl }) => {
     const theme = useTheme();
     const { t } = useTranslation();
-    const { allTransfers, clearCompletedTransfers, updateTransferProgress } =
-      useAllGlobalTransfers();
+    const { allTransfers } = useAllGlobalTransfers();
     const { history, clearHistory, removeHistoryItemAt } = useTransferHistory();
     const [windowWidth, setWindowWidth] = useState(DEFAULT_WIDTH);
     const [isResizing, setIsResizing] = useState(false);
@@ -464,80 +434,30 @@ const TransferSidebar = memo(
     // 取消传输
     const handleCancelTransfer = useCallback(
       (transfer) => {
-        if (
-          transfer.tabId &&
-          transfer.transferKey &&
-          window.terminalAPI?.cancelTransfer
-        ) {
-          window.terminalAPI
-            .cancelTransfer(transfer.tabId, transfer.transferKey)
-            .then((result) => {
-              if (result.success) {
-                updateTransferProgress(transfer.tabId, transfer.transferId, {
-                  isCancelled: true,
-                  statusText: t(
-                    "fileManager.transfer.status.transferCancelled",
-                  ),
-                  cancelMessage: t(
-                    "fileManager.transfer.status.transferCancelled",
-                  ),
-                });
-              }
-            })
-            .catch(() => {
-              updateTransferProgress(transfer.tabId, transfer.transferId, {
-                isCancelled: true,
-                statusText: t("fileManager.transfer.status.transferCancelled"),
-                cancelMessage: t(
-                  "fileManager.transfer.status.transferCancelled",
-                ),
-              });
-            });
-        }
+        cancelTransferWithNotice(
+          transfer.tabId,
+          transfer,
+          t("fileManager.transfer.status.transferCancelled"),
+        );
       },
-      [t, updateTransferProgress],
+      [t],
     );
 
     // 清除所有已完成的传输
     const handleClearCompleted = useCallback(() => {
-      const uniqueTabIds = [
-        ...new Set(allTransfers?.map((t) => t.tabId) || []),
-      ];
-      uniqueTabIds.forEach((tabId) => {
-        if (tabId) {
-          clearCompletedTransfers(tabId);
-        }
-      });
-    }, [allTransfers, clearCompletedTransfers]);
+      clearCompletedTransfersForAllTabs();
+    }, []);
 
     // 拖拽调整宽度的处理（左侧手柄）
-    const handleResizeStart = useCallback(
-      (e) => {
-        e.preventDefault();
-        setIsResizing(true);
-
-        const startX = e.clientX;
-        const startWidth = windowWidth;
-
-        const handleMouseMove = (moveEvent) => {
-          const deltaX = startX - moveEvent.clientX;
-          const newWidth = Math.min(
-            MAX_WIDTH,
-            Math.max(MIN_WIDTH, startWidth + deltaX),
-          );
-          setWindowWidth(newWidth);
-        };
-
-        const handleMouseUp = () => {
-          setIsResizing(false);
-          document.removeEventListener("mousemove", handleMouseMove);
-          document.removeEventListener("mouseup", handleMouseUp);
-        };
-
-        document.addEventListener("mousemove", handleMouseMove);
-        document.addEventListener("mouseup", handleMouseUp);
-      },
-      [windowWidth],
+    const startResize = useDragResize({
+      getStart: () => ({ width: windowWidth }),
+      getBounds: () => ({ minWidth: MIN_WIDTH, maxWidth: MAX_WIDTH }),
+      onResize: ({ width }) => setWindowWidth(width),
+      onStateChange: (mode) => setIsResizing(mode !== null),
+    });
+    const handleResizeStart = useMemo(
+      () => startResize("width"),
+      [startResize],
     );
 
     return (

@@ -92,7 +92,12 @@ import AddIcon from "@mui/icons-material/Add";
 import PauseCircleOutlinedIcon from "@mui/icons-material/PauseCircleOutlined";
 import PlayCircleOutlinedIcon from "@mui/icons-material/PlayCircleOutlined";
 import { dispatchCommandToGroup } from "./core/syncGroupCommandDispatcher";
-import { useEventManager } from "./core/utils/eventManager.js";
+import { useCleanupManager } from "./hooks/useAutoCleanup.js";
+import {
+  openLogDirectory,
+  exportDiagnostics,
+  openFeedbackIssue,
+} from "./utils/diagnosticsActions.js";
 import ErrorNotification from "./components/ErrorNotification.jsx";
 import GlobalTransferBar from "./components/GlobalTransferBar.jsx";
 import GlobalTransferFloat from "./components/GlobalTransferFloat.jsx";
@@ -115,6 +120,13 @@ const SIDEBAR_UNMOUNT_DELAY_MS = SIDEBAR_TRANSITION_MS + 40;
 const UPDATE_REMINDER_STORAGE_KEY = "simpleshell.update.remindAt";
 const UPDATE_REMINDER_DELAY_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_SIDEBAR_WIDTH = SIDEBAR_WIDTHS.DEFAULT;
+
+// 延迟触发窗口resize事件，确保终端快速适配新的布局
+const notifyTerminalResize = (delay = 15) => {
+  setTimeout(() => {
+    window.dispatchEvent(new Event("resize"));
+  }, delay);
+};
 
 function useDelayedPresence(open, delay = SIDEBAR_UNMOUNT_DELAY_MS) {
   const [present, setPresent] = React.useState(open);
@@ -422,7 +434,7 @@ const getReconnectFailureReasonLabel = (t, failureReason) => {
 function AppContent() {
   const LATENCY_INFO_MIN_WIDTH = 150;
   const { t, i18n } = useTranslation();
-  const eventManager = useEventManager(); // 使用统一的事件管理器
+  const eventManager = useCleanupManager(); // 使用统一的事件管理器
   const { showError, showInfo, showSuccess } = useNotification();
 
   // 使用全局状态和 dispatch
@@ -1163,20 +1175,8 @@ function AppContent() {
       // 查找对应的连接配置
       let connectionConfig = null;
       if (data.connectionId) {
-        // 递归查找连接配置
-        const findConnection = (items) => {
-          for (const item of items) {
-            if (item.type === "connection" && item.id === data.connectionId) {
-              return item;
-            }
-            if (item.type === "group" && Array.isArray(item.items)) {
-              const found = findConnection(item.items);
-              if (found) return found;
-            }
-          }
-          return null;
-        };
-        connectionConfig = findConnection(connections);
+        // 递归查找连接配置（复用模块级 findConnectionById）
+        connectionConfig = findConnectionById(connections, data.connectionId);
       }
 
       // 也可以从 tabId 获取配置
@@ -1379,6 +1379,37 @@ function AppContent() {
       }
     },
     [dispatch, findFallbackSidebar, lastOpenedSidebar],
+  );
+
+  // 侧边栏 toggle/close 的公共逻辑：更新开关状态、维护 lastOpenedSidebar、
+  // 触发 resize 让终端适配布局（notifyResize 可关闭）
+  const runSidebarToggle = React.useCallback(
+    (isOpen, setOpen, sidebarKey, { notifyResize = true } = {}) => {
+      const willOpen = !isOpen;
+      setOpen(willOpen);
+      if (willOpen) {
+        dispatch(actions.setLastOpenedSidebar(sidebarKey));
+      } else {
+        setFallbackSidebarAfterClose(sidebarKey);
+      }
+
+      if (notifyResize) {
+        notifyTerminalResize();
+      }
+    },
+    [dispatch, setFallbackSidebarAfterClose],
+  );
+
+  const runSidebarClose = React.useCallback(
+    (setOpen, sidebarKey, { notifyResize = true } = {}) => {
+      setOpen(false);
+      setFallbackSidebarAfterClose(sidebarKey);
+
+      if (notifyResize) {
+        notifyTerminalResize();
+      }
+    },
+    [setFallbackSidebarAfterClose],
   );
   const contextMenuTab =
     tabContextMenu.tabIndex !== null &&
@@ -2116,66 +2147,23 @@ function AppContent() {
 
   const handleOpenLogDirectory = useCallback(async () => {
     dispatch(actions.setAnchorEl(null));
-    try {
-      const result = await window.terminalAPI?.openLogDirectory?.();
-      if (result?.success === false) {
-        throw new Error(result.error || t("settings.openLogDirectoryFailed"));
-      }
-      showSuccess(t("settings.logDirectoryOpened"));
-    } catch (error) {
-      showError(error?.message || t("settings.openLogDirectoryFailed"));
-    }
+    await openLogDirectory({ t, showSuccess, showError });
   }, [dispatch, showError, showSuccess, t]);
 
   const handleExportDiagnostics = useCallback(async () => {
     dispatch(actions.setAnchorEl(null));
-    try {
-      const result = await window.terminalAPI?.exportDiagnostics?.();
-      if (result?.success === false) {
-        throw new Error(result.error || t("settings.exportDiagnosticsFailed"));
-      }
-      showSuccess(
-        t("settings.diagnosticsExported", {
-          path: result?.filePath || "",
-        }),
-      );
-    } catch (error) {
-      showError(error?.message || t("settings.exportDiagnosticsFailed"));
-    }
+    await exportDiagnostics({ t, showSuccess, showError });
   }, [dispatch, showError, showSuccess, t]);
 
   const handleOpenFeedbackIssue = useCallback(async () => {
     dispatch(actions.setAnchorEl(null));
-    try {
-      if (!window.dialogAPI?.showMessageBox) {
-        throw new Error(t("settings.feedback.dialogUnavailable"));
-      }
-
-      const confirmation = await window.dialogAPI.showMessageBox({
-        type: "info",
-        buttons: [t("settings.feedback.cancel"), t("menu.feedback")],
-        defaultId: 1,
-        cancelId: 0,
-        title: t("settings.feedback.confirmTitle"),
-        message: t("settings.feedback.confirmMessage"),
-        detail: t("settings.feedback.confirmDetail"),
-        noLink: true,
-      });
-      if (confirmation?.response !== 1) {
-        return;
-      }
-
-      const result = await window.terminalAPI?.openFeedbackIssue?.({
-        source: "main-menu",
-        title: t("settings.feedback.defaultTitle"),
-      });
-      if (result?.success === false) {
-        throw new Error(result.error || t("settings.feedback.openIssueFailed"));
-      }
-      showSuccess(t("settings.feedback.issueOpened"));
-    } catch (error) {
-      showError(error?.message || t("settings.feedback.openIssueFailed"));
-    }
+    await openFeedbackIssue({
+      t,
+      showSuccess,
+      showError,
+      source: "main-menu",
+      confirmButtonLabel: t("menu.feedback"),
+    });
   }, [dispatch, showError, showSuccess, t]);
 
   const handleSystemMenuAction = useCallback(
@@ -2388,9 +2376,7 @@ function AppContent() {
           );
 
           // 触发窗口resize事件，作为备用机制确保布局更新
-          setTimeout(() => {
-            window.dispatchEvent(new Event("resize"));
-          }, 100);
+          notifyTerminalResize(100);
         }
       }
     },
@@ -2498,36 +2484,28 @@ function AppContent() {
 
   // 切换连接管理侧边栏
   const toggleConnectionManager = useCallback(() => {
-    const willOpen = !connectionManagerOpen;
-    dispatch(actions.setConnectionManagerOpen(willOpen));
-    // 如果要打开连接管理侧边栏，确保它显示在上层
-    if (willOpen) {
-      dispatch(actions.setLastOpenedSidebar("connection"));
-      // 资源监控保持不变
-    } else {
-      setFallbackSidebarAfterClose("connection");
-    }
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
-  }, [connectionManagerOpen, dispatch, setFallbackSidebarAfterClose]);
+    runSidebarToggle(
+      connectionManagerOpen,
+      (open) => dispatch(actions.setConnectionManagerOpen(open)),
+      "connection",
+    );
+  }, [connectionManagerOpen, dispatch, runSidebarToggle]);
 
   // 关闭连接管理侧边栏
   const handleCloseConnectionManager = useCallback(() => {
-    dispatch(actions.setConnectionManagerOpen(false));
-    setFallbackSidebarAfterClose("connection");
-  }, [dispatch, setFallbackSidebarAfterClose]);
+    runSidebarClose(
+      (open) => dispatch(actions.setConnectionManagerOpen(open)),
+      "connection",
+      { notifyResize: false },
+    );
+  }, [dispatch, runSidebarClose]);
 
   const handleRequestCreateConnection = useCallback(() => {
     dispatch(actions.setConnectionManagerOpen(true));
     dispatch(actions.setLastOpenedSidebar("connection"));
     setCreateConnectionSignal(Date.now());
 
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
+    notifyTerminalResize();
   }, [dispatch]);
 
   // 关闭终端连接
@@ -3023,29 +3001,24 @@ function AppContent() {
 
   // 切换资源监控侧边栏
   const toggleResourceMonitor = useCallback(() => {
-    const willOpen = !resourceMonitorOpen;
-    dispatch(actions.setResourceMonitorOpen(willOpen));
-    // 如果要打开资源监控侧边栏，确保它显示在上层
-    if (willOpen) {
-      dispatch(actions.setLastOpenedSidebar("resource"));
-      // 连接管理保持不变
-    } else {
-      setFallbackSidebarAfterClose("resource");
-    }
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
-  }, [resourceMonitorOpen, dispatch, setFallbackSidebarAfterClose]);
+    runSidebarToggle(
+      resourceMonitorOpen,
+      (open) => dispatch(actions.setResourceMonitorOpen(open)),
+      "resource",
+    );
+  }, [resourceMonitorOpen, dispatch, runSidebarToggle]);
 
   // 关闭资源监控侧边栏
   const handleCloseResourceMonitor = useCallback(() => {
-    dispatch(actions.setResourceMonitorOpen(false));
-    setFallbackSidebarAfterClose("resource");
-  }, [dispatch, setFallbackSidebarAfterClose]);
+    runSidebarClose(
+      (open) => dispatch(actions.setResourceMonitorOpen(open)),
+      "resource",
+      { notifyResize: false },
+    );
+  }, [dispatch, runSidebarClose]);
 
   // 切换文件管理侧边栏
+  // （比通用 toggle 多出 SSH 连接状态守卫与 tabId 锁定逻辑，保留独立实现）
   const toggleFileManager = () => {
     const currentPanelTab = getCurrentPanelTab();
     if (!fileManagerOpen && !isCurrentPanelSshConnected) {
@@ -3071,23 +3044,17 @@ function AppContent() {
       setLockedFileManagerTabId(null);
     }
 
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
+    notifyTerminalResize();
   };
 
   // 关闭文件管理侧边栏
   const handleCloseFileManager = () => {
-    dispatch(actions.setFileManagerOpen(false));
-    setFallbackSidebarAfterClose("file");
+    runSidebarClose(
+      (open) => dispatch(actions.setFileManagerOpen(open)),
+      "file",
+    );
     // 清除锁定的tabId
     setLockedFileManagerTabId(null);
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
   };
 
   // 更新文件管理路径记忆
@@ -3136,54 +3103,34 @@ function AppContent() {
 
   // 添加切换快捷命令侧边栏的函数
   const toggleShortcutCommands = () => {
-    const willOpen = !shortcutCommandsOpen;
-    dispatch(actions.setShortcutCommandsOpen(willOpen));
-    if (willOpen) {
-      dispatch(actions.setLastOpenedSidebar("shortcut"));
-    } else {
-      setFallbackSidebarAfterClose("shortcut");
-    }
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
+    runSidebarToggle(
+      shortcutCommandsOpen,
+      (open) => dispatch(actions.setShortcutCommandsOpen(open)),
+      "shortcut",
+    );
   };
 
   const handleCloseShortcutCommands = () => {
-    dispatch(actions.setShortcutCommandsOpen(false));
-    setFallbackSidebarAfterClose("shortcut");
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
+    runSidebarClose(
+      (open) => dispatch(actions.setShortcutCommandsOpen(open)),
+      "shortcut",
+    );
   };
 
   // 添加切换历史命令侧边栏的函数
   const toggleCommandHistory = () => {
-    const willOpen = !commandHistoryOpen;
-    dispatch(actions.setCommandHistoryOpen(willOpen));
-    if (willOpen) {
-      dispatch(actions.setLastOpenedSidebar("history"));
-    } else {
-      setFallbackSidebarAfterClose("history");
-    }
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
+    runSidebarToggle(
+      commandHistoryOpen,
+      (open) => dispatch(actions.setCommandHistoryOpen(open)),
+      "history",
+    );
   };
 
   const handleCloseCommandHistory = () => {
-    dispatch(actions.setCommandHistoryOpen(false));
-    setFallbackSidebarAfterClose("history");
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
+    runSidebarClose(
+      (open) => dispatch(actions.setCommandHistoryOpen(open)),
+      "history",
+    );
   };
 
   const probeAiApiStatus = useCallback(async () => {
@@ -3309,67 +3256,43 @@ function AppContent() {
 
   // 切换IP地址查询侧边栏
   const toggleIpAddressQuery = () => {
-    const willOpen = !ipAddressQueryOpen;
-    dispatch(actions.setIpAddressQueryOpen(willOpen));
-    if (willOpen) {
-      dispatch(actions.setLastOpenedSidebar("ipquery"));
-    } else {
-      setFallbackSidebarAfterClose("ipquery");
-    }
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
+    runSidebarToggle(
+      ipAddressQueryOpen,
+      (open) => dispatch(actions.setIpAddressQueryOpen(open)),
+      "ipquery",
+    );
   };
 
   // 关闭IP地址查询侧边栏
   const handleCloseIpAddressQuery = () => {
-    dispatch(actions.setIpAddressQueryOpen(false));
-    setFallbackSidebarAfterClose("ipquery");
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
+    runSidebarClose(
+      (open) => dispatch(actions.setIpAddressQueryOpen(open)),
+      "ipquery",
+    );
   };
 
-  // 切换随机密码生成器侧边栏
+  // 切换随机密码生成器侧边栏（不触发终端resize）
   const toggleSecurityTools = () => {
-    const willOpen = !securityToolsOpen;
-    dispatch(actions.setSecurityToolsOpen(willOpen));
-    if (willOpen) {
-      dispatch(actions.setLastOpenedSidebar("password"));
-    } else {
-      setFallbackSidebarAfterClose("password");
-    }
+    runSidebarToggle(
+      securityToolsOpen,
+      (open) => dispatch(actions.setSecurityToolsOpen(open)),
+      "password",
+      { notifyResize: false },
+    );
   };
 
   // 切换本地终端侧边栏
   const toggleLocalTerminalSidebar = () => {
-    const willOpen = !localTerminalSidebarOpen;
-    setLocalTerminalSidebarOpen(willOpen);
-    if (willOpen) {
-      dispatch(actions.setLastOpenedSidebar("localTerminal"));
-    } else {
-      setFallbackSidebarAfterClose("localTerminal");
-    }
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
+    runSidebarToggle(
+      localTerminalSidebarOpen,
+      setLocalTerminalSidebarOpen,
+      "localTerminal",
+    );
   };
 
   // 关闭本地终端侧边栏
   const handleCloseLocalTerminalSidebar = () => {
-    setLocalTerminalSidebarOpen(false);
-    setFallbackSidebarAfterClose("localTerminal");
-
-    // 立即触发resize事件，确保终端快速适配新的布局
-    setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 15);
+    runSidebarClose(setLocalTerminalSidebarOpen, "localTerminal");
   };
 
   // 创建应用内本地终端标签页
@@ -3434,9 +3357,7 @@ function AppContent() {
       setLocalTerminalSidebarOpen(false);
       setFallbackSidebarAfterClose("localTerminal");
 
-      setTimeout(() => {
-        window.dispatchEvent(new Event("resize"));
-      }, 15);
+      notifyTerminalResize();
 
       return { success: true, data: newTab };
     },
@@ -3515,9 +3436,7 @@ function AppContent() {
       dispatch(actions.setFileManagerOpen(false));
       setFallbackSidebarAfterClose("file");
       setLockedFileManagerTabId(null);
-      setTimeout(() => {
-        window.dispatchEvent(new Event("resize"));
-      }, 15);
+      notifyTerminalResize();
     }
   }, [
     connectionStatusByTabId,
