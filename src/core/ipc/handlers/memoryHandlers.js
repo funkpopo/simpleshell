@@ -1,7 +1,6 @@
 const path = require("path");
 const fs = require("fs").promises;
 const { app } = require("electron");
-const { logToFile } = require("../../utils/logger");
 const { getTempDirectory } = require("../../utils/appPaths");
 const fileCache = require("../../utils/fileCache");
 const {
@@ -13,6 +12,8 @@ const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * 记忆文件相关的IPC处理器
+ * 错误统一由 safeHandle/wrapIpcHandler 捕获并生成标准错误响应,处理器内直接 throw
+ * （loadMemory/deleteMemory 对“文件不存在”按业务语义返回 null/false，不视为 IPC 错误）
  */
 class MemoryHandlers {
   getTempDir() {
@@ -45,16 +46,12 @@ class MemoryHandlers {
   }
 
   async saveMemory(event, memory) {
-    try {
-      const tempDir = this.getTempDir();
-      await fs.mkdir(tempDir, { recursive: true });
-      const filepath = path.join(tempDir, "mem.json");
-      await fs.writeFile(filepath, JSON.stringify(memory, null, 2), "utf-8");
-      return { success: true, filepath };
-    } catch (error) {
-      logToFile(`Save memory failed: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    void event;
+    const tempDir = this.getTempDir();
+    await fs.mkdir(tempDir, { recursive: true });
+    const filepath = path.join(tempDir, "mem.json");
+    await fs.writeFile(filepath, JSON.stringify(memory, null, 2), "utf-8");
+    return { success: true, filepath };
   }
 
   async loadMemory() {
@@ -80,40 +77,35 @@ class MemoryHandlers {
   }
 
   async getDiagnostics() {
-    try {
-      const processEntries = Array.from(processManager.getProcessMap()).map(
-        ([id, proc]) => ({
-          id,
-          type: proc?.type || "unknown",
-          ready: proc?.ready === true,
-          hasStream: Boolean(proc?.stream),
-          hasConnectionInfo: Boolean(proc?.connectionInfo),
-          tabId: proc?.config?.tabId || null,
-        }),
-      );
+    const processEntries = Array.from(processManager.getProcessMap()).map(
+      ([id, proc]) => ({
+        id,
+        type: proc?.type || "unknown",
+        ready: proc?.ready === true,
+        hasStream: Boolean(proc?.stream),
+        hasConnectionInfo: Boolean(proc?.connectionInfo),
+        tabId: proc?.config?.tabId || null,
+      }),
+    );
 
-      return {
-        success: true,
-        timestamp: Date.now(),
-        process: {
-          pid: process.pid,
-          platform: process.platform,
-          arch: process.arch,
-          uptimeSeconds: Math.round(process.uptime()),
-          memoryUsage: process.memoryUsage(),
-        },
-        resources: mainProcessResourceManager.getStats(),
-        terminalProcesses: {
-          count: processManager.getProcessCount(),
-          entries: processEntries,
-        },
-        fileCache: fileCache.getCacheStats(),
-        aiWorker: aiWorkerManager.getDiagnostics(),
-      };
-    } catch (error) {
-      logToFile(`Memory diagnostics failed: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    return {
+      success: true,
+      timestamp: Date.now(),
+      process: {
+        pid: process.pid,
+        platform: process.platform,
+        arch: process.arch,
+        uptimeSeconds: Math.round(process.uptime()),
+        memoryUsage: process.memoryUsage(),
+      },
+      resources: mainProcessResourceManager.getStats(),
+      terminalProcesses: {
+        count: processManager.getProcessCount(),
+        entries: processEntries,
+      },
+      fileCache: fileCache.getCacheStats(),
+      aiWorker: aiWorkerManager.getDiagnostics(),
+    };
   }
 }
 

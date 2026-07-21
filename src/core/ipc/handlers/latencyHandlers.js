@@ -1,5 +1,4 @@
 const NetworkLatencyService = require("../../services/networkLatencyService");
-const { logToFile } = require("../../utils/logger");
 const { broadcastToAllWindows } = require("../../window/windowManager");
 const {
   IPC_EVENT_CHANNELS,
@@ -8,6 +7,7 @@ const {
 
 /**
  * 网络延迟检测相关的IPC处理器
+ * 错误统一由 safeHandle/wrapIpcHandler 捕获并生成标准错误响应,处理器内直接 throw
  */
 class LatencyHandlers {
   constructor() {
@@ -72,136 +72,92 @@ class LatencyHandlers {
    * 注册SSH连接的延迟检测
    */
   async registerConnection(event, { tabId, host, port }) {
-    try {
-      // 从进程管理器获取SSH连接实例（tabId 对应的 ssh2.Client）
-      const processManager = require("../../process/processManager");
-      const proc = processManager.getProcess(tabId);
-      if (!proc || proc.type !== "ssh2" || !proc.process) {
-        throw new Error("SSH连接不存在或未建立");
-      }
-
-      this.latencyService.registerSSHConnection(
-        tabId,
-        proc.process,
-        host,
-        port,
-        proc.config?.proxy || null,
-      );
-
-      return {
-        success: true,
-        message: "已注册延迟检测",
-        tabId,
-      };
-    } catch (error) {
-      logToFile(`注册延迟检测失败: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message,
-      };
+    void event;
+    // 从进程管理器获取SSH连接实例（tabId 对应的 ssh2.Client）
+    const processManager = require("../../process/processManager");
+    const proc = processManager.getProcess(tabId);
+    if (!proc || proc.type !== "ssh2" || !proc.process) {
+      throw new Error("SSH连接不存在或未建立");
     }
+
+    this.latencyService.registerSSHConnection(
+      tabId,
+      proc.process,
+      host,
+      port,
+      proc.config?.proxy || null,
+    );
+
+    return {
+      success: true,
+      message: "已注册延迟检测",
+      tabId,
+    };
   }
 
   /**
    * 注销连接的延迟检测
    */
   async unregisterConnection(event, { tabId }) {
-    try {
-      this.latencyService.unregisterConnection(tabId);
+    void event;
+    this.latencyService.unregisterConnection(tabId);
 
-      return {
-        success: true,
-        message: "已注销延迟检测",
-        tabId,
-      };
-    } catch (error) {
-      logToFile(`注销延迟检测失败: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
+    return {
+      success: true,
+      message: "已注销延迟检测",
+      tabId,
+    };
   }
 
   /**
    * 获取指定连接的延迟信息
    */
   async getLatencyInfo(event, { tabId }) {
-    try {
-      const info = this.latencyService.getLatencyInfo(tabId);
+    void event;
+    const info = this.latencyService.getLatencyInfo(tabId);
 
-      return {
-        success: true,
-        data: info,
-      };
-    } catch (error) {
-      logToFile(`获取延迟信息失败: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
+    return {
+      success: true,
+      data: info,
+    };
   }
 
   /**
    * 获取所有连接的延迟信息
    */
   async getAllLatencyInfo() {
-    try {
-      const info = this.latencyService.getAllLatencyInfo();
+    const info = this.latencyService.getAllLatencyInfo();
 
-      return {
-        success: true,
-        data: info,
-      };
-    } catch (error) {
-      logToFile(`获取所有延迟信息失败: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
+    return {
+      success: true,
+      data: info,
+    };
   }
 
   /**
    * 获取服务状态
    */
   async getServiceStatus() {
-    try {
-      const status = this.latencyService.getServiceStatus();
+    const status = this.latencyService.getServiceStatus();
 
-      return {
-        success: true,
-        data: status,
-      };
-    } catch (error) {
-      logToFile(`获取服务状态失败: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
+    return {
+      success: true,
+      data: status,
+    };
   }
 
   /**
    * 立即测试指定连接的延迟
    */
   async testLatencyNow(event, { tabId }) {
-    try {
-      await this.latencyService.testLatencyNow(tabId);
+    void event;
+    await this.latencyService.testLatencyNow(tabId);
 
-      return {
-        success: true,
-        message: "延迟测试已触发",
-        tabId,
-      };
-    } catch (error) {
-      logToFile(`立即测试延迟失败: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
+    return {
+      success: true,
+      message: "延迟测试已触发",
+      tabId,
+    };
   }
 
   /**

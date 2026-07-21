@@ -537,114 +537,101 @@ class AIHandlers {
         }
       });
     } catch (error) {
-      logToFile(`处理AI请求时出错: ${error.message}`, "ERROR");
-      return {
-        error: error.message || "处理请求时出错",
-        statusCode: error.statusCode || error.raw?.statusCode,
-      };
+      // 透传 statusCode 供错误分类/前端展示；统一错误响应由 wrapIpcHandler 生成
+      if (error && typeof error === "object") {
+        if (error.statusCode == null && error.raw?.statusCode != null) {
+          error.statusCode = error.raw.statusCode;
+        }
+      }
+      throw error;
     }
   }
 
   async abortAPIRequest() {
-    try {
-      const currentSessionId = aiWorkerManager.getCurrentSessionId();
-      const aiWorker = aiWorkerManager.getAIWorker();
-      // 检查是否有当前会话ID
-      if (currentSessionId && aiWorker) {
-        // 生成取消请求ID
-        const cancelRequestId = `cancel_${Date.now()}`;
-
-        // 尝试通过Worker取消请求
-        aiWorker.postMessage({
-          type: "cancel_request",
-          id: cancelRequestId,
-          data: {
-            sessionId: currentSessionId,
-          },
-        });
-
-        // 获取主窗口
-        const mainWindow = BrowserWindow.getAllWindows()[0];
-        if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-          // 发送中断消息给渲染进程
-          mainWindow.webContents.send(IPC_EVENT_CHANNELS.AI_STREAM_END, {
-            tabId: "ai",
-            aborted: true,
-            sessionId: currentSessionId,
-          });
-        }
-
-        // 清理会话ID和映射
-        aiWorkerManager.deleteStreamSession(currentSessionId);
-        aiWorkerManager.clearCurrentSessionId();
-
-        return { success: true, message: "请求已中断" };
-      } else {
-        return { success: false, message: "没有活跃的请求" };
-      }
-    } catch (error) {
-      logToFile(`中断API请求时出错: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    const currentSessionId = aiWorkerManager.getCurrentSessionId();
+    const aiWorker = aiWorkerManager.getAIWorker();
+    // 检查是否有当前会话ID
+    if (!currentSessionId || !aiWorker) {
+      throw new Error("没有活跃的请求");
     }
+
+    // 生成取消请求ID
+    const cancelRequestId = `cancel_${Date.now()}`;
+
+    // 尝试通过Worker取消请求
+    aiWorker.postMessage({
+      type: "cancel_request",
+      id: cancelRequestId,
+      data: {
+        sessionId: currentSessionId,
+      },
+    });
+
+    // 获取主窗口
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+      // 发送中断消息给渲染进程
+      mainWindow.webContents.send(IPC_EVENT_CHANNELS.AI_STREAM_END, {
+        tabId: "ai",
+        aborted: true,
+        sessionId: currentSessionId,
+      });
+    }
+
+    // 清理会话ID和映射
+    aiWorkerManager.deleteStreamSession(currentSessionId);
+    aiWorkerManager.clearCurrentSessionId();
+
+    return { success: true, message: "请求已中断" };
   }
 
   async fetchModels(event, requestData) {
-    try {
-      const resolvedRequestData = this._resolveApiRequestData(
-        requestData || {},
-      );
-      if (!resolvedRequestData.url || !resolvedRequestData.apiKey) {
-        throw new Error("请先配置有效的 API 地址和密钥");
-      }
-
-      // 确保Worker已创建
-      const aiWorker = aiWorkerManager.ensureAIWorker();
-      if (!aiWorker) {
-        throw new Error("无法创建AI Worker");
-      }
-
-      const requestId = aiWorkerManager.getNextRequestId();
-      const timeout = 30000; // 30秒超时
-
-      return new Promise((resolve, reject) => {
-        // 存储回调
-        aiWorkerManager.setRequestCallback(requestId, { resolve, reject });
-
-        // 发送消息到worker
-        aiWorker.postMessage({
-          id: requestId,
-          type: "api_request",
-          data: {
-            ...resolvedRequestData,
-            type: "models",
-          },
-        });
-
-        // 设置超时
-        setTimeout(() => {
-          if (aiWorkerManager.hasRequest(requestId)) {
-            aiWorkerManager.deleteRequestCallback(requestId);
-            reject(new Error("获取模型列表请求超时"));
-          }
-        }, timeout);
-      });
-    } catch (error) {
-      logToFile(`获取模型列表失败: ${error.message}`, "ERROR");
-      throw error;
+    void event;
+    const resolvedRequestData = this._resolveApiRequestData(requestData || {});
+    if (!resolvedRequestData.url || !resolvedRequestData.apiKey) {
+      throw new Error("请先配置有效的 API 地址和密钥");
     }
+
+    // 确保Worker已创建
+    const aiWorker = aiWorkerManager.ensureAIWorker();
+    if (!aiWorker) {
+      throw new Error("无法创建AI Worker");
+    }
+
+    const requestId = aiWorkerManager.getNextRequestId();
+    const timeout = 30000; // 30秒超时
+
+    return new Promise((resolve, reject) => {
+      // 存储回调
+      aiWorkerManager.setRequestCallback(requestId, { resolve, reject });
+
+      // 发送消息到worker
+      aiWorker.postMessage({
+        id: requestId,
+        type: "api_request",
+        data: {
+          ...resolvedRequestData,
+          type: "models",
+        },
+      });
+
+      // 设置超时
+      setTimeout(() => {
+        if (aiWorkerManager.hasRequest(requestId)) {
+          aiWorkerManager.deleteRequestCallback(requestId);
+          reject(new Error("获取模型列表请求超时"));
+        }
+      }, timeout);
+    });
   }
 
   async saveCustomRiskRules(event, rules) {
-    try {
-      const currentSettings = configService.loadAISettings() || {};
-      currentSettings.customRiskRules = normalizeCustomRiskRules(rules);
-      configService.saveAISettings(currentSettings);
-      logToFile("Custom risk rules saved", "INFO");
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error saving custom risk rules: ${error.message}`, "ERROR");
-      throw error;
-    }
+    void event;
+    const currentSettings = configService.loadAISettings() || {};
+    currentSettings.customRiskRules = normalizeCustomRiskRules(rules);
+    configService.saveAISettings(currentSettings);
+    logToFile("Custom risk rules saved", "INFO");
+    return { success: true };
   }
 }
 

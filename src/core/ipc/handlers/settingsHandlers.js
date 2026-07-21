@@ -40,6 +40,7 @@ const LOCAL_DATA_SECTIONS = new Set([
 
 /**
  * 设置相关的IPC处理器
+ * 错误统一由 safeHandle/wrapIpcHandler 捕获并生成标准错误响应,处理器内直接 throw
  */
 class SettingsHandlers {
   notifyCommandHistoryChanged(reason, history) {
@@ -231,144 +232,76 @@ class SettingsHandlers {
 
   // 实现各个处理器方法
   async loadUISettings() {
-    try {
-      const settings = configService.loadUISettings();
-      // 直接返回设置对象,避免嵌套
-      return settings;
-    } catch (error) {
-      logToFile(`Error loading UI settings: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    // 直接返回设置对象,避免嵌套
+    return configService.loadUISettings();
   }
 
   async saveUISettings(event, settings) {
-    try {
-      const saved = configService.saveUISettings(settings);
-      if (!saved) {
-        throw new Error("Failed to save UI settings");
-      }
-      applyDesktopIntegrationSettings(settings?.desktopIntegration || {});
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error saving UI settings: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    const saved = configService.saveUISettings(settings);
+    if (!saved) {
+      throw new Error("Failed to save UI settings");
     }
+    applyDesktopIntegrationSettings(settings?.desktopIntegration || {});
+    return { success: true };
   }
 
   async loadLogSettings() {
-    try {
-      const settings = configService.loadLogSettings();
-      return { success: true, settings };
-    } catch (error) {
-      logToFile(`Error loading log settings: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    const settings = configService.loadLogSettings();
+    return { success: true, settings };
   }
 
   async saveLogSettings(event, settings) {
-    try {
-      configService.saveLogSettings(settings);
-      updateLogConfig(settings);
-      logToFile("Log settings updated", "INFO");
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error saving log settings: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    configService.saveLogSettings(settings);
+    updateLogConfig(settings);
+    logToFile("Log settings updated", "INFO");
+    return { success: true };
   }
 
   async getErrorReportingSettings() {
-    try {
-      return getErrorReportingStatus(app);
-    } catch (error) {
-      logToFile(
-        `Error loading error reporting settings: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message };
-    }
+    return getErrorReportingStatus(app);
   }
 
   async saveErrorReportingSettings(event, settings) {
-    try {
-      void event;
-      const status = saveErrorReportingSettings(settings);
-      logToFile("Error reporting settings updated", "INFO");
-      return status;
-    } catch (error) {
-      logToFile(
-        `Error saving error reporting settings: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message };
-    }
+    void event;
+    const status = saveErrorReportingSettings(settings);
+    logToFile("Error reporting settings updated", "INFO");
+    return status;
   }
 
   async updatePrefetchSettings() {
-    try {
-      // Prefetch settings 可能需要单独的处理逻辑
-      // 暂时注释掉，因为 ConfigService 中没有对应的方法
-      // configService.savePrefetchSettings(settings);
-      logToFile("Prefetch settings updated (not implemented)", "WARN");
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error updating prefetch settings: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    // Prefetch settings 可能需要单独的处理逻辑
+    // 暂时注释掉，因为 ConfigService 中没有对应的方法
+    // configService.savePrefetchSettings(settings);
+    logToFile("Prefetch settings updated (not implemented)", "WARN");
+    return { success: true };
   }
 
   async getCredentialSecurityStatus() {
-    try {
-      const status = configService.getCredentialSecurityStatus();
-      return { success: true, status };
-    } catch (error) {
-      logToFile(
-        `Error getting credential security status: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message };
-    }
+    const status = configService.getCredentialSecurityStatus();
+    return { success: true, status };
   }
 
   async updateCredentialSecurity(event, settings) {
-    try {
-      const status = configService.updateCredentialSecurity(settings);
-      broadcastToAllWindows(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
-      logToFile("Credential security settings updated", "INFO");
-      return { success: true, status };
-    } catch (error) {
-      logToFile(
-        `Error updating credential security settings: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message };
-    }
+    const status = configService.updateCredentialSecurity(settings);
+    broadcastToAllWindows(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
+    logToFile("Credential security settings updated", "INFO");
+    return { success: true, status };
   }
 
   async unlockCredentialStore(event, masterPassword) {
-    try {
-      const result = configService.unlockCredentialStore(masterPassword);
-      if (result.success) {
-        logToFile("Credential store unlocked", "INFO");
-      }
-      return result;
-    } catch (error) {
-      logToFile(`Error unlocking credential store: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    const result = configService.unlockCredentialStore(masterPassword);
+    if (result.success) {
+      logToFile("Credential store unlocked", "INFO");
     }
+    return result;
   }
 
   async lockCredentialStore() {
-    try {
-      const result = configService.lockCredentialStore();
-      if (result.success) {
-        logToFile("Credential store locked", "INFO");
-      }
-      return result;
-    } catch (error) {
-      logToFile(`Error locking credential store: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    const result = configService.lockCredentialStore();
+    if (result.success) {
+      logToFile("Credential store locked", "INFO");
     }
+    return result;
   }
 
   normalizeLocalDataSections(sections) {
@@ -471,219 +404,164 @@ class SettingsHandlers {
   }
 
   async clearLocalData(event, options = {}) {
-    try {
-      void event;
-      const sections = this.normalizeLocalDataSections(options?.sections);
-      const configSections = sections.filter((section) =>
-        [
-          "connections",
-          "credentials",
-          "commandHistory",
-          "shortcutCommands",
-          "uiSettings",
-          "aiSettings",
-        ].includes(section),
-      );
+    void event;
+    const sections = this.normalizeLocalDataSections(options?.sections);
+    const configSections = sections.filter((section) =>
+      [
+        "connections",
+        "credentials",
+        "commandHistory",
+        "shortcutCommands",
+        "uiSettings",
+        "aiSettings",
+      ].includes(section),
+    );
 
-      const runtime = {};
-      if (configSections.length > 0) {
-        configService.clearLocalConfigData({ sections: configSections });
-      }
-
-      if (sections.includes("commandHistory")) {
-        commandHistoryService.initialize([]);
-      }
-
-      if (sections.includes("cache")) {
-        runtime.cacheCleared =
-          await this.clearRuntimeFileResource("file-cache");
-      }
-
-      if (sections.includes("snapshots")) {
-        runtime.snapshotsCleared =
-          await this.clearRuntimeFileResource("file-snapshots");
-      }
-
-      if (sections.includes("externalEditorTemp")) {
-        runtime.externalEditorTempCleared = await this.clearRuntimeFileResource(
-          "external-editor-temp",
-        );
-      }
-
-      if (sections.includes("logs")) {
-        runtime.logFilesCleared = await this.clearLogFiles();
-      }
-
-      if (sections.includes("aiMemory")) {
-        runtime.aiMemoryCleared = await this.clearAIMemoryFile();
-      }
-
-      this.notifyLocalDataChanged(sections);
-      logToFile(`Local data cleared: ${sections.join(", ")}`, "WARN");
-
-      return {
-        success: true,
-        sections,
-        runtime,
-      };
-    } catch (error) {
-      logToFile(`Error clearing local data: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    const runtime = {};
+    if (configSections.length > 0) {
+      configService.clearLocalConfigData({ sections: configSections });
     }
+
+    if (sections.includes("commandHistory")) {
+      commandHistoryService.initialize([]);
+    }
+
+    if (sections.includes("cache")) {
+      runtime.cacheCleared =
+        await this.clearRuntimeFileResource("file-cache");
+    }
+
+    if (sections.includes("snapshots")) {
+      runtime.snapshotsCleared =
+        await this.clearRuntimeFileResource("file-snapshots");
+    }
+
+    if (sections.includes("externalEditorTemp")) {
+      runtime.externalEditorTempCleared = await this.clearRuntimeFileResource(
+        "external-editor-temp",
+      );
+    }
+
+    if (sections.includes("logs")) {
+      runtime.logFilesCleared = await this.clearLogFiles();
+    }
+
+    if (sections.includes("aiMemory")) {
+      runtime.aiMemoryCleared = await this.clearAIMemoryFile();
+    }
+
+    this.notifyLocalDataChanged(sections);
+    logToFile(`Local data cleared: ${sections.join(", ")}`, "WARN");
+
+    return {
+      success: true,
+      sections,
+      runtime,
+    };
   }
 
   async getShortcutCommands() {
-    try {
-      const shortcuts = configService.loadShortcutCommands();
-      return { success: true, data: shortcuts };
-    } catch (error) {
-      logToFile(`Error getting shortcut commands: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    const shortcuts = configService.loadShortcutCommands();
+    return { success: true, data: shortcuts };
   }
 
   async saveShortcutCommands(event, data) {
-    try {
-      configService.saveShortcutCommands(data);
-      logToFile("Shortcut commands saved", "INFO");
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error saving shortcut commands: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    configService.saveShortcutCommands(data);
+    logToFile("Shortcut commands saved", "INFO");
+    return { success: true };
   }
 
   async addCommandHistory(event, command) {
-    try {
-      const result = this.applyCommandHistoryMutation("add", () =>
-        commandHistoryService.addCommand(command),
-      );
-      return {
-        success: true,
-        data: result.mutationResult,
-        saved: result.changed,
-        history: result.history,
-      };
-    } catch (error) {
-      logToFile(`Error adding command to history: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    const result = this.applyCommandHistoryMutation("add", () =>
+      commandHistoryService.addCommand(command),
+    );
+    return {
+      success: true,
+      data: result.mutationResult,
+      saved: result.changed,
+      history: result.history,
+    };
   }
 
   async getCommandSuggestions(event, input, maxResults = 10) {
-    try {
-      const suggestions = commandHistoryService.getSuggestions(
-        input,
-        maxResults,
-      );
-      return { success: true, suggestions };
-    } catch (error) {
-      logToFile(`Error getting command suggestions: ${error.message}`, "ERROR");
-      return { success: false, error: error.message, suggestions: [] };
-    }
+    const suggestions = commandHistoryService.getSuggestions(
+      input,
+      maxResults,
+    );
+    return { success: true, suggestions };
   }
 
   async incrementCommandUsage(event, command) {
-    try {
-      const result = this.applyCommandHistoryMutation("increment", () =>
-        commandHistoryService.incrementCommandUsage(command),
-      );
-      return {
-        success: true,
-        data: result.mutationResult,
-        saved: result.changed,
-        history: result.history,
-      };
-    } catch (error) {
-      logToFile(`Error incrementing command usage: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    const result = this.applyCommandHistoryMutation("increment", () =>
+      commandHistoryService.incrementCommandUsage(command),
+    );
+    return {
+      success: true,
+      data: result.mutationResult,
+      saved: result.changed,
+      history: result.history,
+    };
   }
 
   async clearCommandHistory() {
-    try {
-      const result = this.applyCommandHistoryMutation("clear", () =>
-        commandHistoryService.clearHistory(),
-      );
-      if (result.changed) {
-        logToFile("Command history cleared", "INFO");
-      }
-      return {
-        success: true,
-        data: result.mutationResult,
-        saved: result.changed,
-        history: result.history,
-      };
-    } catch (error) {
-      logToFile(`Error clearing command history: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    const result = this.applyCommandHistoryMutation("clear", () =>
+      commandHistoryService.clearHistory(),
+    );
+    if (result.changed) {
+      logToFile("Command history cleared", "INFO");
     }
+    return {
+      success: true,
+      data: result.mutationResult,
+      saved: result.changed,
+      history: result.history,
+    };
   }
 
   async getCommandStatistics() {
-    try {
-      const stats = commandHistoryService.getStatistics();
-      return { success: true, data: stats };
-    } catch (error) {
-      logToFile(`Error getting command statistics: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    const stats = commandHistoryService.getStatistics();
+    return { success: true, data: stats };
   }
 
   async getAllCommandHistory() {
-    try {
-      const history = commandHistoryService.getAllHistory();
-      return { success: true, data: history };
-    } catch (error) {
-      logToFile(`Error getting command history: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    const history = commandHistoryService.getAllHistory();
+    return { success: true, data: history };
   }
 
   async deleteCommand(event, command) {
-    try {
-      const result = this.applyCommandHistoryMutation("delete", () =>
-        commandHistoryService.deleteCommand(command),
-      );
-      return {
-        success: result.mutationResult === true,
-        data: result.mutationResult,
-        saved: result.changed,
-        history: result.history,
-      };
-    } catch (error) {
-      logToFile(`Error deleting command: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    const result = this.applyCommandHistoryMutation("delete", () =>
+      commandHistoryService.deleteCommand(command),
+    );
+    return {
+      success: result.mutationResult === true,
+      data: result.mutationResult,
+      saved: result.changed,
+      history: result.history,
+    };
   }
 
   async deleteCommandBatch(event, commands) {
-    try {
-      let deletedCount = 0;
-      const result = this.applyCommandHistoryMutation("deleteBatch", () => {
-        for (const command of commands) {
-          if (commandHistoryService.deleteCommand(command)) {
-            deletedCount++;
-          }
+    let deletedCount = 0;
+    const result = this.applyCommandHistoryMutation("deleteBatch", () => {
+      for (const command of commands) {
+        if (commandHistoryService.deleteCommand(command)) {
+          deletedCount++;
         }
-        return {
-          changed: deletedCount > 0,
-          deletedCount,
-        };
-      });
-      if (deletedCount > 0) {
-        logToFile(`Deleted ${deletedCount} commands from history`, "INFO");
       }
       return {
-        success: true,
+        changed: deletedCount > 0,
         deletedCount,
-        saved: result.changed,
-        history: result.history,
       };
-    } catch (error) {
-      logToFile(`Error deleting command batch: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    });
+    if (deletedCount > 0) {
+      logToFile(`Deleted ${deletedCount} commands from history`, "INFO");
     }
+    return {
+      success: true,
+      deletedCount,
+      saved: result.changed,
+      history: result.history,
+    };
   }
 }
 

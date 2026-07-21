@@ -1,7 +1,6 @@
 const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
 const nativeSftpClient = require("../../utils/nativeSftpClient");
 const { logToFile } = require("../../utils/logger");
-const { buildErrorResponse } = require("../../utils/errorResponse");
 const { generateId } = require("../../../shared/common");
 const processManager = require("../../process/processManager");
 const path = require("path");
@@ -61,8 +60,21 @@ const isDroppedRemoteNotFound = (errorLike = {}) => {
   );
 };
 
+const isUserCancelledError = (error) =>
+  error?.message?.includes("cancel") ||
+  error?.message?.includes("abort") ||
+  error?.message?.includes("用户取消");
+
+const buildUserCancelledResponse = () => ({
+  success: true,
+  cancelled: true,
+  userCancelled: true,
+  message: "用户已取消操作",
+});
+
 /**
  * 文件操作相关的IPC处理器
+ * 错误统一由 safeHandle/wrapIpcHandler 捕获并生成标准错误响应,处理器内直接 throw
  */
 class FileHandlers {
   constructor() {
@@ -309,130 +321,114 @@ class FileHandlers {
 
   // 实现各个处理器方法
   async listFiles(event, tabId, path, options = {}) {
-    try {
-      // 支持非阻塞/分片目录加载：
-      // 立即返回 { chunked, token }，并通过 listFiles:chunk 增量推送 items
-      if (options && options.nonBlocking) {
-        const requestedPath = path;
-        const chunkSize =
-          typeof options.chunkSize === "number" && options.chunkSize > 0
-            ? Math.floor(options.chunkSize)
-            : 300;
-        const token = generateId();
+    // 支持非阻塞/分片目录加载：
+    // 立即返回 { chunked, token }，并通过 listFiles:chunk 增量推送 items
+    if (options && options.nonBlocking) {
+      const requestedPath = path;
+      const chunkSize =
+        typeof options.chunkSize === "number" && options.chunkSize > 0
+          ? Math.floor(options.chunkSize)
+          : 300;
+      const token = generateId();
 
-        // Fire-and-forget chunk producer
-        Promise.resolve()
-          .then(async () => {
-            const result = await nativeSftpClient.listFiles(
-              tabId,
-              requestedPath,
-              {
-                onSpawn: (child) => {
-                  this.activeDirectoryReads.set(token, {
-                    tabId: String(tabId),
-                    token,
-                    child,
-                  });
-                },
+      // Fire-and-forget chunk producer
+      Promise.resolve()
+        .then(async () => {
+          const result = await nativeSftpClient.listFiles(
+            tabId,
+            requestedPath,
+            {
+              onSpawn: (child) => {
+                this.activeDirectoryReads.set(token, {
+                  tabId: String(tabId),
+                  token,
+                  child,
+                });
               },
-            );
+            },
+          );
 
-            const send = (payload) => {
-              try {
-                if (event && event.sender && !event.sender.isDestroyed()) {
-                  event.sender.send(
-                    IPC_EVENT_CHANNELS.FILE_LIST_CHUNK,
-                    payload,
-                  );
-                }
-              } catch {
-                // ignore send errors (window may be gone)
-              }
-            };
-
-            if (!result || result.success === false) {
-              send({
-                tabId,
-                path: requestedPath,
-                token,
-                items: [],
-                done: true,
-                error: result?.error || "listFiles failed",
-                errorCode: result?.errorCode || result?.code || null,
-                errorKind: result?.errorKind || null,
-                retryable: result?.retryable === true,
-                module: result?.module || null,
-                operation: result?.operation || null,
-              });
-              return;
-            }
-
-            const data = Array.isArray(result.data) ? result.data : [];
-            for (let i = 0; i < data.length; i += chunkSize) {
-              const items = data.slice(i, i + chunkSize);
-              const done = i + chunkSize >= data.length;
-              send({ tabId, path: requestedPath, token, items, done });
-            }
-
-            // Ensure done signal even for empty directories
-            if (data.length === 0) {
-              send({
-                tabId,
-                path: requestedPath,
-                token,
-                items: [],
-                done: true,
-              });
-            }
-          })
-          .catch((err) => {
+          const send = (payload) => {
             try {
               if (event && event.sender && !event.sender.isDestroyed()) {
-                event.sender.send(IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, {
-                  tabId,
-                  path: requestedPath,
-                  token,
-                  items: [],
-                  done: true,
-                  error: err?.message || String(err),
-                  errorCode: err?.errorCode || err?.code || null,
-                  errorKind: err?.errorKind || null,
-                  retryable: err?.retryable === true,
-                  module: err?.module || null,
-                  operation: err?.operation || null,
-                });
+                event.sender.send(
+                  IPC_EVENT_CHANNELS.FILE_LIST_CHUNK,
+                  payload,
+                );
               }
             } catch {
-              /* intentionally ignored */
+              // ignore send errors (window may be gone)
             }
-          })
-          .finally(() => {
-            this._removeActiveDirectoryRead(token);
-          });
+          };
 
-        return { success: true, data: [], chunked: true, token };
-      }
+          if (!result || result.success === false) {
+            send({
+              tabId,
+              path: requestedPath,
+              token,
+              items: [],
+              done: true,
+              error: result?.error || "listFiles failed",
+              errorCode: result?.errorCode || result?.code || null,
+              errorKind: result?.errorKind || null,
+              retryable: result?.retryable === true,
+              module: result?.module || null,
+              operation: result?.operation || null,
+            });
+            return;
+          }
 
-      const result = await nativeSftpClient.listFiles(tabId, path);
-      return result;
-    } catch (error) {
-      logToFile(`Error listing files: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to list files");
+          const data = Array.isArray(result.data) ? result.data : [];
+          for (let i = 0; i < data.length; i += chunkSize) {
+            const items = data.slice(i, i + chunkSize);
+            const done = i + chunkSize >= data.length;
+            send({ tabId, path: requestedPath, token, items, done });
+          }
+
+          // Ensure done signal even for empty directories
+          if (data.length === 0) {
+            send({
+              tabId,
+              path: requestedPath,
+              token,
+              items: [],
+              done: true,
+            });
+          }
+        })
+        .catch((err) => {
+          try {
+            if (event && event.sender && !event.sender.isDestroyed()) {
+              event.sender.send(IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, {
+                tabId,
+                path: requestedPath,
+                token,
+                items: [],
+                done: true,
+                error: err?.message || String(err),
+                errorCode: err?.errorCode || err?.code || null,
+                errorKind: err?.errorKind || null,
+                retryable: err?.retryable === true,
+                module: err?.module || null,
+                operation: err?.operation || null,
+              });
+            }
+          } catch {
+            /* intentionally ignored */
+          }
+        })
+        .finally(() => {
+          this._removeActiveDirectoryRead(token);
+        });
+
+      return { success: true, data: [], chunked: true, token };
     }
+
+    return nativeSftpClient.listFiles(tabId, path);
   }
 
   async copyFile(event, tabId, sourcePath, targetPath) {
-    try {
-      const result = await nativeSftpClient.copyFile(
-        tabId,
-        sourcePath,
-        targetPath,
-      );
-      return result;
-    } catch (error) {
-      logToFile(`Error copying file: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to copy file");
-    }
+    return nativeSftpClient.copyFile(tabId, sourcePath, targetPath);
   }
 
   async moveFile(event, tabId, sourcePath, targetPath) {
@@ -442,7 +438,7 @@ class FileHandlers {
         `[Move Check Failed] Invalid paths. Source: ${sourcePath}, Target: ${targetPath} (Tab: ${tabId})`,
         "WARN",
       );
-      return { success: false, error: "Invalid source or target path" };
+      throw new Error("Invalid source or target path");
     }
 
     // 校验: 根目录保护
@@ -451,7 +447,7 @@ class FileHandlers {
         `[Move Check Failed] Attempt to move root directory (Tab: ${tabId})`,
         "WARN",
       );
-      return { success: false, error: "Cannot move root directory" };
+      throw new Error("Cannot move root directory");
     }
 
     logToFile(
@@ -459,12 +455,7 @@ class FileHandlers {
       "INFO",
     );
 
-    try {
-      return await nativeSftpClient.moveFile(tabId, sourcePath, targetPath);
-    } catch (error) {
-      logToFile(`Error moving file: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to move file");
-    }
+    return nativeSftpClient.moveFile(tabId, sourcePath, targetPath);
   }
 
   async deleteFile(event, tabId, filePath, isDirectory) {
@@ -474,7 +465,7 @@ class FileHandlers {
         `[Delete Check Failed] Invalid path: ${filePath} (Tab: ${tabId})`,
         "WARN",
       );
-      return { success: false, error: "Invalid file path" };
+      throw new Error("Invalid file path");
     }
 
     // 校验: 根目录保护
@@ -483,7 +474,7 @@ class FileHandlers {
         `[Delete Check Failed] Attempt to delete root: ${filePath} (Tab: ${tabId})`,
         "WARN",
       );
-      return { success: false, error: "Cannot delete root directory" };
+      throw new Error("Cannot delete root directory");
     }
 
     logToFile(
@@ -491,32 +482,15 @@ class FileHandlers {
       "INFO",
     );
 
-    try {
-      return await nativeSftpClient.deleteFile(tabId, filePath, isDirectory);
-    } catch (error) {
-      logToFile(`Error deleting file: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to delete file");
-    }
+    return nativeSftpClient.deleteFile(tabId, filePath, isDirectory);
   }
 
   async createFolder(event, tabId, folderPath) {
-    try {
-      const result = await nativeSftpClient.createFolder(tabId, folderPath);
-      return result;
-    } catch (error) {
-      logToFile(`Error creating folder: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to create folder");
-    }
+    return nativeSftpClient.createFolder(tabId, folderPath);
   }
 
   async createFile(event, tabId, filePath) {
-    try {
-      const result = await nativeSftpClient.createFile(tabId, filePath);
-      return result;
-    } catch (error) {
-      logToFile(`Error creating file: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to create file");
-    }
+    return nativeSftpClient.createFile(tabId, filePath);
   }
 
   async renameFile(event, tabId, oldPath, newName) {
@@ -526,14 +500,14 @@ class FileHandlers {
         `[Rename Check Failed] Invalid params. Old: ${oldPath}, New: ${newName} (Tab: ${tabId})`,
         "WARN",
       );
-      return { success: false, error: "Invalid old path or new name" };
+      throw new Error("Invalid old path or new name");
     }
     if (oldPath.trim() === "/" || oldPath.trim() === "\\") {
       logToFile(
         `[Rename Check Failed] Attempt to rename root (Tab: ${tabId})`,
         "WARN",
       );
-      return { success: false, error: "Cannot rename root directory" };
+      throw new Error("Cannot rename root directory");
     }
 
     const newPath = path.posix.join(path.posix.dirname(oldPath), newName);
@@ -542,108 +516,63 @@ class FileHandlers {
       "INFO",
     );
 
-    try {
-      return await nativeSftpClient.renameFile(tabId, oldPath, newPath);
-    } catch (error) {
-      logToFile(`Error renaming file: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to rename file");
-    }
+    return nativeSftpClient.renameFile(tabId, oldPath, newPath);
   }
 
   async downloadFile(event, tabId, remotePath) {
-    try {
-      const result = await filemanagementService.downloadFile(
-        event,
-        tabId,
-        remotePath,
-      );
-      if (result.success) {
-        this.activeTransfers.set(`${tabId}-${remotePath}`, result.transferKey);
-      }
-      return result;
-    } catch (error) {
-      logToFile(`Error downloading file: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to download file");
+    const result = await filemanagementService.downloadFile(
+      event,
+      tabId,
+      remotePath,
+    );
+    if (result.success) {
+      this.activeTransfers.set(`${tabId}-${remotePath}`, result.transferKey);
     }
+    return result;
   }
 
   async downloadFolder(event, tabId, remotePath) {
-    try {
-      const result = await filemanagementService.downloadFolder(
-        event,
-        tabId,
-        remotePath,
-      );
-      return result;
-    } catch (error) {
-      logToFile(`Error downloading folder: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to download folder");
-    }
+    return filemanagementService.downloadFolder(event, tabId, remotePath);
   }
 
   async getFilePermissions(event, tabId, filePath) {
-    try {
-      const result = await nativeSftpClient.getFilePermissions(tabId, filePath);
-      return result;
-    } catch (error) {
-      logToFile(`Error getting file permissions: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to read permissions");
-    }
+    return nativeSftpClient.getFilePermissions(tabId, filePath);
   }
 
   async getAbsolutePath(event, tabId, relativePath) {
-    try {
-      const result = await nativeSftpClient.getAbsolutePath(
-        tabId,
-        relativePath,
-      );
-      return result;
-    } catch (error) {
-      logToFile(`Error getting absolute path: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to resolve absolute path");
-    }
+    return nativeSftpClient.getAbsolutePath(tabId, relativePath);
   }
 
   async checkPathExists(event, checkPath) {
-    try {
-      const exists = fs.existsSync(checkPath);
-      if (!exists) {
-        return { success: true, exists };
-      }
-
-      const stats = fs.statSync(checkPath);
-      let readable = true;
-      try {
-        fs.accessSync(checkPath, fs.constants.R_OK);
-      } catch {
-        readable = false;
-      }
-
-      return {
-        success: true,
-        exists,
-        readable,
-        isFile: stats.isFile(),
-        isDirectory: stats.isDirectory(),
-        mode: Number.isFinite(stats.mode) ? stats.mode : null,
-        permissions: Number.isFinite(stats.mode)
-          ? (stats.mode & 0o777).toString(8).padStart(3, "0")
-          : null,
-      };
-    } catch (error) {
-      logToFile(`Error checking path: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    const exists = fs.existsSync(checkPath);
+    if (!exists) {
+      return { success: true, exists };
     }
+
+    const stats = fs.statSync(checkPath);
+    let readable = true;
+    try {
+      fs.accessSync(checkPath, fs.constants.R_OK);
+    } catch {
+      readable = false;
+    }
+
+    return {
+      success: true,
+      exists,
+      readable,
+      isFile: stats.isFile(),
+      isDirectory: stats.isDirectory(),
+      mode: Number.isFinite(stats.mode) ? stats.mode : null,
+      permissions: Number.isFinite(stats.mode)
+        ? (stats.mode & 0o777).toString(8).padStart(3, "0")
+        : null,
+    };
   }
 
   async showItemInFolder(event, itemPath) {
-    try {
-      shell.showItemInFolder(itemPath);
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error showing item in folder: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    shell.showItemInFolder(itemPath);
+    return { success: true };
   }
 
   async validateDroppedItems(event, items) {
@@ -783,7 +712,7 @@ class FileHandlers {
       !processInfo.process ||
       processInfo.type !== "ssh2"
     ) {
-      return { success: false, error: "无效或未就绪的SSH连接" };
+      throw new Error("无效或未就绪的SSH连接");
     }
 
     const normalizedTarget = normalizeDroppedRemotePath(targetFolder);
@@ -796,7 +725,7 @@ class FileHandlers {
     for (const fileData of rawFiles) {
       const relativePath = normalizeDroppedRelativePath(fileData?.relativePath);
       if (!relativePath) {
-        return { success: false, error: "拖放文件缺少有效的相对路径" };
+        throw new Error("拖放文件缺少有效的相对路径");
       }
 
       candidates.push({
@@ -810,7 +739,7 @@ class FileHandlers {
     for (const folderData of rawFolders) {
       const relativePath = normalizeDroppedFolderRelativePath(folderData);
       if (!relativePath) {
-        return { success: false, error: "拖放文件夹缺少有效的相对路径" };
+        throw new Error("拖放文件夹缺少有效的相对路径");
       }
 
       candidates.push({
@@ -846,23 +775,17 @@ class FileHandlers {
             isDirectory: result.stats?.isDirectory === true,
           });
         } else if (!isDroppedRemoteNotFound(result || {})) {
-          return {
-            success: false,
-            error:
-              result?.error ||
+          throw new Error(
+            result?.error ||
               result?.message ||
               "Failed to check remote path conflicts",
-          };
+          );
         }
       } catch (error) {
         if (isDroppedRemoteNotFound(error)) {
           continue;
         }
-
-        return {
-          success: false,
-          error: error?.message || "Failed to check remote path conflicts",
-        };
+        throw error;
       }
     }
 
@@ -874,215 +797,195 @@ class FileHandlers {
   }
 
   async cancelTransfer(event, tabId, transferKey) {
-    try {
-      if (
-        filemanagementService &&
-        typeof filemanagementService.cancelTransfer === "function"
-      ) {
-        const nextResult = await filemanagementService.cancelTransfer(
-          event,
-          tabId,
-          transferKey,
-        );
-
-        if (nextResult?.success || nextResult?.cancelled) {
-          for (const [k, v] of this.activeTransfers.entries()) {
-            if (v === transferKey) {
-              this.activeTransfers.delete(k);
-            }
-          }
-          return nextResult;
-        }
-      }
-
-      const result = await filemanagementService.cancelTransfer(
+    if (
+      filemanagementService &&
+      typeof filemanagementService.cancelTransfer === "function"
+    ) {
+      const nextResult = await filemanagementService.cancelTransfer(
         event,
         tabId,
         transferKey,
       );
 
-      // Clean up any local bookkeeping that maps to this transferKey (if present).
-      for (const [k, v] of this.activeTransfers.entries()) {
-        if (v === transferKey) {
-          this.activeTransfers.delete(k);
+      if (nextResult?.success || nextResult?.cancelled) {
+        for (const [k, v] of this.activeTransfers.entries()) {
+          if (v === transferKey) {
+            this.activeTransfers.delete(k);
+          }
         }
+        return nextResult;
       }
-      return result;
-    } catch (error) {
-      logToFile(`Error canceling transfer: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
     }
+
+    const result = await filemanagementService.cancelTransfer(
+      event,
+      tabId,
+      transferKey,
+    );
+
+    // Clean up any local bookkeeping that maps to this transferKey (if present).
+    for (const [k, v] of this.activeTransfers.entries()) {
+      if (v === transferKey) {
+        this.activeTransfers.delete(k);
+      }
+    }
+    return result;
   }
 
   async cancelListFiles(event, tabId, token = null) {
-    try {
-      const normalizedTabId = String(tabId ?? "");
-      if (!normalizedTabId) {
-        return { success: false, error: "tabId is required" };
-      }
-
-      if (token) {
-        const entry = this.activeDirectoryReads.get(String(token));
-        if (!entry || entry.tabId !== normalizedTabId) {
-          return { success: true, cancelledCount: 0 };
-        }
-
-        return {
-          success: true,
-          cancelledCount: this._cancelActiveDirectoryRead(token) ? 1 : 0,
-        };
-      }
-
-      let cancelledCount = 0;
-      for (const [activeToken, entry] of this.activeDirectoryReads.entries()) {
-        if (entry.tabId !== normalizedTabId) continue;
-        if (this._cancelActiveDirectoryRead(activeToken)) {
-          cancelledCount += 1;
-        }
-      }
-
-      return { success: true, cancelledCount };
-    } catch (error) {
-      logToFile(`Error cancelling listFiles: ${error.message}`, "WARN");
-      return { success: false, error: error.message };
+    const normalizedTabId = String(tabId ?? "");
+    if (!normalizedTabId) {
+      throw new Error("tabId is required");
     }
-  }
 
-  async startDirectoryWatch(event, tabId, remotePath, options = {}) {
-    try {
-      const normalizedTabId = String(tabId ?? "");
-      if (!normalizedTabId) {
-        return { success: false, error: "tabId is required" };
+    if (token) {
+      const entry = this.activeDirectoryReads.get(String(token));
+      if (!entry || entry.tabId !== normalizedTabId) {
+        return { success: true, cancelledCount: 0 };
       }
-
-      const sender = event?.sender;
-      if (!sender || sender.isDestroyed()) {
-        return { success: false, error: "renderer is unavailable" };
-      }
-
-      const ownerKey = this._getDirectoryWatchOwnerKey(sender, normalizedTabId);
-      const previousWatchId = this.activeDirectoryWatchOwners.get(ownerKey);
-      if (previousWatchId) {
-        const previousEntry = this._findDirectoryWatchById(previousWatchId);
-        this._stopActiveDirectoryWatch(previousEntry, "replaced");
-      }
-
-      const watchId = this._generateDirectoryWatchId();
-      const requestedPath =
-        typeof remotePath === "string" ? remotePath : String(remotePath ?? "");
-
-      const entry = {
-        watchId,
-        tabId: normalizedTabId,
-        path: requestedPath,
-        ownerKey,
-        sender,
-        controller: null,
-        stopped: false,
-        stopReason: null,
-        removeDestroyedListener: null,
-      };
-
-      const handleSenderDestroyed = () => {
-        this._stopActiveDirectoryWatch(entry, "renderer-destroyed");
-      };
-      sender.on("destroyed", handleSenderDestroyed);
-      entry.removeDestroyedListener = () => {
-        try {
-          sender.removeListener("destroyed", handleSenderDestroyed);
-        } catch {
-          // ignore listener cleanup failures
-        }
-      };
-
-      let controller;
-      try {
-        controller = await nativeSftpClient.watchDirectory(
-          normalizedTabId,
-          requestedPath,
-          {
-            intervalMs: options?.intervalMs,
-            onChanged: (payload) => {
-              if (!this.activeDirectoryWatches.has(watchId)) {
-                return;
-              }
-              this._sendDirectoryWatchEvent(entry, "changed", payload);
-            },
-            onError: (error) => {
-              if (!this.activeDirectoryWatches.has(watchId)) {
-                return;
-              }
-              this._sendDirectoryWatchEvent(entry, "error", {
-                error: error?.message || String(error),
-              });
-            },
-            onExit: () => {
-              const isStillActive =
-                this.activeDirectoryWatches.get(watchId) === entry;
-              if (isStillActive) {
-                this._removeActiveDirectoryWatch(entry);
-              }
-            },
-          },
-        );
-      } catch (error) {
-        entry.removeDestroyedListener?.();
-        entry.removeDestroyedListener = null;
-        throw error;
-      }
-
-      entry.controller = controller;
-      this.activeDirectoryWatches.set(watchId, entry);
-      this.activeDirectoryWatchOwners.set(ownerKey, watchId);
 
       return {
         success: true,
-        watchId,
-        path: requestedPath,
+        cancelledCount: this._cancelActiveDirectoryRead(token) ? 1 : 0,
       };
-    } catch (error) {
-      logToFile(`Error starting directory watch: ${error.message}`, "WARN");
-      return buildErrorResponse(error, "Failed to start directory watch");
     }
+
+    let cancelledCount = 0;
+    for (const [activeToken, entry] of this.activeDirectoryReads.entries()) {
+      if (entry.tabId !== normalizedTabId) continue;
+      if (this._cancelActiveDirectoryRead(activeToken)) {
+        cancelledCount += 1;
+      }
+    }
+
+    return { success: true, cancelledCount };
+  }
+
+  async startDirectoryWatch(event, tabId, remotePath, options = {}) {
+    const normalizedTabId = String(tabId ?? "");
+    if (!normalizedTabId) {
+      throw new Error("tabId is required");
+    }
+
+    const sender = event?.sender;
+    if (!sender || sender.isDestroyed()) {
+      throw new Error("renderer is unavailable");
+    }
+
+    const ownerKey = this._getDirectoryWatchOwnerKey(sender, normalizedTabId);
+    const previousWatchId = this.activeDirectoryWatchOwners.get(ownerKey);
+    if (previousWatchId) {
+      const previousEntry = this._findDirectoryWatchById(previousWatchId);
+      this._stopActiveDirectoryWatch(previousEntry, "replaced");
+    }
+
+    const watchId = this._generateDirectoryWatchId();
+    const requestedPath =
+      typeof remotePath === "string" ? remotePath : String(remotePath ?? "");
+
+    const entry = {
+      watchId,
+      tabId: normalizedTabId,
+      path: requestedPath,
+      ownerKey,
+      sender,
+      controller: null,
+      stopped: false,
+      stopReason: null,
+      removeDestroyedListener: null,
+    };
+
+    const handleSenderDestroyed = () => {
+      this._stopActiveDirectoryWatch(entry, "renderer-destroyed");
+    };
+    sender.on("destroyed", handleSenderDestroyed);
+    entry.removeDestroyedListener = () => {
+      try {
+        sender.removeListener("destroyed", handleSenderDestroyed);
+      } catch {
+        // ignore listener cleanup failures
+      }
+    };
+
+    let controller;
+    try {
+      controller = await nativeSftpClient.watchDirectory(
+        normalizedTabId,
+        requestedPath,
+        {
+          intervalMs: options?.intervalMs,
+          onChanged: (payload) => {
+            if (!this.activeDirectoryWatches.has(watchId)) {
+              return;
+            }
+            this._sendDirectoryWatchEvent(entry, "changed", payload);
+          },
+          onError: (error) => {
+            if (!this.activeDirectoryWatches.has(watchId)) {
+              return;
+            }
+            this._sendDirectoryWatchEvent(entry, "error", {
+              error: error?.message || String(error),
+            });
+          },
+          onExit: () => {
+            const isStillActive =
+              this.activeDirectoryWatches.get(watchId) === entry;
+            if (isStillActive) {
+              this._removeActiveDirectoryWatch(entry);
+            }
+          },
+        },
+      );
+    } catch (error) {
+      entry.removeDestroyedListener?.();
+      entry.removeDestroyedListener = null;
+      throw error;
+    }
+
+    entry.controller = controller;
+    this.activeDirectoryWatches.set(watchId, entry);
+    this.activeDirectoryWatchOwners.set(ownerKey, watchId);
+
+    return {
+      success: true,
+      watchId,
+      path: requestedPath,
+    };
   }
 
   async stopDirectoryWatch(event, tabId, watchId = null) {
-    try {
-      const normalizedTabId = String(tabId ?? "");
-      if (!normalizedTabId) {
-        return { success: false, error: "tabId is required" };
-      }
+    const normalizedTabId = String(tabId ?? "");
+    if (!normalizedTabId) {
+      throw new Error("tabId is required");
+    }
 
-      if (watchId) {
-        const entry = this._findDirectoryWatchById(watchId);
-        if (!entry || entry.tabId !== normalizedTabId) {
-          return { success: true, stopped: false };
-        }
-
-        return {
-          success: true,
-          stopped: this._stopActiveDirectoryWatch(entry, "client-stop"),
-        };
-      }
-
-      const ownerKey = this._getDirectoryWatchOwnerKey(
-        event?.sender,
-        normalizedTabId,
-      );
-      const activeWatchId = this.activeDirectoryWatchOwners.get(ownerKey);
-      if (!activeWatchId) {
+    if (watchId) {
+      const entry = this._findDirectoryWatchById(watchId);
+      if (!entry || entry.tabId !== normalizedTabId) {
         return { success: true, stopped: false };
       }
 
-      const entry = this._findDirectoryWatchById(activeWatchId);
       return {
         success: true,
         stopped: this._stopActiveDirectoryWatch(entry, "client-stop"),
       };
-    } catch (error) {
-      logToFile(`Error stopping directory watch: ${error.message}`, "WARN");
-      return buildErrorResponse(error, "Failed to stop directory watch");
     }
+
+    const ownerKey = this._getDirectoryWatchOwnerKey(
+      event?.sender,
+      normalizedTabId,
+    );
+    const activeWatchId = this.activeDirectoryWatchOwners.get(ownerKey);
+    if (!activeWatchId) {
+      return { success: true, stopped: false };
+    }
+
+    const entry = this._findDirectoryWatchById(activeWatchId);
+    return {
+      success: true,
+      stopped: this._stopActiveDirectoryWatch(entry, "client-stop"),
+    };
   }
 
   async downloadFiles(event, tabId, files) {
@@ -1090,63 +993,28 @@ class FileHandlers {
   }
 
   async setFilePermissions(event, tabId, filePath, permissions) {
-    try {
-      return await nativeSftpClient.setFilePermissions(
-        tabId,
-        filePath,
-        permissions,
-      );
-    } catch (error) {
-      logToFile(`Set file permissions error: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, `设置权限失败: ${error.message}`);
-    }
+    return nativeSftpClient.setFilePermissions(tabId, filePath, permissions);
   }
 
   async getFilePermissionsBatch(event, tabId, filePaths) {
-    try {
-      return await nativeSftpClient.getFilePermissionsBatch(tabId, filePaths);
-    } catch (error) {
-      logToFile(`Batch get file permissions error: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, `批量获取权限失败: ${error.message}`);
-    }
+    return nativeSftpClient.getFilePermissionsBatch(tabId, filePaths);
   }
 
   async setFileOwnership(event, tabId, filePath, owner, group) {
-    try {
-      return await nativeSftpClient.setFileOwnership(
-        tabId,
-        filePath,
-        owner,
-        group,
-      );
-    } catch (error) {
-      logToFile(`Set file ownership error: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, `设置所有者/组失败: ${error.message}`);
-    }
+    return nativeSftpClient.setFileOwnership(tabId, filePath, owner, group);
   }
 
   async createRemoteFolders(event, tabId, folderPath) {
-    try {
-      const processInfo = processManager.getProcess(tabId);
-      if (!processInfo || !processInfo.config || processInfo.type !== "ssh2") {
-        return { success: false, error: "Invalid SSH connection" };
-      }
-      return await nativeSftpClient.createRemoteFolders(tabId, folderPath);
-    } catch (error) {
-      logToFile(`Error creating remote folders: ${error.message}`, "ERROR");
-      return buildErrorResponse(error, "Failed to create remote folders");
+    const processInfo = processManager.getProcess(tabId);
+    if (!processInfo || !processInfo.config || processInfo.type !== "ssh2") {
+      throw new Error("Invalid SSH connection");
     }
+    return nativeSftpClient.createRemoteFolders(tabId, folderPath);
   }
 
-  async uploadFile(event, tabId, targetFolder, progressChannel) {
-    if (
-      !filemanagementService ||
-      typeof filemanagementService.uploadFile !== "function"
-    ) {
-      return {
-        success: false,
-        error: "SFTP Upload feature not properly initialized.",
-      };
+  _assertUploadReady(serviceMethod, tabId) {
+    if (typeof filemanagementService?.[serviceMethod] !== "function") {
+      throw new Error("SFTP Upload feature not properly initialized.");
     }
     const processInfo = processManager.getProcess(tabId);
     if (
@@ -1155,8 +1023,12 @@ class FileHandlers {
       !processInfo.process ||
       processInfo.type !== "ssh2"
     ) {
-      return { success: false, error: "无效或未就绪的SSH连接" };
+      throw new Error("无效或未就绪的SSH连接");
     }
+  }
+
+  async uploadFile(event, tabId, targetFolder, progressChannel) {
+    this._assertUploadReady("uploadFile", tabId);
     try {
       return await filemanagementService.uploadFile(
         event,
@@ -1165,19 +1037,11 @@ class FileHandlers {
         progressChannel,
       );
     } catch (error) {
-      const isCancelError =
-        error.message?.includes("cancel") ||
-        error.message?.includes("abort") ||
-        error.message?.includes("用户取消");
-      if (isCancelError) {
-        return {
-          success: true,
-          cancelled: true,
-          userCancelled: true,
-          message: "用户已取消操作",
-        };
+      // 用户主动取消按成功响应返回,不作为错误上报
+      if (isUserCancelledError(error)) {
+        return buildUserCancelledResponse();
       }
-      return buildErrorResponse(error, `上传文件失败: ${error.message}`);
+      throw error;
     }
   }
 
@@ -1188,24 +1052,7 @@ class FileHandlers {
     uploadData,
     progressChannel,
   ) {
-    if (
-      !filemanagementService ||
-      typeof filemanagementService.uploadDroppedFiles !== "function"
-    ) {
-      return {
-        success: false,
-        error: "SFTP Upload feature not properly initialized.",
-      };
-    }
-    const processInfo = processManager.getProcess(tabId);
-    if (
-      !processInfo ||
-      !processInfo.config ||
-      !processInfo.process ||
-      processInfo.type !== "ssh2"
-    ) {
-      return { success: false, error: "无效或未就绪的SSH连接" };
-    }
+    this._assertUploadReady("uploadDroppedFiles", tabId);
     try {
       return await filemanagementService.uploadDroppedFiles(
         event,
@@ -1215,41 +1062,15 @@ class FileHandlers {
         progressChannel,
       );
     } catch (error) {
-      const isCancelError =
-        error.message?.includes("cancel") ||
-        error.message?.includes("abort") ||
-        error.message?.includes("用户取消");
-      if (isCancelError) {
-        return {
-          success: true,
-          cancelled: true,
-          userCancelled: true,
-          message: "用户已取消操作",
-        };
+      if (isUserCancelledError(error)) {
+        return buildUserCancelledResponse();
       }
-      return buildErrorResponse(error, `上传文件失败: ${error.message}`);
+      throw error;
     }
   }
 
   async uploadFolder(event, tabId, targetFolder, progressChannel) {
-    if (
-      !filemanagementService ||
-      typeof filemanagementService.uploadFolder !== "function"
-    ) {
-      return {
-        success: false,
-        error: "SFTP Upload feature not properly initialized.",
-      };
-    }
-    const processInfo = processManager.getProcess(tabId);
-    if (
-      !processInfo ||
-      !processInfo.config ||
-      !processInfo.process ||
-      processInfo.type !== "ssh2"
-    ) {
-      return { success: false, error: "无效或未就绪的SSH连接" };
-    }
+    this._assertUploadReady("uploadFolder", tabId);
     try {
       return await filemanagementService.uploadFolder(
         event,
@@ -1258,19 +1079,10 @@ class FileHandlers {
         progressChannel,
       );
     } catch (error) {
-      const isCancelError =
-        error.message?.includes("cancel") ||
-        error.message?.includes("abort") ||
-        error.message?.includes("用户取消");
-      if (isCancelError) {
-        return {
-          success: true,
-          cancelled: true,
-          userCancelled: true,
-          message: "用户已取消操作",
-        };
+      if (isUserCancelledError(error)) {
+        return buildUserCancelledResponse();
       }
-      return buildErrorResponse(error, `上传文件夹失败: ${error.message}`);
+      throw error;
     }
   }
 

@@ -1,9 +1,9 @@
-const { logToFile } = require("../../utils/logger");
 const externalEditorManager = require("../../../modules/sftp/externalEditorManager");
 const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * 外部编辑器相关的IPC处理器
+ * 错误统一由 safeHandle/wrapIpcHandler 捕获并生成标准错误响应,处理器内直接 throw
  */
 class ExternalEditorHandlers {
   getHandlers() {
@@ -17,32 +17,19 @@ class ExternalEditorHandlers {
   }
 
   async openInExternalEditor(event, tabId, remotePath) {
+    void event;
     if (
       !externalEditorManager ||
       typeof externalEditorManager.openFileInExternalEditor !== "function"
     ) {
-      return {
-        success: false,
-        error: "External editor feature not available.",
-      };
+      throw new Error("External editor feature not available.");
     }
 
     if (!tabId || !remotePath) {
-      return { success: false, error: "Missing parameters." };
+      throw new Error("Missing parameters.");
     }
 
-    try {
-      return await externalEditorManager.openFileInExternalEditor(
-        tabId,
-        remotePath,
-      );
-    } catch (error) {
-      logToFile(
-        `External editor open failed for ${remotePath}: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message };
-    }
+    return externalEditorManager.openFileInExternalEditor(tabId, remotePath);
   }
 }
 

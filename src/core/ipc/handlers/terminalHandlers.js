@@ -508,19 +508,14 @@ class TerminalHandlers {
    * 执行简单命令
    */
   async executeCommand(command) {
-    try {
-      // 简单内部命令处理
-      if (command === "date") {
-        return { output: new Date().toString() };
-      } else if (command.startsWith("echo ")) {
-        return { output: command.substring(5) };
-      } else {
-        return { output: `Command not recognized: ${command}` };
-      }
-    } catch (error) {
-      logToFile(`Command error: ${error.message}`, "ERROR");
-      return { error: error.message };
+    // 简单内部命令处理（纯同步分支，异常交给 wrapIpcHandler）
+    if (command === "date") {
+      return { output: new Date().toString() };
     }
+    if (command.startsWith("echo ")) {
+      return { output: command.substring(5) };
+    }
+    return { output: `Command not recognized: ${command}` };
   }
 
   /**
@@ -575,73 +570,69 @@ class TerminalHandlers {
    * 清理终端连接（用于连接刷新）
    */
   async cleanupConnection(event, processId) {
-    try {
-      if (!processId) {
-        logToFile("No processId provided for cleanup", "WARN");
-        return { success: false, error: "No processId provided" };
-      }
-
-      logToFile(`Cleaning up connection for process ${processId}`, "INFO");
-
-      // 删除子进程映射
-      if (this.processManager.hasProcess(processId)) {
-        const processObj = this.processManager.getProcess(processId);
-
-        // 关闭SSH连接（如果存在）
-        try {
-          if (processObj.connectionInfo) {
-            processObj.connectionInfo.closeReason = "user";
-            processObj.connectionInfo.intentionalClose = true;
-            this.connectionManager.releaseSSHConnection(
-              processObj.connectionInfo.key,
-              processObj.config?.tabId,
-              { reason: "user", intentional: true },
-            );
-            this._removeSSHProcessTabReference(processObj, processId);
-          }
-          if (
-            processObj.client &&
-            typeof processObj.client.end === "function"
-          ) {
-            processObj.client.end();
-          }
-          if (
-            processObj.process &&
-            typeof processObj.process.kill === "function"
-          ) {
-            processObj.process.kill();
-          }
-        } catch (cleanupError) {
-          logToFile(
-            `Error during connection cleanup: ${cleanupError.message}`,
-            "WARN",
-          );
-        }
-
-        this.processManager.deleteProcess(processId);
-        if (processObj.processId && processObj.processId !== processId) {
-          this.processManager.deleteProcess(processObj.processId);
-        }
-
-        // 如果有tabId也清理
-        if (processObj.config && processObj.config.tabId) {
-          this.processManager.deleteProcess(processObj.config.tabId);
-          if (typeof this.processManager.deleteTerminalProcess === "function") {
-            this.processManager.deleteTerminalProcess(processObj.config.tabId);
-          }
-        }
-        if (this.terminalIOMailboxManager) {
-          this.terminalIOMailboxManager.destroyProcess(
-            processObj.processId || processId,
-          );
-        }
-      }
-
-      return { success: true };
-    } catch (error) {
-      logToFile(`Failed to cleanup connection: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    void event;
+    if (!processId) {
+      logToFile("No processId provided for cleanup", "WARN");
+      throw new Error("No processId provided");
     }
+
+    logToFile(`Cleaning up connection for process ${processId}`, "INFO");
+
+    // 删除子进程映射
+    if (this.processManager.hasProcess(processId)) {
+      const processObj = this.processManager.getProcess(processId);
+
+      // 关闭SSH连接（如果存在）；清理失败只记日志，不阻断整体 cleanup
+      try {
+        if (processObj.connectionInfo) {
+          processObj.connectionInfo.closeReason = "user";
+          processObj.connectionInfo.intentionalClose = true;
+          this.connectionManager.releaseSSHConnection(
+            processObj.connectionInfo.key,
+            processObj.config?.tabId,
+            { reason: "user", intentional: true },
+          );
+          this._removeSSHProcessTabReference(processObj, processId);
+        }
+        if (
+          processObj.client &&
+          typeof processObj.client.end === "function"
+        ) {
+          processObj.client.end();
+        }
+        if (
+          processObj.process &&
+          typeof processObj.process.kill === "function"
+        ) {
+          processObj.process.kill();
+        }
+      } catch (cleanupError) {
+        logToFile(
+          `Error during connection cleanup: ${cleanupError.message}`,
+          "WARN",
+        );
+      }
+
+      this.processManager.deleteProcess(processId);
+      if (processObj.processId && processObj.processId !== processId) {
+        this.processManager.deleteProcess(processObj.processId);
+      }
+
+      // 如果有tabId也清理
+      if (processObj.config && processObj.config.tabId) {
+        this.processManager.deleteProcess(processObj.config.tabId);
+        if (typeof this.processManager.deleteTerminalProcess === "function") {
+          this.processManager.deleteTerminalProcess(processObj.config.tabId);
+        }
+      }
+      if (this.terminalIOMailboxManager) {
+        this.terminalIOMailboxManager.destroyProcess(
+          processObj.processId || processId,
+        );
+      }
+    }
+
+    return { success: true };
   }
 
   /**

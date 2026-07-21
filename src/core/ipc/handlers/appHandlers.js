@@ -27,6 +27,7 @@ const normalizeGpuText = (value) =>
 
 /**
  * 应用级别的IPC处理器
+ * 错误统一由 safeHandle/wrapIpcHandler 捕获并生成标准错误响应,处理器内直接 throw
  */
 class AppHandlers {
   /**
@@ -129,109 +130,74 @@ class AppHandlers {
 
   // 实现各个处理器方法
   async getVersion() {
-    try {
-      return {
-        success: true,
-        version: app.getVersion(),
-      };
-    } catch (error) {
-      logToFile(`Error getting app version: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    return {
+      success: true,
+      version: app.getVersion(),
+    };
   }
 
   async getGpuInfo() {
-    try {
-      const hardwareAccelerationEnabled =
-        global.__hardwareAccelerationEnabled !== false;
-      const info = await app.getGPUInfo("complete");
-      const aux = info && info.auxAttributes ? info.auxAttributes : {};
-      const devices = Array.isArray(info && info.gpuDevice)
-        ? info.gpuDevice
-        : [];
-      const activeDevice =
-        devices.find((d) => d && d.active) || devices[0] || {};
-      const vendorId = toHexId(activeDevice.vendorId);
-      const deviceId = toHexId(activeDevice.deviceId);
+    const hardwareAccelerationEnabled =
+      global.__hardwareAccelerationEnabled !== false;
+    const info = await app.getGPUInfo("complete");
+    const aux = info && info.auxAttributes ? info.auxAttributes : {};
+    const devices = Array.isArray(info && info.gpuDevice)
+      ? info.gpuDevice
+      : [];
+    const activeDevice =
+      devices.find((d) => d && d.active) || devices[0] || {};
+    const vendorId = toHexId(activeDevice.vendorId);
+    const deviceId = toHexId(activeDevice.deviceId);
 
-      return {
-        success: true,
-        hardwareAccelerationEnabled,
-        displayRenderer: normalizeGpuText(activeDevice.deviceString),
-        displayVendor: normalizeGpuText(activeDevice.vendorString),
-        glRenderer: aux.glRenderer || null,
-        glVendor: aux.glVendor || null,
-        glVersion: aux.glVersion || null,
-        softwareRendering:
-          aux.softwareRendering === true || aux.glRenderer === "SwiftShader",
-        gpuCompositing: aux.gpuCompositing !== false,
-        activeGpu: {
-          vendorId,
-          deviceId,
-          vendorString: normalizeGpuText(activeDevice.vendorString),
-          deviceString: normalizeGpuText(activeDevice.deviceString),
-          driverVendor: activeDevice.driverVendor || null,
-          driverVersion: activeDevice.driverVersion || null,
-        },
-      };
-    } catch (error) {
-      logToFile(`Error getting GPU info: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message,
-        hardwareAccelerationEnabled:
-          global.__hardwareAccelerationEnabled !== false,
-      };
-    }
+    return {
+      success: true,
+      hardwareAccelerationEnabled,
+      displayRenderer: normalizeGpuText(activeDevice.deviceString),
+      displayVendor: normalizeGpuText(activeDevice.vendorString),
+      glRenderer: aux.glRenderer || null,
+      glVendor: aux.glVendor || null,
+      glVersion: aux.glVersion || null,
+      softwareRendering:
+        aux.softwareRendering === true || aux.glRenderer === "SwiftShader",
+      gpuCompositing: aux.gpuCompositing !== false,
+      activeGpu: {
+        vendorId,
+        deviceId,
+        vendorString: normalizeGpuText(activeDevice.vendorString),
+        deviceString: normalizeGpuText(activeDevice.deviceString),
+        driverVendor: activeDevice.driverVendor || null,
+        driverVersion: activeDevice.driverVersion || null,
+      },
+    };
   }
 
   async closeApp() {
-    try {
-      logToFile("Application closing via IPC", "INFO");
-      app.quit();
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error closing app: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    logToFile("Application closing via IPC", "INFO");
+    app.quit();
+    return { success: true };
   }
 
   async reloadWindow() {
-    try {
-      const mainWindow = BrowserWindow.getAllWindows()[0];
-      if (mainWindow) {
-        mainWindow.reload();
-        logToFile("Window reloaded", "INFO");
-        return { success: true };
-      }
-      return { success: false, error: "No window found" };
-    } catch (error) {
-      logToFile(`Error reloading window: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow) {
+      throw new Error("No window found");
     }
+    mainWindow.reload();
+    logToFile("Window reloaded", "INFO");
+    return { success: true };
   }
 
   async readClipboardText() {
-    try {
-      return {
-        success: true,
-        text: clipboard.readText(),
-      };
-    } catch (error) {
-      logToFile(`Error reading clipboard text: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    return {
+      success: true,
+      text: clipboard.readText(),
+    };
   }
 
   async writeClipboardText(event, text) {
-    try {
-      void event;
-      clipboard.writeText(String(text ?? ""));
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error writing clipboard text: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    void event;
+    clipboard.writeText(String(text ?? ""));
+    return { success: true };
   }
 
   normalizeExternalOpenRequest(rawInput) {
@@ -307,135 +273,106 @@ class AppHandlers {
   }
 
   async openExternal(event, rawInput) {
-    try {
-      const request = this.normalizeExternalOpenRequest(rawInput);
-      const { normalizedUrl, protocol } = this.validateExternalUrl(request.url);
+    const request = this.normalizeExternalOpenRequest(rawInput);
+    const { normalizedUrl, protocol } = this.validateExternalUrl(request.url);
 
-      const isDefaultProtocol = DEFAULT_EXTERNAL_PROTOCOLS.has(protocol);
-      const isConfirmableProtocol =
-        CONFIRMABLE_EXTERNAL_PROTOCOLS.has(protocol);
+    const isDefaultProtocol = DEFAULT_EXTERNAL_PROTOCOLS.has(protocol);
+    const isConfirmableProtocol =
+      CONFIRMABLE_EXTERNAL_PROTOCOLS.has(protocol);
 
-      if (!isDefaultProtocol) {
-        if (!isConfirmableProtocol || !request.allowRestrictedProtocols) {
-          logToFile(
-            `Blocked external URL protocol: ${protocol} (source: ${request.source})`,
-            "WARN",
-          );
-          return { success: false, error: "Unsupported protocol" };
-        }
-
-        const confirmed = await this.confirmRestrictedExternalOpen(
-          event,
-          request.source,
-          normalizedUrl,
+    if (!isDefaultProtocol) {
+      if (!isConfirmableProtocol || !request.allowRestrictedProtocols) {
+        logToFile(
+          `Blocked external URL protocol: ${protocol} (source: ${request.source})`,
+          "WARN",
         );
-        if (!confirmed) {
-          logToFile(
-            `User denied restricted external URL: ${normalizedUrl}`,
-            "WARN",
-          );
-          return { success: false, error: "Opening restricted URL was denied" };
-        }
+        throw new Error("Unsupported protocol");
       }
 
-      logToFile(`Attempting to open external URL: ${normalizedUrl}`, "INFO");
-
-      const TIMEOUT_MS = 5000;
-      await Promise.race([
-        shell.openExternal(normalizedUrl),
-        new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error("shell.openExternal timed out")),
-            TIMEOUT_MS,
-          ),
-        ),
-      ]);
-
-      logToFile(`Opened external URL: ${normalizedUrl}`, "INFO");
-      return { success: true };
-    } catch (error) {
-      logToFile(`Error opening external URL: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+      const confirmed = await this.confirmRestrictedExternalOpen(
+        event,
+        request.source,
+        normalizedUrl,
+      );
+      if (!confirmed) {
+        logToFile(
+          `User denied restricted external URL: ${normalizedUrl}`,
+          "WARN",
+        );
+        throw new Error("Opening restricted URL was denied");
+      }
     }
+
+    logToFile(`Attempting to open external URL: ${normalizedUrl}`, "INFO");
+
+    const TIMEOUT_MS = 5000;
+    await Promise.race([
+      shell.openExternal(normalizedUrl),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("shell.openExternal timed out")),
+          TIMEOUT_MS,
+        ),
+      ),
+    ]);
+
+    logToFile(`Opened external URL: ${normalizedUrl}`, "INFO");
+    return { success: true };
   }
 
   async checkForUpdate() {
-    try {
-      return await updateService.checkForUpdate();
-    } catch (error) {
-      logToFile(`Error checking for updates: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    return updateService.checkForUpdate();
   }
 
   async downloadUpdate(event) {
-    try {
-      // 设置进度回调
-      const onProgress = (progressData) => {
-        if (event?.sender) {
-          // 发送进度事件到渲染进程
-          event.sender.send(
-            IPC_EVENT_CHANNELS.UPDATE_DOWNLOAD_PROGRESS,
-            progressData,
-          );
-        }
-      };
+    // 设置进度回调
+    const onProgress = (progressData) => {
+      if (event?.sender) {
+        // 发送进度事件到渲染进程
+        event.sender.send(
+          IPC_EVENT_CHANNELS.UPDATE_DOWNLOAD_PROGRESS,
+          progressData,
+        );
+      }
+    };
 
-      const installer = await updateService.downloadUpdate(onProgress);
+    const installer = await updateService.downloadUpdate(onProgress);
 
-      return {
-        success: true,
-        filePath: installer?.filePath || "",
-        installer,
-        message: "Download completed successfully",
-      };
-    } catch (error) {
-      logToFile(`Error downloading update: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    return {
+      success: true,
+      filePath: installer?.filePath || "",
+      installer,
+      message: "Download completed successfully",
+    };
   }
 
   async installUpdate(event) {
-    try {
-      void event;
+    void event;
 
-      const result = await updateService.installUpdate();
+    const result = await updateService.installUpdate();
 
-      if (result.success) {
-        logToFile("Update installation initiated", "INFO");
-      }
-
-      return result;
-    } catch (error) {
-      logToFile(`Error installing update: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    if (result.success) {
+      logToFile("Update installation initiated", "INFO");
     }
+
+    return result;
   }
 
   async getDownloadProgress() {
-    try {
-      const progress = updateService.getDownloadProgress();
-      return { success: true, progress };
-    } catch (error) {
-      logToFile(`Error getting download progress: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    const progress = updateService.getDownloadProgress();
+    return { success: true, progress };
   }
 
   async cancelDownload() {
-    try {
-      updateService.cancelDownload();
-      return { success: true, message: "Download cancelled" };
-    } catch (error) {
-      logToFile(`Error cancelling download: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    updateService.cancelDownload();
+    return { success: true, message: "Download cancelled" };
   }
 
   async hasDownloadedInstaller() {
     try {
       return await updateService.hasDownloadedInstaller();
     } catch (error) {
+      // 检查失败按"无可用安装包"降级,不作为错误上报
       logToFile(
         `Error checking downloaded installer: ${error.message}`,
         "ERROR",
@@ -445,93 +382,68 @@ class AppHandlers {
   }
 
   async openLogDirectory() {
-    try {
-      const logDir = getLogDirectory(app);
-      const errorMessage = await shell.openPath(logDir);
-      if (errorMessage) {
-        throw new Error(errorMessage);
-      }
-      return { success: true, path: logDir };
-    } catch (error) {
-      logToFile(`Error opening log directory: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    const logDir = getLogDirectory(app);
+    const errorMessage = await shell.openPath(logDir);
+    if (errorMessage) {
+      throw new Error(errorMessage);
     }
+    return { success: true, path: logDir };
   }
 
   async exportDiagnostics() {
-    try {
-      const result = await exportDiagnosticPackage(app, { updateService });
-      logToFile(`Diagnostics exported: ${result.filePath}`, "INFO");
-      return result;
-    } catch (error) {
-      logToFile(`Error exporting diagnostics: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    const result = await exportDiagnosticPackage(app, { updateService });
+    logToFile(`Diagnostics exported: ${result.filePath}`, "INFO");
+    return result;
   }
 
   async copyDiagnosticSummary(event, context = null) {
-    try {
-      void event;
-      const payload = await buildDiagnosticPayload(app, {
-        updateService,
-        context,
-      });
-      const summary = buildDiagnosticSummary(payload);
-      clipboard.writeText(summary);
-      logToFile("Diagnostic summary copied to clipboard", "INFO");
-      return {
-        success: true,
-        summary,
-        generatedAt: payload.generatedAt,
-      };
-    } catch (error) {
-      logToFile(`Error copying diagnostic summary: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    void event;
+    const payload = await buildDiagnosticPayload(app, {
+      updateService,
+      context,
+    });
+    const summary = buildDiagnosticSummary(payload);
+    clipboard.writeText(summary);
+    logToFile("Diagnostic summary copied to clipboard", "INFO");
+    return {
+      success: true,
+      summary,
+      generatedAt: payload.generatedAt,
+    };
   }
 
   async copyDiagnosticPackage(event, context = null) {
-    try {
-      void event;
-      const payload = await buildDiagnosticPayload(app, {
-        updateService,
-        context,
-      });
-      const serialized = JSON.stringify(payload, null, 2);
-      clipboard.writeText(serialized);
-      logToFile("Diagnostic package copied to clipboard", "INFO");
-      return {
-        success: true,
-        generatedAt: payload.generatedAt,
-        bytes: Buffer.byteLength(serialized, "utf8"),
-      };
-    } catch (error) {
-      logToFile(`Error copying diagnostic package: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    void event;
+    const payload = await buildDiagnosticPayload(app, {
+      updateService,
+      context,
+    });
+    const serialized = JSON.stringify(payload, null, 2);
+    clipboard.writeText(serialized);
+    logToFile("Diagnostic package copied to clipboard", "INFO");
+    return {
+      success: true,
+      generatedAt: payload.generatedAt,
+      bytes: Buffer.byteLength(serialized, "utf8"),
+    };
   }
 
   async openFeedbackIssue(event, context = null) {
-    try {
-      void event;
-      const payload = await buildDiagnosticPayload(app, {
-        updateService,
-        context,
-      });
-      const summary = buildDiagnosticSummary(payload);
-      const issueUrl = buildFeedbackIssueUrl(payload, summary);
-      await shell.openExternal(issueUrl);
-      logToFile("Feedback issue URL opened", "INFO");
-      return {
-        success: true,
-        url: issueUrl,
-        summary,
-        generatedAt: payload.generatedAt,
-      };
-    } catch (error) {
-      logToFile(`Error opening feedback issue: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    void event;
+    const payload = await buildDiagnosticPayload(app, {
+      updateService,
+      context,
+    });
+    const summary = buildDiagnosticSummary(payload);
+    const issueUrl = buildFeedbackIssueUrl(payload, summary);
+    await shell.openExternal(issueUrl);
+    logToFile("Feedback issue URL opened", "INFO");
+    return {
+      success: true,
+      url: issueUrl,
+      summary,
+      generatedAt: payload.generatedAt,
+    };
   }
 }
 

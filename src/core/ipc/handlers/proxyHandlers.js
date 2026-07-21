@@ -1,9 +1,9 @@
 const proxyManager = require("../../proxy/proxy-manager");
-const { logToFile } = require("../../utils/logger");
 const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * 代理配置相关的IPC处理器
+ * 错误统一由 safeHandle/wrapIpcHandler 捕获并生成标准错误响应,处理器内直接 throw
  */
 class ProxyHandlers {
   /**
@@ -35,42 +35,19 @@ class ProxyHandlers {
   }
 
   async getStatus() {
-    try {
-      return proxyManager.getProxyStatus();
-    } catch (error) {
-      logToFile(`Error getting proxy status: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    return proxyManager.getProxyStatus();
   }
 
   async getDefaultConfig() {
-    try {
-      return proxyManager.getDefaultProxyConfig();
-    } catch (error) {
-      logToFile(
-        `Error getting default proxy config: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message };
-    }
+    return proxyManager.getDefaultProxyConfig();
   }
 
   async saveDefaultConfig(proxyConfig) {
-    try {
-      return proxyManager.saveDefaultProxyConfig(proxyConfig);
-    } catch (error) {
-      logToFile(`Error saving default proxy config: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    return proxyManager.saveDefaultProxyConfig(proxyConfig);
   }
 
   async getSystemConfig() {
-    try {
-      return proxyManager.getSystemProxyConfig();
-    } catch (error) {
-      logToFile(`Error getting system proxy config: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
-    }
+    return proxyManager.getSystemProxyConfig();
   }
 }
 

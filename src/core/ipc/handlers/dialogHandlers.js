@@ -1,9 +1,9 @@
 const { dialog, BrowserWindow } = require("electron");
-const { logToFile } = require("../../utils/logger");
 const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * 对话框相关的IPC处理器
+ * 错误统一由 safeHandle/wrapIpcHandler 捕获并生成标准错误响应,处理器内直接 throw
  */
 class DialogHandlers {
   /**
@@ -35,36 +35,21 @@ class DialogHandlers {
   }
 
   async showOpenDialog(event, options) {
-    try {
-      const mainWindow = this._getMainWindow();
-      const result = await dialog.showOpenDialog(mainWindow, options);
-      return result;
-    } catch (error) {
-      logToFile(`Error showing open dialog: ${error.message}`, "ERROR");
-      throw error;
-    }
+    void event;
+    const mainWindow = this._getMainWindow();
+    return dialog.showOpenDialog(mainWindow, options);
   }
 
   async showSaveDialog(event, options) {
-    try {
-      const mainWindow = this._getMainWindow();
-      const result = await dialog.showSaveDialog(mainWindow, options);
-      return result;
-    } catch (error) {
-      logToFile(`Error showing save dialog: ${error.message}`, "ERROR");
-      throw error;
-    }
+    void event;
+    const mainWindow = this._getMainWindow();
+    return dialog.showSaveDialog(mainWindow, options);
   }
 
   async showMessageBox(event, options) {
-    try {
-      const mainWindow = this._getMainWindow();
-      const result = await dialog.showMessageBox(mainWindow, options);
-      return result;
-    } catch (error) {
-      logToFile(`Error showing message box: ${error.message}`, "ERROR");
-      throw error;
-    }
+    void event;
+    const mainWindow = this._getMainWindow();
+    return dialog.showMessageBox(mainWindow, options);
   }
 }
 

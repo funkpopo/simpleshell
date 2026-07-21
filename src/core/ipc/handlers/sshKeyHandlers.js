@@ -2,13 +2,14 @@ const { dialog } = require("electron");
 const crypto = require("crypto");
 const util = require("util");
 const fs = require("fs").promises;
-const { logToFile } = require("../../utils/logger");
 const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 const generateKeyPairAsync = util.promisify(crypto.generateKeyPair);
 
 /**
  * SSH密钥相关的IPC处理器
+ * 错误统一由 safeHandle/wrapIpcHandler 捕获并生成标准错误响应,处理器内直接 throw
+ * （用户取消保存对话框返回 success:false，不视为异常）
  */
 class SshKeyHandlers {
   getHandlers() {
@@ -27,139 +28,129 @@ class SshKeyHandlers {
   }
 
   async generateSSHKeyPair(event, options) {
-    try {
-      const {
-        type = "ed25519",
-        bits = 256,
-        comment = "",
-        passphrase = "",
-      } = options;
+    void event;
+    const {
+      type = "ed25519",
+      bits = 256,
+      comment = "",
+      passphrase = "",
+    } = options;
 
-      let keyGenOptions = {};
+    let keyGenOptions = {};
 
-      if (type === "rsa") {
-        keyGenOptions = {
-          modulusLength: bits,
-          publicKeyEncoding: {
-            type: "spki",
-            format: "pem",
-          },
-          privateKeyEncoding: {
-            type: "pkcs8",
-            format: "pem",
-            cipher: passphrase ? "aes-256-cbc" : undefined,
-            passphrase: passphrase || undefined,
-          },
-        };
-      } else if (type === "ed25519") {
-        keyGenOptions = {
-          publicKeyEncoding: {
-            type: "spki",
-            format: "pem",
-          },
-          privateKeyEncoding: {
-            type: "pkcs8",
-            format: "pem",
-            cipher: passphrase ? "aes-256-cbc" : undefined,
-            passphrase: passphrase || undefined,
-          },
-        };
-      } else if (type === "ecdsa") {
-        const namedCurve =
-          bits === 256
-            ? "prime256v1"
-            : bits === 384
-              ? "secp384r1"
-              : "secp521r1";
-        keyGenOptions = {
-          namedCurve: namedCurve,
-          publicKeyEncoding: {
-            type: "spki",
-            format: "pem",
-          },
-          privateKeyEncoding: {
-            type: "pkcs8",
-            format: "pem",
-            cipher: passphrase ? "aes-256-cbc" : undefined,
-            passphrase: passphrase || undefined,
-          },
-        };
-      }
-
-      const { publicKey, privateKey } = await generateKeyPairAsync(
-        type,
-        keyGenOptions,
-      );
-
-      // 格式化公钥为SSH格式
-      let sshPublicKey;
-      if (type === "rsa") {
-        const keyData = publicKey
-          .replace(/-----BEGIN PUBLIC KEY-----\n?/, "")
-          .replace(/\n?-----END PUBLIC KEY-----/, "")
-          .replace(/\n/g, "");
-        sshPublicKey = `ssh-rsa ${keyData} ${comment}`;
-      } else if (type === "ed25519") {
-        const keyData = publicKey
-          .replace(/-----BEGIN PUBLIC KEY-----\n?/, "")
-          .replace(/\n?-----END PUBLIC KEY-----/, "")
-          .replace(/\n/g, "");
-        sshPublicKey = `ssh-ed25519 ${keyData} ${comment}`;
-      } else {
-        const keyData = publicKey
-          .replace(/-----BEGIN PUBLIC KEY-----\n?/, "")
-          .replace(/\n?-----END PUBLIC KEY-----/, "")
-          .replace(/\n/g, "");
-        const curveType =
-          bits === 256
-            ? "ecdsa-sha2-nistp256"
-            : bits === 384
-              ? "ecdsa-sha2-nistp384"
-              : "ecdsa-sha2-nistp521";
-        sshPublicKey = `${curveType} ${keyData} ${comment}`;
-      }
-
-      return {
-        success: true,
-        publicKey: sshPublicKey.trim(),
-        privateKey: privateKey,
+    if (type === "rsa") {
+      keyGenOptions = {
+        modulusLength: bits,
+        publicKeyEncoding: {
+          type: "spki",
+          format: "pem",
+        },
+        privateKeyEncoding: {
+          type: "pkcs8",
+          format: "pem",
+          cipher: passphrase ? "aes-256-cbc" : undefined,
+          passphrase: passphrase || undefined,
+        },
       };
-    } catch (error) {
-      logToFile(`SSH key generation failed: ${error.message}`, "ERROR");
-      return {
-        success: false,
-        error: error.message,
+    } else if (type === "ed25519") {
+      keyGenOptions = {
+        publicKeyEncoding: {
+          type: "spki",
+          format: "pem",
+        },
+        privateKeyEncoding: {
+          type: "pkcs8",
+          format: "pem",
+          cipher: passphrase ? "aes-256-cbc" : undefined,
+          passphrase: passphrase || undefined,
+        },
+      };
+    } else if (type === "ecdsa") {
+      const namedCurve =
+        bits === 256
+          ? "prime256v1"
+          : bits === 384
+            ? "secp384r1"
+            : "secp521r1";
+      keyGenOptions = {
+        namedCurve: namedCurve,
+        publicKeyEncoding: {
+          type: "spki",
+          format: "pem",
+        },
+        privateKeyEncoding: {
+          type: "pkcs8",
+          format: "pem",
+          cipher: passphrase ? "aes-256-cbc" : undefined,
+          passphrase: passphrase || undefined,
+        },
       };
     }
+
+    const { publicKey, privateKey } = await generateKeyPairAsync(
+      type,
+      keyGenOptions,
+    );
+
+    // 格式化公钥为SSH格式
+    let sshPublicKey;
+    if (type === "rsa") {
+      const keyData = publicKey
+        .replace(/-----BEGIN PUBLIC KEY-----\n?/, "")
+        .replace(/\n?-----END PUBLIC KEY-----/, "")
+        .replace(/\n/g, "");
+      sshPublicKey = `ssh-rsa ${keyData} ${comment}`;
+    } else if (type === "ed25519") {
+      const keyData = publicKey
+        .replace(/-----BEGIN PUBLIC KEY-----\n?/, "")
+        .replace(/\n?-----END PUBLIC KEY-----/, "")
+        .replace(/\n/g, "");
+      sshPublicKey = `ssh-ed25519 ${keyData} ${comment}`;
+    } else {
+      const keyData = publicKey
+        .replace(/-----BEGIN PUBLIC KEY-----\n?/, "")
+        .replace(/\n?-----END PUBLIC KEY-----/, "")
+        .replace(/\n/g, "");
+      const curveType =
+        bits === 256
+          ? "ecdsa-sha2-nistp256"
+          : bits === 384
+            ? "ecdsa-sha2-nistp384"
+            : "ecdsa-sha2-nistp521";
+      sshPublicKey = `${curveType} ${keyData} ${comment}`;
+    }
+
+    return {
+      success: true,
+      publicKey: sshPublicKey.trim(),
+      privateKey: privateKey,
+    };
   }
 
   async saveSSHKey(event, options) {
-    try {
-      const { content, filename } = options;
+    void event;
+    const { content, filename } = options;
 
-      // 私钥文件无扩展名，过滤器不能包含扩展名，
-      // 否则 Windows 保存对话框会自动为无扩展名的文件名追加过滤器扩展名（如 .pub）
-      const isPublicKey = filename.endsWith(".pub");
-      const result = await dialog.showSaveDialog({
-        defaultPath: filename,
-        filters: isPublicKey
-          ? [
-              { name: "SSH Public Key", extensions: ["pub"] },
-              { name: "All Files", extensions: ["*"] },
-            ]
-          : [{ name: "All Files", extensions: ["*"] }],
-      });
+    // 私钥文件无扩展名，过滤器不能包含扩展名，
+    // 否则 Windows 保存对话框会自动为无扩展名的文件名追加过滤器扩展名（如 .pub）
+    const isPublicKey = filename.endsWith(".pub");
+    const result = await dialog.showSaveDialog({
+      defaultPath: filename,
+      filters: isPublicKey
+        ? [
+            { name: "SSH Public Key", extensions: ["pub"] },
+            { name: "All Files", extensions: ["*"] },
+          ]
+        : [{ name: "All Files", extensions: ["*"] }],
+    });
 
-      if (!result.canceled && result.filePath) {
-        await fs.writeFile(result.filePath, content, "utf8");
-        return { success: true };
-      }
-
-      return { success: false, error: "User cancelled" };
-    } catch (error) {
-      logToFile(`Save SSH key failed: ${error.message}`, "ERROR");
-      return { success: false, error: error.message };
+    if (!result.canceled && result.filePath) {
+      await fs.writeFile(result.filePath, content, "utf8");
+      return { success: true };
     }
+
+    // 用户取消保存：业务取消态，不走异常通道
+    return { success: false, cancelled: true, error: "User cancelled" };
   }
 }
 

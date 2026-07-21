@@ -147,19 +147,21 @@ function registerReconnectToggleHandler(
     channel,
     async (event, { tabId }) => {
       const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
-      if (connectionKey && connectionPool.reconnectionManager) {
-        const result =
-          connectionPool.reconnectionManager[methodName](connectionKey);
-        return {
-          success: result?.success === true,
-          connectionKey,
-          state: result?.state || null,
-          previousState: result?.previousState || null,
-          error:
-            result?.success === true ? null : result?.error || notAppliedError,
-        };
+      if (!connectionKey || !connectionPool.reconnectionManager) {
+        throw new Error("连接未找到");
       }
-      return { success: false, error: "连接未找到" };
+      const result =
+        connectionPool.reconnectionManager[methodName](connectionKey);
+      if (result?.success !== true) {
+        throw new Error(result?.error || notAppliedError);
+      }
+      return {
+        success: true,
+        connectionKey,
+        state: result?.state || null,
+        previousState: result?.previousState || null,
+        error: null,
+      };
     },
     { category: "reconnect" },
   );

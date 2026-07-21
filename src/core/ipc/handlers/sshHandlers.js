@@ -174,11 +174,12 @@ class SSHHandlers {
    * 处理认证响应
    */
   async handleAuthResponse(event, response) {
+    void event;
     const { requestId, ...authData } = response;
 
     if (!requestId || !this.pendingAuthRequests.has(requestId)) {
       logToFile(`Invalid auth response: requestId=${requestId}`, "WARN");
-      return { success: false, error: "Invalid request ID" };
+      throw new Error("Invalid request ID");
     }
 
     const pendingRequest = this.pendingAuthRequests.get(requestId);
@@ -186,6 +187,7 @@ class SSHHandlers {
 
     if (authData.cancelled) {
       pendingRequest.reject(new Error("Authentication cancelled by user"));
+      // 用户取消认证：业务取消态，不走异常通道
       return { success: false, cancelled: true };
     }
 
@@ -299,66 +301,56 @@ class SSHHandlers {
    * 更新连接凭据（用于保存自动登录信息）
    */
   async updateConnectionCredentials(event, connectionId, credentials) {
-    try {
-      if (!connectionId || !credentials) {
-        return { success: false, error: "Invalid parameters" };
-      }
+    void event;
+    if (!connectionId || !credentials) {
+      throw new Error("Invalid parameters");
+    }
 
-      // 加载现有连接配置
-      const connections = configService.loadConnections();
+    // 加载现有连接配置
+    const connections = configService.loadConnections();
 
-      // 递归查找并更新连接
-      const updateConnection = (items) => {
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-          if (item.type === "connection" && item.id === connectionId) {
-            // 更新凭据
-            if (credentials.username) {
-              items[i].username = credentials.username;
-            }
-            if (credentials.password !== undefined) {
-              items[i].password = credentials.password;
-            }
-            if (credentials.privateKeyPath !== undefined) {
-              items[i].privateKeyPath = credentials.privateKeyPath;
-            }
-            if (credentials.authType) {
-              items[i].authType = credentials.authType;
-            }
+    // 递归查找并更新连接
+    const updateConnection = (items) => {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type === "connection" && item.id === connectionId) {
+          // 更新凭据
+          if (credentials.username) {
+            items[i].username = credentials.username;
+          }
+          if (credentials.password !== undefined) {
+            items[i].password = credentials.password;
+          }
+          if (credentials.privateKeyPath !== undefined) {
+            items[i].privateKeyPath = credentials.privateKeyPath;
+          }
+          if (credentials.authType) {
+            items[i].authType = credentials.authType;
+          }
+          return true;
+        }
+        if (item.type === "group" && Array.isArray(item.items)) {
+          if (updateConnection(item.items)) {
             return true;
           }
-          if (item.type === "group" && Array.isArray(item.items)) {
-            if (updateConnection(item.items)) {
-              return true;
-            }
-          }
         }
-        return false;
-      };
-
-      const updated = updateConnection(connections);
-
-      if (updated) {
-        configService.saveConnections(connections);
-        logToFile(
-          `Updated credentials for connection: ${connectionId}`,
-          "INFO",
-        );
-
-        // 通知前端连接配置已更改
-        broadcastToAllWindows(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
-
-        return { success: true };
-      } else {
-        return { success: false, error: "Connection not found" };
       }
-    } catch (error) {
-      logToFile(
-        `Failed to update connection credentials: ${error.message}`,
-        "ERROR",
-      );
-      return { success: false, error: error.message };
+      return false;
+    };
+
+    const updated = updateConnection(connections);
+
+    if (!updated) {
+      throw new Error("Connection not found");
     }
+
+    configService.saveConnections(connections);
+    logToFile(`Updated credentials for connection: ${connectionId}`, "INFO");
+
+    // 通知前端连接配置已更改
+    broadcastToAllWindows(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
+
+    return { success: true };
   }
 
   /**

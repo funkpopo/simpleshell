@@ -5,6 +5,8 @@ const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
  * 实用工具相关的IPC处理器
+ * 通用错误由 wrapIpcHandler 处理；IP 查询失败保留上游 API 形态 { ret, msg }
+ * （渲染端 IPAddressQuery 依赖 ret/msg，不走标准 success 信封）
  */
 class UtilityHandlers {
   /**
@@ -21,6 +23,7 @@ class UtilityHandlers {
   }
 
   async queryIp(event, ip = "") {
+    void event;
     try {
       const proxyConfig = proxyManager.getDefaultProxyConfig();
       return await ipQuery.queryIpAddress(ip, logToFile, proxyConfig);
