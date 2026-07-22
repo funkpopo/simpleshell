@@ -44,7 +44,6 @@ const LINUX_ICON_PATH = path.join(
   "assets",
   "SimpleShell.png",
 );
-const MAC_ENTITLEMENTS_PATH = path.join(__dirname, "entitlements.plist");
 const WEBPACK_DIR = path.resolve(__dirname, ".webpack");
 const WINDOWS_MOVE_RETRY_DELAY_MS = 250;
 const WINDOWS_MOVE_RETRIES = 8;
@@ -403,9 +402,7 @@ const buildMacSignConfig = () => {
   return {
     identity: process.env.MAC_CODESIGN_IDENTITY,
     hardenedRuntime: true,
-    entitlements: MAC_ENTITLEMENTS_PATH,
     optionsForFile: () => ({
-      entitlements: MAC_ENTITLEMENTS_PATH,
       hardenedRuntime: true,
     }),
   };

@@ -126,7 +126,7 @@ npm run start
 # 使用 Prettier 格式化代码
 npm run format
 
-# 运行 ESLint（通过 .eslintrc.json 配置）
+# 运行 ESLint（通过 eslint.config.js 配置）
 npx eslint src/
 
 # 为当前平台打包应用

@@ -126,7 +126,7 @@ This will:
 # Format code with Prettier
 npm run format
 
-# Run ESLint (configure via .eslintrc.json)
+# Run ESLint (configure via eslint.config.js)
 npx eslint src/
 
 # Package application for current platform

@@ -27,7 +27,6 @@ const releaseWorkflowPath = path.join(
   "workflows",
   "release.yml",
 );
-const entitlementsPath = path.join(projectRoot, "entitlements.plist");
 const logoIcoPath = path.join(projectRoot, "src", "assets", "logo.ico");
 const logoPngPath = path.join(projectRoot, "src", "assets", "SimpleShell.png");
 
@@ -140,7 +139,6 @@ function main() {
 
   requireExistingFile(logoIcoPath, "Windows ICO asset");
   requireExistingFile(logoPngPath, "Linux PNG asset");
-  requireExistingFile(entitlementsPath, "macOS entitlements file");
   requireExistingFile(sidecarPath, "Current platform native sidecar");
 
   if (failures.length > 0) {
