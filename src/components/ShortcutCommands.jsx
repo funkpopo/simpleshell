@@ -22,17 +22,14 @@ import {
   Select,
   Tabs,
   Tab,
-  InputAdornment,
   CircularProgress,
   Collapse,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { compactContextMenuPaperSx } from "./contextMenuStyles";
-import ClearIcon from "@mui/icons-material/Clear";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
-import SearchIcon from "@mui/icons-material/Search";
 import SendIcon from "@mui/icons-material/Send";
 import FolderIcon from "@mui/icons-material/Folder";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
@@ -48,6 +45,7 @@ import {
   sidebarTitleIconButtonSx,
 } from "./sidebarItemStyles";
 import SidebarPanel from "./SidebarPanel.jsx";
+import SidebarSearchField from "./SidebarSearchField.jsx";
 import useSidebarPanel from "../hooks/useSidebarPanel";
 import useContextMenuRetarget from "../hooks/useContextMenuRetarget";
 import { generateId } from "../shared/common";
@@ -226,7 +224,12 @@ const CommandItem = React.memo(
   },
 );
 
-function ShortcutCommands({ open, onClose, onSendCommand }) {
+function ShortcutCommands({
+  open,
+  onClose,
+  onSendCommand,
+  sessionContext = null,
+}) {
   const theme = useTheme();
   const { t } = useTranslation();
   const [commands, setCommands] = useState([]);
@@ -1103,6 +1106,7 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
       rootRef={sidebarRootRef}
       title={t("shortcutCommands.title")}
       onClose={onClose}
+      sessionContext={sessionContext}
       actions={
         <Tooltip title={t("shortcutCommands.addCommand")}>
           <IconButton
@@ -1119,39 +1123,12 @@ function ShortcutCommands({ open, onClose, onSendCommand }) {
     >
       {/* 搜索框 */}
       <Box sx={{ p: 1, borderBottom: `1px solid ${theme.palette.divider}` }}>
-        <TextField
+        <SidebarSearchField
           inputRef={searchInputRef}
           placeholder={t("shortcutCommands.search")}
-          variant="outlined"
-          size="small"
-          fullWidth
           value={searchTerm}
           onChange={handleSearchChange}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-            endAdornment: searchTerm && (
-              <InputAdornment position="end">
-                <Tooltip title={t("common.clearSearch")}>
-                  <IconButton
-                    size="small"
-                    onClick={() => setSearchTerm("")}
-                    aria-label={t("common.clearSearch")}
-                  >
-                    <ClearIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </InputAdornment>
-            ),
-          }}
-          sx={{
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-            },
-          }}
+          onClear={() => setSearchTerm("")}
         />
       </Box>
 

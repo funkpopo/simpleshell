@@ -27,7 +27,6 @@ import {
   Select,
   Menu,
   Tooltip,
-  InputAdornment,
   Switch,
   FormControlLabel,
   Divider,
@@ -43,8 +42,6 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import ClearIcon from "@mui/icons-material/Clear";
-import SearchIcon from "@mui/icons-material/Search";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
 import ErrorOutlinedIcon from "@mui/icons-material/ErrorOutlined";
@@ -75,9 +72,9 @@ import { ConnectionManagerSkeleton } from "./SkeletonLoader.jsx";
 import VirtualizedConnectionList from "./VirtualizedConnectionList.jsx";
 import { sidebarListItemSx } from "./sidebarItemStyles";
 import SidebarPanel from "./SidebarPanel.jsx";
+import SidebarSearchField from "./SidebarSearchField.jsx";
 import useSidebarPanel from "../hooks/useSidebarPanel";
 import useContextMenuRetarget from "../hooks/useContextMenuRetarget";
-import { getSearchFieldMotionSx } from "../utils/searchFieldStyles";
 import { generateId } from "../shared/common";
 
 // 自定义比较函数
@@ -90,7 +87,8 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.onOpenConnection === nextProps.onOpenConnection &&
     prevProps.createConnectionSignal === nextProps.createConnectionSignal &&
     prevProps.onCreateConnectionSignalConsumed ===
-      nextProps.onCreateConnectionSignalConsumed
+      nextProps.onCreateConnectionSignalConsumed &&
+    prevProps.sessionContext === nextProps.sessionContext
   );
 };
 
@@ -943,6 +941,7 @@ const ConnectionManager = memo(
     onOpenConnection,
     createConnectionSignal = 0,
     onCreateConnectionSignalConsumed,
+    sessionContext = null,
   }) => {
     const theme = useTheme();
     const { t, i18n } = useTranslation();
@@ -2377,6 +2376,7 @@ const ConnectionManager = memo(
         rootRef={sidebarRootRef}
         title={t("connectionManager.title")}
         onClose={onClose}
+        sessionContext={sessionContext}
       >
         {/* 操作按钮区 */}
         <Box
@@ -2409,41 +2409,13 @@ const ConnectionManager = memo(
 
         {/* 搜索框 */}
         <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
-          <TextField
+          <SidebarSearchField
             inputRef={searchInputRef}
             placeholder={t("connectionManager.search")}
-            variant="outlined"
-            size="small"
-            fullWidth
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              ),
-              endAdornment: searchQuery && (
-                <InputAdornment position="end">
-                  <Tooltip title={t("common.clearSearch")}>
-                    <IconButton
-                      size="small"
-                      onClick={() => setSearchQuery("")}
-                      edge="end"
-                      aria-label={t("common.clearSearch")}
-                    >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </InputAdornment>
-              ),
-            }}
-            sx={{
-              ...getSearchFieldMotionSx(theme, {
-                borderRadius: 2,
-                enableScale: true,
-              }),
-            }}
+            onClear={() => setSearchQuery("")}
+            enableScale
           />
         </Box>
 

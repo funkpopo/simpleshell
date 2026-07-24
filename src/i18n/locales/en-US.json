@@ -281,7 +281,11 @@
       "resize": "Resize sidebar",
       "moveToLeft": "Move sidebar to left",
       "moveToRight": "Move sidebar to right",
-      "aiApiUnreachable": "AI API unreachable"
+      "aiApiUnreachable": "AI API unreachable",
+      "sessionConnected": "Connected",
+      "sessionConnecting": "Connecting",
+      "sessionDisconnected": "Disconnected",
+      "sessionLocal": "Local"
     },
     "latency": {
       "connectionInfo": "Connection Info",

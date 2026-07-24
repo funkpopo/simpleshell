@@ -50,6 +50,15 @@
   --radius-md: 10px;
   --radius-lg: 16px;
 
+  /* 侧栏 token */
+  --sidebar-rail-width: 48px;
+  --sidebar-rail-item-gap: 4px;
+  --sidebar-item-inset-x: 6px;
+  --sidebar-surface: var(--color-bg-paper);
+  --sidebar-active-border: var(--color-primary-main);
+  --sidebar-active-bg: var(--color-selected);
+  --sidebar-rail-divider: var(--color-divider);
+
   /* 阴影 */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12);
   --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.12);
@@ -113,6 +122,15 @@
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
+
+  /* 侧栏 token */
+  --sidebar-rail-width: 48px;
+  --sidebar-rail-item-gap: 4px;
+  --sidebar-item-inset-x: 6px;
+  --sidebar-surface: var(--color-bg-paper);
+  --sidebar-active-border: var(--color-primary-main);
+  --sidebar-active-bg: var(--color-selected);
+  --sidebar-rail-divider: var(--color-divider);
 
   /* 阴影 */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);

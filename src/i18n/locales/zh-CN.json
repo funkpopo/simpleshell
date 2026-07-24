@@ -281,7 +281,11 @@
       "resize": "调整侧边栏宽度",
       "moveToLeft": "将侧边栏移动到左侧",
       "moveToRight": "将侧边栏移动到右侧",
-      "aiApiUnreachable": "AI API 当前不可达"
+      "aiApiUnreachable": "AI API 当前不可达",
+      "sessionConnected": "已连接",
+      "sessionConnecting": "连接中",
+      "sessionDisconnected": "未连接",
+      "sessionLocal": "本机"
     },
     "latency": {
       "connectionInfo": "连接信息",

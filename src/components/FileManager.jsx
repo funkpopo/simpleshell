@@ -403,6 +403,7 @@ const FileManager = memo(
     navigationState,
     onPathChange,
     onNavigationStateChange,
+    sessionContext = null,
   }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -5975,7 +5976,7 @@ const FileManager = memo(
             boxShadow: `0 0 20px ${theme.palette.primary.main}30`,
           }),
         }}
-        elevation={4}
+        elevation={theme.palette.mode === "dark" ? 1 : 0}
       >
         <Box sx={sidebarContentSx(theme, open)}>
           <SidebarTitleBar
@@ -5987,6 +5988,12 @@ const FileManager = memo(
             titleSx={{ flexGrow: 1 }}
             onClose={handleClose}
             closeDisabled={isClosing}
+            sessionContext={
+              sessionContext ||
+              (tabName
+                ? { host: tabName, protocol: "SSH" }
+                : null)
+            }
           />
 
           <Box

@@ -113,7 +113,7 @@ async function saveIpQueryHistoryToConfig(history) {
 }
 
 // IP地址查询组件
-const IPAddressQuery = memo(({ open, onClose }) => {
+const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const [ipAddress, setIpAddress] = useState("");
@@ -449,6 +449,7 @@ const IPAddressQuery = memo(({ open, onClose }) => {
       open={open}
       title={t("ipAddressQuery.title")}
       onClose={onClose}
+      sessionContext={sessionContext}
     >
       <Box
         sx={{

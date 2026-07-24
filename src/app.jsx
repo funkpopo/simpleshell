@@ -77,6 +77,10 @@ import { changeLanguage } from "./i18n/i18n";
 import "./styles/index.css";
 import "./styles/theme-switch-animation.css";
 import { SIDEBAR_WIDTHS } from "./constants/layout.js";
+import {
+  sidebarRailButtonSx,
+  sidebarRailDividerSx,
+} from "./components/sidebarItemStyles";
 import "flag-icons/css/flag-icons.min.css";
 import {
   findGroupByTab,
@@ -1382,7 +1386,8 @@ function AppContent() {
   );
 
   // 侧边栏 toggle/close 的公共逻辑：更新开关状态、维护 lastOpenedSidebar、
-  // 触发 resize 让终端适配布局（notifyResize 可关闭）
+  // 触发 resize 让终端适配布局（notifyResize 可关闭）。
+  // 不互斥关闭：多侧栏可同时 open，后打开的以 z-index 覆盖先打开的。
   const runSidebarToggle = React.useCallback(
     (isOpen, setOpen, sidebarKey, { notifyResize = true } = {}) => {
       const willOpen = !isOpen;
@@ -3031,16 +3036,15 @@ function AppContent() {
     const willOpen = !fileManagerOpen;
     dispatch(actions.setFileManagerOpen(willOpen));
 
-    // 如果要打开文件管理侧边栏，锁定当前标签页的tabId
+    // 如果要打开文件管理侧边栏，锁定当前标签页的 tabId
     if (willOpen) {
       dispatch(actions.setLastOpenedSidebar("file"));
-      const currentPanelTab = getCurrentPanelTab();
-      if (currentPanelTab) {
-        setLockedFileManagerTabId(currentPanelTab.id);
+      const panelTab = getCurrentPanelTab();
+      if (panelTab) {
+        setLockedFileManagerTabId(panelTab.id);
       }
     } else {
       setFallbackSidebarAfterClose("file");
-      // 关闭时清除锁定
       setLockedFileManagerTabId(null);
     }
 
@@ -3533,6 +3537,52 @@ function AppContent() {
       type: currentPanelTab.type?.toUpperCase() || "SSH",
     };
   }, [currentPanelTab, terminalInstances]);
+
+  // 侧栏标题区会话上下文（host / 协议 / 连接质量）
+  const sidebarSessionContext = useMemo(() => {
+    if (!currentPanelTab || currentPanelTab.id === "welcome") {
+      return null;
+    }
+
+    if (currentPanelTab.type === "local") {
+      return {
+        protocol: "LOCAL",
+        host: currentPanelTab.label || t("sidebar.localTerminal"),
+        quality: t("sidebar.sessionLocal"),
+      };
+    }
+
+    if (
+      currentPanelTab.type !== "ssh" &&
+      currentPanelTab.type !== "telnet"
+    ) {
+      return null;
+    }
+
+    const config = terminalInstances[`${currentPanelTab.id}-config`];
+    const protocol = (currentPanelTab.type || "ssh").toUpperCase();
+    const host = config
+      ? `${config.username ? `${config.username}@` : ""}${config.host || currentPanelTab.label}${config.port ? `:${config.port}` : ""}`
+      : currentPanelTab.label;
+
+    let quality = t("sidebar.sessionDisconnected");
+    if (currentPanelConnectionStatus?.isConnecting) {
+      quality = t("sidebar.sessionConnecting");
+    } else if (currentPanelConnectionStatus?.isConnected) {
+      quality = t("sidebar.sessionConnected");
+    }
+
+    return {
+      protocol,
+      host,
+      quality,
+    };
+  }, [
+    currentPanelConnectionStatus,
+    currentPanelTab,
+    t,
+    terminalInstances,
+  ]);
 
   // 计算按钮禁用状态
   const isSSHButtonDisabled = useMemo(() => {
@@ -4387,7 +4437,7 @@ function AppContent() {
                     })}
                   />
                 )}
-                {/* 资源监控侧边栏 */}
+                {/* 业务侧栏可多开：后打开的以更高 z-index 覆盖，关闭后回退到先前打开的 */}
                 <Box
                   sx={{
                     position: "absolute",
@@ -4404,11 +4454,11 @@ function AppContent() {
                       open={resourceMonitorOpen}
                       onClose={handleCloseResourceMonitor}
                       currentTabId={resourceMonitorTabId}
+                      sessionContext={sidebarSessionContext}
                     />
                   )}
                 </Box>
 
-                {/* 连接管理侧边栏 */}
                 <Box
                   sx={{
                     position: "absolute",
@@ -4431,11 +4481,11 @@ function AppContent() {
                       onCreateConnectionSignalConsumed={() =>
                         setCreateConnectionSignal(0)
                       }
+                      sessionContext={sidebarSessionContext}
                     />
                   )}
                 </Box>
 
-                {/* 文件管理侧边栏 */}
                 <Box
                   sx={{
                     position: "absolute",
@@ -4459,11 +4509,11 @@ function AppContent() {
                       navigationState={fileManagerProps.navigationState}
                       onPathChange={updateFileManagerPath}
                       onNavigationStateChange={updateFileManagerHistory}
+                      sessionContext={sidebarSessionContext}
                     />
                   )}
                 </Box>
 
-                {/* 添加快捷命令侧边栏 */}
                 <Box
                   sx={{
                     position: "absolute",
@@ -4480,11 +4530,11 @@ function AppContent() {
                       open={shortcutCommandsOpen}
                       onClose={handleCloseShortcutCommands}
                       onSendCommand={handleSendCommand}
+                      sessionContext={sidebarSessionContext}
                     />
                   )}
                 </Box>
 
-                {/* 添加历史命令侧边栏 */}
                 <Box
                   sx={{
                     position: "absolute",
@@ -4501,13 +4551,11 @@ function AppContent() {
                       open={commandHistoryOpen}
                       onClose={handleCloseCommandHistory}
                       onSendCommand={handleSendCommand}
+                      sessionContext={sidebarSessionContext}
                     />
                   )}
                 </Box>
 
-                {/* 传输侧边栏已改为浮动窗口，移至底部与AI助手窗口同级 */}
-
-                {/* IP地址查询侧边栏 */}
                 <Box
                   sx={{
                     position: "absolute",
@@ -4523,11 +4571,11 @@ function AppContent() {
                     <IPAddressQuery
                       open={ipAddressQueryOpen}
                       onClose={handleCloseIpAddressQuery}
+                      sessionContext={sidebarSessionContext}
                     />
                   )}
                 </Box>
 
-                {/* 随机密码生成器侧边栏 */}
                 <Box
                   sx={{
                     position: "absolute",
@@ -4546,11 +4594,11 @@ function AppContent() {
                         dispatch(actions.setSecurityToolsOpen(false));
                         setFallbackSidebarAfterClose("password");
                       }}
+                      sessionContext={sidebarSessionContext}
                     />
                   )}
                 </Box>
 
-                {/* 本地终端侧边栏 */}
                 <Box
                   sx={{
                     position: "absolute",
@@ -4567,87 +4615,57 @@ function AppContent() {
                       open={localTerminalSidebarOpen}
                       onClose={handleCloseLocalTerminalSidebar}
                       onLaunchTerminal={handleLaunchLocalTerminal}
+                      sessionContext={sidebarSessionContext}
                     />
                   )}
                 </Box>
               </Box>
 
-              {/* 侧边栏按钮栏 */}
+              {/* 图标轨 Activity Rail：上=会话区 / 中=工具 / 下=AI·主题·位置 */}
               <Paper
-                elevation={3}
+                elevation={0}
                 square={true}
-                sx={{
-                  width: "48px",
+                sx={(theme) => ({
+                  width: "var(--sidebar-rail-width, 48px)",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
-                  py: 2,
-                  gap: 2,
+                  py: 1.25,
+                  gap: "var(--sidebar-rail-item-gap, 4px)",
                   borderRadius: 0,
                   zIndex: 110,
                   flexShrink: 0,
-                }}
+                  bgcolor: "background.paper",
+                  borderLeft:
+                    sidebarPosition === "right"
+                      ? `1px solid ${theme.palette.divider}`
+                      : "none",
+                  borderRight:
+                    sidebarPosition === "left"
+                      ? `1px solid ${theme.palette.divider}`
+                      : "none",
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "inset 0 0 0 1px rgba(255,255,255,0.03)"
+                      : "none",
+                })}
               >
-                {/* 主题切换按钮 */}
-                <SidebarTooltip
-                  title={t("sidebar.theme")}
-                  placement={sidebarTooltipPlacement}
-                >
-                  <IconButton onClick={toggleTheme} color="primary"
-                    aria-label={t("sidebar.theme")}>
-                    {darkMode ? <DarkModeIcon /> : <LightModeIcon />}
-                  </IconButton>
-                </SidebarTooltip>
-
-                {/* 资源监控按钮 */}
-                <SidebarTooltip
-                  title={t("sidebar.monitor")}
-                  placement={sidebarTooltipPlacement}
-                >
-                  <IconButton
-                    color="primary"
-                    onClick={toggleResourceMonitor}
-                    sx={{
-                      bgcolor: resourceMonitorOpen
-                        ? "action.selected"
-                        : "transparent",
-                      "&:hover": {
-                        bgcolor: resourceMonitorOpen
-                          ? "action.selected"
-                          : "action.hover",
-                      },
-                    }}
-                  
-                    aria-label={t("sidebar.monitor")}>
-                    <MonitorHeartIcon />
-                  </IconButton>
-                </SidebarTooltip>
-
-                {/* 连接管理按钮 */}
+                {/* 上：会话 / 连接 / 文件 / 历史 */}
                 <SidebarTooltip
                   title={t("sidebar.connections")}
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
-                    color="primary"
                     onClick={toggleConnectionManager}
-                    sx={{
-                      bgcolor: connectionManagerOpen
-                        ? "action.selected"
-                        : "transparent",
-                      "&:hover": {
-                        bgcolor: connectionManagerOpen
-                          ? "action.selected"
-                          : "action.hover",
-                      },
-                    }}
-                  
-                    aria-label={t("sidebar.connections")}>
+                    sx={(theme) =>
+                      sidebarRailButtonSx(theme, connectionManagerOpen)
+                    }
+                    aria-label={t("sidebar.connections")}
+                  >
                     <LinkIcon />
                   </IconButton>
                 </SidebarTooltip>
 
-                {/* 文件管理按钮 */}
                 <SidebarTooltip
                   title={
                     isFileManagerButtonDisabled
@@ -4657,157 +4675,111 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
-                    color="primary"
                     onClick={toggleFileManager}
-                    sx={{
-                      bgcolor: fileManagerOpen
-                        ? "action.selected"
-                        : "transparent",
-                      "&:hover": {
-                        bgcolor: fileManagerOpen
-                          ? "action.selected"
-                          : "action.hover",
-                      },
-                    }}
+                    sx={(theme) =>
+                      sidebarRailButtonSx(theme, fileManagerOpen)
+                    }
                     disabled={isFileManagerButtonDisabled}
-                  
-                    aria-label={t("sidebar.files")}>
+                    aria-label={t("sidebar.files")}
+                  >
                     <FolderIcon />
                   </IconButton>
                 </SidebarTooltip>
 
-                {/* 快捷命令按钮 - 应该放在文件按钮的后面 */}
                 <SidebarTooltip
                   title={t("sidebar.shortcutCommands")}
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
-                    color="primary"
                     onClick={toggleShortcutCommands}
-                    sx={{
-                      bgcolor: shortcutCommandsOpen
-                        ? "action.selected"
-                        : "transparent",
-                      "&:hover": {
-                        bgcolor: shortcutCommandsOpen
-                          ? "action.selected"
-                          : "action.hover",
-                      },
-                    }}
+                    sx={(theme) =>
+                      sidebarRailButtonSx(theme, shortcutCommandsOpen)
+                    }
                     disabled={isSSHButtonDisabled}
-                  
-                    aria-label={t("sidebar.shortcutCommands")}>
+                    aria-label={t("sidebar.shortcutCommands")}
+                  >
                     <TerminalIcon />
                   </IconButton>
                 </SidebarTooltip>
 
-                {/* 历史命令按钮 */}
                 <SidebarTooltip
                   title={t("sidebar.history")}
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
-                    color="primary"
                     onClick={toggleCommandHistory}
-                    sx={{
-                      bgcolor: commandHistoryOpen
-                        ? "action.selected"
-                        : "transparent",
-                      "&:hover": {
-                        bgcolor: commandHistoryOpen
-                          ? "action.selected"
-                          : "action.hover",
-                      },
-                    }}
-                  
-                    aria-label={t("sidebar.history")}>
+                    sx={(theme) =>
+                      sidebarRailButtonSx(theme, commandHistoryOpen)
+                    }
+                    aria-label={t("sidebar.history")}
+                  >
                     <HistoryIcon />
                   </IconButton>
                 </SidebarTooltip>
 
-                {/* IP地址查询按钮 */}
+                <Box sx={sidebarRailDividerSx} />
+
+                {/* 中：工具 — 监控 / IP / 安全 / 本地 / 传输 */}
+                <SidebarTooltip
+                  title={t("sidebar.monitor")}
+                  placement={sidebarTooltipPlacement}
+                >
+                  <IconButton
+                    onClick={toggleResourceMonitor}
+                    sx={(theme) =>
+                      sidebarRailButtonSx(theme, resourceMonitorOpen)
+                    }
+                    aria-label={t("sidebar.monitor")}
+                  >
+                    <MonitorHeartIcon />
+                  </IconButton>
+                </SidebarTooltip>
+
                 <SidebarTooltip
                   title={t("sidebar.ipQuery")}
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
-                    color="primary"
                     onClick={toggleIpAddressQuery}
-                    sx={{
-                      bgcolor: ipAddressQueryOpen
-                        ? "action.selected"
-                        : "transparent",
-                      "&:hover": {
-                        bgcolor: ipAddressQueryOpen
-                          ? "action.selected"
-                          : "action.hover",
-                      },
-                    }}
-                  
-                    aria-label={t("sidebar.ipQuery")}>
+                    sx={(theme) =>
+                      sidebarRailButtonSx(theme, ipAddressQueryOpen)
+                    }
+                    aria-label={t("sidebar.ipQuery")}
+                  >
                     <PublicIcon />
                   </IconButton>
                 </SidebarTooltip>
 
-                {/* 安全工具按钮 */}
                 <SidebarTooltip
                   title={t("sidebar.securityTool")}
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
-                    color="primary"
                     onClick={toggleSecurityTools}
-                    sx={{
-                      bgcolor: securityToolsOpen
-                        ? "action.selected"
-                        : "transparent",
-                      "&:hover": {
-                        bgcolor: securityToolsOpen
-                          ? "action.selected"
-                          : "action.hover",
-                      },
-                    }}
-                  
-                    aria-label={t("sidebar.securityTool")}>
+                    sx={(theme) =>
+                      sidebarRailButtonSx(theme, securityToolsOpen)
+                    }
+                    aria-label={t("sidebar.securityTool")}
+                  >
                     <VpnKeyIcon />
                   </IconButton>
                 </SidebarTooltip>
 
-                {/* 分隔符 */}
-                <Box
-                  sx={{
-                    height: "1px",
-                    width: "30px",
-                    bgcolor: "divider",
-                    my: 1,
-                  }}
-                />
-
-                {/* 本地终端按钮 */}
                 <SidebarTooltip
                   title={t("sidebar.localTerminal")}
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
-                    color="primary"
                     onClick={toggleLocalTerminalSidebar}
-                    sx={{
-                      bgcolor: localTerminalSidebarOpen
-                        ? "action.selected"
-                        : "transparent",
-                      "&:hover": {
-                        bgcolor: localTerminalSidebarOpen
-                          ? "action.selected"
-                          : "action.hover",
-                      },
-                    }}
-                  
-                    aria-label={t("sidebar.localTerminal")}>
+                    sx={(theme) =>
+                      sidebarRailButtonSx(theme, localTerminalSidebarOpen)
+                    }
+                    aria-label={t("sidebar.localTerminal")}
+                  >
                     <ComputerIcon />
                   </IconButton>
                 </SidebarTooltip>
 
-                {/* 传输侧边栏按钮 - 仅在sidebar模式下显示 */}
                 {transferBarMode === "sidebar" && (
                   <TransferSidebarButton
                     ref={transferSidebarButtonRef}
@@ -4823,7 +4795,9 @@ function AppContent() {
                   />
                 )}
 
-                {/* AI助手按钮 */}
+                <Box sx={sidebarRailDividerSx} />
+
+                {/* 下：AI / 主题 / 位置切换 */}
                 <SidebarTooltip
                   title={
                     aiPanelOpen && aiApiReachable === false
@@ -4834,25 +4808,20 @@ function AppContent() {
                 >
                   <IconButton
                     ref={aiChatButtonRef}
-                    color="primary"
                     onClick={handleToggleGlobalAiChatWindow}
-                    sx={{
+                    sx={(theme) => ({
                       position: "relative",
-                      bgcolor:
-                        aiChatStatus === "visible"
-                          ? "action.selected"
-                          : "transparent",
-                      "&:hover": {
-                        bgcolor:
-                          aiChatStatus === "visible"
-                            ? "action.selected"
-                            : "action.hover",
-                      },
-                    }}
-                  
-                    aria-label={aiPanelOpen && aiApiReachable === false
-                      ? t("sidebar.aiApiUnreachable")
-                      : t("sidebar.ai")}>
+                      ...sidebarRailButtonSx(
+                        theme,
+                        aiChatStatus === "visible",
+                      ),
+                    })}
+                    aria-label={
+                      aiPanelOpen && aiApiReachable === false
+                        ? t("sidebar.aiApiUnreachable")
+                        : t("sidebar.ai")
+                    }
+                  >
                     <AIIcon />
                     {aiPanelOpen && (
                       <Box
@@ -4875,9 +4844,21 @@ function AppContent() {
                   </IconButton>
                 </SidebarTooltip>
 
+                <SidebarTooltip
+                  title={t("sidebar.theme")}
+                  placement={sidebarTooltipPlacement}
+                >
+                  <IconButton
+                    onClick={toggleTheme}
+                    sx={(theme) => sidebarRailButtonSx(theme, false)}
+                    aria-label={t("sidebar.theme")}
+                  >
+                    {darkMode ? <DarkModeIcon /> : <LightModeIcon />}
+                  </IconButton>
+                </SidebarTooltip>
+
                 <Box sx={{ flexGrow: 1 }} />
 
-                {/* 侧边栏左右切换按钮 */}
                 <SidebarTooltip
                   title={
                     sidebarPosition === "left"
@@ -4887,12 +4868,14 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
-                    color="primary"
                     onClick={handleToggleSidebarPosition}
-                  
-                    aria-label={sidebarPosition === "left"
-                      ? t("sidebar.moveToRight")
-                      : t("sidebar.moveToLeft")}>
+                    sx={(theme) => sidebarRailButtonSx(theme, false)}
+                    aria-label={
+                      sidebarPosition === "left"
+                        ? t("sidebar.moveToRight")
+                        : t("sidebar.moveToLeft")
+                    }
+                  >
                     {sidebarPosition === "left" ? (
                       <LastPageIcon />
                     ) : (

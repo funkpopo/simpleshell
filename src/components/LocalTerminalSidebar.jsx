@@ -14,18 +14,14 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  TextField,
   Tooltip,
   CircularProgress,
   Alert,
-  InputAdornment,
   Skeleton,
   Chip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import SearchIcon from "@mui/icons-material/Search";
-import ClearIcon from "@mui/icons-material/Clear";
 import { RiTerminalBoxLine } from "react-icons/ri";
 import {
   VscTerminalLinux,
@@ -41,6 +37,7 @@ import {
   sidebarTitleIconButtonSx,
 } from "./sidebarItemStyles";
 import SidebarPanel from "./SidebarPanel.jsx";
+import SidebarSearchField from "./SidebarSearchField.jsx";
 import useSidebarPanel from "../hooks/useSidebarPanel";
 import { useNotification } from "../contexts/NotificationContext";
 
@@ -68,7 +65,12 @@ const getTerminalIcon = (terminal) => {
   return iconMap[type] || <RiTerminalBoxLine size={20} />;
 };
 
-const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
+const LocalTerminalSidebar = ({
+  open,
+  onClose,
+  onLaunchTerminal,
+  sessionContext = null,
+}) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const [detectedTerminals, setDetectedTerminals] = useState([]);
@@ -497,7 +499,7 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
       rootRef={sidebarRef}
       title={t("localTerminal.title")}
       onClose={onClose}
-      elevation={3}
+      sessionContext={sessionContext}
       square={true}
       borderLeft={false}
       titleBarSx={{ gap: 1 }}
@@ -529,41 +531,15 @@ const LocalTerminalSidebar = ({ open, onClose, onLaunchTerminal }) => {
             variant="rectangular"
             width="100%"
             height={36}
-            sx={{ borderRadius: 2 }}
+            sx={{ borderRadius: "var(--radius-sm, 6px)" }}
           />
         ) : (
-          <TextField
-            ref={searchInputRef}
-            fullWidth
-            size="small"
+          <SidebarSearchField
+            inputRef={searchInputRef}
             placeholder={t("localTerminal.searchPlaceholder")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              ),
-              endAdornment: searchQuery && (
-                <InputAdornment position="end">
-                  <Tooltip title={t("common.clearSearch")}>
-                    <IconButton
-                      size="small"
-                      onClick={clearSearch}
-                      aria-label={t("common.clearSearch")}
-                    >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </InputAdornment>
-              ),
-            }}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                borderRadius: 2,
-              },
-            }}
+            onClear={clearSearch}
           />
         )}
       </Box>

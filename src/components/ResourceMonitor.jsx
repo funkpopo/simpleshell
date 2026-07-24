@@ -165,7 +165,7 @@ AccordionHeader.propTypes = {
 };
 
 // 资源监控组件
-const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
+const ResourceMonitor = memo(({ open, onClose, currentTabId, sessionContext = null }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const [systemInfo, setSystemInfo] = useState(null);
@@ -301,6 +301,7 @@ const ResourceMonitor = memo(({ open, onClose, currentTabId }) => {
       open={open}
       title={t("resourceMonitor.title")}
       onClose={onClose}
+      sessionContext={sessionContext}
       actions={
         <Tooltip title={t("common.refresh")} placement="top">
           <IconButton
@@ -634,6 +635,12 @@ ResourceMonitor.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   currentTabId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  sessionContext: PropTypes.shape({
+    host: PropTypes.string,
+    protocol: PropTypes.string,
+    quality: PropTypes.string,
+    cwd: PropTypes.string,
+  }),
 };
 
 export default ResourceMonitor;

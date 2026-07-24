@@ -23,14 +23,11 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  InputAdornment,
   CircularProgress,
   Checkbox,
   Tooltip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import ClearIcon from "@mui/icons-material/Clear";
-import SearchIcon from "@mui/icons-material/Search";
 import SendIcon from "@mui/icons-material/Send";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -44,6 +41,7 @@ import {
   sidebarListItemButtonSx,
 } from "./sidebarItemStyles";
 import SidebarPanel from "./SidebarPanel.jsx";
+import SidebarSearchField from "./SidebarSearchField.jsx";
 import useSidebarPanel from "../hooks/useSidebarPanel";
 import useContextMenuRetarget from "../hooks/useContextMenuRetarget";
 import { useNotification } from "../contexts/NotificationContext";
@@ -227,7 +225,7 @@ const HistoryItem = React.memo(
   },
 );
 
-function CommandHistory({ open, onClose, onSendCommand }) {
+function CommandHistory({ open, onClose, onSendCommand, sessionContext = null }) {
   const theme = useTheme();
   const { t } = useTranslation();
   const [history, setHistory] = useState([]);
@@ -600,43 +598,17 @@ function CommandHistory({ open, onClose, onSendCommand }) {
         rootRef={sidebarRootRef}
         title={t("commandHistory.title")}
         onClose={onClose}
+        sessionContext={sessionContext}
       >
         {/* 搜索栏和工具栏 */}
         <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}` }}>
-          <TextField
+          <SidebarSearchField
             inputRef={searchInputRef}
-            fullWidth
-            size="small"
             placeholder={t("commandHistory.search")}
             value={searchTerm}
             onChange={handleSearchChange}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-              endAdornment: searchTerm && (
-                <InputAdornment position="end">
-                  <Tooltip title={t("common.clearSearch")}>
-                    <IconButton
-                      size="small"
-                      onClick={() => setSearchTerm("")}
-                      edge="end"
-                      aria-label={t("common.clearSearch")}
-                    >
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </InputAdornment>
-              ),
-            }}
-            sx={{
-              mb: 2,
-              "& .MuiOutlinedInput-root": {
-                borderRadius: 2,
-              },
-            }}
+            onClear={() => setSearchTerm("")}
+            sx={{ mb: 2 }}
           />
 
           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>

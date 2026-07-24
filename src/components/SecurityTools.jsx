@@ -29,7 +29,7 @@ import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import KeyIcon from "@mui/icons-material/Key";
 import SidebarPanel from "./SidebarPanel.jsx";
 
-const RandomPasswordGenerator = ({ open, onClose }) => {
+const RandomPasswordGenerator = ({ open, onClose, sessionContext = null }) => {
   const { t } = useTranslation();
   const theme = useTheme();
 
@@ -183,6 +183,7 @@ const RandomPasswordGenerator = ({ open, onClose }) => {
       open={open}
       title={t("securityTools.title")}
       onClose={onClose}
+      sessionContext={sessionContext}
     >
       {/* 标签页 */}
       <Box sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}>

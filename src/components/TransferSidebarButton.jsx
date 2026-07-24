@@ -7,6 +7,7 @@ import { SwapVert } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
 import { sumTransferFileCount } from "../utils/transferCounts.js";
+import { sidebarRailButtonSx } from "./sidebarItemStyles";
 
 /**
  * 传输侧边栏按钮 - 带环形进度条
@@ -102,16 +103,12 @@ const TransferSidebarButton = memo(
           {/* 按钮 */}
           <IconButton
             onClick={onClick}
-            color="primary"
             size="small"
             aria-label={t("fileManager.transfer.panelTitle")}
             sx={{
               width: 32,
               height: 32,
-              bgcolor: isOpen ? "action.selected" : "transparent",
-              "&:hover": {
-                bgcolor: isOpen ? "action.selected" : "action.hover",
-              },
+              ...sidebarRailButtonSx(theme, isOpen),
             }}
           >
             <SwapVert
