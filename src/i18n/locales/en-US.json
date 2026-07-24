@@ -43,6 +43,7 @@
       "terminalAndLogs": "Terminal & Logs",
       "terminalFontFamily": "Terminal Font Family",
       "fontWeight": "Weight",
+      "terminalLineHeight": "Line Height",
       "terminalScrollbackLines": "Terminal Scrollback Lines",
       "terminalScrollbackHelper": "1000-500000; aligned with buffer usage metrics in performance monitoring",
       "transferDisplay": "File Transfer Display",
@@ -363,9 +364,12 @@
         "open": "Open search (Ctrl+/)",
         "placeholder": "Search...",
         "noMatches": "No matches",
-        "previous": "Find previous (Ctrl+,)",
-        "next": "Find next (Ctrl+.)",
-        "close": "Close search (Ctrl+/ or Esc)"
+        "previous": "Find previous (Ctrl+, / Shift+Enter)",
+        "next": "Find next (Ctrl+. / Enter)",
+        "close": "Close search (Ctrl+/ or Esc)",
+        "caseSensitive": "Match case",
+        "wholeWord": "Whole word",
+        "regex": "Regular expression"
       },
       "runtime": {
         "connecting": "Connecting to {{host}}...",

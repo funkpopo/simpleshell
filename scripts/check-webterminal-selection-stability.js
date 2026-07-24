@@ -8,6 +8,7 @@ const read = (relativePath) =>
 
 const webTerminal = read("src/components/WebTerminal.jsx");
 const webTerminalCss = read("src/components/WebTerminal.css");
+const terminalSurfaceCss = read("src/styles/terminal.css");
 const terminalDom = read("src/modules/terminal/controller/terminalDom.js");
 
 const forbiddenWebTerminalPatterns = [
@@ -46,6 +47,7 @@ const forbiddenSelectionCss = [
 
 for (const source of [
   ["WebTerminal.css", webTerminalCss],
+  ["styles/terminal.css", terminalSurfaceCss],
   ["terminalDom.js", terminalDom],
 ]) {
   const [name, content] = source;

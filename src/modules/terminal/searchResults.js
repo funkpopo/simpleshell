@@ -1,19 +1,107 @@
 const DEFAULT_SEARCH_OPTIONS = Object.freeze({
   caseSensitive: false,
+  regex: false,
+  wholeWord: false,
 });
 
 const normalizeSearchOptions = (options = {}) => ({
   ...DEFAULT_SEARCH_OPTIONS,
   ...options,
+  caseSensitive: Boolean(options.caseSensitive),
+  regex: Boolean(options.regex),
+  wholeWord: Boolean(options.wholeWord),
 });
 
-const normalizeSearchTerm = (term, options = DEFAULT_SEARCH_OPTIONS) => {
-  const searchTerm = typeof term === "string" ? term : "";
-  if (!searchTerm) {
-    return "";
+const isWordBoundaryChar = (char) => {
+  if (!char) {
+    return true;
+  }
+  return !/[0-9A-Za-z_]/.test(char);
+};
+
+const isWholeWordMatch = (lineText, startIndex, matchLength) => {
+  const before = startIndex > 0 ? lineText.charAt(startIndex - 1) : "";
+  const after =
+    startIndex + matchLength < lineText.length
+      ? lineText.charAt(startIndex + matchLength)
+      : "";
+  return isWordBoundaryChar(before) && isWordBoundaryChar(after);
+};
+
+const buildRegex = (term, options) => {
+  if (!term) {
+    return null;
   }
 
-  return options.caseSensitive ? searchTerm : searchTerm.toLowerCase();
+  try {
+    const source = options.regex
+      ? term
+      : term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const flags = options.caseSensitive ? "g" : "gi";
+    return new RegExp(source, flags);
+  } catch {
+    return null;
+  }
+};
+
+const findNextMatchIndex = (searchText, term, options, fromIndex = 0) => {
+  if (!term || !searchText) {
+    return -1;
+  }
+
+  if (options.regex) {
+    const regex = buildRegex(term, options);
+    if (!regex) {
+      return -1;
+    }
+    regex.lastIndex = Math.max(0, fromIndex);
+    const match = regex.exec(searchText);
+    if (!match || match[0] === "") {
+      return -1;
+    }
+    if (
+      options.wholeWord &&
+      !isWholeWordMatch(searchText, match.index, match[0].length)
+    ) {
+      return findNextMatchIndex(
+        searchText,
+        term,
+        options,
+        match.index + Math.max(1, match[0].length),
+      );
+    }
+    return match.index;
+  }
+
+  const haystack = options.caseSensitive
+    ? searchText
+    : searchText.toLowerCase();
+  const needle = options.caseSensitive ? term : term.toLowerCase();
+  let index = haystack.indexOf(needle, fromIndex);
+  while (index !== -1) {
+    if (!options.wholeWord || isWholeWordMatch(searchText, index, needle.length)) {
+      return index;
+    }
+    index = haystack.indexOf(needle, index + 1);
+  }
+  return -1;
+};
+
+const getMatchLength = (searchText, term, options, matchIndex) => {
+  if (options.regex) {
+    const regex = buildRegex(term, options);
+    if (!regex) {
+      return 0;
+    }
+    regex.lastIndex = matchIndex;
+    const match = regex.exec(searchText);
+    if (!match || match.index !== matchIndex) {
+      return 0;
+    }
+    return match[0].length;
+  }
+
+  return term.length;
 };
 
 const translateBufferLineToStringWithWrap = (buffer, startRow, trimRight) => {
@@ -108,12 +196,16 @@ const collectTerminalSearchMatches = (term, rawTerm, options = {}) => {
   }
 
   const searchOptions = normalizeSearchOptions(options);
-  const normalizedSearchTerm = normalizeSearchTerm(rawTerm, searchOptions);
-  if (!normalizedSearchTerm) {
+  const searchTerm = typeof rawTerm === "string" ? rawTerm : "";
+  if (!searchTerm) {
     return [];
   }
 
-  const searchTermLength = normalizedSearchTerm.length;
+  // Invalid regex should yield no matches (matches SearchAddon behavior).
+  if (searchOptions.regex && !buildRegex(searchTerm, searchOptions)) {
+    return [];
+  }
+
   const terminalCols = Number.isFinite(term?.cols) ? term.cols : 0;
   const searchableBufferLength = getSearchableBufferLength(term, buffer);
   const matches = [];
@@ -130,10 +222,19 @@ const collectTerminalSearchMatches = (term, rawTerm, options = {}) => {
 
     const { text, lineCount, lineOffsets } =
       translateBufferLineToStringWithWrap(buffer, row, true);
-    const searchText = searchOptions.caseSensitive ? text : text.toLowerCase();
 
-    let resultIndex = searchText.indexOf(normalizedSearchTerm);
+    let resultIndex = findNextMatchIndex(text, searchTerm, searchOptions, 0);
     while (resultIndex !== -1) {
+      const matchLength = getMatchLength(
+        text,
+        searchTerm,
+        searchOptions,
+        resultIndex,
+      );
+      if (matchLength <= 0) {
+        break;
+      }
+
       let startRowOffset = 0;
       while (
         startRowOffset < lineOffsets.length - 1 &&
@@ -145,14 +246,14 @@ const collectTerminalSearchMatches = (term, rawTerm, options = {}) => {
       let endRowOffset = startRowOffset;
       while (
         endRowOffset < lineOffsets.length - 1 &&
-        resultIndex + searchTermLength >= lineOffsets[endRowOffset + 1]
+        resultIndex + matchLength >= lineOffsets[endRowOffset + 1]
       ) {
         endRowOffset += 1;
       }
 
       const startColOffset = resultIndex - lineOffsets[startRowOffset];
       const endColOffset =
-        resultIndex + searchTermLength - lineOffsets[endRowOffset];
+        resultIndex + matchLength - lineOffsets[endRowOffset];
       const startCol = stringLengthToBufferSize(
         buffer,
         row + startRowOffset,
@@ -174,7 +275,12 @@ const collectTerminalSearchMatches = (term, rawTerm, options = {}) => {
           terminalCols * Math.max(0, endRowOffset - startRowOffset),
       });
 
-      resultIndex = searchText.indexOf(normalizedSearchTerm, resultIndex + 1);
+      resultIndex = findNextMatchIndex(
+        text,
+        searchTerm,
+        searchOptions,
+        resultIndex + Math.max(1, matchLength),
+      );
     }
 
     row += lineCount - 1;

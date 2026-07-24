@@ -65,6 +65,11 @@ import {
   processMultilineInput,
   shouldChunkInputPayload,
 } from "../modules/terminal/controller/terminalInput.js";
+import {
+  DEFAULT_TERMINAL_LINE_HEIGHT,
+  getTerminalTheme,
+  normalizeTerminalLineHeight,
+} from "../modules/terminal/terminalTheme.js";
 import { useTranslation } from "react-i18next";
 import {
   FIRA_CODE_FONT_FAMILY,
@@ -632,12 +637,18 @@ const WebTerminal = ({
     searchTerm,
     searchResults,
     noMatchFound,
+    caseSensitive,
+    useRegex,
+    wholeWord,
     setSearchTerm,
     handleSearch,
     handleSearchPrevious,
     openSearchBar,
     closeSearchBar,
     toggleSearchBar,
+    toggleCaseSensitive,
+    toggleRegex,
+    toggleWholeWord,
   } = useTerminalSearch({
     searchAddonRef,
     termRef,
@@ -1754,40 +1765,8 @@ const WebTerminal = ({
     }
   };
 
-  // 定义响应主题模式的终端主题
-  const terminalTheme = {
-    // 现代化背景色 - 深色更深，浅色更柔和
-    background: theme.palette.mode === "light" ? "#f6f8fa" : "#1e1e1e",
-    // 文本颜色 - 提高对比度
-    foreground: theme.palette.mode === "light" ? "#24292f" : "#e6edf3",
-    // 光标颜色 - 更醒目
-    cursor: theme.palette.mode === "light" ? "#0969da" : "#58a6ff",
-    cursorAccent: theme.palette.mode === "light" ? "#f3f4f6" : "#0d1117",
-    // 选择高亮 - 优化可见度，日间和夜间模式下都有足够的对比度
-    selectionBackground:
-      theme.palette.mode === "light"
-        ? "rgba(79, 126, 255, 0.43)"
-        : "rgba(212, 253, 62, 0.49)",
-    selectionForeground: undefined,
-    // ANSI颜色 - 现代化配色方案（参考GitHub/VSCode主题）
-    black: theme.palette.mode === "light" ? "#24292f" : "#484f58",
-    red: theme.palette.mode === "light" ? "#cf222e" : "#ff7b72",
-    green: theme.palette.mode === "light" ? "#116329" : "#3fb950",
-    yellow: theme.palette.mode === "light" ? "#9a6700" : "#d29922",
-    blue: theme.palette.mode === "light" ? "#0969da" : "#58a6ff",
-    magenta: theme.palette.mode === "light" ? "#8250df" : "#bc8cff",
-    cyan: theme.palette.mode === "light" ? "#1b7c83" : "#39c5cf",
-    white: theme.palette.mode === "light" ? "#6e7781" : "#b1bac4",
-    // 亮色版本 - 更高饱和度
-    brightBlack: theme.palette.mode === "light" ? "#57606a" : "#6e7681",
-    brightRed: theme.palette.mode === "light" ? "#d1242f" : "#ffa198",
-    brightGreen: theme.palette.mode === "light" ? "#1a7f37" : "#56d364",
-    brightYellow: theme.palette.mode === "light" ? "#bf8700" : "#e3b341",
-    brightBlue: theme.palette.mode === "light" ? "#218bff" : "#79c0ff",
-    brightMagenta: theme.palette.mode === "light" ? "#a371f7" : "#d2a8ff",
-    brightCyan: theme.palette.mode === "light" ? "#3192aa" : "#56d4dd",
-    brightWhite: theme.palette.mode === "light" ? "#8c959f" : "#f0f6fc",
-  };
+  // 终端主题与 UI token 对齐（见 terminalTheme.js / theme-variables.css）
+  const terminalTheme = getTerminalTheme(theme.palette.mode);
 
   // 获取存储的字体大小和字体族或使用默认值
   const getFontSettings = async () => {
@@ -1810,6 +1789,7 @@ const WebTerminal = ({
             settings.terminalFont || "Fira Code",
           ),
           fontWeight: settings.terminalFontWeight || 500,
+          lineHeight: normalizeTerminalLineHeight(settings.terminalLineHeight),
           terminalScrollbackLines,
         };
       }
@@ -1822,6 +1802,7 @@ const WebTerminal = ({
       fontSize: 14,
       fontFamily: getTerminalFontFamily("Fira Code"),
       fontWeight: 500,
+      lineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
       terminalScrollbackLines: 50000,
     };
   };
@@ -1868,6 +1849,7 @@ const WebTerminal = ({
         terminalFontSize,
         terminalFont,
         terminalFontWeight,
+        terminalLineHeight,
         performance,
         terminalScrollbackLines,
       } = event.detail;
@@ -1926,6 +1908,10 @@ const WebTerminal = ({
             terminalFontWeight,
             10,
           );
+        }
+        if (terminalLineHeight !== undefined) {
+          terminalCache[tabId].options.lineHeight =
+            normalizeTerminalLineHeight(terminalLineHeight);
         }
 
         // 使用EventManager管理定时器
@@ -2110,7 +2096,7 @@ const WebTerminal = ({
           selectionScrollSpeed: 5,
           fastScrollModifier: "shift",
           letterSpacing: 0,
-          lineHeight: 1.0, // 优化行高，提高可读性
+          lineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
           macOptionIsMeta: false,
           macOptionClickForcesSelection: false,
         });
@@ -2122,6 +2108,7 @@ const WebTerminal = ({
             term.options.fontSize = fontSettings.fontSize;
             term.options.fontFamily = fontSettings.fontFamily;
             term.options.fontWeight = fontSettings.fontWeight;
+            term.options.lineHeight = fontSettings.lineHeight;
             const scrollLines = fontSettings.terminalScrollbackLines || 50000;
             term.options.scrollback = scrollLines;
             if (scrollbackUsageTrackerRef.current) {
@@ -2773,6 +2760,8 @@ const WebTerminal = ({
             ";", // Ctrl+; 复制
             "'", // Ctrl+' 粘贴
             "g", // 搜索导航
+            "l", // Ctrl+L 清空
+            "L", // Ctrl+L 清空
           ];
 
           const isAllowedKey =
@@ -2782,7 +2771,8 @@ const WebTerminal = ({
             (e.key === "," && e.ctrlKey) || // Ctrl+,
             (e.key === "." && e.ctrlKey) || // Ctrl+.
             (e.key === ";" && e.ctrlKey) || // Ctrl+;
-            (e.key === "'" && e.ctrlKey); // Ctrl+'
+            (e.key === "'" && e.ctrlKey) || // Ctrl+'
+            (e.key.toLowerCase?.() === "l" && e.ctrlKey); // Ctrl+L
 
           if (!isAllowedKey) {
             return;
@@ -2810,6 +2800,13 @@ const WebTerminal = ({
           window.clipboardAPI.readText().then((text) => {
             handlePasteText(text);
           });
+        }
+        // Ctrl+L 清空终端（与右键菜单一致）
+        else if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "l") {
+          if (!isActiveRef.current) return;
+          e.preventDefault();
+          e.stopPropagation();
+          term.clear();
         }
         // Ctrl+/ 搜索切换 (打开/关闭搜索栏)
         else if (e.ctrlKey && e.key === "/") {
@@ -3564,8 +3561,7 @@ const WebTerminal = ({
   // 监听主题变化并更新终端主题
   useEffect(() => {
     if (terminalCache[tabId]) {
-      // 更新主题
-      terminalCache[tabId].options.theme = terminalTheme;
+      terminalCache[tabId].options.theme = getTerminalTheme(theme.palette.mode);
     }
   }, [theme.palette.mode, tabId]);
 
@@ -3844,11 +3840,17 @@ const WebTerminal = ({
           searchTerm={searchTerm}
           searchResults={searchResults}
           noMatchFound={noMatchFound}
+          caseSensitive={caseSensitive}
+          useRegex={useRegex}
+          wholeWord={wholeWord}
           onOpenSearch={openSearchBar}
           onCloseSearch={closeSearchBar}
           onSearchTermChange={setSearchTerm}
           onSearchNext={handleSearch}
           onSearchPrevious={handleSearchPrevious}
+          onToggleCaseSensitive={toggleCaseSensitive}
+          onToggleRegex={toggleRegex}
+          onToggleWholeWord={toggleWholeWord}
         />
       </div>
       <WebTerminalContextMenu

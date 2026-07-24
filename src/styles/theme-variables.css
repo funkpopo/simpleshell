@@ -76,6 +76,25 @@
   --float-bg: rgba(255, 255, 255, 0.95);
   --float-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
 
+  /* 终端表面 token（与 xterm theme / terminal.css 对齐） */
+  --terminal-bg: var(--color-bg-paper);
+  --terminal-fg: var(--color-text-primary);
+  --terminal-cursor: var(--color-primary-main);
+  --terminal-cursor-accent: var(--color-bg-paper);
+  --terminal-selection: rgba(25, 118, 210, 0.28);
+  --terminal-selection-inactive: rgba(25, 118, 210, 0.16);
+  --terminal-focus-ring: var(--color-focus);
+  --terminal-link: rgba(25, 118, 210, 0.55);
+  --terminal-link-active: rgba(25, 118, 210, 1);
+  --terminal-link-hover-bg: rgba(25, 118, 210, 0.1);
+  --terminal-find-match: rgba(25, 118, 210, 0.22);
+  --terminal-find-match-border: rgba(25, 118, 210, 0.28);
+  --terminal-find-active: rgba(25, 118, 210, 0.34);
+  --terminal-find-active-border: rgba(25, 118, 210, 0.45);
+  --terminal-find-ruler: rgba(25, 118, 210, 0.72);
+  --terminal-search-glass-bg: rgba(255, 255, 255, 0.82);
+  --terminal-search-glass-border: rgba(25, 118, 210, 0.22);
+
   /* 主题切换过渡 */
   --theme-transition-duration: 0.4s;
   --theme-transition-easing: cubic-bezier(0.4, 0, 0.2, 1);
@@ -148,6 +167,25 @@
   /* 浮动对话框毛玻璃 */
   --float-bg: rgba(30, 30, 30, 0.95);
   --float-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+
+  /* 终端表面 token（与 xterm theme / terminal.css 对齐） */
+  --terminal-bg: var(--color-bg-paper);
+  --terminal-fg: var(--color-text-primary);
+  --terminal-cursor: var(--color-primary-main);
+  --terminal-cursor-accent: var(--color-bg-default);
+  --terminal-selection: rgba(144, 202, 249, 0.32);
+  --terminal-selection-inactive: rgba(144, 202, 249, 0.18);
+  --terminal-focus-ring: var(--color-focus);
+  --terminal-link: rgba(144, 202, 249, 0.55);
+  --terminal-link-active: rgba(144, 202, 249, 1);
+  --terminal-link-hover-bg: rgba(144, 202, 249, 0.12);
+  --terminal-find-match: rgba(72, 132, 214, 0.28);
+  --terminal-find-match-border: rgba(148, 196, 255, 0.34);
+  --terminal-find-active: rgba(92, 156, 255, 0.36);
+  --terminal-find-active-border: rgba(220, 236, 255, 0.8);
+  --terminal-find-ruler: rgba(124, 184, 255, 0.78);
+  --terminal-search-glass-bg: rgba(30, 30, 30, 0.88);
+  --terminal-search-glass-border: rgba(144, 202, 249, 0.28);
 
   /* 主题切换过渡 */
   --theme-transition-duration: 0.4s;

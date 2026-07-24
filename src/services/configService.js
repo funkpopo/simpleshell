@@ -173,6 +173,12 @@ class ConfigService {
           maximum: 30,
           default: 14,
         },
+        terminalLineHeight: {
+          type: "number",
+          minimum: 1.0,
+          maximum: 1.4,
+          default: 1.2,
+        },
         performance: { type: "object", default: {} },
         externalEditor: { type: "object", default: {} },
         desktopIntegration: {
@@ -417,6 +423,7 @@ class ConfigService {
         sidebarPosition: "right",
         terminalFont: "Fira Code",
         terminalFontSize: 14,
+        terminalLineHeight: 1.2,
         performance: {},
         externalEditor: {},
         desktopIntegration: {
@@ -1453,6 +1460,7 @@ class ConfigService {
       sidebarPosition: "right",
       terminalFont: "Fira Code",
       terminalFontSize: 14,
+      terminalLineHeight: 1.2,
       performance: {},
       externalEditor: {},
       desktopIntegration: {

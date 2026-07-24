@@ -14,6 +14,12 @@ const SEARCH_DECORATIONS = Object.freeze({
   activeMatchColorOverviewRuler: "#FFB020",
 });
 
+const DEFAULT_SEARCH_OPTIONS = Object.freeze({
+  caseSensitive: false,
+  regex: false,
+  wholeWord: false,
+});
+
 export const useTerminalSearch = ({
   searchAddonRef,
   termRef,
@@ -23,11 +29,38 @@ export const useTerminalSearch = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState(EMPTY_SEARCH_RESULTS);
   const [noMatchFound, setNoMatchFound] = useState(false);
+  const [caseSensitive, setCaseSensitive] = useState(
+    DEFAULT_SEARCH_OPTIONS.caseSensitive,
+  );
+  const [useRegex, setUseRegex] = useState(DEFAULT_SEARCH_OPTIONS.regex);
+  const [wholeWord, setWholeWord] = useState(DEFAULT_SEARCH_OPTIONS.wholeWord);
+
   const searchTermRef = useRef(searchTerm);
+  const searchOptionsRef = useRef({
+    caseSensitive,
+    regex: useRegex,
+    wholeWord,
+  });
 
   useEffect(() => {
     searchTermRef.current = searchTerm;
   }, [searchTerm]);
+
+  useEffect(() => {
+    searchOptionsRef.current = {
+      caseSensitive,
+      regex: useRegex,
+      wholeWord,
+    };
+  }, [caseSensitive, useRegex, wholeWord]);
+
+  const getSearchOptions = useCallback(
+    () => ({
+      ...searchOptionsRef.current,
+      decorations: SEARCH_DECORATIONS,
+    }),
+    [],
+  );
 
   const clearSearchState = useCallback(
     ({ clearSelection = false } = {}) => {
@@ -63,7 +96,11 @@ export const useTerminalSearch = ({
         };
       }
 
-      const matches = collectTerminalSearchMatches(terminal, term);
+      const matches = collectTerminalSearchMatches(
+        terminal,
+        term,
+        searchOptionsRef.current,
+      );
       const currentIndex = findSelectedTerminalSearchMatchIndex(
         terminal,
         matches,
@@ -105,7 +142,7 @@ export const useTerminalSearch = ({
 
       try {
         const searchOptions = {
-          decorations: SEARCH_DECORATIONS,
+          ...getSearchOptions(),
           incremental: direction === "next" && options.incremental === true,
         };
         const found =
@@ -121,7 +158,7 @@ export const useTerminalSearch = ({
         return false;
       }
     },
-    [clearSearchState, refreshSearchState, searchAddonRef],
+    [clearSearchState, getSearchOptions, refreshSearchState, searchAddonRef],
   );
 
   const handleSearch = useCallback(() => runSearch("next"), [runSearch]);
@@ -143,6 +180,18 @@ export const useTerminalSearch = ({
     setShowSearchBar((prev) => !prev);
   }, []);
 
+  const toggleCaseSensitive = useCallback(() => {
+    setCaseSensitive((prev) => !prev);
+  }, []);
+
+  const toggleRegex = useCallback(() => {
+    setUseRegex((prev) => !prev);
+  }, []);
+
+  const toggleWholeWord = useCallback(() => {
+    setWholeWord((prev) => !prev);
+  }, []);
+
   useEffect(() => {
     if (!searchTerm) {
       clearSearchState({ clearSelection: true });
@@ -150,7 +199,15 @@ export const useTerminalSearch = ({
     }
 
     runSearch("next", { incremental: true });
-  }, [clearSearchState, runSearch, searchAddonVersion, searchTerm]);
+  }, [
+    caseSensitive,
+    clearSearchState,
+    runSearch,
+    searchAddonVersion,
+    searchTerm,
+    useRegex,
+    wholeWord,
+  ]);
 
   useEffect(() => {
     const searchAddon = searchAddonRef.current;
@@ -174,11 +231,17 @@ export const useTerminalSearch = ({
     searchTerm,
     searchResults,
     noMatchFound,
+    caseSensitive,
+    useRegex,
+    wholeWord,
     setSearchTerm,
     handleSearch,
     handleSearchPrevious,
     openSearchBar,
     closeSearchBar,
     toggleSearchBar,
+    toggleCaseSensitive,
+    toggleRegex,
+    toggleWholeWord,
   };
 };

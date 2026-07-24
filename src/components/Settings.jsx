@@ -162,6 +162,7 @@ const Settings = memo(({ open, onClose }) => {
   const [terminalFont, setTerminalFont] = React.useState("Fira Code");
   const [terminalFontSize, setTerminalFontSize] = React.useState(14);
   const [terminalFontWeight, setTerminalFontWeight] = React.useState(500);
+  const [terminalLineHeight, setTerminalLineHeight] = React.useState(1.2);
   const [terminalScrollbackLines, setTerminalScrollbackLines] =
     React.useState(50000);
   const [darkMode, setDarkMode] = React.useState(true);
@@ -228,6 +229,12 @@ const Settings = memo(({ open, onClose }) => {
             setTerminalFont(settings.terminalFont || "Fira Code");
             setTerminalFontSize(settings.terminalFontSize || 14);
             setTerminalFontWeight(settings.terminalFontWeight || 500);
+            const rawLineHeight = Number(settings.terminalLineHeight);
+            setTerminalLineHeight(
+              Number.isFinite(rawLineHeight)
+                ? Math.min(1.4, Math.max(1.0, Math.round(rawLineHeight * 100) / 100))
+                : 1.2,
+            );
             const rawSb = Number(settings.terminalScrollbackLines);
             setTerminalScrollbackLines(
               Number.isFinite(rawSb)
@@ -556,6 +563,13 @@ const Settings = memo(({ open, onClose }) => {
           terminalFont,
           terminalFontSize,
           terminalFontWeight,
+          terminalLineHeight: Math.min(
+            1.4,
+            Math.max(
+              1.0,
+              Math.round((Number(terminalLineHeight) || 1.2) * 100) / 100,
+            ),
+          ),
           terminalScrollbackLines: Math.min(
             500000,
             Math.max(
@@ -632,6 +646,13 @@ const Settings = memo(({ open, onClose }) => {
             terminalFont,
             terminalFontSize,
             terminalFontWeight,
+            terminalLineHeight: Math.min(
+              1.4,
+              Math.max(
+                1.0,
+                Math.round((Number(terminalLineHeight) || 1.2) * 100) / 100,
+              ),
+            ),
             terminalScrollbackLines: Math.min(
               500000,
               Math.max(
@@ -1068,6 +1089,45 @@ const Settings = memo(({ open, onClose }) => {
                               style: { textAlign: "center" },
                             }}
                             sx={{ width: 64 }}
+                          />
+                        </Box>
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.5,
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            sx={{ minWidth: 52, fontSize: "0.8rem" }}
+                          >
+                            {t("settings.terminalLineHeight")}
+                          </Typography>
+                          <Slider
+                            value={terminalLineHeight}
+                            onChange={(_event, value) => {
+                              const next = Array.isArray(value)
+                                ? value[0]
+                                : value;
+                              setTerminalLineHeight(
+                                Math.round(Number(next) * 100) / 100,
+                              );
+                            }}
+                            min={1.0}
+                            max={1.4}
+                            step={0.05}
+                            marks={[
+                              { value: 1.0, label: "1.0" },
+                              { value: 1.2, label: "1.2" },
+                              { value: 1.4, label: "1.4" },
+                            ]}
+                            size="small"
+                            sx={{ flex: 1 }}
+                            valueLabelDisplay="auto"
                           />
                         </Box>
                       </Box>

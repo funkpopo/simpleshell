@@ -43,6 +43,7 @@
       "terminalAndLogs": "终端与日志",
       "terminalFontFamily": "终端字体族",
       "fontWeight": "粗细",
+      "terminalLineHeight": "行高",
       "terminalScrollbackLines": "终端回滚行数",
       "terminalScrollbackHelper": "1000-500000；与性能监控中的缓冲占用统计一致",
       "transferDisplay": "文件传输显示",
@@ -363,9 +364,12 @@
         "open": "打开搜索 (Ctrl+/)",
         "placeholder": "搜索...",
         "noMatches": "无匹配结果",
-        "previous": "查找上一个 (Ctrl+,)",
-        "next": "查找下一个 (Ctrl+.)",
-        "close": "关闭搜索 (Ctrl+/ 或 Esc)"
+        "previous": "查找上一个 (Ctrl+, / Shift+Enter)",
+        "next": "查找下一个 (Ctrl+. / Enter)",
+        "close": "关闭搜索 (Ctrl+/ 或 Esc)",
+        "caseSensitive": "区分大小写",
+        "wholeWord": "全词匹配",
+        "regex": "正则表达式"
       },
       "runtime": {
         "connecting": "正在连接到 {{host}}...",
