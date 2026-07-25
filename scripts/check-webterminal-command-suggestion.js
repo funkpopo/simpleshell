@@ -1,12 +1,10 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
 const path = require("node:path");
-
-const ROOT = path.resolve(__dirname, "..");
-
-function readSource(relativePath) {
-  return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
-}
+const {
+  ROOT,
+  collectWebTerminalSources,
+  readSource,
+} = require("./lib/webterminal-sources.js");
 
 const {
   IPC_REQUEST_CHANNELS,
@@ -24,7 +22,7 @@ const {
   shouldResumePromptTrackingOnInput,
 } = require(path.join(ROOT, "src/modules/terminal/commandSuggestionState.js"));
 
-const webTerminalSource = readSource("src/components/WebTerminal.jsx");
+const webTerminalSource = collectWebTerminalSources();
 const commandSuggestionSource = readSource(
   "src/components/CommandSuggestion.jsx",
 );

@@ -1,20 +1,24 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const {
+  collectWebTerminalSources,
+  readSource,
+} = require("./lib/webterminal-sources.js");
 
 const repoRoot = path.resolve(__dirname, "..");
 const read = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
-const webTerminal = read("src/components/WebTerminal.jsx");
+const webTerminal = collectWebTerminalSources();
 const terminalSurfaceCss = read("src/styles/terminal.css");
 const themeVariables = read("src/styles/theme-variables.css");
 const terminalTheme = read("src/modules/terminal/terminalTheme.js");
-const searchOverlay = read(
+const searchOverlay = readSource(
   "src/components/web-terminal/WebTerminalSearchOverlay.jsx",
 );
 const searchHook = read("src/hooks/useTerminalSearch.js");
-const contextMenu = read(
+const contextMenu = readSource(
   "src/components/web-terminal/WebTerminalContextMenu.jsx",
 );
 

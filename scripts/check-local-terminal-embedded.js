@@ -11,7 +11,10 @@ const handlerSource = read("src/core/ipc/handlers/localTerminalHandlers.js");
 const channelSource = read("src/core/ipc/schema/channels.js");
 const preloadSource = read("src/preload.js");
 const appSource = read("src/app.jsx");
-const webTerminalSource = read("src/components/WebTerminal.jsx");
+const {
+  collectWebTerminalSources,
+} = require("./lib/webterminal-sources.js");
+const webTerminalSource = collectWebTerminalSources();
 const sidebarSource = read("src/components/LocalTerminalSidebar.jsx");
 const webpackMainSource = read("webpack.main.config.js");
 const forgeConfigSource = read("forge.config.js");
