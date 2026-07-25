@@ -95,6 +95,17 @@
   --terminal-search-glass-bg: rgba(255, 255, 255, 0.82);
   --terminal-search-glass-border: rgba(25, 118, 210, 0.22);
 
+  /* Command block gutter (P1) */
+  --terminal-block-gutter-width: 22px;
+  --terminal-block-running: var(--color-info);
+  --terminal-block-success: var(--color-success);
+  --terminal-block-failed: var(--color-error);
+  --terminal-block-cancelled: var(--color-warning);
+  --terminal-block-unknown: var(--color-text-secondary);
+  --terminal-block-span: rgba(25, 118, 210, 0.28);
+  --terminal-block-actions-bg: rgba(255, 255, 255, 0.92);
+  --terminal-block-actions-border: rgba(25, 118, 210, 0.18);
+
   /* 主题切换过渡 */
   --theme-transition-duration: 0.4s;
   --theme-transition-easing: cubic-bezier(0.4, 0, 0.2, 1);
@@ -186,6 +197,17 @@
   --terminal-find-ruler: rgba(124, 184, 255, 0.78);
   --terminal-search-glass-bg: rgba(30, 30, 30, 0.88);
   --terminal-search-glass-border: rgba(144, 202, 249, 0.28);
+
+  /* Command block gutter (P1) */
+  --terminal-block-gutter-width: 22px;
+  --terminal-block-running: var(--color-info);
+  --terminal-block-success: var(--color-success);
+  --terminal-block-failed: var(--color-error);
+  --terminal-block-cancelled: var(--color-warning);
+  --terminal-block-unknown: var(--color-text-secondary);
+  --terminal-block-span: rgba(144, 202, 249, 0.32);
+  --terminal-block-actions-bg: rgba(30, 30, 30, 0.92);
+  --terminal-block-actions-border: rgba(144, 202, 249, 0.22);
 
   /* 主题切换过渡 */
   --theme-transition-duration: 0.4s;

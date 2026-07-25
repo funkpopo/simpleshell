@@ -35,6 +35,7 @@ export function usePromptTracking({
   sendInputToProcess,
   enqueueInputToProcess,
   suggestionApi,
+  commandBlockCallbacks = null,
 }) {
   const [, setInEditorMode] = useState(false);
   const [, setIsCommandExecuting] = useState(false);
@@ -48,6 +49,11 @@ export function usePromptTracking({
   // listeners never capture a stale object identity from render N.
   const suggestionApiRef = useRef(suggestionApi);
   suggestionApiRef.current = suggestionApi;
+
+  // Command-block boundary callbacks (P1 logical blocks). Ref-bound so
+  // setupCommandDetection never freezes a stale closure.
+  const commandBlockCallbacksRef = useRef(commandBlockCallbacks);
+  commandBlockCallbacksRef.current = commandBlockCallbacks;
 
   // Coalesce cursor + suggestion refresh (replaces paired setTimeout 10/16).
   // Delay is intentional: xterm must process the keystroke before we measure
@@ -131,10 +137,16 @@ export function usePromptTracking({
         ? previousInEditorMode
         : normalizedInEditorMode,
     );
+    try {
+      commandBlockCallbacksRef.current?.onLayout?.();
+    } catch {
+      /* intentionally ignored */
+    }
   }, [inEditorModeRef]);
 
   const applyPromptTrackingState = useCallback((nextState = {}) => {
     const state = promptTrackingStateRef.current;
+    const wasCommandExecuting = state.commandRunning && !state.promptReady;
     let promptStateChanged = false;
     let commandRunningChanged = false;
 
@@ -159,8 +171,19 @@ export function usePromptTracking({
         state.commandRunning && !state.promptReady;
       isCommandExecutingRef.current = nextIsCommandExecuting;
       setIsCommandExecuting(nextIsCommandExecuting);
+
+      // Command block boundary: running → prompt ready closes the open block.
+      if (wasCommandExecuting && state.promptReady && !state.commandRunning) {
+        try {
+          commandBlockCallbacksRef.current?.onCommandEnd?.({
+            term: termRef.current,
+          });
+        } catch {
+          /* intentionally ignored */
+        }
+      }
     }
-  }, []);
+  }, [termRef]);
 
   const resetPromptTracking = useCallback(() => {
     promptTrackingStateRef.current = createPromptTrackingState();
@@ -172,6 +195,12 @@ export function usePromptTracking({
 
     isCommandExecutingRef.current = false;
     setIsCommandExecuting(false);
+
+    try {
+      commandBlockCallbacksRef.current?.onReset?.();
+    } catch {
+      /* intentionally ignored */
+    }
   }, [termRef]);
 
   const resumePromptTrackingForSuggestionInput = useCallback(
@@ -544,6 +573,17 @@ export function usePromptTracking({
           return;
         }
 
+        // Ctrl+C while a command is running → mark block cancelled (soft).
+        if (data === "\x03") {
+          try {
+            if (promptTrackingStateRef.current.commandRunning) {
+              commandBlockCallbacksRef.current?.onCommandInterrupt?.();
+            }
+          } catch {
+            /* intentionally ignored */
+          }
+        }
+
         if (data === "\b" || data === "\x7f") {
           if (
             canTrackPromptInput &&
@@ -712,6 +752,21 @@ export function usePromptTracking({
               promptReady: false,
               commandRunning: true,
             });
+
+            // Open a logical command block at the submit boundary (P1).
+            // Keep pendingCommandBoundary long enough for history commit, then
+            // clear; the block store owns the running lifetime separately.
+            if (command && !inEditorMode) {
+              try {
+                commandBlockCallbacksRef.current?.onCommandStart?.({
+                  command,
+                  term,
+                });
+              } catch {
+                /* intentionally ignored */
+              }
+            }
+
             commitExecutedCommand();
             suggestionSelectedRef.current = false;
             pendingCommandBoundaryRef.current = {

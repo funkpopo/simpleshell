@@ -21,6 +21,8 @@ import { useTerminalClipboard } from "./web-terminal/useTerminalClipboard.js";
 import { useTerminalContextMenu } from "./web-terminal/useTerminalContextMenu.js";
 import { useTerminalLifecycle } from "./web-terminal/useTerminalLifecycle.js";
 import { useTerminalSessionEvents } from "./web-terminal/useTerminalSessionEvents.js";
+import { useCommandBlocks } from "./web-terminal/blocks/useCommandBlocks.js";
+import CommandBlockGutter from "./web-terminal/blocks/CommandBlockGutter.jsx";
 
 const WebTerminal = ({
   tabId,
@@ -239,6 +241,23 @@ const WebTerminal = ({
   };
 
   const {
+    gutterItems,
+    gutterHidden,
+    commandBlockCallbacks,
+    toggleFold,
+    copyCommand,
+    rerunCommand,
+  } = useCommandBlocks({
+    tabId,
+    termRef,
+    terminalRef,
+    inEditorModeRef,
+    currentProcessId,
+    sendInputToProcess,
+    isActive,
+  });
+
+  const {
     resetPromptTracking,
     syncPromptTrackingFromTerminal,
     recoverTerminalInteractionState,
@@ -258,6 +277,7 @@ const WebTerminal = ({
     sendInputToProcess,
     enqueueInputToProcess,
     suggestionApi,
+    commandBlockCallbacks,
   });
 
   const recoverTerminalInteractionStateBound = useCallback(
@@ -481,6 +501,14 @@ const WebTerminal = ({
             height: "100%",
             padding: "0 0 0 0",
           }}
+        />
+
+        <CommandBlockGutter
+          items={gutterItems}
+          hidden={gutterHidden || !isActive}
+          onToggleFold={toggleFold}
+          onCopy={copyCommand}
+          onRerun={rerunCommand}
         />
 
         <WebTerminalSearchOverlay

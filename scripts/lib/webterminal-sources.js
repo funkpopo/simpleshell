@@ -20,6 +20,9 @@ const WEB_TERMINAL_SOURCE_FILES = [
   "src/components/web-terminal/useTerminalSessionEvents.js",
   "src/components/web-terminal/WebTerminalSearchOverlay.jsx",
   "src/components/web-terminal/WebTerminalContextMenu.jsx",
+  "src/components/web-terminal/blocks/commandBlockModel.js",
+  "src/components/web-terminal/blocks/useCommandBlocks.js",
+  "src/components/web-terminal/blocks/CommandBlockGutter.jsx",
 ];
 
 function readSource(relativePath) {
