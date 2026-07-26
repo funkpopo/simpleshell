@@ -11,9 +11,11 @@ const read = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
 const webTerminal = collectWebTerminalSources();
-const terminalSurfaceCss = read("src/styles/terminal.css");
-const themeVariables = read("src/styles/theme-variables.css");
+const webTerminalCss = read("src/components/WebTerminal.css");
+const terminalCss = read("src/styles/terminal.css");
+const terminalDom = read("src/modules/terminal/controller/terminalDom.js");
 const terminalTheme = read("src/modules/terminal/terminalTheme.js");
+const themeVariables = read("src/styles/theme-variables.css");
 const searchOverlay = readSource(
   "src/components/web-terminal/WebTerminalSearchOverlay.jsx",
 );
@@ -22,11 +24,11 @@ const contextMenu = readSource(
   "src/components/web-terminal/WebTerminalContextMenu.jsx",
 );
 
-// P0.4 — line height configurable around 1.15–1.25 (default 1.2)
+// Line height remains configurable, but default stays at historical 1.0 (no visual redesign).
 assert.match(
   terminalTheme,
-  /DEFAULT_TERMINAL_LINE_HEIGHT\s*=\s*1\.2/,
-  "default terminal line height must be 1.2",
+  /DEFAULT_TERMINAL_LINE_HEIGHT\s*=\s*1\.0/,
+  "default terminal line height must remain 1.0",
 );
 assert.match(
   webTerminal,
@@ -39,17 +41,7 @@ assert.match(
   "WebTerminal must react to terminalLineHeight settings",
 );
 
-// P0.4 — 16-color theme aligned with UI tokens
-assert.match(
-  themeVariables,
-  /--terminal-bg/,
-  "theme-variables must define terminal surface tokens",
-);
-assert.match(
-  themeVariables,
-  /--terminal-selection/,
-  "theme-variables must define terminal selection token",
-);
+// Historical xterm theme palette (not MUI surface-token redesign).
 assert.match(
   terminalTheme,
   /getTerminalTheme/,
@@ -60,34 +52,59 @@ assert.match(
   /getTerminalTheme\(/,
   "WebTerminal must build theme via getTerminalTheme",
 );
-
-// P0.4 — single surface style source
 assert.match(
-  terminalSurfaceCss,
+  terminalTheme,
+  /#f6f8fa/,
+  "light terminal background must keep historical palette",
+);
+assert.match(
+  terminalTheme,
+  /rgba\(212,\s*253,\s*62,\s*0\.49\)/,
+  "dark selection must keep historical palette",
+);
+
+// Pre-d52c38e style sources remain in place (no single-token surface redesign).
+assert.match(
+  webTerminalCss,
   /\.xterm-selection/,
-  "styles/terminal.css must own selection styles",
+  "WebTerminal.css must own historical selection styles",
 );
 assert.match(
-  terminalSurfaceCss,
-  /var\(--app-scrollbar-thumb\)/,
-  "terminal scrollbar must use app scrollbar tokens",
+  webTerminalCss,
+  /rgba\(255,\s*223,\s*0,\s*0\.32\)/,
+  "dark selection highlight must keep historical CSS",
 );
 assert.match(
-  terminalSurfaceCss,
-  /var\(--terminal-focus-ring\)/,
-  "terminal focus ring must use theme token",
+  terminalDom,
+  /export const terminalStyles\s*=\s*`[\s\S]*\.xterm-selection/,
+  "terminalDom must restore injected terminalStyles",
 );
 assert.match(
-  terminalSurfaceCss,
-  /var\(--terminal-selection\)/,
-  "terminal selection CSS must use theme token",
+  terminalDom,
+  /export const searchBarStyles\s*=\s*`[\s\S]*\.search-bar/,
+  "terminalDom must restore injected searchBarStyles",
+);
+assert.match(
+  terminalCss,
+  /\.xterm\s*::selection|\.xterm ::selection/,
+  "styles/terminal.css keeps minimal global selection helper",
+);
+assert.doesNotMatch(
+  themeVariables,
+  /--terminal-selection\s*:/,
+  "theme-variables must not introduce d52c38e terminal surface selection tokens",
+);
+assert.doesNotMatch(
+  themeVariables,
+  /--terminal-search-glass-bg\s*:/,
+  "theme-variables must not introduce d52c38e search glass tokens",
 );
 
-// P0.5 — productized search overlay with case / regex / whole word
+// Search options remain functional without redesigned glass overlay.
 assert.match(
   searchOverlay,
-  /ToggleButton/,
-  "search overlay should expose MUI toggle options",
+  /className=["']search-bar["']/,
+  "search overlay must use historical search-bar markup",
 );
 assert.match(
   searchOverlay,
@@ -116,7 +133,7 @@ assert.match(
   "useTerminalSearch must track wholeWord",
 );
 
-// P0.5 — shortcut hints match bindings
+// Shortcut hints match bindings.
 assert.match(
   contextMenu,
   /Ctrl\+;/,
@@ -146,6 +163,18 @@ assert.match(
   webTerminal,
   /e\.ctrlKey\s*&&\s*e\.key\s*===\s*["']\/["']/,
   "WebTerminal must bind Ctrl+/ search",
+);
+
+// Command block styles from 3aef8c remain available.
+assert.match(
+  terminalCss,
+  /\.command-block-gutter/,
+  "terminal.css must keep command block gutter styles",
+);
+assert.match(
+  themeVariables,
+  /--terminal-block-gutter-width/,
+  "theme-variables must keep command block tokens",
 );
 
 console.log("WebTerminal surface experience checks passed.");

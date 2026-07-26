@@ -177,7 +177,7 @@ class ConfigService {
           type: "number",
           minimum: 1.0,
           maximum: 1.4,
-          default: 1.2,
+          default: 1.0,
         },
         performance: { type: "object", default: {} },
         externalEditor: { type: "object", default: {} },
@@ -423,7 +423,7 @@ class ConfigService {
         sidebarPosition: "right",
         terminalFont: "Fira Code",
         terminalFontSize: 14,
-        terminalLineHeight: 1.2,
+        terminalLineHeight: 1.0,
         performance: {},
         externalEditor: {},
         desktopIntegration: {
@@ -1460,7 +1460,7 @@ class ConfigService {
       sidebarPosition: "right",
       terminalFont: "Fira Code",
       terminalFontSize: 14,
-      terminalLineHeight: 1.2,
+      terminalLineHeight: 1.0,
       performance: {},
       externalEditor: {},
       desktopIntegration: {

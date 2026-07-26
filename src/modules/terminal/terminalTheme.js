@@ -1,9 +1,9 @@
 /**
  * WebTerminal xterm theme builder.
- * Aligns ANSI / surface colors with UI theme tokens (theme-variables.css + MUI palette).
+ * Keeps the pre-existing GitHub/VS Code–inspired palette (no surface redesign).
  */
 
-export const DEFAULT_TERMINAL_LINE_HEIGHT = 1.2;
+export const DEFAULT_TERMINAL_LINE_HEIGHT = 1.0;
 export const MIN_TERMINAL_LINE_HEIGHT = 1.0;
 export const MAX_TERMINAL_LINE_HEIGHT = 1.4;
 
@@ -27,65 +27,43 @@ export const normalizeTerminalLineHeight = (value) => {
 
 /**
  * Build an xterm.js theme object for the given mode.
- * Colors mirror CSS custom properties under --terminal-*.
+ * Colors match the historical WebTerminal palette (before d52c38e surface redesign).
  * @param {"light"|"dark"} mode
  * @returns {Record<string, string|undefined>}
  */
 export const getTerminalTheme = (mode = "dark") => {
   const isLight = mode === "light";
 
-  if (isLight) {
-    return {
-      background: "#f3f4f6", // --color-bg-paper
-      foreground: "#24292f", // --color-text-primary
-      cursor: "#1976d2", // --color-primary-main
-      cursorAccent: "#f3f4f6",
-      selectionBackground: "rgba(25, 118, 210, 0.28)",
-      selectionForeground: undefined,
-      selectionInactiveBackground: "rgba(25, 118, 210, 0.16)",
-      // ANSI aligned with success/error/warning/info + text tokens
-      black: "#24292f",
-      red: "#d32f2f", // --color-error
-      green: "#2e7d32", // --color-success
-      yellow: "#ed6c02", // --color-warning
-      blue: "#1976d2", // --color-primary-main
-      magenta: "#9c27b0",
-      cyan: "#0288d1", // --color-info
-      white: "#6e7781",
-      brightBlack: "#57606a", // --color-text-secondary
-      brightRed: "#ef5350",
-      brightGreen: "#43a047",
-      brightYellow: "#fb8c00",
-      brightBlue: "#42a5f5", // --color-primary-light
-      brightMagenta: "#ba68c8",
-      brightCyan: "#29b6f6",
-      brightWhite: "#8c959f", // --color-text-disabled
-    };
-  }
-
   return {
-    background: "#1e1e1e", // --color-bg-paper
-    foreground: "#e6edf3", // --color-text-primary
-    cursor: "#90caf9", // --color-primary-main
-    cursorAccent: "#121212",
-    selectionBackground: "rgba(144, 202, 249, 0.32)",
+    // 现代化背景色 - 深色更深，浅色更柔和
+    background: isLight ? "#f6f8fa" : "#1e1e1e",
+    // 文本颜色 - 提高对比度
+    foreground: isLight ? "#24292f" : "#e6edf3",
+    // 光标颜色 - 更醒目
+    cursor: isLight ? "#0969da" : "#58a6ff",
+    cursorAccent: isLight ? "#f3f4f6" : "#0d1117",
+    // 选择高亮 - 优化可见度，日间和夜间模式下都有足够的对比度
+    selectionBackground: isLight
+      ? "rgba(79, 126, 255, 0.43)"
+      : "rgba(212, 253, 62, 0.49)",
     selectionForeground: undefined,
-    selectionInactiveBackground: "rgba(144, 202, 249, 0.18)",
-    black: "#484f58",
-    red: "#f44336", // --color-error
-    green: "#4caf50", // --color-success
-    yellow: "#ff9800", // --color-warning
-    blue: "#90caf9", // --color-primary-main
-    magenta: "#ce93d8",
-    cyan: "#29b6f6", // --color-info
-    white: "#b1bac4",
-    brightBlack: "#6e7681",
-    brightRed: "#ef9a9a",
-    brightGreen: "#81c784",
-    brightYellow: "#ffb74d",
-    brightBlue: "#bbdefb", // --color-primary-light
-    brightMagenta: "#e1bee7",
-    brightCyan: "#4fc3f7",
-    brightWhite: "#f0f6fc",
+    // ANSI颜色 - 现代化配色方案（参考GitHub/VSCode主题）
+    black: isLight ? "#24292f" : "#484f58",
+    red: isLight ? "#cf222e" : "#ff7b72",
+    green: isLight ? "#116329" : "#3fb950",
+    yellow: isLight ? "#9a6700" : "#d29922",
+    blue: isLight ? "#0969da" : "#58a6ff",
+    magenta: isLight ? "#8250df" : "#bc8cff",
+    cyan: isLight ? "#1b7c83" : "#39c5cf",
+    white: isLight ? "#6e7781" : "#b1bac4",
+    // 亮色版本 - 更高饱和度
+    brightBlack: isLight ? "#57606a" : "#6e7681",
+    brightRed: isLight ? "#d1242f" : "#ffa198",
+    brightGreen: isLight ? "#1a7f37" : "#56d364",
+    brightYellow: isLight ? "#bf8700" : "#e3b341",
+    brightBlue: isLight ? "#218bff" : "#79c0ff",
+    brightMagenta: isLight ? "#a371f7" : "#d2a8ff",
+    brightCyan: isLight ? "#3192aa" : "#56d4dd",
+    brightWhite: isLight ? "#8c959f" : "#f0f6fc",
   };
 };
