@@ -301,9 +301,12 @@
       "excellent": "Excellent",
       "good": "Good",
       "fair": "Fair",
+      "degraded": "Degraded",
       "poor": "Poor",
       "bad": "Bad",
-      "updateInterval": "Auto-refresh every minute"
+      "offline": "Offline",
+      "updateInterval": "Adaptive refresh by link quality (about 15–60s)",
+      "clickToRetest": "Click to retest latency now"
     },
     "ipAddressQuery": {
       "title": "IP Address Query",
@@ -383,6 +386,14 @@
         "noProcessId": "Could not get process ID",
         "welcome": "Welcome to WebTerminal!",
         "helpHint": "Type \"help\" for available commands."
+      },
+      "offlineBuffer": {
+        "title": "Offline input buffer",
+        "buffering": "Buffering offline · {{chars}} chars",
+        "send": "Send buffer",
+        "clear": "Clear",
+        "pasteBlocked": "Paste large content after reconnect completes",
+        "full": "Offline input buffer is full; wait for reconnect"
       }
     },
     "connectionManager": {

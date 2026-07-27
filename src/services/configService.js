@@ -502,6 +502,12 @@ class ConfigService {
           : defaultConfig.shortcutCommands,
     };
 
+    // 清理历史弱网/网络韧性 UI 配置（策略已固定，无用户开关）
+    if (normalized.uiSettings && typeof normalized.uiSettings === "object") {
+      delete normalized.uiSettings.networkResilience;
+      delete normalized.uiSettings.networkResilienceMode;
+    }
+
     if (
       source.uiSettings &&
       typeof source.uiSettings === "object" &&
@@ -1491,6 +1497,9 @@ class ConfigService {
           ...(config.uiSettings || {}),
           ...settings,
         };
+
+        delete mergedSettings.networkResilience;
+        delete mergedSettings.networkResilienceMode;
 
         // 验证数据
         if (!this._validate("uiSettings", mergedSettings)) {

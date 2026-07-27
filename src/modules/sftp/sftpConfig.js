@@ -120,6 +120,33 @@ function calculateRetryDelay(attempt) {
   return base * Math.pow(multiplier, Math.max(0, attempt - 1));
 }
 
+/**
+ * 判断错误是否可重试（弱网闪断/超时等）
+ * @param {Error|string|object} error
+ * @returns {boolean}
+ */
+function isRetryableTransferError(error) {
+  if (!error) {
+    return false;
+  }
+  if (error?.cancelled || error?.userCancelled) {
+    return false;
+  }
+  if (error?.retryable === true) {
+    return true;
+  }
+
+  const message = String(
+    error?.message || error?.error || error || "",
+  ).toLowerCase();
+  const code = String(error?.code || error?.errorCode || "").toLowerCase();
+  const haystack = `${message} ${code}`;
+
+  return RETRY_CONFIG.RETRYABLE_ERRORS.some((pattern) =>
+    haystack.includes(String(pattern).toLowerCase()),
+  );
+}
+
 // ========================================================================================
 // EXPORTS
 // ========================================================================================
@@ -128,7 +155,9 @@ module.exports = {
   // Configuration objects
   SESSION_CONFIG,
   TRANSFER_CONFIG,
+  RETRY_CONFIG,
 
   // Helper functions
   calculateRetryDelay,
+  isRetryableTransferError,
 };

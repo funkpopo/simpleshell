@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
+import { useTranslation } from "react-i18next";
 import "@xterm/xterm/css/xterm.css";
 import "./WebTerminal.css";
 import PropTypes from "prop-types";
@@ -59,6 +62,7 @@ const WebTerminal = ({
   const [searchAddonVersion, setSearchAddonVersion] = useState(0);
 
   const theme = useTheme();
+  const { t } = useTranslation();
   const eventManager = useCleanupManager();
   const lifecycleEventManager = useCleanupManager();
 
@@ -136,6 +140,9 @@ const WebTerminal = ({
     markPasteIfAllowed,
     handlePasteText,
     lastPasteTimeRef,
+    offlineBufferState,
+    clearOfflineBuffer,
+    sendOfflineBufferNow,
   } = useTerminalIO({
     tabId,
     terminalIOMailboxRef,
@@ -487,6 +494,7 @@ const WebTerminal = ({
         className={`terminal-container${
           inEditorMode ? " terminal-container--editor" : ""
         }`}
+        style={{ position: "relative" }}
       >
         <div
           ref={terminalRef}
@@ -516,6 +524,62 @@ const WebTerminal = ({
             onToggleRegex={toggleRegex}
             onToggleWholeWord={toggleWholeWord}
           />
+        ) : null}
+
+        {offlineBufferState?.active || offlineBufferState?.pendingSend ? (
+          <Box
+            sx={{
+              position: "absolute",
+              left: 8,
+              bottom: 8,
+              zIndex: 1200,
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              px: 1.25,
+              py: 0.75,
+              borderRadius: 1,
+              bgcolor:
+                theme.palette.mode === "dark"
+                  ? "rgba(15, 23, 42, 0.92)"
+                  : "rgba(255, 255, 255, 0.94)",
+              border: "1px solid",
+              borderColor: "divider",
+              boxShadow: 2,
+              maxWidth: "min(420px, calc(100% - 16px))",
+            }}
+          >
+            <Typography variant="caption" sx={{ flex: 1, lineHeight: 1.35 }}>
+              {offlineBufferState.active
+                ? t("webTerminal.offlineBuffer.buffering", {
+                    chars: offlineBufferState.chars || 0,
+                  })
+                : t("webTerminal.offlineBuffer.buffering", {
+                    chars: offlineBufferState.chars || 0,
+                  })}
+            </Typography>
+            {offlineBufferState.pendingSend &&
+            (offlineBufferState.chars || 0) > 0 ? (
+              <Button
+                size="small"
+                variant="contained"
+                onClick={() => sendOfflineBufferNow()}
+                sx={{ minWidth: 0, px: 1, py: 0.25, fontSize: "0.7rem" }}
+              >
+                {t("webTerminal.offlineBuffer.send")}
+              </Button>
+            ) : null}
+            {(offlineBufferState.chars || 0) > 0 ? (
+              <Button
+                size="small"
+                variant="text"
+                onClick={() => clearOfflineBuffer()}
+                sx={{ minWidth: 0, px: 1, py: 0.25, fontSize: "0.7rem" }}
+              >
+                {t("webTerminal.offlineBuffer.clear")}
+              </Button>
+            ) : null}
+          </Box>
         ) : null}
       </div>
       <WebTerminalContextMenu

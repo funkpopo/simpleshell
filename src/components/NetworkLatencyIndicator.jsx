@@ -164,63 +164,84 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   }, [getCurrentTabForLatency, updateLatencyDisplay]);
 
   /**
-   * 根据延迟值获取信号强度图标和颜色
+   * 根据质量等级 / 延迟值获取信号强度图标和颜色
    */
   const getSignalInfo = useCallback(
-    (latency, status) => {
-      if (status === "error") {
+    (latency, status, qualityLevel) => {
+      if (status === "error" || qualityLevel === "offline") {
         return {
           icon: ErrorIcon,
           color: theme.palette.error.main,
-          text: t("latency.error"),
-          level: "error",
+          text:
+            qualityLevel === "offline"
+              ? t("latency.offline")
+              : t("latency.error"),
+          level: qualityLevel === "offline" ? "offline" : "error",
         };
       }
 
       if (latency === null || latency === undefined) {
-        return {
-          icon: SignalWifiOffIcon,
-          color: theme.palette.text.disabled,
-          text: t("latency.checking"),
-          level: "unknown",
-        };
+        if (qualityLevel === "degraded" || qualityLevel === "poor") {
+          // fall through with level-only rendering when RTT unknown but quality known
+        } else {
+          return {
+            icon: SignalWifiOffIcon,
+            color: theme.palette.text.disabled,
+            text: t("latency.checking"),
+            level: "unknown",
+          };
+        }
       }
 
-      if (latency <= 50) {
-        return {
-          icon: SignalWifi4BarIcon,
-          color: theme.palette.success.main,
-          text: t("latency.excellent"),
-          level: "excellent",
-        };
-      } else if (latency <= 100) {
-        return {
-          icon: SignalWifi3BarIcon,
-          color: theme.palette.success.light,
-          text: t("latency.good"),
-          level: "good",
-        };
-      } else if (latency <= 200) {
-        return {
-          icon: SignalWifi2BarIcon,
-          color: theme.palette.warning.main,
-          text: t("latency.fair"),
-          level: "fair",
-        };
-      } else if (latency <= 500) {
-        return {
-          icon: SignalWifi1BarIcon,
-          color: theme.palette.warning.dark,
-          text: t("latency.poor"),
-          level: "poor",
-        };
-      } else {
-        return {
-          icon: SignalWifiOffIcon,
-          color: theme.palette.error.main,
-          text: t("latency.bad"),
-          level: "bad",
-        };
+      const resolvedLevel =
+        qualityLevel ||
+        (latency <= 50
+          ? "excellent"
+          : latency <= 100
+            ? "good"
+            : latency <= 200
+              ? "degraded"
+              : latency <= 500
+                ? "poor"
+                : "bad");
+
+      switch (resolvedLevel) {
+        case "excellent":
+          return {
+            icon: SignalWifi4BarIcon,
+            color: theme.palette.success.main,
+            text: t("latency.excellent"),
+            level: "excellent",
+          };
+        case "good":
+          return {
+            icon: SignalWifi3BarIcon,
+            color: theme.palette.success.light,
+            text: t("latency.good"),
+            level: "good",
+          };
+        case "degraded":
+        case "fair":
+          return {
+            icon: SignalWifi2BarIcon,
+            color: theme.palette.warning.main,
+            text: t("latency.degraded"),
+            level: "degraded",
+          };
+        case "poor":
+          return {
+            icon: SignalWifi1BarIcon,
+            color: theme.palette.warning.dark,
+            text: t("latency.poor"),
+            level: "poor",
+          };
+        default:
+          return {
+            icon: SignalWifiOffIcon,
+            color: theme.palette.error.main,
+            text: t("latency.bad"),
+            level: "bad",
+          };
       }
     },
     [theme, t],
@@ -254,7 +275,15 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
     return null;
   }
 
-  const signalInfo = getSignalInfo(latencyData.latency, latencyData.status);
+  const qualityLevel =
+    latencyData.qualityLevel ||
+    latencyData.quality?.level ||
+    null;
+  const signalInfo = getSignalInfo(
+    latencyData.latency,
+    latencyData.status,
+    qualityLevel,
+  );
   const SignalIcon = signalInfo.icon;
 
   // 构建工具提示内容
@@ -296,7 +325,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
           color: "primary.main",
         }}
       >
-        💡 点击立即测试延迟
+        💡 {t("latency.clickToRetest")}
       </Typography>
     </Box>
   );

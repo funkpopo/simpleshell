@@ -3,6 +3,11 @@ const { performance } = require("node:perf_hooks");
 const { logToFile } = require("../utils/logger");
 const net = require("node:net");
 const proxyManager = require("../proxy/proxy-manager");
+const {
+  computeNetworkQuality,
+  getCheckIntervalForQuality,
+  NETWORK_QUALITY_LEVELS,
+} = require("./networkQuality");
 
 function nowMs() {
   return Date.now();
@@ -125,6 +130,7 @@ class NetworkLatencyService extends EventEmitter {
 
     // 初始化延迟数据，存储SSH连接实例
     this.latencyData.set(tabId, {
+      tabId,
       host,
       port,
       sshConnection, // 保存SSH连接实例以便后续使用
@@ -138,6 +144,10 @@ class NetworkLatencyService extends EventEmitter {
       lastError: null,
       checkPromise: null,
       nextCheckAt: nowMs(),
+      quality: null,
+      previousQualityLevel: null,
+      previousQualityLevelAt: null,
+      reconnectSuccessRate: 1,
     });
 
     void this._runDueChecks();
@@ -305,6 +315,10 @@ class NetworkLatencyService extends EventEmitter {
           currentData.history.shift();
         }
 
+        const quality = this._updateQualityMetrics(currentData, {
+          offline: false,
+        });
+
         this.emit("latency:updated", {
           tabId,
           latency,
@@ -313,9 +327,14 @@ class NetworkLatencyService extends EventEmitter {
           lastCheck: currentData.lastCheck,
           timestamp: currentData.lastCheck,
           status: currentData.status,
+          quality,
+          qualityLevel: quality?.level || null,
         });
 
-        logToFile(`SSH连接${tabId}延迟检测: ${latency}ms`, "DEBUG");
+        logToFile(
+          `SSH连接${tabId}延迟检测: ${latency}ms (质量: ${quality?.level || "n/a"})`,
+          "DEBUG",
+        );
         return latency;
       } catch (error) {
         if (
@@ -328,10 +347,15 @@ class NetworkLatencyService extends EventEmitter {
 
         currentData.latency = null;
         currentData.errors++;
+        currentData.checkCount++;
         currentData.status = "error";
         currentData.lastCheck = nowMs();
         const errorMessage = error?.message || String(error);
         currentData.lastError = errorMessage;
+
+        const quality = this._updateQualityMetrics(currentData, {
+          offline: false,
+        });
 
         logToFile(`SSH连接${tabId}延迟检测失败: ${errorMessage}`, "WARN");
 
@@ -342,6 +366,8 @@ class NetworkLatencyService extends EventEmitter {
           port: currentData.port,
           lastCheck: currentData.lastCheck,
           timestamp: currentData.lastCheck,
+          quality,
+          qualityLevel: quality?.level || null,
         });
 
         return null;
@@ -349,7 +375,10 @@ class NetworkLatencyService extends EventEmitter {
         if (this.serviceGeneration === checkGeneration) {
           if (this.latencyData.get(tabId) === currentData) {
             currentData.checkPromise = null;
-            currentData.nextCheckAt = nowMs() + this.checkInterval;
+            const qualityLevel =
+              currentData.quality?.level || NETWORK_QUALITY_LEVELS.GOOD;
+            const adaptiveInterval = getCheckIntervalForQuality(qualityLevel);
+            currentData.nextCheckAt = nowMs() + adaptiveInterval;
           }
 
           this.activeCheckCount = Math.max(0, this.activeCheckCount - 1);
@@ -618,6 +647,61 @@ class NetworkLatencyService extends EventEmitter {
   }
 
   /**
+   * 根据延迟历史刷新质量画像
+   * @private
+   */
+  _updateQualityMetrics(data, { offline = false } = {}) {
+    if (!data) {
+      return null;
+    }
+
+    const quality = computeNetworkQuality({
+      latencyMs: data.latency,
+      history: data.history,
+      checkCount: data.checkCount,
+      errorCount: data.errors,
+      reconnectSuccessRate: data.reconnectSuccessRate,
+      offline,
+      previousLevel: data.previousQualityLevel,
+      previousLevelAt: data.previousQualityLevelAt,
+    });
+
+    data.quality = quality;
+    if (quality?.level && quality.level !== data.previousQualityLevel) {
+      data.previousQualityLevel = quality.level;
+      data.previousQualityLevelAt = quality.updatedAt;
+      this.emit("quality:updated", {
+        tabId: data.tabId,
+        host: data.host,
+        port: data.port,
+        quality,
+      });
+    } else if (quality?.level && !data.previousQualityLevel) {
+      data.previousQualityLevel = quality.level;
+      data.previousQualityLevelAt = quality.updatedAt;
+    }
+
+    return quality;
+  }
+
+  /**
+   * 外部（重连管理器）可注入重连成功率，参与质量计算
+   */
+  setReconnectSuccessRate(tabId, successRate) {
+    const data = this.latencyData.get(tabId);
+    if (!data) {
+      return false;
+    }
+    const rate = Number(successRate);
+    if (!Number.isFinite(rate)) {
+      return false;
+    }
+    data.reconnectSuccessRate = Math.min(1, Math.max(0, rate));
+    this._updateQualityMetrics(data, { offline: data.status === "error" });
+    return true;
+  }
+
+  /**
    * 获取指定连接的延迟信息
    * @param {string} tabId 标签页ID
    * @returns {object|null} 延迟信息
@@ -627,6 +711,12 @@ class NetworkLatencyService extends EventEmitter {
     if (!data) {
       return null;
     }
+
+    const quality =
+      data.quality ||
+      this._updateQualityMetrics(data, {
+        offline: data.status === "error" && data.latency == null,
+      });
 
     return {
       tabId,
@@ -640,6 +730,8 @@ class NetworkLatencyService extends EventEmitter {
       lastError: data.lastError,
       isChecking: Boolean(data.checkPromise),
       history: [...data.history], // 返回历史记录副本
+      quality,
+      qualityLevel: quality?.level || null,
     };
   }
 

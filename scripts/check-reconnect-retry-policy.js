@@ -11,6 +11,8 @@ const {
   DEFAULT_SSH_RETRY_CONFIG,
   buildReconnectTimeoutMessage,
   buildReconnectWaitMessage,
+  calculateRetryDelay,
+  buildSshRetryConfig,
 } = require(path.join(ROOT, "src/core/connection/ssh-retry-helper.js"));
 
 function createFakeConnection() {
@@ -41,40 +43,136 @@ function waitForEvent(emitter, eventName, timeoutMs = 3000, predicate = null) {
   ]);
 }
 
-function testDefaultRetryPolicyIsFiveSecondsForTwentyFiveSecondsWindow() {
+function testDefaultRetryPolicyIsWeakNetworkFriendly() {
   assert.equal(
     DEFAULT_SSH_RETRY_CONFIG.initialDelay,
-    5000,
-    "默认每次自动重连间隔应为5秒",
+    1500,
+    "默认首次重连间隔应为1.5秒（弱网友好）",
   );
   assert.equal(
     DEFAULT_SSH_RETRY_CONFIG.maxDelay,
-    5000,
-    "默认自动重连间隔上限应固定为5秒",
+    20_000,
+    "默认重连间隔上限应为20秒",
   );
   assert.equal(
     DEFAULT_SSH_RETRY_CONFIG.useExponentialBackoff,
-    false,
-    "默认自动重连不应再使用指数退避",
+    true,
+    "默认应启用指数退避",
   );
   assert.equal(
     DEFAULT_SSH_RETRY_CONFIG.totalTimeCapMs,
-    25_000,
-    "默认自动重连总窗口应放宽为25秒",
+    120_000,
+    "默认自动重连总窗口应为120秒",
+  );
+  assert.equal(
+    DEFAULT_SSH_RETRY_CONFIG.fastReconnect.enabled,
+    true,
+    "默认应启用瞬时闪断快恢",
+  );
+  assert.equal(
+    DEFAULT_SSH_RETRY_CONFIG.smartReconnect.enabled,
+    true,
+    "默认应启用智能重连（自适应延迟）",
+  );
+  assert.equal(
+    DEFAULT_SSH_RETRY_CONFIG.networkProbe.tcpTimeoutMs,
+    2000,
+    "默认 preflight TCP 超时应为2秒",
   );
   assert.equal(
     buildReconnectWaitMessage(DEFAULT_SSH_RETRY_CONFIG),
-    "正在重连，最多等待网络/VPN 25秒...",
-    "等待提示文案应保持简洁并同步使用25秒窗口",
+    "正在重连，最多等待网络/VPN 2分钟...",
+    "等待提示文案应同步使用2分钟窗口",
   );
   assert.equal(
     buildReconnectTimeoutMessage(DEFAULT_SSH_RETRY_CONFIG),
-    "重连超时（25秒），请检查网络/VPN后刷新或重新打开连接。",
-    "超时提示文案应保持简洁并同步使用25秒窗口",
+    "重连超时（2分钟），请检查网络/VPN后刷新或重新打开连接。",
+    "超时提示文案应同步使用2分钟窗口",
+  );
+
+  const resolvedDefault = buildSshRetryConfig();
+  assert.equal(
+    resolvedDefault.totalTimeCapMs,
+    DEFAULT_SSH_RETRY_CONFIG.totalTimeCapMs,
+    "无参数 buildSshRetryConfig 应得到唯一弱网默认策略",
   );
 }
 
-async function testReconnectRunsFiveRetriesAfterFailures() {
+function testJitterAndFastReconnectDelay() {
+  const delays = [];
+  for (let i = 0; i < 20; i += 1) {
+    delays.push(
+      calculateRetryDelay({
+        retryConfig: {
+          ...DEFAULT_SSH_RETRY_CONFIG,
+          jitter: 400,
+        },
+        attempt: 3,
+        lastError: null,
+        successRate: 1,
+      }),
+    );
+  }
+
+  assert.ok(
+    delays.every((d) => d >= 0),
+    "延迟不可为负",
+  );
+  const baseWithoutJitter = calculateRetryDelay({
+    retryConfig: {
+      ...DEFAULT_SSH_RETRY_CONFIG,
+      jitter: 0,
+    },
+    attempt: 3,
+    lastError: null,
+    successRate: 1,
+  });
+  assert.ok(
+    delays.some((d) => d !== baseWithoutJitter) || baseWithoutJitter === 0,
+    "启用 jitter 后延迟应出现波动（或基线为0）",
+  );
+
+  const fastDelay = calculateRetryDelay({
+    retryConfig: DEFAULT_SSH_RETRY_CONFIG,
+    attempt: 1,
+    lastError: { code: "ECONNRESET" },
+    successRate: 1,
+  });
+  assert.ok(
+    fastDelay <= 700,
+    `ECONNRESET 快恢延迟应较短，实际 ${fastDelay}ms`,
+  );
+}
+
+function testOnlyWeakDefaultPolicyExists() {
+  assert.equal(
+    DEFAULT_SSH_RETRY_CONFIG.maxRetries,
+    10,
+    "唯一弱网策略 maxRetries 应为 10",
+  );
+  assert.equal(
+    DEFAULT_SSH_RETRY_CONFIG.useExponentialBackoff,
+    true,
+    "唯一弱网策略应启用指数退避",
+  );
+  // 确保不再存在多模式预设模块
+  let presetsMissing = false;
+  try {
+    require(path.join(
+      ROOT,
+      "src/core/connection/network-resilience-presets.js",
+    ));
+  } catch {
+    presetsMissing = true;
+  }
+  assert.equal(
+    presetsMissing,
+    true,
+    "network-resilience-presets.js 应已移除（仅保留弱网默认）",
+  );
+}
+
+async function testReconnectRunsConfiguredRetriesAfterFailures() {
   const manager = new ReconnectionManager({
     maxRetries: 5,
     initialDelay: 10,
@@ -268,12 +366,14 @@ async function testPreflightFailuresAlsoCountRetries() {
 async function run() {
   const tests = [
     [
-      "default retry policy is five seconds for twenty five seconds window",
-      testDefaultRetryPolicyIsFiveSecondsForTwentyFiveSecondsWindow,
+      "default retry policy is weak-network friendly (120s window)",
+      testDefaultRetryPolicyIsWeakNetworkFriendly,
     ],
+    ["jitter and fast reconnect delay behave as expected", testJitterAndFastReconnectDelay],
+    ["only weak default policy exists", testOnlyWeakDefaultPolicyExists],
     [
-      "reconnect runs five retries after failures",
-      testReconnectRunsFiveRetriesAfterFailures,
+      "reconnect runs configured retries after failures",
+      testReconnectRunsConfiguredRetriesAfterFailures,
     ],
     [
       "preflight failures also count retries",
@@ -286,9 +386,7 @@ async function run() {
     console.log(`PASS ${name}`);
   }
 
-  console.log(
-    `\n${tests.length} reconnect retry policy checks passed.`,
-  );
+  console.log(`\n${tests.length} reconnect retry policy checks passed.`);
 }
 
 run().catch((error) => {

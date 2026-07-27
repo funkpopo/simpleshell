@@ -1,12 +1,18 @@
 const os = require("os");
 
-const { SESSION_CONFIG } = require("../sftp/sftpConfig");
+const {
+  SESSION_CONFIG,
+  RETRY_CONFIG,
+  calculateRetryDelay,
+  isRetryableTransferError,
+} = require("../sftp/sftpConfig");
 const { logToFile } = require("../../core/utils/logger");
 const {
   invokeNativeRequestWithConfig,
 } = require("../../core/utils/nativeSftpClient");
 const { normalizeErrorMessage } = require("../../core/utils/errorResponse");
 const { buildCancelledError } = require("./transferShared");
+const { sleep } = require("../../shared/common");
 
 const DEFAULT_MAX_QUEUE_SIZE = 20000;
 
@@ -211,7 +217,7 @@ class TransferProcessPool {
       transferKey: entry.transferKey,
       taskId: entry.taskId,
       tabId: entry.tabId,
-      attempt: 0,
+      attempt: Number.isFinite(entry?.attempt) ? entry.attempt : 0,
       timestamp: Date.now(),
       workerPid: entry.sidecarPid || null,
       direction: entry.taskPayload.direction,
@@ -408,9 +414,81 @@ class TransferProcessPool {
   async _startTask(entry) {
     this._markTaskRunning(entry);
 
+    const maxAttempts = Math.max(
+      1,
+      Number(RETRY_CONFIG?.MAX_OPERATION_ATTEMPTS) || 3,
+    );
+    let attempt = 0;
+    let lastError = null;
+
     try {
-      const payload = await this._executeTask(entry);
-      this._resolveTask(entry.taskKey, payload);
+      while (attempt < maxAttempts) {
+        attempt += 1;
+        entry.attempt = attempt;
+
+        if (
+          this._isShutdown ||
+          this.transferCancelled.has(entry.transferKey) ||
+          entry.cancelRequested
+        ) {
+          throw buildCancelledError(
+            entry.cancelReason || "Transfer cancelled by user",
+          );
+        }
+
+        try {
+          const payload = await this._executeTask(entry);
+          if (payload && typeof payload === "object") {
+            payload.attempt = attempt;
+          }
+          this._resolveTask(entry.taskKey, payload);
+          return;
+        } catch (error) {
+          lastError = error;
+
+          const cancelled =
+            this._isTaskCancelledMessage(error) ||
+            this.transferCancelled.has(entry.transferKey) ||
+            entry.cancelRequested ||
+            this._isShutdown;
+
+          if (cancelled) {
+            throw buildCancelledError(
+              entry.cancelReason || normalizeErrorMessage(error),
+            );
+          }
+
+          const retryable = isRetryableTransferError(error);
+          const hasMoreAttempts = attempt < maxAttempts;
+          if (!retryable || !hasMoreAttempts) {
+            throw createTaskRuntimeError(normalizeErrorMessage(error), {
+              code: error?.code || error?.errorCode,
+              errorKind: error?.errorKind,
+              retryable,
+              module: error?.module,
+              operation: error?.operation,
+              raw: error?.raw || error,
+              worker: "native-sidecar",
+            });
+          }
+
+          const delayMs = calculateRetryDelay(attempt);
+          this._log(
+            `Transfer task ${entry.taskKey} retryable failure (attempt ${attempt}/${maxAttempts}), wait ${delayMs}ms: ${normalizeErrorMessage(error)}`,
+            "WARN",
+          );
+          entry.child = null;
+          await sleep(delayMs);
+        }
+      }
+
+      throw (
+        lastError ||
+        createTaskRuntimeError("Transfer task failed after retries", {
+          retryable: true,
+          worker: "native-sidecar",
+        })
+      );
     } catch (error) {
       const normalizedError =
         this._isTaskCancelledMessage(error) ||
@@ -420,15 +498,17 @@ class TransferProcessPool {
           ? buildCancelledError(
               entry.cancelReason || normalizeErrorMessage(error),
             )
-          : createTaskRuntimeError(normalizeErrorMessage(error), {
-              code: error?.code || error?.errorCode,
-              errorKind: error?.errorKind,
-              retryable: error?.retryable,
-              module: error?.module,
-              operation: error?.operation,
-              raw: error?.raw || error,
-              worker: "native-sidecar",
-            });
+          : error?.retryable !== undefined
+            ? error
+            : createTaskRuntimeError(normalizeErrorMessage(error), {
+                code: error?.code || error?.errorCode,
+                errorKind: error?.errorKind,
+                retryable: isRetryableTransferError(error),
+                module: error?.module,
+                operation: error?.operation,
+                raw: error?.raw || error,
+                worker: "native-sidecar",
+              });
       this._rejectTask(entry.taskKey, normalizedError);
     } finally {
       entry.child = null;

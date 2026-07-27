@@ -301,9 +301,12 @@
       "excellent": "优秀",
       "good": "良好",
       "fair": "一般",
+      "degraded": "降级",
       "poor": "较差",
       "bad": "很差",
-      "updateInterval": "每分钟自动刷新"
+      "offline": "离线",
+      "updateInterval": "按连接质量自适应刷新（约 15–60 秒）",
+      "clickToRetest": "点击立即测试延迟"
     },
     "ipAddressQuery": {
       "title": "IP 地址查询",
@@ -383,6 +386,14 @@
         "noProcessId": "未能获取进程 ID",
         "welcome": "欢迎使用 WebTerminal!",
         "helpHint": "输入 \"help\" 查看可用命令。"
+      },
+      "offlineBuffer": {
+        "title": "离线输入缓冲",
+        "buffering": "断线缓冲中 · {{chars}} 字符",
+        "send": "发送缓冲",
+        "clear": "清空",
+        "pasteBlocked": "重连完成后再粘贴大段内容",
+        "full": "离线输入缓冲已满，请等待重连"
       }
     },
     "connectionManager": {

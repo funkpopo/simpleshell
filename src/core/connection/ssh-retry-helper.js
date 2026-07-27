@@ -18,29 +18,30 @@ const {
   isTimeoutErrorMessage,
 } = require("../../shared/errorClassification");
 
+// 唯一默认策略：弱网/VPN 友好（更长总窗口、温和指数退避、瞬时闪断快恢）。
 const DEFAULT_SSH_RETRY_CONFIG = Object.freeze({
-  maxRetries: 5,
-  initialDelay: 5000,
-  maxDelay: 5000,
-  exponentialFactor: 1.0,
-  jitter: 0,
-  totalTimeCapMs: 25_000,
+  maxRetries: 10,
+  initialDelay: 1500,
+  maxDelay: 20_000,
+  exponentialFactor: 1.6,
+  jitter: 400,
+  totalTimeCapMs: 120_000,
   networkProbe: {
     enabled: true,
     intervalMs: 1000,
-    tcpTimeoutMs: 300,
+    tcpTimeoutMs: 2000,
   },
-  useExponentialBackoff: false,
+  useExponentialBackoff: true,
   fastReconnect: {
-    enabled: false,
-    maxAttempts: 0,
-    delay: 5000,
+    enabled: true,
+    maxAttempts: 2,
+    delay: 500,
     conditions: ["ECONNRESET", "EPIPE"],
   },
   smartReconnect: {
-    enabled: false,
+    enabled: true,
     analyzePattern: false,
-    adaptiveDelay: false,
+    adaptiveDelay: true,
     networkQualityThreshold: 0.7,
   },
   authFailure: {
@@ -472,6 +473,18 @@ async function waitForSshPreflight(
   }
 }
 
+function applyRetryJitter(baseDelay, jitterMs) {
+  const delay = Math.max(0, Number(baseDelay) || 0);
+  const jitter = Math.max(0, Number(jitterMs) || 0);
+  if (jitter <= 0) {
+    return Math.round(delay);
+  }
+
+  // 对称抖动：delay ± (0..jitter)，避免多会话同时撞车
+  const offset = Math.random() * jitter * 2 - jitter;
+  return Math.max(0, Math.round(delay + offset));
+}
+
 function calculateRetryDelay({
   retryConfig,
   attempt,
@@ -481,14 +494,23 @@ function calculateRetryDelay({
   const resolvedRetryConfig = buildSshRetryConfig(retryConfig);
   const attemptNumber = Math.max(1, Math.floor(attempt || 1));
   let delay;
+  let skipJitter = false;
 
   if (
     resolvedRetryConfig.fastReconnect?.enabled &&
     attemptNumber <= Number(resolvedRetryConfig.fastReconnect?.maxAttempts || 0)
   ) {
     const errorCode = String(lastError?.code || "").toUpperCase();
-    if (resolvedRetryConfig.fastReconnect.conditions.includes(errorCode)) {
+    const conditions = Array.isArray(
+      resolvedRetryConfig.fastReconnect.conditions,
+    )
+      ? resolvedRetryConfig.fastReconnect.conditions
+      : [];
+    if (conditions.includes(errorCode)) {
       delay = Number(resolvedRetryConfig.fastReconnect.delay || 500);
+      // 快恢路径仅加少量抖动，保持“瞬时恢复”体感
+      skipJitter = true;
+      delay = applyRetryJitter(delay, Math.min(100, delay * 0.2));
     }
   }
 
@@ -500,12 +522,10 @@ function calculateRetryDelay({
           Number(resolvedRetryConfig.exponentialFactor || 2),
           attemptNumber - 1,
         );
-      const cappedDelay = Math.min(
+      delay = Math.min(
         exponentialDelay,
         Number(resolvedRetryConfig.maxDelay || 30000),
       );
-      const jitter = Math.random() * Number(resolvedRetryConfig.jitter || 0);
-      delay = Math.round(cappedDelay + jitter);
     } else {
       delay = Number(resolvedRetryConfig.initialDelay || 1000);
     }
@@ -517,7 +537,11 @@ function calculateRetryDelay({
     Number(successRate) <
       Number(resolvedRetryConfig.smartReconnect?.networkQualityThreshold || 0)
   ) {
-    delay = Math.round(delay * 1.5);
+    delay = Math.round(Number(delay) * 1.5);
+  }
+
+  if (!skipJitter) {
+    delay = applyRetryJitter(delay, resolvedRetryConfig.jitter);
   }
 
   return Math.max(0, Math.floor(delay || 0));

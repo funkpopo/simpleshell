@@ -1,3 +1,8 @@
+const {
+  getNetworkProfileOverridesForQuality,
+  NETWORK_QUALITY_LEVELS,
+} = require("../services/networkQuality");
+
 const DEFAULT_SSH_NETWORK_PROFILE = Object.freeze({
   tcpNoDelay: true,
   socketKeepAlive: true,
@@ -53,38 +58,60 @@ const resolveSshNetworkProfile = (
   defaults = DEFAULT_SSH_NETWORK_PROFILE,
 ) => {
   const profileSource = getNetworkProfileSource(config);
+  const qualityLevel =
+    config?.networkQualityLevel ||
+    profileSource?.networkQualityLevel ||
+    config?.qualityLevel ||
+    null;
+  const qualityOverrides = qualityLevel
+    ? getNetworkProfileOverridesForQuality(qualityLevel)
+    : null;
+
+  const effectiveDefaults = qualityOverrides
+    ? {
+        ...defaults,
+        socketKeepAliveInitialDelay:
+          qualityOverrides.socketKeepAliveInitialDelay ??
+          defaults.socketKeepAliveInitialDelay,
+        keepaliveInterval:
+          qualityOverrides.keepaliveInterval ?? defaults.keepaliveInterval,
+        keepaliveCountMax:
+          qualityOverrides.keepaliveCountMax ?? defaults.keepaliveCountMax,
+        readyTimeout: qualityOverrides.readyTimeout ?? defaults.readyTimeout,
+      }
+    : defaults;
 
   const tcpNoDelay = toBoolean(
     readProfileValue(config, profileSource, "tcpNoDelay"),
-    defaults.tcpNoDelay,
+    effectiveDefaults.tcpNoDelay,
   );
   const socketKeepAlive = toBoolean(
     readProfileValue(config, profileSource, "socketKeepAlive"),
-    defaults.socketKeepAlive,
+    effectiveDefaults.socketKeepAlive,
   );
   const socketKeepAliveInitialDelay = toBoundedInt(
     readProfileValue(config, profileSource, "socketKeepAliveInitialDelay"),
     1000,
     120000,
-    defaults.socketKeepAliveInitialDelay,
+    effectiveDefaults.socketKeepAliveInitialDelay,
   );
   const keepaliveInterval = toBoundedInt(
     readProfileValue(config, profileSource, "keepaliveInterval"),
     5000,
     120000,
-    defaults.keepaliveInterval,
+    effectiveDefaults.keepaliveInterval,
   );
   const keepaliveCountMax = toBoundedInt(
     readProfileValue(config, profileSource, "keepaliveCountMax"),
     3,
     30,
-    defaults.keepaliveCountMax,
+    effectiveDefaults.keepaliveCountMax,
   );
   const readyTimeout = toBoundedInt(
     readProfileValue(config, profileSource, "readyTimeout"),
     10000,
     180000,
-    defaults.readyTimeout,
+    effectiveDefaults.readyTimeout,
   );
 
   return {
@@ -94,6 +121,11 @@ const resolveSshNetworkProfile = (
     keepaliveInterval,
     keepaliveCountMax,
     readyTimeout,
+    networkQualityLevel: qualityLevel || NETWORK_QUALITY_LEVELS.GOOD,
+    outputDispatchThresholdBytes:
+      qualityOverrides?.outputDispatchThresholdBytes ?? 4096,
+    outputDispatchIntervalMs: qualityOverrides?.outputDispatchIntervalMs ?? 8,
+    preflightTcpTimeoutMs: qualityOverrides?.preflightTcpTimeoutMs ?? 2000,
   };
 };
 
@@ -130,6 +162,7 @@ const applySocketNetworkProfile = (
 };
 
 module.exports = {
+  DEFAULT_SSH_NETWORK_PROFILE,
   resolveSshNetworkProfile,
   applySocketNetworkProfile,
 };

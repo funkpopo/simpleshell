@@ -712,6 +712,54 @@ class ReconnectionManager extends EventEmitter {
     return successCount / recentHistory.length;
   }
 
+  /**
+   * 用延迟/重连统计刷新 session.qualityMetrics
+   */
+  updateSessionQualityMetrics(session, partial = {}) {
+    if (!session) {
+      return null;
+    }
+
+    const successRate = this.calculateSuccessRate(session);
+    const next = {
+      stability:
+        partial.stability !== undefined
+          ? partial.stability
+          : (session.qualityMetrics?.stability ?? successRate),
+      latency:
+        partial.latency !== undefined
+          ? partial.latency
+          : (session.qualityMetrics?.latency ?? 0),
+      packetLoss:
+        partial.packetLoss !== undefined
+          ? partial.packetLoss
+          : (session.qualityMetrics?.packetLoss ?? 0),
+      level:
+        partial.level !== undefined
+          ? partial.level
+          : (session.qualityMetrics?.level ?? null),
+      successRate,
+      updatedAt: Date.now(),
+    };
+    session.qualityMetrics = next;
+    return next;
+  }
+
+  /**
+   * 运行时更新重连策略配置（设置页网络模式切换）
+   */
+  updateConfig(config = {}) {
+    this.config = buildSshRetryConfig({
+      ...this.config,
+      ...config,
+    });
+    logToFile(
+      `重连管理器配置已更新 (窗口${this.config.totalTimeCapMs}ms, 最多${this.config.maxRetries}次, backoff=${this.config.useExponentialBackoff})`,
+      "INFO",
+    );
+    return this.config;
+  }
+
   // 取消待执行的重连任务
   cancelPendingReconnect(sessionId) {
     const timerId = this.reconnectTimers.get(sessionId);
@@ -883,11 +931,16 @@ class ReconnectionManager extends EventEmitter {
       });
 
       this.statistics.successfulReconnects++;
+      this.updateSessionQualityMetrics(session, {
+        stability: this.calculateSuccessRate(session),
+        level: "good",
+      });
 
       logToFile(`重连成功: ${session.id}`, "INFO");
       const successPayload = {
         sessionId: session.id,
         attempts: attemptNumber,
+        qualityMetrics: session.qualityMetrics,
         ...strategyFields,
       };
       this.emit("reconnectSuccess", successPayload);
@@ -927,6 +980,10 @@ class ReconnectionManager extends EventEmitter {
         success: false,
         attempts: session.retryCount,
         error: error.message,
+      });
+      this.updateSessionQualityMetrics(session, {
+        stability: this.calculateSuccessRate(session),
+        level: "degraded",
       });
 
       this.statistics.failedReconnects++;

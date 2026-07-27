@@ -58,7 +58,7 @@ class SSHPool extends BaseConnectionPool {
     // 为每个连接初始化通道管理器
     this.channelManagers = new Map();
 
-    // 初始化重连管理器
+    // 重连策略固定为弱网默认（DEFAULT_SSH_RETRY_CONFIG），无多模式切换
     this.reconnectionManager = new ReconnectionManager();
   }
 
@@ -75,7 +75,7 @@ class SSHPool extends BaseConnectionPool {
     proxyManager.initialize();
     this.proxyManager = proxyManager;
 
-    // 初始化重连管理器
+    // 初始化重连管理器（唯一弱网策略）
     this.reconnectionManager.initialize();
     this._setupReconnectionEvents();
 
