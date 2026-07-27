@@ -35,10 +35,10 @@ export function usePromptTracking({
   sendInputToProcess,
   enqueueInputToProcess,
   suggestionApi,
-  commandBlockCallbacks = null,
 }) {
-  const [, setInEditorMode] = useState(false);
+  const [inEditorMode, setInEditorMode] = useState(false);
   const [, setIsCommandExecuting] = useState(false);
+  const editorLayoutSyncTimersRef = useRef([]);
   const promptTrackingStateRef = useRef(createPromptTrackingState());
   const pendingCommandBoundaryRef = useRef({
     command: "",
@@ -49,11 +49,6 @@ export function usePromptTracking({
   // listeners never capture a stale object identity from render N.
   const suggestionApiRef = useRef(suggestionApi);
   suggestionApiRef.current = suggestionApi;
-
-  // Command-block boundary callbacks (P1 logical blocks). Ref-bound so
-  // setupCommandDetection never freezes a stale closure.
-  const commandBlockCallbacksRef = useRef(commandBlockCallbacks);
-  commandBlockCallbacksRef.current = commandBlockCallbacks;
 
   // Coalesce cursor + suggestion refresh (replaces paired setTimeout 10/16).
   // Delay is intentional: xterm must process the keystroke before we measure
@@ -129,24 +124,74 @@ export function usePromptTracking({
 
   useEffect(() => () => cancelInputUiRefresh(), [cancelInputUiRefresh]);
 
-  const setEditorModeState = useCallback((nextInEditorMode) => {
-    const normalizedInEditorMode = Boolean(nextInEditorMode);
-    inEditorModeRef.current = normalizedInEditorMode;
-    setInEditorMode((previousInEditorMode) =>
-      previousInEditorMode === normalizedInEditorMode
-        ? previousInEditorMode
-        : normalizedInEditorMode,
-    );
-    try {
-      commandBlockCallbacksRef.current?.onLayout?.();
-    } catch {
-      /* intentionally ignored */
+  const clearEditorLayoutSyncTimers = useCallback(() => {
+    if (editorLayoutSyncTimersRef.current.length === 0) {
+      return;
     }
-  }, [inEditorModeRef]);
+    editorLayoutSyncTimersRef.current.forEach((timerId) => {
+      window.clearTimeout(timerId);
+    });
+    editorLayoutSyncTimersRef.current = [];
+  }, []);
+
+  const scheduleEditorLayoutSyncPasses = useCallback(() => {
+    clearEditorLayoutSyncTimers();
+
+    // Alternate-buffer apps (vim/nano/less) need a few fit+resize passes:
+    // first paint often happens before rows/cols stabilize.
+    const delaysMs = [0, 32, 96, 220];
+    delaysMs.forEach((delayMs, index) => {
+      const timerId = window.setTimeout(() => {
+        scheduleTerminalLayoutSyncRef.current(
+          index === 0
+            ? "alternate-buffer-force"
+            : `alternate-buffer-refit-force-${delayMs}`,
+          index === 0 ? { immediate: true } : undefined,
+        );
+      }, delayMs);
+      editorLayoutSyncTimersRef.current.push(timerId);
+    });
+  }, [clearEditorLayoutSyncTimers, scheduleTerminalLayoutSyncRef]);
+
+  const setEditorModeState = useCallback(
+    (nextInEditorMode) => {
+      const normalizedInEditorMode = Boolean(nextInEditorMode);
+      const wasInEditorMode = inEditorModeRef.current;
+      inEditorModeRef.current = normalizedInEditorMode;
+      setInEditorMode((previousInEditorMode) =>
+        previousInEditorMode === normalizedInEditorMode
+          ? previousInEditorMode
+          : normalizedInEditorMode,
+      );
+
+      if (normalizedInEditorMode && !wasInEditorMode) {
+        scheduleEditorLayoutSyncPasses();
+      } else if (!normalizedInEditorMode) {
+        clearEditorLayoutSyncTimers();
+        if (wasInEditorMode) {
+          scheduleTerminalLayoutSyncRef.current("editor-exit-force", {
+            immediate: true,
+          });
+        }
+      }
+    },
+    [
+      clearEditorLayoutSyncTimers,
+      inEditorModeRef,
+      scheduleEditorLayoutSyncPasses,
+      scheduleTerminalLayoutSyncRef,
+    ],
+  );
+
+  useEffect(
+    () => () => {
+      clearEditorLayoutSyncTimers();
+    },
+    [clearEditorLayoutSyncTimers],
+  );
 
   const applyPromptTrackingState = useCallback((nextState = {}) => {
     const state = promptTrackingStateRef.current;
-    const wasCommandExecuting = state.commandRunning && !state.promptReady;
     let promptStateChanged = false;
     let commandRunningChanged = false;
 
@@ -171,19 +216,8 @@ export function usePromptTracking({
         state.commandRunning && !state.promptReady;
       isCommandExecutingRef.current = nextIsCommandExecuting;
       setIsCommandExecuting(nextIsCommandExecuting);
-
-      // Command block boundary: running → prompt ready closes the open block.
-      if (wasCommandExecuting && state.promptReady && !state.commandRunning) {
-        try {
-          commandBlockCallbacksRef.current?.onCommandEnd?.({
-            term: termRef.current,
-          });
-        } catch {
-          /* intentionally ignored */
-        }
-      }
     }
-  }, [termRef]);
+  }, []);
 
   const resetPromptTracking = useCallback(() => {
     promptTrackingStateRef.current = createPromptTrackingState();
@@ -195,12 +229,6 @@ export function usePromptTracking({
 
     isCommandExecutingRef.current = false;
     setIsCommandExecuting(false);
-
-    try {
-      commandBlockCallbacksRef.current?.onReset?.();
-    } catch {
-      /* intentionally ignored */
-    }
   }, [termRef]);
 
   const resumePromptTrackingForSuggestionInput = useCallback(
@@ -445,9 +473,6 @@ export function usePromptTracking({
             clearPendingWrappedInputRefresh(term);
             applyPromptTrackingState({ promptReady: false });
             setEditorModeState(true);
-            scheduleTerminalLayoutSyncRef.current("alternate-buffer-force", {
-              immediate: true,
-            });
 
             if (processId && window.terminalAPI?.notifyEditorModeChange) {
               window.terminalAPI.notifyEditorModeChange(processId, true);
@@ -455,6 +480,7 @@ export function usePromptTracking({
 
             setShowSuggestions(false);
             setSuggestions([]);
+            setCurrentInput("");
           } else if (type === "normal") {
             clearPendingWrappedInputRefresh(term);
             if (inEditorMode) {
@@ -571,17 +597,6 @@ export function usePromptTracking({
             sendInputToProcess(processId, data);
           }
           return;
-        }
-
-        // Ctrl+C while a command is running → mark block cancelled (soft).
-        if (data === "\x03") {
-          try {
-            if (promptTrackingStateRef.current.commandRunning) {
-              commandBlockCallbacksRef.current?.onCommandInterrupt?.();
-            }
-          } catch {
-            /* intentionally ignored */
-          }
         }
 
         if (data === "\b" || data === "\x7f") {
@@ -752,20 +767,6 @@ export function usePromptTracking({
               promptReady: false,
               commandRunning: true,
             });
-
-            // Open a logical command block at the submit boundary (P1).
-            // Keep pendingCommandBoundary long enough for history commit, then
-            // clear; the block store owns the running lifetime separately.
-            if (command && !inEditorMode) {
-              try {
-                commandBlockCallbacksRef.current?.onCommandStart?.({
-                  command,
-                  term,
-                });
-              } catch {
-                /* intentionally ignored */
-              }
-            }
 
             commitExecutedCommand();
             suggestionSelectedRef.current = false;
@@ -966,6 +967,7 @@ export function usePromptTracking({
   );
 
   return {
+    inEditorMode,
     inEditorModeRef,
     isCommandExecutingRef,
     lastExecutedCommandTimeRef,

@@ -176,16 +176,49 @@ assert.match(
   "WebTerminal must bind Ctrl+/ search",
 );
 
-// Command block styles from 3aef8c remain available.
-assert.match(
+// Command block gutter was removed; ensure no residual styles/tokens remain.
+assert.doesNotMatch(
   terminalCss,
-  /\.command-block-gutter/,
-  "terminal.css must keep command block gutter styles",
+  /command-block-gutter/,
+  "terminal.css must not contain command block gutter styles",
+);
+assert.doesNotMatch(
+  themeVariables,
+  /--terminal-block-/,
+  "theme-variables must not contain command block tokens",
+);
+assert.doesNotMatch(
+  webTerminal,
+  /CommandBlockGutter|useCommandBlocks/,
+  "WebTerminal must not wire command block gutter",
+);
+
+// Fullscreen editor mode must not leave floating search chrome over the buffer,
+// and must not override xterm cell metrics via CSS font-size/line-height hacks.
+assert.match(
+  webTerminal,
+  /terminal-container--editor/,
+  "WebTerminal must mark editor/alternate-buffer containers",
 );
 assert.match(
-  themeVariables,
-  /--terminal-block-gutter-width/,
-  "theme-variables must keep command block tokens",
+  webTerminal,
+  /!inEditorMode\s*\?[\s\S]*WebTerminalSearchOverlay|inEditorMode[\s\S]*WebTerminalSearchOverlay/,
+  "WebTerminal must hide search overlay while in editor mode",
+);
+assert.match(
+  webTerminalCss,
+  /\.terminal-container--editor\s+\.xterm-viewport/,
+  "WebTerminal.css must hide overflow in editor mode",
+);
+assert.doesNotMatch(
+  terminalCss,
+  /\.xterm-viewport\s*\{[^}]*font-size\s*:/,
+  "terminal.css must not override xterm-viewport font-size",
+);
+assert.doesNotMatch(
+  terminalCss,
+  /\.xterm-viewport\s*\{[^}]*line-height\s*:/,
+  "terminal.css must not override xterm-viewport line-height",
 );
 
 console.log("WebTerminal surface experience checks passed.");

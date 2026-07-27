@@ -12,8 +12,6 @@ export const terminalStyles = `
   overflow: hidden;
 }
 .xterm-viewport {
-  width: 100% !important;
-  height: 100% !important;
   overflow-y: auto;
   overflow-x: hidden;
   background: inherit !important;
@@ -42,6 +40,13 @@ export const terminalStyles = `
   height: 100%;
   overflow: hidden;
   position: relative;
+}
+.terminal-container--editor .xterm-viewport {
+  overflow: hidden !important;
+}
+.terminal-container--editor .search-icon-btn,
+.terminal-container--editor .search-bar {
+  display: none !important;
 }
 
 .xterm-selection {

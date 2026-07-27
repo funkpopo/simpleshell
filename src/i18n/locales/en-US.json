@@ -383,19 +383,6 @@
         "noProcessId": "Could not get process ID",
         "welcome": "Welcome to WebTerminal!",
         "helpHint": "Type \"help\" for available commands."
-      },
-      "commandBlocks": {
-        "copy": "Copy command",
-        "copied": "Copied",
-        "rerun": "Rerun command",
-        "fold": "Toggle fold",
-        "status": {
-          "running": "Running",
-          "success": "Completed",
-          "failed": "Failed",
-          "cancelled": "Cancelled",
-          "unknown": "Unknown"
-        }
       }
     },
     "connectionManager": {

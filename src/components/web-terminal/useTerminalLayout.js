@@ -127,11 +127,15 @@ export function useTerminalLayout({
 
         const rect = container.getBoundingClientRect();
         const previous = lastLayoutGeometryRef.current;
+        const forceResizeMessage = String(reason).includes("force");
         const sizeChanged =
           Math.abs(rect.width - previous.width) > 0.5 ||
           Math.abs(rect.height - previous.height) > 0.5;
 
-        if (sizeChanged && term.element) {
+        // Always re-apply geometry on forced sync (alternate buffer / editor).
+        // xterm can keep stale element box sizes after buffer switches even when
+        // the outer container rect did not change.
+        if ((sizeChanged || forceResizeMessage) && term.element) {
           term.element.style.width = `${rect.width}px`;
           term.element.style.height = `${rect.height}px`;
         }
@@ -149,7 +153,6 @@ export function useTerminalLayout({
         };
 
         const processId = processCache[tabId];
-        const forceResizeMessage = String(reason).includes("force");
         if (processId && (colsChanged || rowsChanged || forceResizeMessage)) {
           sendResizeIfNeeded(processId, tabId, term.cols, term.rows, {
             force: forceResizeMessage,
@@ -157,8 +160,15 @@ export function useTerminalLayout({
           });
         }
 
-        if (!term.__webglEnabled && typeof term.refresh === "function") {
-          scheduleTerminalRedrawRef.current(term, { force: sizeChanged });
+        // Canvas and WebGL both need an explicit refresh after forced fit so
+        // the last rows/cols are not left blank or clipped after editor entry.
+        if (
+          typeof term.refresh === "function" &&
+          (forceResizeMessage || sizeChanged || colsChanged || rowsChanged)
+        ) {
+          scheduleTerminalRedrawRef.current(term, {
+            force: forceResizeMessage || sizeChanged,
+          });
         }
 
         return true;

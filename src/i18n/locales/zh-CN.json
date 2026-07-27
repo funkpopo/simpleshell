@@ -383,19 +383,6 @@
         "noProcessId": "未能获取进程 ID",
         "welcome": "欢迎使用 WebTerminal!",
         "helpHint": "输入 \"help\" 查看可用命令。"
-      },
-      "commandBlocks": {
-        "copy": "复制命令",
-        "copied": "已复制",
-        "rerun": "重新运行",
-        "fold": "折叠/展开",
-        "status": {
-          "running": "运行中",
-          "success": "已完成",
-          "failed": "失败",
-          "cancelled": "已取消",
-          "unknown": "未知"
-        }
       }
     },
     "connectionManager": {

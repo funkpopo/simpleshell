@@ -21,8 +21,6 @@ import { useTerminalClipboard } from "./web-terminal/useTerminalClipboard.js";
 import { useTerminalContextMenu } from "./web-terminal/useTerminalContextMenu.js";
 import { useTerminalLifecycle } from "./web-terminal/useTerminalLifecycle.js";
 import { useTerminalSessionEvents } from "./web-terminal/useTerminalSessionEvents.js";
-import { useCommandBlocks } from "./web-terminal/blocks/useCommandBlocks.js";
-import CommandBlockGutter from "./web-terminal/blocks/CommandBlockGutter.jsx";
 
 const WebTerminal = ({
   tabId,
@@ -241,23 +239,7 @@ const WebTerminal = ({
   };
 
   const {
-    gutterItems,
-    gutterHidden,
-    commandBlockCallbacks,
-    toggleFold,
-    copyCommand,
-    rerunCommand,
-  } = useCommandBlocks({
-    tabId,
-    termRef,
-    terminalRef,
-    inEditorModeRef,
-    currentProcessId,
-    sendInputToProcess,
-    isActive,
-  });
-
-  const {
+    inEditorMode,
     resetPromptTracking,
     syncPromptTrackingFromTerminal,
     recoverTerminalInteractionState,
@@ -277,7 +259,6 @@ const WebTerminal = ({
     sendInputToProcess,
     enqueueInputToProcess,
     suggestionApi,
-    commandBlockCallbacks,
   });
 
   const recoverTerminalInteractionStateBound = useCallback(
@@ -348,6 +329,15 @@ const WebTerminal = ({
     termRef,
     searchAddonVersion,
   });
+
+  // Fullscreen TUI editors (vim/nano/less) must not keep the floating search
+  // chrome, which otherwise permanently covers the top-right of the buffer.
+  useEffect(() => {
+    if (!inEditorMode || !showSearchBar) {
+      return;
+    }
+    closeSearchBar();
+  }, [closeSearchBar, inEditorMode, showSearchBar]);
 
   const { handleMouseDown, handleMouseMove, handleMouseUp } =
     useTerminalClipboard({
@@ -493,7 +483,11 @@ const WebTerminal = ({
         overflow: "hidden",
       }}
     >
-      <div className="terminal-container">
+      <div
+        className={`terminal-container${
+          inEditorMode ? " terminal-container--editor" : ""
+        }`}
+      >
         <div
           ref={terminalRef}
           style={{
@@ -503,32 +497,26 @@ const WebTerminal = ({
           }}
         />
 
-        <CommandBlockGutter
-          items={gutterItems}
-          hidden={gutterHidden || !isActive}
-          onToggleFold={toggleFold}
-          onCopy={copyCommand}
-          onRerun={rerunCommand}
-        />
-
-        <WebTerminalSearchOverlay
-          isActive={isActive}
-          showSearchBar={showSearchBar}
-          searchTerm={searchTerm}
-          searchResults={searchResults}
-          noMatchFound={noMatchFound}
-          caseSensitive={caseSensitive}
-          useRegex={useRegex}
-          wholeWord={wholeWord}
-          onOpenSearch={openSearchBar}
-          onCloseSearch={closeSearchBar}
-          onSearchTermChange={setSearchTerm}
-          onSearchNext={handleSearch}
-          onSearchPrevious={handleSearchPrevious}
-          onToggleCaseSensitive={toggleCaseSensitive}
-          onToggleRegex={toggleRegex}
-          onToggleWholeWord={toggleWholeWord}
-        />
+        {!inEditorMode ? (
+          <WebTerminalSearchOverlay
+            isActive={isActive}
+            showSearchBar={showSearchBar}
+            searchTerm={searchTerm}
+            searchResults={searchResults}
+            noMatchFound={noMatchFound}
+            caseSensitive={caseSensitive}
+            useRegex={useRegex}
+            wholeWord={wholeWord}
+            onOpenSearch={openSearchBar}
+            onCloseSearch={closeSearchBar}
+            onSearchTermChange={setSearchTerm}
+            onSearchNext={handleSearch}
+            onSearchPrevious={handleSearchPrevious}
+            onToggleCaseSensitive={toggleCaseSensitive}
+            onToggleRegex={toggleRegex}
+            onToggleWholeWord={toggleWholeWord}
+          />
+        ) : null}
       </div>
       <WebTerminalContextMenu
         contextMenu={contextMenu}
