@@ -19,7 +19,6 @@ import {
   Paper,
   Fab,
   Tooltip,
-  CircularProgress,
   Alert,
   Menu,
   MenuItem,
@@ -31,6 +30,7 @@ import {
   Button,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
+import MinimizeIcon from "@mui/icons-material/Minimize";
 import SendIcon from "@mui/icons-material/Send";
 import SettingsIcon from "@mui/icons-material/Settings";
 import StopIcon from "@mui/icons-material/Stop";
@@ -44,7 +44,6 @@ import AIIcon from "./AIIcon";
 import AISettings from "./AISettings";
 import ExecutableCommand from "./ExecutableCommand";
 import { useTranslation } from "react-i18next";
-import { styled } from "@mui/material/styles";
 import { RADIUS } from "../theme";
 import ReactMarkdown from "react-markdown";
 import {
@@ -64,13 +63,17 @@ import "./CodeHighlight.css";
 const MAX_MARKDOWN_LINK_LENGTH = 2048;
 const API_ERROR_SUMMARY_MAX_LENGTH = 180;
 const MESSAGE_ACTION_BUTTON_SX = {
-  width: 24,
-  height: 24,
-  p: 0.25,
+  width: 26,
+  height: 26,
+  p: 0.35,
+  borderRadius: "7px",
   color: "text.secondary",
-  opacity: 0.72,
+  opacity: 0.78,
+  transition: "opacity 0.15s ease, background 0.15s ease, color 0.15s ease",
   "&:hover": {
     opacity: 1,
+    backgroundColor: "action.hover",
+    color: "text.primary",
   },
   "&.Mui-disabled": {
     color: "text.disabled",
@@ -78,7 +81,7 @@ const MESSAGE_ACTION_BUTTON_SX = {
   },
 };
 const MESSAGE_ACTION_ICON_SX = {
-  fontSize: 15,
+  fontSize: 14,
 };
 const ALLOWED_MARKDOWN_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const MARKDOWN_ALLOWED_ELEMENTS = [
@@ -270,57 +273,62 @@ const FloatingDialog = createFloatingDialog({
   borderRadius: DIALOG_PAPER_RADIUS,
 });
 
-// 消息气泡组件
-const MessageBubble = styled(Paper)(({ theme, isUser }) => ({
-  padding: theme.spacing(1.5, 2),
-  marginBottom: theme.spacing(1.5),
-  maxWidth: "85%",
-  alignSelf: isUser ? "flex-end" : "flex-start",
-  backgroundColor: isUser
-    ? theme.palette.primary.main
-    : theme.palette.mode === "dark"
-      ? theme.palette.grey[800]
-      : theme.palette.grey[100],
-  color: isUser
-    ? theme.palette.primary.contrastText
-    : theme.palette.text.primary,
-  borderRadius: isUser ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-  wordBreak: "break-word",
-  position: "relative",
-}));
-
 // 思考内容组件
 const ThinkContent = ({ content, isExpanded, onToggle }) => {
   const { t } = useTranslation();
   return (
-    <Box
-      sx={{
-        mt: 1,
-        p: 1,
-        borderRadius: 1,
-        backgroundColor: "action.hover",
-        cursor: "pointer",
-      }}
-      onClick={onToggle}
-    >
+    <Box className="ai-think-block" onClick={onToggle}>
       <Box display="flex" alignItems="center" justifyContent="space-between">
-        <Typography variant="caption" color="text.secondary">
+        <Typography className="ai-think-label" variant="caption">
           {t("ai.thinkingProcess")}
         </Typography>
         {isExpanded ? (
-          <ExpandLessIcon fontSize="small" />
+          <ExpandLessIcon fontSize="small" sx={{ color: "text.secondary" }} />
         ) : (
-          <ExpandMoreIcon fontSize="small" />
+          <ExpandMoreIcon fontSize="small" sx={{ color: "text.secondary" }} />
         )}
       </Box>
       <Collapse in={isExpanded}>
-        <Typography
-          variant="body2"
-          sx={{ mt: 1, fontStyle: "italic", opacity: 0.8 }}
-        >
+        <Typography className="ai-think-body" variant="body2">
           {content}
         </Typography>
       </Collapse>
+    </Box>
+  );
+};
+
+/** 流式输出包装：渐变遮罩 + 光标尾迹 + 节流 chunk 淡入 */
+const StreamContent = ({ isStreaming, contentLength = 0, children }) => {
+  const [streamTick, setStreamTick] = useState(0);
+  const lastLenRef = useRef(0);
+  const lastTickAtRef = useRef(0);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      lastLenRef.current = contentLength;
+      return undefined;
+    }
+    if (contentLength <= lastLenRef.current) {
+      return undefined;
+    }
+    lastLenRef.current = contentLength;
+    const now =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
+    // 约 16fps 节流，避免逐 token 重启动画造成闪烁
+    if (now - lastTickAtRef.current < 60) {
+      return undefined;
+    }
+    lastTickAtRef.current = now;
+    setStreamTick((tick) => (tick + 1) % 2);
+    return undefined;
+  }, [isStreaming, contentLength]);
+
+  return (
+    <Box
+      className={`ai-stream-wrap ${isStreaming ? "ai-stream-active" : "ai-stream-done"}`}
+      data-stream-tick={isStreaming ? String(streamTick) : undefined}
+    >
+      <Box className="ai-message-content ai-stream-body">{children}</Box>
     </Box>
   );
 };
@@ -1196,6 +1204,11 @@ const AIChatWindow = ({
       customzindex={zIndex}
       ref={dialogRef}
       onMouseDown={onFocus}
+      slotProps={{
+        paper: {
+          className: "ai-chat-paper",
+        },
+      }}
       {...createAnchoredTransition(anchorEl)}
     >
       {/* 左上角拖动调整宽高手柄 */}
@@ -1296,28 +1309,36 @@ const AIChatWindow = ({
         }}
       />
       <DialogTitle
+        className="ai-chat-header"
         sx={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          pb: 1,
+          gap: 1,
         }}
       >
-        <Box display="flex" alignItems="center" gap={1}>
+        <Box display="flex" alignItems="center" gap={0.75} minWidth={0}>
           <Tooltip title={t("aiAssistant.minimize")}>
-            <IconButton size="medium" onClick={onMinimize} sx={{ p: 0.5 }}
-              aria-label={t("aiAssistant.minimize")}>
+            <IconButton
+              size="small"
+              onClick={onMinimize}
+              className="ai-chat-header-btn"
+              aria-label={t("aiAssistant.minimize")}
+            >
               <AIIcon />
             </IconButton>
           </Tooltip>
-          <Typography variant="h6">{t("ai.title")}</Typography>
+          <Typography className="ai-chat-title" variant="h6" noWrap>
+            {t("ai.title")}
+          </Typography>
         </Box>
-        <Box display="flex" alignItems="center" gap={0.5}>
+        <Box display="flex" alignItems="center" gap={0.35} flexShrink={0}>
           {currentApi && (
             <Chip
               label={currentApi.model}
               size="small"
               onClick={(e) => setApiMenuAnchor(e.currentTarget)}
+              className="ai-chat-model-chip"
               sx={{ cursor: "pointer" }}
             />
           )}
@@ -1330,6 +1351,9 @@ const AIChatWindow = ({
                 border: 1,
                 borderColor: "divider",
                 boxShadow: 3,
+                borderRadius: 2,
+                mt: 0.5,
+                minWidth: 160,
               },
             }}
           >
@@ -1338,83 +1362,73 @@ const AIChatWindow = ({
                 key={api.id}
                 onClick={() => handleApiChange(api)}
                 selected={currentApi?.id === api.id}
+                dense
               >
                 {api.model}
               </MenuItem>
             ))}
             <Divider />
-            <MenuItem onClick={() => setSettingsOpen(true)}>
+            <MenuItem onClick={() => setSettingsOpen(true)} dense>
               <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
               {t("ai.manageApis")}
             </MenuItem>
           </Menu>
           <Tooltip title={t("ai.clearChat")}>
-            <IconButton size="small" onClick={handleClearChat}
-              aria-label={t("ai.clearChat")}>
-              <DeleteIcon />
+            <IconButton
+              size="small"
+              onClick={handleClearChat}
+              className="ai-chat-header-btn"
+              aria-label={t("ai.clearChat")}
+            >
+              <DeleteIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Tooltip title={t("ai.settings")}>
-            <IconButton size="small" onClick={() => setSettingsOpen(true)}
-              aria-label={t("ai.settings")}>
-              <SettingsIcon />
+            <IconButton
+              size="small"
+              onClick={() => setSettingsOpen(true)}
+              className="ai-chat-header-btn"
+              aria-label={t("ai.settings")}
+            >
+              <SettingsIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t("aiAssistant.minimize")}>
+            <IconButton
+              size="small"
+              onClick={onMinimize}
+              className="ai-chat-header-btn"
+              aria-label={t("aiAssistant.minimize")}
+            >
+              <MinimizeIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Tooltip title={t("aiAssistant.close")}>
             <IconButton
               size="small"
               onClick={handleClose}
+              className="ai-chat-header-btn ai-chat-close-btn"
               aria-label={t("aiAssistant.close")}
             >
-              <CloseIcon />
+              <CloseIcon fontSize="small" />
             </IconButton>
           </Tooltip>
         </Box>
       </DialogTitle>
-      <Divider />
-      <DialogContent
-        sx={{
-          display: "flex",
-          flexDirection: "column",
-          p: 2,
-          overflow: "hidden",
-          position: "relative",
-        }}
-      >
+      <DialogContent className="ai-chat-content">
         {/* 消息列表 */}
-        <Box
-          ref={messagesContainerRef}
-          sx={{
-            flex: 1,
-            overflowY: "auto",
-            display: "flex",
-            flexDirection: "column",
-            mb: 2,
-            pr: 1,
-          }}
-        >
+        <Box ref={messagesContainerRef} className="ai-chat-messages">
           {messages.length === 0 && (
-            <Box
-              sx={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 2,
-                p: 3,
-              }}
-            >
+            <Box className="ai-chat-empty">
+              <Box className="ai-chat-empty-icon" aria-hidden="true">
+                <AIIcon />
+              </Box>
               {!currentApi ||
               !currentApi.apiUrl ||
               !hasConfiguredApiKey(currentApi) ||
               !currentApi.model ? (
                 <>
-                  <Typography
-                    color="warning.main"
-                    variant="body2"
-                    textAlign="center"
-                  >
+                  <Typography className="ai-chat-empty-title">
                     {t("ai.noApiConfigured")}
                   </Typography>
                   <Button
@@ -1422,79 +1436,85 @@ const AIChatWindow = ({
                     size="small"
                     startIcon={<SettingsIcon />}
                     onClick={() => setSettingsOpen(true)}
+                    sx={{ borderRadius: "10px", textTransform: "none" }}
                   >
                     {t("ai.settings")}
                   </Button>
                 </>
               ) : (
-                <Typography color="text.secondary" variant="body2">
-                  {t("ai.startConversation")}
-                </Typography>
+                <>
+                  <Typography className="ai-chat-empty-title">
+                    {t("ai.startConversation")}
+                  </Typography>
+                  <Typography className="ai-chat-empty-hint">
+                    {t("ai.inputPlaceholder")}
+                  </Typography>
+                </>
               )}
             </Box>
           )}
           {messages.map((message) => {
             const isUserMessage = message.role === "user";
+            const isStreaming = Boolean(message.isStreaming);
             const messageActionsDisabled = Boolean(
-              isPending || abortController || message.isStreaming,
+              isPending || abortController || isStreaming,
             );
+
+            const assistantBody =
+              message.role === "assistant" ? (
+                showThinking ? (
+                  processThinkContent(message.content).map((part, index) =>
+                    part.type === "text" ? (
+                      <React.Fragment key={index}>
+                        {renderMessageContent(
+                          part.content,
+                          message.id,
+                          isStreaming,
+                        )}
+                      </React.Fragment>
+                    ) : (
+                      <ThinkContent
+                        key={index}
+                        content={part.content}
+                        isExpanded={expandedThinking[message.id]}
+                        onToggle={() => toggleThinking(message.id)}
+                      />
+                    ),
+                  )
+                ) : (
+                  renderMessageContent(
+                    message.content.replace(/<think>[\s\S]*?<\/think>/g, ""),
+                    message.id,
+                    isStreaming,
+                  )
+                )
+              ) : null;
 
             return (
               <Box
                 key={message.id}
-                sx={{
-                  alignSelf: isUserMessage ? "flex-end" : "flex-start",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: isUserMessage ? "flex-end" : "flex-start",
-                  maxWidth: "85%",
-                  mb: 1.25,
+                className={`ai-message-row ${isUserMessage ? "is-user" : "is-assistant"}`}
+                ref={(el) => {
+                  if (el) messageRefsMap.current[message.id] = el;
                 }}
               >
-                <MessageBubble
-                  isUser={isUserMessage}
-                  ref={(el) => {
-                    if (el) messageRefsMap.current[message.id] = el;
-                  }}
-                  sx={{
-                    alignSelf: "stretch",
-                    maxWidth: "100%",
-                    mb: 0,
-                  }}
+                <Paper
+                  elevation={0}
+                  className={`ai-message-bubble ${isUserMessage ? "is-user" : "is-assistant"}${isStreaming ? " is-streaming" : ""}`}
                 >
-                  <Box>
-                    {message.role === "assistant" ? (
-                      showThinking ? (
-                        processThinkContent(message.content).map(
-                          (part, index) => (
-                            <Box key={index}>
-                              {part.type === "text" ? (
-                                renderMessageContent(
-                                  part.content,
-                                  message.id,
-                                  message.isStreaming,
-                                )
-                              ) : (
-                                <ThinkContent
-                                  content={part.content}
-                                  isExpanded={expandedThinking[message.id]}
-                                  onToggle={() => toggleThinking(message.id)}
-                                />
-                              )}
-                            </Box>
-                          ),
-                        )
-                      ) : (
-                        renderMessageContent(
-                          message.content.replace(
-                            /<think>[\s\S]*?<\/think>/g,
-                            "",
-                          ),
-                          message.id,
-                          message.isStreaming,
-                        )
-                      )
-                    ) : (
+                  {message.role === "assistant" ? (
+                    <StreamContent
+                      isStreaming={isStreaming}
+                      contentLength={
+                        typeof message.content === "string"
+                          ? message.content.length
+                          : 0
+                      }
+                    >
+                      {assistantBody}
+                    </StreamContent>
+                  ) : (
+                    <Box className="ai-message-content">
                       <ReactMarkdown
                         components={markdownComponents}
                         allowedElements={MARKDOWN_ALLOWED_ELEMENTS}
@@ -1504,21 +1524,10 @@ const AIChatWindow = ({
                       >
                         {message.content}
                       </ReactMarkdown>
-                    )}
-                    {message.isStreaming && (
-                      <CircularProgress size={12} sx={{ ml: 1 }} />
-                    )}
-                  </Box>
-                </MessageBubble>
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 0.25,
-                    mt: 0.25,
-                    px: 0.5,
-                  }}
-                >
+                    </Box>
+                  )}
+                </Paper>
+                <Box className="ai-message-actions">
                   {isUserMessage && (
                     <>
                       <Tooltip title={t("ai.editMessage")}>
@@ -1568,48 +1577,17 @@ const AIChatWindow = ({
 
         {/* 点状导航 - 消息快速跳转 */}
         {messages.length > 1 && (
-          <Box
-            sx={{
-              position: "absolute",
-              right: 6,
-              top: "50%",
-              transform: "translateY(-50%)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 0.5,
-              zIndex: 2,
-              py: 1,
-              px: 0.5,
-              borderRadius: 2,
-              backgroundColor: (theme) =>
-                theme.palette.mode === "dark"
-                  ? "rgba(0, 0, 0, 0.3)"
-                  : "rgba(255, 255, 255, 0.8)",
-            }}
-          >
+          <Box className="ai-chat-dots">
             {messages.map((message) => (
               <Box
                 key={message.id}
+                className={`ai-chat-dot ${message.role === "user" ? "is-user" : "is-assistant"}`}
                 onClick={() => scrollToMessage(message.id)}
-                sx={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  cursor: "pointer",
-                  backgroundColor:
-                    message.role === "user"
-                      ? "primary.main"
-                      : (theme) =>
-                          theme.palette.mode === "dark"
-                            ? "grey.500"
-                            : "grey.400",
-                  opacity: 0.7,
-                  transition: "all 0.2s",
-                  "&:hover": {
-                    opacity: 1,
-                    transform: "scale(1.3)",
-                  },
-                }}
+                title={
+                  message.role === "user"
+                    ? t("ai.editMessage")
+                    : t("ai.copyMessage")
+                }
               />
             ))}
           </Box>
@@ -1617,104 +1595,88 @@ const AIChatWindow = ({
 
         {/* 错误提示 */}
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError("")}>
+          <Alert
+            severity="error"
+            className="ai-chat-error"
+            onClose={() => setError("")}
+          >
             {error}
           </Alert>
         )}
 
         {/* 输入区域 */}
-        <Box
-          sx={{
-            display: "flex",
-            gap: 1,
-            alignItems: "center",
-            width: "100%",
-          }}
-        >
-          <TextField
-            fullWidth
-            multiline
-            maxRows={4}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
-              }
-            }}
-            placeholder={t("ai.inputPlaceholder")}
-            disabled={isPending || abortController}
-            inputRef={inputRef}
-            variant="outlined"
-            size="small"
-            sx={{
-              flex: "1 1 0",
-              minWidth: 0,
-            }}
-          />
-          {isPending || abortController ? (
-            <Tooltip title={t("ai.stopGenerating")}>
-              <Fab
-                size="small"
-                color="error"
-                onClick={handleAbortRequest}
-                aria-label={t("ai.stopGenerating")}
-                sx={{
-                  flexShrink: 0,
-                  width: 36,
-                  height: 36,
-                  minHeight: 36,
-                }}
-              >
-                <StopIcon />
-              </Fab>
-            </Tooltip>
-          ) : (
-            <Tooltip title={t("ai.sendMessage")}>
-              <span>
+        <Box className="ai-chat-footer">
+          <Box className="ai-chat-composer">
+            <TextField
+              fullWidth
+              multiline
+              maxRows={4}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
+              placeholder={t("ai.inputPlaceholder")}
+              disabled={isPending || abortController}
+              inputRef={inputRef}
+              variant="outlined"
+              size="small"
+              sx={{
+                flex: "1 1 0",
+                minWidth: 0,
+              }}
+            />
+            {isPending || abortController ? (
+              <Tooltip title={t("ai.stopGenerating")}>
                 <Fab
                   size="small"
-                  color="primary"
-                  onClick={handleSendMessage}
-                  disabled={
-                    !input.trim() ||
-                    !currentApi ||
-                    !currentApi.apiUrl ||
-                    !hasConfiguredApiKey(currentApi) ||
-                    !currentApi.model
-                  }
-                  aria-label={t("ai.sendMessage")}
-                  sx={{
-                    flexShrink: 0,
-                    width: 36,
-                    height: 36,
-                    minHeight: 36,
-                  }}
+                  color="error"
+                  onClick={handleAbortRequest}
+                  aria-label={t("ai.stopGenerating")}
+                  className="ai-chat-send-btn"
                 >
-                  <SendIcon />
+                  <StopIcon />
                 </Fab>
-              </span>
-            </Tooltip>
-          )}
-        </Box>
+              </Tooltip>
+            ) : (
+              <Tooltip title={t("ai.sendMessage")}>
+                <span>
+                  <Fab
+                    size="small"
+                    color="primary"
+                    onClick={handleSendMessage}
+                    disabled={
+                      !input.trim() ||
+                      !currentApi ||
+                      !currentApi.apiUrl ||
+                      !hasConfiguredApiKey(currentApi) ||
+                      !currentApi.model
+                    }
+                    aria-label={t("ai.sendMessage")}
+                    className="ai-chat-send-btn"
+                  >
+                    <SendIcon />
+                  </Fab>
+                </span>
+              </Tooltip>
+            )}
+          </Box>
 
-        {/* 显示思考内容开关 */}
-        <Box
-          sx={{
-            mt: 1,
-          }}
-        >
-          <FormControlLabel
-            control={
-              <Switch
-                size="small"
-                checked={showThinking}
-                onChange={(e) => setShowThinking(e.target.checked)}
-              />
-            }
-            label={t("ai.showThinking")}
-          />
+          <Box className="ai-chat-options">
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={showThinking}
+                  onChange={(e) => setShowThinking(e.target.checked)}
+                />
+              }
+              label={t("ai.showThinking")}
+            />
+          </Box>
         </Box>
       </DialogContent>
 
