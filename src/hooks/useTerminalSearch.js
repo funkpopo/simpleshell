@@ -36,6 +36,7 @@ export const useTerminalSearch = ({
   const [wholeWord, setWholeWord] = useState(DEFAULT_SEARCH_OPTIONS.wholeWord);
 
   const searchTermRef = useRef(searchTerm);
+  const showSearchBarRef = useRef(showSearchBar);
   const searchOptionsRef = useRef({
     caseSensitive,
     regex: useRegex,
@@ -45,6 +46,10 @@ export const useTerminalSearch = ({
   useEffect(() => {
     searchTermRef.current = searchTerm;
   }, [searchTerm]);
+
+  useEffect(() => {
+    showSearchBarRef.current = showSearchBar;
+  }, [showSearchBar]);
 
   useEffect(() => {
     searchOptionsRef.current = {
@@ -174,11 +179,17 @@ export const useTerminalSearch = ({
 
   const closeSearchBar = useCallback(() => {
     setShowSearchBar(false);
-  }, []);
+    setSearchTerm("");
+    clearSearchState({ clearSelection: true });
+  }, [clearSearchState]);
 
   const toggleSearchBar = useCallback(() => {
-    setShowSearchBar((prev) => !prev);
-  }, []);
+    if (showSearchBarRef.current) {
+      closeSearchBar();
+      return;
+    }
+    openSearchBar();
+  }, [closeSearchBar, openSearchBar]);
 
   const toggleCaseSensitive = useCallback(() => {
     setCaseSensitive((prev) => !prev);

@@ -132,6 +132,17 @@ assert.match(
   /wholeWord/,
   "useTerminalSearch must track wholeWord",
 );
+// Closing search must clear the term and decorations so reopen starts fresh.
+assert.match(
+  searchHook,
+  /const closeSearchBar = useCallback\(\(\) => \{[\s\S]*?setSearchTerm\(""\)[\s\S]*?clearSearchState\(\{\s*clearSelection:\s*true\s*\}\)/,
+  "closeSearchBar must clear search term and decorations",
+);
+assert.match(
+  searchHook,
+  /toggleSearchBar[\s\S]*?closeSearchBar\(\)/,
+  "toggleSearchBar must close via closeSearchBar so content is cleared",
+);
 
 // Shortcut hints match bindings.
 assert.match(
