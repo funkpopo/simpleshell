@@ -3,6 +3,10 @@ import { useWindowEvent } from "./useWindowEvent.js";
 import { getCharacterMetricsCss } from "../modules/terminal/controller/terminalDom.js";
 import { processCache } from "../modules/terminal/controller/terminalSessionStore.js";
 import {
+  buildCommandSuggestionCursorPosition,
+  isUsableRect,
+} from "../modules/terminal/commandSuggestionCursor.js";
+import {
   normalizeCommandSuggestionInput,
   shouldRequestCommandSuggestions,
 } from "../modules/terminal/commandSuggestionState.js";
@@ -20,24 +24,6 @@ const waitForTerminalLayoutFrame = () =>
   });
 
 const COMMAND_SUGGESTION_LIMIT = 10;
-
-const isUsableRect = (rect) =>
-  rect &&
-  Number.isFinite(rect.left) &&
-  Number.isFinite(rect.top) &&
-  Number.isFinite(rect.width) &&
-  Number.isFinite(rect.height) &&
-  rect.width > 0 &&
-  rect.height > 0;
-
-const isPointInsideRect = (x, y, rect) =>
-  Number.isFinite(x) &&
-  Number.isFinite(y) &&
-  isUsableRect(rect) &&
-  x >= rect.left &&
-  x <= rect.right &&
-  y >= rect.top &&
-  y <= rect.bottom;
 
 export const useTerminalSuggestions = ({
   tabId,
@@ -110,64 +96,73 @@ export const useTerminalSuggestions = ({
           return null;
         }
 
+        const commitPosition = (rawPosition) => {
+          const nextPosition = buildCommandSuggestionCursorPosition({
+            ...rawPosition,
+            suggestionHeight,
+            containerRect,
+          });
+          if (!nextPosition) {
+            setCursorPosition(null);
+            return null;
+          }
+          setCursorPosition(nextPosition);
+          return nextPosition;
+        };
+
+        // DOM cursor is only present with the DOM renderer. WebGL draws the
+        // cursor on canvas, so this path often misses; metrics are the fallback.
         const cursorElement = term.element?.querySelector(".xterm-cursor");
         if (cursorElement) {
           const cursorRect = cursorElement.getBoundingClientRect();
-          if (
-            isUsableRect(cursorRect) &&
-            isPointInsideRect(cursorRect.left, cursorRect.top, containerRect)
-          ) {
-            const gap = 20;
-            const nextPosition = {
+          if (isUsableRect(cursorRect)) {
+            const fromDom = commitPosition({
               x: cursorRect.left,
               y: cursorRect.top,
               cursorHeight: cursorRect.height || 18,
               cursorBottom:
                 cursorRect.bottom || cursorRect.top + (cursorRect.height || 18),
-              showAbove:
-                cursorRect.bottom + suggestionHeight + gap >
-                  containerRect.bottom &&
-                cursorRect.top - suggestionHeight - gap >= containerRect.top,
-            };
-
-            setCursorPosition(nextPosition);
-            return nextPosition;
+            });
+            if (fromDom) {
+              return fromDom;
+            }
           }
         }
 
         const metrics = getCharacterMetricsCss(term);
         if (metrics) {
-          const cursorX = term.buffer.active.cursorX;
-          const cursorY = term.buffer.active.cursorY;
+          const cursorX = term.buffer?.active?.cursorX ?? 0;
+          const cursorY = term.buffer?.active?.cursorY ?? 0;
           const screen =
             term.element?.querySelector(".xterm-screen") ||
             term.element?.querySelector(".xterm-viewport") ||
             container;
           const screenRect = screen.getBoundingClientRect();
-          const absoluteX = screenRect.left + cursorX * metrics.charWidth;
-          const absoluteY = screenRect.top + cursorY * metrics.charHeight;
-          if (!isPointInsideRect(absoluteX, absoluteY, containerRect)) {
-            setCursorPosition(null);
-            return null;
-          }
+          const charWidth = metrics.charWidth || 8;
+          const charHeight = metrics.charHeight || 18;
+          const absoluteX = screenRect.left + cursorX * charWidth;
+          const absoluteY = screenRect.top + cursorY * charHeight;
 
-          const gap = 20;
-          const nextPosition = {
+          const fromMetrics = commitPosition({
             x: absoluteX,
             y: absoluteY,
-            cursorHeight: metrics.charHeight || 18,
-            cursorBottom: absoluteY + (metrics.charHeight || 18),
-            showAbove:
-              absoluteY + suggestionHeight + gap > containerRect.bottom &&
-              absoluteY - suggestionHeight - gap >= containerRect.top,
-          };
-
-          setCursorPosition(nextPosition);
-          return nextPosition;
+            cursorHeight: charHeight,
+            cursorBottom: absoluteY + charHeight,
+          });
+          if (fromMetrics) {
+            return fromMetrics;
+          }
         }
 
-        setCursorPosition(null);
-        return null;
+        // Last-resort anchor: keep suggestions usable even when cell metrics
+        // disagree with the layout (typical after the prompt reaches the bottom).
+        const fallback = commitPosition({
+          x: containerRect.left + 12,
+          y: Math.max(containerRect.top + 12, containerRect.bottom - 36),
+          cursorHeight: 18,
+          cursorBottom: Math.max(containerRect.top + 30, containerRect.bottom - 18),
+        });
+        return fallback;
       } catch {
         setCursorPosition(null);
         return null;

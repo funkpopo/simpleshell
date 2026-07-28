@@ -21,6 +21,9 @@ const {
   shouldRequestCommandSuggestions,
   shouldResumePromptTrackingOnInput,
 } = require(path.join(ROOT, "src/modules/terminal/commandSuggestionState.js"));
+const {
+  buildCommandSuggestionCursorPosition,
+} = require(path.join(ROOT, "src/modules/terminal/commandSuggestionCursor.js"));
 
 const webTerminalSource = collectWebTerminalSources();
 const commandSuggestionSource = readSource(
@@ -28,6 +31,9 @@ const commandSuggestionSource = readSource(
 );
 const commandSuggestionHookSource = readSource(
   "src/hooks/useTerminalSuggestions.js",
+);
+const promptTrackingSource = readSource(
+  "src/components/web-terminal/usePromptTracking.js",
 );
 const preloadSource = readSource("src/preload.js");
 
@@ -217,6 +223,89 @@ function testSuggestionSuppressionFlagsUpdateRefsSynchronously() {
   );
 }
 
+function testCursorPositionClampsBottomRowInsteadOfRejecting() {
+  const containerRect = {
+    left: 100,
+    top: 100,
+    width: 800,
+    height: 400,
+    right: 900,
+    bottom: 500,
+  };
+
+  // Simulate slightly-overestimated cell metrics pushing the last-row cursor
+  // a few pixels past the container bottom — previously this returned null and
+  // permanently hid the suggestion window for the rest of the tab session.
+  const position = buildCommandSuggestionCursorPosition({
+    x: 140,
+    y: 502,
+    cursorHeight: 18,
+    cursorBottom: 520,
+    suggestionHeight: 140,
+    containerRect,
+  });
+
+  assert.ok(position, "bottom-row cursor drift must still yield a position");
+  assert.ok(
+    position.y >= containerRect.top && position.y <= containerRect.bottom,
+    "clamped cursor y must stay inside the terminal container",
+  );
+  assert.ok(
+    position.cursorBottom >= position.y &&
+      position.cursorBottom <= containerRect.bottom,
+    "clamped cursor bottom must stay inside the terminal container",
+  );
+  assert.equal(
+    position.showAbove,
+    true,
+    "near-bottom anchors should flip the suggestion window above the cursor",
+  );
+}
+
+function testTabCompletionReleasesSuggestionTracking() {
+  assert.match(
+    promptTrackingSource,
+    /const resetTabCompletionTracking = \(\) => \{[\s\S]*tabCompletionUsed = false;[\s\S]*currentLineBeforeTab = null;/,
+    "Tab-completion latch must be clearable via a shared reset helper.",
+  );
+
+  assert.match(
+    promptTrackingSource,
+    /currentLine !== previousContent[\s\S]*resetTabCompletionTracking\(\);[\s\S]*requestSuggestions:\s*true/,
+    "After the shell rewrites the line for Tab completion, suggestion tracking must resume.",
+  );
+
+  assert.match(
+    promptTrackingSource,
+    /if \(tabCompletionUsed && canTrackPromptInput && isPrintableInput\) \{[\s\S]*resetTabCompletionTracking\(\);/,
+    "Typing after Tab must release the completion latch and resync input tracking.",
+  );
+
+  assert.match(
+    promptTrackingSource,
+    /if \(data === "\\x03"\) \{[\s\S]*resetTabCompletionTracking\(\);/,
+    "Ctrl+C must clear the Tab-completion latch so later input can show suggestions.",
+  );
+
+  assert.match(
+    promptTrackingSource,
+    /isEscapeSequenceFinalByte[\s\S]*\[\\x40-\\x7e\]/,
+    "Escape-sequence tracking must recognize the full CSI final-byte range.",
+  );
+
+  assert.match(
+    commandSuggestionHookSource,
+    /buildCommandSuggestionCursorPosition/,
+    "Suggestion cursor updates must clamp through buildCommandSuggestionCursorPosition.",
+  );
+
+  assert.doesNotMatch(
+    commandSuggestionHookSource,
+    /if \(!isPointInsideRect\(absoluteX, absoluteY, containerRect\)\) \{\s*setCursorPosition\(null\);\s*return null;/,
+    "Suggestion cursor updates must not hard-reject slightly out-of-bounds metrics.",
+  );
+}
+
 function testImeAndSystemKeysDoNotDriveSuggestionWindow() {
   const ignoredEvents = [
     { key: "a", isComposing: true },
@@ -337,6 +426,14 @@ function run() {
     [
       "suggestion suppression flags update refs synchronously",
       testSuggestionSuppressionFlagsUpdateRefsSynchronously,
+    ],
+    [
+      "cursor position clamps bottom-row drift instead of rejecting",
+      testCursorPositionClampsBottomRowInsteadOfRejecting,
+    ],
+    [
+      "tab completion releases suggestion tracking latch",
+      testTabCompletionReleasesSuggestionTracking,
     ],
     [
       "IME and system keys do not drive command suggestion window logic",

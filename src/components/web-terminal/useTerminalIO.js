@@ -499,6 +499,7 @@ export function useTerminalIO({
         suggestionUi.setSuggestions?.([]);
         suggestionUi.setCurrentInput?.("");
         suggestionUi.setSuggestionsHiddenByEsc?.(false);
+        suggestionUi.setSuggestionsSuppressedUntilEnter?.(false);
       }
 
       const processedText = processMultilineInput(text);

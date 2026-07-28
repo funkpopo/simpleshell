@@ -222,12 +222,14 @@ const WebTerminal = ({
       setSuggestions,
       setCurrentInput,
       setSuggestionsHiddenByEsc,
+      setSuggestionsSuppressedUntilEnter,
     };
   }, [
     setShowSuggestions,
     setSuggestions,
     setCurrentInput,
     setSuggestionsHiddenByEsc,
+    setSuggestionsSuppressedUntilEnter,
   ]);
 
   const suggestionApi = {

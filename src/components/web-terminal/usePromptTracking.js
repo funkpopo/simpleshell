@@ -430,6 +430,18 @@ export function usePromptTracking({
 
       const editorCommandRegex =
         /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
+
+      // CSI/SS3 finals live in 0x40-0x7E (@-~). Matching only A-Za-z~ left the
+      // tracker stuck in escape mode after some key sequences, which permanently
+      // blocked suggestion input handling in the same tab.
+      const isEscapeSequenceFinalByte = (chunk = "") =>
+        typeof chunk === "string" && /[\x40-\x7e]/.test(chunk);
+
+      const resetTabCompletionTracking = () => {
+        tabCompletionUsed = false;
+        currentLineBeforeTab = null;
+      };
+
       const extractCommand = (line) => {
         const normalizedLine =
           typeof line === "string" ? line : line?.toString?.() || "";
@@ -470,6 +482,9 @@ export function usePromptTracking({
         handleBufferTypeChange: (type) => {
           if (type === "alternate") {
             inEditorMode = true;
+            isEscapeSequence = false;
+            resetTabCompletionTracking();
+            currentInputBuffer = "";
             clearPendingWrappedInputRefresh(term);
             applyPromptTrackingState({ promptReady: false });
             setEditorModeState(true);
@@ -481,8 +496,13 @@ export function usePromptTracking({
             setShowSuggestions(false);
             setSuggestions([]);
             setCurrentInput("");
+            setSuggestionsHiddenByEsc(false);
+            setSuggestionsSuppressedUntilEnter(false);
           } else if (type === "normal") {
             clearPendingWrappedInputRefresh(term);
+            isEscapeSequence = false;
+            resetTabCompletionTracking();
+            currentInputBuffer = "";
             if (inEditorMode) {
               inEditorMode = false;
               setEditorModeState(false);
@@ -491,6 +511,11 @@ export function usePromptTracking({
                 window.terminalAPI.notifyEditorModeChange(processId, false);
               }
             }
+            setCurrentInput("");
+            setShowSuggestions(false);
+            setSuggestions([]);
+            setSuggestionsHiddenByEsc(false);
+            setSuggestionsSuppressedUntilEnter(false);
             syncPromptState();
           }
         },
@@ -571,11 +596,31 @@ export function usePromptTracking({
             (data.includes("\u001b[200~") && data.includes("\u001b[201~")))
         ) {
           currentInputBuffer = "";
+          isEscapeSequence = false;
+          resetTabCompletionTracking();
           setCurrentInput("");
           setShowSuggestions(false);
           setSuggestions([]);
+          setSuggestionsHiddenByEsc(false);
+          setSuggestionsSuppressedUntilEnter(false);
           if (processId && !shouldSkipSendToProcess) {
             enqueueInputToProcess(processId, data, { forceChunk: true });
+          }
+          return;
+        }
+
+        // Ctrl+C / SIGINT: cancel the current line and re-enable suggestion tracking.
+        if (data === "\x03") {
+          currentInputBuffer = "";
+          isEscapeSequence = false;
+          resetTabCompletionTracking();
+          setCurrentInput("");
+          setShowSuggestions(false);
+          setSuggestions([]);
+          setSuggestionsHiddenByEsc(false);
+          setSuggestionsSuppressedUntilEnter(false);
+          if (processId && !shouldSkipSendToProcess) {
+            sendInputToProcess(processId, data);
           }
           return;
         }
@@ -589,7 +634,7 @@ export function usePromptTracking({
         }
 
         if (isEscapeSequence) {
-          if (/[A-Za-z~]/.test(data)) {
+          if (isEscapeSequenceFinalByte(data)) {
             isEscapeSequence = false;
           }
 
@@ -689,10 +734,16 @@ export function usePromptTracking({
           }
 
           clearPendingWrappedInputRefresh(term);
+          isEscapeSequence = false;
+          resetTabCompletionTracking();
 
           if (!canTrackPromptInput) {
             currentInputBuffer = "";
             setCurrentInput("");
+            setShowSuggestions(false);
+            setSuggestions([]);
+            setSuggestionsHiddenByEsc(false);
+            setSuggestionsSuppressedUntilEnter(false);
             if (processId) {
               sendInputToProcess(processId, data);
             }
@@ -710,8 +761,7 @@ export function usePromptTracking({
 
             if (PASSWORD_PROMPT_REGEX.test(lastLine.trimEnd())) {
               currentInputBuffer = "";
-              tabCompletionUsed = false;
-              currentLineBeforeTab = null;
+              resetTabCompletionTracking();
               pendingCommandBoundaryRef.current = {
                 command: "",
                 capturedAt: 0,
@@ -732,10 +782,7 @@ export function usePromptTracking({
               return;
             }
 
-            let command = extractCommand(lastLine);
-            if (tabCompletionUsed) {
-              command = extractCommand(lastLine);
-            }
+            const command = extractCommand(lastLine);
 
             if (
               command &&
@@ -755,14 +802,13 @@ export function usePromptTracking({
               capturedAt: Date.now(),
             };
 
-            tabCompletionUsed = false;
-            currentLineBeforeTab = null;
             currentInputBuffer = "";
 
             setShowSuggestions(false);
             setSuggestions([]);
             setCurrentInput("");
             setSuggestionsHiddenByEsc(false);
+            setSuggestionsSuppressedUntilEnter(false);
             applyPromptTrackingState({
               promptReady: false,
               commandRunning: true,
@@ -788,16 +834,25 @@ export function usePromptTracking({
           }
           return;
         } else if (data !== "\t") {
-          if (canTrackPromptInput && !tabCompletionUsed) {
-            currentInputBuffer += data;
-          }
-
           const firstCode = data.length > 0 ? data.charCodeAt(0) : 0;
           const isPrintableInput =
             data.length >= 1 &&
             firstCode >= 32 &&
             firstCode !== 0x7f &&
             !/[\u0000-\u001f\u007f]/.test(data);
+
+          // Continuing to type after Tab means completion is done (or was a
+          // no-op). Release the latch and resync from the visible line first so
+          // currentInputBuffer does not stay empty forever in this tab.
+          if (tabCompletionUsed && canTrackPromptInput && isPrintableInput) {
+            const liveInput = extractCurrentCommandInput(term);
+            currentInputBuffer = liveInput || currentInputBuffer;
+            resetTabCompletionTracking();
+          }
+
+          if (canTrackPromptInput && !tabCompletionUsed) {
+            currentInputBuffer += data;
+          }
 
           if (
             canTrackPromptInput &&
@@ -908,18 +963,32 @@ export function usePromptTracking({
                   setCurrentInput(currentInputBuffer);
                 }
               }
-            }
 
-            // Coalesce tab-completion reset onto the next frame
-            scheduleInputUiRefresh({ cursor: false });
-            const lineSnapshot = currentLineBeforeTab;
-            requestAnimationFrame(() => {
-              if (currentLineBeforeTab === lineSnapshot) {
-                currentLineBeforeTab = null;
+              // Tab completion finished rewriting the line — resume normal
+              // keystroke tracking so the suggestion window can appear again.
+              resetTabCompletionTracking();
+
+              if (
+                !inEditorMode &&
+                currentInputBuffer.trim() !== "" &&
+                !suggestionsHiddenByEscRef.current &&
+                !suggestionsSuppressedRef.current &&
+                !isCommandExecutingRef.current
+              ) {
+                scheduleInputUiRefresh({
+                  cursor: true,
+                  requestSuggestions: true,
+                  suggestionInput: currentInputBuffer,
+                });
+              } else {
+                scheduleInputUiRefresh({ cursor: true });
               }
-            });
+            }
+            // If the line is unchanged, keep the latch until the next printable
+            // key / Ctrl+C / Enter. Early release raced the shell rewrite and
+            // left currentInputBuffer empty for the rest of the tab.
           } catch {
-            // ignore
+            resetTabCompletionTracking();
           }
         }
 
