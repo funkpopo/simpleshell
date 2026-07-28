@@ -7128,7 +7128,7 @@ const FileManager = memo(
           </DialogActions>
         </Dialog>
 
-        {/* 拖拽覆盖层 */}
+        {/* 拖拽覆盖层：提示尺寸随侧栏自适应，避免窄宽度/长路径溢出 */}
         {isDragging && (
           <Box
             sx={{
@@ -7142,6 +7142,9 @@ const FileManager = memo(
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              p: 1.5,
+              boxSizing: "border-box",
+              containerType: "size",
               zIndex: 1500,
               pointerEvents: "none",
             }}
@@ -7149,20 +7152,51 @@ const FileManager = memo(
             <Paper
               elevation={4}
               sx={{
-                p: 3,
+                boxSizing: "border-box",
+                width: "fit-content",
+                maxWidth: "100%",
+                maxHeight: "100%",
+                minWidth: 0,
+                p: 2,
                 backgroundColor: theme.palette.background.paper,
                 border: `2px solid ${theme.palette.primary.main}`,
                 borderRadius: 2,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: 2,
+                justifyContent: "center",
+                gap: 1.5,
+                overflow: "hidden",
+                // 窄侧栏时压缩内边距与间距
+                "@container (max-width: 320px)": {
+                  p: 1.25,
+                  gap: 1,
+                },
+                "@container (max-width: 240px)": {
+                  p: 1,
+                  gap: 0.75,
+                  borderRadius: 1.5,
+                },
+                "@container (max-height: 220px)": {
+                  p: 1,
+                  gap: 0.75,
+                },
               }}
             >
               <UploadFileIcon
                 sx={{
                   fontSize: 48,
                   color: theme.palette.primary.main,
+                  flexShrink: 0,
+                  "@container (max-width: 320px)": {
+                    fontSize: 36,
+                  },
+                  "@container (max-width: 240px)": {
+                    fontSize: 28,
+                  },
+                  "@container (max-height: 220px)": {
+                    fontSize: 28,
+                  },
                 }}
               />
               <Typography
@@ -7170,6 +7204,20 @@ const FileManager = memo(
                 sx={{
                   color: theme.palette.primary.main,
                   fontWeight: "medium",
+                  textAlign: "center",
+                  width: "100%",
+                  maxWidth: "100%",
+                  minWidth: 0,
+                  px: 0.5,
+                  lineHeight: 1.3,
+                  overflowWrap: "anywhere",
+                  wordBreak: "break-word",
+                  "@container (max-width: 320px)": {
+                    fontSize: "1rem",
+                  },
+                  "@container (max-width: 240px)": {
+                    fontSize: "0.875rem",
+                  },
                 }}
               >
                 {t("fileManager.messages.dragDropMessage")}
@@ -7178,6 +7226,30 @@ const FileManager = memo(
                 variant="body2"
                 sx={{
                   color: theme.palette.text.secondary,
+                  textAlign: "center",
+                  width: "100%",
+                  maxWidth: "100%",
+                  minWidth: 0,
+                  px: 0.5,
+                  lineHeight: 1.4,
+                  overflowWrap: "anywhere",
+                  wordBreak: "break-all",
+                  // 超长路径限制行数，避免撑破覆盖层
+                  display: "-webkit-box",
+                  WebkitLineClamp: 4,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                  "@container (max-width: 320px)": {
+                    fontSize: "0.75rem",
+                    WebkitLineClamp: 3,
+                  },
+                  "@container (max-width: 240px)": {
+                    fontSize: "0.7rem",
+                    WebkitLineClamp: 2,
+                  },
+                  "@container (max-height: 220px)": {
+                    WebkitLineClamp: 2,
+                  },
                 }}
               >
                 {selectedFile && selectedFile.isDirectory
