@@ -98,11 +98,12 @@ export const sidebarListItemButtonSx = (theme, active = false) =>
 
 /**
  * 图标轨按钮统一样式。
- * 默认 text.secondary；hover/active 用 primary；激活态左侧 2px accent + 浅底。
+ * - 展开/激活：primary + 浅底高亮 + 左侧 2px accent 指示
+ * - 禁用：action.disabled，无高亮/指示/hover 反馈
  */
 export const sidebarRailButtonSx = (theme, active = false) => ({
   position: "relative",
-  color: active ? "primary.main" : "text.secondary",
+  color: "primary.main",
   borderRadius: SIDEBAR_ITEM_RADIUS,
   bgcolor: active ? getSidebarItemSelectedBg(theme) : "transparent",
   transition: theme.transitions.create(["background-color", "color"], {
@@ -117,9 +118,7 @@ export const sidebarRailButtonSx = (theme, active = false) => ({
       ? getSidebarItemSelectedHoverBg(theme)
       : theme.palette.action.hover,
   },
-  "&.Mui-disabled": {
-    color: "text.disabled",
-  },
+  // 展开指示放在 disabled 之前，确保禁用态可覆盖 ::before
   ...(active
     ? {
         "&::before": {
@@ -134,6 +133,20 @@ export const sidebarRailButtonSx = (theme, active = false) => ({
         },
       }
     : {}),
+  "&.Mui-disabled": {
+    color: "action.disabled",
+    bgcolor: "transparent",
+    // 覆盖主题 IconButton 的 hover scale / 背景，避免禁用态仍有可点反馈
+    transform: "none",
+    "&:hover": {
+      color: "action.disabled",
+      bgcolor: "transparent",
+      transform: "none",
+    },
+    "&::before": {
+      display: "none",
+    },
+  },
 });
 
 /**
