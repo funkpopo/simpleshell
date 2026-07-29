@@ -1117,6 +1117,15 @@ function AppContent() {
         setReconnectActionTabId((current) =>
           current === payload.tabId ? null : current,
         );
+
+        // 连接成功时强制刷新终端内容
+        if (payload.connectionStatus?.isConnected === true) {
+          window.dispatchEvent(
+            new CustomEvent("terminalForceRefresh", {
+              detail: { tabId: payload.tabId, layoutType: "default" },
+            }),
+          );
+        }
         return;
       }
 
@@ -2464,22 +2473,15 @@ function AppContent() {
         console.warn("Connection cleanup failed:", cleanupError);
       }
 
-      // 从缓存中先移除旧实例
-      dispatch(
-        actions.setTerminalInstances({
-          ...terminalInstances,
-          [tabId]: undefined,
-        }),
-      );
+      // 从缓存中先移除旧实例，保留 config 等关联数据
+      dispatch(actions.updateTerminalInstance(tabId, undefined));
 
       // 添加新实例标记，触发WebTerminal重新创建
+      // 使用 functional 风格的增量更新，避免闭包中的 terminalInstances 过期
       setTimeout(() => {
+        dispatch(actions.updateTerminalInstance(tabId, true));
         dispatch(
-          actions.setTerminalInstances({
-            ...terminalInstances,
-            [tabId]: true,
-            [`${tabId}-refresh`]: Date.now(), // 添加时间戳确保组件被重新渲染
-          }),
+          actions.updateTerminalInstance(`${tabId}-refresh`, Date.now()),
         );
       }, 100);
     }

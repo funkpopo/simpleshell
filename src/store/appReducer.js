@@ -235,11 +235,25 @@ export function appReducer(state = initialState, action) {
       return { ...state, terminalInstances: action.payload };
 
     case ActionTypes.UPDATE_TERMINAL_INSTANCE:
+      const { id, instance } = action.payload;
+      if (typeof instance === "boolean") {
+        return {
+          ...state,
+          terminalInstances: {
+            ...state.terminalInstances,
+            [id]: instance,
+          },
+        };
+      }
+      // merge object
       return {
         ...state,
         terminalInstances: {
           ...state.terminalInstances,
-          [action.payload.id]: action.payload.instance,
+          [id]: {
+            ...(state.terminalInstances[id] || {}),
+            ...instance,
+          },
         },
       };
 
