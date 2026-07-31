@@ -53,6 +53,7 @@
     "eslint-config-prettier": "10.1.5",
     "eslint-plugin-prettier": "5.5.5",
     "eslint-plugin-react": "7.37.5",
+    "fs-extra": "11.4.0",
     "node-loader": "2.1.0",
     "prettier": "3.9.6",
     "style-loader": "4.0.0"
