@@ -3867,17 +3867,19 @@ function AppContent() {
                   <AppsIcon />
                 </IconButton>
               </Tooltip>
-              <Tooltip title={t("menu.lockApp")}>
-                <IconButton
-                  color="inherit"
-                  size="small"
-                  aria-label={t("menu.lockApp")}
-                  sx={{ mr: 1, WebkitAppRegion: "no-drag" }}
-                  onClick={handleLockApp}
-                >
-                  <LockOutlinedIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+              {credentialSecurityStatus.masterPasswordEnabled && (
+                <Tooltip title={t("menu.lockApp")}>
+                  <IconButton
+                    color="inherit"
+                    size="small"
+                    aria-label={t("menu.lockApp")}
+                    sx={{ mr: 1, WebkitAppRegion: "no-drag" }}
+                    onClick={handleLockApp}
+                  >
+                    <LockOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
               <Menu
                 id="menu-appbar"
                 anchorEl={anchorEl}

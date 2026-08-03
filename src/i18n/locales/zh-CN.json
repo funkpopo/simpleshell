@@ -702,6 +702,8 @@
       "retryMessage": "重试消息",
       "clearChat": "清空对话",
       "settings": "设置",
+      "switchModel": "切换模型",
+      "selectModel": "选择模型",
       "manageApis": "管理 API 配置",
       "sendMessage": "发送消息",
       "stopGenerating": "停止生成",

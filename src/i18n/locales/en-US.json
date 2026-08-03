@@ -702,6 +702,8 @@
       "retryMessage": "Retry message",
       "clearChat": "Clear chat",
       "settings": "Settings",
+      "switchModel": "Switch model",
+      "selectModel": "Select model",
       "manageApis": "Manage API configurations",
       "sendMessage": "Send Message",
       "stopGenerating": "Stop Generating",

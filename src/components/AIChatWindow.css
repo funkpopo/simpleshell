@@ -77,7 +77,8 @@
   font-size: 0.6875rem !important;
   font-weight: 500 !important;
   border-radius: 999px !important;
-  max-width: 140px;
+  max-width: 160px;
+  cursor: pointer !important;
   background: color-mix(
     in srgb,
     var(--color-primary-main) 12%,
@@ -89,7 +90,45 @@
   transition:
     background 0.15s ease,
     border-color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.ai-chat-model-chip .MuiChip-label {
+  display: flex;
+  padding-left: 8px;
+  padding-right: 6px;
+  overflow: hidden;
+}
+
+.ai-chat-model-chip-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ai-chat-model-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.ai-chat-model-chip-caret {
+  flex-shrink: 0;
+  font-size: 14px !important;
+  color: var(--color-primary-main) !important;
+  opacity: 0.75;
+  transition:
+    opacity 0.15s ease,
     transform 0.15s ease;
+}
+
+.ai-chat-model-chip-caret-open {
+  transform: rotate(180deg);
+  opacity: 1;
 }
 
 .ai-chat-model-chip:hover {
@@ -103,6 +142,34 @@
     var(--color-primary-main) 45%,
     transparent
   ) !important;
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--color-primary-main) 18%, transparent);
+}
+
+.ai-chat-model-chip:hover .ai-chat-model-chip-caret {
+  opacity: 1;
+}
+
+.ai-chat-model-chip:focus-visible {
+  outline: 2px solid
+    color-mix(in srgb, var(--color-primary-main) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.ai-chat-model-menu .MuiMenuItem-root.Mui-selected {
+  background-color: color-mix(
+    in srgb,
+    var(--color-primary-main) 14%,
+    transparent
+  );
+}
+
+.ai-chat-model-menu .MuiMenuItem-root.Mui-selected:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--color-primary-main) 20%,
+    transparent
+  );
 }
 
 .ai-chat-header-btn {

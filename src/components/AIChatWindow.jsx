@@ -1185,12 +1185,48 @@ const AIChatWindow = ({
     ],
   );
 
-  // 切换API
-  const handleApiChange = (api) => {
+  // 切换 API / 模型配置
+  const handleApiChange = useCallback(async (api) => {
+    if (!api) {
+      return;
+    }
+
     setCurrentApi(api);
-    window.terminalAPI.setCurrentApiConfig(api.id);
     setApiMenuAnchor(null);
-  };
+
+    try {
+      if (window.terminalAPI?.setCurrentApiConfig) {
+        await window.terminalAPI.setCurrentApiConfig(api.id);
+      }
+    } catch (err) {
+      console.error("Failed to set current API config:", err);
+    }
+  }, []);
+
+  const handleOpenApiMenu = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setApiMenuAnchor(event.currentTarget);
+  }, []);
+
+  const handleCloseApiMenu = useCallback(() => {
+    setApiMenuAnchor(null);
+  }, []);
+
+  const handleOpenSettingsFromMenu = useCallback(() => {
+    setApiMenuAnchor(null);
+    setSettingsOpen(true);
+  }, []);
+
+  const modelChipLabel = useMemo(() => {
+    if (!currentApi) {
+      return t("ai.selectModel");
+    }
+    return currentApi.model || currentApi.name || t("ai.selectModel");
+  }, [currentApi, t]);
+
+  const apiMenuZIndex = (Number(zIndex) || 1300) + 20;
+  const showModelChip = Boolean(currentApi) || availableApis.length > 0;
 
   return (
     <FloatingDialog
@@ -1333,42 +1369,109 @@ const AIChatWindow = ({
           </Typography>
         </Box>
         <Box display="flex" alignItems="center" gap={0.35} flexShrink={0}>
-          {currentApi && (
-            <Chip
-              label={currentApi.model}
-              size="small"
-              onClick={(e) => setApiMenuAnchor(e.currentTarget)}
-              className="ai-chat-model-chip"
-              sx={{ cursor: "pointer" }}
-            />
+          {showModelChip && (
+            <Tooltip title={t("ai.switchModel")}>
+              <Chip
+                label={
+                  <Box
+                    component="span"
+                    className="ai-chat-model-chip-content"
+                  >
+                    <Box component="span" className="ai-chat-model-chip-text">
+                      {modelChipLabel}
+                    </Box>
+                    <ExpandMoreIcon
+                      className={`ai-chat-model-chip-caret${
+                        apiMenuAnchor ? " ai-chat-model-chip-caret-open" : ""
+                      }`}
+                      aria-hidden
+                    />
+                  </Box>
+                }
+                size="small"
+                clickable
+                onClick={handleOpenApiMenu}
+                onMouseDown={(event) => event.stopPropagation()}
+                className="ai-chat-model-chip"
+                aria-label={t("ai.switchModel")}
+                aria-haspopup="menu"
+                aria-expanded={Boolean(apiMenuAnchor)}
+              />
+            </Tooltip>
           )}
           <Menu
             anchorEl={apiMenuAnchor}
             open={Boolean(apiMenuAnchor)}
-            onClose={() => setApiMenuAnchor(null)}
-            PaperProps={{
-              sx: {
-                border: 1,
-                borderColor: "divider",
-                boxShadow: 3,
-                borderRadius: 2,
-                mt: 0.5,
-                minWidth: 160,
+            onClose={handleCloseApiMenu}
+            disableScrollLock
+            // 浮动窗 z-index 为 1300/1310，菜单需更高才能显示在其上方
+            sx={{ zIndex: apiMenuZIndex }}
+            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+            transformOrigin={{ vertical: "top", horizontal: "right" }}
+            slotProps={{
+              paper: {
+                className: "ai-chat-model-menu",
+                sx: {
+                  border: 1,
+                  borderColor: "divider",
+                  boxShadow: 3,
+                  borderRadius: 2,
+                  mt: 0.5,
+                  minWidth: 168,
+                  maxWidth: 280,
+                },
               },
             }}
           >
-            {availableApis.map((api) => (
-              <MenuItem
-                key={api.id}
-                onClick={() => handleApiChange(api)}
-                selected={currentApi?.id === api.id}
-                dense
-              >
-                {api.model}
+            {availableApis.length === 0 ? (
+              <MenuItem disabled dense>
+                {t("ai.noApiConfigured")}
               </MenuItem>
-            ))}
+            ) : (
+              availableApis.map((api) => {
+                const itemLabel = api.model || api.name || t("ai.selectModel");
+                const isSelected = currentApi?.id === api.id;
+                return (
+                  <MenuItem
+                    key={api.id}
+                    onClick={() => handleApiChange(api)}
+                    selected={isSelected}
+                    dense
+                  >
+                    <Box
+                      component="span"
+                      sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "flex-start",
+                        minWidth: 0,
+                        width: "100%",
+                      }}
+                    >
+                      <Typography
+                        variant="body2"
+                        noWrap
+                        sx={{ width: "100%", fontWeight: isSelected ? 600 : 500 }}
+                      >
+                        {itemLabel}
+                      </Typography>
+                      {api.provider ? (
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          noWrap
+                          sx={{ width: "100%", lineHeight: 1.2 }}
+                        >
+                          {api.provider}
+                        </Typography>
+                      ) : null}
+                    </Box>
+                  </MenuItem>
+                );
+              })
+            )}
             <Divider />
-            <MenuItem onClick={() => setSettingsOpen(true)} dense>
+            <MenuItem onClick={handleOpenSettingsFromMenu} dense>
               <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
               {t("ai.manageApis")}
             </MenuItem>
@@ -1381,16 +1484,6 @@ const AIChatWindow = ({
               aria-label={t("ai.clearChat")}
             >
               <DeleteIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title={t("ai.settings")}>
-            <IconButton
-              size="small"
-              onClick={() => setSettingsOpen(true)}
-              className="ai-chat-header-btn"
-              aria-label={t("ai.settings")}
-            >
-              <SettingsIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Tooltip title={t("aiAssistant.minimize")}>
