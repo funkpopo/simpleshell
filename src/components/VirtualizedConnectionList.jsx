@@ -312,6 +312,7 @@ const VirtualizedConnectionList = ({
   onSelectConnection,
   onDoubleClick,
   onItemContextMenu,
+  onBlankContextMenu,
   height = 400,
   itemHeight = 48,
   enableVirtualization = true,
@@ -450,6 +451,7 @@ const VirtualizedConnectionList = ({
       <Box
         ref={containerRef}
         className={className}
+        onContextMenu={onBlankContextMenu}
         sx={{
           height: height === "100%" ? "100%" : height,
           display: "flex",
@@ -478,6 +480,7 @@ const VirtualizedConnectionList = ({
       <Box
         ref={containerRef}
         className={["app-scrollbar", className].filter(Boolean).join(" ")}
+        onContextMenu={onBlankContextMenu}
         sx={{
           height: height === "100%" ? "100%" : height,
           overflow: "auto",
@@ -500,6 +503,7 @@ const VirtualizedConnectionList = ({
     <Box
       ref={containerRef}
       className={["app-scrollbar", className].filter(Boolean).join(" ")}
+      onContextMenu={onBlankContextMenu}
       sx={{
         height: height === "100%" ? "100%" : height,
       }}

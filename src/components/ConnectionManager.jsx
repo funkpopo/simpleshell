@@ -867,6 +867,20 @@ const GroupListItem = memo(function GroupListItem({
 
       <Box
         ref={setGroupDroppableRef}
+        data-connection-manager-group-area="true"
+        onContextMenu={(e) => {
+          // 分组内部空白（含“没有连接项”占位）右键：打开分组菜单
+          if (
+            e.target instanceof Element &&
+            (e.target.closest(`[${CONNECTION_MANAGER_ROW_DATA_ATTR}]`) ||
+              e.target.closest(".MuiListItemButton-root"))
+          ) {
+            return;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          onOpenGroupRowContextMenu?.(e, group);
+        }}
         sx={{
           backgroundColor: isOver
             ? theme.palette.mode === "dark"
@@ -1438,6 +1452,36 @@ const ConnectionManager = memo(
       });
     }, []);
 
+    const openBlankContextMenuFromEvent = useCallback((event) => {
+      setConnectionListContextMenu({
+        mouseX: event.clientX,
+        mouseY: event.clientY,
+        kind: "blank",
+      });
+    }, []);
+
+    // 空白区域右键：新建连接 / 新建分组（忽略已有连接项/分组行）
+    const handleBlankContextMenu = useCallback(
+      (event) => {
+        if (!(event?.target instanceof Element)) {
+          return;
+        }
+
+        // 行级元素已自行 stopPropagation；此处再兜底一次，避免误触发
+        if (
+          event.target.closest(`[${CONNECTION_MANAGER_ROW_DATA_ATTR}]`) ||
+          event.target.closest(".MuiListItemButton-root")
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        openBlankContextMenuFromEvent(event);
+      },
+      [openBlankContextMenuFromEvent],
+    );
+
     const handleVirtualizedItemContextMenu = useCallback(
       (event, item, parentGroup) => {
         if (!item) {
@@ -1457,10 +1501,37 @@ const ConnectionManager = memo(
       rootRef: connectionManagerListRootRef,
       menuSelector: '[data-connection-manager-context-menu="true"]',
       mode: "redispatch",
-      resolveItemElement: (retargetElement) =>
-        retargetElement.closest("[data-connection-manager-item]") ||
-        retargetElement.closest(".MuiListItem-root") ||
-        retargetElement,
+      resolveItemElement: (retargetElement) => {
+        // 优先命中真实连接/分组行（带 data 标记的可聚焦按钮）
+        const rowButton = retargetElement.closest?.(
+          `[${CONNECTION_MANAGER_ROW_DATA_ATTR}]`,
+        );
+        if (rowButton) {
+          return rowButton.closest?.(".MuiListItem-root") || rowButton;
+        }
+
+        const listItem = retargetElement.closest?.(".MuiListItem-root");
+        if (
+          listItem?.querySelector?.(`[${CONNECTION_MANAGER_ROW_DATA_ATTR}]`)
+        ) {
+          return listItem;
+        }
+
+        // 分组内部空白：派发到分组区域，触发 group 菜单
+        const groupArea = retargetElement.closest?.(
+          "[data-connection-manager-group-area]",
+        );
+        if (groupArea) {
+          return groupArea;
+        }
+
+        // 空白区域（含空状态占位）：派发到列表根容器，触发 blank 菜单
+        return (
+          retargetElement.closest?.(
+            '[data-connection-manager-list-root="true"]',
+          ) || retargetElement
+        );
+      },
       onCloseMenus: () => {
         setConnectionListContextMenu(null);
       },
@@ -2305,6 +2376,7 @@ const ConnectionManager = memo(
       openConnectionContextMenuFromEvent,
       openGroupContextMenuFromEvent,
       handleOpenConnection,
+      connectionListContextMenu,
     ]);
     const groupOptions = useMemo(() => {
       return connections
@@ -2422,6 +2494,8 @@ const ConnectionManager = memo(
         {/* 连接列表区域 */}
         <Box
           ref={connectionManagerListRootRef}
+          data-connection-manager-list-root="true"
+          onContextMenu={handleBlankContextMenu}
           sx={{
             flexGrow: 1,
             overflow: "auto",
@@ -2447,10 +2521,11 @@ const ConnectionManager = memo(
               onSelectConnection={handleOpenConnection}
               onDoubleClick={handleOpenConnection}
               onItemContextMenu={handleVirtualizedItemContextMenu}
+              onBlankContextMenu={handleBlankContextMenu}
               height="100%"
               itemHeight={36}
               enableVirtualization
-              emptyMessage="没有连接项"
+              emptyMessage={t("connectionManager.noConnections")}
             />
           ) : (
             <DndContext
@@ -2463,6 +2538,7 @@ const ConnectionManager = memo(
                 ref={setRootDroppableRef}
                 sx={{
                   p: 1,
+                  minHeight: "100%",
                   backgroundColor: isRootDraggingOver
                     ? theme.palette.mode === "dark"
                       ? alpha(theme.palette.primary.main, 0.2)
@@ -2476,7 +2552,7 @@ const ConnectionManager = memo(
                   {filteredItems.length === 0 && (
                     <ListItem>
                       <ListItemText
-                        primary="没有连接项"
+                        primary={t("connectionManager.noConnections")}
                         primaryTypographyProps={{
                           variant: "body2",
                           sx: {
@@ -2630,6 +2706,32 @@ const ConnectionManager = memo(
                   <DeleteIcon fontSize="small" />
                 </ListItemIcon>
                 {t("connectionManager.delete")}
+              </MenuItem>
+            </>
+          )}
+          {connectionListContextMenu?.kind === "blank" && (
+            <>
+              <MenuItem
+                onClick={() => {
+                  handleConnectionListContextMenuClose();
+                  handleAddConnection();
+                }}
+              >
+                <ListItemIcon>
+                  <AddIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.newConnection")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  handleConnectionListContextMenuClose();
+                  handleAddGroup();
+                }}
+              >
+                <ListItemIcon>
+                  <FolderIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.newGroup")}
               </MenuItem>
             </>
           )}
