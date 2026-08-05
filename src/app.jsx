@@ -80,7 +80,6 @@ import {
   sidebarRailButtonSx,
   sidebarRailDividerSx,
 } from "./components/sidebarItemStyles";
-import "flag-icons/css/flag-icons.min.css";
 import {
   findGroupByTab,
   getGroups,
@@ -293,7 +292,6 @@ const getConnectionSyncSignature = (connection) =>
     password: connection?.password || "",
     authType: connection?.authType || "",
     privateKeyPath: connection?.privateKeyPath || "",
-    country: connection?.country || "",
     os: connection?.os || "",
     connectionType: connection?.connectionType || "",
     protocol: connection?.protocol || "",

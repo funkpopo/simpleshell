@@ -442,7 +442,6 @@
       "type": "类型",
       "bareMetal": "裸金属",
       "os": "操作系统",
-      "countryRegion": "国家/地区",
       "contextCopyIp": "复制IP地址",
       "contextAddConnection": "添加连接",
       "ipCopied": "已复制到剪贴板",

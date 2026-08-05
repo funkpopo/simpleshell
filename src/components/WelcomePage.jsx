@@ -1,4 +1,4 @@
-import React, { useCallback, memo, useEffect, useMemo, useState } from "react";
+import React, { useCallback, memo } from "react";
 import {
   Box,
   Button,
@@ -9,7 +9,6 @@ import {
   ListItemButton,
   alpha,
   Chip,
-  Tooltip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
@@ -21,29 +20,6 @@ const WelcomePage = ({
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const [countries, setCountries] = useState(null);
-  const hasCountryMetadata = useMemo(
-    () => topConnections?.some((connection) => Boolean(connection.country)),
-    [topConnections],
-  );
-
-  useEffect(() => {
-    let active = true;
-
-    if (hasCountryMetadata && !countries) {
-      import("countries-list")
-        .then((module) => {
-          if (active) setCountries(module.countries);
-        })
-        .catch((error) => {
-          console.error("Failed to load country metadata:", error);
-        });
-    }
-
-    return () => {
-      active = false;
-    };
-  }, [countries, hasCountryMetadata]);
 
   const handleOpenConnection = useCallback(
     (connection) => {
@@ -174,32 +150,6 @@ const WelcomePage = ({
                 height: 18,
               }}
             />
-          )}
-
-          {connection.country && countries?.[connection.country] && (
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 0.3,
-                backgroundColor: alpha(theme.palette.background.paper, 0.8),
-                borderRadius: 0.5,
-                px: 0.4,
-                py: 0.1,
-                border: `1px solid ${alpha(theme.palette.divider, 0.3)}`,
-              }}
-            >
-              <Tooltip title={countries[connection.country].name}>
-                <span
-                  className={`fi fi-${connection.country.toLowerCase()}`}
-                  style={{
-                    fontSize: "0.8rem",
-                    borderRadius: "1px",
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
-                  }}
-                />
-              </Tooltip>
-            </Box>
           )}
         </Box>
       </ListItemButton>

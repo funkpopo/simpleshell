@@ -29,7 +29,7 @@
   src:
     local("Space Mono"),
     local("SpaceMono-Regular"),
-    url("./SpaceMono-Regular.ttf") format("truetype");
+    url("./SpaceMono-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -40,7 +40,7 @@
   src:
     local("Space Mono Bold"),
     local("SpaceMono-Bold"),
-    url("./SpaceMono-Bold.ttf") format("truetype");
+    url("./SpaceMono-Bold.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
   font-display: swap;

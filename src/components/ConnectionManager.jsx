@@ -65,7 +65,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { alpha } from "@mui/material/styles";
-import { countries } from "countries-list";
 import { useTranslation } from "react-i18next";
 import { useNotification } from "../contexts/NotificationContext";
 import { ConnectionManagerSkeleton } from "./SkeletonLoader.jsx";
@@ -145,7 +144,6 @@ const getConnectionVersion = (connection) => {
     connection.connectionType || "",
     connection.authType || "",
     connection.privateKeyPath || "",
-    connection.country || "",
     connection.os || "",
     connection.password || "",
     proxySignature,
@@ -407,7 +405,6 @@ const buildConnectionPayloadFromForm = ({
     _preservePassword: shouldPreservePassword,
     authType: formData.authType || "password",
     privateKeyPath: String(formData.privateKeyPath || "").trim(),
-    country: formData.country,
     os: formData.os,
     connectionType: formData.connectionType,
     protocol,
@@ -1134,7 +1131,6 @@ const ConnectionManager = memo(
       authType: "password",
       privateKeyPath: "",
       parentGroup: "",
-      country: "",
       os: "",
       connectionType: "",
       protocol: "ssh", // 新增：连接协议，默认为SSH
@@ -1255,7 +1251,6 @@ const ConnectionManager = memo(
         authType: "password",
         privateKeyPath: "",
         parentGroup: parentGroupId || "",
-        country: "",
         os: "",
         connectionType: "",
         protocol: "ssh", // 默认为SSH
@@ -1332,7 +1327,6 @@ const ConnectionManager = memo(
           authType: item.authType || "password",
           privateKeyPath: item.privateKeyPath || "",
           parentGroup: parentGroup ? parentGroup.id : "",
-          country: item.country || "",
           os: item.os || "",
           connectionType: item.connectionType || "",
           protocol: item.protocol || "ssh",
@@ -2388,14 +2382,6 @@ const ConnectionManager = memo(
         ));
     }, [connections]);
 
-    const countryOptions = useMemo(() => {
-      return Object.entries(countries).map(([code, country]) => (
-        <MenuItem key={code} value={code}>
-          {`(${country.native}) - ${country.name}`}
-        </MenuItem>
-      ));
-    }, []);
-
     const renderValidationStep = (step) => {
       const isChecking = step.severity === "checking";
       const isWarning = step.severity === "warning";
@@ -2991,30 +2977,6 @@ const ConnectionManager = memo(
                       <MenuItem value="Windows">Windows</MenuItem>
                       <MenuItem value="macOS">macOS</MenuItem>
                       <MenuItem value="Other">{t("common.other")}</MenuItem>
-                    </Select>
-                  </FormControl>
-
-                  <FormControl fullWidth size="small">
-                    <InputLabel>
-                      {t("connectionManager.countryRegion")}
-                    </InputLabel>
-                    <Select
-                      name="country"
-                      value={formData.country || ""}
-                      label={t("connectionManager.countryRegion")}
-                      onChange={handleFormChange}
-                      MenuProps={{
-                        PaperProps: {
-                          style: {
-                            maxHeight: 200,
-                          },
-                        },
-                      }}
-                    >
-                      <MenuItem value="">
-                        <em>{t("common.none")}</em>
-                      </MenuItem>
-                      {countryOptions}
                     </Select>
                   </FormControl>
 

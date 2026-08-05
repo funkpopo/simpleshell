@@ -442,7 +442,6 @@
       "type": "Type",
       "bareMetal": "Bare Metal",
       "os": "Operating System",
-      "countryRegion": "Country/Region",
       "contextCopyIp": "Copy IP address",
       "contextAddConnection": "Add connection",
       "ipCopied": "Copied to clipboard",
