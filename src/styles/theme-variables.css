@@ -164,3 +164,9 @@ body {
       var(--theme-transition-easing),
     color var(--theme-transition-duration) var(--theme-transition-easing);
 }
+
+/* 启动阶段禁用背景/颜色过渡，避免从 boot 色切到主题色时动画闪屏 */
+body.ss-bootstrapping,
+body.ss-bootstrapping * {
+  transition: none !important;
+}

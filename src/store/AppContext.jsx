@@ -5,9 +5,28 @@ import { appReducer, initialState } from "./appReducer.js";
 const AppStateContext = createContext(undefined);
 const AppDispatchContext = createContext(undefined);
 
+/**
+ * 用 preload 注入的启动主题初始化 darkMode，避免 React 默认深色与用户浅色配置
+ * 在首帧之间来回切换造成闪屏。
+ */
+function createBootstrappedInitialState() {
+  const bootDarkMode = window.simpleshellBoot?.darkMode;
+  if (typeof bootDarkMode === "boolean") {
+    return {
+      ...initialState,
+      darkMode: bootDarkMode,
+    };
+  }
+  return initialState;
+}
+
 // Provider 组件
 export function AppProvider({ children }) {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+  const [state, dispatch] = useReducer(
+    appReducer,
+    undefined,
+    createBootstrappedInitialState,
+  );
 
   // 使用 useMemo 避免不必要的重渲染
   const stateValue = useMemo(() => state, [state]);

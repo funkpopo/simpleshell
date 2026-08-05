@@ -94,6 +94,12 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
   ),
   defineRequest("WINDOW_CLOSE", "window:close", "window", NO_ARGS_SCHEMA),
   defineRequest("WINDOW_GET_STATE", "window:getState", "window", NO_ARGS_SCHEMA),
+  defineRequest(
+    "WINDOW_NOTIFY_READY",
+    "window:notifyReady",
+    "window",
+    NO_ARGS_SCHEMA,
+  ),
   defineEvent(
     "WINDOW_STATE",
     "window:state",

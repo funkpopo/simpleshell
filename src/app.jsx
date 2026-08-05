@@ -1306,6 +1306,47 @@ function AppContent() {
     );
   }, [darkMode]);
 
+  // 主题加载完成后：解除启动期 transition 锁定，并通知主进程显示窗口（避免闪屏）
+  React.useEffect(() => {
+    if (themeLoading) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let outerRaf = 0;
+    let innerRaf = 0;
+
+    // 与 shared/startupTheme.clearStartupThemeBootstrap 保持一致（避免 CJS 动态 import）
+    document.body?.classList.remove("ss-bootstrapping");
+    document.documentElement?.style.removeProperty("background-color");
+    document.body?.style.removeProperty("background-color");
+    document.getElementById("root")?.style.removeProperty("background-color");
+
+    // 双 rAF：确保 CssBaseline / 首屏布局已提交到合成器后再 show
+    outerRaf = requestAnimationFrame(() => {
+      innerRaf = requestAnimationFrame(() => {
+        if (cancelled) {
+          return;
+        }
+        if (window.terminalAPI?.notifyWindowReady) {
+          void window.terminalAPI.notifyWindowReady().catch(() => {
+            /* main may already have revealed via fallback timeout */
+          });
+        }
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      if (outerRaf) {
+        cancelAnimationFrame(outerRaf);
+      }
+      if (innerRaf) {
+        cancelAnimationFrame(innerRaf);
+      }
+    };
+  }, [themeLoading]);
+
   // ============ 保持本地状态(不在 reducer 中)============
   const [localTerminalSidebarOpen, setLocalTerminalSidebarOpen] =
     React.useState(false);

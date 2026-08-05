@@ -19,6 +19,36 @@ const {
   TERMINAL_IO_MESSAGE_TYPES,
   getTerminalIOMailboxOutputChannel,
 } = require("./modules/terminal/io/terminalIOMailboxProtocol");
+const {
+  applyStartupThemeToDocument,
+  parseStartupThemeFromArgv,
+} = require("./shared/startupTheme");
+
+// 启动主题：在页面脚本运行前根据 main 传入的 additionalArguments 校正 DOM，
+// 避免 CSS :root 默认浅色在 ready-to-show 时被画到屏幕上。
+const startupTheme = parseStartupThemeFromArgv(process.argv);
+const scheduleStartupThemeApply = () => {
+  try {
+    applyStartupThemeToDocument(startupTheme);
+  } catch {
+    // DOM may be incomplete during earliest preload ticks.
+  }
+};
+scheduleStartupThemeApply();
+if (typeof document !== "undefined") {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", scheduleStartupThemeApply, {
+      once: true,
+    });
+  } else {
+    scheduleStartupThemeApply();
+  }
+}
+
+contextBridge.exposeInMainWorld("simpleshellBoot", {
+  darkMode: startupTheme.darkMode,
+  backgroundColor: startupTheme.backgroundColor,
+});
 
 // Listener wrapper stores (avoid mutating callback functions with hidden properties)
 const topConnectionsChangedWrappers = new WeakMap();
@@ -1248,6 +1278,9 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   closeWindow: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_CLOSE),
   getWindowState: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_GET_STATE),
+  /** 主题与首屏 UI 就绪后通知主进程显示窗口（防启动闪屏） */
+  notifyWindowReady: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_NOTIFY_READY),
   onWindowStateChange: (callback) => {
     if (typeof callback !== "function") {
       return () => {};

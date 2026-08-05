@@ -23,7 +23,13 @@ assert.match(
 assert.match(
   windowManagerSource,
   /ready-to-show/,
-  "Main BrowserWindow should show after ready-to-show.",
+  "Main BrowserWindow should wait for ready-to-show before becoming visible.",
+);
+
+assert.match(
+  windowManagerSource,
+  /notifyPrimaryWindowRendererReady|rendererReady/,
+  "Main BrowserWindow should also wait for renderer-ready before show to avoid theme flash.",
 );
 
 console.log("Background session checks passed.");

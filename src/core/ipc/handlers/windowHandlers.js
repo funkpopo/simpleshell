@@ -1,4 +1,7 @@
-const { getPrimaryWindow } = require("../../window/windowManager");
+const {
+  getPrimaryWindow,
+  notifyPrimaryWindowRendererReady,
+} = require("../../window/windowManager");
 const { IPC_REQUEST_CHANNELS } = require("../schema/channels");
 
 /**
@@ -29,6 +32,11 @@ class WindowHandlers {
         channel: IPC_REQUEST_CHANNELS.WINDOW_GET_STATE,
         category: "window",
         handler: this.getState.bind(this),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.WINDOW_NOTIFY_READY,
+        category: "window",
+        handler: this.notifyReady.bind(this),
       },
     ];
   }
@@ -75,6 +83,13 @@ class WindowHandlers {
       isMaximized: mainWindow.isMaximized(),
       isFullScreen: mainWindow.isFullScreen(),
     };
+  }
+
+  /**
+   * 渲染进程主题与首屏 UI 就绪后通知主进程显示窗口，避免启动闪屏。
+   */
+  async notifyReady() {
+    return notifyPrimaryWindowRendererReady();
   }
 }
 

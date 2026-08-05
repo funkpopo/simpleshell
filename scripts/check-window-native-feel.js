@@ -87,6 +87,67 @@ function testStartupAndWindowLifecycle() {
 
   assertContains(
     windowManagerSource,
+    /additionalArguments/,
+    "Main BrowserWindow must pass startup theme via additionalArguments for preload boot paint.",
+  );
+
+  assertContains(
+    windowManagerSource,
+    /notifyPrimaryWindowRendererReady|rendererReady/,
+    "Main BrowserWindow must gate first show on renderer-ready to avoid theme flash.",
+  );
+
+  assertContains(
+    windowManagerSource,
+    /RENDERER_READY_FALLBACK_MS|revealFallbackTimer/,
+    "Main BrowserWindow must fall back to show if renderer-ready never arrives.",
+  );
+
+  const startupThemeSource = readSource("src/shared/startupTheme.js");
+  assertContains(
+    startupThemeSource,
+    /#121212/,
+    "Startup theme must use the dark MUI background.default color.",
+  );
+  assertContains(
+    startupThemeSource,
+    /#e8eaed/,
+    "Startup theme must use the light MUI background.default color.",
+  );
+
+  const indexHtmlSource = readSource("src/index.html");
+  assertContains(
+    indexHtmlSource,
+    /ss-startup-boot|#121212/,
+    "index.html must inline a boot background to avoid white flash before CSS loads.",
+  );
+
+  const preloadSourceForBoot = readSource("src/preload.js");
+  assertContains(
+    preloadSourceForBoot,
+    /applyStartupThemeToDocument|simpleshellBoot/,
+    "Preload must apply startup theme to the DOM before renderer scripts run.",
+  );
+  assertContains(
+    preloadSourceForBoot,
+    /WINDOW_NOTIFY_READY|notifyWindowReady/,
+    "Preload must expose notifyWindowReady for first-paint reveal.",
+  );
+
+  assertContains(
+    appSource,
+    /notifyWindowReady/,
+    "Renderer must notify main process when the themed first paint is ready.",
+  );
+
+  assertContains(
+    appSource,
+    /ss-bootstrapping/,
+    "Renderer must clear the startup bootstrap class after theme load.",
+  );
+
+  assertContains(
+    windowManagerSource,
     /windowBounds/,
     "Main BrowserWindow must persist and restore window bounds.",
   );

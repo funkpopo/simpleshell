@@ -5,6 +5,10 @@ const { IPC_EVENT_CHANNELS } = require("../ipc/schema/channels");
 const { logToFile } = require("../utils/logger");
 const { recordCrashMarker } = require("../utils/crashReporter");
 const { buildErrorEvent } = require("../utils/errorResponse");
+const {
+  buildStartupDarkModeArg,
+  getStartupBackgroundColor,
+} = require("../../shared/startupTheme");
 
 const DEFAULT_WINDOW_BOUNDS = Object.freeze({
   width: 1200,
@@ -13,7 +17,12 @@ const DEFAULT_WINDOW_BOUNDS = Object.freeze({
 
 const MIN_VISIBLE_PIXELS = 80;
 const WINDOW_BOUNDS_SAVE_DELAY_MS = 500;
+/** ready-to-show 后若渲染进程未回报首屏就绪，超时后仍显示，避免卡在隐藏状态 */
+const RENDERER_READY_FALLBACK_MS = 4000;
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+
+/** @type {WeakMap<Electron.BrowserWindow, () => void>} */
+const rendererReadyRevealHandlers = new WeakMap();
 
 /**
  * 惰性获取BrowserWindow，保证在electron被按需mock/替换时也能取到当前实现
@@ -64,15 +73,44 @@ function broadcastToAllWindows(channel, ...args) {
 }
 
 /**
- * 获取启动时的主题背景色
+ * 读取启动主题（与 config / MUI palette.background.default 对齐）
+ * @returns {{ darkMode: boolean, backgroundColor: string }}
  */
-function getStartupBackgroundColor() {
+function getStartupTheme() {
   try {
     const uiSettings = configService.loadUISettings();
-    return uiSettings.darkMode ? "#121212" : "#f0f2f5";
+    const darkMode = uiSettings?.darkMode !== false;
+    return {
+      darkMode,
+      backgroundColor: getStartupBackgroundColor(darkMode),
+    };
   } catch {
-    return "#121212";
+    return {
+      darkMode: true,
+      backgroundColor: getStartupBackgroundColor(true),
+    };
   }
+}
+
+/**
+ * 渲染进程首屏就绪后调用：在主题已落地的前提下再显示主窗口，避免闪屏。
+ */
+function notifyPrimaryWindowRendererReady() {
+  const mainWindow = getPrimaryWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+
+  const reveal = rendererReadyRevealHandlers.get(mainWindow);
+  if (typeof reveal === "function") {
+    reveal();
+    return true;
+  }
+
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+  return true;
 }
 
 function normalizeBounds(bounds) {
@@ -301,7 +339,8 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
     iconPath = path.join(__dirname, "..", "..", "assets", "logo.ico");
   }
 
-  const backgroundColor = getStartupBackgroundColor();
+  const startupTheme = getStartupTheme();
+  const { backgroundColor, darkMode: startupDarkMode } = startupTheme;
   const restoredWindowState = getRestoredWindowState();
 
   const mainWindow = new BrowserWindow({
@@ -310,6 +349,7 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
     show: false,
     title: "SimpleShell",
     backgroundColor,
+    // 与主题底色一致，减少 Windows 无边框窗口合成时的白边/闪白
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     webPreferences: {
       preload: preloadEntry,
@@ -320,6 +360,8 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
       // Keep preload sandboxed. The renderer webpack config excludes asset-relocator
       // runtime from preload bundles, and Node-backed APIs are exposed through IPC.
       sandbox: true,
+      // 供 preload 在首屏绘制前同步应用主题类名与背景色
+      additionalArguments: [buildStartupDarkModeArg(startupDarkMode)],
     },
     icon: iconPath,
   });
@@ -344,15 +386,61 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
   mainWindow.on("leave-full-screen", emitWindowState);
   registerWindowStatePersistence(mainWindow);
 
-  mainWindow.once("ready-to-show", () => {
+  // 显示门闩：须同时满足 ready-to-show + 渲染进程主题首屏就绪（或超时兜底）
+  let compositorReady = false;
+  let rendererReady = false;
+  let hasRevealed = false;
+  let revealFallbackTimer = null;
+  /** @type {string|null} dom-ready 注入的启动底色样式 key，reveal 后移除以免锁死主题切换 */
+  let bootCssKey = null;
+
+  const clearBootCss = () => {
+    if (!bootCssKey || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+      bootCssKey = null;
+      return;
+    }
+    const key = bootCssKey;
+    bootCssKey = null;
+    try {
+      mainWindow.webContents.removeInsertedCSS(key);
+    } catch {
+      /* best-effort */
+    }
+  };
+
+  const revealMainWindow = () => {
+    if (hasRevealed || mainWindow.isDestroyed()) {
+      return;
+    }
+    if (!compositorReady || !rendererReady) {
+      return;
+    }
+
+    hasRevealed = true;
+    if (revealFallbackTimer) {
+      clearTimeout(revealFallbackTimer);
+      revealFallbackTimer = null;
+    }
+
+    // 最大化/全屏在 show 之前应用，避免先以普通尺寸闪一下再放大
     if (restoredWindowState.fullScreen) {
       mainWindow.setFullScreen(true);
     } else if (restoredWindowState.maximized) {
       mainWindow.maximize();
     }
 
+    clearBootCss();
     mainWindow.show();
     emitWindowState();
+
+    // DevTools 在 show 之后打开，避免开发模式下过早弹出/带出隐藏窗口造成闪屏
+    if (process.env.NODE_ENV === "development") {
+      try {
+        mainWindow.webContents.openDevTools({ mode: "detach" });
+      } catch {
+        /* intentionally ignored */
+      }
+    }
 
     // 硬件加速开启时显式锁定 60Hz，避免高刷新率显示器把渲染推到 144Hz+
     // 造成不必要的 GPU/CPU 开销；关闭时不调用，沿用系统默认。
@@ -363,6 +451,65 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
         /* intentionally ignored — older Electron / unsupported */
       }
     }
+  };
+
+  rendererReadyRevealHandlers.set(mainWindow, () => {
+    rendererReady = true;
+    revealMainWindow();
+  });
+
+  mainWindow.once("ready-to-show", () => {
+    compositorReady = true;
+    // 渲染进程异常时仍保证窗口最终可见
+    revealFallbackTimer = setTimeout(() => {
+      revealFallbackTimer = null;
+      if (!rendererReady) {
+        logToFile(
+          "Renderer ready signal timed out; revealing main window to avoid stuck hidden state",
+          "WARN",
+        );
+        rendererReady = true;
+      }
+      revealMainWindow();
+    }, RENDERER_READY_FALLBACK_MS);
+    revealMainWindow();
+  });
+
+  mainWindow.webContents.on("dom-ready", () => {
+    // 双保险：在隐藏阶段注入与主题一致的底色，覆盖 CSS :root 默认浅色
+    if (mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+      return;
+    }
+    const bootCss = [
+      `html, body, #root { background-color: ${backgroundColor}; }`,
+      `html { color-scheme: ${startupDarkMode ? "dark" : "light"}; }`,
+    ].join("\n");
+    void mainWindow.webContents
+      .insertCSS(bootCss)
+      .then((key) => {
+        // 若已 reveal，立即清掉，避免残留样式干扰后续主题切换
+        if (hasRevealed) {
+          try {
+            mainWindow.webContents.removeInsertedCSS(key);
+          } catch {
+            /* best-effort */
+          }
+          return;
+        }
+        bootCssKey = key;
+      })
+      .catch(() => {
+        /* best-effort anti-flash injection */
+      });
+  });
+
+  mainWindow.on("closed", () => {
+    if (revealFallbackTimer) {
+      clearTimeout(revealFallbackTimer);
+      revealFallbackTimer = null;
+    }
+    clearBootCss();
+    rendererReadyRevealHandlers.delete(mainWindow);
   });
 
   mainWindow.loadURL(webpackEntry);
@@ -382,10 +529,6 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
     });
   }
 
-  if (process.env.NODE_ENV === "development") {
-    mainWindow.webContents.openDevTools();
-  }
-
   if (onSetupIPC) {
     onSetupIPC(mainWindow);
   }
@@ -397,6 +540,8 @@ module.exports = {
   getPrimaryWindow,
   safeSendToRenderer,
   broadcastToAllWindows,
-  getStartupBackgroundColor,
+  getStartupTheme,
+  getStartupBackgroundColor: () => getStartupTheme().backgroundColor,
+  notifyPrimaryWindowRendererReady,
   createWindow,
 };
