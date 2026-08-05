@@ -28,6 +28,7 @@ import {
 } from "../../modules/terminal/controller/terminalDom.js";
 import {
   clearGeometryFor,
+  disposeTerminalSession,
   disposablesCache,
   fitAddonCache,
   processCache,
@@ -185,6 +186,20 @@ export function useTerminalLifecycle({
       terminalScrollbackLines: 50000,
     };
   }, [setWebglRendererEnabled, webglRendererEnabledRef]);
+
+  // Closing a tab unmounts WebTerminal. Keep this cleanup separate from the
+  // long-lived setup effect so dependency refreshes can still reuse a cached
+  // terminal, while a real unmount always releases the xterm object graph.
+  useEffect(
+    () => () => {
+      disposeTerminalSession(tabId);
+      termRef.current = null;
+      fitAddonRef.current = null;
+      searchAddonRef.current = null;
+      currentProcessId.current = null;
+    },
+    [currentProcessId, fitAddonRef, searchAddonRef, tabId, termRef],
+  );
 
   // 如果 refreshKey 变化，清除缓存强制重新创建终端
   useEffect(() => {

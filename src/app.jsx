@@ -116,6 +116,10 @@ import {
   shouldClearOnTabConnectionStatus,
   shouldMarkPendingOnTabConnectionStatus,
 } from "./modules/terminal/reconnectTabStatus.js";
+import {
+  disposeTerminalSession,
+  getTerminalSessionDiagnostics,
+} from "./modules/terminal/controller/terminalSessionStore.js";
 
 const SIDEBAR_TRANSITION_MS = 250;
 const SIDEBAR_UNMOUNT_DELAY_MS = SIDEBAR_TRANSITION_MS + 40;
@@ -2737,6 +2741,30 @@ function AppContent() {
       window.terminalAPI.closeLocalTerminal?.(tabToRemove.id).catch((err) => {
         console.warn(`关闭本地终端时出错: ${err.message}`);
       });
+    }
+
+    // Release renderer-owned xterm/addon/listener/mailbox caches immediately.
+    // The WebTerminal unmount cleanup calls the same idempotent path as a
+    // safety net, but doing it here prevents output from reaching a closed tab
+    // while React is committing the state update.
+    const diagnosticsBeforeClose =
+      process.env.NODE_ENV === "development"
+        ? getTerminalSessionDiagnostics()
+        : null;
+    disposeTerminalSession(tabToRemove.id);
+    if (process.env.NODE_ENV === "development") {
+      const diagnosticsAfterClose = getTerminalSessionDiagnostics();
+      const hadCachedTerminal = diagnosticsBeforeClose.terminalIds.includes(
+        tabToRemove.id,
+      );
+      console.assert(
+        !diagnosticsAfterClose.terminalIds.includes(tabToRemove.id) &&
+          (!hadCachedTerminal ||
+            diagnosticsAfterClose.terminalCount <
+              diagnosticsBeforeClose.terminalCount),
+        `[App] terminal cache count did not decrease after closing tabId=${tabToRemove.id}`,
+        diagnosticsAfterClose,
+      );
     }
 
     // 检查文件管理器是否为该标签页打开，如果是则关闭它
