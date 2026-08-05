@@ -7,7 +7,7 @@ const ONE_DAY_MS = 24 * ONE_HOUR_MS;
 const DEFAULT_RESOURCE_POLICIES = Object.freeze({
   "file-cache": Object.freeze({
     maxAgeMs: ONE_HOUR_MS,
-    maxTotalBytes: 512 * 1024 * 1024,
+    maxTotalBytes: 128 * 1024 * 1024,
     cleanupIntervalMs: 30 * 60 * 1000,
     startupCleanup: "clear",
     protectActive: true,

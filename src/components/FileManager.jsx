@@ -897,7 +897,7 @@ const FileManager = memo(
     const transferProgressList = transferList;
 
     // 缓存过期时间（毫秒）
-    const CACHE_EXPIRY_TIME = 10000; // 10秒
+    const MAX_DIRECTORY_CACHE_ENTRIES = 500; // 增加条目上限（LRU），防止内存占用过高
 
     // 自动刷新相关参数
     const USER_ACTIVITY_REFRESH_DELAY = 300; // 将用户活动后刷新延迟从1000ms减少到300ms
@@ -1275,10 +1275,18 @@ const FileManager = memo(
 
     // 更新目录缓存
     const updateDirectoryCache = (path, data) => {
-      directoryCacheRef.current.set(path, {
+      const cache = directoryCacheRef.current;
+      cache.set(path, {
         data,
         timestamp: Date.now(),
       });
+
+      // LRU: 超过上限则删除最旧条目
+      const MAX_DIRECTORY_CACHE_ENTRIES = 500;
+      if (cache.size > MAX_DIRECTORY_CACHE_ENTRIES) {
+        const oldestPath = cache.keys().next().value;
+        cache.delete(oldestPath);
+      }
     };
 
     // 订阅非阻塞目录分片事件

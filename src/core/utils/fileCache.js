@@ -9,7 +9,7 @@ const LIFECYCLE_RESOURCE_NAME = "file-cache";
 const DEFAULT_CACHE_SETTINGS = Object.freeze({
   enabled: true,
   maxAgeMs: 60 * 60 * 1000,
-  maxTotalBytes: 512 * 1024 * 1024,
+  maxTotalBytes: 128 * 1024 * 1024,
   cleanupIntervalMs: 30 * 60 * 1000,
   startupCleanup: "clear",
   protectActive: true,

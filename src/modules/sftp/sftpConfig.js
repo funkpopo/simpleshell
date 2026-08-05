@@ -46,7 +46,7 @@ const TRANSFER_CONFIG = {
   // Stream chunk sizes (highWaterMark for fs/sftp streams)
   CHUNK_SIZE_SMALL: 512 * 1024, // 小文件块大小 (512 KB)
   CHUNK_SIZE_MEDIUM: 2 * 1024 * 1024, // 中等文件块大小 (2 MB)
-  CHUNK_SIZE_LARGE: 4 * 1024 * 1024, // 大文件块大小 (4 MB)
+  CHUNK_SIZE_LARGE: 2 * 1024 * 1024, // 可根据系统内存自动调整（非固定值）
 
   // Progress reporting
   PROGRESS_INTERVAL_MS: 100, // 进度上报节流间隔 (100 毫秒)

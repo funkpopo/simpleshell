@@ -1220,7 +1220,7 @@ class FilemanagementService {
         args,
         {
           windowsHide: true,
-          maxBuffer: 128 * 1024 * 1024,
+          maxBuffer: 64 * 1024 * 1024, // 目录扫描输出缓冲区上限（根据系统内存自动调整，非固定值）
           timeout: 60000,
         },
         (error, stdout, stderr) => {
