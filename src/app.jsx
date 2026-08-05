@@ -43,31 +43,31 @@ import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import PublicIcon from "@mui/icons-material/Public";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import ComputerIcon from "@mui/icons-material/Computer";
-import WebTerminal from "./components/WebTerminal.jsx";
 import WelcomePage from "./components/WelcomePage.jsx";
-import FirstRunDialog from "./components/FirstRunDialog.jsx";
-import ConnectionManager from "./components/ConnectionManager.jsx";
-import FileManager from "./components/FileManager.jsx";
 import {
+  AboutDialogWithSuspense as AboutDialog,
+  AIChatWindowWithSuspense as AIChatWindow,
+  ConnectionManagerWithSuspense as ConnectionManager,
+  FileManagerWithSuspense as FileManager,
+  FirstRunDialogWithSuspense as FirstRunDialog,
   ResourceMonitorWithSuspense as ResourceMonitor,
   IPAddressQueryWithSuspense as IPAddressQuery,
+  SecurityToolsWithSuspense as SecurityTools,
   SettingsWithSuspense as Settings,
   CommandHistoryWithSuspense as CommandHistory,
   ShortcutCommandsWithSuspense as ShortcutCommands,
   LocalTerminalSidebarWithSuspense as LocalTerminalSidebar,
+  WebTerminalWithSuspense as WebTerminal,
   preloadComponents,
   smartPreload,
 } from "./components/LazyComponents.jsx";
 
-import SecurityTools from "./components/SecurityTools.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";
 import FirstPageIcon from "@mui/icons-material/FirstPage";
 import LastPageIcon from "@mui/icons-material/LastPage";
-import AIChatWindow from "./components/AIChatWindow.jsx";
 import CustomTab from "./components/CustomTab.jsx";
 import NetworkLatencyIndicator from "./components/NetworkLatencyIndicator.jsx";
 import WindowControls from "./components/WindowControls.jsx";
-import AboutDialog from "./components/AboutDialog.jsx";
 import SSHAuthDialog from "./components/SSHAuthDialog.jsx";
 import MasterPasswordOverlay from "./components/MasterPasswordOverlay.jsx";
 // Import i18n configuration
@@ -739,8 +739,9 @@ function AppContent() {
   const topConnectionsRef = React.useRef(topConnections);
   const terminalInstancesRef = React.useRef(terminalInstances);
   const processCacheRef = React.useRef(processCache);
-  const [connectionStatusByTabId, setConnectionStatusByTabId] =
-    React.useState({});
+  const [connectionStatusByTabId, setConnectionStatusByTabId] = React.useState(
+    {},
+  );
 
   React.useEffect(() => {
     connectionsRef.current = connections;
@@ -1369,9 +1370,7 @@ function AppContent() {
   const [transferBarMode, setTransferBarMode] = React.useState("bottom");
   // 侧边栏位置: "left" | "right"
   const [sidebarPosition, setSidebarPosition] = React.useState("right");
-  const [sidebarWidth, setSidebarWidth] = React.useState(
-    DEFAULT_SIDEBAR_WIDTH,
-  );
+  const [sidebarWidth, setSidebarWidth] = React.useState(DEFAULT_SIDEBAR_WIDTH);
   const [sidebarResizing, setSidebarResizing] = React.useState(false);
   // 传输侧边栏状态
   const [transferSidebarOpen, setTransferSidebarOpen] = React.useState(false);
@@ -3353,8 +3352,9 @@ function AppContent() {
       const defaultDistribution = Array.isArray(
         terminalConfig.availableDistributions,
       )
-        ? terminalConfig.availableDistributions.find((dist) => dist.isDefault) ||
-          terminalConfig.availableDistributions[0]
+        ? terminalConfig.availableDistributions.find(
+            (dist) => dist.isDefault,
+          ) || terminalConfig.availableDistributions[0]
         : null;
       const distribution =
         terminalConfig.distribution || defaultDistribution?.name || undefined;
@@ -3408,12 +3408,7 @@ function AppContent() {
 
       return { success: true, data: newTab };
     },
-    [
-      dispatch,
-      setFallbackSidebarAfterClose,
-      tabs,
-      terminalInstances,
-    ],
+    [dispatch, setFallbackSidebarAfterClose, tabs, terminalInstances],
   );
 
   // 获取右侧面板应该使用的当前标签页信息
@@ -3595,10 +3590,7 @@ function AppContent() {
       };
     }
 
-    if (
-      currentPanelTab.type !== "ssh" &&
-      currentPanelTab.type !== "telnet"
-    ) {
+    if (currentPanelTab.type !== "ssh" && currentPanelTab.type !== "telnet") {
       return null;
     }
 
@@ -3620,12 +3612,7 @@ function AppContent() {
       host,
       quality,
     };
-  }, [
-    currentPanelConnectionStatus,
-    currentPanelTab,
-    t,
-    terminalInstances,
-  ]);
+  }, [currentPanelConnectionStatus, currentPanelTab, t, terminalInstances]);
 
   // 计算按钮禁用状态
   const isSSHButtonDisabled = useMemo(() => {
@@ -4390,7 +4377,9 @@ function AppContent() {
                               ? terminalInstances[`${tab.id}-config`]
                               : null
                           }
-                          terminalType={tab.type === "local" ? "local" : tab.type}
+                          terminalType={
+                            tab.type === "local" ? "local" : tab.type
+                          }
                           localConfig={
                             tab.type === "local"
                               ? terminalInstances[`${tab.id}-config`] ||
@@ -4721,9 +4710,7 @@ function AppContent() {
                 >
                   <IconButton
                     onClick={toggleFileManager}
-                    sx={(theme) =>
-                      sidebarRailButtonSx(theme, fileManagerOpen)
-                    }
+                    sx={(theme) => sidebarRailButtonSx(theme, fileManagerOpen)}
                     disabled={isFileManagerButtonDisabled}
                     aria-label={t("sidebar.files")}
                   >
@@ -4856,10 +4843,7 @@ function AppContent() {
                     onClick={handleToggleGlobalAiChatWindow}
                     sx={(theme) => ({
                       position: "relative",
-                      ...sidebarRailButtonSx(
-                        theme,
-                        aiChatStatus === "visible",
-                      ),
+                      ...sidebarRailButtonSx(theme, aiChatStatus === "visible"),
                     })}
                     aria-label={
                       aiPanelOpen && aiApiReachable === false
@@ -4944,18 +4928,20 @@ function AppContent() {
       </Box>
 
       {/* 全局AI聊天窗口 */}
-      <AIChatWindow
-        windowState={aiChatStatus}
-        onClose={handleCloseGlobalAiChatWindow}
-        onMinimize={handleMinimizeGlobalAiChatWindow}
-        presetInput={aiInputPreset}
-        onInputPresetUsed={() => dispatch(actions.setAiInputPreset(""))}
-        connectionInfo={aiChatConnectionInfo}
-        onExecuteCommand={handleSendCommand}
-        zIndex={lastActiveFloatWindow === "ai" ? 1310 : 1300}
-        onFocus={() => setLastActiveFloatWindow("ai")}
-        anchorEl={aiChatButtonRef.current}
-      />
+      {aiChatStatus !== "closed" && (
+        <AIChatWindow
+          windowState={aiChatStatus}
+          onClose={handleCloseGlobalAiChatWindow}
+          onMinimize={handleMinimizeGlobalAiChatWindow}
+          presetInput={aiInputPreset}
+          onInputPresetUsed={() => dispatch(actions.setAiInputPreset(""))}
+          connectionInfo={aiChatConnectionInfo}
+          onExecuteCommand={handleSendCommand}
+          zIndex={lastActiveFloatWindow === "ai" ? 1310 : 1300}
+          onFocus={() => setLastActiveFloatWindow("ai")}
+          anchorEl={aiChatButtonRef.current}
+        />
+      )}
 
       {/* 文件传输浮动窗口 - 仅在sidebar模式下显示 */}
       {transferBarMode === "sidebar" && (
@@ -4968,20 +4954,24 @@ function AppContent() {
         />
       )}
 
-      <FirstRunDialog
-        open={firstRunDialogOpen}
-        initialSettings={uiSettingsSnapshot}
-        credentialSecurityStatus={credentialSecurityStatus}
-        onComplete={handleFirstRunComplete}
-      />
+      {firstRunDialogOpen && (
+        <FirstRunDialog
+          open={firstRunDialogOpen}
+          initialSettings={uiSettingsSnapshot}
+          credentialSecurityStatus={credentialSecurityStatus}
+          onComplete={handleFirstRunComplete}
+        />
+      )}
 
       {/* 关于对话框 */}
-      <AboutDialog
-        open={aboutDialogOpen}
-        onClose={handleCloseAbout}
-        checkUpdateSignal={aboutUpdateCheckSignal}
-        onRemindLater={handleRemindUpdateLater}
-      />
+      {aboutDialogOpen && (
+        <AboutDialog
+          open={aboutDialogOpen}
+          onClose={handleCloseAbout}
+          checkUpdateSignal={aboutUpdateCheckSignal}
+          onRemindLater={handleRemindUpdateLater}
+        />
+      )}
 
       {/* SSH 认证对话框 */}
       <SSHAuthDialog

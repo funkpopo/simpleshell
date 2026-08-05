@@ -1,4 +1,4 @@
-import React, { useCallback, memo } from "react";
+import React, { useCallback, memo, useEffect, useMemo, useState } from "react";
 import {
   Box,
   Button,
@@ -13,11 +13,37 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
-import { countries } from "countries-list";
 
-const WelcomePage = ({ topConnections, onOpenConnection, onCreateConnection }) => {
+const WelcomePage = ({
+  topConnections,
+  onOpenConnection,
+  onCreateConnection,
+}) => {
   const theme = useTheme();
   const { t } = useTranslation();
+  const [countries, setCountries] = useState(null);
+  const hasCountryMetadata = useMemo(
+    () => topConnections?.some((connection) => Boolean(connection.country)),
+    [topConnections],
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    if (hasCountryMetadata && !countries) {
+      import("countries-list")
+        .then((module) => {
+          if (active) setCountries(module.countries);
+        })
+        .catch((error) => {
+          console.error("Failed to load country metadata:", error);
+        });
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [countries, hasCountryMetadata]);
 
   const handleOpenConnection = useCallback(
     (connection) => {
@@ -150,7 +176,7 @@ const WelcomePage = ({ topConnections, onOpenConnection, onCreateConnection }) =
             />
           )}
 
-          {connection.country && countries[connection.country] && (
+          {connection.country && countries?.[connection.country] && (
             <Box
               sx={{
                 display: "flex",

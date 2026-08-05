@@ -1,12 +1,7 @@
 import React, { Suspense, lazy, memo } from "react";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import LoadingFallback from "./LoadingFallback.jsx";
-import {
-  ResourceMonitorSkeleton,
-  LocalTerminalSidebarSkeleton,
-  SettingsSkeleton,
-  CommandHistorySkeleton,
-} from "./SkeletonLoader.jsx";
+import { SettingsSkeleton, SidebarLazySkeleton } from "./SkeletonLoader.jsx";
 
 // React 19 优化：使用 memo 包装懒加载组件工厂函数，减少不必要的重渲染
 const createLazyComponent = (
@@ -46,18 +41,46 @@ const createLazyComponent = (
   });
 };
 
+// 侧栏 fallback 必须与 SidebarPanel 保持同样的根布局；业务差异只存在于
+// 骨架内容，不能改变首次展开时的宽高、背景或滑入轨迹。
+const createSidebarFallback = (variant, loadingLabel) => {
+  const SidebarFallback = (props) => (
+    <SidebarLazySkeleton
+      {...props}
+      variant={variant}
+      loadingLabel={loadingLabel}
+    />
+  );
+  SidebarFallback.displayName = `${variant}SidebarFallback`;
+  return memo(SidebarFallback);
+};
+
+const createLazySidebarComponent = (
+  importFn,
+  fallbackMessage,
+  componentName,
+  variant = "list",
+) =>
+  createLazyComponent(
+    importFn,
+    fallbackMessage,
+    componentName,
+    createSidebarFallback(variant, fallbackMessage),
+  );
+
 // 使用工厂函数创建懒加载组件
-export const ResourceMonitorWithSuspense = createLazyComponent(
+export const ResourceMonitorWithSuspense = createLazySidebarComponent(
   () => import("./ResourceMonitor.jsx"),
   "正在加载资源监控...",
   "资源监控",
-  ResourceMonitorSkeleton,
+  "resource",
 );
 
-export const IPAddressQueryWithSuspense = createLazyComponent(
+export const IPAddressQueryWithSuspense = createLazySidebarComponent(
   () => import("./IPAddressQuery.jsx"),
   "正在加载IP地址查询...",
   "IP地址查询",
+  "ipAddress",
 );
 
 export const SettingsWithSuspense = createLazyComponent(
@@ -67,24 +90,73 @@ export const SettingsWithSuspense = createLazyComponent(
   SettingsSkeleton,
 );
 
-export const CommandHistoryWithSuspense = createLazyComponent(
+export const CommandHistoryWithSuspense = createLazySidebarComponent(
   () => import("./CommandHistory.jsx"),
   "正在加载命令历史...",
   "命令历史",
-  CommandHistorySkeleton,
+  "history",
 );
 
-export const ShortcutCommandsWithSuspense = createLazyComponent(
+export const ShortcutCommandsWithSuspense = createLazySidebarComponent(
   () => import("./ShortcutCommands.jsx"),
   "正在加载快捷命令...",
   "快捷命令",
+  "shortcut",
 );
 
-export const LocalTerminalSidebarWithSuspense = createLazyComponent(
+export const LocalTerminalSidebarWithSuspense = createLazySidebarComponent(
   () => import("./LocalTerminalSidebar.jsx"),
   "正在加载本地终端...",
   "本地终端",
-  LocalTerminalSidebarSkeleton,
+  "localTerminal",
+);
+
+// 启动路径上的重型功能必须在真正显示时才下载和执行。调用方仍需通过
+// open/present 状态控制是否挂载这些包装器，避免仅仅渲染一个关闭的对话框就
+// 触发动态 import。
+export const WebTerminalWithSuspense = createLazyComponent(
+  () => import("./WebTerminal.jsx"),
+  "正在加载终端...",
+  "终端",
+);
+
+export const ConnectionManagerWithSuspense = createLazySidebarComponent(
+  () => import("./ConnectionManager.jsx"),
+  "正在加载连接管理器...",
+  "连接管理器",
+  "connection",
+);
+
+export const FileManagerWithSuspense = createLazySidebarComponent(
+  () => import("./FileManager.jsx"),
+  "正在加载文件管理器...",
+  "文件管理器",
+  "file",
+);
+
+export const SecurityToolsWithSuspense = createLazySidebarComponent(
+  () => import("./SecurityTools.jsx"),
+  "正在加载安全工具...",
+  "安全工具",
+  "security",
+);
+
+export const AIChatWindowWithSuspense = createLazyComponent(
+  () => import("./AIChatWindow.jsx"),
+  "正在加载 AI 助手...",
+  "AI 助手",
+);
+
+export const FirstRunDialogWithSuspense = createLazyComponent(
+  () => import("./FirstRunDialog.jsx"),
+  "正在加载首次运行向导...",
+  "首次运行向导",
+);
+
+export const AboutDialogWithSuspense = createLazyComponent(
+  () => import("./AboutDialog.jsx"),
+  "正在加载关于信息...",
+  "关于对话框",
 );
 
 // 预加载函数对象，为提高应用启动速度，延迟加载非关键组件

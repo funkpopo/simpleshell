@@ -1,7 +1,9 @@
 import React, {
   useState,
   useEffect,
+  lazy,
   memo,
+  Suspense,
   useCallback,
   useMemo,
   useRef,
@@ -51,7 +53,8 @@ import LockIcon from "@mui/icons-material/Lock";
 import SortByAlphaIcon from "@mui/icons-material/SortByAlpha";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
-import FilePreview from "./FilePreview.jsx";
+import ErrorBoundary from "./ErrorBoundary.jsx";
+import LoadingFallback from "./LoadingFallback.jsx";
 import OverflowTooltipText from "./OverflowTooltipText.jsx";
 import NameInputDialog from "./NameInputDialog.jsx";
 // TransferProgressFloat 已移至全局显示,不再导入
@@ -86,6 +89,10 @@ import {
 import { sleep } from "../shared/common";
 
 const FILE_LIST_ROW_HEIGHT = 36;
+
+// FilePreview 会进一步拉入 CodeMirror、语法支持和预览工具链。文件管理器首开时
+// 不需要这些能力，因此只在用户实际打开文件预览后加载。
+const FilePreview = lazy(() => import("./FilePreview.jsx"));
 const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
 const FILE_LIST_OVERSCAN = 12;
 const FILE_MANAGER_PATH_HISTORY_LIMIT = 50;
@@ -3337,7 +3344,8 @@ const FileManager = memo(
             const normalized = normalizeTransferProgress(raw);
             const update = {
               ...normalized,
-              fileName: raw.fileName || t("fileManager.messages.preparingUpload"),
+              fileName:
+                raw.fileName || t("fileManager.messages.preparingUpload"),
               statusText: t("fileManager.transfer.status.uploading"),
               currentFile: raw.currentFile || "",
               fileList: raw.fileList || null,
@@ -3479,7 +3487,6 @@ const FileManager = memo(
 
     const handleUploadFile = () => runUploadTransfer("file");
     const handleUploadFolder = () => runUploadTransfer("folder");
-
 
     // 复制绝对路径
     const handleCopyAbsolutePath = async () => {
@@ -5990,9 +5997,7 @@ const FileManager = memo(
             closeDisabled={isClosing}
             sessionContext={
               sessionContext ||
-              (tabName
-                ? { host: tabName, protocol: "SSH" }
-                : null)
+              (tabName ? { host: tabName, protocol: "SSH" } : null)
             }
           />
 
@@ -6789,13 +6794,19 @@ const FileManager = memo(
         )}
 
         {showPreview && filePreview && (
-          <FilePreview
-            open={showPreview}
-            onClose={handleClosePreview}
-            file={filePreview}
-            path={currentPath}
-            tabId={tabId}
-          />
+          <ErrorBoundary componentName="文件预览">
+            <Suspense
+              fallback={<LoadingFallback message="正在加载文件预览..." />}
+            >
+              <FilePreview
+                open={showPreview}
+                onClose={handleClosePreview}
+                file={filePreview}
+                path={currentPath}
+                tabId={tabId}
+              />
+            </Suspense>
+          </ErrorBoundary>
         )}
 
         {/* TransferProgressFloat已移至全局底部栏,不再在侧边栏内显示 */}

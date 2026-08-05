@@ -1,6 +1,7 @@
 import React, { memo } from "react";
 import {
   Box,
+  Paper,
   Skeleton,
   Stack,
   Typography,
@@ -17,6 +18,11 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useTranslation } from "react-i18next";
+import {
+  sidebarContentSx,
+  sidebarPaperSx,
+  sidebarTitleBarSx,
+} from "./sidebarItemStyles";
 
 // 基础骨架屏组件
 const SkeletonLoader = memo(
@@ -325,13 +331,96 @@ export const ConnectionManagerSkeleton = memo(() => {
 
 export const FileManagerSkeleton = memo(() => {
   return (
-    <Box sx={{ p: 1, height: "100%", overflow: "hidden" }}>
+    <Box
+      sx={{
+        p: 1,
+        width: "100%",
+        minWidth: 0,
+        height: "100%",
+        flex: 1,
+        boxSizing: "border-box",
+        overflow: "hidden",
+      }}
+    >
       <Box sx={{ flex: 1, height: "100%" }}>
         <SkeletonLoader type="fileList" lines={12} />
       </Box>
     </Box>
   );
 });
+
+/**
+ * 动态模块下载期间使用的统一侧栏外壳。
+ *
+ * 外层尺寸、表面和滑入行为刻意与 SidebarPanel 保持一致，避免各业务骨架按
+ * 内容最小宽度布局，或在模块就绪后突然切换背景和运动轨迹。
+ */
+export const SidebarLazySkeleton = memo(
+  ({ open = false, variant = "list", loadingLabel }) => {
+    const theme = useTheme();
+    const { t } = useTranslation();
+    const isFileManager = variant === "file";
+
+    return (
+      <Paper
+        aria-busy="true"
+        aria-label={loadingLabel || t("common.loading")}
+        sx={{
+          ...sidebarPaperSx(theme),
+          position: "relative",
+        }}
+        elevation={theme.palette.mode === "dark" ? 1 : 0}
+      >
+        <Box sx={sidebarContentSx(theme, open)}>
+          <Box sx={sidebarTitleBarSx(theme)}>
+            <Skeleton variant="text" width="42%" height={24} />
+            <Skeleton variant="circular" width={26} height={26} />
+          </Box>
+
+          {isFileManager && (
+            <Box
+              sx={{
+                px: 1.5,
+                py: 1,
+                display: "flex",
+                flexDirection: "column",
+                gap: 1,
+                flexShrink: 0,
+                borderBottom: `1px solid ${theme.palette.divider}`,
+                bgcolor: "background.paper",
+              }}
+            >
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                {Array.from({ length: 4 }, (_, index) => (
+                  <Skeleton
+                    key={index}
+                    variant="circular"
+                    width={26}
+                    height={26}
+                  />
+                ))}
+              </Box>
+              <Skeleton variant="rounded" width="100%" height={32} />
+            </Box>
+          )}
+
+          <Box sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+            {isFileManager ? (
+              <FileManagerSkeleton />
+            ) : (
+              <Box sx={{ p: 1.5, width: "100%", boxSizing: "border-box" }}>
+                <Skeleton variant="rounded" width="100%" height={36} />
+                <Box sx={{ mt: 1.5 }}>
+                  <SkeletonLoader type="list" lines={8} />
+                </Box>
+              </Box>
+            )}
+          </Box>
+        </Box>
+      </Paper>
+    );
+  },
+);
 
 export const TerminalSkeleton = memo(() => {
   const { t } = useTranslation();
@@ -448,16 +537,23 @@ export const LocalTerminalSidebarSkeleton = memo((props) => {
         </Typography>
         <Tooltip title={t("localTerminal.refresh")}>
           <span>
-            <IconButton size="small" disabled
-              aria-label={t("localTerminal.refresh")}>
+            <IconButton
+              size="small"
+              disabled
+              aria-label={t("localTerminal.refresh")}
+            >
               <CircularProgress size={18} />
             </IconButton>
           </span>
         </Tooltip>
         <Tooltip title={t("common.close")}>
           <span>
-            <IconButton size="small" onClick={onClose} disabled={!onClose}
-              aria-label={t("common.close")}>
+            <IconButton
+              size="small"
+              onClick={onClose}
+              disabled={!onClose}
+              aria-label={t("common.close")}
+            >
               <CloseIcon />
             </IconButton>
           </span>

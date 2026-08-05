@@ -283,7 +283,7 @@ function assertRendererLocalTabSupport() {
   );
   assert.match(
     appSource,
-    /terminalType=\{tab\.type === ["']local["'] \? ["']local["'] : tab\.type\}/,
+    /terminalType=\{\s*tab\.type\s*===\s*["']local["']\s*\?\s*["']local["']\s*:\s*tab\.type\s*\}/,
     "app must pass local terminalType to WebTerminal",
   );
   assert.match(
