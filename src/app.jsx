@@ -58,7 +58,6 @@ import {
   ShortcutCommandsWithSuspense as ShortcutCommands,
   LocalTerminalSidebarWithSuspense as LocalTerminalSidebar,
   WebTerminalWithSuspense as WebTerminal,
-  preloadComponents,
   smartPreload,
 } from "./components/LazyComponents.jsx";
 
@@ -124,6 +123,14 @@ const SIDEBAR_UNMOUNT_DELAY_MS = SIDEBAR_TRANSITION_MS + 40;
 const UPDATE_REMINDER_STORAGE_KEY = "simpleshell.update.remindAt";
 const UPDATE_REMINDER_DELAY_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_SIDEBAR_WIDTH = SIDEBAR_WIDTHS.DEFAULT;
+
+const intentPreloadProps = (componentName) => ({
+  onMouseEnter: () => smartPreload.scheduleComponent(componentName),
+  onMouseLeave: () => smartPreload.cancelScheduledComponent(componentName),
+  // 键盘聚焦与鼠标悬停表达相同的打开意图，同时保留 200ms 防误触阈值。
+  onFocus: () => smartPreload.scheduleComponent(componentName),
+  onBlur: () => smartPreload.cancelScheduledComponent(componentName),
+});
 
 // 延迟触发窗口resize事件，确保终端快速适配新的布局
 const notifyTerminalResize = (delay = 15) => {
@@ -1926,16 +1933,8 @@ function AppContent() {
     }
   }, [connections, dispatch, tabs, terminalInstances]);
 
-  // 应用启动时注册预加载和事件监听
+  // 应用启动时注册事件监听
   React.useEffect(() => {
-    const preloadTimer = setTimeout(() => {
-      // 再延迟一点预加载其他组件
-      setTimeout(() => {
-        preloadComponents.resourceMonitor().catch(() => {});
-        preloadComponents.ipAddressQuery().catch(() => {});
-      }, 2000);
-    }, 3000);
-
     // 添加监听器，接收终端进程ID更新事件
     const handleTerminalProcessIdUpdate = (event) => {
       const { terminalId, processId } = event.detail;
@@ -1970,9 +1969,6 @@ function AppContent() {
     );
 
     return () => {
-      // 清理预加载定时器
-      clearTimeout(preloadTimer);
-
       removeSshListener();
       removeTerminalListener();
     };
@@ -3780,10 +3776,8 @@ function AppContent() {
 
     loadInitialSettings();
 
-    // 智能预加载侧边栏组件，提升用户体验
-    smartPreload.preloadSidebarComponents();
-
     return () => {
+      smartPreload.cancelAllScheduled();
       removeSettingsListener();
       removeToggleListener();
       removeSendToAIListener();
@@ -3923,7 +3917,10 @@ function AppContent() {
                 open={open}
                 onClose={handleClose}
               >
-                <MenuItem onClick={handleOpenSettings}>
+                <MenuItem
+                  {...intentPreloadProps("settings")}
+                  onClick={handleOpenSettings}
+                >
                   <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
                   {t("menu.settings")}
                 </MenuItem>
@@ -3939,7 +3936,10 @@ function AppContent() {
                   <FeedbackIcon fontSize="small" sx={{ mr: 1 }} />
                   {t("menu.feedback")}
                 </MenuItem>
-                <MenuItem onClick={handleOpenAbout}>
+                <MenuItem
+                  {...intentPreloadProps("aboutDialog")}
+                  onClick={handleOpenAbout}
+                >
                   <InfoIcon fontSize="small" sx={{ mr: 1 }} />
                   {t("menu.about")}
                 </MenuItem>
@@ -4690,6 +4690,7 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
+                    {...intentPreloadProps("connectionManager")}
                     onClick={toggleConnectionManager}
                     sx={(theme) =>
                       sidebarRailButtonSx(theme, connectionManagerOpen)
@@ -4709,6 +4710,7 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
+                    {...intentPreloadProps("fileManager")}
                     onClick={toggleFileManager}
                     sx={(theme) => sidebarRailButtonSx(theme, fileManagerOpen)}
                     disabled={isFileManagerButtonDisabled}
@@ -4723,6 +4725,7 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
+                    {...intentPreloadProps("shortcutCommands")}
                     onClick={toggleShortcutCommands}
                     sx={(theme) =>
                       sidebarRailButtonSx(theme, shortcutCommandsOpen)
@@ -4739,6 +4742,7 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
+                    {...intentPreloadProps("commandHistory")}
                     onClick={toggleCommandHistory}
                     sx={(theme) =>
                       sidebarRailButtonSx(theme, commandHistoryOpen)
@@ -4757,6 +4761,7 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
+                    {...intentPreloadProps("resourceMonitor")}
                     onClick={toggleResourceMonitor}
                     sx={(theme) =>
                       sidebarRailButtonSx(theme, resourceMonitorOpen)
@@ -4772,6 +4777,7 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
+                    {...intentPreloadProps("ipAddressQuery")}
                     onClick={toggleIpAddressQuery}
                     sx={(theme) =>
                       sidebarRailButtonSx(theme, ipAddressQueryOpen)
@@ -4787,6 +4793,7 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
+                    {...intentPreloadProps("securityTools")}
                     onClick={toggleSecurityTools}
                     sx={(theme) =>
                       sidebarRailButtonSx(theme, securityToolsOpen)
@@ -4802,6 +4809,7 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
+                    {...intentPreloadProps("localTerminalSidebar")}
                     onClick={toggleLocalTerminalSidebar}
                     sx={(theme) =>
                       sidebarRailButtonSx(theme, localTerminalSidebarOpen)
@@ -4839,6 +4847,7 @@ function AppContent() {
                   placement={sidebarTooltipPlacement}
                 >
                   <IconButton
+                    {...intentPreloadProps("aiChatWindow")}
                     ref={aiChatButtonRef}
                     onClick={handleToggleGlobalAiChatWindow}
                     sx={(theme) => ({

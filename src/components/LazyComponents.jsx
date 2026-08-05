@@ -159,76 +159,60 @@ export const AboutDialogWithSuspense = createLazyComponent(
   "关于对话框",
 );
 
-// 预加载函数对象，为提高应用启动速度，延迟加载非关键组件
+// 仅在用户表现出打开意图时预加载。不要在启动/空闲阶段批量调用这些函数，
+// 否则会抵消上述 React.lazy 对空载内存的优化。
 const preloadComponents = {
+  connectionManager: () => import("./ConnectionManager.jsx"),
+  fileManager: () => import("./FileManager.jsx"),
   resourceMonitor: () => import("./ResourceMonitor.jsx"),
   ipAddressQuery: () => import("./IPAddressQuery.jsx"),
+  securityTools: () => import("./SecurityTools.jsx"),
   settings: () => import("./Settings.jsx"),
   commandHistory: () => import("./CommandHistory.jsx"),
   shortcutCommands: () => import("./ShortcutCommands.jsx"),
   localTerminalSidebar: () => import("./LocalTerminalSidebar.jsx"),
+  aiChatWindow: () => import("./AIChatWindow.jsx"),
+  aboutDialog: () => import("./AboutDialog.jsx"),
 };
 
-// React 19 优化：智能预加载策略 - 利用并发特性和优化的调度
+const scheduledPreloads = new Map();
+
+const cancelScheduledComponent = (componentName) => {
+  const timer = scheduledPreloads.get(componentName);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    scheduledPreloads.delete(componentName);
+  }
+};
+
+const preloadComponent = (componentName) => {
+  cancelScheduledComponent(componentName);
+  const loader = preloadComponents[componentName];
+  return loader ? loader().catch(() => {}) : Promise.resolve();
+};
+
+// 只有悬停达到阈值才加载，避免鼠标快速划过侧栏时下载多个重型 chunk。
 const smartPreload = {
-  // 预加载所有侧边栏组件（在应用空闲时）
-  // React 19: 使用更高效的并发加载策略
-  preloadSidebarComponents: () => {
-    const queue = [
-      preloadComponents.settings,
-      preloadComponents.commandHistory,
-      preloadComponents.shortcutCommands,
-      preloadComponents.resourceMonitor,
-      preloadComponents.ipAddressQuery,
-    ];
+  preloadComponent,
 
-    // React 19: 批量预加载优化，减少调度开销
-    const runNext = () => {
-      if (!queue.length) {
-        return;
-      }
-      const loader = queue.shift();
-      if (typeof loader === "function") {
-        Promise.resolve(loader())
-          .catch(() => {})
-          .finally(() => {
-            if (queue.length) {
-              scheduleNext();
-            }
-          });
-      } else if (queue.length) {
-        scheduleNext();
-      }
-    };
+  scheduleComponent: (componentName, delay = 200) => {
+    if (!preloadComponents[componentName]) {
+      return;
+    }
 
-    const scheduleNext = () => {
-      // React 19: 优先使用 requestIdleCallback 以获得更好的性能
-      if (typeof requestIdleCallback === "function") {
-        requestIdleCallback(
-          (deadline) => {
-            // React 19: 提高时间阈值，利用自动批处理减少中断
-            if (deadline.timeRemaining() > 5 || deadline.didTimeout) {
-              runNext();
-            } else {
-              scheduleNext();
-            }
-          },
-          { timeout: 2000 },
-        ); // React 19: 添加超时确保关键组件最终被加载
-      } else {
-        // Fallback: 使用较短的延迟以提高响应性
-        setTimeout(runNext, 300);
-      }
-    };
-
-    scheduleNext();
+    cancelScheduledComponent(componentName);
+    const timer = setTimeout(() => {
+      scheduledPreloads.delete(componentName);
+      preloadComponent(componentName);
+    }, delay);
+    scheduledPreloads.set(componentName, timer);
   },
 
-  // 按需预加载特定组件
-  preloadComponent: (componentName) => {
-    if (preloadComponents[componentName]) {
-      preloadComponents[componentName]().catch(() => {});
-    }
+  cancelScheduledComponent,
+
+  cancelAllScheduled: () => {
+    scheduledPreloads.forEach((timer) => clearTimeout(timer));
+    scheduledPreloads.clear();
   },
 
   // React 19 新增：并行预加载多个组件
