@@ -398,7 +398,6 @@ const WebTerminal = ({
     contentUpdatedRef,
     contentUpdateFrameRef,
     contentUpdateFrameTypeRef,
-    contentUpdatedStateRef,
     markTerminalContentUpdated,
     lifecycleEventManager,
     eventManager,

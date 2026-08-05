@@ -234,7 +234,7 @@ export function appReducer(state = initialState, action) {
     case ActionTypes.SET_TERMINAL_INSTANCES:
       return { ...state, terminalInstances: action.payload };
 
-    case ActionTypes.UPDATE_TERMINAL_INSTANCE:
+    case ActionTypes.UPDATE_TERMINAL_INSTANCE: {
       const { id, instance } = action.payload;
       if (typeof instance === "boolean") {
         return {
@@ -256,6 +256,7 @@ export function appReducer(state = initialState, action) {
           },
         },
       };
+    }
 
     // Connection Actions
     case ActionTypes.SET_CONNECTIONS:

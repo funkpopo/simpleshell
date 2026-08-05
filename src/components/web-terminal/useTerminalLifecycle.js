@@ -76,7 +76,6 @@ export function useTerminalLifecycle({
   contentUpdatedRef,
   contentUpdateFrameRef,
   contentUpdateFrameTypeRef,
-  contentUpdatedStateRef,
   markTerminalContentUpdated,
   lifecycleEventManager,
   eventManager,
