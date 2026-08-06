@@ -74,11 +74,26 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 
 ## **Installation**
 
+### **Linux One-line Install**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/main/scripts/install-linux.sh | sh
+```
+
+Install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/main/scripts/install-linux.sh | SIMPLESHELL_VERSION=0.4.39 sh
+```
+
+The script detects Debian/Ubuntu `.deb` and Fedora/RHEL/openSUSE `.rpm` systems, then downloads the matching latest package for the current CPU architecture from GitHub Releases.
+
 ### **Download Pre-built Binaries**
 
 Download the latest release for your platform from the [Releases page](https://github.com/funkpopo/simpleshell/releases).
 
 - **Windows**: `.exe` installer
+- **Linux**: `.deb` or `.rpm` package
 
 ### **Build from Source**
 

@@ -1,13 +1,13 @@
 // 等宽字体族常量与终端字体族映射，供终端/编辑器/命令建议等组件共享
 
 export const FIRA_CODE_FONT_FAMILY =
-  '"Fira Code", "Consolas", "Monaco", "Courier New", monospace';
+  '"Fira Code", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK", "WenQuanYi Micro Hei Mono", "Consolas", "Monaco", "Courier New", monospace';
 
 export const SPACE_MONO_FONT_FAMILY =
-  '"Space Mono", "Consolas", "Monaco", "Courier New", monospace';
+  '"Space Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK", "WenQuanYi Micro Hei Mono", "Consolas", "Monaco", "Courier New", monospace';
 
 export const CONSOLAS_FONT_FAMILY =
-  '"Consolas", "Monaco", "Courier New", monospace';
+  '"Consolas", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK", "WenQuanYi Micro Hei Mono", "Monaco", "Courier New", monospace';
 
 const TERMINAL_FONT_FAMILY_MAP = Object.freeze({
   "Fira Code": FIRA_CODE_FONT_FAMILY,

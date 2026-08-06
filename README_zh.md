@@ -74,11 +74,26 @@ SimpleShell 是一款现代化、功能丰富的 SSH 终端应用，结合了 El
 
 ## **安装**
 
+### **Linux 一键安装**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/main/scripts/install-linux.sh | sh
+```
+
+安装指定版本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/main/scripts/install-linux.sh | SIMPLESHELL_VERSION=0.4.39 sh
+```
+
+脚本会自动识别 Debian/Ubuntu 的 `.deb` 和 Fedora/RHEL/openSUSE 的 `.rpm`，并从 GitHub Releases 下载对应架构的最新安装包。
+
 ### **下载预构建版本**
 
 从 [发布页面](https://github.com/funkpopo/simpleshell/releases) 下载适合您平台的最新版本。
 
 - **Windows**：`.exe` 安装程序
+- **Linux**：`.deb` 或 `.rpm` 安装包
 
 ### **从源代码构建**
 

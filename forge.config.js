@@ -19,6 +19,8 @@ const APP_HOMEPAGE = "https://github.com/funkpopo/simpleshell";
 const APP_DESCRIPTION = "A Simple Electron SSH Terminal for Windows";
 const AUTHOR = "funkpopo <funkpopoisme@gmail.com>";
 const LOCALE_PAKS_TO_KEEP = new Set(["en-US.pak", "zh-CN.pak"]);
+const DEBIAN_CJK_FONT_DEPENDENCIES = ["fonts-noto-cjk"];
+const RPM_CJK_FONT_DEPENDENCIES = ["google-noto-sans-cjk-fonts"];
 const WORKER_UNPACK_DIRS = [
   ".webpack/main/workers",
   ".webpack\\main\\workers",
@@ -53,6 +55,14 @@ const PACKAGED_SCRIPT_NAMES_TO_REMOVE = new Set([
   "generate-checksums.js",
   "prepare-rust-sidecar.js",
 ]);
+const NODE_PTY_PREBUILD_DIRS_BY_TARGET = {
+  "darwin-arm64": new Set(["darwin-arm64"]),
+  "darwin-x64": new Set(["darwin-x64"]),
+  "linux-arm64": new Set(["linux-arm64"]),
+  "linux-x64": new Set(["linux-x64"]),
+  "win32-arm64": new Set(["win32-arm64"]),
+  "win32-x64": new Set(["win32-x64"]),
+};
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -391,8 +401,50 @@ const cleanupPackagedDevelopmentFiles = async (buildPath) => {
   );
 };
 
-const cleanupPackagedDevelopmentFilesHook = ({ buildPath }) =>
-  cleanupPackagedDevelopmentFiles(buildPath);
+const cleanupPackagedNodePtyPrebuilds = async (buildPath, platform, arch) => {
+  const prebuildsDir = path.join(buildPath, ".webpack", "main", "prebuilds");
+  const targetKey = `${platform}-${arch}`;
+  const prebuildDirsToKeep = NODE_PTY_PREBUILD_DIRS_BY_TARGET[targetKey];
+
+  if (!prebuildDirsToKeep) {
+    return;
+  }
+
+  let entries;
+  try {
+    entries = await fs.readdir(prebuildsDir, { withFileTypes: true });
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return;
+    }
+
+    throw error;
+  }
+
+  await Promise.all(
+    entries
+      .filter(
+        (entry) => entry.isDirectory() && !prebuildDirsToKeep.has(entry.name),
+      )
+      .map((entry) =>
+        fs.rm(path.join(prebuildsDir, entry.name), {
+          force: true,
+          recursive: true,
+        }),
+      ),
+  );
+};
+
+const cleanupPackagedDevelopmentFilesHook = async ({
+  arch,
+  buildPath,
+  platform,
+}) => {
+  await Promise.all([
+    cleanupPackagedDevelopmentFiles(buildPath),
+    cleanupPackagedNodePtyPrebuilds(buildPath, platform, arch),
+  ]);
+};
 
 const buildMacSignConfig = () => {
   if (!process.env.MAC_CODESIGN_IDENTITY) {
@@ -565,6 +617,7 @@ module.exports = async () => {
             priority: "optional",
             maintainer: AUTHOR,
             homepage: APP_HOMEPAGE,
+            depends: DEBIAN_CJK_FONT_DEPENDENCIES,
             bin: PRODUCT_NAME,
             icon: LINUX_ICON_PATH,
             categories: ["Development", "Network", "Utility"],
@@ -583,6 +636,7 @@ module.exports = async () => {
             license: "Apache-2.0",
             group: "Applications/Internet",
             homepage: APP_HOMEPAGE,
+            requires: RPM_CJK_FONT_DEPENDENCIES,
             bin: PRODUCT_NAME,
             icon: LINUX_ICON_PATH,
             categories: ["Development", "Network", "Utility"],

@@ -89,7 +89,9 @@ export const createUnifiedTheme = (darkMode) =>
     typography: {
       fontFamily: [
         "-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "Roboto",
-        '"Helvetica Neue"', "Arial", "sans-serif",
+        '"Helvetica Neue"', "Arial", '"Noto Sans CJK SC"', '"Noto Sans SC"',
+        '"WenQuanYi Micro Hei"', '"Microsoft YaHei"', '"PingFang SC"',
+        "sans-serif",
       ].join(","),
       h6: { fontSize: "1rem", fontWeight: 600, lineHeight: 1.3 },
       subtitle2: { fontSize: "0.875rem", fontWeight: 600, lineHeight: 1.3 },
