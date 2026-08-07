@@ -503,7 +503,8 @@
           "6": "Sat"
         }
       },
-      "unknownError": "Unknown error"
+      "unknownError": "Unknown error",
+      "unknown": "Unknown"
     },
     "shortcutCommands": {
       "title": "Shortcut Commands",
@@ -679,6 +680,13 @@
         "medium": "May affect services or data",
         "high": "May cause service interruption or data loss",
         "critical": "May cause system unavailability or irrecoverable state"
+      },
+      "risk": {
+        "safe": "Safe",
+        "low": "Low Risk",
+        "medium": "Medium Risk",
+        "high": "High Risk",
+        "critical": "Critical Risk"
       }
     },
     "randomPassword": {
@@ -1442,7 +1450,8 @@
         "pipeClosed": "Connection pipe closed. The network may be unstable or the session was interrupted.",
         "disconnected": "Connection disconnected and automatic reconnect failed. Please reconnect.",
         "connectionTimeoutShort": "Connection timed out",
-        "connectionClosedShort": "Connection closed"
+        "connectionClosedShort": "Connection closed",
+        "connectionNotFound": "Connection not found"
       },
       "update": {
         "readyTitle": "Update Ready",
@@ -1460,6 +1469,140 @@
       "desktop": {
         "openFileSingle": "Received local file open request: {{name}}",
         "openFileMultiple": "Received {{count}} local file open requests"
+      },
+      "ai": {
+        "sendError": "Error sending request",
+        "configRequired": "Please configure the AI API first, including base URL, key, and model",
+        "invalidRequest": "Invalid request data: message content is missing",
+        "workerCreateFailed": "Failed to create AI worker",
+        "requestTimeout": "Request timed out",
+        "streamStarted": "Streaming request started",
+        "noActiveRequest": "No active request",
+        "requestAborted": "Request aborted",
+        "apiConfigRequired": "Please configure a valid API base URL and key first",
+        "fetchModelsTimeout": "Fetching model list timed out"
+      },
+      "file": {
+        "userCancelled": "Cancelled by user",
+        "userCancelledOperation": "Operation cancelled by user",
+        "sshConnectionInvalid": "Invalid or not-ready SSH connection",
+        "dropFileMissingRelativePath": "Dropped file is missing a valid relative path",
+        "dropFolderMissingRelativePath": "Dropped folder is missing a valid relative path",
+        "dropFileMissingLocalPath": "Dropped file is missing a verifiable local path: {{path}}",
+        "dropFolderMissingLocalPath": "Dropped folder is missing a verifiable local path: {{path}}",
+        "dropNotUploadableFile": "Dropped item is not an uploadable local file: {{path}}",
+        "dropNotUploadableFolder": "Dropped item is not an uploadable local folder: {{path}}"
+      },
+      "transfer": {
+        "itemLabel": "items",
+        "fileLabel": "files",
+        "multipleItems": "{{firstName}} and {{count}} {{itemLabel}}",
+        "preparingUpload": "Preparing upload",
+        "creatingDirectory": "Creating directory {{index}}/{{total}}: {{path}}",
+        "directoryReady": "Directory structure ready, starting file transfer",
+        "saveFileTitle": "Save File",
+        "downloadButton": "Download",
+        "downloadCancelled": "Download cancelled by user",
+        "uploadCancelled": "Upload cancelled by user",
+        "downloadComplete": "Download complete",
+        "noFilesSelected": "No files selected for download",
+        "selectSaveDirectory": "Select save directory",
+        "selectDirectoryButton": "Select Folder",
+        "batchDownloadTitle": "Batch download ({{count}} files)",
+        "batchDownloadComplete": "Batch download complete ({{completed}}/{{total}})",
+        "batchDownloadCompleteWithFailures": "Batch download complete, {{failed}} failed",
+        "partialDownloadFailed": "Partial download failure, completed {{completed}}/{{total}} files",
+        "allDownloadsFailed": "All file downloads failed",
+        "scanningRemoteFolder": "Scanning remote folder",
+        "scanningLocalFolder": "Scanning local folder",
+        "folderDownloadComplete": "Folder download complete",
+        "folderDownloadFailed": "Folder download failed",
+        "folderPartialDownloadFailed": "Partial folder download failure, completed {{completed}}/{{total}} files",
+        "noValidUploadFiles": "No valid files to upload",
+        "uploadComplete": "Upload complete",
+        "uploadCompleteWithFailures": "Upload complete, {{failed}} failed",
+        "partialUploadFailed": "Partial upload failure, completed {{completed}}/{{total}} files",
+        "selectUploadFiles": "Select files to upload",
+        "uploadFilesButton": "Upload Files",
+        "selectUploadFolder": "Select folder to upload",
+        "uploadFolderButton": "Upload Folder",
+        "dragUpload": "Drag and drop upload",
+        "emptyFolderNoUpload": "Folder is empty; nothing to upload.",
+        "uploadFileFailed": "File upload failed: {{error}}",
+        "uploadFolderFailed": "Folder upload failed: {{error}}"
+      },
+      "telnet": {
+        "genericError": "Telnet connection error: {{message}}",
+        "connectionRefused": "Connection refused: cannot connect to {{host}}:{{port}}",
+        "hostNotFound": "Host not found: cannot resolve hostname {{host}}",
+        "connectionTimeout": "Connection timed out: cannot connect to {{host}}:{{port}} in time",
+        "authFailed": "Telnet authentication failed: check username and password"
+      },
+      "latency": {
+        "sshNotReady": "SSH connection does not exist or is not established",
+        "registered": "Latency monitoring registered",
+        "unregistered": "Latency monitoring unregistered",
+        "testTriggered": "Latency test triggered"
+      },
+      "systemInfo": {
+        "sshUnavailable": "SSH connection unavailable"
+      },
+      "snapshot": {
+        "manual": "Manual snapshot",
+        "autoBeforeRevert": "Auto backup before revert"
+      }
+    },
+    "connectionAdvice": {
+      "targetPrefix": " ({{endpoint}})",
+      "dns": {
+        "title": "Host cannot be resolved",
+        "message": "Host cannot be resolved{{target}}",
+        "suggestion": "Check the hostname/DNS, or use the server IP."
+      },
+      "port": {
+        "title": "Port is not reachable",
+        "message": "Connection refused by the port{{target}}",
+        "suggestion": "Confirm the port and that SSH/Telnet service is running."
+      },
+      "auth": {
+        "title": "Authentication failed",
+        "message": "Authentication failed",
+        "suggestion": "Check username, password/key, and allowed auth methods."
+      },
+      "proxy": {
+        "title": "Proxy unavailable",
+        "message": "Proxy connection failed",
+        "suggestion": "Check proxy host, port, credentials, and VPN/proxy status."
+      },
+      "host-key": {
+        "title": "Host key changed",
+        "message": "Host key does not match the local record",
+        "suggestion": "Verify the server identity, then trust the host key again."
+      },
+      "firewall": {
+        "title": "Network or firewall blocked",
+        "message": "Connection timed out or host is unreachable{{target}}",
+        "suggestion": "Check network/VPN, firewall, security group, and port rules."
+      },
+      "private-key-permission": {
+        "title": "Private key permission issue",
+        "message": "Private key cannot be read or has unsafe permissions",
+        "suggestion": "Confirm the key path is readable; on Unix use 600 or 400."
+      },
+      "network": {
+        "title": "Connection interrupted",
+        "message": "Connection was interrupted by network or server",
+        "suggestion": "Check network stability, VPN/proxy, and remote service status."
+      },
+      "cancelled": {
+        "title": "Connection cancelled",
+        "message": "Connection cancelled",
+        "suggestion": "Start the connection again when needed."
+      },
+      "unknown": {
+        "title": "Connection failed",
+        "message": "Connection failed{{target}}",
+        "suggestion": "Check host, port, authentication, proxy, and network policy."
       }
     }
   }

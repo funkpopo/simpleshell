@@ -77,7 +77,13 @@ class LatencyHandlers {
     const processManager = require("../../process/processManager");
     const proc = processManager.getProcess(tabId);
     if (!proc || proc.type !== "ssh2" || !proc.process) {
-      throw new Error("SSH连接不存在或未建立");
+      const { t: mainT, getUiLanguage } = require("../../../shared/mainI18n");
+      const configService = require("../../../services/configService");
+      throw new Error(
+        mainT("mainProcess.latency.sshNotReady", {
+          lng: getUiLanguage(configService),
+        }),
+      );
     }
 
     this.latencyService.registerSSHConnection(
@@ -88,9 +94,13 @@ class LatencyHandlers {
       proc.config?.proxy || null,
     );
 
+    const { t: mainT, getUiLanguage } = require("../../../shared/mainI18n");
+    const configService = require("../../../services/configService");
     return {
       success: true,
-      message: "已注册延迟检测",
+      message: mainT("mainProcess.latency.registered", {
+        lng: getUiLanguage(configService),
+      }),
       tabId,
     };
   }
@@ -102,9 +112,13 @@ class LatencyHandlers {
     void event;
     this.latencyService.unregisterConnection(tabId);
 
+    const { t: mainT, getUiLanguage } = require("../../../shared/mainI18n");
+    const configService = require("../../../services/configService");
     return {
       success: true,
-      message: "已注销延迟检测",
+      message: mainT("mainProcess.latency.unregistered", {
+        lng: getUiLanguage(configService),
+      }),
       tabId,
     };
   }
@@ -153,9 +167,13 @@ class LatencyHandlers {
     void event;
     await this.latencyService.testLatencyNow(tabId);
 
+    const { t: mainT, getUiLanguage } = require("../../../shared/mainI18n");
+    const configService = require("../../../services/configService");
     return {
       success: true,
-      message: "延迟测试已触发",
+      message: mainT("mainProcess.latency.testTriggered", {
+        lng: getUiLanguage(configService),
+      }),
       tabId,
     };
   }

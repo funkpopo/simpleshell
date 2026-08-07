@@ -1,5 +1,10 @@
 const os = require("os");
 const si = require("systeminformation");
+const { t: mainT, getUiLanguage } = require("../../shared/mainI18n");
+const configService = require("../../services/configService");
+
+const unknownLabel = () =>
+  mainT("common.unknown", { lng: getUiLanguage(configService) });
 
 async function getProcessList() {
   try {
@@ -35,8 +40,8 @@ async function getLocalSystemInfo() {
     platform: os.platform(),
     release: os.release(),
     hostname: os.hostname(),
-    distro: "未知",
-    version: "未知",
+    distro: unknownLabel(),
+    version: unknownLabel(),
   };
 
   // 根据平台添加额外信息

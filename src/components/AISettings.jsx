@@ -602,8 +602,22 @@ const AISettings = ({ open, onClose }) => {
 
   // 获取风险等级标签
   const getRiskLevelLabel = (level) => {
-    const riskKey = level.toUpperCase();
-    return RISK_LEVELS[riskKey]?.label || level;
+    switch (String(level || "").toLowerCase()) {
+      case "safe":
+        return t("ai.risk.safe");
+      case "low":
+        return t("ai.risk.low");
+      case "medium":
+        return t("ai.risk.medium");
+      case "high":
+        return t("ai.risk.high");
+      case "critical":
+        return t("ai.risk.critical");
+      default: {
+        const legacyKey = String(level || "").toUpperCase();
+        return RISK_LEVELS[legacyKey]?.label || level;
+      }
+    }
   };
 
   return (

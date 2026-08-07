@@ -6,6 +6,14 @@ const {
   IPC_EVENT_CHANNELS,
   IPC_REQUEST_CHANNELS,
 } = require("../schema/channels");
+const {
+  t: translateLocale,
+  getUiLanguage,
+} = require("../../../shared/mainI18n");
+
+// Wrapper keeps call sites static for check-i18n; implementation uses a non-t name.
+const aiText = (key, params = {}) =>
+  translateLocale(key, { lng: getUiLanguage(configService), ...params });
 
 const CUSTOM_RULE_LEVELS = ["critical", "high", "medium", "low"];
 const MAX_CUSTOM_RULES_PER_LEVEL = 50;
@@ -459,7 +467,11 @@ class AIHandlers {
       return await configService.sendAIPrompt(prompt, settings);
     } catch (error) {
       logToFile(`Error sending AI prompt: ${error.message}`, "ERROR");
-      return { error: error.message || "发送请求时出错" };
+      return {
+        error:
+          error.message ||
+          aiText("mainProcess.ai.sendError"),
+      };
     }
   }
 
@@ -476,17 +488,23 @@ class AIHandlers {
         !resolvedRequestData.apiKey ||
         !resolvedRequestData.model
       ) {
-        throw new Error("请先配置 AI API，包括 API 地址、密钥和模型");
+        throw new Error(
+          aiText("mainProcess.ai.configRequired"),
+        );
       }
 
       if (!resolvedRequestData.messages) {
-        throw new Error("请求数据无效，缺少消息内容");
+        throw new Error(
+          aiText("mainProcess.ai.invalidRequest"),
+        );
       }
 
       // 确保Worker已创建
       const aiWorker = aiWorkerManager.ensureAIWorker();
       if (!aiWorker) {
-        throw new Error("无法创建AI Worker");
+        throw new Error(
+          aiText("mainProcess.ai.workerCreateFailed"),
+        );
       }
 
       // 生成请求ID
@@ -508,7 +526,11 @@ class AIHandlers {
         // 设置请求超时
         const timeoutId = setTimeout(() => {
           aiWorkerManager.deleteRequestCallback(requestId);
-          reject(new Error("请求超时"));
+          reject(
+            new Error(
+              aiText("mainProcess.ai.requestTimeout"),
+            ),
+          );
         }, 60000); // 60秒超时
 
         // 存储回调函数
@@ -533,7 +555,10 @@ class AIHandlers {
 
         // 如果是流式请求，立即返回成功
         if (isStream) {
-          resolve({ success: true, message: "流式请求已开始" });
+          resolve({
+            success: true,
+            message: aiText("mainProcess.ai.streamStarted"),
+          });
         }
       });
     } catch (error) {
@@ -552,7 +577,9 @@ class AIHandlers {
     const aiWorker = aiWorkerManager.getAIWorker();
     // 检查是否有当前会话ID
     if (!currentSessionId || !aiWorker) {
-      throw new Error("没有活跃的请求");
+      throw new Error(
+        aiText("mainProcess.ai.noActiveRequest"),
+      );
     }
 
     // 生成取消请求ID
@@ -582,20 +609,23 @@ class AIHandlers {
     aiWorkerManager.deleteStreamSession(currentSessionId);
     aiWorkerManager.clearCurrentSessionId();
 
-    return { success: true, message: "请求已中断" };
+    return {
+      success: true,
+      message: aiText("mainProcess.ai.requestAborted"),
+    };
   }
 
   async fetchModels(event, requestData) {
     void event;
     const resolvedRequestData = this._resolveApiRequestData(requestData || {});
     if (!resolvedRequestData.url || !resolvedRequestData.apiKey) {
-      throw new Error("请先配置有效的 API 地址和密钥");
+      throw new Error(aiText("mainProcess.ai.apiConfigRequired"));
     }
 
     // 确保Worker已创建
     const aiWorker = aiWorkerManager.ensureAIWorker();
     if (!aiWorker) {
-      throw new Error("无法创建AI Worker");
+      throw new Error(aiText("mainProcess.ai.workerCreateFailed"));
     }
 
     const requestId = aiWorkerManager.getNextRequestId();
@@ -619,7 +649,11 @@ class AIHandlers {
       setTimeout(() => {
         if (aiWorkerManager.hasRequest(requestId)) {
           aiWorkerManager.deleteRequestCallback(requestId);
-          reject(new Error("获取模型列表请求超时"));
+          reject(
+            new Error(
+              aiText("mainProcess.ai.fetchModelsTimeout"),
+            ),
+          );
         }
       }, timeout);
     });

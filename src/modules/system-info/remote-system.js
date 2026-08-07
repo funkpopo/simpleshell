@@ -3,6 +3,18 @@ const REMOTE_PROCESS_LIST_CACHE_TTL_MS = 5000;
 const remoteSystemInfoCache = new WeakMap();
 const remoteProcessListCache = new WeakMap();
 
+const {
+  t: translateLocale,
+  getUiLanguage,
+} = require("../../shared/mainI18n");
+const configService = require("../../services/configService");
+
+const systemInfoText = (key, params = {}) =>
+  translateLocale(key, { lng: getUiLanguage(configService), ...params });
+
+const sshUnavailableError = () =>
+  new Error(systemInfoText("mainProcess.systemInfo.sshUnavailable"));
+
 const cloneSystemInfo = (info) => ({
   ...info,
   os: info?.os ? { ...info.os } : {},
@@ -22,20 +34,21 @@ async function getRemoteSystemInfo(sshClient) {
 
   // 检查SSH连接是否有效
   if (!isSshClientUsable(sshClient)) {
-    throw new Error("SSH连接不可用");
+    throw sshUnavailableError();
   }
 
+  const unknownLabel = systemInfoText("common.unknown");
   const result = {
     isLocal: false,
     os: {
-      type: "未知",
-      platform: "未知",
-      release: "未知",
-      hostname: "未知",
-      distro: "未知",
-      version: "未知",
+      type: unknownLabel,
+      platform: unknownLabel,
+      release: unknownLabel,
+      hostname: unknownLabel,
+      distro: unknownLabel,
+      version: unknownLabel,
     },
-    cpu: { model: "未知", cores: 0, usage: 0 },
+    cpu: { model: unknownLabel, cores: 0, usage: 0 },
     memory: { total: 0, free: 0, used: 0, usagePercent: 0 },
     processes: [], // Initially empty, will be fetched on demand
   };
@@ -492,7 +505,7 @@ function sortRemoteProcesses(rows) {
 function execSshCapture(sshClient, command) {
   return new Promise((resolve, reject) => {
     if (!isSshClientUsable(sshClient)) {
-      reject(new Error("SSH连接不可用"));
+      reject(sshUnavailableError());
       return;
     }
 
@@ -567,7 +580,7 @@ async function getRemoteProcessList(sshClient) {
   }
 
   if (!isSshClientUsable(sshClient)) {
-    throw new Error("SSH连接不可用");
+    throw sshUnavailableError();
   }
 
   let lastError = null;
@@ -597,7 +610,7 @@ async function getRemoteProcessList(sshClient) {
     }
   }
 
-  if (lastError && lastError.message !== "SSH连接不可用") {
+  if (lastError && lastError.message !== systemInfoText("mainProcess.systemInfo.sshUnavailable")) {
     console.warn(
       "[getRemoteProcessList] All strategies failed:",
       lastError.message,

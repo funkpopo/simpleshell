@@ -55,7 +55,20 @@ class FileSnapshotStore {
     }
   }
 
-  normalizeLabel(label, fallback = "手动快照") {
+  getSnapshotLabel(kind = "manual") {
+    const { t: mainT, getUiLanguage } = require("../../shared/mainI18n");
+    const configService = require("../../services/configService");
+    const lng = getUiLanguage(configService);
+    if (kind === "autoBeforeRevert") {
+      return mainT("mainProcess.snapshot.autoBeforeRevert", { lng });
+    }
+    return mainT("mainProcess.snapshot.manual", { lng });
+  }
+
+  normalizeLabel(label, fallback) {
+    if (fallback == null) {
+      fallback = this.getSnapshotLabel("manual");
+    }
     if (typeof label !== "string") {
       return fallback;
     }
@@ -210,7 +223,7 @@ class FileSnapshotStore {
     const entry = {
       id: snapshotId,
       createdAt,
-      label: this.normalizeLabel(options.label, "手动快照"),
+      label: this.normalizeLabel(options.label),
       type: options.type || "manual",
       size: Buffer.byteLength(content, "utf8"),
       contentHash,
@@ -299,7 +312,7 @@ class FileSnapshotStore {
 
     if (typeof currentContent === "string" && currentContent.length > 0) {
       await this.createSnapshot(tabId, filePath, currentContent, {
-        label: "回退前自动备份",
+        label: this.getSnapshotLabel("autoBeforeRevert"),
         type: "rollback-backup",
       });
     }

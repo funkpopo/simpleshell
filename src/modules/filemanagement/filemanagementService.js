@@ -27,6 +27,15 @@ const {
   buildTransferDisplayName: buildSharedTransferDisplayName,
   getTopLevelTransferItemName,
 } = require("../../shared/transferNameUtils");
+const {
+  t: translateLocale,
+  getUiLanguage,
+} = require("../../shared/mainI18n");
+const configService = require("../../services/configService");
+
+const transferText = (key, params = {}) =>
+  translateLocale(key, { lng: getUiLanguage(configService), ...params });
+
 
 const DIRECTORY_TYPE_MASK = 0o170000;
 const DIRECTORY_MODE = 0o040000;
@@ -80,14 +89,21 @@ function isPathExistsError(error) {
   return (
     code === "EEXIST" ||
     message.includes("already exists") ||
+    message.includes("file exists") ||
+    message.includes("已存在") ||
     message.includes("failure code is 4")
   );
 }
 
-function buildTransferDisplayName(names, itemLabel = "项目") {
-  return buildSharedTransferDisplayName(
-    names,
-    ({ firstName, count }) => `${firstName} 等 ${count} 个${itemLabel}`,
+function buildTransferDisplayName(names, itemLabel) {
+  const resolvedItemLabel =
+    itemLabel || transferText("mainProcess.transfer.itemLabel");
+  return buildSharedTransferDisplayName(names, ({ firstName, count }) =>
+    transferText("mainProcess.transfer.multipleItems", {
+      firstName,
+      count,
+      itemLabel: resolvedItemLabel,
+    }),
   );
 }
 
@@ -1124,7 +1140,7 @@ class FilemanagementService {
   async _ensureRemoteDirectories(
     tabId,
     remoteDirs,
-    { transferKey = null, displayName = "准备上传", progressExtra = {} } = {},
+    { transferKey = null, displayName = transferText("mainProcess.transfer.preparingUpload"), progressExtra = {} } = {},
   ) {
     const uniqueDirs = Array.from(
       new Set(
@@ -1167,8 +1183,12 @@ class FilemanagementService {
         if (transferKey) {
           const transfer = this._advanceTransferPreparation(transferKey);
           this._emitTransferProgress(transferKey, {
-            fileName: displayName || "准备上传",
-            currentFile: `正在创建目录 ${index + 1}/${uniqueDirs.length}: ${fullDirPath}`,
+            fileName: displayName || transferText("mainProcess.transfer.preparingUpload"),
+            currentFile: transferText("mainProcess.transfer.creatingDirectory", {
+              index: index + 1,
+              total: uniqueDirs.length,
+              path: fullDirPath,
+            }),
             extra: {
               preparationCompleted: transfer?.preparationCompleted || 0,
               preparationTotal: transfer?.preparationTotal || uniqueDirs.length,
@@ -1183,8 +1203,8 @@ class FilemanagementService {
       const transfer = this._getTransfer(transferKey);
       this._emitTransferProgress(transferKey, {
         force: true,
-        fileName: displayName || "准备上传",
-        currentFile: "目录结构已就绪，开始传输文件",
+        fileName: displayName || transferText("mainProcess.transfer.preparingUpload"),
+        currentFile: transferText("mainProcess.transfer.directoryReady"),
         extra: {
           preparationCompleted: transfer?.preparationCompleted || 0,
           preparationTotal: transfer?.preparationTotal || uniqueDirs.length,
@@ -1482,14 +1502,14 @@ class FilemanagementService {
       const { canceled, filePath } = await dialog.showSaveDialog(
         dialogWindow || undefined,
         {
-          title: "保存文件",
+          title: transferText("mainProcess.transfer.saveFileTitle"),
           defaultPath: defaultTargetPath,
-          buttonLabel: "下载",
+          buttonLabel: transferText("mainProcess.transfer.downloadButton"),
         },
       );
 
       if (canceled || !filePath) {
-        return { success: false, cancelled: true, error: "用户取消下载" };
+        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
       }
 
       transferKey = this._generateTransferKey(tabId, "download");
@@ -1681,7 +1701,7 @@ class FilemanagementService {
         success: true,
         transferKey,
         downloadPath: filePath,
-        message: "下载完成",
+        message: transferText("mainProcess.transfer.downloadComplete"),
       };
     } catch (error) {
       if (chunkTempPath) {
@@ -1701,7 +1721,7 @@ class FilemanagementService {
         this._finalizeTransfer(transferKey);
       }
       if (isCancelledError(error)) {
-        return { success: false, cancelled: true, error: "用户取消下载" };
+        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
       }
       this._log(
         `downloadFile failed: ${normalizeErrorMessage(error)}`,
@@ -1716,7 +1736,7 @@ class FilemanagementService {
     const chunkTempCleanup = new Set();
     try {
       if (!Array.isArray(files) || files.length === 0) {
-        return { success: false, error: "没有选择要下载的文件" };
+        return { success: false, error: transferText("mainProcess.transfer.noFilesSelected") };
       }
 
       const sender = event?.sender;
@@ -1724,14 +1744,14 @@ class FilemanagementService {
       const { canceled, filePaths } = await dialog.showOpenDialog(
         dialogWindow || undefined,
         {
-          title: "选择保存目录",
+          title: transferText("mainProcess.transfer.selectSaveDirectory"),
           defaultPath: this._resolveDownloadBasePath(tabId),
-          buttonLabel: "选择目录",
+          buttonLabel: transferText("mainProcess.transfer.selectDirectoryButton"),
           properties: ["openDirectory", "createDirectory"],
         },
       );
       if (canceled || !filePaths || filePaths.length === 0) {
-        return { success: false, cancelled: true, error: "用户取消下载" };
+        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
       }
 
       const targetDir = filePaths[0];
@@ -1749,8 +1769,8 @@ class FilemanagementService {
                 this._normalizeRemotePath(file?.remotePath || ""),
               ),
           ),
-          "文件",
-        ) || `批量下载 (${totalFiles} 个文件)`;
+          transferText("mainProcess.transfer.fileLabel"),
+        ) || transferText("mainProcess.transfer.batchDownloadTitle", { count: totalFiles });
       const sshConfig = await this._resolveTransferSshConfig(tabId);
 
       transferKey = this._generateTransferKey(tabId, "batch-download");
@@ -2131,8 +2151,13 @@ class FilemanagementService {
         isBatch: true,
         fileName:
           failed === 0
-            ? `批量下载完成 (${completed}/${totalFiles})`
-            : `批量下载完成，失败 ${failed} 个文件`,
+            ? transferText("mainProcess.transfer.batchDownloadComplete", {
+                completed,
+                total: totalFiles,
+              })
+            : transferText("mainProcess.transfer.batchDownloadCompleteWithFailures", {
+                failed,
+              }),
       });
       this._finalizeTransfer(transferKey);
 
@@ -2145,7 +2170,10 @@ class FilemanagementService {
           completed,
           failed,
           errors,
-          warning: `部分下载失败，已完成 ${completed}/${totalFiles} 个文件`,
+          warning: transferText("mainProcess.transfer.partialDownloadFailed", {
+            completed,
+            total: totalFiles,
+          }),
           targetDir,
         };
       }
@@ -2154,7 +2182,7 @@ class FilemanagementService {
         completed,
         failed,
         errors,
-        error: "全部文件下载失败",
+        error: transferText("mainProcess.transfer.allDownloadsFailed"),
         targetDir,
       };
     } catch (error) {
@@ -2173,7 +2201,7 @@ class FilemanagementService {
         this._finalizeTransfer(transferKey);
       }
       if (isCancelledError(error)) {
-        return { success: false, cancelled: true, error: "用户取消下载" };
+        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
       }
       this._log(
         `downloadFiles failed: ${normalizeErrorMessage(error)}`,
@@ -2195,15 +2223,15 @@ class FilemanagementService {
       const { canceled, filePaths } = await dialog.showOpenDialog(
         dialogWindow || undefined,
         {
-          title: "选择保存目录",
+          title: transferText("mainProcess.transfer.selectSaveDirectory"),
           defaultPath: this._resolveDownloadBasePath(tabId),
-          buttonLabel: "选择目录",
+          buttonLabel: transferText("mainProcess.transfer.selectDirectoryButton"),
           properties: ["openDirectory", "createDirectory"],
         },
       );
 
       if (canceled || !filePaths || filePaths.length === 0) {
-        return { success: false, cancelled: true, error: "用户取消下载" };
+        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
       }
 
       const targetRootDir = filePaths[0];
@@ -2225,7 +2253,7 @@ class FilemanagementService {
         channel: IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
         force: true,
         fileName: folderName,
-        currentFile: "正在扫描远程文件夹",
+        currentFile: transferText("mainProcess.transfer.scanningRemoteFolder"),
       });
       await fsp.mkdir(localFolderPath, { recursive: true });
       this._throwIfTransferCancelled(transferKey);
@@ -2614,7 +2642,7 @@ class FilemanagementService {
           failed,
           errors,
           downloadPath: localFolderPath,
-          message: "文件夹下载完成",
+          message: transferText("mainProcess.transfer.folderDownloadComplete"),
         };
       }
       if (completed > 0) {
@@ -2624,7 +2652,10 @@ class FilemanagementService {
           completed,
           failed,
           errors,
-          warning: `部分文件下载失败，已完成 ${completed}/${totalFiles} 个文件`,
+          warning: transferText("mainProcess.transfer.folderPartialDownloadFailed", {
+            completed,
+            total: totalFiles,
+          }),
           downloadPath: localFolderPath,
         };
       }
@@ -2633,7 +2664,7 @@ class FilemanagementService {
         completed,
         failed,
         errors,
-        error: "文件夹下载失败",
+        error: transferText("mainProcess.transfer.folderDownloadFailed"),
         downloadPath: localFolderPath,
       };
     } catch (error) {
@@ -2652,7 +2683,7 @@ class FilemanagementService {
         this._finalizeTransfer(transferKey);
       }
       if (isCancelledError(error)) {
-        return { success: false, cancelled: true, error: "用户取消下载" };
+        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
       }
       this._log(
         `downloadFolder failed: ${normalizeErrorMessage(error)}`,
@@ -2679,7 +2710,7 @@ class FilemanagementService {
       : [];
 
     if (uploadEntries.length === 0 && requestedRemoteDirectories.length === 0) {
-      return { success: false, error: "没有有效的文件可上传" };
+      return { success: false, error: transferText("mainProcess.transfer.noValidUploadFiles") };
     }
 
     const sender = event?.sender;
@@ -2740,7 +2771,7 @@ class FilemanagementService {
 
     this._emitTransferProgress(transferKey, {
       force: true,
-      fileName: displayName || "准备上传",
+      fileName: displayName || transferText("mainProcess.transfer.preparingUpload"),
       currentFile: "",
       currentFileIndex: 0,
       extra: includeOperationComplete
@@ -2885,7 +2916,7 @@ class FilemanagementService {
         });
         this._emitTransferProgress(transferKey, {
           force: true,
-          fileName: "上传完成",
+          fileName: transferText("mainProcess.transfer.uploadComplete"),
           currentFile: "",
           currentFileIndex: totalFiles,
           extra: { operationComplete: true, cancelled: false },
@@ -2897,7 +2928,7 @@ class FilemanagementService {
           totalFiles,
           failedCount: 0,
           transferKey,
-          message: "上传完成",
+          message: transferText("mainProcess.transfer.uploadComplete"),
         };
       }
 
@@ -3027,7 +3058,7 @@ class FilemanagementService {
           success: true,
           cancelled: true,
           userCancelled: true,
-          message: "用户已取消操作",
+          message: transferText("mainProcess.file.userCancelledOperation"),
         };
       }
 
@@ -3107,7 +3138,7 @@ class FilemanagementService {
           success: true,
           cancelled: true,
           userCancelled: true,
-          message: "用户已取消操作",
+          message: transferText("mainProcess.file.userCancelledOperation"),
         };
       }
 
@@ -3134,8 +3165,10 @@ class FilemanagementService {
         force: true,
         fileName:
           failedCount === 0
-            ? "上传完成"
-            : `上传完成，失败 ${failedCount} 个文件`,
+            ? transferText("mainProcess.transfer.uploadComplete")
+            : transferText("mainProcess.transfer.uploadCompleteWithFailures", {
+                failed: failedCount,
+              }),
         currentFile: "",
         currentFileIndex: totalFiles,
         extra: { operationComplete: true, cancelled: false },
@@ -3149,7 +3182,7 @@ class FilemanagementService {
           totalFiles,
           failedCount,
           transferKey,
-          message: "上传完成",
+          message: transferText("mainProcess.transfer.uploadComplete"),
         };
       }
       if (uploadedCount > 0) {
@@ -3161,7 +3194,10 @@ class FilemanagementService {
           failedCount,
           errors,
           transferKey,
-          warning: `部分上传失败，已完成 ${uploadedCount}/${totalFiles} 个文件`,
+          warning: transferText("mainProcess.transfer.partialUploadFailed", {
+            completed: uploadedCount,
+            total: totalFiles,
+          }),
         };
       }
       return {
@@ -3171,7 +3207,7 @@ class FilemanagementService {
         failedCount,
         errors,
         transferKey,
-        error: "上传失败",
+        error: transferText("fileManager.errors.uploadFailed"),
       };
     } catch (error) {
       const state = this._getTransfer(transferKey);
@@ -3193,7 +3229,7 @@ class FilemanagementService {
           success: true,
           cancelled: true,
           userCancelled: true,
-          message: "用户已取消操作",
+          message: transferText("mainProcess.file.userCancelledOperation"),
         };
       }
       throw error;
@@ -3206,14 +3242,14 @@ class FilemanagementService {
       const { canceled, filePaths } = await dialog.showOpenDialog(
         dialogWindow || undefined,
         {
-          title: "选择要上传的文件",
+          title: transferText("mainProcess.transfer.selectUploadFiles"),
           properties: ["openFile", "multiSelections"],
-          buttonLabel: "上传文件",
+          buttonLabel: transferText("mainProcess.transfer.uploadFilesButton"),
         },
       );
 
       if (canceled || !filePaths || filePaths.length === 0) {
-        return { success: false, cancelled: true, error: "用户取消上传" };
+        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.uploadCancelled") };
       }
 
       const normalizedTarget = this._normalizeRemotePath(targetFolder);
@@ -3240,17 +3276,17 @@ class FilemanagementService {
         displayName:
           buildTransferDisplayName(
             entries.map((entry) => entry.fileName),
-            "文件",
-          ) || "上传文件",
+            transferText("mainProcess.transfer.fileLabel"),
+          ) || transferText("mainProcess.transfer.uploadFilesButton"),
         includeOperationComplete: true,
       });
     } catch (error) {
       if (isCancelledError(error)) {
-        return { success: false, cancelled: true, error: "用户取消上传" };
+        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.uploadCancelled") };
       }
       return {
         success: false,
-        error: `上传文件失败: ${normalizeErrorMessage(error)}`,
+        error: transferText("mainProcess.transfer.uploadFileFailed", { error: normalizeErrorMessage(error) }),
       };
     }
   }
@@ -3277,18 +3313,18 @@ class FilemanagementService {
           fileData.relativePath,
         );
         if (!relativePath) {
-          throw new Error("拖放文件缺少有效的相对路径");
+          throw new Error(transferText("mainProcess.file.dropFileMissingRelativePath"));
         }
 
         if (!fileData.localPath) {
-          throw new Error(`拖放文件缺少可验证的本地路径: ${relativePath}`);
+          throw new Error(transferText("mainProcess.file.dropFileMissingLocalPath", { path: relativePath }));
         }
 
         const resolvedLocalPath = path.resolve(fileData.localPath);
         const stats = await fsp.stat(resolvedLocalPath);
         await fsp.access(resolvedLocalPath, fs.constants.R_OK);
         if (!stats.isFile()) {
-          throw new Error(`拖放项目不是可上传的本地文件: ${relativePath}`);
+          throw new Error(transferText("mainProcess.file.dropNotUploadableFile", { path: relativePath }));
         }
 
         const remotePath = this._joinRemotePath(normalizedTarget, relativePath);
@@ -3311,18 +3347,18 @@ class FilemanagementService {
           folderData.relativePath,
         );
         if (!relativePath) {
-          throw new Error("拖放文件夹缺少有效的相对路径");
+          throw new Error(transferText("mainProcess.file.dropFolderMissingRelativePath"));
         }
 
         if (!folderData.localPath) {
-          throw new Error(`拖放文件夹缺少可验证的本地路径: ${relativePath}`);
+          throw new Error(transferText("mainProcess.file.dropFolderMissingLocalPath", { path: relativePath }));
         }
 
         const resolvedLocalPath = path.resolve(folderData.localPath);
         const stats = await fsp.stat(resolvedLocalPath);
         await fsp.access(resolvedLocalPath, fs.constants.R_OK);
         if (!stats.isDirectory()) {
-          throw new Error(`拖放项目不是可上传的本地文件夹: ${relativePath}`);
+          throw new Error(transferText("mainProcess.file.dropNotUploadableFolder", { path: relativePath }));
         }
         await fsp.readdir(resolvedLocalPath);
 
@@ -3341,8 +3377,8 @@ class FilemanagementService {
               getTopLevelTransferItemName(folderPath),
             ),
           ],
-          "项目",
-        ) || "拖拽上传";
+          transferText("mainProcess.transfer.itemLabel"),
+        ) || transferText("mainProcess.transfer.dragUpload");
 
       return this._uploadEntries({
         event,
@@ -3360,12 +3396,12 @@ class FilemanagementService {
           success: true,
           cancelled: true,
           userCancelled: true,
-          message: "用户已取消操作",
+          message: transferText("mainProcess.file.userCancelledOperation"),
         };
       }
       return {
         success: false,
-        error: `上传文件失败: ${normalizeErrorMessage(error)}`,
+        error: transferText("mainProcess.transfer.uploadFileFailed", { error: normalizeErrorMessage(error) }),
       };
     }
   }
@@ -3378,14 +3414,14 @@ class FilemanagementService {
       const { canceled, filePaths } = await dialog.showOpenDialog(
         dialogWindow || undefined,
         {
-          title: "选择要上传的文件夹",
+          title: transferText("mainProcess.transfer.selectUploadFolder"),
           properties: ["openDirectory"],
-          buttonLabel: "上传文件夹",
+          buttonLabel: transferText("mainProcess.transfer.uploadFolderButton"),
         },
       );
 
       if (canceled || !filePaths || filePaths.length === 0) {
-        return { success: false, cancelled: true, error: "用户取消上传" };
+        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.uploadCancelled") };
       }
 
       const localFolderPath = filePaths[0];
@@ -3408,7 +3444,7 @@ class FilemanagementService {
       this._emitTransferProgress(transferKey, {
         force: true,
         fileName: folderName,
-        currentFile: "正在扫描本地文件夹",
+        currentFile: transferText("mainProcess.transfer.scanningLocalFolder"),
         currentFileIndex: 0,
         extra: { operationComplete: false, cancelled: false },
       });
@@ -3430,7 +3466,7 @@ class FilemanagementService {
           uploadedCount: 0,
           totalFiles: 0,
           failedCount: 0,
-          message: "文件夹为空，无需上传。",
+          message: transferText("mainProcess.transfer.emptyFolderNoUpload"),
         };
       }
 
@@ -3475,12 +3511,12 @@ class FilemanagementService {
           success: true,
           cancelled: true,
           userCancelled: true,
-          message: "用户已取消操作",
+          message: transferText("mainProcess.file.userCancelledOperation"),
         };
       }
       return {
         success: false,
-        error: `上传文件夹失败: ${normalizeErrorMessage(error)}`,
+        error: transferText("mainProcess.transfer.uploadFolderFailed", { error: normalizeErrorMessage(error) }),
       };
     }
   }

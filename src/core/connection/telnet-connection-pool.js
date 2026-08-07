@@ -172,27 +172,42 @@ class TelnetConnectionPool extends BaseConnectionPool {
    * @private
    */
   _handleTelnetError(err, telnetConfig, connectionKey) {
-    let errorMessage = `Telnet连接错误: ${err.message}`;
+    const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
+    const lng = normalizeLanguage(telnetConfig?.language);
+    const host = telnetConfig.host;
+    const port = telnetConfig.port || 23;
+    let errorMessage = mainT("mainProcess.telnet.genericError", {
+      lng,
+      message: err.message,
+    });
 
     // 检测常见Telnet错误
     if (err.message.includes("ECONNREFUSED")) {
-      errorMessage = `连接被拒绝: 无法连接到 ${telnetConfig.host}:${telnetConfig.port || 23}`;
+      errorMessage = mainT("mainProcess.telnet.connectionRefused", {
+        lng,
+        host,
+        port,
+      });
     } else if (err.message.includes("ENOTFOUND")) {
-      errorMessage = `主机不存在: 无法解析主机名 ${telnetConfig.host}`;
+      errorMessage = mainT("mainProcess.telnet.hostNotFound", { lng, host });
     } else if (
       err.message.includes("ETIMEDOUT") ||
       err.message.includes("timeout")
     ) {
-      errorMessage = `连接超时: 无法在指定时间内连接到 ${telnetConfig.host}:${telnetConfig.port || 23}`;
+      errorMessage = mainT("mainProcess.telnet.connectionTimeout", {
+        lng,
+        host,
+        port,
+      });
     } else if (
       err.message.includes("authentication") ||
       err.message.includes("login")
     ) {
-      errorMessage = `Telnet认证失败: 请检查用户名和密码是否正确`;
+      errorMessage = mainT("mainProcess.telnet.authFailed", { lng });
     }
 
     // 日志中记录详细信息（包含connectionKey），但不影响用户看到的错误
-    this._logInfo(`Telnet连接错误详情: ${connectionKey} - ${errorMessage}`);
+    this._logInfo(`Telnet connection error detail: ${connectionKey} - ${errorMessage}`);
 
     // 创建增强的错误对象（使用简洁的错误消息）
     const enhancedError = new Error(errorMessage);

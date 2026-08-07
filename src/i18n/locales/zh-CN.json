@@ -503,7 +503,8 @@
           "6": "周六"
         }
       },
-      "unknownError": "未知错误"
+      "unknownError": "未知错误",
+      "unknown": "未知"
     },
     "shortcutCommands": {
       "title": "快捷命令",
@@ -679,6 +680,13 @@
         "medium": "可能影响服务或数据",
         "high": "可能导致服务中断或数据丢失",
         "critical": "可能导致系统不可用或不可恢复"
+      },
+      "risk": {
+        "safe": "安全",
+        "low": "低风险",
+        "medium": "中风险",
+        "high": "高风险",
+        "critical": "极高风险"
       }
     },
     "randomPassword": {
@@ -1442,7 +1450,8 @@
         "pipeClosed": "连接管道已关闭：网络不稳定或会话被中止。",
         "disconnected": "连接已断开，自动重连失败，请重新连接。",
         "connectionTimeoutShort": "连接超时",
-        "connectionClosedShort": "连接已关闭"
+        "connectionClosedShort": "连接已关闭",
+        "connectionNotFound": "连接未找到"
       },
       "update": {
         "readyTitle": "更新已就绪",
@@ -1460,6 +1469,140 @@
       "desktop": {
         "openFileSingle": "收到本地文件打开请求：{{name}}",
         "openFileMultiple": "收到 {{count}} 个本地文件打开请求"
+      },
+      "ai": {
+        "sendError": "发送请求时出错",
+        "configRequired": "请先配置 AI API，包括 API 地址、密钥和模型",
+        "invalidRequest": "请求数据无效，缺少消息内容",
+        "workerCreateFailed": "无法创建 AI Worker",
+        "requestTimeout": "请求超时",
+        "streamStarted": "流式请求已开始",
+        "noActiveRequest": "没有活跃的请求",
+        "requestAborted": "请求已中断",
+        "apiConfigRequired": "请先配置有效的 API 地址和密钥",
+        "fetchModelsTimeout": "获取模型列表请求超时"
+      },
+      "file": {
+        "userCancelled": "用户取消",
+        "userCancelledOperation": "用户已取消操作",
+        "sshConnectionInvalid": "无效或未就绪的 SSH 连接",
+        "dropFileMissingRelativePath": "拖放文件缺少有效的相对路径",
+        "dropFolderMissingRelativePath": "拖放文件夹缺少有效的相对路径",
+        "dropFileMissingLocalPath": "拖放文件缺少可验证的本地路径: {{path}}",
+        "dropFolderMissingLocalPath": "拖放文件夹缺少可验证的本地路径: {{path}}",
+        "dropNotUploadableFile": "拖放项目不是可上传的本地文件: {{path}}",
+        "dropNotUploadableFolder": "拖放项目不是可上传的本地文件夹: {{path}}"
+      },
+      "transfer": {
+        "itemLabel": "项目",
+        "fileLabel": "文件",
+        "multipleItems": "{{firstName}} 等 {{count}} 个{{itemLabel}}",
+        "preparingUpload": "准备上传",
+        "creatingDirectory": "正在创建目录 {{index}}/{{total}}: {{path}}",
+        "directoryReady": "目录结构已就绪，开始传输文件",
+        "saveFileTitle": "保存文件",
+        "downloadButton": "下载",
+        "downloadCancelled": "用户取消下载",
+        "uploadCancelled": "用户取消上传",
+        "downloadComplete": "下载完成",
+        "noFilesSelected": "没有选择要下载的文件",
+        "selectSaveDirectory": "选择保存目录",
+        "selectDirectoryButton": "选择目录",
+        "batchDownloadTitle": "批量下载 ({{count}} 个文件)",
+        "batchDownloadComplete": "批量下载完成 ({{completed}}/{{total}})",
+        "batchDownloadCompleteWithFailures": "批量下载完成，失败 {{failed}} 个文件",
+        "partialDownloadFailed": "部分下载失败，已完成 {{completed}}/{{total}} 个文件",
+        "allDownloadsFailed": "全部文件下载失败",
+        "scanningRemoteFolder": "正在扫描远程文件夹",
+        "scanningLocalFolder": "正在扫描本地文件夹",
+        "folderDownloadComplete": "文件夹下载完成",
+        "folderDownloadFailed": "文件夹下载失败",
+        "folderPartialDownloadFailed": "部分文件下载失败，已完成 {{completed}}/{{total}} 个文件",
+        "noValidUploadFiles": "没有有效的文件可上传",
+        "uploadComplete": "上传完成",
+        "uploadCompleteWithFailures": "上传完成，失败 {{failed}} 个文件",
+        "partialUploadFailed": "部分上传失败，已完成 {{completed}}/{{total}} 个文件",
+        "selectUploadFiles": "选择要上传的文件",
+        "uploadFilesButton": "上传文件",
+        "selectUploadFolder": "选择要上传的文件夹",
+        "uploadFolderButton": "上传文件夹",
+        "dragUpload": "拖拽上传",
+        "emptyFolderNoUpload": "文件夹为空，无需上传。",
+        "uploadFileFailed": "上传文件失败: {{error}}",
+        "uploadFolderFailed": "上传文件夹失败: {{error}}"
+      },
+      "telnet": {
+        "genericError": "Telnet 连接错误: {{message}}",
+        "connectionRefused": "连接被拒绝: 无法连接到 {{host}}:{{port}}",
+        "hostNotFound": "主机不存在: 无法解析主机名 {{host}}",
+        "connectionTimeout": "连接超时: 无法在指定时间内连接到 {{host}}:{{port}}",
+        "authFailed": "Telnet 认证失败: 请检查用户名和密码是否正确"
+      },
+      "latency": {
+        "sshNotReady": "SSH 连接不存在或未建立",
+        "registered": "已注册延迟检测",
+        "unregistered": "已注销延迟检测",
+        "testTriggered": "延迟测试已触发"
+      },
+      "systemInfo": {
+        "sshUnavailable": "SSH 连接不可用"
+      },
+      "snapshot": {
+        "manual": "手动快照",
+        "autoBeforeRevert": "回退前自动备份"
+      }
+    },
+    "connectionAdvice": {
+      "targetPrefix": "（{{endpoint}}）",
+      "dns": {
+        "title": "主机名无法解析",
+        "message": "主机名无法解析{{target}}",
+        "suggestion": "检查主机名/DNS，或改用服务器 IP。"
+      },
+      "port": {
+        "title": "端口无法连接",
+        "message": "端口拒绝连接{{target}}",
+        "suggestion": "确认端口号正确，SSH/Telnet 服务已启动。"
+      },
+      "auth": {
+        "title": "认证失败",
+        "message": "认证失败",
+        "suggestion": "检查用户名、密码/私钥和服务器允许的认证方式。"
+      },
+      "proxy": {
+        "title": "代理不可用",
+        "message": "代理连接失败",
+        "suggestion": "检查代理地址、端口、账号密码，确认代理/VPN 已连接。"
+      },
+      "host-key": {
+        "title": "主机密钥已变化",
+        "message": "主机密钥与本地记录不一致",
+        "suggestion": "确认服务器身份；可信后重新信任该主机密钥。"
+      },
+      "firewall": {
+        "title": "网络或防火墙阻断",
+        "message": "连接超时或主机不可达{{target}}",
+        "suggestion": "检查网络/VPN、防火墙、安全组和端口放行。"
+      },
+      "private-key-permission": {
+        "title": "私钥权限异常",
+        "message": "私钥文件无法读取或权限不安全",
+        "suggestion": "确认私钥路径可读；在类 Unix 系统将权限设为 600 或 400。"
+      },
+      "network": {
+        "title": "连接中断",
+        "message": "连接被网络或服务器中断",
+        "suggestion": "检查网络稳定性、VPN/代理和服务器 SSH/Telnet 服务状态。"
+      },
+      "cancelled": {
+        "title": "连接已取消",
+        "message": "连接已取消",
+        "suggestion": "需要连接时请重新发起。"
+      },
+      "unknown": {
+        "title": "连接失败",
+        "message": "连接失败{{target}}",
+        "suggestion": "检查主机、端口、认证、代理和网络策略。"
       }
     }
   }

@@ -151,7 +151,13 @@ function registerReconnectToggleHandler(
     async (event, { tabId }) => {
       const connectionKey = connectionPool.getConnectionKeyByTabId(tabId);
       if (!connectionKey || !connectionPool.reconnectionManager) {
-        throw new Error("连接未找到");
+        const { t: mainT, getUiLanguage } = require("../../../shared/mainI18n");
+        const configService = require("../../../services/configService");
+        throw new Error(
+          mainT("mainProcess.reconnect.connectionNotFound", {
+            lng: getUiLanguage(configService),
+          }),
+        );
       }
       const result =
         connectionPool.reconnectionManager[methodName](connectionKey);

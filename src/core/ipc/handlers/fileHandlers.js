@@ -14,6 +14,14 @@ const {
   toPosixPath,
   normalizeDroppedTransferRelativePath,
 } = require("../../../modules/filemanagement/transferShared");
+const {
+  t: translateLocale,
+  getUiLanguage,
+} = require("../../../shared/mainI18n");
+const configService = require("../../../services/configService");
+
+const fileText = (key, params = {}) =>
+  translateLocale(key, { lng: getUiLanguage(configService), ...params });
 
 const normalizeDroppedRemotePath = (remotePath) => {
   const raw = String(remotePath ?? "").trim();
@@ -60,16 +68,23 @@ const isDroppedRemoteNotFound = (errorLike = {}) => {
   );
 };
 
-const isUserCancelledError = (error) =>
-  error?.message?.includes("cancel") ||
-  error?.message?.includes("abort") ||
-  error?.message?.includes("用户取消");
+const isUserCancelledError = (error) => {
+  const message = String(error?.message || "");
+  return (
+    /cancel/i.test(message) ||
+    /abort/i.test(message) ||
+    message.includes("用户取消") ||
+    message.includes(fileText("mainProcess.file.userCancelled")) ||
+    message.includes(fileText("mainProcess.transfer.downloadCancelled")) ||
+    message.includes(fileText("mainProcess.transfer.uploadCancelled"))
+  );
+};
 
 const buildUserCancelledResponse = () => ({
   success: true,
   cancelled: true,
   userCancelled: true,
-  message: "用户已取消操作",
+  message: fileText("mainProcess.file.userCancelledOperation"),
 });
 
 /**
@@ -712,7 +727,7 @@ class FileHandlers {
       !processInfo.process ||
       processInfo.type !== "ssh2"
     ) {
-      throw new Error("无效或未就绪的SSH连接");
+      throw new Error(fileText("mainProcess.file.sshConnectionInvalid"));
     }
 
     const normalizedTarget = normalizeDroppedRemotePath(targetFolder);
@@ -725,7 +740,7 @@ class FileHandlers {
     for (const fileData of rawFiles) {
       const relativePath = normalizeDroppedRelativePath(fileData?.relativePath);
       if (!relativePath) {
-        throw new Error("拖放文件缺少有效的相对路径");
+        throw new Error(fileText("mainProcess.file.dropFileMissingRelativePath"));
       }
 
       candidates.push({
@@ -739,7 +754,9 @@ class FileHandlers {
     for (const folderData of rawFolders) {
       const relativePath = normalizeDroppedFolderRelativePath(folderData);
       if (!relativePath) {
-        throw new Error("拖放文件夹缺少有效的相对路径");
+        throw new Error(
+          fileText("mainProcess.file.dropFolderMissingRelativePath"),
+        );
       }
 
       candidates.push({
@@ -1023,7 +1040,7 @@ class FileHandlers {
       !processInfo.process ||
       processInfo.type !== "ssh2"
     ) {
-      throw new Error("无效或未就绪的SSH连接");
+      throw new Error(fileText("mainProcess.file.sshConnectionInvalid"));
     }
   }
 

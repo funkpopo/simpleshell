@@ -225,7 +225,11 @@ const withSftpRetry = async (operation, options = {}) => {
         return { success: true, response };
       }
 
-      if (responseError.includes("SFTP错误") && attempt < maxRetries) {
+      if (
+        (responseError.includes("SFTP错误") ||
+          /sftp\s*error/i.test(responseError)) &&
+        attempt < maxRetries
+      ) {
         onRetry?.(attempt + 1, maxRetries);
         await waitBeforeRetry(attempt);
         continue;
@@ -2159,8 +2163,10 @@ const FileManager = memo(
             // 处理错误，检查是否需要重试
             if (
               response?.error?.includes("SFTP错误") ||
+              /sftp\s*error/i.test(response?.error || "") ||
               response?.error?.includes("Channel open failure") ||
               response?.error?.includes("SSH连接尚未就绪") ||
+              /ssh connection (is )?not ready/i.test(response?.error || "") ||
               response?.error?.includes("No SSH connection info found") ||
               response?.error?.includes("ECONNRESET")
             ) {
@@ -2702,7 +2708,8 @@ const FileManager = memo(
             treatErrorAsSuccess: (responseError) =>
               responseError.includes("already exists") ||
               responseError.includes("已存在") ||
-              responseError.includes("File exists"),
+              responseError.includes("File exists") ||
+              /file exists/i.test(responseError),
           },
         ),
       [t, tabId],

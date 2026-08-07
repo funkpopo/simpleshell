@@ -15,7 +15,16 @@ const UNUSED_MODE = (process.env.CHECK_I18N_UNUSED || "warn").toLowerCase();
 // Set CHECK_I18N_HARDCODED=error to fail on hardcoded UI strings.
 const HARDCODED_MODE = (process.env.CHECK_I18N_HARDCODED || "warn").toLowerCase();
 
-const TRANSLATION_IDENTIFIERS = new Set(["t", "mainT", "translate"]);
+const TRANSLATION_IDENTIFIERS = new Set([
+  "t",
+  "mainT",
+  "translate",
+  // Project helpers that forward the first-arg key to mainT/t
+  "aiText",
+  "fileText",
+  "transferText",
+  "systemInfoText",
+]);
 const TRANSLATION_MEMBER_PROPERTIES = new Set(["t", "current"]);
 
 const parseJson = (filePath) =>
