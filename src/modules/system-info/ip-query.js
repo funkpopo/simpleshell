@@ -4,6 +4,10 @@ const { SocksProxyAgent } = require("socks-proxy-agent");
 const { HttpsProxyAgent } = require("https-proxy-agent");
 const { HttpProxyAgent } = require("http-proxy-agent");
 const ipUtils = require("../../utils/ip");
+const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
+const configService = require("../../services/configService");
+const ipQueryText = (key, params = {}) =>
+  translateLocale(key, { lng: getUiLanguage(configService), ...params });
 
 // In-memory LRU + TTL cache (skeleton)
 const CACHE_TTL_MS = parseInt(process.env.IPQUERY_CACHE_TTL_MS || "300000", 10); // 5 min default
@@ -212,7 +216,7 @@ async function getPublicIp(proxyConfig = null) {
           options.agent = new HttpsProxyAgent(proxyUrl);
         }
       } catch (proxyError) {
-        reject(new Error(`代理配置错误: ${proxyError.message}`));
+        reject(new Error(ipQueryText("mainProcess.ipQuery.proxyConfigError", { error: proxyError.message })));
         return;
       }
     }
@@ -270,7 +274,7 @@ function fetchIpInfo(provider, ip, logger, proxyConfig = null) {
           }
         }
       } catch (proxyError) {
-        reject(new Error(`代理配置错误: ${proxyError.message}`));
+        reject(new Error(ipQueryText("mainProcess.ipQuery.proxyConfigError", { error: proxyError.message })));
         return;
       }
     }
@@ -312,10 +316,10 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
     if (ip && ip.trim()) {
       const ver = ipUtils.isIP(ip.trim());
       if (ver === 0) {
-        return { ret: "failed", msg: "无效的IP地址" };
+        return { ret: "failed", msg: ipQueryText("mainProcess.ipQuery.invalidIp") };
       }
       if (ipUtils.isPrivateOrSpecial(ip.trim())) {
-        return { ret: "failed", msg: "该IP为私有/保留地址，已跳过查询" };
+        return { ret: "failed", msg: ipQueryText("mainProcess.ipQuery.privateOrReserved") };
       }
     }
 
@@ -324,7 +328,7 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
     const now = Date.now();
     if (entry && now - entry.ts < CACHE_TTL_MS) {
       if (typeof logger === "function") {
-        logger(`IP查询命中缓存: ${cacheKey(ip)}`, "INFO");
+        logger(`IP query cache hit: ${cacheKey(ip)}`, "INFO");
       }
       return entry.result;
     }
@@ -337,7 +341,7 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
     for (const key in KEY_API_PROVIDERS) {
       if (KEY_API_PROVIDERS[key].key) {
         logger(
-          `${KEY_API_PROVIDERS[key].name} API Key已配置，启用该服务。`,
+          `${KEY_API_PROVIDERS[key].name} API key configured; enabling provider.`,
           "INFO",
         );
         allProviders.unshift(KEY_API_PROVIDERS[key]);
@@ -347,13 +351,13 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
     // 记录代理配置使用情况
     if (proxyConfig && proxyConfig.host && proxyConfig.port) {
       logger(
-        `使用代理进行IP查询: ${proxyConfig.type} ${proxyConfig.host}:${proxyConfig.port}`,
+        `Using proxy for IP query: ${proxyConfig.type} ${proxyConfig.host}:${proxyConfig.port}`,
         "INFO",
       );
     }
 
     if (ip) {
-      logger(`查询IP地址: ${ip}`, "INFO");
+      logger(`Querying IP address: ${ip}`, "INFO");
       const doNetwork = async () => {
         const lookupProviders = allProviders.filter((p) => !p.ownIpOnly);
         const promises = lookupProviders.map((provider) =>
@@ -372,7 +376,7 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
       }
       return await doNetwork();
     } else {
-      logger("查询本机IP...", "INFO");
+      logger("Querying own IP...", "INFO");
 
       const providers = {
         chinese: allProviders.find((p) => p.name === "myip.ipip.net"),
@@ -404,7 +408,7 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
       }
 
       // Fallback if primary providers fail or don't exist
-      logger("主查询服务失败或未配置，启用备用服务...", "INFO");
+      logger("Primary providers failed or missing; using fallback...", "INFO");
       const standardLookupPromise = (async () => {
         const publicIp = await getPublicIp(proxyConfig);
         const lookupProviders = allProviders.filter((p) => !p.ownIpOnly);
@@ -427,11 +431,11 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
       const errorMessages = error.errors
         ? error.errors.map((e) => e.message).join(", ")
         : error.message || "Unknown error";
-      logger(`所有IP地址查询服务失败: ${errorMessages}`, "ERROR");
+      logger(`All IP query providers failed: ${errorMessages}`, "ERROR");
     }
     return {
       ret: "failed",
-      msg: "所有IP地址查询服务均失败或超时。",
+      msg: ipQueryText("mainProcess.ipQuery.allProvidersFailed"),
     };
   }
 }

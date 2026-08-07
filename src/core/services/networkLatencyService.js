@@ -1,6 +1,9 @@
 const { EventEmitter } = require("events");
 const { performance } = require("node:perf_hooks");
 const { logToFile } = require("../utils/logger");
+const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
+const configService = require("../../services/configService");
+const latencyText = (key, params = {}) => translateLocale(key, { lng: getUiLanguage(configService), ...params });
 const net = require("node:net");
 const proxyManager = require("../proxy/proxy-manager");
 const {
@@ -55,7 +58,7 @@ class NetworkLatencyService extends EventEmitter {
       // ignore
     }
 
-    logToFile("网络延迟检测服务已初始化", "INFO");
+    logToFile("Network latency service initialized", "INFO");
   }
 
   /**
@@ -75,7 +78,7 @@ class NetworkLatencyService extends EventEmitter {
       this.schedulerTimer.unref();
     }
 
-    logToFile("网络延迟检测服务已启动", "INFO");
+    logToFile("Network latency service started", "INFO");
     this.emit("service:started");
   }
 
@@ -99,7 +102,7 @@ class NetworkLatencyService extends EventEmitter {
     this.latencyData.clear();
 
     this.isRunning = false;
-    logToFile("网络延迟检测服务已停止", "INFO");
+    logToFile("Network latency service stopped", "INFO");
     this.emit("service:stopped");
   }
 
@@ -119,12 +122,12 @@ class NetworkLatencyService extends EventEmitter {
     proxyConfig = null,
   ) {
     if (!this.isRunning) {
-      logToFile(`服务未启动，无法注册连接: ${tabId}`, "WARN");
+      logToFile(`Service not started; cannot register connection: ${tabId}`, "WARN");
       return;
     }
 
     if (this.latencyData.has(tabId)) {
-      logToFile(`连接${tabId}已存在，先注销旧连接`, "DEBUG");
+      logToFile(`Connection ${tabId} already exists; unregistering old one first`, "DEBUG");
       this.unregisterConnection(tabId);
     }
 
@@ -152,7 +155,7 @@ class NetworkLatencyService extends EventEmitter {
 
     void this._runDueChecks();
 
-    logToFile(`已注册SSH连接延迟检测: ${tabId} -> ${host}:${port}`, "INFO");
+    logToFile(`Registered SSH latency probe: ${tabId} -> ${host}:${port}`, "INFO");
   }
 
   /**
@@ -163,7 +166,7 @@ class NetworkLatencyService extends EventEmitter {
     const hadConnection = this.latencyData.delete(tabId);
 
     if (hadConnection) {
-      logToFile(`已注销SSH连接延迟检测: ${tabId}`, "INFO");
+      logToFile(`Unregistered SSH latency probe: ${tabId}`, "INFO");
     }
     this.emit("latency:disconnected", { tabId });
   }
@@ -193,21 +196,21 @@ class NetworkLatencyService extends EventEmitter {
    */
   async testLatencyNow(tabId) {
     if (!this.isRunning) {
-      throw new Error("服务未启动");
+      throw new Error(latencyText("mainProcess.latency.serviceNotStarted"));
     }
 
     const data = this.latencyData.get(tabId);
     if (!data) {
-      throw new Error(`连接${tabId}未注册`);
+      throw new Error(latencyText("mainProcess.latency.connectionNotRegistered", { tabId }));
     }
 
     if (!data.sshConnection) {
-      throw new Error(`连接${tabId}的SSH实例不存在`);
+      throw new Error(latencyText("mainProcess.latency.sshInstanceMissing", { tabId }));
     }
 
     // 立即执行延迟检测，使用存储的SSH连接实例
     await this.checkLatency(tabId, data.sshConnection);
-    logToFile(`已触发连接${tabId}的立即延迟测试`, "INFO");
+    logToFile(`Triggered immediate latency test for ${tabId}`, "INFO");
   }
 
   async _runDueChecks() {
@@ -289,7 +292,7 @@ class NetworkLatencyService extends EventEmitter {
           : null;
 
         if (latency === null) {
-          throw new Error("延迟检测结果无效");
+          throw new Error(latencyText("mainProcess.latency.invalidResult"));
         }
 
         if (
@@ -332,7 +335,7 @@ class NetworkLatencyService extends EventEmitter {
         });
 
         logToFile(
-          `SSH连接${tabId}延迟检测: ${latency}ms (质量: ${quality?.level || "n/a"})`,
+          `SSH latency ${tabId}: ${latency}ms (quality: ${quality?.level || "n/a"})`,
           "DEBUG",
         );
         return latency;
@@ -357,7 +360,7 @@ class NetworkLatencyService extends EventEmitter {
           offline: false,
         });
 
-        logToFile(`SSH连接${tabId}延迟检测失败: ${errorMessage}`, "WARN");
+        logToFile(`SSH latency probe failed for ${tabId}: ${errorMessage}`, "WARN");
 
         this.emit("latency:error", {
           tabId,
@@ -452,7 +455,7 @@ class NetworkLatencyService extends EventEmitter {
 
       // 更贴近真实：等待 SSH 服务端 banner（"SSH-"）返回的耗时，而非仅 TCP connect 耗时
       socket.setTimeout(timeoutMs, () =>
-        onError(new Error("延迟检测超时 (5秒)")),
+        onError(new Error(latencyText("mainProcess.latency.timeout"))),
       );
       socket.once("error", onError);
       socket.once("close", () =>
@@ -529,7 +532,7 @@ class NetworkLatencyService extends EventEmitter {
       };
 
       sock.setTimeout(timeoutMs, () =>
-        onError(new Error("延迟检测超时 (5秒)")),
+        onError(new Error(latencyText("mainProcess.latency.timeout"))),
       );
       sock.once("error", onError);
       sock.once("close", () =>
@@ -544,7 +547,7 @@ class NetworkLatencyService extends EventEmitter {
   _measureLatencyViaSshExec(sshConnection) {
     return new Promise((resolve, reject) => {
       if (!sshConnection || typeof sshConnection.exec !== "function") {
-        reject(new Error("SSH实例不可用"));
+        reject(new Error(latencyText("mainProcess.latency.sshInstanceUnavailable")));
         return;
       }
 
@@ -609,7 +612,7 @@ class NetworkLatencyService extends EventEmitter {
       }
 
       function onStreamClose() {
-        finish(new Error("未收到响应数据"));
+        finish(new Error(latencyText("mainProcess.latency.noResponse")));
       }
 
       function onStreamExit() {
@@ -617,7 +620,7 @@ class NetworkLatencyService extends EventEmitter {
       }
 
       timeoutId = setTimeout(() => {
-        finish(new Error("延迟检测超时 (5秒)"));
+        finish(new Error(latencyText("mainProcess.latency.timeout")));
       }, 5000);
 
       try {

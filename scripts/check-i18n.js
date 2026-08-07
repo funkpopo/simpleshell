@@ -21,9 +21,13 @@ const TRANSLATION_IDENTIFIERS = new Set([
   "translate",
   // Project helpers that forward the first-arg key to mainT/t
   "aiText",
+  "aiWorkerText",
   "fileText",
   "transferText",
   "systemInfoText",
+  "latencyText",
+  "ipQueryText",
+  "aiManagerText",
 ]);
 const TRANSLATION_MEMBER_PROPERTIES = new Set(["t", "current"]);
 

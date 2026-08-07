@@ -680,13 +680,6 @@
         "medium": "可能影响服务或数据",
         "high": "可能导致服务中断或数据丢失",
         "critical": "可能导致系统不可用或不可恢复"
-      },
-      "risk": {
-        "safe": "安全",
-        "low": "低风险",
-        "medium": "中风险",
-        "high": "高风险",
-        "critical": "极高风险"
       }
     },
     "randomPassword": {
@@ -1451,7 +1444,18 @@
         "disconnected": "连接已断开，自动重连失败，请重新连接。",
         "connectionTimeoutShort": "连接超时",
         "connectionClosedShort": "连接已关闭",
-        "connectionNotFound": "连接未找到"
+        "connectionNotFound": "连接未找到",
+        "sessionNotFound": "会话不存在: {{sessionId}}",
+        "registerFailed": "注册重连会话失败: sessionId 或 connection 不可用",
+        "conditionsNotMet": "不满足重连条件",
+        "preflightFailed": "连接预检失败",
+        "validationFailed": "连接验证失败",
+        "closedBeforeTakeover": "重连连接在接管前已关闭",
+        "cannotPause": "当前状态不可暂停: {{state}}",
+        "cannotResume": "当前状态不可恢复: {{state}}",
+        "maxRetriesReached": "达到最大重试次数（{{maxRetries}}次）",
+        "timeoutExceeded": "自动重连超时（>{{ms}}ms）",
+        "maxRetriesOrConditions": "达到最大重试次数（{{maxRetries}}次）或不满足重连条件"
       },
       "update": {
         "readyTitle": "更新已就绪",
@@ -1480,7 +1484,21 @@
         "noActiveRequest": "没有活跃的请求",
         "requestAborted": "请求已中断",
         "apiConfigRequired": "请先配置有效的 API 地址和密钥",
-        "fetchModelsTimeout": "获取模型列表请求超时"
+        "fetchModelsTimeout": "获取模型列表请求超时",
+        "unknownMessageType": "未知的消息类型: {{type}}",
+        "apiRequestFailed": "API 请求失败: {{status}} {{statusMessage}}",
+        "parseResponseFailed": "无法解析 API 响应",
+        "parseResponseError": "解析响应失败: {{error}}",
+        "requestError": "请求出错: {{error}}",
+        "streamProcessError": "处理流数据时出错: {{error}}",
+        "cancelMissingIds": "取消请求失败: 未提供有效的请求 ID 或会话 ID",
+        "workerUncaught": "Worker 未捕获异常: {{error}}",
+        "unknownError": "未知错误",
+        "modelsUrlBuildFailed": "无法构建模型列表 URL",
+        "modelsUrlBuildError": "构建模型列表 URL 失败: {{error}}",
+        "modelsListFailed": "获取模型列表失败: {{status}} {{statusMessage}}",
+        "modelsParseFailed": "解析模型列表响应失败: {{error}}",
+        "modelsRequestError": "获取模型列表请求出错: {{error}}"
       },
       "file": {
         "userCancelled": "用户取消",
@@ -1542,14 +1560,39 @@
         "sshNotReady": "SSH 连接不存在或未建立",
         "registered": "已注册延迟检测",
         "unregistered": "已注销延迟检测",
-        "testTriggered": "延迟测试已触发"
+        "testTriggered": "延迟测试已触发",
+        "serviceNotStarted": "服务未启动",
+        "connectionNotRegistered": "连接 {{tabId}} 未注册",
+        "sshInstanceMissing": "连接 {{tabId}} 的 SSH 实例不存在",
+        "invalidResult": "延迟检测结果无效",
+        "timeout": "延迟检测超时 (5 秒)",
+        "sshInstanceUnavailable": "SSH 实例不可用",
+        "noResponse": "未收到响应数据"
       },
       "systemInfo": {
-        "sshUnavailable": "SSH 连接不可用"
+        "sshUnavailable": "SSH 连接不可用",
+        "getSystemInfoFailed": "获取系统信息失败",
+        "getProcessListFailed": "获取进程列表失败"
       },
       "snapshot": {
         "manual": "手动快照",
         "autoBeforeRevert": "回退前自动备份"
+      },
+      "ipQuery": {
+        "proxyConfigError": "代理配置错误: {{error}}",
+        "invalidIp": "无效的 IP 地址",
+        "privateOrReserved": "该 IP 为私有/保留地址，已跳过查询",
+        "allProvidersFailed": "所有 IP 地址查询服务均失败或超时。"
+      },
+      "ssh": {
+        "proxyFailed": "代理连接失败",
+        "authFailed": "SSH 认证失败",
+        "privateKeyUnreadable": "私钥文件无法读取",
+        "hostKeyFailed": "SSH 主机密钥校验失败",
+        "connectionRefused": "连接被拒绝: 无法连接到 {{host}}:{{port}}{{proxy}}",
+        "hostNotFound": "主机不存在: 无法解析主机名 {{host}}",
+        "connectionTimeout": "连接超时: {{host}}:{{port}}",
+        "throughProxy": " (通过代理)"
       }
     },
     "connectionAdvice": {

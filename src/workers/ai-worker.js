@@ -4,6 +4,10 @@ const http = require("http");
 const { SocksProxyAgent } = require("socks-proxy-agent");
 const { HttpsProxyAgent } = require("https-proxy-agent");
 const { HttpProxyAgent } = require("http-proxy-agent");
+const { t: translateLocale, getUiLanguage } = require("../shared/mainI18n");
+const configService = require("../services/configService");
+const aiWorkerText = (key, params = {}) =>
+  translateLocale(key, { lng: getUiLanguage(configService), ...params });
 
 const GLOBAL_HTTP_AGENT = new http.Agent({
   keepAlive: true,
@@ -602,7 +606,7 @@ parentPort.on("message", async (message) => {
         break;
 
       default:
-        throw new Error(`未知的消息类型: ${type}`);
+        throw new Error(aiWorkerText("mainProcess.ai.unknownMessageType", { type }));
     }
   } catch (error) {
     // 发送错误回主线程
@@ -689,7 +693,7 @@ function handleStandardRequest(requestId, requestData) {
         responseData += chunk.toString("utf-8");
       });
       res.on("end", () => {
-        let errorMessage = `API请求失败: ${res.statusCode} ${res.statusMessage}`;
+        let errorMessage = aiWorkerText("mainProcess.ai.apiRequestFailed", { status: res.statusCode, statusMessage: res.statusMessage });
         try {
           const errorData = JSON.parse(responseData);
           if (errorData.error && errorData.error.message) {
@@ -729,7 +733,7 @@ function handleStandardRequest(requestId, requestData) {
           parentPort.postMessage({
             id: requestId,
             error: {
-              message: "无法解析API响应",
+              message: aiWorkerText("mainProcess.ai.parseResponseFailed"),
               rawResponse: responseData.substring(0, 200) + "...",
             },
           });
@@ -738,7 +742,7 @@ function handleStandardRequest(requestId, requestData) {
         parentPort.postMessage({
           id: requestId,
           error: {
-            message: `解析响应失败: ${error.message}`,
+            message: aiWorkerText("mainProcess.ai.parseResponseError", { error: error.message }),
             rawResponse: responseData.substring(0, 200) + "...",
           },
         });
@@ -755,7 +759,7 @@ function handleStandardRequest(requestId, requestData) {
     parentPort.postMessage({
       id: requestId,
       error: {
-        message: `请求出错: ${error.message}`,
+        message: aiWorkerText("mainProcess.ai.requestError", { error: error.message }),
         stack: error.stack,
       },
     });
@@ -836,7 +840,7 @@ function handleStreamRequest(requestId, requestData) {
         errorData += chunk.toString("utf-8");
       });
       res.on("end", () => {
-        let errorMessage = `API请求失败: ${res.statusCode} ${res.statusMessage}`;
+        let errorMessage = aiWorkerText("mainProcess.ai.apiRequestFailed", { status: res.statusCode, statusMessage: res.statusMessage });
         try {
           const parsed = JSON.parse(errorData);
           if (parsed.error && parsed.error.message) {
@@ -940,7 +944,7 @@ function handleStreamRequest(requestId, requestData) {
           data: {
             sessionId,
             error: {
-              message: `处理流数据时出错: ${error.message}`,
+              message: aiWorkerText("mainProcess.ai.streamProcessError", { error: error.message }),
             },
           },
         });
@@ -976,7 +980,7 @@ function handleStreamRequest(requestId, requestData) {
       data: {
         sessionId,
         error: {
-          message: `请求出错: ${error.message}`,
+          message: aiWorkerText("mainProcess.ai.requestError", { error: error.message }),
         },
       },
     });
@@ -1042,7 +1046,7 @@ function cancelRequest(requestId, data) {
     parentPort.postMessage({
       id: requestId || "cancel_unknown",
       error: {
-        message: "取消请求失败: 未提供有效的请求ID或会话ID",
+        message: aiWorkerText("mainProcess.ai.cancelMissingIds"),
       },
     });
   }
@@ -1062,7 +1066,7 @@ process.on("uncaughtException", (error) => {
   parentPort.postMessage({
     type: "worker_error",
     error: {
-      message: `Worker未捕获异常: ${error.message}`,
+      message: aiWorkerText("mainProcess.ai.workerUncaught", { error: error.message }),
       stack: error.stack,
     },
   });
@@ -1102,13 +1106,13 @@ function handleModelsRequest(requestId, requestData) {
     }
 
     if (!modelsUrl) {
-      throw new Error("无法构建模型列表URL");
+      throw new Error(aiWorkerText("mainProcess.ai.modelsUrlBuildFailed"));
     }
   } catch (error) {
     parentPort.postMessage({
       id: requestId,
       error: {
-        message: `构建模型列表URL失败: ${error.message}`,
+        message: aiWorkerText("mainProcess.ai.modelsUrlBuildError", { error: error.message }),
       },
     });
     return;
@@ -1139,7 +1143,7 @@ function handleModelsRequest(requestId, requestData) {
       parentPort.postMessage({
         id: requestId,
         error: {
-          message: `获取模型列表失败: ${res.statusCode} ${res.statusMessage}`,
+          message: aiWorkerText("mainProcess.ai.modelsListFailed", { status: res.statusCode, statusMessage: res.statusMessage }),
           statusCode: res.statusCode,
         },
       });
@@ -1169,7 +1173,7 @@ function handleModelsRequest(requestId, requestData) {
         parentPort.postMessage({
           id: requestId,
           error: {
-            message: `解析模型列表响应失败: ${error.message}`,
+            message: aiWorkerText("mainProcess.ai.modelsParseFailed", { error: error.message }),
             rawResponse: responseData.substring(0, 200) + "...",
           },
         });
@@ -1182,7 +1186,7 @@ function handleModelsRequest(requestId, requestData) {
     parentPort.postMessage({
       id: requestId,
       error: {
-        message: `获取模型列表请求出错: ${error.message}`,
+        message: aiWorkerText("mainProcess.ai.modelsRequestError", { error: error.message }),
         stack: error.stack,
       },
     });

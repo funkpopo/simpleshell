@@ -604,19 +604,17 @@ const AISettings = ({ open, onClose }) => {
   const getRiskLevelLabel = (level) => {
     switch (String(level || "").toLowerCase()) {
       case "safe":
-        return t("ai.risk.safe");
+        return t("ai.riskLevels.safe");
       case "low":
-        return t("ai.risk.low");
+        return t("ai.riskLevels.low");
       case "medium":
-        return t("ai.risk.medium");
+        return t("ai.riskLevels.medium");
       case "high":
-        return t("ai.risk.high");
+        return t("ai.riskLevels.high");
       case "critical":
-        return t("ai.risk.critical");
-      default: {
-        const legacyKey = String(level || "").toUpperCase();
-        return RISK_LEVELS[legacyKey]?.label || level;
-      }
+        return t("ai.riskLevels.critical");
+      default:
+        return level;
     }
   };
 

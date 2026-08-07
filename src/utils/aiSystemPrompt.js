@@ -8,42 +8,27 @@ export const RISK_LEVELS = {
   SAFE: {
     level: 1,
     name: "safe",
-    color: "#4caf50", // 绿色
-    label: "安全",
-    labelEn: "Safe",
-    description: "只读操作，不会修改系统状态",
+    color: "#4caf50",
   },
   LOW: {
     level: 2,
     name: "low",
-    color: "#8bc34a", // 浅绿色
-    label: "低风险",
-    labelEn: "Low Risk",
-    description: "轻微修改，影响范围有限",
+    color: "#8bc34a",
   },
   MEDIUM: {
     level: 3,
     name: "medium",
-    color: "#ff9800", // 橙色
-    label: "中风险",
-    labelEn: "Medium Risk",
-    description: "可能影响服务或数据",
+    color: "#ff9800",
   },
   HIGH: {
     level: 4,
     name: "high",
-    color: "#f44336", // 红色
-    label: "高风险",
-    labelEn: "High Risk",
-    description: "可能导致服务中断或数据丢失",
+    color: "#f44336",
   },
   CRITICAL: {
     level: 5,
     name: "critical",
-    color: "#9c27b0", // 紫色
-    label: "极高风险",
-    labelEn: "Critical Risk",
-    description: "可能导致系统不可用或不可恢复",
+    color: "#9c27b0",
   },
 };
 

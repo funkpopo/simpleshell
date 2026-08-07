@@ -1,6 +1,10 @@
 const { Worker } = require("worker_threads");
 const { BrowserWindow } = require("electron");
 const { logToFile } = require("../utils/logger");
+const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
+const configService = require("../../services/configService");
+const aiManagerText = (key, params = {}) =>
+  translateLocale(key, { lng: getUiLanguage(configService), ...params });
 const { resolveWorkerScriptPath } = require("../utils/workerScriptResolver");
 const {
   mainProcessResourceManager,
@@ -112,13 +116,13 @@ function handleWorkerTypeMessage(type, id, data, result, error) {
     !mainWindow.webContents ||
     mainWindow.webContents.isDestroyed()
   ) {
-    logToFile("无法发送Worker消息: 主窗口不可用", "ERROR");
+    logToFile("Cannot send worker message: main window unavailable", "ERROR");
     return;
   }
 
   switch (type) {
     case "init":
-      logToFile(`AI Worker初始化完成: ${JSON.stringify(result)}`, "INFO");
+      logToFile(`AI Worker initialized: ${JSON.stringify(result)}`, "INFO");
       break;
 
     case "stream_chunk":
@@ -148,22 +152,25 @@ function handleWorkerTypeMessage(type, id, data, result, error) {
         mainWindow.webContents.send(IPC_EVENT_CHANNELS.AI_STREAM_ERROR, {
           tabId: "ai",
           sessionId: data.sessionId,
-          error: data.error || { message: "未知错误" },
+          error:
+            data.error || {
+              message: aiManagerText("mainProcess.ai.unknownError"),
+            },
         });
         streamSessions.delete(data.sessionId);
       }
       break;
 
     case "worker_error":
-      logToFile(`AI Worker内部错误: ${error?.message || "未知错误"}`, "ERROR");
+      logToFile(`AI Worker internal error: ${error?.message || "Unknown error"}`, "ERROR");
       break;
 
     case "worker_exit":
-      logToFile(`AI Worker退出事件: ${JSON.stringify(result)}`, "INFO");
+      logToFile(`AI Worker exit event: ${JSON.stringify(result)}`, "INFO");
       break;
 
     default:
-      logToFile(`未知的Worker消息类型: ${type}`, "WARN");
+      logToFile(`Unknown worker message type: ${type}`, "WARN");
   }
 }
 
@@ -189,7 +196,7 @@ function createAIWorker() {
 
   try {
     const workerPath = getWorkerPath();
-    logToFile(`创建AI Worker: ${workerPath}`, "INFO");
+    logToFile(`Creating AI Worker: ${workerPath}`, "INFO");
 
     aiWorker = new Worker(workerPath);
     // AI Worker 属于预期长生命周期资源，避免被 30 分钟阈值误判为泄漏
@@ -224,7 +231,7 @@ function createAIWorker() {
         }
         aiRequestMap.delete(id);
       } else {
-        logToFile(`收到未知请求ID的响应: ${id}`, "WARN");
+        logToFile(`Received response for unknown request id: ${id}`, "WARN");
       }
     };
 
@@ -239,7 +246,7 @@ function createAIWorker() {
       );
 
     const errorHandler = (error) => {
-      logToFile(`AI Worker错误: ${error.message}`, "ERROR");
+      logToFile(`AI Worker error: ${error.message}`, "ERROR");
       for (const [id, callback] of aiRequestMap.entries()) {
         callback.reject(
           new Error("AI Worker encountered an error: " + error.message),
@@ -259,10 +266,10 @@ function createAIWorker() {
     );
 
     const exitHandler = (code) => {
-      logToFile(`AI Worker退出，代码: ${code}`, "WARN");
+      logToFile(`AI Worker exited, code: ${code}`, "WARN");
       if (code !== 0) {
         const timerId = setTimeout(() => {
-          logToFile("尝试重启AI Worker", "INFO");
+          logToFile("Attempting to restart AI Worker", "INFO");
           // timer 已触发，移除其资源注册（避免资源管理器长期保留一次性 timer）
           void cleanupRestartTimerRegistration();
           createAIWorker();
@@ -312,17 +319,17 @@ function createAIWorker() {
           data: proxyConfig,
         });
         logToFile(
-          `AI Worker 代理已配置: ${proxyConfig.host}:${proxyConfig.port}`,
+          `AI Worker proxy configured: ${proxyConfig.host}:${proxyConfig.port}`,
           "INFO",
         );
       }
     } catch (proxyError) {
-      logToFile(`AI Worker 代理配置失败: ${proxyError.message}`, "WARN");
+      logToFile(`AI Worker proxy configuration failed: ${proxyError.message}`, "WARN");
     }
 
     return aiWorker;
   } catch (error) {
-    logToFile(`创建AI Worker失败: ${error.message}`, "ERROR");
+    logToFile(`Failed to create AI Worker: ${error.message}`, "ERROR");
     return null;
   }
 }
@@ -339,7 +346,7 @@ function getAIWorker() {
  */
 function ensureAIWorker() {
   if (!aiWorker) {
-    logToFile("AI Worker未初始化，尝试创建", "WARN");
+    logToFile("AI Worker not initialized, attempting to create", "WARN");
     aiWorker = createAIWorker();
   }
   return aiWorker;

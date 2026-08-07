@@ -1,4 +1,7 @@
 const { ipcMain } = require("electron");
+const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
+const configServiceForI18n = require("../../services/configService");
+const systemInfoText = (key) => translateLocale(key, { lng: getUiLanguage(configServiceForI18n) });
 const { logToFile } = require("../utils/logger");
 const { safeHandle, safeOn } = require("../ipc/ipcResponse");
 const { IPC_REQUEST_CHANNELS } = require("../ipc/schema/channels");
@@ -48,47 +51,47 @@ const BOILERPLATE_HANDLER_MODULES = [
   {
     HandlersClass: AIHandlers,
     successLog: "AI handlers registered",
-    errorLabel: "AI处理器初始化失败",
+    errorLabel: "Failed to initialize AI handlers",
   },
   {
     HandlersClass: FileHandlers,
     successLog: "File handlers registered",
-    errorLabel: "文件处理器初始化失败",
+    errorLabel: "Failed to initialize file handlers",
   },
   {
     HandlersClass: SftpHandlers,
     successLog: "SFTP handlers registered",
-    errorLabel: "SFTP处理器初始化失败",
+    errorLabel: "Failed to initialize SFTP handlers",
   },
   {
     HandlersClass: UtilityHandlers,
     successLog: "Utility handlers registered",
-    errorLabel: "实用工具处理器初始化失败",
+    errorLabel: "Failed to initialize utility handlers",
   },
   {
     HandlersClass: ConnectionHandlers,
     successLog: "Connection handlers registered",
-    errorLabel: "连接状态处理器初始化失败",
+    errorLabel: "Failed to initialize connection status handlers",
   },
   {
     HandlersClass: SshKeyHandlers,
     successLog: "SSH key handlers registered",
-    errorLabel: "SSH密钥处理器初始化失败",
+    errorLabel: "Failed to initialize SSH key handlers",
   },
   {
     HandlersClass: MemoryHandlers,
     successLog: "Memory handlers registered",
-    errorLabel: "记忆处理器初始化失败",
+    errorLabel: "Failed to initialize memory handlers",
   },
   {
     HandlersClass: ExternalEditorHandlers,
     successLog: "External editor handlers registered",
-    errorLabel: "外部编辑器处理器初始化失败",
+    errorLabel: "Failed to initialize external editor handlers",
   },
   {
     HandlersClass: RuntimeFileHandlers,
     successLog: "Runtime file lifecycle handlers registered",
-    errorLabel: "运行时文件生命周期处理器初始化失败",
+    errorLabel: "Failed to initialize runtime file lifecycle handlers",
   },
 ];
 
@@ -127,9 +130,9 @@ class IPCSetup {
   registerReconnectHandlers() {
     try {
       registerReconnectHandlers(connectionManager.sshConnectionPool);
-      logToFile("重连处理器已注册", "INFO");
+      logToFile("Reconnect handlers registered", "INFO");
     } catch (error) {
-      logToFile(`重连处理器注册失败: ${error.message}`, "ERROR");
+      logToFile(`Failed to register reconnect handlers: ${error.message}`, "ERROR");
     }
   }
 
@@ -139,9 +142,9 @@ class IPCSetup {
   registerBatchHandlers() {
     try {
       registerBatchHandlers(ipcMain);
-      logToFile("IPC批量消息处理器已注册", "INFO");
+      logToFile("IPC batch handlers registered", "INFO");
     } catch (error) {
-      logToFile(`IPC批量消息处理器注册失败: ${error.message}`, "ERROR");
+      logToFile(`Failed to register IPC batch handlers: ${error.message}`, "ERROR");
     }
   }
 
@@ -180,9 +183,9 @@ class IPCSetup {
         safeHandle(ipcMain, channel, handler, { category });
       });
 
-      logToFile(`已注册 ${handlers.length} 个延迟检测IPC处理器`, "INFO");
+      logToFile(`Registered ${handlers.length} latency IPC handlers`, "INFO");
     } catch (error) {
-      logToFile(`延迟检测服务初始化失败: ${error.message}`, "ERROR");
+      logToFile(`Failed to initialize latency service: ${error.message}`, "ERROR");
     }
   }
 
@@ -221,7 +224,7 @@ class IPCSetup {
     awaitLocal,
     fallbackTarget,
     failureSubject,
-    failureMessageZh,
+    getFailureMessage,
   }) {
     // awaitLocal 保持与原实现一致：
     // TERMINAL_GET_SYSTEM_INFO 原实现 `return await getLocalSystemInfo()`（本地调用的拒绝会被捕获并降级），
@@ -266,7 +269,10 @@ class IPCSetup {
             : getLocal(systemInfo);
         } catch {
           return {
-            error: failureMessageZh,
+            error:
+              typeof getFailureMessage === "function"
+                ? getFailureMessage()
+                : getFailureMessage,
             message: error.message,
           };
         }
@@ -305,7 +311,8 @@ class IPCSetup {
         awaitLocal: true,
         fallbackTarget: "local system info",
         failureSubject: "system info",
-        failureMessageZh: "获取系统信息失败",
+        getFailureMessage: () =>
+          systemInfoText("mainProcess.systemInfo.getSystemInfoFailed"),
       }),
       { category: "terminal" },
     );
@@ -320,7 +327,8 @@ class IPCSetup {
         awaitLocal: false,
         fallbackTarget: "local process list",
         failureSubject: "process list",
-        failureMessageZh: "获取进程列表失败",
+        getFailureMessage: () =>
+          systemInfoText("mainProcess.systemInfo.getProcessListFailed"),
       }),
       { category: "terminal" },
     );
@@ -339,9 +347,9 @@ class IPCSetup {
           terminalIOMailboxManager: this.terminalIOMailboxManager,
         },
       );
-      logToFile("本地终端处理器初始化成功", "INFO");
+      logToFile("Local terminal handlers initialized", "INFO");
     } catch (error) {
-      logToFile(`本地终端处理器初始化失败: ${error.message}`, "ERROR");
+      logToFile(`Failed to initialize local terminal handlers: ${error.message}`, "ERROR");
       logToFile(`Stack: ${error.stack}`, "ERROR");
     }
   }
@@ -361,7 +369,7 @@ class IPCSetup {
       this._registerHandlerInstance(this.sshHandlers);
       logToFile("SSH/Telnet handlers registered", "INFO");
     } catch (error) {
-      logToFile(`SSH/Telnet处理器初始化失败: ${error.message}`, "ERROR");
+      logToFile(`Failed to initialize SSH/Telnet handlers: ${error.message}`, "ERROR");
     }
   }
 
@@ -387,7 +395,7 @@ class IPCSetup {
       }
       logToFile("Terminal handlers registered", "INFO");
     } catch (error) {
-      logToFile(`终端处理器初始化失败: ${error.message}`, "ERROR");
+      logToFile(`Failed to initialize terminal handlers: ${error.message}`, "ERROR");
     }
   }
 
@@ -414,9 +422,9 @@ class IPCSetup {
     if (this.latencyHandlers) {
       try {
         this.latencyHandlers.cleanup();
-        logToFile("延迟检测服务已清理", "INFO");
+        logToFile("Latency service cleaned up", "INFO");
       } catch (error) {
-        logToFile(`延迟检测服务清理失败: ${error.message}`, "ERROR");
+        logToFile(`Failed to clean up latency service: ${error.message}`, "ERROR");
       }
     }
   }
@@ -428,9 +436,9 @@ class IPCSetup {
     if (this.localTerminalHandlers) {
       try {
         await this.localTerminalHandlers.cleanup();
-        logToFile("本地终端处理器已清理", "INFO");
+        logToFile("Local terminal handlers cleaned up", "INFO");
       } catch (error) {
-        logToFile(`本地终端处理器清理失败: ${error.message}`, "ERROR");
+        logToFile(`Failed to clean up local terminal handlers: ${error.message}`, "ERROR");
       }
     }
   }

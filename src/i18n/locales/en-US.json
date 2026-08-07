@@ -680,13 +680,6 @@
         "medium": "May affect services or data",
         "high": "May cause service interruption or data loss",
         "critical": "May cause system unavailability or irrecoverable state"
-      },
-      "risk": {
-        "safe": "Safe",
-        "low": "Low Risk",
-        "medium": "Medium Risk",
-        "high": "High Risk",
-        "critical": "Critical Risk"
       }
     },
     "randomPassword": {
@@ -1451,7 +1444,18 @@
         "disconnected": "Connection disconnected and automatic reconnect failed. Please reconnect.",
         "connectionTimeoutShort": "Connection timed out",
         "connectionClosedShort": "Connection closed",
-        "connectionNotFound": "Connection not found"
+        "connectionNotFound": "Connection not found",
+        "sessionNotFound": "Session not found: {{sessionId}}",
+        "registerFailed": "Failed to register reconnect session: sessionId or connection unavailable",
+        "conditionsNotMet": "Reconnect conditions not met",
+        "preflightFailed": "Connection preflight failed",
+        "validationFailed": "Connection validation failed",
+        "closedBeforeTakeover": "Reconnected connection closed before takeover",
+        "cannotPause": "Cannot pause in current state: {{state}}",
+        "cannotResume": "Cannot resume in current state: {{state}}",
+        "maxRetriesReached": "Reached maximum retry count ({{maxRetries}})",
+        "timeoutExceeded": "Automatic reconnect timed out (>{{ms}}ms)",
+        "maxRetriesOrConditions": "Reached maximum retries ({{maxRetries}}) or conditions not met"
       },
       "update": {
         "readyTitle": "Update Ready",
@@ -1480,7 +1484,21 @@
         "noActiveRequest": "No active request",
         "requestAborted": "Request aborted",
         "apiConfigRequired": "Please configure a valid API base URL and key first",
-        "fetchModelsTimeout": "Fetching model list timed out"
+        "fetchModelsTimeout": "Fetching model list timed out",
+        "unknownMessageType": "Unknown message type: {{type}}",
+        "apiRequestFailed": "API request failed: {{status}} {{statusMessage}}",
+        "parseResponseFailed": "Failed to parse API response",
+        "parseResponseError": "Failed to parse response: {{error}}",
+        "requestError": "Request error: {{error}}",
+        "streamProcessError": "Error processing stream data: {{error}}",
+        "cancelMissingIds": "Cancel failed: no valid request ID or session ID provided",
+        "workerUncaught": "Worker uncaught exception: {{error}}",
+        "unknownError": "Unknown error",
+        "modelsUrlBuildFailed": "Unable to build models list URL",
+        "modelsUrlBuildError": "Failed to build models list URL: {{error}}",
+        "modelsListFailed": "Failed to fetch models list: {{status}} {{statusMessage}}",
+        "modelsParseFailed": "Failed to parse models list response: {{error}}",
+        "modelsRequestError": "Models list request error: {{error}}"
       },
       "file": {
         "userCancelled": "Cancelled by user",
@@ -1542,14 +1560,39 @@
         "sshNotReady": "SSH connection does not exist or is not established",
         "registered": "Latency monitoring registered",
         "unregistered": "Latency monitoring unregistered",
-        "testTriggered": "Latency test triggered"
+        "testTriggered": "Latency test triggered",
+        "serviceNotStarted": "Service is not started",
+        "connectionNotRegistered": "Connection {{tabId}} is not registered",
+        "sshInstanceMissing": "SSH instance for connection {{tabId}} does not exist",
+        "invalidResult": "Invalid latency probe result",
+        "timeout": "Latency probe timed out (5s)",
+        "sshInstanceUnavailable": "SSH instance unavailable",
+        "noResponse": "No response data received"
       },
       "systemInfo": {
-        "sshUnavailable": "SSH connection unavailable"
+        "sshUnavailable": "SSH connection unavailable",
+        "getSystemInfoFailed": "Failed to get system info",
+        "getProcessListFailed": "Failed to get process list"
       },
       "snapshot": {
         "manual": "Manual snapshot",
         "autoBeforeRevert": "Auto backup before revert"
+      },
+      "ipQuery": {
+        "proxyConfigError": "Proxy configuration error: {{error}}",
+        "invalidIp": "Invalid IP address",
+        "privateOrReserved": "This IP is private/reserved and was skipped",
+        "allProvidersFailed": "All IP lookup services failed or timed out."
+      },
+      "ssh": {
+        "proxyFailed": "Proxy connection failed",
+        "authFailed": "SSH authentication failed",
+        "privateKeyUnreadable": "Private key is unreadable",
+        "hostKeyFailed": "SSH host key verification failed",
+        "connectionRefused": "Connection refused: cannot connect to {{host}}:{{port}}{{proxy}}",
+        "hostNotFound": "Host not found: cannot resolve hostname {{host}}",
+        "connectionTimeout": "Connection timed out: {{host}}:{{port}}",
+        "throughProxy": " (through proxy)"
       }
     },
     "connectionAdvice": {

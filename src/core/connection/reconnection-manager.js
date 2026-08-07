@@ -13,7 +13,8 @@ const {
   calculateRetryDelay,
   createManagedSshConnection,
 } = require("./ssh-retry-helper");
-const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
+const { t: mainT, normalizeLanguage, getUiLanguage } = require("../../shared/mainI18n");
+const configService = require("../../services/configService");
 
 // 重连状态
 const RECONNECT_STATE = {
@@ -76,10 +77,10 @@ class ReconnectionManager extends EventEmitter {
       Number(this.config.maxDelay || 0),
     );
     const strategyLabel = this.config.useExponentialBackoff
-      ? `指数退避: ${this.config.initialDelay}ms → ${Math.round(maxDelay)}ms`
-      : `固定间隔: ${this.config.initialDelay}ms`;
+      ? `exponential backoff: ${this.config.initialDelay}ms → ${Math.round(maxDelay)}ms`
+      : `fixed interval: ${this.config.initialDelay}ms`;
     logToFile(
-      `重连管理器已初始化 (${strategyLabel}, 最多${this.config.maxRetries}次重试, 总窗口${this.config.totalTimeCapMs}ms)`,
+      `Reconnect manager initialized (${strategyLabel}, max ${this.config.maxRetries} retries, window ${this.config.totalTimeCapMs}ms)`,
       "INFO",
     );
   }
@@ -87,7 +88,7 @@ class ReconnectionManager extends EventEmitter {
   // 注册连接会话
   registerSession(sessionId, connection, config, options = {}) {
     if (!sessionId || !connection) {
-      throw new Error("注册重连会话失败: sessionId 或 connection 不可用");
+      throw new Error(mainT("mainProcess.reconnect.registerFailed", { lng: getUiLanguage(configService) }));
     }
 
     const {
@@ -138,7 +139,7 @@ class ReconnectionManager extends EventEmitter {
         existingSession.state = RECONNECT_STATE.PENDING;
       }
 
-      logToFile(`复用重连会话: ${sessionId}`, "DEBUG");
+      logToFile(`Reusing reconnect session: ${sessionId}`, "DEBUG");
       this.emit("sessionRegistered", {
         sessionId,
         session: existingSession,
@@ -189,7 +190,7 @@ class ReconnectionManager extends EventEmitter {
     // 设置连接事件监听
     this.setupConnectionListeners(session);
 
-    logToFile(`注册重连会话: ${sessionId}`, "DEBUG");
+    logToFile(`Registered reconnect session: ${sessionId}`, "DEBUG");
     this.emit("sessionRegistered", { sessionId, session });
 
     // 关键：很多场景（例如 ssh2 的 close 已经触发后才注册）不会再收到旧连接事件，
@@ -206,21 +207,21 @@ class ReconnectionManager extends EventEmitter {
   setupConnectionListeners(session) {
     const connection = session.connection;
     if (!connection || typeof connection.on !== "function") {
-      logToFile(`跳过注册重连监听(连接对象不可监听): ${session.id}`, "WARN");
+      logToFile(`Skip reconnect listeners (connection not observable): ${session.id}`, "WARN");
       return;
     }
 
-    // 监听连接错误
+    // 监听connection error
     connection.on("error", (error) => {
       this.handleConnectionError(session, error, connection);
     });
 
-    // 监听连接关闭
+    // 监听connection close
     connection.on("close", () => {
       this.handleConnectionClose(session, connection);
     });
 
-    // 监听连接超时
+    // 监听connection timeout
     connection.on("timeout", () => {
       this.handleConnectionTimeout(session, connection);
     });
@@ -262,7 +263,7 @@ class ReconnectionManager extends EventEmitter {
       session.state === RECONNECT_STATE.PAUSED
     ) {
       logToFile(
-        `忽略${eventLabel}(状态: ${session.state}): ${session.id}${error ? ` - ${error.message}` : ""}`,
+        `Ignore ${eventLabel} (state: ${session.state}): ${session.id}${error ? ` - ${error.message}` : ""}`,
         "DEBUG",
       );
       return;
@@ -294,7 +295,7 @@ class ReconnectionManager extends EventEmitter {
       } catch (patternErr) {
         // 失败模式统计不应影响断线/重连主流程
         logToFile(
-          `记录失败模式异常(已忽略): ${session.id} - ${patternErr?.message || patternErr}`,
+          `Failure pattern record error (ignored): ${session.id} - ${patternErr?.message || patternErr}`,
           "WARN",
         );
       }
@@ -305,45 +306,45 @@ class ReconnectionManager extends EventEmitter {
       this._ensureReconnectWindowStarted(session);
       await this.scheduleReconnect(session, resolvedFailureReason);
     } else if (abandonWhenNotReconnectable) {
-      this.abandonReconnection(session, "不满足重连条件");
+      this.abandonReconnection(session, mainT("mainProcess.reconnect.conditionsNotMet", { lng: normalizeLanguage(session?.config?.language) }));
     }
   }
 
-  // 处理连接错误
+  // 处理connection error
   async handleConnectionError(session, error, sourceConnection) {
     return this._handleConnectionInterruption(session, sourceConnection, {
-      eventLabel: "连接错误",
+      eventLabel: "connection error",
       error,
       mainLogLevel: "ERROR",
       onIntentionalClose: () => {
-        logToFile(`忽略主动关闭连接错误: ${session.id}`, "DEBUG");
+        logToFile(`Ignore intentional-close connection error: ${session.id}`, "DEBUG");
       },
       recordPattern: true,
       abandonWhenNotReconnectable: true,
     });
   }
 
-  // 处理连接关闭
+  // 处理connection close
   async handleConnectionClose(session, sourceConnection) {
     return this._handleConnectionInterruption(session, sourceConnection, {
-      eventLabel: "连接关闭",
+      eventLabel: "connection close",
       failureReason: FAILURE_REASON.NETWORK,
       mainLogLevel: "INFO",
       onIntentionalClose: () => {
-        logToFile(`检测到主动关闭连接，清理重连会话: ${session.id}`, "DEBUG");
+        logToFile(`Intentional close detected, cleaning reconnect session: ${session.id}`, "DEBUG");
         this.cancelSession(session.id, "intentional-close");
       },
     });
   }
 
-  // 处理连接超时
+  // 处理connection timeout
   async handleConnectionTimeout(session, sourceConnection) {
     return this._handleConnectionInterruption(session, sourceConnection, {
-      eventLabel: "连接超时",
+      eventLabel: "connection timeout",
       failureReason: FAILURE_REASON.TIMEOUT,
       mainLogLevel: "WARN",
       onIntentionalClose: () => {
-        logToFile(`忽略主动关闭连接超时: ${session.id}`, "DEBUG");
+        logToFile(`Ignore intentional-close connection timeout: ${session.id}`, "DEBUG");
       },
     });
   }
@@ -520,7 +521,7 @@ class ReconnectionManager extends EventEmitter {
 
     if (sameReasonConsecutive >= guardThreshold) {
       logToFile(
-        `停止自动重连(短时同类连续失败): ${session.id}, 原因=${reason}, 2分钟内连续 ${sameReasonConsecutive} 次(阈值 ${guardThreshold} 次)`,
+        `Stop auto-reconnect (repeated same failure): ${session.id}, reason=${reason}, ${sameReasonConsecutive} in 2min (threshold ${guardThreshold})`,
         "WARN",
       );
       return true;
@@ -537,14 +538,14 @@ class ReconnectionManager extends EventEmitter {
         Boolean(session?.config?.retryOnAuthFailure) ||
         Boolean(this.config?.authFailure?.enabled);
       if (!enabled) {
-        logToFile(`认证失败，不进行重连: ${session.id}`, "WARN");
+        logToFile(`Auth failure, skip reconnect: ${session.id}`, "WARN");
         return false;
       }
     }
 
     // 资源限制不重连
     if (failureReason === FAILURE_REASON.RESOURCE) {
-      logToFile(`资源限制，不进行重连: ${session.id}`, "WARN");
+      logToFile(`Resource limit, skip reconnect: ${session.id}`, "WARN");
       return false;
     }
 
@@ -552,13 +553,13 @@ class ReconnectionManager extends EventEmitter {
 
     // maxRetries <= 0 表示该原因不允许重连
     if (maxRetries <= 0) {
-      logToFile(`不满足重连条件(禁止该原因重连): ${session.id}`, "WARN");
+      logToFile(`Reconnect conditions not met (reason blocked): ${session.id}`, "WARN");
       return false;
     }
 
     // 检查重试次数
     if (session.retryCount >= maxRetries) {
-      logToFile(`达到最大重试次数(${maxRetries}次): ${session.id}`, "WARN");
+      logToFile(`Reached max retries (${maxRetries}): ${session.id}`, "WARN");
       return false;
     }
 
@@ -590,7 +591,7 @@ class ReconnectionManager extends EventEmitter {
       session.isReconnecting = false;
       this.abandonReconnection(
         session,
-        `自动重连超时(>${this.config.totalTimeCapMs}ms)`,
+        mainT("mainProcess.reconnect.timeoutExceeded", { lng: normalizeLanguage(session?.config?.language), ms: this.config.totalTimeCapMs }),
       );
       this.emit("reconnectFailed", {
         sessionId: session.id,
@@ -607,7 +608,7 @@ class ReconnectionManager extends EventEmitter {
 
     if (session.retryCount + 1 > maxRetries) {
       session.isReconnecting = false;
-      this.abandonReconnection(session, `达到最大重试次数(${maxRetries}次)`);
+      this.abandonReconnection(session, mainT("mainProcess.reconnect.maxRetriesReached", { lng: normalizeLanguage(session?.config?.language), maxRetries }));
       this.emit("reconnectFailed", {
         sessionId: session.id,
         error: buildMaxRetriesMessage(maxRetries, session?.config?.language),
@@ -664,7 +665,7 @@ class ReconnectionManager extends EventEmitter {
     this.reconnectQueues.get(session.id).push(reconnectTask);
 
     logToFile(
-      `计划重连: ${session.id}, 延迟 ${delay}ms (指数退避), 第 ${nextAttempt}/${maxRetries} 次尝试`,
+      `Schedule reconnect: ${session.id}, delay ${delay}ms (backoff), attempt ${nextAttempt}/${maxRetries}`,
       "INFO",
     );
 
@@ -745,7 +746,7 @@ class ReconnectionManager extends EventEmitter {
       ...config,
     });
     logToFile(
-      `重连管理器配置已更新 (窗口${this.config.totalTimeCapMs}ms, 最多${this.config.maxRetries}次, backoff=${this.config.useExponentialBackoff})`,
+      `Reconnect manager config updated (window ${this.config.totalTimeCapMs}ms, max ${this.config.maxRetries}, backoff=${this.config.useExponentialBackoff})`,
       "INFO",
     );
     return this.config;
@@ -757,7 +758,7 @@ class ReconnectionManager extends EventEmitter {
     if (timerId) {
       clearTimeout(timerId);
       this.reconnectTimers.delete(sessionId);
-      logToFile(`取消待执行的重连任务: ${sessionId}`, "DEBUG");
+      logToFile(`Cancelled pending reconnect task: ${sessionId}`, "DEBUG");
     }
 
     const session = this.sessions.get(sessionId);
@@ -787,7 +788,7 @@ class ReconnectionManager extends EventEmitter {
       handle.cleanup(reason);
     } catch (error) {
       logToFile(
-        `清理重连临时连接异常(已忽略): ${reason} - ${error?.message || error}`,
+        `Cleanup temp reconnect connection error (ignored): ${reason} - ${error?.message || error}`,
         "WARN",
       );
     }
@@ -815,13 +816,13 @@ class ReconnectionManager extends EventEmitter {
       session.state === RECONNECT_STATE.ABANDONED ||
       session.state === RECONNECT_STATE.PAUSED
     ) {
-      logToFile(`跳过重连(状态=${session.state}): ${session.id}`, "DEBUG");
+      logToFile(`Skip reconnect (state=${session.state}): ${session.id}`, "DEBUG");
       return;
     }
 
     // 检查是否正在重连中（防止并发重连）
     if (session.state === RECONNECT_STATE.RECONNECTING) {
-      logToFile(`跳过重连(正在重连中): ${session.id}`, "DEBUG");
+      logToFile(`Skip reconnect (already reconnecting): ${session.id}`, "DEBUG");
       return;
     }
 
@@ -837,7 +838,7 @@ class ReconnectionManager extends EventEmitter {
     session.nextReconnectAt = null;
 
     logToFile(
-      `开始重连: ${session.id} (第 ${session.retryCount}/${maxRetries} 次)`,
+      `Start reconnect: ${session.id} (attempt ${session.retryCount}/${maxRetries})`,
       "INFO",
     );
     this.emit("reconnectStarted", {
@@ -856,7 +857,7 @@ class ReconnectionManager extends EventEmitter {
       const attemptNumber = session.retryCount;
       const preflight = await this._checkPreflight(session);
       if (!preflight?.ok) {
-        const preflightError = new Error(preflight?.message || "连接预检失败");
+        const preflightError = new Error(preflight?.message || mainT("mainProcess.reconnect.preflightFailed", { lng: normalizeLanguage(session?.config?.language) }));
         if (preflight?.code) {
           preflightError.code = preflight.code;
         }
@@ -882,7 +883,7 @@ class ReconnectionManager extends EventEmitter {
       // 验证连接
       const isValid = await this.validateConnection(newConnection);
       if (!isValid) {
-        throw new Error("连接验证失败");
+        throw new Error(mainT("mainProcess.reconnect.validationFailed", { lng: normalizeLanguage(session?.config?.language) }));
       }
 
       if (this._shouldAbortReconnect(session)) {
@@ -927,7 +928,7 @@ class ReconnectionManager extends EventEmitter {
         level: "good",
       });
 
-      logToFile(`重连成功: ${session.id}`, "INFO");
+      logToFile(`Reconnect succeeded: ${session.id}`, "INFO");
       const successPayload = {
         sessionId: session.id,
         attempts: attemptNumber,
@@ -949,7 +950,7 @@ class ReconnectionManager extends EventEmitter {
 
       // 重连过程中再次检查状态，避免在连接已成功时报告错误
       if (session.state === RECONNECT_STATE.CONNECTED) {
-        logToFile(`重连异常被忽略(连接已成功): ${session.id}`, "DEBUG");
+        logToFile(`Reconnect exception ignored (already connected): ${session.id}`, "DEBUG");
         return;
       }
 
@@ -959,7 +960,7 @@ class ReconnectionManager extends EventEmitter {
       }
 
       logToFile(
-        `重连失败: ${session.id} - ${error.message} (第 ${session.retryCount}/${maxRetries} 次)`,
+        `Reconnect failed: ${session.id} - ${error.message} (attempt ${session.retryCount}/${maxRetries})`,
         "ERROR",
       );
 
@@ -986,7 +987,7 @@ class ReconnectionManager extends EventEmitter {
         this.recordFailurePattern(session.id, nextFailureReason);
       } catch (patternErr) {
         logToFile(
-          `记录失败模式异常(已忽略): ${session.id} - ${patternErr?.message || patternErr}`,
+          `Failure pattern record error (ignored): ${session.id} - ${patternErr?.message || patternErr}`,
           "WARN",
         );
       }
@@ -1000,7 +1001,7 @@ class ReconnectionManager extends EventEmitter {
 
         this.abandonReconnection(
           session,
-          `达到最大重试次数(${maxRetries}次)或不满足重连条件`,
+          mainT("mainProcess.reconnect.maxRetriesOrConditions", { lng: normalizeLanguage(session?.config?.language), maxRetries }),
         );
 
         const userFacingError = this.formatReconnectErrorForUser(
@@ -1009,7 +1010,7 @@ class ReconnectionManager extends EventEmitter {
         );
         if (userFacingError !== error.message) {
           logToFile(
-            `重连失败(用户提示): ${session.id} - ${userFacingError}`,
+            `Reconnect failed (user message): ${session.id} - ${userFacingError}`,
             "WARN",
           );
         }
@@ -1130,11 +1131,11 @@ class ReconnectionManager extends EventEmitter {
       typeof newConnection.isClosed === "function" &&
       newConnection.isClosed()
     ) {
-      throw new Error("重连连接在接管前已关闭");
+      throw new Error(mainT("mainProcess.reconnect.closedBeforeTakeover", { lng: normalizeLanguage(session?.config?.language) }));
     }
 
     if (this.replacingSessions.has(session.id)) {
-      logToFile(`跳过并发连接替换: ${session.id}`, "DEBUG");
+      logToFile(`Skip concurrent connection replace: ${session.id}`, "DEBUG");
       return;
     }
 
@@ -1198,7 +1199,7 @@ class ReconnectionManager extends EventEmitter {
       session.failureReason,
     );
 
-    logToFile(`放弃重连 ${session.id}: ${reason}`, "WARN");
+    logToFile(`Abandon reconnect ${session.id}: ${reason}`, "WARN");
 
     this.emit("reconnectAbandoned", {
       sessionId: session.id,
@@ -1213,7 +1214,7 @@ class ReconnectionManager extends EventEmitter {
   }
 
   /**
-   * 会话销毁的公共清理序列（差异动作：日志、连接关闭等留在调用方）
+   * 会话销毁的公共清理序列（差异动作：日志、connection close等留在调用方）
    * @private
    */
   _teardownSession(session, reason) {
@@ -1250,7 +1251,7 @@ class ReconnectionManager extends EventEmitter {
       // 忽略错误
     }
 
-    logToFile(`清理重连会话: ${sessionId}`, "DEBUG");
+    logToFile(`Cleaned reconnect session: ${sessionId}`, "DEBUG");
   }
 
   cancelSession(sessionId, reason = "cancel-session") {
@@ -1266,7 +1267,7 @@ class ReconnectionManager extends EventEmitter {
 
     this._teardownSession(session, reason);
 
-    logToFile(`取消重连会话: ${sessionId}, reason=${reason}`, "DEBUG");
+    logToFile(`Cancelled reconnect session: ${sessionId}, reason=${reason}`, "DEBUG");
     return true;
   }
 
@@ -1330,7 +1331,7 @@ class ReconnectionManager extends EventEmitter {
   ) {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new Error(`会话不存在: ${sessionId}`);
+      throw new Error(mainT("mainProcess.reconnect.sessionNotFound", { lng: getUiLanguage(configService), sessionId }));
     }
 
     this._ensureReconnectWindowStarted(session);
@@ -1356,7 +1357,7 @@ class ReconnectionManager extends EventEmitter {
   waitForReconnect(sessionId, timeoutMs = this.config.totalTimeCapMs) {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      return Promise.reject(new Error(`会话不存在: ${sessionId}`));
+      return Promise.reject(new Error(mainT("mainProcess.reconnect.sessionNotFound", { lng: getUiLanguage(configService), sessionId })));
     }
 
     if (session.state === RECONNECT_STATE.CONNECTED) {
@@ -1453,7 +1454,7 @@ class ReconnectionManager extends EventEmitter {
         success: false,
         sessionId,
         state: null,
-        error: `会话不存在: ${sessionId}`,
+        error: mainT("mainProcess.reconnect.sessionNotFound", { lng: getUiLanguage(configService), sessionId }),
       };
     }
 
@@ -1466,7 +1467,7 @@ class ReconnectionManager extends EventEmitter {
         success: false,
         sessionId,
         state: previousState,
-        error: `当前状态不可暂停: ${previousState}`,
+        error: mainT("mainProcess.reconnect.cannotPause", { lng: getUiLanguage(configService), state: previousState }),
       };
     }
 
@@ -1475,7 +1476,7 @@ class ReconnectionManager extends EventEmitter {
     session.state = RECONNECT_STATE.PAUSED;
     session.isReconnecting = false;
     session.failureReason = session.failureReason || FAILURE_REASON.NETWORK;
-    logToFile(`暂停重连: ${sessionId}`, "INFO");
+    logToFile(`Paused reconnect: ${sessionId}`, "INFO");
 
     return {
       success: true,
@@ -1493,7 +1494,7 @@ class ReconnectionManager extends EventEmitter {
         success: false,
         sessionId,
         state: null,
-        error: `会话不存在: ${sessionId}`,
+        error: mainT("mainProcess.reconnect.sessionNotFound", { lng: getUiLanguage(configService), sessionId }),
       };
     }
 
@@ -1503,7 +1504,7 @@ class ReconnectionManager extends EventEmitter {
         success: false,
         sessionId,
         state: previousState,
-        error: `当前状态不可恢复: ${previousState}`,
+        error: mainT("mainProcess.reconnect.cannotResume", { lng: getUiLanguage(configService), state: previousState }),
       };
     }
 
@@ -1512,7 +1513,7 @@ class ReconnectionManager extends EventEmitter {
     session.reconnectWindowStartedAt = Date.now();
     session.failureReason = FAILURE_REASON.NETWORK;
     void this.scheduleReconnect(session, FAILURE_REASON.NETWORK);
-    logToFile(`恢复重连: ${sessionId}`, "INFO");
+    logToFile(`Resumed reconnect: ${sessionId}`, "INFO");
 
     return {
       success: true,
@@ -1530,7 +1531,7 @@ class ReconnectionManager extends EventEmitter {
     }
 
     this.isInitialized = false;
-    logToFile("重连管理器已关闭", "INFO");
+    logToFile("Reconnect manager closed", "INFO");
   }
 }
 
