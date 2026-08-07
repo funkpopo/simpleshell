@@ -226,12 +226,102 @@ async function testSchedulerRespectsConcurrencyLimit() {
   }
 }
 
+async function testDirectTcpUsesConnectRttNotBanner() {
+  const net = require("node:net");
+  const { NetworkLatencyService, restore } = loadNetworkLatencyService();
+  const service = createService(NetworkLatencyService);
+
+  let server = null;
+  try {
+    // 服务端故意延迟发送 banner，模拟 UseDNS / 限速等场景
+    server = net.createServer((socket) => {
+      setTimeout(() => {
+        try {
+          socket.write("SSH-2.0-TestBanner\r\n");
+        } catch {
+          /* ignore */
+        }
+      }, 350);
+    });
+
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+
+    const { port } = server.address();
+    const started = Date.now();
+    const latency = await service._measureTcpLatencyDirect("127.0.0.1", port);
+    const elapsed = Date.now() - started;
+
+    assert.ok(
+      Number.isFinite(latency) && latency >= 0,
+      "直连探测应返回有效延迟",
+    );
+    assert.ok(
+      latency < 150,
+      `TCP 建连 RTT 应接近本地回环（实际 ${latency}ms），不应等待 banner`,
+    );
+    assert.ok(
+      elapsed < 250,
+      `探测应在 connect 后立即返回（实际耗时 ${elapsed}ms），不应卡满 300ms 兜底`,
+    );
+  } finally {
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    service.stop();
+    restore();
+  }
+}
+
+async function testDirectTcpReportsConnectTimeWhenNoBanner() {
+  const net = require("node:net");
+  const { NetworkLatencyService, restore } = loadNetworkLatencyService();
+  const service = createService(NetworkLatencyService);
+
+  let server = null;
+  try {
+    // 只 accept，永不发送 banner
+    server = net.createServer(() => {
+      /* hold connection open without writing */
+    });
+
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+
+    const { port } = server.address();
+    const started = Date.now();
+    const latency = await service._measureTcpLatencyDirect("127.0.0.1", port, 2000);
+    const elapsed = Date.now() - started;
+
+    assert.ok(
+      Number.isFinite(latency) && latency < 150,
+      `无 banner 时也应返回 connect RTT（实际 ${latency}ms），不应变成 ~300ms`,
+    );
+    assert.ok(
+      elapsed < 250,
+      `无 banner 时不应等待兜底窗口（实际耗时 ${elapsed}ms）`,
+    );
+  } finally {
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    service.stop();
+    restore();
+  }
+}
+
 async function main() {
   const tests = [
     testUnregisterSuppressesInFlightResult,
     testManualRefreshReusesInFlightProbe,
     testErrorClearsStaleLatency,
     testSchedulerRespectsConcurrencyLimit,
+    testDirectTcpUsesConnectRttNotBanner,
+    testDirectTcpReportsConnectTimeWhenNoBanner,
   ];
 
   for (const test of tests) {

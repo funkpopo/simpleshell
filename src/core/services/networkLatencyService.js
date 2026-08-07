@@ -275,10 +275,9 @@ class NetworkLatencyService extends EventEmitter {
 
     const checkPromise = (async () => {
       try {
-        // 关键：延迟测试应走“连接项对应的代理配置”
-        // - 若连接项配置了代理：通过代理 CONNECT 建 TCP 隧道测量建连耗时（更贴近真实路径）
-        // - 否则：直连 TCP connect 测量建连耗时
-        // - 若上述失败：回退到 SSH exec echo 测量往返耗时
+        // 延迟测试走“连接项对应的代理配置”，指标为 TCP 建连 RTT（与 ping 同量级）
+        // - 若连接项配置了代理：经代理 CONNECT 建隧道，测隧道建立耗时
+        // - 否则：直连 TCP connect 测三次握手耗时
         const measuredLatency = await this.measureLatency(
           currentData.sshConnection,
           {
@@ -397,7 +396,7 @@ class NetworkLatencyService extends EventEmitter {
   }
 
   /**
-   * 测量SSH连接延迟
+   * 测量 SSH 连接的网络延迟（TCP 建连 RTT，与 ICMP ping 同量级）。
    * @param {object} sshConnection SSH连接实例
    * @returns {Promise<number>} 延迟时间(毫秒)
    */
@@ -429,17 +428,16 @@ class NetworkLatencyService extends EventEmitter {
     return await this._measureLatencyViaSshExec(sshConnection);
   }
 
+  /**
+   * 直连 TCP 三次握手完成即记为 RTT。
+   */
   _measureTcpLatencyDirect(host, port, timeoutMs = 5000) {
     return new Promise((resolve, reject) => {
       const startTime = monotonicNow();
       const socket = net.connect({ host, port });
-      let fallbackTimer = null;
+      let settled = false;
 
       const cleanup = () => {
-        if (fallbackTimer) {
-          clearTimeout(fallbackTimer);
-          fallbackTimer = null;
-        }
         socket.removeAllListeners();
         try {
           socket.destroy();
@@ -448,44 +446,32 @@ class NetworkLatencyService extends EventEmitter {
         }
       };
 
-      const onError = (e) => {
+      const finish = (error = null, latency = null) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         cleanup();
-        reject(e);
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(latency);
       };
 
-      // 更贴近真实：等待 SSH 服务端 banner（"SSH-"）返回的耗时，而非仅 TCP connect 耗时
       socket.setTimeout(timeoutMs, () =>
-        onError(new Error(latencyText("mainProcess.latency.timeout"))),
+        finish(new Error(latencyText("mainProcess.latency.timeout"))),
       );
-      socket.once("error", onError);
-      socket.once("close", () =>
-        onError(
-          new Error("Socket closed before latency measurement completed"),
-        ),
-      );
-
-      // 一旦收到任何数据（SSH banner），就认为链路可达并计算耗时
-      socket.once("data", () => {
-        const latency = elapsedMs(startTime);
-        cleanup();
-        resolve(latency);
-      });
-
-      // 某些极端情况下可能收不到 banner，但 connect 已完成；
-      // 为避免永远等待，这里用一个更短的兜底窗口返回 connect 耗时。
+      socket.once("error", (error) => finish(error));
       socket.once("connect", () => {
-        fallbackTimer = setTimeout(
-          () => {
-            const latency = elapsedMs(startTime);
-            cleanup();
-            resolve(latency);
-          },
-          Math.min(300, timeoutMs),
-        );
+        finish(null, elapsedMs(startTime));
       });
     });
   }
 
+  /**
+   * 经代理时测量「代理隧道建立成功」耗时（含代理侧往返）
+   */
   async _measureTcpLatencyViaProxy(
     resolvedProxyConfig,
     host,
@@ -502,45 +488,13 @@ class NetworkLatencyService extends EventEmitter {
       },
     );
 
-    // 关键修复：仅测“隧道建立/CONNECT 成功”在本地代理场景可能几乎恒定很小（比如 1ms）。
-    // 为更贴近实际体验，这里等待目标 SSH 服务端 banner 返回，用首包耗时作为延迟指标。
-    const latency = await new Promise((resolve, reject) => {
-      let settled = false;
-
-      const cleanup = () => {
-        sock.removeAllListeners();
-        try {
-          sock.destroy();
-        } catch {
-          /* intentionally ignored */
-        }
-      };
-
-      const onError = (e) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        reject(e);
-      };
-
-      const onData = () => {
-        if (settled) return;
-        settled = true;
-        const ms = elapsedMs(startTime);
-        cleanup();
-        resolve(ms);
-      };
-
-      sock.setTimeout(timeoutMs, () =>
-        onError(new Error(latencyText("mainProcess.latency.timeout"))),
-      );
-      sock.once("error", onError);
-      sock.once("close", () =>
-        onError(new Error("Proxy tunnel socket closed")),
-      );
-      sock.once("data", onData);
-    });
-
+    const latency = elapsedMs(startTime);
+    try {
+      sock.removeAllListeners();
+      sock.destroy();
+    } catch {
+      /* intentionally ignored */
+    }
     return latency;
   }
 
