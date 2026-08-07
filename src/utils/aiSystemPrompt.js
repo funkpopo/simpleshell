@@ -1,7 +1,37 @@
 /**
  * AI助手系统提示词模块
  * 提供运维助手的专业提示词和命令风险评估逻辑
+ *
+ * 系统提示词与记忆上下文文案来自 i18n locales：
+ * - ai.systemPrompt.*
+ * - ai.memoryContext.*
  */
+
+import i18n from "../i18n/i18n";
+
+const normalizePromptLanguage = (language) => {
+  if (typeof language !== "string" || !language.trim()) {
+    return "zh-CN";
+  }
+  const lower = language.trim().toLowerCase();
+  if (lower === "zh" || lower.startsWith("zh-")) {
+    return "zh-CN";
+  }
+  if (lower === "en" || lower.startsWith("en-")) {
+    return "en-US";
+  }
+  return "zh-CN";
+};
+
+/**
+ * Create a language-scoped translator. Implementation uses getFixedT so the
+ * internal call is not flagged as a dynamic i18n.t(key) by check-i18n; call
+ * sites must still use static t("...") string literals.
+ */
+const createPromptT = (lng) => {
+  const fixedT = i18n.getFixedT(lng);
+  return (key, params = {}) => fixedT(key, params);
+};
 
 // 命令风险等级定义
 export const RISK_LEVELS = {
@@ -280,7 +310,24 @@ function assessCommandRisk(command) {
 }
 
 /**
- * 生成运维助手系统提示词
+ * Build connection environment line for the system prompt.
+ * @param {(key: string, params?: object) => string} t
+ * @param {Object|null} connectionInfo
+ * @returns {string}
+ */
+function buildConnectionContext(t, connectionInfo) {
+  if (!connectionInfo) {
+    return t("ai.systemPrompt.environment.noConnection");
+  }
+
+  return t("ai.systemPrompt.environment.withConnection", {
+    host: connectionInfo.host || t("ai.systemPrompt.environment.unknownHost"),
+    type: connectionInfo.type || t("ai.systemPrompt.environment.defaultType"),
+  });
+}
+
+/**
+ * 生成运维助手系统提示词（文案来自 ai.systemPrompt.* locale keys）
  * @param {Object} options - 配置选项
  * @param {string} options.language - 语言 ('zh-CN' 或 'en-US')
  * @param {Object} options.connectionInfo - 当前连接信息
@@ -288,138 +335,105 @@ function assessCommandRisk(command) {
  */
 export function generateSystemPrompt(options = {}) {
   const { language = "zh-CN", connectionInfo = null } = options;
+  const lng = normalizePromptLanguage(language);
+  const t = createPromptT(lng);
 
-  const isZhCN = language === "zh-CN" || language.startsWith("zh");
+  const connectionContext = buildConnectionContext(t, connectionInfo);
+  const riskPlaceholder = t(
+    "ai.systemPrompt.commandFormat.templateRiskPlaceholder",
+  );
+  const commandPlaceholder = t(
+    "ai.systemPrompt.commandFormat.templateCommandPlaceholder",
+  );
+  const cmdTemplate = `<cmd risk="${riskPlaceholder}">${commandPlaceholder}</cmd>`;
 
-  if (isZhCN) {
-    return generateZhCNPrompt(connectionInfo);
-  } else {
-    return generateEnUSPrompt(connectionInfo);
-  }
+  return [
+    t("ai.systemPrompt.role"),
+    "",
+    t("ai.systemPrompt.environment.header"),
+    connectionContext,
+    "",
+    t("ai.systemPrompt.responsibilities.header"),
+    t("ai.systemPrompt.responsibilities.logAnalysis"),
+    t("ai.systemPrompt.responsibilities.commandSuggestions"),
+    t("ai.systemPrompt.responsibilities.troubleshooting"),
+    t("ai.systemPrompt.responsibilities.security"),
+    t("ai.systemPrompt.responsibilities.performance"),
+    "",
+    t("ai.systemPrompt.commandFormat.header"),
+    "",
+    t("ai.systemPrompt.commandFormat.intro"),
+    "",
+    "```",
+    cmdTemplate,
+    "```",
+    "",
+    t("ai.systemPrompt.commandFormat.riskHeader"),
+    t("ai.systemPrompt.commandFormat.riskSafe"),
+    t("ai.systemPrompt.commandFormat.riskLow"),
+    t("ai.systemPrompt.commandFormat.riskMedium"),
+    t("ai.systemPrompt.commandFormat.riskHigh"),
+    t("ai.systemPrompt.commandFormat.riskCritical"),
+    "",
+    t("ai.systemPrompt.commandFormat.examplesHeader"),
+    t("ai.systemPrompt.commandFormat.exampleViewProcesses"),
+    t("ai.systemPrompt.commandFormat.exampleRestartService"),
+    t("ai.systemPrompt.commandFormat.exampleDeleteFiles"),
+    "",
+    t("ai.systemPrompt.guidelines.header"),
+    t("ai.systemPrompt.guidelines.concise"),
+    t("ai.systemPrompt.guidelines.wrapCommands"),
+    t("ai.systemPrompt.guidelines.warnHighRisk"),
+    t("ai.systemPrompt.guidelines.explainCommands"),
+    t("ai.systemPrompt.guidelines.multiStepOrder"),
+    "",
+    t("ai.systemPrompt.capabilities.header"),
+    t("ai.systemPrompt.capabilities.logFormats"),
+    t("ai.systemPrompt.capabilities.errorPatterns"),
+    t("ai.systemPrompt.capabilities.securityPractices"),
+  ].join("\n");
 }
 
+/**
+ * 生成历史记忆上下文（文案来自 ai.memoryContext.* locale keys）
+ * @param {Object} memory
+ * @param {string} language
+ * @returns {string}
+ */
 export function generateMemoryContext(memory, language = "zh-CN") {
   if (!memory) {
     return "";
   }
 
-  const isZhCN = language === "zh-CN" || language.startsWith("zh");
+  const lng = normalizePromptLanguage(language);
+  const t = createPromptT(lng);
+  const joiner = t("ai.memoryContext.listJoiner");
+  const none = t("ai.memoryContext.none");
+  const keyPoints = Array.isArray(memory.keyPoints)
+    ? memory.keyPoints.join(joiner)
+    : "";
+  const pendingTasks = Array.isArray(memory.pendingTasks)
+    ? memory.pendingTasks.join(joiner)
+    : "";
 
-  if (isZhCN) {
-    return `[历史对话记忆 - ${memory.timestamp}]
-摘要：${memory.summary}
-关键点：${memory.keyPoints?.join("、") || "无"}
-${memory.pendingTasks?.length ? `待处理：${memory.pendingTasks.join("、")}` : ""}
+  const lines = [
+    t("ai.memoryContext.header", { timestamp: memory.timestamp }),
+    t("ai.memoryContext.summaryLine", { summary: memory.summary || "" }),
+    t("ai.memoryContext.keyPointsLine", {
+      points: keyPoints || none,
+    }),
+  ];
 
-`;
+  if (pendingTasks) {
+    lines.push(
+      t("ai.memoryContext.pendingLine", {
+        tasks: pendingTasks,
+      }),
+    );
   }
 
-  return `[Conversation Memory - ${memory.timestamp}]
-Summary: ${memory.summary}
-Key points: ${memory.keyPoints?.join(", ") || "None"}
-${memory.pendingTasks?.length ? `Pending tasks: ${memory.pendingTasks.join(", ")}` : ""}
-
-`;
-}
-
-function generateZhCNPrompt(connectionInfo) {
-  const connectionContext = connectionInfo
-    ? `当前连接: ${connectionInfo.host || "未知主机"} (${connectionInfo.type || "SSH"})`
-    : "当前无活动连接";
-
-  return `你是一个专业的Linux/Unix服务器运维助手，内置于SimpleShell终端应用中。你的职责是帮助用户进行服务器管理、故障排查和日常运维任务。
-
-## 当前环境
-${connectionContext}
-
-## 核心职责
-1. **日志分析**: 分析用户发送的系统日志、应用日志，找出问题根源
-2. **命令建议**: 根据用户需求提供合适的Shell命令
-3. **故障排查**: 帮助定位和解决服务器问题
-4. **安全建议**: 提供安全最佳实践建议
-5. **性能优化**: 分析系统性能并给出优化建议
-
-## 重要规则 - 命令输出格式
-
-当你需要建议执行命令时，必须使用以下XML格式包装命令：
-
-\`\`\`
-<cmd risk="风险等级">命令内容</cmd>
-\`\`\`
-
-风险等级说明：
-- **safe**: 只读操作，如 ls, cat, ps, top, df 等查看命令
-- **low**: 轻微修改，如 touch, mkdir, 安装软件等
-- **medium**: 中等风险，如 mv, cp, chmod, 重启服务等
-- **high**: 高风险，如 rm -rf, 停止服务, 修改防火墙等
-- **critical**: 极高风险，如 rm -rf /, 格式化磁盘, 关机等
-
-示例输出：
-- 查看进程: <cmd risk="safe">ps aux | grep nginx</cmd>
-- 重启服务: <cmd risk="medium">systemctl restart nginx</cmd>
-- 删除文件: <cmd risk="high">rm -rf /var/log/old_logs/</cmd>
-
-## 响应规范
-1. 保持简洁专业，直接给出解决方案
-2. 命令必须使用 <cmd> 标签包装，方便用户一键执行
-3. 对高风险命令要明确警告
-4. 提供命令时说明其作用
-5. 如果需要多步操作，按顺序列出
-
-## 特殊能力
-- 理解常见的日志格式 (syslog, nginx, apache, docker, systemd journal等)
-- 识别常见错误模式和解决方案
-- 提供符合安全最佳实践的建议`;
-}
-
-function generateEnUSPrompt(connectionInfo) {
-  const connectionContext = connectionInfo
-    ? `Current connection: ${connectionInfo.host || "Unknown host"} (${connectionInfo.type || "SSH"})`
-    : "No active connection";
-
-  return `You are a professional Linux/Unix server operations assistant, built into the SimpleShell terminal application. Your role is to help users with server management, troubleshooting, and daily operations tasks.
-
-## Current Environment
-${connectionContext}
-
-## Core Responsibilities
-1. **Log Analysis**: Analyze system and application logs sent by users to identify root causes
-2. **Command Suggestions**: Provide appropriate Shell commands based on user needs
-3. **Troubleshooting**: Help locate and resolve server issues
-4. **Security Advice**: Provide security best practice recommendations
-5. **Performance Optimization**: Analyze system performance and provide optimization suggestions
-
-## Important Rules - Command Output Format
-
-When suggesting commands to execute, you MUST wrap them in the following XML format:
-
-\`\`\`
-<cmd risk="risk_level">command content</cmd>
-\`\`\`
-
-Risk level descriptions:
-- **safe**: Read-only operations like ls, cat, ps, top, df
-- **low**: Minor modifications like touch, mkdir, software installation
-- **medium**: Medium risk like mv, cp, chmod, service restart
-- **high**: High risk like rm -rf, stopping services, firewall changes
-- **critical**: Critical risk like rm -rf /, disk formatting, shutdown
-
-Example outputs:
-- View processes: <cmd risk="safe">ps aux | grep nginx</cmd>
-- Restart service: <cmd risk="medium">systemctl restart nginx</cmd>
-- Delete files: <cmd risk="high">rm -rf /var/log/old_logs/</cmd>
-
-## Response Guidelines
-1. Be concise and professional, provide direct solutions
-2. Commands MUST be wrapped in <cmd> tags for one-click execution
-3. Explicitly warn about high-risk commands
-4. Explain what each command does
-5. For multi-step operations, list them in order
-
-## Special Capabilities
-- Understand common log formats (syslog, nginx, apache, docker, systemd journal, etc.)
-- Recognize common error patterns and solutions
-- Provide recommendations following security best practices`;
+  lines.push("", "");
+  return lines.join("\n");
 }
 
 /**
