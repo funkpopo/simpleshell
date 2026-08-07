@@ -736,6 +736,7 @@ const GroupListItem = memo(function GroupListItem({
   onOpenConnection,
   contextMenuTarget = null,
 }) {
+  const { t } = useTranslation();
   const containerId = getGroupContainerId(group.id);
 
   const {
@@ -925,7 +926,7 @@ const GroupListItem = memo(function GroupListItem({
             {(!group.items || group.items.length === 0) && (
               <ListItem sx={{ pl: 2 }}>
                 <ListItemText
-                  primary="没有连接项"
+                  primary={t("connectionManager.noConnections")}
                   primaryTypographyProps={{
                     variant: "caption",
                     sx: {
@@ -2738,8 +2739,13 @@ const ConnectionManager = memo(
           }}
         >
           <DialogTitle>
-            {dialogMode === "add" ? "新建" : "编辑"}{" "}
-            {dialogType === "connection" ? "连接" : "分组"}
+            {dialogMode === "add"
+              ? dialogType === "connection"
+                ? t("connectionManager.newConnection")
+                : t("connectionManager.newGroup")
+              : dialogType === "connection"
+                ? t("connectionManager.editConnection")
+                : t("connectionManager.editGroup")}
           </DialogTitle>
           <DialogContent
             dividers

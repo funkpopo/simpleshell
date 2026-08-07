@@ -3,13 +3,15 @@ import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
+import { useTranslation } from "react-i18next";
 
-const LoadingFallback = ({
-  message = "正在加载组件...",
-  size = 40,
-  showMessage = true,
-}) => {
+const LoadingFallback = ({ message, size = 40, showMessage = true }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
+  const displayMessage =
+    typeof message === "string" && message.trim()
+      ? message
+      : t("common.skeleton.loading");
 
   return (
     <Box
@@ -56,7 +58,7 @@ const LoadingFallback = ({
             fontWeight: 400,
           }}
         >
-          {message}
+          {displayMessage}
         </Typography>
       )}
     </Box>

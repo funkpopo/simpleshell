@@ -256,12 +256,22 @@ class AppHandlers {
     const targetWindow = event?.sender
       ? BrowserWindow.fromWebContents(event.sender)
       : null;
+    const { t: mainT, getUiLanguage } = require("../../../shared/mainI18n");
+    const configService = require("../../../services/configService");
+    const lng = getUiLanguage(configService);
     const messageBoxOptions = {
       type: "warning",
-      title: "Restricted External Link",
-      message: "This link uses a restricted protocol.",
-      detail: `Source: ${source}\nURL: ${normalizedUrl}\n\nOpen anyway?`,
-      buttons: ["Deny (Recommended)", "Open Anyway"],
+      title: mainT("mainProcess.externalLink.title", { lng }),
+      message: mainT("mainProcess.externalLink.message", { lng }),
+      detail: mainT("mainProcess.externalLink.detail", {
+        lng,
+        source,
+        url: normalizedUrl,
+      }),
+      buttons: [
+        mainT("mainProcess.externalLink.deny", { lng }),
+        mainT("mainProcess.externalLink.open", { lng }),
+      ],
       defaultId: 0,
       cancelId: 0,
       noLink: true,

@@ -7,6 +7,8 @@ const { spawn, execFile } = require("child_process");
 const { logToFile } = require("../utils/logger");
 const { getTempDirectory } = require("../utils/appPaths");
 const { buildErrorResponse } = require("../utils/errorResponse");
+const { t: mainT, getUiLanguage } = require("../../shared/mainI18n");
+const configService = require("../../services/configService");
 
 const DOWNLOAD_CONNECTION_TIMEOUT = 30000;
 const DOWNLOAD_DATA_TIMEOUT = 60000;
@@ -1524,12 +1526,12 @@ class UpdateService {
         } else {
           logToFile("macOS DMG opened successfully", "INFO");
           resolve();
+          const lng = getUiLanguage(configService);
           this.dialog.showMessageBox({
             type: "info",
-            title: "Update Ready",
-            message:
-              "The update package has been opened. Please drag the app to Applications folder to complete the update.",
-            buttons: ["OK"],
+            title: mainT("mainProcess.update.readyTitle", { lng }),
+            message: mainT("mainProcess.update.macMessage", { lng }),
+            buttons: [mainT("mainProcess.update.ok", { lng })],
           });
         }
       });
@@ -1544,12 +1546,12 @@ class UpdateService {
 
     if (fileExt === ".appimage") {
       this.shell.showItemInFolder(filePath);
+      const lng = getUiLanguage(configService);
       this.dialog.showMessageBox({
         type: "info",
-        title: "Update Ready",
-        message:
-          "The update has been downloaded. Please replace your current application with the new AppImage file.",
-        buttons: ["OK"],
+        title: mainT("mainProcess.update.readyTitle", { lng }),
+        message: mainT("mainProcess.update.linuxAppImageMessage", { lng }),
+        buttons: [mainT("mainProcess.update.ok", { lng })],
       });
       return;
     }

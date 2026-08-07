@@ -272,11 +272,11 @@ function CommandHistory({ open, onClose, onSendCommand, sessionContext = null })
         if (result.success) {
           setHistory(result.data || []);
         } else {
-          showNotification("加载历史记录失败", "error");
+          showNotification(t("commandHistory.loadFailed"), "error");
         }
       }
     } catch {
-      showNotification("加载历史记录出错", "error");
+      showNotification(t("commandHistory.loadError"), "error");
     } finally {
       setLoading(false);
     }
@@ -378,7 +378,10 @@ function CommandHistory({ open, onClose, onSendCommand, sessionContext = null })
       if (onSendCommand) {
         const result = onSendCommand(command);
         if (result && result.success === false) {
-          showNotification(`发送失败: ${result.error}`, "error");
+          showNotification(
+            t("commandHistory.sendFailedWithError", { error: result.error }),
+            "error",
+          );
         } else {
           showNotification(t("commandHistory.commandSent", { command }));
         }
@@ -733,7 +736,8 @@ function CommandHistory({ open, onClose, onSendCommand, sessionContext = null })
             {t("commandHistory.totalCommands", {
               count: filteredHistory.length,
             })}
-            {searchTerm && ` / ${history.length} 总计`}
+            {searchTerm &&
+              t("commandHistory.totalWithSearch", { total: history.length })}
           </Typography>
         </Box>
       </SidebarPanel>

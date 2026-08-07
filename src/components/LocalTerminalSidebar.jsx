@@ -137,7 +137,7 @@ const LocalTerminalSidebar = ({
           setHasInitialDetection(true);
           setSnackbar({
             open: true,
-            message: "终端API不可用",
+            message: t("localTerminal.apiUnavailable"),
             severity: "error",
           });
         }
@@ -284,10 +284,14 @@ const LocalTerminalSidebar = ({
         // 提供更详细的错误信息
         let errorMessage =
           error.message ||
-          t("localTerminal.launchError", { error: "Unknown error" });
+          t("localTerminal.launchError", {
+            error: t("localTerminal.unknownError"),
+          });
 
         if (error.executable) {
-          errorMessage = `${errorMessage}\n路径: ${error.executable}`;
+          errorMessage = `${errorMessage}\n${t("localTerminal.pathLabel", {
+            path: error.executable,
+          })}`;
         }
 
         if (error.suggestion) {

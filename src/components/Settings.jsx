@@ -136,15 +136,19 @@ const Settings = memo(({ open, onClose }) => {
   const terminalFonts = [
     {
       value: "Fira Code",
-      label: "Fira Code",
-      description: "支持编程连字的等宽字体",
+      label: t("settings.fonts.fira-code"),
+      description: t("settings.terminalFonts.firaCodeDescription"),
     },
     {
       value: "Space Mono",
-      label: "Space Mono",
-      description: "简洁的等宽字体",
+      label: t("settings.fonts.space-mono"),
+      description: t("settings.terminalFonts.spaceMonoDescription"),
     },
-    { value: "Consolas", label: "Consolas", description: "系统默认字体" },
+    {
+      value: "Consolas",
+      label: t("settings.fonts.consolas"),
+      description: t("settings.terminalFonts.consolasDescription"),
+    },
   ];
 
   // Define log level options

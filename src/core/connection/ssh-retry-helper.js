@@ -11,7 +11,7 @@ const {
   resolveSshNetworkProfile,
   applySocketNetworkProfile,
 } = require("../utils/ssh-network-profile");
-const { isZhLanguage } = require("../../shared/connectionErrorAdvice");
+const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
 const { sleep } = require("../../shared/common");
 const {
   isAuthErrorMessage,
@@ -211,10 +211,10 @@ function isRetryWindowExpired(windowStartedAt, retryConfig) {
 }
 
 function formatRetryWindowLabel(durationMs, language = "zh-CN") {
+  const lng = normalizeLanguage(language);
   const normalizedMs = Number(durationMs || 0);
-  const isZh = isZhLanguage(language);
   if (!Number.isFinite(normalizedMs) || normalizedMs <= 0) {
-    return isZh ? "0秒" : "0s";
+    return mainT("mainProcess.reconnect.durationZero", { lng });
   }
 
   if (normalizedMs < 60_000) {
@@ -222,38 +222,40 @@ function formatRetryWindowLabel(durationMs, language = "zh-CN") {
     const rendered = Number.isInteger(seconds)
       ? String(seconds)
       : seconds.toFixed(1).replace(/\.0$/, "");
-    return isZh ? `${rendered}秒` : `${rendered}s`;
+    return mainT("mainProcess.reconnect.durationSeconds", {
+      lng,
+      value: rendered,
+    });
   }
 
   const minutes = normalizedMs / 60_000;
   const rendered = Number.isInteger(minutes)
     ? String(minutes)
     : minutes.toFixed(1).replace(/\.0$/, "");
-  return isZh ? `${rendered}分钟` : `${rendered}m`;
+  return mainT("mainProcess.reconnect.durationMinutes", {
+    lng,
+    value: rendered,
+  });
 }
 
 function buildReconnectTimeoutMessage(retryConfig, language = "zh-CN") {
+  const lng = normalizeLanguage(language);
   const resolvedRetryConfig = buildSshRetryConfig(retryConfig);
   const duration = formatRetryWindowLabel(
     resolvedRetryConfig.totalTimeCapMs,
-    language,
+    lng,
   );
-  if (!isZhLanguage(language)) {
-    return `Reconnect timed out (${duration}). Check network/VPN and refresh or reopen the connection.`;
-  }
-  return `重连超时（${duration}），请检查网络/VPN后刷新或重新打开连接。`;
+  return mainT("mainProcess.reconnect.timeout", { lng, duration });
 }
 
 function buildReconnectWaitMessage(retryConfig, language = "zh-CN") {
+  const lng = normalizeLanguage(language);
   const resolvedRetryConfig = buildSshRetryConfig(retryConfig);
   const duration = formatRetryWindowLabel(
     resolvedRetryConfig.totalTimeCapMs,
-    language,
+    lng,
   );
-  if (!isZhLanguage(language)) {
-    return `Reconnecting, waiting up to ${duration} for network/VPN...`;
-  }
-  return `正在重连，最多等待网络/VPN ${duration}...`;
+  return mainT("mainProcess.reconnect.waiting", { lng, duration });
 }
 
 function probeTcp(host, port, timeoutMs) {
@@ -659,9 +661,9 @@ async function createManagedSshConnection(sshConfig, options = {}) {
 
     timeoutId = setTimeout(() => {
       const error = new Error(
-        isZhLanguage(processedConfig?.language)
-          ? "连接超时"
-          : "Connection timed out",
+        mainT("mainProcess.reconnect.connectionTimeoutShort", {
+          lng: normalizeLanguage(processedConfig?.language),
+        }),
       );
       error.code = "ETIMEDOUT";
       cleanup();
@@ -689,9 +691,9 @@ async function createManagedSshConnection(sshConfig, options = {}) {
       cleanup();
       finishReject(
         new Error(
-          isZhLanguage(processedConfig?.language)
-            ? "连接已关闭"
-            : "Connection closed",
+          mainT("mainProcess.reconnect.connectionClosedShort", {
+            lng: normalizeLanguage(processedConfig?.language),
+          }),
         ),
       );
     };

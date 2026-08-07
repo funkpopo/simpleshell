@@ -1,15 +1,5 @@
 {
   "translation": {
-    "snackbar": {
-      "undo": "撤销",
-      "tabMoved": "标签顺序已更新"
-    },
-    "notification": {
-      "success": "操作成功",
-      "error": "操作失败",
-      "info": "提示信息",
-      "warning": "警告"
-    },
     "settings": {
       "title": "设置",
       "general": "通用",
@@ -29,23 +19,18 @@
       "save": "保存",
       "saveSuccess": "设置已保存",
       "saveError": "保存设置失败，请重试。",
-      "editorFont": "文件预览/编辑字体",
       "fonts": {
-        "system": "系统默认",
         "fira-code": "Fira Code",
         "consolas": "Consolas",
-        "space-mono": "Space Mono",
-        "sample": "Hello World! 123"
+        "space-mono": "Space Mono"
       },
       "terminalFontSectionTitle": "终端字体设置",
-      "terminalFontLabel": "终端字体",
       "terminalFontSizeLabel": "终端字号",
       "terminalAndLogs": "终端与日志",
       "terminalFontFamily": "终端字体族",
       "fontWeight": "粗细",
       "terminalLineHeight": "行高",
       "terminalScrollbackLines": "终端回滚行数",
-      "terminalScrollbackHelper": "1000-500000；与性能监控中的缓冲占用统计一致",
       "transferDisplay": "文件传输显示",
       "transferDisplayBottom": "底部栏模式",
       "transferDisplaySidebar": "侧边栏模式",
@@ -55,11 +40,8 @@
         "consolasDescription": "系统默认等宽字体"
       },
       "logSettingsTitle": "日志设置",
-      "logLevelLabel": "日志记录级别",
       "logFileSizeLimitLabel": "日志文件大小上限",
       "logCleanupIntervalLabel": "日志清理间隔",
-      "logCleanupIntervalHelper": "清理早于指定天数的日志记录，按时间与大小双重清理。",
-      "days": "天",
       "logLevels": {
         "debug": "调试",
         "info": "信息",
@@ -67,7 +49,6 @@
         "error": "错误"
       },
       "backupRetentionLabel": "配置备份保留天数",
-      "backupRetentionHelper": "超过保留天数的配置文件备份将被自动清理",
       "openLogDirectory": "打开日志目录",
       "exportDiagnostics": "导出诊断包",
       "logDirectoryOpened": "日志目录已打开",
@@ -113,9 +94,7 @@
       "needsRestart": "需要重启",
       "externalEditor": {
         "title": "外部编辑器",
-        "commandLabel": "启动命令",
         "commandPlaceholder": "例如：C:\\Users\\xxx\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\notebook.exe",
-        "commandHelper": "填写可执行文件路径或命令。%FILE% 将被替换为下载后的文件路径。留空则使用系统默认程序打开。",
         "enable": "使用外部编辑器"
       },
       "security": {
@@ -198,16 +177,12 @@
     },
     "app": {
       "cannotOpenLinkAlert": "无法打开链接，请手动访问：{{url}}",
-      "unknownUpdateError": "检查更新时发生未知错误",
-      "cannotSendCommandConsole": "无法发送命令：{{reason}}",
       "openFilesReceived": "已收到 {{count}} 个本地文件打开请求：{{firstPath}}",
-      "apiNotFound": "API 未找到",
-      "processIdNotFound": "进程 ID 未找到"
+      "apiNotFound": "API 未找到"
     },
     "menu": {
       "settings": "设置",
       "about": "关于",
-      "checkForUpdates": "检查更新",
       "openLogs": "打开日志目录",
       "exportDiagnostics": "导出诊断包",
       "feedback": "反馈问题",
@@ -231,7 +206,6 @@
       "reconnectStopped": "自动重连已停止",
       "reconnectPaused": "自动重连已暂停",
       "retryAttempts": "已重试：{{attempts}} / {{maxAttempts}}",
-      "nextRetryIn": "下次重试：{{seconds}} 秒后",
       "failureReasonLabel": "失败类型：{{reason}}",
       "failureReasonProxyUnavailable": "代理不可用",
       "failureReasonConnectionRefused": "连接被拒绝",
@@ -242,14 +216,13 @@
       "failureReasonTimeout": "连接超时",
       "failureReasonResource": "资源限制",
       "failureReasonUnknown": "未知原因",
-      "retryWindowRemaining": "自动重连窗口剩余：{{seconds}} 秒",
       "lastError": "最近错误：{{error}}",
-      "reconnectHint": "提示：{{hint}}",
       "pauseReconnect": "暂停自动重连",
       "resumeReconnect": "恢复自动重连",
       "pauseReconnectDone": "已暂停自动重连",
       "resumeReconnectDone": "已恢复自动重连",
-      "reconnectSessionRestoreFailedHint": "底层连接已恢复，但终端会话恢复失败，请刷新连接。"
+      "reconnectSessionRestoreFailedHint": "底层连接已恢复，但终端会话恢复失败，请刷新连接。",
+      "syncGroup": "同步分组 {{groupId}}"
     },
     "about": {
       "title": "关于 SimpleShell",
@@ -258,15 +231,9 @@
       "author": "作者",
       "email": "邮箱",
       "updateCheck": "检查更新",
-      "checkingUpdate": "正在检查更新...",
-      "latestVersion": "当前已是最新版本",
-      "newVersion": "发现新版本：{{version}}，点击下方按钮查看详情",
-      "updateError": "无法检查更新：{{error}}",
       "checkUpdateButton": "检查更新",
-      "viewLatestButton": "查看最新版本",
       "close": "关闭",
-      "visitGithub": "访问 GitHub 发布页",
-      "updateNotAvailable": "无法检查更新：未找到更新 API"
+      "visitGithub": "访问 GitHub 发布页"
     },
     "sidebar": {
       "theme": "切换主题",
@@ -300,7 +267,6 @@
       "error": "错误",
       "excellent": "优秀",
       "good": "良好",
-      "fair": "一般",
       "degraded": "降级",
       "poor": "较差",
       "bad": "很差",
@@ -313,11 +279,9 @@
       "inputPlaceholder": "请输入 IP 地址...",
       "queryButton": "查询",
       "queryYourIP": "查询本机 IP",
-      "loading": "查询中...",
       "ipInfo": "IP 信息",
       "location": "位置",
       "noData": "暂无数据",
-      "errorOccurred": "发生错误",
       "retry": "重试",
       "networkError": "网络连接异常，请检查网络设置",
       "invalidIp": "无效的 IP 地址",
@@ -326,7 +290,6 @@
       "province": "省/州",
       "city": "城市",
       "isp": "运营商",
-      "organization": "组织",
       "historyTitle": "查询历史",
       "toggleHistory": "展开/收起历史",
       "clearHistory": "清空查询历史",
@@ -336,22 +299,14 @@
     },
     "welcome": {
       "title": "欢迎使用 SimpleShell",
-      "subtitle": "快速开始",
-      "newTerminal": "新建终端",
       "newConnection": "新建 SSH 连接",
-      "recentConnections": "最近连接",
       "lastConnectedServers": "最近连接的服务器",
-      "tips": "小提示",
-      "description": "一款界面简洁、功能强大的轻量级终端模拟器。",
       "emptyDescription": "先添加一台 SSH 主机，保存后可直接打开终端，也可从连接管理里继续分组整理。",
       "exampleTitle": "示例连接字段",
       "exampleAuth": "密码或私钥",
       "emptyHint": "示例地址不会被保存；请填写自己的服务器地址、端口、用户名和认证方式。"
     },
     "terminal": {
-      "connecting": "正在连接到 {{host}}...",
-      "connected": "已连接到 {{host}}",
-      "connectionFailed": "连接失败：{{error}}",
       "welcome": "欢迎"
     },
     "webTerminal": {
@@ -388,12 +343,9 @@
         "helpHint": "输入 \"help\" 查看可用命令。"
       },
       "offlineBuffer": {
-        "title": "离线输入缓冲",
         "buffering": "断线缓冲中 · {{chars}} 字符",
         "send": "发送缓冲",
-        "clear": "清空",
-        "pasteBlocked": "重连完成后再粘贴大段内容",
-        "full": "离线输入缓冲已满，请等待重连"
+        "clear": "清空"
       }
     },
     "connectionManager": {
@@ -402,7 +354,6 @@
       "newGroup": "新建分组",
       "search": "搜索...",
       "noConnections": "没有连接项",
-      "noGroups": "没有分组",
       "loadFailed": "加载连接配置失败",
       "reloadFailed": "重新加载连接配置失败",
       "saveFailed": "保存连接配置失败",
@@ -416,17 +367,13 @@
       "deleteConnectionConfirm": "确定要删除连接 \"{{name}}\" 吗？",
       "cannotUndo": "此操作无法撤销。",
       "delete": "删除",
-      "cancel": "取消",
       "proxyConfig": "代理配置 (可选)",
       "enableProxy": "启用代理",
       "useSystemProxy": "使用系统默认代理配置",
-      "proxyType": "代理类型",
       "proxyHost": "代理主机",
       "proxyPort": "端口",
       "proxyUsername": "代理用户名 (可选)",
       "proxyPassword": "代理密码 (可选)",
-      "hostPlaceholder": "例如: 127.0.0.1",
-      "portPlaceholder": "8080",
       "protocol": "协议",
       "hostAddress": "主机地址",
       "port": "端口",
@@ -444,7 +391,6 @@
       "os": "操作系统",
       "contextCopyIp": "复制IP地址",
       "contextAddConnection": "添加连接",
-      "ipCopied": "已复制到剪贴板",
       "copyFailed": "复制失败",
       "testConnection": "测试连接",
       "testing": "测试中...",
@@ -486,44 +432,78 @@
         "privateKeyUnreadable": "私钥文件不可读。",
         "privateKeyUnsafe": "私钥权限为 {{permissions}}，建议仅当前用户可读。",
         "privateKeyOk": "私钥文件可读，权限检查通过。"
-      }
+      },
+      "editConnection": "编辑连接",
+      "editGroup": "编辑分组"
     },
     "common": {
       "cancel": "取消",
       "save": "保存",
       "delete": "删除",
       "edit": "编辑",
-      "add": "新增",
-      "update": "更新",
       "confirm": "确定",
       "name": "名称",
-      "description": "描述",
       "expand": "展开",
       "collapse": "收起",
       "close": "关闭",
       "clearSearch": "清空搜索",
-      "moreActions": "更多操作",
       "showPassword": "显示密码",
       "hidePassword": "隐藏密码",
-      "later": "稍后",
-      "ok": "确定",
-      "yes": "是",
-      "no": "否",
       "none": "无",
       "other": "其他",
       "loading": "加载中...",
       "refresh": "刷新",
       "copiedToClipboard": "已复制到剪贴板",
-      "operationFailed": "操作失败",
-      "submitFailed": "提交失败",
       "skeleton": {
         "loading": "正在加载内容...",
-        "terminal": "正在初始化终端...",
-        "fileManager": "正在加载文件列表...",
+        "terminal": "正在加载终端...",
+        "fileManager": "正在加载文件管理器...",
         "settings": "正在加载设置...",
-        "connections": "正在加载连接列表...",
-        "aiChat": "正在初始化 AI 助手..."
-      }
+        "connections": "正在加载连接管理器...",
+        "aiChat": "正在加载 AI 助手...",
+        "resourceMonitor": "正在加载资源监控...",
+        "ipAddressQuery": "正在加载 IP 地址查询...",
+        "commandHistory": "正在加载命令历史...",
+        "shortcutCommands": "正在加载快捷命令...",
+        "localTerminal": "正在加载本地终端...",
+        "securityTools": "正在加载安全工具...",
+        "firstRun": "正在加载首次运行向导...",
+        "about": "正在加载关于信息...",
+        "webTerminal": "正在加载终端..."
+      },
+      "componentLoadFailed": "{{name}}组件加载失败，请刷新页面重试",
+      "componentNames": {
+        "resourceMonitor": "资源监控",
+        "ipAddressQuery": "IP 地址查询",
+        "settings": "设置",
+        "commandHistory": "命令历史",
+        "shortcutCommands": "快捷命令",
+        "localTerminal": "本地终端",
+        "terminal": "终端",
+        "connectionManager": "连接管理器",
+        "fileManager": "文件管理器",
+        "securityTools": "安全工具",
+        "aiAssistant": "AI 助手",
+        "firstRun": "首次运行向导",
+        "about": "关于对话框"
+      },
+      "date": {
+        "today": "今天",
+        "justNow": "刚刚",
+        "secondsAgo": "{{count}}秒前",
+        "minutesAgo": "{{count}}分钟前",
+        "unknown": "未知",
+        "weekdays": {
+          "0": "周日",
+          "1": "周一",
+          "2": "周二",
+          "3": "周三",
+          "4": "周四",
+          "5": "周五",
+          "6": "周六"
+        }
+      },
+      "unknownError": "未知错误"
     },
     "shortcutCommands": {
       "title": "快捷命令",
@@ -532,7 +512,6 @@
       "editCommand": "编辑命令",
       "commandName": "命令名称",
       "command": "命令",
-      "description": "描述",
       "category": "分类",
       "uncategorized": "未分类",
       "loading": "加载中...",
@@ -547,7 +526,6 @@
       "color": "颜色",
       "edit": "编辑",
       "delete": "删除",
-      "sendCommand": "发送命令",
       "sendAndExecute": "发送并执行",
       "copyCommand": "复制命令",
       "categoryActions": "分类操作",
@@ -563,7 +541,6 @@
       "noCommandsFound": "未找到匹配的记录",
       "totalCommands": "共 {{count}} 条历史记录",
       "commandSent": "已发送命令：{{command}}",
-      "commandCopied": "命令已复制到剪贴板",
       "copyFailed": "复制失败",
       "sendCommand": "发送命令",
       "copyCommand": "复制命令",
@@ -588,34 +565,16 @@
       "enterCommand": "请输入命令...",
       "editNote": "编辑后的命令将保存为快捷命令",
       "sendCommandHandlerMissing": "未提供发送命令处理函数",
-      "sendFailed": "发送失败",
       "noSshConnection": "请先建立 SSH 连接",
-      "notSshTab": "当前标签不是 SSH 连接"
+      "notSshTab": "当前标签不是 SSH 连接",
+      "loadFailed": "加载历史记录失败",
+      "loadError": "加载历史记录出错",
+      "sendFailedWithError": "发送失败: {{error}}",
+      "totalWithSearch": " / {{total}} 总计"
     },
     "aiAssistant": {
-      "title": "AI 助手",
-      "placeholder": "请输入你的问题...",
-      "send": "发送",
-      "clear": "清空对话",
-      "settings": "设置",
-      "connecting": "连接中...",
-      "thinking": "思考中...",
-      "error": "发生错误",
-      "retry": "重试",
-      "copy": "复制",
-      "copied": "已复制",
-      "noMessages": "尚无对话，开始向 AI 助手提问吧！",
-      "networkError": "网络连接错误，请检查网络设置",
-      "apiError": "接口调用失败，请检查配置",
-      "emptyMessage": "消息内容不能为空",
-      "floatingButton": "AI 助手",
       "minimize": "最小化",
-      "maximize": "最大化",
-      "close": "关闭",
-      "requestCancelled": "请求已取消",
-      "selectApi": "选择 API",
-      "currentApi": "当前：{{name}}",
-      "thinkingProcess": "思考过程"
+      "close": "关闭"
     },
     "aiSettings": {
       "title": "AI 设置",
@@ -626,13 +585,9 @@
       "model": "模型名称",
       "modelSelectPlaceholder": "请先点击右侧模型探测按钮",
       "placeholders": {
-        "name": "我的 API",
         "baseUrl": "https://api.openai.com/v1",
-        "apiKey": "sk-...",
-        "model": "gpt-3.5-turbo"
+        "apiKey": "sk-..."
       },
-      "maxTokens": "最大 Token 数",
-      "temperature": "Temperature（温度）",
       "streamEnabled": "流式输出",
       "save": "保存",
       "cancel": "取消",
@@ -646,16 +601,12 @@
       "apiKeyRequired": "API 密钥不能为空",
       "modelRequired": "模型名称不能为空",
       "invalidUrl": "请输入有效的 URL",
-      "temperatureRange": "Temperature 应在 0-2 之间",
-      "maxTokensRange": "最大 Token 数应在 1-32000 之间",
       "apiManagement": "API 管理",
       "apiList": "API 配置列表",
       "addApi": "新增 API",
       "editApi": "编辑 API",
       "deleteApi": "删除 API",
       "setAsCurrent": "设为当前",
-      "apiName": "配置名称",
-      "apiNameRequired": "配置名称不能为空",
       "providerType": "渠道类型",
       "deleteConfirmTitle": "删除确认",
       "deleteConfirm": "确定要删除该 API 配置吗？",
@@ -665,8 +616,6 @@
       "setCurrentFailed": "设置当前 API 失败",
       "noApiConfigs": "暂无 API 配置，请先新增一条",
       "currentApi": "当前 API",
-      "selectApi": "选择 API",
-      "apiSwitched": "已切换到：{{name}}",
       "cloneApi": "克隆配置",
       "clonedConfigHint": "基于已有配置新建，无需重新输入 API 地址和密钥",
       "fetchModels": "模型探测",
@@ -694,7 +643,6 @@
       "title": "AI 助手",
       "inputPlaceholder": "输入消息...",
       "startConversation": "开始对话，提出你的问题",
-      "thinking": "思考中...",
       "thinkingProcess": "思考过程",
       "copyMessage": "复制消息",
       "editMessage": "编辑消息",
@@ -718,7 +666,6 @@
       "executeAnyway": "确认执行",
       "commandsCount": "{{count}} 条命令",
       "highRiskCount": "{{count}} 条高风险",
-      "noConnection": "请先建立 SSH 连接",
       "riskLevels": {
         "safe": "安全",
         "low": "低风险",
@@ -732,17 +679,9 @@
         "medium": "可能影响服务或数据",
         "high": "可能导致服务中断或数据丢失",
         "critical": "可能导致系统不可用或不可恢复"
-      },
-      "contextWarning": "上下文容量警告：点击生成记忆摘要",
-      "contextCapacityWarning": "上下文容量警告：点击生成记忆摘要",
-      "memoryGenerating": "记忆生成中...",
-      "emptyApiResponse": "API 返回内容为空",
-      "compressing": "正在生成记忆摘要...",
-      "compressSuccess": "记忆已保存",
-      "compressFailed": "记忆生成失败"
+      }
     },
     "randomPassword": {
-      "title": "随机密码生成器",
       "length": "密码长度",
       "uppercase": "包含大写字母",
       "lowercase": "包含小写字母",
@@ -780,7 +719,6 @@
     "sshAuth": {
       "login": "登录",
       "host": "主机",
-      "account": "账户",
       "username": "用户",
       "enterUsername": "请输入用户名",
       "password": "密码",
@@ -804,7 +742,6 @@
       "fingerprintConfirmNotice": "请确认主机指纹是否可信。",
       "fingerprintWarning": "服务器指纹已更改，请确认是否为预期更改。",
       "previousFingerprint": "历史指纹",
-      "authCancelled": "认证已取消",
       "authFailed": "认证失败",
       "pleaseRetry": "用户名或密码错误，请重新输入"
     },
@@ -857,7 +794,6 @@
       "syntaxHighlightLoading": "语法高亮加载中",
       "syntaxHighlightReady": "{{language}} 高亮",
       "loadingSyntaxHighlight": "正在加载 {{language}} 语法高亮...",
-      "selectedVersion": "已选中版本：{{date}}",
       "savedVersionLabel": "已保存版本",
       "initialVersionLabel": "初始版本",
       "snapshotCreated": "已创建时间点",
@@ -938,7 +874,9 @@
         "replacedMatches": "已替换 $ 个匹配项",
         "goToLine": "跳转到行",
         "go": "跳转"
-      }
+      },
+      "title": "文件预览",
+      "loading": "正在加载文件预览..."
     },
     "fileManager": {
       "title": "文件管理",
@@ -969,20 +907,15 @@
       "rename": "重命名",
       "delete": "删除",
       "deleteItems": "删除 {{count}} 个项目",
-      "download": "下载",
       "downloadFile": "下载文件",
       "downloadFiles": "下载 {{count}} 个文件",
       "downloadFolder": "下载文件夹",
       "downloadFolders": "下载 {{count}} 个文件夹",
-      "copy": "复制",
       "copyPath": "复制路径",
-      "cut": "剪切",
-      "paste": "粘贴",
       "properties": "属性",
       "permissions": "权限",
       "owner": "用户",
       "group": "用户组",
-      "createSymlink": "创建软链接",
       "openLocation": "打开位置",
       "multipleItemsName": "{{name}} 等 {{count}} 个{{itemLabel}}",
       "itemLabels": {
@@ -1010,7 +943,6 @@
         "createFileFailed": "创建文件失败",
         "emptyName": "名称不能为空",
         "unknownError": "未知错误",
-        "refreshTimeout": "刷新超时",
         "directoryWatchFailed": "目录自动刷新监听失败：{{error}}",
         "noFilesSelected": "未选择任何文件",
         "dragDropNotSupported": "不支持拖拽上传",
@@ -1020,41 +952,22 @@
         "dragDropPermissionDenied": "无法读取拖放的本地项目，请检查文件权限：{{name}}",
         "dragDropUnsupportedItem": "该拖放项目不是可上传的本地文件或文件夹：{{name}}",
         "dragDropConflictCancelled": "已取消拖放上传，远端已有同名项目。",
-        "dragDropConflictDialogUnavailable": "无法显示覆盖确认对话框，已阻止拖放上传。",
         "noConnection": "没有可用的 SSH 连接",
         "userCancelled": "用户已取消",
-        "operationCancelled": "操作已取消",
-        "sftpError": "SFTP 错误",
         "connectionNotReady": "SSH 连接尚未就绪",
-        "channelOpenFailure": "通道打开失败",
-        "connectionReset": "连接被重置",
         "updateFailed": "更新失败",
         "permissionSetFailed": "设置权限失败",
-        "fileRenamedButPermissionFailed": "文件已重命名，但权限设置失败",
         "batchDownloadFailed": "批量下载失败",
         "transferCancelled": "传输已取消",
-        "transferCancelFailed": "取消传输失败",
-        "uploadCancelledByUser": "上传已被用户取消",
-        "folderUploadCancelledByUser": "文件夹上传已被用户取消",
-        "downloadCancelledByUser": "下载已被用户取消",
-        "cancelDetected": "检测到取消操作",
-        "replyNeverSent": "响应未发送",
-        "cancelApiCallFailed": "取消传输 API 调用失败",
-        "cancelProcessError": "取消过程发生错误",
-        "fileSizeExceedsPreviewLimit": "文件大小超过预览限制",
-        "downloadProcessInterrupted": "下载过程被中断，请重试"
+        "downloadCancelledByUser": "下载已被用户取消"
       },
       "messages": {
         "preparingUpload": "正在准备上传...",
-        "preparingFolderUpload": "正在扫描文件夹...",
-        "creatingFolders": "正在创建文件夹结构...",
         "uploadComplete": "上传完成",
         "uploadSuccess": "文件上传成功",
-        "uploadFailed": "上传失败",
         "unknownFile": "未知文件",
         "retrying": "重试中（{{current}}/{{max}}）...",
         "fileListSummary": "{{shown}} 等 {{remaining}} 项",
-        "batchDeleteConfirm": "确定要删除选中的 {{count}} 个文件吗？",
         "deleteConfirm": "确定要删除 {{name}} 吗？",
         "deleteSuccessCount": "已成功删除 {{count}} 个项目",
         "deletePartialResult": "删除完成：成功 {{deleted}} 项，失败 {{failed}} 项",
@@ -1066,21 +979,14 @@
         "dragDropMessage": "将文件拖到此处上传",
         "uploadToFolder": "上传到文件夹：{{folder}}",
         "uploadToCurrentFolder": "上传到当前文件夹",
-        "uploadSkipError": "跳过错误提示",
-        "uploadCancelledSkipError": "上传已取消，跳过错误提示",
-        "folderUploadCancelledSkipError": "文件夹上传已取消，跳过错误提示",
         "dragDropConflictTitle": "确认覆盖远端项目",
         "dragDropConflictMessage": "远端目录中已有 {{count}} 个同名项目。继续会覆盖同名文件，并可能合并同名文件夹。",
-        "dragDropConflictDetail": "{{items}}",
         "dragDropConflictConfirm": "覆盖并上传",
         "dragDropConflictCancel": "取消",
         "downloadFolderFailed": "下载文件夹失败",
-        "batchDownloadFolderFailed": "批量下载文件夹失败",
         "updateFailedRetrying": "更新失败，正在重试",
         "createFolderFailedRetrying": "创建文件夹失败，正在重试",
-        "permissionSetFailedRetrying": "设置权限失败，正在重试",
         "fileSizeExceedsLimit": "文件 \"{{name}}\" 大小为 {{size}}，超过 10MB 预览限制。请下载后在本地查看。",
-        "transferCancelApiFailedButMarked": "取消传输 API 返回失败，但界面仍标记为已取消",
         "selectFolderToDownload": "请先选择要下载的文件夹",
         "startDownload": "开始下载 {{count}} 个文件",
         "downloadSuccessCount": "成功下载 {{count}} 个文件",
@@ -1182,9 +1088,7 @@
       },
       "fileTypes": {
         "folder": "文件夹",
-        "file": "文件",
-        "symlink": "符号链接",
-        "unknown": "未知类型"
+        "file": "文件"
       },
       "units": {
         "bytes": "字节",
@@ -1194,8 +1098,6 @@
         "tb": "TB"
       },
       "statusBar": {
-        "totalItems": "共 {{count}} 个项目",
-        "selectedItems": "已选择 {{count}} 个项目",
         "lastRefresh": "上次刷新时间：{{time}}"
       },
       "externalEditor": {
@@ -1208,7 +1110,6 @@
       }
     },
     "update": {
-      "title": "应用更新",
       "checking": "正在检查更新...",
       "upToDate": "当前已是最新版本！",
       "available": "有可用更新",
@@ -1217,16 +1118,12 @@
       "readyToInstall": "更新已准备好安装",
       "installing": "正在安装更新...",
       "currentVersion": "当前版本",
-      "newVersion": "新版本",
       "releaseDate": "发布日期",
       "releaseNotes": "更新日志",
       "downloadSize": "下载大小",
       "download": "下载更新",
-      "installNow": "立即安装",
       "installUpdate": "安装更新",
-      "installAndRestart": "安装并重启",
       "retryCheck": "重新检查",
-      "retryDownload": "重试下载",
       "remindLater": "稍后提醒",
       "reminderScheduled": "将在 {{hours}} 小时后提醒更新",
       "reminderDue": "更新提醒时间已到",
@@ -1252,15 +1149,9 @@
       "refresh": "刷新",
       "searchPlaceholder": "搜索终端...",
       "availableTerminals": "可用终端",
-      "runningTerminals": "运行中的终端",
       "noTerminals": "未检测到终端",
       "noTerminalSelected": "请选择一个终端",
       "noSearchResults": "未找到匹配的终端",
-      "noRunningTerminals": "没有正在运行的终端",
-      "detecting": "正在检测终端...",
-      "launch": "启动",
-      "stop": "停止终端",
-      "running": "运行中",
       "statusRunning": "运行中",
       "statusStopped": "未启动",
       "statusUnknown": "未知",
@@ -1269,51 +1160,9 @@
       "detectError": "检测终端失败",
       "launchSuccess": "已打开 {{name}} 本地终端标签页",
       "launchError": "启动终端失败：{{error}}",
-      "stopSuccess": "终端已停止",
-      "stopError": "停止终端失败：{{error}}",
-      "initializing": "初始化中...",
-      "launching": "正在启动终端...",
-      "ready": "终端就绪",
-      "custom": "自定义",
-      "addCustom": "添加自定义终端",
-      "deleteSuccess": "已成功删除 {{name}}",
-      "deleteError": "删除失败：{{error}}",
-      "updateSuccess": "已成功更新 {{name}}",
-      "addSuccess": "已成功添加 {{name}}",
-      "saveError": "保存失败：{{error}}",
-      "config": {
-        "addTitle": "添加自定义终端",
-        "editTitle": "编辑终端配置",
-        "basicTab": "基础设置",
-        "advancedTab": "高级设置",
-        "basicInfo": "基本信息",
-        "executionConfig": "执行配置",
-        "name": "名称",
-        "nameRequired": "名称不能为空",
-        "nameHelp": "列表中显示的名称",
-        "executable": "可执行文件",
-        "executableRequired": "可执行文件不能为空",
-        "executableHelp": "输入可执行文件的完整路径或命令",
-        "arguments": "参数",
-        "addArgument": "添加参数",
-        "argHelp": "例如：--version、-h、/c",
-        "noArgs": "暂无参数",
-        "workingDirectory": "工作目录",
-        "workingDirectoryHelp": "留空则使用默认目录",
-        "cwdPlaceholder": "可选：留空使用默认工作目录",
-        "environmentVariables": "环境变量",
-        "noEnvVars": "暂无环境变量",
-        "icon": "图标",
-        "description": "描述",
-        "descriptionPlaceholder": "可选：简要描述此应用的用途",
-        "runInBackground": "后台运行",
-        "runInBackgroundInfo": "应用将在后台运行，不会嵌入到终端窗口中"
-      },
-      "waitingEmbed": "等待窗口嵌入...",
-      "terminated": "终端已终止",
       "unknownError": "发生未知错误",
-      "launchNormal": "正常启动",
-      "wslDistributions": "WSL 发行版"
+      "apiUnavailable": "终端 API 不可用",
+      "pathLabel": "路径: {{path}}"
     },
     "windowControls": {
       "minimize": "最小化",
@@ -1344,7 +1193,6 @@
       "usedMemory": "已用内存",
       "freeMemory": "可用内存",
       "processes": "进程",
-      "processName": "进程",
       "cpuShort": "CPU",
       "memoryShort": "内存",
       "topProcessesHint": "已按内存占用排序，仅显示前 {{count}} 个进程",
@@ -1445,8 +1293,7 @@
           "验证端口号是否正确",
           "检查防火墙规则是否允许连接"
         ],
-        "action": "重新检查配置",
-        "severity": "error"
+        "action": "重新检查配置"
       },
       "ETIMEDOUT": {
         "title": "连接超时",
@@ -1457,8 +1304,7 @@
           "尝试增加超时时间",
           "检查是否有网络防火墙限制"
         ],
-        "action": "重试连接",
-        "severity": "warning"
+        "action": "重试连接"
       },
       "EHOSTUNREACH": {
         "title": "主机不可达",
@@ -1469,8 +1315,7 @@
           "使用ping命令测试主机连通性",
           "联系网络管理员检查路由配置"
         ],
-        "action": "检查服务器地址",
-        "severity": "error"
+        "action": "检查服务器地址"
       },
       "ENOTFOUND": {
         "title": "主机名无法解析",
@@ -1481,8 +1326,7 @@
           "检查DNS服务器配置",
           "确认域名是否有效"
         ],
-        "action": "检查主机名",
-        "severity": "error"
+        "action": "检查主机名"
       },
       "ECONNRESET": {
         "title": "连接被重置",
@@ -1493,8 +1337,7 @@
           "查看服务器日志了解断开原因",
           "尝试重新连接"
         ],
-        "action": "重新连接",
-        "severity": "warning"
+        "action": "重新连接"
       },
       "ENETUNREACH": {
         "title": "网络不可达",
@@ -1505,8 +1348,7 @@
           "如使用VPN，确认VPN已连接",
           "检查代理设置是否正确"
         ],
-        "action": "检查网络",
-        "severity": "error"
+        "action": "检查网络"
       },
       "AUTH_FAILED": {
         "title": "SSH认证失败",
@@ -1517,8 +1359,7 @@
           "验证密钥是否已添加到服务器authorized_keys",
           "确认服务器允许该认证方式"
         ],
-        "action": "检查认证信息",
-        "severity": "error"
+        "action": "检查认证信息"
       },
       "KEY_ERROR": {
         "title": "SSH密钥错误",
@@ -1529,8 +1370,7 @@
           "验证密钥格式是否正确",
           "如密钥有密码保护，确认输入正确"
         ],
-        "action": "检查密钥配置",
-        "severity": "error"
+        "action": "检查密钥配置"
       },
       "EACCES": {
         "title": "权限不足",
@@ -1541,8 +1381,7 @@
           "联系管理员获取相应权限",
           "检查文件是否被其他程序占用"
         ],
-        "action": "检查权限",
-        "severity": "warning"
+        "action": "检查权限"
       },
       "ENOENT": {
         "title": "文件不存在",
@@ -1553,8 +1392,7 @@
           "检查文件名拼写",
           "确认有访问该路径的权限"
         ],
-        "action": "检查文件路径",
-        "severity": "warning"
+        "action": "检查文件路径"
       },
       "OPERATION_TIMEOUT": {
         "title": "操作超时",
@@ -1565,15 +1403,63 @@
           "考虑分批处理大量数据",
           "增加超时时间限制"
         ],
-        "action": "重试操作",
-        "severity": "warning"
+        "action": "重试操作"
+      }
+    },
+    "mainProcess": {
+      "terminal": {
+        "reconnectRecoveryStarted": "正在恢复终端...",
+        "reconnectRecoverySucceeded": "终端已恢复",
+        "reconnectRecoveryFailedDefault": "终端恢复失败，请刷新连接。",
+        "reconnectRecoveryFailedHint": "连接已恢复，但终端恢复失败。",
+        "reconnectRecoveryFailed": "终端恢复失败: {{message}}",
+        "sshDisconnected": "SSH已断开，正在重连",
+        "telnetClosed": "Telnet连接已关闭",
+        "telnetTimeout": "Telnet连接超时",
+        "droppedBytesWarning": "输出过快，已丢弃 {{dropped}} 字节（请适当降低输出速率）",
+        "sshConnected": "{{host}} 已连接",
+        "telnetError": "Telnet连接错误: {{message}}",
+        "telnetConnectedReused": "{{host}} Telnet连接已建立（复用现有连接）"
       },
-      "UNKNOWN": {
-        "title": "发生错误",
-        "message": "遇到了一个未知错误",
-        "solutions": ["请稍后重试", "如问题持续，请联系管理员"],
-        "action": "重试",
-        "severity": "error"
+      "reconnect": {
+        "maxRetries": "达到最大重试次数（{{maxRetries}}次），请检查代理/VPN/网络后刷新或重新打开连接。",
+        "timeout": "重连超时（{{duration}}），请检查网络/VPN后刷新或重新打开连接。",
+        "waiting": "正在重连，最多等待网络/VPN {{duration}}...",
+        "defaultHint": "请检查代理/VPN和网络后刷新或重新打开连接。",
+        "failed": "自动重连失败",
+        "abandoned": "自动重连已放弃",
+        "durationZero": "0秒",
+        "durationSeconds": "{{value}}秒",
+        "durationMinutes": "{{value}}分钟",
+        "targetHost": "目标主机",
+        "internalError": "连接发生异常并已断开，自动重连失败。请重试连接，或查看日志获取详细信息。",
+        "authFailed": "SSH 认证失败：请检查用户名/密码/私钥与权限设置。",
+        "proxyUnavailable": "代理不可用：请检查本地代理/VPN是否已启动，并确认代理地址与端口可访问。",
+        "connectionRefused": "连接被拒绝：无法连接到 {{host}}:{{port}}。请检查端口、服务状态与防火墙。",
+        "hostUnresolved": "主机名无法解析：{{host}}。请检查主机名/DNS/网络。",
+        "connectionTimedOut": "连接超时：{{host}}:{{port}}。请检查网络质量或服务器负载。",
+        "connectionReset": "连接被远端重置：网络不稳定或服务器主动断开。",
+        "pipeClosed": "连接管道已关闭：网络不稳定或会话被中止。",
+        "disconnected": "连接已断开，自动重连失败，请重新连接。",
+        "connectionTimeoutShort": "连接超时",
+        "connectionClosedShort": "连接已关闭"
+      },
+      "update": {
+        "readyTitle": "更新已就绪",
+        "macMessage": "更新包已打开。请将应用拖到“应用程序”文件夹以完成更新。",
+        "linuxAppImageMessage": "更新已下载。请用新的 AppImage 文件替换当前应用。",
+        "ok": "确定"
+      },
+      "externalLink": {
+        "title": "受限的外部链接",
+        "message": "此链接使用了受限协议。",
+        "detail": "来源：{{source}}\nURL：{{url}}\n\n仍要打开吗？",
+        "deny": "拒绝（推荐）",
+        "open": "仍然打开"
+      },
+      "desktop": {
+        "openFileSingle": "收到本地文件打开请求：{{name}}",
+        "openFileMultiple": "收到 {{count}} 个本地文件打开请求"
       }
     }
   }

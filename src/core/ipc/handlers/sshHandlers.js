@@ -17,10 +17,8 @@ const {
   getTerminalProcessExitChannel,
   getTerminalProcessOutputChannel,
 } = require("../schema/channels");
-const {
-  classifyConnectionFailure,
-  isZhLanguage,
-} = require("../../../shared/connectionErrorAdvice");
+const { classifyConnectionFailure } = require("../../../shared/connectionErrorAdvice");
+const { resolveLanguage, t: mainT } = require("../../../shared/mainI18n");
 const { isAuthErrorMessage } = require("../../../shared/errorClassification");
 const { generateId } = require("../../../shared/common");
 const {
@@ -38,62 +36,46 @@ const {
 } = require("../../window/windowManager");
 
 function getTerminalLanguage(config) {
-  return config?.language || "zh-CN";
+  return resolveLanguage(config);
 }
 
 function getTerminalText(config, key, params = {}) {
-  const isZh = isZhLanguage(getTerminalLanguage(config));
-  const messages = {
-    reconnectRecoveryStarted: isZh
-      ? "正在恢复终端..."
-      : "Restoring terminal...",
-    reconnectRecoverySucceeded: isZh ? "终端已恢复" : "Terminal restored",
-    reconnectRecoveryFailedDefault: isZh
-      ? "终端恢复失败，请刷新连接。"
-      : "Terminal restore failed. Refresh the connection.",
-    reconnectRecoveryFailedHint: isZh
-      ? "连接已恢复，但终端恢复失败。"
-      : "Connection recovered, but terminal restore failed.",
-    sshDisconnected: isZh
-      ? "SSH已断开，正在重连"
-      : "SSH disconnected, reconnecting",
-    telnetClosed: isZh ? "Telnet连接已关闭" : "Telnet connection closed",
-    telnetTimeout: isZh ? "Telnet连接超时" : "Telnet connection timed out",
-  };
+  const language = getTerminalLanguage(config);
+  const options = { lng: language, ...params };
 
-  if (key === "reconnectRecoveryFailed") {
-    return isZh
-      ? `终端恢复失败: ${params.message}`
-      : `Terminal restore failed: ${params.message}`;
+  // Keep mainT("...") keys as static string literals for i18n coverage checks.
+  switch (key) {
+    case "reconnectRecoveryStarted":
+      return mainT("mainProcess.terminal.reconnectRecoveryStarted", options);
+    case "reconnectRecoverySucceeded":
+      return mainT("mainProcess.terminal.reconnectRecoverySucceeded", options);
+    case "reconnectRecoveryFailedDefault":
+      return mainT(
+        "mainProcess.terminal.reconnectRecoveryFailedDefault",
+        options,
+      );
+    case "reconnectRecoveryFailedHint":
+      return mainT("mainProcess.terminal.reconnectRecoveryFailedHint", options);
+    case "reconnectRecoveryFailed":
+      return mainT("mainProcess.terminal.reconnectRecoveryFailed", options);
+    case "sshDisconnected":
+      return mainT("mainProcess.terminal.sshDisconnected", options);
+    case "telnetClosed":
+      return mainT("mainProcess.terminal.telnetClosed", options);
+    case "telnetTimeout":
+      return mainT("mainProcess.terminal.telnetTimeout", options);
+    case "droppedBytesWarning":
+      return mainT("mainProcess.terminal.droppedBytesWarning", options);
+    case "sshConnected":
+    case "sshConnectedReused":
+      return mainT("mainProcess.terminal.sshConnected", options);
+    case "telnetError":
+      return mainT("mainProcess.terminal.telnetError", options);
+    case "telnetConnectedReused":
+      return mainT("mainProcess.terminal.telnetConnectedReused", options);
+    default:
+      return key;
   }
-
-  if (key === "droppedBytesWarning") {
-    return isZh
-      ? `输出过快，已丢弃 ${params.dropped} 字节（请适当降低输出速率）`
-      : `Output is too fast. Dropped ${params.dropped} bytes. Please reduce the output rate.`;
-  }
-
-  if (key === "sshConnected") {
-    return isZh ? `${params.host} 已连接` : `${params.host} connected`;
-  }
-
-  if (key === "sshConnectedReused") {
-    return isZh ? `${params.host} 已连接` : `${params.host} connected`;
-  }
-
-  if (key === "telnetError") {
-    return isZh
-      ? `Telnet连接错误: ${params.message}`
-      : `Telnet connection error: ${params.message}`;
-  }
-
-  if (key === "telnetConnectedReused") {
-    return isZh
-      ? `${params.host} Telnet连接已建立（复用现有连接）`
-      : `${params.host} Telnet connection established (reused existing connection)`;
-  }
-
-  return messages[key] || key;
 }
 
 function extractTabIdFromConnectionKey(connectionKey) {

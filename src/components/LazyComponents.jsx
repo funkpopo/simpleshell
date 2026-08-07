@@ -1,32 +1,46 @@
 import React, { Suspense, lazy, memo } from "react";
+import { useTranslation } from "react-i18next";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import LoadingFallback from "./LoadingFallback.jsx";
 import { SettingsSkeleton, SidebarLazySkeleton } from "./SkeletonLoader.jsx";
 
+const ComponentLoadError = memo(({ getName }) => {
+  const { t } = useTranslation();
+  return (
+    <div style={{ padding: "20px", textAlign: "center" }}>
+      {t("common.componentLoadFailed", {
+        name: getName(t),
+      })}
+    </div>
+  );
+});
+ComponentLoadError.displayName = "ComponentLoadError";
+
 // React 19 优化：使用 memo 包装懒加载组件工厂函数，减少不必要的重渲染
+// getFallbackMessage / getComponentName 必须用静态 t("...") 字面量 key，便于 i18n 检查。
 const createLazyComponent = (
   importFn,
-  fallbackMessage,
-  componentName,
+  getFallbackMessage,
+  getComponentName,
   SkeletonComponent,
 ) => {
   const LazyComponent = lazy(() =>
     importFn().catch((error) => {
-      console.error(`Failed to load ${componentName}:`, error);
+      console.error("Failed to load lazy component:", error);
       return {
-        default: () => (
-          <div style={{ padding: "20px", textAlign: "center" }}>
-            {componentName}组件加载失败，请刷新页面重试
-          </div>
-        ),
+        default: () => <ComponentLoadError getName={getComponentName} />,
       };
     }),
   );
 
   // React 19: memo 优化包装器组件，避免 props 未变化时的重渲染
   return memo((props) => {
+    const { t } = useTranslation();
+    const fallbackMessage = getFallbackMessage(t);
+    const componentName = getComponentName(t);
+
     const fallback = SkeletonComponent ? (
-      <SkeletonComponent {...props} />
+      <SkeletonComponent {...props} loadingLabel={fallbackMessage} />
     ) : (
       <LoadingFallback message={fallbackMessage} />
     );
@@ -43,13 +57,9 @@ const createLazyComponent = (
 
 // 侧栏 fallback 必须与 SidebarPanel 保持同样的根布局；业务差异只存在于
 // 骨架内容，不能改变首次展开时的宽高、背景或滑入轨迹。
-const createSidebarFallback = (variant, loadingLabel) => {
+const createSidebarFallback = (variant) => {
   const SidebarFallback = (props) => (
-    <SidebarLazySkeleton
-      {...props}
-      variant={variant}
-      loadingLabel={loadingLabel}
-    />
+    <SidebarLazySkeleton {...props} variant={variant} />
   );
   SidebarFallback.displayName = `${variant}SidebarFallback`;
   return memo(SidebarFallback);
@@ -57,57 +67,57 @@ const createSidebarFallback = (variant, loadingLabel) => {
 
 const createLazySidebarComponent = (
   importFn,
-  fallbackMessage,
-  componentName,
+  getFallbackMessage,
+  getComponentName,
   variant = "list",
 ) =>
   createLazyComponent(
     importFn,
-    fallbackMessage,
-    componentName,
-    createSidebarFallback(variant, fallbackMessage),
+    getFallbackMessage,
+    getComponentName,
+    createSidebarFallback(variant),
   );
 
 // 使用工厂函数创建懒加载组件
 export const ResourceMonitorWithSuspense = createLazySidebarComponent(
   () => import("./ResourceMonitor.jsx"),
-  "正在加载资源监控...",
-  "资源监控",
+  (t) => t("common.skeleton.resourceMonitor"),
+  (t) => t("common.componentNames.resourceMonitor"),
   "resource",
 );
 
 export const IPAddressQueryWithSuspense = createLazySidebarComponent(
   () => import("./IPAddressQuery.jsx"),
-  "正在加载IP地址查询...",
-  "IP地址查询",
+  (t) => t("common.skeleton.ipAddressQuery"),
+  (t) => t("common.componentNames.ipAddressQuery"),
   "ipAddress",
 );
 
 export const SettingsWithSuspense = createLazyComponent(
   () => import("./Settings.jsx"),
-  "正在加载设置...",
-  "设置",
+  (t) => t("common.skeleton.settings"),
+  (t) => t("common.componentNames.settings"),
   SettingsSkeleton,
 );
 
 export const CommandHistoryWithSuspense = createLazySidebarComponent(
   () => import("./CommandHistory.jsx"),
-  "正在加载命令历史...",
-  "命令历史",
+  (t) => t("common.skeleton.commandHistory"),
+  (t) => t("common.componentNames.commandHistory"),
   "history",
 );
 
 export const ShortcutCommandsWithSuspense = createLazySidebarComponent(
   () => import("./ShortcutCommands.jsx"),
-  "正在加载快捷命令...",
-  "快捷命令",
+  (t) => t("common.skeleton.shortcutCommands"),
+  (t) => t("common.componentNames.shortcutCommands"),
   "shortcut",
 );
 
 export const LocalTerminalSidebarWithSuspense = createLazySidebarComponent(
   () => import("./LocalTerminalSidebar.jsx"),
-  "正在加载本地终端...",
-  "本地终端",
+  (t) => t("common.skeleton.localTerminal"),
+  (t) => t("common.componentNames.localTerminal"),
   "localTerminal",
 );
 
@@ -116,47 +126,47 @@ export const LocalTerminalSidebarWithSuspense = createLazySidebarComponent(
 // 触发动态 import。
 export const WebTerminalWithSuspense = createLazyComponent(
   () => import("./WebTerminal.jsx"),
-  "正在加载终端...",
-  "终端",
+  (t) => t("common.skeleton.webTerminal"),
+  (t) => t("common.componentNames.terminal"),
 );
 
 export const ConnectionManagerWithSuspense = createLazySidebarComponent(
   () => import("./ConnectionManager.jsx"),
-  "正在加载连接管理器...",
-  "连接管理器",
+  (t) => t("common.skeleton.connections"),
+  (t) => t("common.componentNames.connectionManager"),
   "connection",
 );
 
 export const FileManagerWithSuspense = createLazySidebarComponent(
   () => import("./FileManager.jsx"),
-  "正在加载文件管理器...",
-  "文件管理器",
+  (t) => t("common.skeleton.fileManager"),
+  (t) => t("common.componentNames.fileManager"),
   "file",
 );
 
 export const SecurityToolsWithSuspense = createLazySidebarComponent(
   () => import("./SecurityTools.jsx"),
-  "正在加载安全工具...",
-  "安全工具",
+  (t) => t("common.skeleton.securityTools"),
+  (t) => t("common.componentNames.securityTools"),
   "security",
 );
 
 export const AIChatWindowWithSuspense = createLazyComponent(
   () => import("./AIChatWindow.jsx"),
-  "正在加载 AI 助手...",
-  "AI 助手",
+  (t) => t("common.skeleton.aiChat"),
+  (t) => t("common.componentNames.aiAssistant"),
 );
 
 export const FirstRunDialogWithSuspense = createLazyComponent(
   () => import("./FirstRunDialog.jsx"),
-  "正在加载首次运行向导...",
-  "首次运行向导",
+  (t) => t("common.skeleton.firstRun"),
+  (t) => t("common.componentNames.firstRun"),
 );
 
 export const AboutDialogWithSuspense = createLazyComponent(
   () => import("./AboutDialog.jsx"),
-  "正在加载关于信息...",
-  "关于对话框",
+  (t) => t("common.skeleton.about"),
+  (t) => t("common.componentNames.about"),
 );
 
 // 仅在用户表现出打开意图时预加载。不要在启动/空闲阶段批量调用这些函数，

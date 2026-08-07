@@ -5,7 +5,11 @@ const {
   IPC_EVENT_CHANNELS,
   IPC_REQUEST_CHANNELS,
 } = require("../schema/channels");
-const { isZhLanguage } = require("../../../shared/connectionErrorAdvice");
+const {
+  t: mainT,
+  normalizeLanguage,
+  resolveLanguage,
+} = require("../../../shared/mainI18n");
 const { extractTabIdFromSessionKey } = require("../../utils/ssh-utils");
 const { broadcastToAllWindows } = require("../../window/windowManager");
 
@@ -24,14 +28,13 @@ function getSessionLanguage(reconnectionManager, sessionId) {
   const session =
     reconnectionManager.sessions?.get?.(sessionId) ||
     reconnectionManager.getSessionStatus?.(sessionId);
-  return session?.config?.language || "zh-CN";
+  return resolveLanguage(session?.config || session);
 }
 
 function getDefaultReconnectHint(language) {
-  if (!isZhLanguage(language)) {
-    return "Check proxy/VPN/network and refresh or reopen the connection.";
-  }
-  return "请检查代理/VPN和网络后刷新或重新打开连接。";
+  return mainT("mainProcess.reconnect.defaultHint", {
+    lng: normalizeLanguage(language),
+  });
 }
 
 function resolveMaxAttempts(reconnectionManager, sessionId, fallback = null) {
@@ -298,9 +301,9 @@ const RECONNECT_EVENT_FORWARDERS = [
       const finalError =
         error ||
         reason ||
-        (isZhLanguage(language)
-          ? "自动重连已放弃"
-          : "Automatic reconnect abandoned");
+        mainT("mainProcess.reconnect.abandoned", {
+          lng: normalizeLanguage(language),
+        });
       return normalizeReconnectPayload(
         boundReconnectionManager,
         {

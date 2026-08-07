@@ -115,11 +115,19 @@ function sendDesktopOpenFiles(filePaths = []) {
   }
 
   if (Notification.isSupported()) {
+    const { t: mainT, getUiLanguage } = require("../../shared/mainI18n");
+    const lng = getUiLanguage(configService);
     const [firstPath] = normalizedPaths;
     const body =
       normalizedPaths.length === 1
-        ? `Received local file open request: ${path.basename(firstPath)}`
-        : `Received ${normalizedPaths.length} local file open requests`;
+        ? mainT("mainProcess.desktop.openFileSingle", {
+            lng,
+            name: path.basename(firstPath),
+          })
+        : mainT("mainProcess.desktop.openFileMultiple", {
+            lng,
+            count: normalizedPaths.length,
+          });
     new Notification({
       title: PRODUCT_NAME,
       body,

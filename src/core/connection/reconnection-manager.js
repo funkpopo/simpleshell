@@ -13,7 +13,7 @@ const {
   calculateRetryDelay,
   createManagedSshConnection,
 } = require("./ssh-retry-helper");
-const { isZhLanguage } = require("../../shared/connectionErrorAdvice");
+const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
 
 // 重连状态
 const RECONNECT_STATE = {
@@ -32,10 +32,10 @@ const FAILURE_PATTERN_GUARD = {
 };
 
 function buildMaxRetriesMessage(maxRetries, language) {
-  if (!isZhLanguage(language)) {
-    return `Reached the maximum retry count (${maxRetries}). Check proxy/VPN/network and refresh or reopen the connection.`;
-  }
-  return `达到最大重试次数（${maxRetries}次），请检查代理/VPN/网络后刷新或重新打开连接。`;
+  return mainT("mainProcess.reconnect.maxRetries", {
+    lng: normalizeLanguage(language),
+    maxRetries,
+  });
 }
 
 class ReconnectionManager extends EventEmitter {
@@ -442,57 +442,48 @@ class ReconnectionManager extends EventEmitter {
   formatReconnectErrorForUser(error, config) {
     const msg = String(error?.message || "");
     const code = String(error?.code || "");
-    const isZh = isZhLanguage(config?.language);
-    const host = config?.host || (isZh ? "目标主机" : "target host");
+    const lng = normalizeLanguage(config?.language);
+    const host =
+      config?.host || mainT("mainProcess.reconnect.targetHost", { lng });
     const port = config?.port || 22;
 
     // 这一类属于开发/内部异常，不应直接暴露给用户
     if (msg.includes("is not a function") || msg.includes("undefined")) {
-      return isZh
-        ? "连接发生异常并已断开，自动重连失败。请重试连接，或查看日志获取详细信息。"
-        : "The connection failed due to an internal error and automatic reconnect failed. Retry the connection or check logs for details.";
+      return mainT("mainProcess.reconnect.internalError", { lng });
     }
 
     // SSH2 常见错误映射
     if (msg.includes("All configured authentication methods failed")) {
-      return isZh
-        ? "SSH 认证失败：请检查用户名/密码/私钥与权限设置。"
-        : "SSH authentication failed. Check username, password, private key, and permission settings.";
+      return mainT("mainProcess.reconnect.authFailed", { lng });
     }
     if (code === "EPROXYUNAVAILABLE" || msg.includes("proxy")) {
-      return isZh
-        ? "代理不可用：请检查本地代理/VPN是否已启动，并确认代理地址与端口可访问。"
-        : "Proxy unavailable. Check whether the local proxy/VPN is running and whether the proxy address and port are reachable.";
+      return mainT("mainProcess.reconnect.proxyUnavailable", { lng });
     }
     if (code === "ECONNREFUSED" || msg.includes("connect ECONNREFUSED")) {
-      return isZh
-        ? `连接被拒绝：无法连接到 ${host}:${port}。请检查端口、服务状态与防火墙。`
-        : `Connection refused: cannot connect to ${host}:${port}. Check the port, service status, and firewall.`;
+      return mainT("mainProcess.reconnect.connectionRefused", {
+        lng,
+        host,
+        port,
+      });
     }
     if (code === "ENOTFOUND" || msg.includes("getaddrinfo ENOTFOUND")) {
-      return isZh
-        ? `主机名无法解析：${host}。请检查主机名/DNS/网络。`
-        : `Hostname could not be resolved: ${host}. Check hostname, DNS, and network.`;
+      return mainT("mainProcess.reconnect.hostUnresolved", { lng, host });
     }
     if (code === "ETIMEDOUT" || msg.toLowerCase().includes("timeout")) {
-      return isZh
-        ? `连接超时：${host}:${port}。请检查网络质量或服务器负载。`
-        : `Connection timed out: ${host}:${port}. Check network quality or server load.`;
+      return mainT("mainProcess.reconnect.connectionTimedOut", {
+        lng,
+        host,
+        port,
+      });
     }
     if (code === "ECONNRESET" || msg.includes("ECONNRESET")) {
-      return isZh
-        ? "连接被远端重置：网络不稳定或服务器主动断开。"
-        : "Connection reset by remote host. The network may be unstable or the server disconnected.";
+      return mainT("mainProcess.reconnect.connectionReset", { lng });
     }
     if (code === "EPIPE" || msg.includes("EPIPE")) {
-      return isZh
-        ? "连接管道已关闭：网络不稳定或会话被中止。"
-        : "Connection pipe closed. The network may be unstable or the session was interrupted.";
+      return mainT("mainProcess.reconnect.pipeClosed", { lng });
     }
 
-    return isZh
-      ? "连接已断开，自动重连失败，请重新连接。"
-      : "Connection disconnected and automatic reconnect failed. Please reconnect.";
+    return mainT("mainProcess.reconnect.disconnected", { lng });
   }
 
   _shouldStopReconnectByFailurePattern(session, failureReason, maxRetries = 0) {
@@ -1415,9 +1406,9 @@ class ReconnectionManager extends EventEmitter {
           finishReject(
             new Error(
               error ||
-                (isZhLanguage(session?.config?.language)
-                  ? "自动重连失败"
-                  : "Automatic reconnect failed"),
+                mainT("mainProcess.reconnect.failed", {
+                  lng: normalizeLanguage(session?.config?.language),
+                }),
             ),
           );
         }
@@ -1428,9 +1419,9 @@ class ReconnectionManager extends EventEmitter {
           finishReject(
             new Error(
               reason ||
-                (isZhLanguage(session?.config?.language)
-                  ? "自动重连已放弃"
-                  : "Automatic reconnect abandoned"),
+                mainT("mainProcess.reconnect.abandoned", {
+                  lng: normalizeLanguage(session?.config?.language),
+                }),
             ),
           );
       };

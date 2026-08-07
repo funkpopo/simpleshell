@@ -2471,7 +2471,7 @@ const FileManager = memo(
     const displayFileRows = useMemo(() => {
       return displayFiles.map((file, index) => {
         const formattedDate = file?.modifyTime
-          ? formatDate(new Date(file.modifyTime))
+          ? formatDate(new Date(file.modifyTime), { t })
           : "";
         const formattedSize =
           file?.size && !file?.isDirectory
@@ -6105,7 +6105,7 @@ const FileManager = memo(
                 }}
               >
                 {t("fileManager.statusBar.lastRefresh", {
-                  time: formatLastRefreshTime(lastRefreshTime),
+                  time: formatLastRefreshTime(lastRefreshTime, { t }),
                 })}
               </Box>
             </Box>
@@ -6802,9 +6802,9 @@ const FileManager = memo(
         )}
 
         {showPreview && filePreview && (
-          <ErrorBoundary componentName="文件预览">
+          <ErrorBoundary componentName={t("filePreview.title")}>
             <Suspense
-              fallback={<LoadingFallback message="正在加载文件预览..." />}
+              fallback={<LoadingFallback message={t("filePreview.loading")} />}
             >
               <FilePreview
                 open={showPreview}

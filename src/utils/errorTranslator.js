@@ -265,7 +265,7 @@ export function translateError(error) {
   const originalMessage =
     typeof error === "string"
       ? error
-      : error?.message || error?.error || "未知错误";
+      : error?.message || error?.error || i18n.t("common.unknownError");
 
   if (errorType) {
     const knownError = getKnownErrorTranslation(

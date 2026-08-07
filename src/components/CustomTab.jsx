@@ -3,6 +3,7 @@ import PropTypes from "prop-types";
 import { Box, Typography, Tab, Tooltip } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
+import { useTranslation } from "react-i18next";
 import { findGroupByTab } from "../core/syncInputGroups";
 
 // 拖拽指示器与重连动画的 keyframes 定义在 styles/global.css 中
@@ -35,6 +36,7 @@ const areEqual = (prevProps, nextProps) => {
 
 // 自定义标签页组件
 const CustomTab = memo((props) => {
+  const { t } = useTranslation();
   const {
     label,
     onClose,
@@ -229,7 +231,9 @@ const CustomTab = memo((props) => {
           >
             {/* 分组圆点与编号 */}
             {group && (
-              <Tooltip title={`同步分组 ${group.groupId}`}>
+              <Tooltip
+                title={t("tabMenu.syncGroup", { groupId: group.groupId })}
+              >
                 <Box
                   sx={{
                     width: 14, // 更紧凑

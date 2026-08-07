@@ -1,15 +1,5 @@
 {
   "translation": {
-    "snackbar": {
-      "undo": "Undo",
-      "tabMoved": "Tab order updated"
-    },
-    "notification": {
-      "success": "Success",
-      "error": "Error",
-      "info": "Information",
-      "warning": "Warning"
-    },
     "settings": {
       "title": "Settings",
       "general": "General",
@@ -29,23 +19,18 @@
       "save": "Save",
       "saveSuccess": "Settings saved successfully",
       "saveError": "Failed to save settings. Please try again.",
-      "editorFont": "File Preview/Edit Font",
       "fonts": {
-        "system": "System Default",
         "fira-code": "Fira Code",
         "consolas": "Consolas",
-        "space-mono": "Space Mono",
-        "sample": "Hello World! 123"
+        "space-mono": "Space Mono"
       },
       "terminalFontSectionTitle": "Terminal Font Settings",
-      "terminalFontLabel": "Terminal Font",
       "terminalFontSizeLabel": "Terminal Font Size",
       "terminalAndLogs": "Terminal & Logs",
       "terminalFontFamily": "Terminal Font Family",
       "fontWeight": "Weight",
       "terminalLineHeight": "Line Height",
       "terminalScrollbackLines": "Terminal Scrollback Lines",
-      "terminalScrollbackHelper": "1000-500000; aligned with buffer usage metrics in performance monitoring",
       "transferDisplay": "File Transfer Display",
       "transferDisplayBottom": "Bottom Bar Mode",
       "transferDisplaySidebar": "Sidebar Mode",
@@ -55,11 +40,8 @@
         "consolasDescription": "System default monospace font"
       },
       "logSettingsTitle": "Log Settings",
-      "logLevelLabel": "Log Level",
       "logFileSizeLimitLabel": "Log File Size Limit",
       "logCleanupIntervalLabel": "Log Cleanup Interval",
-      "logCleanupIntervalHelper": "Clean up log entries older than specified days, dual cleanup by size and time",
-      "days": "days",
       "logLevels": {
         "debug": "Debug",
         "info": "Info",
@@ -67,7 +49,6 @@
         "error": "Error"
       },
       "backupRetentionLabel": "Config Backup Retention",
-      "backupRetentionHelper": "Backups older than this many days will be automatically cleaned up",
       "openLogDirectory": "Open Log Directory",
       "exportDiagnostics": "Export Diagnostics",
       "logDirectoryOpened": "Log directory opened",
@@ -113,9 +94,7 @@
       "needsRestart": "Needs Restart",
       "externalEditor": {
         "title": "External Editor",
-        "commandLabel": "Launch Command",
         "commandPlaceholder": "e.g. C:\\Users\\xxx\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\notebook.exe",
-        "commandHelper": "Provide the executable path or command. %FILE% will be replaced with the downloaded file path. Leave empty to open with the system default application.",
         "enable": "Use external editor"
       },
       "security": {
@@ -198,16 +177,12 @@
     },
     "app": {
       "cannotOpenLinkAlert": "Cannot open link. Please visit manually: {{url}}",
-      "unknownUpdateError": "An unknown error occurred while checking for updates",
-      "cannotSendCommandConsole": "Cannot send command: {{reason}}",
       "openFilesReceived": "Received {{count}} local file open request(s): {{firstPath}}",
-      "apiNotFound": "API not found",
-      "processIdNotFound": "Process ID not found"
+      "apiNotFound": "API not found"
     },
     "menu": {
       "settings": "Settings",
       "about": "About",
-      "checkForUpdates": "Check for Updates",
       "openLogs": "Open Logs",
       "exportDiagnostics": "Export Diagnostics",
       "feedback": "Report Issue",
@@ -231,7 +206,6 @@
       "reconnectStopped": "Automatic reconnect stopped",
       "reconnectPaused": "Automatic reconnect paused",
       "retryAttempts": "Completed Retries: {{attempts}} / {{maxAttempts}}",
-      "nextRetryIn": "Next retry in {{seconds}}s",
       "failureReasonLabel": "Failure type: {{reason}}",
       "failureReasonProxyUnavailable": "Proxy unavailable",
       "failureReasonConnectionRefused": "Connection refused",
@@ -242,14 +216,13 @@
       "failureReasonTimeout": "Connection timeout",
       "failureReasonResource": "Resource limit",
       "failureReasonUnknown": "Unknown",
-      "retryWindowRemaining": "Reconnect window remaining: {{seconds}}s",
       "lastError": "Last error: {{error}}",
-      "reconnectHint": "Hint: {{hint}}",
       "pauseReconnect": "Pause Auto Reconnect",
       "resumeReconnect": "Resume Auto Reconnect",
       "pauseReconnectDone": "Automatic reconnect paused",
       "resumeReconnectDone": "Automatic reconnect resumed",
-      "reconnectSessionRestoreFailedHint": "The transport connection recovered, but the interactive terminal session could not be restored. Refresh the connection."
+      "reconnectSessionRestoreFailedHint": "The transport connection recovered, but the interactive terminal session could not be restored. Refresh the connection.",
+      "syncGroup": "Sync group {{groupId}}"
     },
     "about": {
       "title": "About SimpleShell",
@@ -258,15 +231,9 @@
       "author": "Author",
       "email": "Email",
       "updateCheck": "Check for Updates",
-      "checkingUpdate": "Checking for updates...",
-      "latestVersion": "You are using the latest version",
-      "newVersion": "New version available: {{version}}. Click button below for details",
-      "updateError": "Could not check for updates: {{error}}",
       "checkUpdateButton": "Check for Updates",
-      "viewLatestButton": "View Latest Version",
       "close": "Close",
-      "visitGithub": "Visit GitHub Release Page",
-      "updateNotAvailable": "Cannot check for updates: Update API not found"
+      "visitGithub": "Visit GitHub Release Page"
     },
     "sidebar": {
       "theme": "Toggle Theme",
@@ -300,7 +267,6 @@
       "error": "Error",
       "excellent": "Excellent",
       "good": "Good",
-      "fair": "Fair",
       "degraded": "Degraded",
       "poor": "Poor",
       "bad": "Bad",
@@ -313,11 +279,9 @@
       "inputPlaceholder": "Enter IP address...",
       "queryButton": "Query",
       "queryYourIP": "Query Your IP",
-      "loading": "Querying...",
       "ipInfo": "IP Information",
       "location": "Location",
       "noData": "No data available",
-      "errorOccurred": "Error occurred",
       "retry": "Retry",
       "networkError": "Network connection error, please check network settings",
       "invalidIp": "Invalid IP address",
@@ -326,7 +290,6 @@
       "province": "Province/State",
       "city": "City",
       "isp": "ISP",
-      "organization": "Organization",
       "historyTitle": "Query History",
       "toggleHistory": "Toggle history",
       "clearHistory": "Clear query history",
@@ -336,22 +299,14 @@
     },
     "welcome": {
       "title": "Welcome to SimpleShell",
-      "subtitle": "Get Started",
-      "newTerminal": "New Terminal",
       "newConnection": "New SSH Connection",
-      "recentConnections": "Recent Connections",
       "lastConnectedServers": "Last Connected Servers",
-      "tips": "Tips",
-      "description": "A lightweight terminal emulator with a simple interface and powerful features.",
       "emptyDescription": "Add an SSH host first. After saving it, you can open a terminal immediately or organize it in Connection Manager.",
       "exampleTitle": "Example connection fields",
       "exampleAuth": "Password or private key",
       "emptyHint": "The sample address is not saved. Use your own server host, port, username, and authentication method."
     },
     "terminal": {
-      "connecting": "Connecting to {{host}}...",
-      "connected": "Connected to {{host}}",
-      "connectionFailed": "Connection failed: {{error}}",
       "welcome": "Welcome"
     },
     "webTerminal": {
@@ -388,12 +343,9 @@
         "helpHint": "Type \"help\" for available commands."
       },
       "offlineBuffer": {
-        "title": "Offline input buffer",
         "buffering": "Buffering offline · {{chars}} chars",
         "send": "Send buffer",
-        "clear": "Clear",
-        "pasteBlocked": "Paste large content after reconnect completes",
-        "full": "Offline input buffer is full; wait for reconnect"
+        "clear": "Clear"
       }
     },
     "connectionManager": {
@@ -402,7 +354,6 @@
       "newGroup": "New Group",
       "search": "Search...",
       "noConnections": "No Connections",
-      "noGroups": "No Groups",
       "loadFailed": "Failed to load connection configuration",
       "reloadFailed": "Failed to reload connection configuration",
       "saveFailed": "Failed to save connection configuration",
@@ -416,17 +367,13 @@
       "deleteConnectionConfirm": "Are you sure you want to delete connection \"{{name}}\"?",
       "cannotUndo": "This action cannot be undone.",
       "delete": "Delete",
-      "cancel": "Cancel",
       "proxyConfig": "Proxy Configuration (Optional)",
       "enableProxy": "Enable Proxy",
       "useSystemProxy": "Use System Default Proxy",
-      "proxyType": "Proxy Type",
       "proxyHost": "Proxy Host",
       "proxyPort": "Port",
       "proxyUsername": "Proxy Username (Optional)",
       "proxyPassword": "Proxy Password (Optional)",
-      "hostPlaceholder": "e.g., 127.0.0.1",
-      "portPlaceholder": "8080",
       "protocol": "Protocol",
       "hostAddress": "Host Address",
       "port": "Port",
@@ -444,7 +391,6 @@
       "os": "Operating System",
       "contextCopyIp": "Copy IP address",
       "contextAddConnection": "Add connection",
-      "ipCopied": "Copied to clipboard",
       "copyFailed": "Copy failed",
       "testConnection": "Test Connection",
       "testing": "Testing...",
@@ -486,44 +432,78 @@
         "privateKeyUnreadable": "Private key file is not readable.",
         "privateKeyUnsafe": "Private key permissions are {{permissions}}. Only the current user should be able to read it.",
         "privateKeyOk": "Private key file is readable and permissions look valid."
-      }
+      },
+      "editConnection": "Edit Connection",
+      "editGroup": "Edit Group"
     },
     "common": {
       "cancel": "Cancel",
       "save": "Save",
       "delete": "Delete",
       "edit": "Edit",
-      "add": "Add",
-      "update": "Update",
       "confirm": "Confirm",
       "name": "Name",
-      "description": "Description",
       "expand": "Expand",
       "collapse": "Collapse",
       "close": "Close",
       "clearSearch": "Clear Search",
-      "moreActions": "More Actions",
       "showPassword": "Show Password",
       "hidePassword": "Hide Password",
-      "later": "Later",
-      "ok": "OK",
-      "yes": "Yes",
-      "no": "No",
       "none": "None",
       "other": "Other",
       "loading": "Loading...",
       "refresh": "Refresh",
       "copiedToClipboard": "Copied to clipboard",
-      "operationFailed": "Operation failed",
-      "submitFailed": "Submit failed",
       "skeleton": {
         "loading": "Loading content...",
-        "terminal": "Initializing terminal...",
-        "fileManager": "Loading file list...",
+        "terminal": "Loading terminal...",
+        "fileManager": "Loading file manager...",
         "settings": "Loading settings...",
-        "connections": "Loading connection list...",
-        "aiChat": "Initializing AI assistant..."
-      }
+        "connections": "Loading connection manager...",
+        "aiChat": "Loading AI assistant...",
+        "resourceMonitor": "Loading resource monitor...",
+        "ipAddressQuery": "Loading IP address query...",
+        "commandHistory": "Loading command history...",
+        "shortcutCommands": "Loading shortcut commands...",
+        "localTerminal": "Loading local terminal...",
+        "securityTools": "Loading security tools...",
+        "firstRun": "Loading first-run wizard...",
+        "about": "Loading about dialog...",
+        "webTerminal": "Loading terminal..."
+      },
+      "componentLoadFailed": "Failed to load {{name}}. Please refresh and try again.",
+      "componentNames": {
+        "resourceMonitor": "Resource Monitor",
+        "ipAddressQuery": "IP Address Query",
+        "settings": "Settings",
+        "commandHistory": "Command History",
+        "shortcutCommands": "Shortcut Commands",
+        "localTerminal": "Local Terminal",
+        "terminal": "Terminal",
+        "connectionManager": "Connection Manager",
+        "fileManager": "File Manager",
+        "securityTools": "Security Tools",
+        "aiAssistant": "AI Assistant",
+        "firstRun": "First-run Wizard",
+        "about": "About Dialog"
+      },
+      "date": {
+        "today": "Today",
+        "justNow": "Just now",
+        "secondsAgo": "{{count}}s ago",
+        "minutesAgo": "{{count}}m ago",
+        "unknown": "Unknown",
+        "weekdays": {
+          "0": "Sun",
+          "1": "Mon",
+          "2": "Tue",
+          "3": "Wed",
+          "4": "Thu",
+          "5": "Fri",
+          "6": "Sat"
+        }
+      },
+      "unknownError": "Unknown error"
     },
     "shortcutCommands": {
       "title": "Shortcut Commands",
@@ -532,7 +512,6 @@
       "editCommand": "Edit Command",
       "commandName": "Command Name",
       "command": "Command",
-      "description": "Description",
       "category": "Category",
       "uncategorized": "Uncategorized",
       "loading": "Loading...",
@@ -547,7 +526,6 @@
       "color": "Color",
       "edit": "Edit",
       "delete": "Delete",
-      "sendCommand": "Send Command",
       "sendAndExecute": "Send and Execute",
       "copyCommand": "Copy Command",
       "categoryActions": "Category Actions",
@@ -563,7 +541,6 @@
       "noCommandsFound": "No matching commands found",
       "totalCommands": "{{count}} commands total",
       "commandSent": "Command sent: {{command}}",
-      "commandCopied": "Command copied to clipboard",
       "copyFailed": "Copy failed",
       "sendCommand": "Send Command",
       "copyCommand": "Copy Command",
@@ -588,34 +565,16 @@
       "enterCommand": "Enter command...",
       "editNote": "Edited command will be saved as shortcut command",
       "sendCommandHandlerMissing": "Send command handler not provided",
-      "sendFailed": "Send failed",
       "noSshConnection": "Please establish SSH connection first",
-      "notSshTab": "Current tab is not an SSH connection"
+      "notSshTab": "Current tab is not an SSH connection",
+      "loadFailed": "Failed to load command history",
+      "loadError": "Error loading command history",
+      "sendFailedWithError": "Send failed: {{error}}",
+      "totalWithSearch": " / {{total}} total"
     },
     "aiAssistant": {
-      "title": "AI Assistant",
-      "placeholder": "Enter your question...",
-      "send": "Send",
-      "clear": "Clear Chat",
-      "settings": "Settings",
-      "connecting": "Connecting...",
-      "thinking": "Thinking...",
-      "error": "Error occurred",
-      "retry": "Retry",
-      "copy": "Copy",
-      "copied": "Copied",
-      "noMessages": "No conversation yet. Start chatting with AI assistant!",
-      "networkError": "Network connection error, please check network settings",
-      "apiError": "API call failed, please check configuration",
-      "emptyMessage": "Message cannot be empty",
-      "floatingButton": "AI Assistant",
       "minimize": "Minimize",
-      "maximize": "Maximize",
-      "close": "Close",
-      "requestCancelled": "Request cancelled",
-      "selectApi": "Select API",
-      "currentApi": "Current: {{name}}",
-      "thinkingProcess": "Thinking Process"
+      "close": "Close"
     },
     "aiSettings": {
       "title": "AI Settings",
@@ -626,13 +585,9 @@
       "model": "Model Name",
       "modelSelectPlaceholder": "Click the model detection button on the right first",
       "placeholders": {
-        "name": "My API",
         "baseUrl": "https://api.openai.com/v1",
-        "apiKey": "sk-...",
-        "model": "gpt-3.5-turbo"
+        "apiKey": "sk-..."
       },
-      "maxTokens": "Max Tokens",
-      "temperature": "Temperature",
       "streamEnabled": "Stream Output",
       "save": "Save",
       "cancel": "Cancel",
@@ -646,16 +601,12 @@
       "apiKeyRequired": "API Key is required",
       "modelRequired": "Model name is required",
       "invalidUrl": "Please enter a valid URL",
-      "temperatureRange": "Temperature should be between 0-2",
-      "maxTokensRange": "Max tokens should be between 1-32000",
       "apiManagement": "API Management",
       "apiList": "API Configuration List",
       "addApi": "Add API",
       "editApi": "Edit API",
       "deleteApi": "Delete API",
       "setAsCurrent": "Set as Current",
-      "apiName": "Configuration Name",
-      "apiNameRequired": "Configuration name is required",
       "providerType": "Provider Type",
       "deleteConfirmTitle": "Confirm Delete",
       "deleteConfirm": "Are you sure you want to delete this API configuration?",
@@ -665,8 +616,6 @@
       "setCurrentFailed": "Failed to set current API",
       "noApiConfigs": "No API configurations, please add one first",
       "currentApi": "Current API",
-      "selectApi": "Select API",
-      "apiSwitched": "Switched to: {{name}}",
       "cloneApi": "Clone Configuration",
       "clonedConfigHint": "Creating new configuration based on existing one, no need to re-enter API URL and key",
       "fetchModels": "Detect Models",
@@ -694,7 +643,6 @@
       "title": "AI Assistant",
       "inputPlaceholder": "Type a message...",
       "startConversation": "Start a conversation, ask your question",
-      "thinking": "Thinking...",
       "thinkingProcess": "Thinking Process",
       "copyMessage": "Copy message",
       "editMessage": "Edit message",
@@ -718,7 +666,6 @@
       "executeAnyway": "Execute Anyway",
       "commandsCount": "{{count}} commands",
       "highRiskCount": "{{count}} high risk",
-      "noConnection": "Please establish SSH connection first",
       "riskLevels": {
         "safe": "Safe",
         "low": "Low Risk",
@@ -732,17 +679,9 @@
         "medium": "May affect services or data",
         "high": "May cause service interruption or data loss",
         "critical": "May cause system unavailability or irrecoverable state"
-      },
-      "contextWarning": "Context capacity warning: Click to generate memory summary",
-      "contextCapacityWarning": "Context capacity warning: Click to generate memory summary",
-      "memoryGenerating": "Generating memory...",
-      "emptyApiResponse": "API returned empty content",
-      "compressing": "Generating memory summary...",
-      "compressSuccess": "Memory saved",
-      "compressFailed": "Memory generation failed"
+      }
     },
     "randomPassword": {
-      "title": "Random Password Generator",
       "length": "Password Length",
       "uppercase": "Include Uppercase",
       "lowercase": "Include Lowercase",
@@ -780,7 +719,6 @@
     "sshAuth": {
       "login": "Login",
       "host": "Host",
-      "account": "Account",
       "username": "User",
       "enterUsername": "Enter username",
       "password": "Password",
@@ -804,7 +742,6 @@
       "fingerprintConfirmNotice": "Please confirm this host fingerprint is trusted.",
       "fingerprintWarning": "Server fingerprint has changed. Please verify this is expected.",
       "previousFingerprint": "Previous Fingerprint",
-      "authCancelled": "Authentication cancelled",
       "authFailed": "Authentication failed",
       "pleaseRetry": "Invalid username or password, please try again"
     },
@@ -857,7 +794,6 @@
       "syntaxHighlightLoading": "Loading syntax highlight",
       "syntaxHighlightReady": "{{language}} highlight",
       "loadingSyntaxHighlight": "Loading {{language}} syntax highlight...",
-      "selectedVersion": "Selected version: {{date}}",
       "savedVersionLabel": "Saved Version",
       "initialVersionLabel": "Initial Version",
       "snapshotCreated": "Snapshot created",
@@ -938,7 +874,9 @@
         "replacedMatches": "Replaced $ matches",
         "goToLine": "Go to line",
         "go": "Go"
-      }
+      },
+      "title": "File Preview",
+      "loading": "Loading file preview..."
     },
     "fileManager": {
       "title": "File Manager",
@@ -969,20 +907,15 @@
       "rename": "Rename",
       "delete": "Delete",
       "deleteItems": "Delete {{count}} items",
-      "download": "Download",
       "downloadFile": "Download File",
       "downloadFiles": "Download {{count}} files",
       "downloadFolder": "Download Folder",
       "downloadFolders": "Download {{count}} folders",
-      "copy": "Copy",
       "copyPath": "Copy Path",
-      "cut": "Cut",
-      "paste": "Paste",
       "properties": "Properties",
       "permissions": "Permissions",
       "owner": "Owner",
       "group": "Group",
-      "createSymlink": "Create Symlink",
       "openLocation": "Open Location",
       "multipleItemsName": "{{name}} and {{count}} {{itemLabel}}",
       "itemLabels": {
@@ -1010,7 +943,6 @@
         "createFileFailed": "Failed to create file",
         "emptyName": "Name cannot be empty",
         "unknownError": "Unknown error",
-        "refreshTimeout": "Refresh timeout",
         "directoryWatchFailed": "Directory auto-refresh watcher failed: {{error}}",
         "noFilesSelected": "No files selected",
         "dragDropNotSupported": "Drag and drop upload is not supported",
@@ -1020,41 +952,22 @@
         "dragDropPermissionDenied": "Cannot read the dropped local item. Check permissions: {{name}}",
         "dragDropUnsupportedItem": "This dropped item is not an uploadable local file or folder: {{name}}",
         "dragDropConflictCancelled": "Drag upload cancelled because remote items already exist.",
-        "dragDropConflictDialogUnavailable": "Cannot show the overwrite confirmation dialog. Drag upload was blocked.",
         "noConnection": "No SSH connection available",
         "userCancelled": "User cancelled",
-        "operationCancelled": "Operation cancelled",
-        "sftpError": "SFTP error",
         "connectionNotReady": "SSH connection not ready",
-        "channelOpenFailure": "Channel open failure",
-        "connectionReset": "Connection reset",
         "updateFailed": "Update failed",
         "permissionSetFailed": "Permission set failed",
-        "fileRenamedButPermissionFailed": "File renamed but permission set failed",
         "batchDownloadFailed": "Batch download failed",
         "transferCancelled": "Transfer cancelled",
-        "transferCancelFailed": "Transfer cancel failed",
-        "uploadCancelledByUser": "Upload cancelled by user",
-        "folderUploadCancelledByUser": "Folder upload cancelled by user",
-        "downloadCancelledByUser": "Download cancelled by user",
-        "cancelDetected": "Cancel operation detected",
-        "replyNeverSent": "Reply was never sent",
-        "cancelApiCallFailed": "Cancel transfer API call failed",
-        "cancelProcessError": "Error occurred during cancel process",
-        "fileSizeExceedsPreviewLimit": "File size exceeds preview limit",
-        "downloadProcessInterrupted": "Download process interrupted, please retry"
+        "downloadCancelledByUser": "Download cancelled by user"
       },
       "messages": {
         "preparingUpload": "Preparing upload...",
-        "preparingFolderUpload": "Scanning folder...",
-        "creatingFolders": "Creating folder structure...",
         "uploadComplete": "Upload complete",
         "uploadSuccess": "Files uploaded successfully",
-        "uploadFailed": "Upload failed",
         "unknownFile": "Unknown file",
         "retrying": "Retrying ({{current}}/{{max}})...",
         "fileListSummary": "{{shown}} and {{remaining}} more",
-        "batchDeleteConfirm": "Are you sure you want to delete {{count}} selected files?",
         "deleteConfirm": "Are you sure you want to delete {{name}}?",
         "deleteSuccessCount": "Successfully deleted {{count}} item(s)",
         "deletePartialResult": "Delete finished: {{deleted}} succeeded, {{failed}} failed",
@@ -1066,21 +979,14 @@
         "dragDropMessage": "Drop files here to upload",
         "uploadToFolder": "Upload to folder: {{folder}}",
         "uploadToCurrentFolder": "Upload to current folder",
-        "uploadSkipError": "Skip error display",
-        "uploadCancelledSkipError": "Upload cancelled, skip error display",
-        "folderUploadCancelledSkipError": "Folder upload cancelled, skip error display",
         "dragDropConflictTitle": "Confirm Remote Overwrite",
         "dragDropConflictMessage": "{{count}} item(s) with the same name already exist in the remote folder. Continuing will overwrite matching files and may merge matching folders.",
-        "dragDropConflictDetail": "{{items}}",
         "dragDropConflictConfirm": "Overwrite and Upload",
         "dragDropConflictCancel": "Cancel",
         "downloadFolderFailed": "Download folder failed",
-        "batchDownloadFolderFailed": "Batch download folder failed",
         "updateFailedRetrying": "Update failed, retrying",
         "createFolderFailedRetrying": "Create folder failed, retrying",
-        "permissionSetFailedRetrying": "Set permissions failed, retrying",
         "fileSizeExceedsLimit": "File \"{{name}}\" size is {{size}}, exceeds the 10MB preview limit. Please download the file and view it locally.",
-        "transferCancelApiFailedButMarked": "Transfer cancel API returned failure, but UI still shows cancelled",
         "selectFolderToDownload": "Please select a folder to download first",
         "startDownload": "Starting download of {{count}} files",
         "downloadSuccessCount": "Successfully downloaded {{count}} files",
@@ -1182,9 +1088,7 @@
       },
       "fileTypes": {
         "folder": "Folder",
-        "file": "File",
-        "symlink": "Symlink",
-        "unknown": "Unknown Type"
+        "file": "File"
       },
       "units": {
         "bytes": "Bytes",
@@ -1194,8 +1098,6 @@
         "tb": "TB"
       },
       "statusBar": {
-        "totalItems": "{{count}} items total",
-        "selectedItems": "{{count}} items selected",
         "lastRefresh": "Last refresh: {{time}}"
       },
       "externalEditor": {
@@ -1208,7 +1110,6 @@
       }
     },
     "update": {
-      "title": "Application Update",
       "checking": "Checking for updates...",
       "upToDate": "You're up to date!",
       "available": "Update Available",
@@ -1217,16 +1118,12 @@
       "readyToInstall": "The update is ready to install",
       "installing": "Installing update...",
       "currentVersion": "Current Version",
-      "newVersion": "New Version",
       "releaseDate": "Release Date",
       "releaseNotes": "Release Notes",
       "downloadSize": "Download Size",
       "download": "Download Update",
-      "installNow": "Install Now",
       "installUpdate": "Install Update",
-      "installAndRestart": "Install and Restart",
       "retryCheck": "Retry Check",
-      "retryDownload": "Retry Download",
       "remindLater": "Remind Me Later",
       "reminderScheduled": "Update reminder scheduled in {{hours}} hours",
       "reminderDue": "Update reminder is due",
@@ -1252,15 +1149,9 @@
       "refresh": "Refresh",
       "searchPlaceholder": "Search terminals...",
       "availableTerminals": "Available Terminals",
-      "runningTerminals": "Running Terminals",
       "noTerminals": "No terminals detected",
       "noTerminalSelected": "Please select a terminal",
       "noSearchResults": "No matching terminals found",
-      "noRunningTerminals": "No running terminals",
-      "detecting": "Detecting terminals...",
-      "launch": "Launch",
-      "stop": "Stop Terminal",
-      "running": "Running",
       "statusRunning": "Running",
       "statusStopped": "Stopped",
       "statusUnknown": "Unknown",
@@ -1269,51 +1160,9 @@
       "detectError": "Failed to detect terminals",
       "launchSuccess": "Opened {{name}} in a local terminal tab",
       "launchError": "Failed to launch terminal: {{error}}",
-      "stopSuccess": "Terminal stopped",
-      "stopError": "Failed to stop terminal: {{error}}",
-      "initializing": "Initializing...",
-      "launching": "Launching terminal...",
-      "ready": "Terminal Ready",
-      "custom": "Custom",
-      "addCustom": "Add Custom Terminal",
-      "deleteSuccess": "Successfully deleted {{name}}",
-      "deleteError": "Failed to delete: {{error}}",
-      "updateSuccess": "Successfully updated {{name}}",
-      "addSuccess": "Successfully added {{name}}",
-      "saveError": "Failed to save: {{error}}",
-      "config": {
-        "addTitle": "Add Custom Terminal",
-        "editTitle": "Edit Terminal Config",
-        "basicTab": "Basic Settings",
-        "advancedTab": "Advanced Settings",
-        "basicInfo": "Basic Information",
-        "executionConfig": "Execution Configuration",
-        "name": "Name",
-        "nameRequired": "Name is required",
-        "nameHelp": "Name displayed in the list",
-        "executable": "Executable",
-        "executableRequired": "Executable is required",
-        "executableHelp": "Enter the full path or command for the executable",
-        "arguments": "Arguments",
-        "addArgument": "Add argument",
-        "argHelp": "e.g., --version, -h, /c",
-        "noArgs": "No arguments",
-        "workingDirectory": "Working Directory",
-        "workingDirectoryHelp": "Leave blank to use default directory",
-        "cwdPlaceholder": "Optional: Leave blank to use default directory",
-        "environmentVariables": "Environment Variables",
-        "noEnvVars": "No environment variables",
-        "icon": "Icon",
-        "description": "Description",
-        "descriptionPlaceholder": "Optional: Briefly describe the purpose of this application",
-        "runInBackground": "Run in Background",
-        "runInBackgroundInfo": "The application will run in the background and won't be embedded in the terminal window"
-      },
-      "waitingEmbed": "Waiting for window embedding...",
-      "terminated": "Terminal Terminated",
       "unknownError": "Unknown error occurred",
-      "launchNormal": "Launch Normal",
-      "wslDistributions": "WSL Distributions"
+      "apiUnavailable": "Terminal API unavailable",
+      "pathLabel": "Path: {{path}}"
     },
     "windowControls": {
       "minimize": "Minimize",
@@ -1344,7 +1193,6 @@
       "usedMemory": "Used Memory",
       "freeMemory": "Free Memory",
       "processes": "Processes",
-      "processName": "Process",
       "cpuShort": "CPU",
       "memoryShort": "Memory",
       "topProcessesHint": "Sorted by memory usage, showing top {{count}} processes",
@@ -1445,8 +1293,7 @@
           "Check if the port number is correct",
           "Review firewall rules"
         ],
-        "action": "Recheck Configuration",
-        "severity": "error"
+        "action": "Recheck Configuration"
       },
       "ETIMEDOUT": {
         "title": "Connection Timeout",
@@ -1457,8 +1304,7 @@
           "Try increasing timeout duration",
           "Check for network firewall restrictions"
         ],
-        "action": "Retry Connection",
-        "severity": "warning"
+        "action": "Retry Connection"
       },
       "EHOSTUNREACH": {
         "title": "Host Unreachable",
@@ -1469,8 +1315,7 @@
           "Test host connectivity using ping command",
           "Contact network administrator for routing issues"
         ],
-        "action": "Check Server Address",
-        "severity": "error"
+        "action": "Check Server Address"
       },
       "ENOTFOUND": {
         "title": "Cannot Resolve Hostname",
@@ -1481,8 +1326,7 @@
           "Check DNS server configuration",
           "Verify the domain name is valid"
         ],
-        "action": "Check Hostname",
-        "severity": "error"
+        "action": "Check Hostname"
       },
       "ECONNRESET": {
         "title": "Connection Reset",
@@ -1493,8 +1337,7 @@
           "Review server logs for disconnect reason",
           "Try reconnecting"
         ],
-        "action": "Reconnect",
-        "severity": "warning"
+        "action": "Reconnect"
       },
       "ENETUNREACH": {
         "title": "Network Unreachable",
@@ -1505,8 +1348,7 @@
           "If using VPN, ensure it's connected",
           "Check proxy settings"
         ],
-        "action": "Check Network",
-        "severity": "error"
+        "action": "Check Network"
       },
       "AUTH_FAILED": {
         "title": "SSH Authentication Failed",
@@ -1517,8 +1359,7 @@
           "Confirm key is added to server's authorized_keys",
           "Verify server allows this authentication method"
         ],
-        "action": "Check Credentials",
-        "severity": "error"
+        "action": "Check Credentials"
       },
       "KEY_ERROR": {
         "title": "SSH Key Error",
@@ -1529,8 +1370,7 @@
           "Verify key format is correct",
           "If key is password protected, confirm correct passphrase"
         ],
-        "action": "Check Key Configuration",
-        "severity": "error"
+        "action": "Check Key Configuration"
       },
       "EACCES": {
         "title": "Permission Denied",
@@ -1541,8 +1381,7 @@
           "Contact administrator for proper permissions",
           "Check if file is being used by another program"
         ],
-        "action": "Check Permissions",
-        "severity": "warning"
+        "action": "Check Permissions"
       },
       "ENOENT": {
         "title": "File Not Found",
@@ -1553,8 +1392,7 @@
           "Check filename spelling",
           "Verify you have access to this path"
         ],
-        "action": "Check File Path",
-        "severity": "warning"
+        "action": "Check File Path"
       },
       "OPERATION_TIMEOUT": {
         "title": "Operation Timeout",
@@ -1565,18 +1403,63 @@
           "Consider processing data in batches",
           "Increase timeout duration"
         ],
-        "action": "Retry Operation",
-        "severity": "warning"
+        "action": "Retry Operation"
+      }
+    },
+    "mainProcess": {
+      "terminal": {
+        "reconnectRecoveryStarted": "Restoring terminal...",
+        "reconnectRecoverySucceeded": "Terminal restored",
+        "reconnectRecoveryFailedDefault": "Terminal restore failed. Refresh the connection.",
+        "reconnectRecoveryFailedHint": "Connection recovered, but terminal restore failed.",
+        "reconnectRecoveryFailed": "Terminal restore failed: {{message}}",
+        "sshDisconnected": "SSH disconnected, reconnecting",
+        "telnetClosed": "Telnet connection closed",
+        "telnetTimeout": "Telnet connection timed out",
+        "droppedBytesWarning": "Output is too fast. Dropped {{dropped}} bytes. Please reduce the output rate.",
+        "sshConnected": "{{host}} connected",
+        "telnetError": "Telnet connection error: {{message}}",
+        "telnetConnectedReused": "{{host}} Telnet connection established (reused existing connection)"
       },
-      "UNKNOWN": {
-        "title": "Error Occurred",
-        "message": "An unknown error occurred",
-        "solutions": [
-          "Please try again later",
-          "If the issue persists, contact administrator"
-        ],
-        "action": "Retry",
-        "severity": "error"
+      "reconnect": {
+        "maxRetries": "Reached the maximum retry count ({{maxRetries}}). Check proxy/VPN/network and refresh or reopen the connection.",
+        "timeout": "Reconnect timed out ({{duration}}). Check network/VPN and refresh or reopen the connection.",
+        "waiting": "Reconnecting, waiting up to {{duration}} for network/VPN...",
+        "defaultHint": "Check proxy/VPN/network and refresh or reopen the connection.",
+        "failed": "Automatic reconnect failed",
+        "abandoned": "Automatic reconnect abandoned",
+        "durationZero": "0s",
+        "durationSeconds": "{{value}}s",
+        "durationMinutes": "{{value}}m",
+        "targetHost": "target host",
+        "internalError": "The connection failed due to an internal error and automatic reconnect failed. Retry the connection or check logs for details.",
+        "authFailed": "SSH authentication failed. Check username, password, private key, and permission settings.",
+        "proxyUnavailable": "Proxy unavailable. Check whether the local proxy/VPN is running and whether the proxy address and port are reachable.",
+        "connectionRefused": "Connection refused: cannot connect to {{host}}:{{port}}. Check the port, service status, and firewall.",
+        "hostUnresolved": "Hostname could not be resolved: {{host}}. Check hostname, DNS, and network.",
+        "connectionTimedOut": "Connection timed out: {{host}}:{{port}}. Check network quality or server load.",
+        "connectionReset": "Connection reset by remote host. The network may be unstable or the server disconnected.",
+        "pipeClosed": "Connection pipe closed. The network may be unstable or the session was interrupted.",
+        "disconnected": "Connection disconnected and automatic reconnect failed. Please reconnect.",
+        "connectionTimeoutShort": "Connection timed out",
+        "connectionClosedShort": "Connection closed"
+      },
+      "update": {
+        "readyTitle": "Update Ready",
+        "macMessage": "The update package has been opened. Please drag the app to Applications folder to complete the update.",
+        "linuxAppImageMessage": "The update has been downloaded. Please replace your current application with the new AppImage file.",
+        "ok": "OK"
+      },
+      "externalLink": {
+        "title": "Restricted External Link",
+        "message": "This link uses a restricted protocol.",
+        "detail": "Source: {{source}}\nURL: {{url}}\n\nOpen anyway?",
+        "deny": "Deny (Recommended)",
+        "open": "Open Anyway"
+      },
+      "desktop": {
+        "openFileSingle": "Received local file open request: {{name}}",
+        "openFileMultiple": "Received {{count}} local file open requests"
       }
     }
   }

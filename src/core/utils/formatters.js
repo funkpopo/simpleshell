@@ -24,30 +24,50 @@ export const formatFileSize = (bytes, options = {}) => {
 };
 
 export const formatDate = (date, options = {}) => {
-  const { showTime = true, showWeekday = true, relative = true } = options;
+  const {
+    showTime = true,
+    showWeekday = true,
+    relative = true,
+    t = null,
+    locale,
+  } = options;
 
   if (!date || !(date instanceof Date)) return "";
 
   const now = new Date();
   const diff = now - date;
   const day = 24 * 60 * 60 * 1000;
-
   // 相对时间显示
   if (relative) {
     // 如果是今天的文件，显示时间
     if (diff < day && date.getDate() === now.getDate()) {
       return showTime
-        ? date.toLocaleTimeString([], {
+        ? date.toLocaleTimeString(locale || undefined, {
             hour: "2-digit",
             minute: "2-digit",
           })
-        : "今天";
+        : t
+          ? t("common.date.today")
+          : "Today";
     }
 
     // 如果是最近一周的文件，显示星期几
     if (showWeekday && diff < 7 * day) {
-      const days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-      return days[date.getDay()];
+      if (t) {
+        const weekdays = [
+          t("common.date.weekdays.0"),
+          t("common.date.weekdays.1"),
+          t("common.date.weekdays.2"),
+          t("common.date.weekdays.3"),
+          t("common.date.weekdays.4"),
+          t("common.date.weekdays.5"),
+          t("common.date.weekdays.6"),
+        ];
+        return weekdays[date.getDay()];
+      }
+      return date.toLocaleDateString(locale || undefined, {
+        weekday: "short",
+      });
     }
   }
 
@@ -59,7 +79,11 @@ export const formatDate = (date, options = {}) => {
 // - fallback：值无法解析为有效日期时返回的文本
 // - requirePositiveNumber：为 true 时仅接受正的有限数字时间戳（属性面板等场景）
 export const formatAbsoluteDateTime = (value, options = {}) => {
-  const { fallback = "", requirePositiveNumber = false } = options;
+  const {
+    fallback = "",
+    requirePositiveNumber = false,
+    locale,
+  } = options;
 
   if (requirePositiveNumber && (!Number.isFinite(value) || value <= 0)) {
     return fallback;
@@ -70,18 +94,34 @@ export const formatAbsoluteDateTime = (value, options = {}) => {
     return fallback;
   }
 
-  return date.toLocaleString();
+  return date.toLocaleString(locale || undefined);
 };
 
-export const formatLastRefreshTime = (timestamp) => {
-  if (!timestamp) return "未知";
+export const formatLastRefreshTime = (timestamp, options = {}) => {
+  const { t = null } = options;
+
+  if (!timestamp) {
+    return t ? t("common.date.unknown") : "Unknown";
+  }
 
   const now = Date.now();
   const diff = now - timestamp;
 
-  if (diff < 1000) return "刚刚";
-  if (diff < 60000) return `${Math.floor(diff / 1000)}秒前`;
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
+  if (diff < 1000) {
+    return t ? t("common.date.justNow") : "Just now";
+  }
+  if (diff < 60000) {
+    const count = Math.floor(diff / 1000);
+    return t
+      ? t("common.date.secondsAgo", { count })
+      : `${count}s ago`;
+  }
+  if (diff < 3600000) {
+    const count = Math.floor(diff / 60000);
+    return t
+      ? t("common.date.minutesAgo", { count })
+      : `${count}m ago`;
+  }
 
   const date = new Date(timestamp);
   return `${date.getHours()}:${date.getMinutes().toString().padStart(2, "0")}`;
