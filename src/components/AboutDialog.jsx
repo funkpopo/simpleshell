@@ -251,6 +251,62 @@ const normalizeSafeMarkdownHref = (href) => {
   return urlObj.toString();
 };
 
+const UPDATE_BUSY_STATUSES = new Set(["checking", "downloading", "installing"]);
+
+/**
+ * 将下载结果或 hasDownloadedInstaller 返回值统一为界面可用的安装包信息。
+ * 下载阶段已完成哈希校验时，可直接用 result.installer 立即展示安装按钮。
+ */
+const normalizeDownloadedInstallerInfo = (source, options = {}) => {
+  if (!source || source.available === false) {
+    return null;
+  }
+
+  const installerVersion = source.installerVersion || source.version || null;
+  const filePath =
+    typeof source.filePath === "string" && source.filePath
+      ? source.filePath
+      : "";
+  const fileName =
+    source.fileName ||
+    source.assetName ||
+    (filePath ? filePath.split(/[\\/]/).pop() : null) ||
+    null;
+
+  // hasDownloadedInstaller 成功结果；或下载返回的 installer 元数据
+  const looksReady =
+    source.available === true ||
+    Boolean(installerVersion) ||
+    Boolean(filePath) ||
+    Boolean(fileName) ||
+    Boolean(source.sha256);
+
+  if (!looksReady) {
+    return null;
+  }
+
+  return {
+    available: true,
+    installerVersion,
+    currentVersion:
+      source.currentVersion || options.currentVersion || null,
+    fileName,
+    size: source.size || 0,
+    sha256: source.sha256 || null,
+    expectedSha256: source.expectedSha256 || null,
+    downloadedAt: source.downloadedAt || null,
+    publishedAt: source.publishedAt || null,
+    releaseName: source.releaseName || null,
+    assetName: source.assetName || null,
+    isSecurityUpdate: source.isSecurityUpdate === true,
+    isImportantUpdate: source.isImportantUpdate === true,
+    severity: source.severity || "normal",
+    status: source.status || "downloaded",
+    installerLogPath: source.installerLogPath || null,
+    lastError: source.lastError || null,
+  };
+};
+
 const AboutDialog = memo(function AboutDialog({
   open,
   onClose,
@@ -275,16 +331,12 @@ const AboutDialog = memo(function AboutDialog({
   const lastHandledCheckUpdateSignalRef = useRef(0);
 
   const hasDownloadedInstaller = downloadedInstallerInfo?.available === true;
-  const updateIsBusy =
-    updateStatus === "checking" ||
-    updateStatus === "downloading" ||
-    updateStatus === "installing";
+  const updateIsBusy = UPDATE_BUSY_STATUSES.has(updateStatus);
   const displayUpdateInfo = hasDownloadedInstaller
     ? downloadedInstallerInfo
     : updateInfo;
+  // 校验通过后的安装包：非忙碌状态一律可安装，并作为主操作
   const canInstallDownloadedUpdate = hasDownloadedInstaller && !updateIsBusy;
-  const shouldShowDownloadedInstallerNotice =
-    hasDownloadedInstaller && updateStatus !== "downloaded" && !updateIsBusy;
   const downloadSizeText = formatBytes(
     displayUpdateInfo?.size || displayUpdateInfo?.downloadSize,
   );
@@ -322,17 +374,13 @@ const AboutDialog = memo(function AboutDialog({
     }
   }, []);
 
-  // 对话框打开时检测是否有已下载的安装包
+  // 对话框打开时检测是否有已下载且校验通过的安装包，有则直接进入可安装状态
   useEffect(() => {
     if (!open) {
       return undefined;
     }
 
     let cancelled = false;
-    setDownloadedInstallerInfo(null);
-    setUpdateStatus((currentStatus) =>
-      currentStatus === "downloaded" ? "idle" : currentStatus,
-    );
 
     (async () => {
       try {
@@ -341,15 +389,24 @@ const AboutDialog = memo(function AboutDialog({
           return;
         }
 
-        const nextInstallerInfo = result?.available ? result : null;
-        setDownloadedInstallerInfo(nextInstallerInfo);
-        setUpdateStatus((currentStatus) => {
-          if (currentStatus !== "downloaded" || nextInstallerInfo) {
-            return currentStatus;
-          }
-
-          return updateInfo?.hasUpdate ? "available" : "idle";
+        const nextInstallerInfo = normalizeDownloadedInstallerInfo(result, {
+          currentVersion: result?.currentVersion || appVersion,
         });
+        setDownloadedInstallerInfo(nextInstallerInfo);
+
+        if (nextInstallerInfo) {
+          setUpdateStatus((currentStatus) =>
+            UPDATE_BUSY_STATUSES.has(currentStatus)
+              ? currentStatus
+              : "downloaded",
+          );
+          return;
+        }
+
+        // 本地安装包不可用时，仅在仍停留在 downloaded 时回退，避免打断检查/下载流程
+        setUpdateStatus((currentStatus) =>
+          currentStatus === "downloaded" ? "idle" : currentStatus,
+        );
       } catch {
         if (cancelled) {
           return;
@@ -357,11 +414,7 @@ const AboutDialog = memo(function AboutDialog({
 
         setDownloadedInstallerInfo(null);
         setUpdateStatus((currentStatus) =>
-          currentStatus === "downloaded"
-            ? updateInfo?.hasUpdate
-              ? "available"
-              : "idle"
-            : currentStatus,
+          currentStatus === "downloaded" ? "idle" : currentStatus,
         );
       }
     })();
@@ -369,9 +422,11 @@ const AboutDialog = memo(function AboutDialog({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+    // 仅在打开对话框时探测；appVersion 用于展示当前版本号
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open-driven probe
+  }, [open, appVersion]);
 
-  // 监听下载进度
+  // 监听下载进度（仅更新进度条；状态切换由 downloadUpdate 完成校验后负责）
   useEffect(() => {
     let progressInterval;
     if (isDownloading) {
@@ -394,9 +449,6 @@ const AboutDialog = memo(function AboutDialog({
             });
             if (!downloading) {
               setIsDownloading(false);
-              if (progress === 100) {
-                setUpdateStatus("downloaded");
-              }
               clearInterval(progressInterval);
             }
           }
@@ -434,6 +486,34 @@ const AboutDialog = memo(function AboutDialog({
     [t, showError],
   );
 
+  const refreshDownloadedInstallerInfo = useCallback(
+    async (preferredSource = null) => {
+      const fromPreferred = normalizeDownloadedInstallerInfo(preferredSource, {
+        currentVersion:
+          preferredSource?.currentVersion ||
+          updateInfo?.currentVersion ||
+          appVersion,
+      });
+      if (fromPreferred) {
+        setDownloadedInstallerInfo(fromPreferred);
+        return fromPreferred;
+      }
+
+      try {
+        const result = await window.terminalAPI.hasDownloadedInstaller?.();
+        const nextInfo = normalizeDownloadedInstallerInfo(result, {
+          currentVersion: result?.currentVersion || appVersion,
+        });
+        setDownloadedInstallerInfo(nextInfo);
+        return nextInfo;
+      } catch {
+        setDownloadedInstallerInfo(null);
+        return null;
+      }
+    },
+    [appVersion, updateInfo?.currentVersion],
+  );
+
   // Check for updates
   const handleCheckForUpdate = useCallback(async () => {
     setCheckingForUpdate(true);
@@ -445,8 +525,10 @@ const AboutDialog = memo(function AboutDialog({
 
       if (result.success) {
         setUpdateInfo(result.updateInfo);
+        // 检查更新后若本地已有校验通过的安装包，直接进入可安装状态
+        const installerInfo = await refreshDownloadedInstallerInfo();
         setUpdateStatus(
-          downloadedInstallerInfo?.available
+          installerInfo
             ? "downloaded"
             : result.updateInfo.hasUpdate
               ? "available"
@@ -462,7 +544,7 @@ const AboutDialog = memo(function AboutDialog({
     } finally {
       setCheckingForUpdate(false);
     }
-  }, [downloadedInstallerInfo, t]);
+  }, [refreshDownloadedInstallerInfo, t]);
 
   useEffect(() => {
     if (!open || !checkUpdateSignal) {
@@ -477,10 +559,16 @@ const AboutDialog = memo(function AboutDialog({
     void handleCheckForUpdate();
   }, [checkUpdateSignal, handleCheckForUpdate, open]);
 
-  // Download update
+  // Download update：下载并完成哈希校验后立即切换到可安装状态
   const downloadUpdate = useCallback(async () => {
     if (!updateInfo?.downloadUrl) {
       setError(t("update.errors.noDownloadUrl"));
+      return;
+    }
+
+    // 已有校验通过的安装包时不再重复下载
+    if (hasDownloadedInstaller) {
+      setUpdateStatus("downloaded");
       return;
     }
 
@@ -498,12 +586,20 @@ const AboutDialog = memo(function AboutDialog({
       const result = await window.terminalAPI.downloadUpdate();
 
       if (result.success) {
-        const installerResult =
-          await window.terminalAPI.hasDownloadedInstaller?.();
-        setDownloadedInstallerInfo(
-          installerResult?.available ? installerResult : null,
-        );
-        setUpdateStatus("downloaded");
+        // 优先使用下载返回的已校验 installer，立即显示安装按钮，避免二次全量哈希等待
+        const installerInfo = await refreshDownloadedInstallerInfo({
+          ...(result.installer || {}),
+          filePath: result.filePath || result.installer?.filePath,
+          currentVersion: updateInfo?.currentVersion || appVersion,
+          available: true,
+        });
+
+        if (installerInfo) {
+          setUpdateStatus("downloaded");
+        } else {
+          setError(t("update.errors.downloadFailed"));
+          setUpdateStatus("error");
+        }
       } else {
         const message = result.error || t("update.errors.downloadFailed");
         if (/cancelled/i.test(message)) {
@@ -524,7 +620,13 @@ const AboutDialog = memo(function AboutDialog({
     } finally {
       setIsDownloading(false);
     }
-  }, [t, updateInfo]);
+  }, [
+    appVersion,
+    hasDownloadedInstaller,
+    refreshDownloadedInstallerInfo,
+    t,
+    updateInfo,
+  ]);
 
   // Install update
   const installUpdate = useCallback(async () => {
@@ -541,24 +643,17 @@ const AboutDialog = memo(function AboutDialog({
 
       if (!result.success) {
         setError(result.error || t("update.errors.installationFailed"));
-        setUpdateStatus("error");
-        const installerResult =
-          await window.terminalAPI.hasDownloadedInstaller?.();
-        setDownloadedInstallerInfo(
-          installerResult?.available ? installerResult : null,
-        );
+        const installerInfo = await refreshDownloadedInstallerInfo();
+        // 安装失败但包仍可用时回到可安装状态，便于立即重试安装而非重新下载
+        setUpdateStatus(installerInfo ? "downloaded" : "error");
       }
       // 成功安装后应用会自动退出并重启
     } catch (err) {
       setError(err.message || t("update.errors.installationFailed"));
-      setUpdateStatus("error");
-      const installerResult =
-        await window.terminalAPI.hasDownloadedInstaller?.();
-      setDownloadedInstallerInfo(
-        installerResult?.available ? installerResult : null,
-      );
+      const installerInfo = await refreshDownloadedInstallerInfo();
+      setUpdateStatus(installerInfo ? "downloaded" : "error");
     }
-  }, [canInstallDownloadedUpdate, t]);
+  }, [canInstallDownloadedUpdate, refreshDownloadedInstallerInfo, t]);
 
   // Cancel download
   const cancelDownload = useCallback(async () => {
@@ -686,23 +781,58 @@ const AboutDialog = memo(function AboutDialog({
         break;
 
       case "available":
-        primaryContent = (
-          <Box sx={updatePanelSx}>
-            <Box display="flex" alignItems="center" gap={1}>
-              <UpdateIcon color="primary" />
-              <Typography variant="body2">{t("update.available")}</Typography>
+        // 本地已有校验通过的包时，不再展示「去下载」文案
+        if (canInstallDownloadedUpdate) {
+          primaryContent = (
+            <Box sx={updatePanelSx}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <CheckIcon color="success" />
+                <Typography variant="body2" color="success.main">
+                  {t("update.readyToInstall")}
+                </Typography>
+              </Box>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 1 }}
+              >
+                {t("update.currentVersion")}:{" "}
+                {downloadedInstallerInfo?.currentVersion ||
+                  updateInfo?.currentVersion ||
+                  appVersion}{" "}
+                →{" "}
+                {downloadedInstallerInfo?.installerVersion ||
+                  updateInfo?.latestVersion}
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 0.75 }}
+              >
+                {t("update.installRestartHint")}
+              </Typography>
+              {renderUpdateMetadata()}
             </Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: "block", mt: 1 }}
-            >
-              {t("update.currentVersion")}: {updateInfo?.currentVersion} →{" "}
-              {updateInfo?.latestVersion}
-            </Typography>
-            {renderUpdateMetadata()}
-          </Box>
-        );
+          );
+        } else {
+          primaryContent = (
+            <Box sx={updatePanelSx}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <UpdateIcon color="primary" />
+                <Typography variant="body2">{t("update.available")}</Typography>
+              </Box>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 1 }}
+              >
+                {t("update.currentVersion")}: {updateInfo?.currentVersion} →{" "}
+                {updateInfo?.latestVersion}
+              </Typography>
+              {renderUpdateMetadata()}
+            </Box>
+          );
+        }
         break;
 
       case "downloading":
@@ -773,6 +903,19 @@ const AboutDialog = memo(function AboutDialog({
               color="text.secondary"
               sx={{ display: "block", mt: 1 }}
             >
+              {t("update.currentVersion")}:{" "}
+              {downloadedInstallerInfo?.currentVersion ||
+                updateInfo?.currentVersion ||
+                appVersion}{" "}
+              →{" "}
+              {downloadedInstallerInfo?.installerVersion ||
+                updateInfo?.latestVersion}
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mt: 0.75 }}
+            >
               {t("update.installRestartHint")}
             </Typography>
             {renderUpdateMetadata()}
@@ -792,31 +935,31 @@ const AboutDialog = memo(function AboutDialog({
         break;
 
       default:
-        primaryContent = null;
-    }
-
-    // 单面板原则：idle 且已有下载好的安装包时，用「已准备好安装」作为唯一状态面板
-    if (!primaryContent && shouldShowDownloadedInstallerNotice) {
-      primaryContent = (
-        <Box sx={updatePanelSx}>
-          <Box display="flex" alignItems="center" gap={1}>
-            <CheckIcon color="success" />
-            <Typography variant="body2" color="success.main">
-              {t("update.readyToInstall")}
-            </Typography>
-          </Box>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ display: "block", mt: 1 }}
-          >
-            {t("update.currentVersion")}:{" "}
-            {downloadedInstallerInfo?.currentVersion || appVersion} →{" "}
-            {downloadedInstallerInfo?.installerVersion}
-          </Typography>
-          {renderUpdateMetadata()}
-        </Box>
-      );
+        // 已有校验通过的安装包时，统一展示「可安装」面板
+        if (canInstallDownloadedUpdate) {
+          primaryContent = (
+            <Box sx={updatePanelSx}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <CheckIcon color="success" />
+                <Typography variant="body2" color="success.main">
+                  {t("update.readyToInstall")}
+                </Typography>
+              </Box>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 1 }}
+              >
+                {t("update.currentVersion")}:{" "}
+                {downloadedInstallerInfo?.currentVersion || appVersion} →{" "}
+                {downloadedInstallerInfo?.installerVersion}
+              </Typography>
+              {renderUpdateMetadata()}
+            </Box>
+          );
+        } else {
+          primaryContent = null;
+        }
     }
 
     return (
@@ -842,9 +985,9 @@ const AboutDialog = memo(function AboutDialog({
     );
   };
 
-  // 渲染更新按钮
+  // 渲染更新按钮：校验完成后只保留「安装」主操作，隐藏下载等易误触按钮
   const renderUpdateButtons = () => {
-    const installButton = canInstallDownloadedUpdate ? (
+    const installButton = (
       <Button
         variant="contained"
         onClick={installUpdate}
@@ -854,106 +997,88 @@ const AboutDialog = memo(function AboutDialog({
       >
         {t("update.installUpdate")}
       </Button>
-    ) : null;
+    );
 
-    const remindLaterButton =
-      updateInfo?.hasUpdate && typeof onRemindLater === "function" ? (
-        <Button
-          variant="text"
-          onClick={onRemindLater}
-          disabled={
-            updateStatus === "installing" || updateStatus === "checking"
-          }
-          startIcon={<ScheduleIcon />}
-        >
-          {t("update.remindLater")}
-        </Button>
-      ) : null;
-
-    const checkUpdateButton = (variant) => (
+    const checkUpdateButton = (variant, label) => (
       <Button
         variant={variant}
         onClick={handleCheckForUpdate}
         disabled={checkingForUpdate}
       >
-        {updateStatus === "error"
-          ? t("update.retryCheck")
-          : t("about.checkUpdateButton")}
+        {label ||
+          (updateStatus === "error"
+            ? t("update.retryCheck")
+            : t("about.checkUpdateButton"))}
       </Button>
     );
 
-    switch (updateStatus) {
-      case "idle":
-        return canInstallDownloadedUpdate ? (
-          <>
-            {installButton}
-            {checkUpdateButton("text")}
-          </>
-        ) : (
-          checkUpdateButton("outlined")
-        );
-
-      case "error":
-        return checkUpdateButton("outlined");
-
-      case "checking":
-        return (
-          <Button variant="outlined" disabled>
-            {t("update.checking")}
-          </Button>
-        );
-
-      case "available":
-        return (
-          <>
-            {canInstallDownloadedUpdate ? (
-              installButton
-            ) : (
-              <Button
-                variant="contained"
-                onClick={downloadUpdate}
-                disabled={isDownloading}
-                startIcon={<DownloadIcon />}
-              >
-                {t("update.download")}
-              </Button>
-            )}
-            {remindLaterButton}
-          </>
-        );
-
-      case "downloading":
-        return (
-          <Button
-            variant="outlined"
-            onClick={cancelDownload}
-            startIcon={<CancelIcon />}
-          >
-            {t("common.cancel")}
-          </Button>
-        );
-
-      case "downloaded":
-        return (
-          <>
-            {installButton}
-            {remindLaterButton}
-          </>
-        );
-
-      case "installing":
-        return (
-          <Button variant="outlined" disabled>
-            {t("update.installing")}
-          </Button>
-        );
-
-      case "upToDate":
-        return installButton || checkUpdateButton("outlined");
-
-      default:
-        return null;
+    if (updateStatus === "checking") {
+      return (
+        <Button variant="outlined" disabled>
+          {t("update.checking")}
+        </Button>
+      );
     }
+
+    if (updateStatus === "downloading") {
+      return (
+        <Button
+          variant="outlined"
+          onClick={cancelDownload}
+          startIcon={<CancelIcon />}
+        >
+          {t("common.cancel")}
+        </Button>
+      );
+    }
+
+    if (updateStatus === "installing") {
+      return (
+        <Button variant="outlined" disabled>
+          {t("update.installing")}
+        </Button>
+      );
+    }
+
+    // 下载校验完成 / 本地已有安装包：仅显示安装，避免再次下载
+    if (canInstallDownloadedUpdate) {
+      return installButton;
+    }
+
+    if (updateStatus === "available") {
+      return (
+        <>
+          <Button
+            variant="contained"
+            onClick={downloadUpdate}
+            disabled={isDownloading}
+            startIcon={<DownloadIcon />}
+          >
+            {t("update.download")}
+          </Button>
+          {typeof onRemindLater === "function" ? (
+            <Button
+              variant="text"
+              onClick={onRemindLater}
+              startIcon={<ScheduleIcon />}
+            >
+              {t("update.remindLater")}
+            </Button>
+          ) : null}
+        </>
+      );
+    }
+
+    if (updateStatus === "error") {
+      return checkUpdateButton("outlined");
+    }
+
+    if (updateStatus === "upToDate") {
+      return checkUpdateButton("outlined", t("update.retryCheck"));
+    }
+
+    // idle 等默认状态
+    return checkUpdateButton("outlined");
   };
 
   const releaseNoteMarkdownComponents = {
