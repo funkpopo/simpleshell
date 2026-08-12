@@ -662,6 +662,7 @@ module.exports = async () => {
               name: "main_window",
               preload: {
                 js: "./src/preload.js",
+                config: "./webpack.preload.config.js",
               },
             },
           ],

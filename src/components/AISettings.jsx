@@ -485,6 +485,11 @@ const AISettings = ({ open, onClose }) => {
       return;
     }
 
+    if (!window.terminalAPI?.fetchModels) {
+      setError(t("aiSettings.fetchModelsFailed") + ": " + t("aiSettings.apiUnavailable"));
+      return;
+    }
+
     setFetchingModels(true);
     setError("");
 

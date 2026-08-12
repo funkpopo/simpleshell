@@ -622,6 +622,7 @@
       "fetchModels": "Detect Models",
       "modelsFetched": "Models fetched successfully",
       "fetchModelsFailed": "Failed to fetch models",
+      "apiUnavailable": "System API is unavailable",
       "apiUrlAndKeyRequired": "API URL and API Key are required to fetch models",
       "customRules": "Custom Rules",
       "customRulesDescription": "Add custom command risk assessment rules. Rules use regular expressions to match commands, and matched commands will be marked with the corresponding risk level. Custom rules take priority over built-in rules.",

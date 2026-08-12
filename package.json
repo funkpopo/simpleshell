@@ -15,7 +15,7 @@
     "check": "node scripts/run-checks.js",
     "check:i18n": "node scripts/check-i18n.js",
     "check:a11y": "node scripts/check-accessibility.js",
-    "lint": "eslint src scripts webpack.main.config.js webpack.renderer.config.js webpack.rules.js forge.config.js eslint.config.js",
+    "lint": "eslint src scripts webpack.main.config.js webpack.renderer.config.js webpack.preload.config.js webpack.rules.js forge.config.js eslint.config.js",
     "format:check": "prettier --check .",
     "test": "npm run check",
     "release:check": "node scripts/release-check.js",
