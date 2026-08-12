@@ -6,6 +6,7 @@ const addFormats = require("ajv-formats");
 const {
   getConfigBackupDirectory,
   getConfigPath,
+  migrateLegacyConfigIfNeeded,
 } = require("../core/utils/appPaths");
 const { buildFileTimestamp } = require("../core/utils/textUtils");
 
@@ -684,6 +685,30 @@ class ConfigService {
   }
 
   /**
+   * 统计连接树中的 connection 节点数量（不含 group）
+   * @param {Array} items
+   * @returns {number}
+   */
+  _countConnections(items) {
+    if (!Array.isArray(items)) {
+      return 0;
+    }
+
+    let count = 0;
+    for (const item of items) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      if (item.type === "connection") {
+        count += 1;
+      } else if (item.type === "group") {
+        count += this._countConnections(item.items);
+      }
+    }
+    return count;
+  }
+
+  /**
    * 初始化主配置文件（如果不存在则创建）
    */
   initializeMainConfig() {
@@ -696,12 +721,41 @@ class ConfigService {
     }
 
     try {
+      // 打包版：把旧版 exe 旁的 config.json 迁到 userData，避免升级后“读不到配置”
+      if (this.app) {
+        const migration = migrateLegacyConfigIfNeeded(this.app);
+        if (migration.migrated) {
+          this._log(
+            `ConfigService: Migrated legacy config from ${migration.from} to ${migration.to}`,
+            "INFO",
+          );
+        } else if (migration.error) {
+          this._log(
+            `ConfigService: Legacy config migration failed (${migration.from} -> ${migration.to}): ${migration.error}`,
+            "WARN",
+          );
+        }
+      }
+
+      // 确保配置目录存在（userData 下首次运行）
+      try {
+        fs.mkdirSync(path.dirname(this.mainConfigPath), { recursive: true });
+      } catch (mkdirError) {
+        this._log(
+          `ConfigService: Failed to ensure config directory - ${mkdirError.message}`,
+          "WARN",
+        );
+      }
+
       if (!fs.existsSync(this.mainConfigPath)) {
         const defaultConfig = this._buildDefaultConfig();
 
         this._writeRawConfig(defaultConfig);
         this._applySecuritySettings(defaultConfig.security);
-        this._log("ConfigService: Main config file created.", "INFO");
+        this._log(
+          `ConfigService: Main config file created at ${this.mainConfigPath}`,
+          "INFO",
+        );
         return;
       }
 
@@ -733,6 +787,17 @@ class ConfigService {
       }
 
       this._applySecuritySettings(normalizedConfig.security);
+
+      const connectionCount = this._countConnections(
+        normalizedConfig.connections,
+      );
+      const lastConnectionCount = Array.isArray(normalizedConfig.lastConnections)
+        ? normalizedConfig.lastConnections.length
+        : 0;
+      this._log(
+        `ConfigService: Loaded config from ${this.mainConfigPath} (connections=${connectionCount}, lastConnections=${lastConnectionCount}, language=${normalizedConfig.uiSettings?.language || "n/a"})`,
+        "INFO",
+      );
     } catch (error) {
       this._log(
         `ConfigService: Failed to initialize main config - ${error.message}`,
@@ -1871,14 +1936,40 @@ class ConfigService {
     try {
       const config = this._readConfig();
       const { config: normalizedConfig } = this._ensureSecurityConfig(config);
-      const runtimeStatus = this.crypto.getSecurityStatus();
+      let runtimeStatus = this.crypto.getSecurityStatus();
+
+      // 自愈：若运行时尚未 configureSecurity（unlocked 默认 false），
+      // 在无主密码模式下补一次，避免渲染进程因 !unlocked 永久不加载连接。
+      const masterPasswordEnabled =
+        normalizedConfig?.security?.masterPasswordEnabled === true;
+      if (
+        !masterPasswordEnabled &&
+        runtimeStatus?.unlocked === false &&
+        typeof this.crypto.configureSecurity === "function"
+      ) {
+        try {
+          this._applySecuritySettings(normalizedConfig.security);
+          runtimeStatus = this.crypto.getSecurityStatus();
+        } catch (applyError) {
+          this._log(
+            `ConfigService: Failed to re-apply security settings for status - ${applyError.message}`,
+            "WARN",
+          );
+        }
+      }
+
+      const requiresUnlock = Boolean(
+        masterPasswordEnabled && runtimeStatus?.unlocked === false,
+      );
 
       return {
         randomKeyConfigured: Boolean(normalizedConfig?.security?.randomKey),
-        masterPasswordEnabled:
-          normalizedConfig?.security?.masterPasswordEnabled === true,
-        unlocked: runtimeStatus?.unlocked !== false,
-        requiresUnlock: Boolean(runtimeStatus?.requiresUnlock),
+        masterPasswordEnabled,
+        // 无主密码时始终视为已解锁，避免启动门闩误拦连接加载
+        unlocked: masterPasswordEnabled
+          ? runtimeStatus?.unlocked === true
+          : true,
+        requiresUnlock,
       };
     } catch (error) {
       this._log(

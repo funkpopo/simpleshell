@@ -1,5 +1,9 @@
 const fs = require("fs");
-const { getConfigPath } = require("../utils/appPaths");
+const {
+  getConfigPath,
+  getLegacyConfigPath,
+  migrateLegacyConfigIfNeeded,
+} = require("../utils/appPaths");
 
 /**
  * 启动期硬件加速引导：必须在 app.whenReady() 之前调用，
@@ -7,7 +11,7 @@ const { getConfigPath } = require("../utils/appPaths");
  *
  * 因为 configService 在 whenReady 内部初始化（太晚），这里同步读取
  * config.json 的 uiSettings.performance.hardwareAcceleration 字段。
- * 路径解析与 configService 保持一致。
+ * 路径解析与 configService 保持一致；打包版会先尝试迁移旧版 exe 旁配置。
  *
  * @param {import('electron').App} app
  * @returns {boolean} 实际生效的 hardwareAccelerationEnabled
@@ -15,7 +19,21 @@ const { getConfigPath } = require("../utils/appPaths");
 function bootstrapHardwareAcceleration(app) {
   let enabled = true;
   try {
-    const configPath = getConfigPath(app);
+    // 尽早迁移，避免 whenReady 前读到空的 userData 配置
+    try {
+      migrateLegacyConfigIfNeeded(app);
+    } catch {
+      /* best-effort */
+    }
+
+    let configPath = getConfigPath(app);
+    if (!fs.existsSync(configPath)) {
+      const legacyPath = getLegacyConfigPath(app);
+      if (legacyPath && fs.existsSync(legacyPath)) {
+        configPath = legacyPath;
+      }
+    }
+
     if (fs.existsSync(configPath)) {
       const raw = fs.readFileSync(configPath, "utf8");
       const parsed = JSON.parse(raw);

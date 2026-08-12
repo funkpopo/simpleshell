@@ -10,6 +10,7 @@ const commandHistoryService = require("../../modules/terminal/command-history");
 const processManager = require("../process/processManager");
 const { safeSendToRenderer } = require("../window/windowManager");
 const updateService = require("../update/updateService");
+const { migrateLegacyConfigIfNeeded } = require("../utils/appPaths");
 
 /**
  * 应用初始化模块
@@ -230,6 +231,13 @@ class AppInitializer {
    * 执行所有初始化
    */
   async initialize(dialog, shell) {
+    // 日志/配置初始化前先迁移旧版 exe 旁 config，避免首启读空配置
+    try {
+      migrateLegacyConfigIfNeeded(this.app);
+    } catch {
+      /* best-effort; configService 仍会再尝试一次 */
+    }
+
     this.initializeLogger();
     await this.configureSessionProxy();
     this.initializeConfigService();

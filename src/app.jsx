@@ -797,7 +797,12 @@ function AppContent() {
     try {
       const loadedConnections =
         (await window.terminalAPI.loadConnections()) || [];
+      // IPC 失败时可能返回 { success: false, error } 而非数组
       if (!Array.isArray(loadedConnections)) {
+        console.warn(
+          "loadConnections returned non-array payload; keeping previous connections",
+          loadedConnections,
+        );
         return;
       }
 
@@ -1858,9 +1863,10 @@ function AppContent() {
   ]);
 
   React.useEffect(() => {
+    // 仅在主密码锁定或安全状态仍在加载时推迟；无主密码时必须立即加载 config 中的连接
     if (
       credentialSecurityStatus.loading ||
-      !credentialSecurityStatus.unlocked ||
+      credentialSecurityStatus.requiresUnlock ||
       !window.terminalAPI
     ) {
       return undefined;
@@ -1885,8 +1891,7 @@ function AppContent() {
     };
   }, [
     credentialSecurityStatus.loading,
-    credentialSecurityStatus.masterPasswordEnabled,
-    credentialSecurityStatus.unlocked,
+    credentialSecurityStatus.requiresUnlock,
     refreshConnectionState,
   ]);
 
@@ -1898,7 +1903,7 @@ function AppContent() {
     const handleConnectionsChanged = () => {
       if (
         credentialSecurityStatus.loading ||
-        !credentialSecurityStatus.unlocked
+        credentialSecurityStatus.requiresUnlock
       ) {
         return;
       }
@@ -1919,7 +1924,7 @@ function AppContent() {
     };
   }, [
     credentialSecurityStatus.loading,
-    credentialSecurityStatus.unlocked,
+    credentialSecurityStatus.requiresUnlock,
     refreshConnectionState,
   ]);
 
