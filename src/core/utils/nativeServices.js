@@ -1,13 +1,13 @@
 const fs = require("fs");
 const path = require("path");
 
-const SIDECAR_BASENAME =
+const NATIVE_SERVICES_BASENAME =
   process.platform === "win32"
-    ? "transfer-sidecar.exe"
-    : "transfer-sidecar";
+    ? "simpleshell-native-services.exe"
+    : "simpleshell-native-services";
 
-function getTransferNativeScannerPath() {
-  const overridePath = process.env.SIMPLESHELL_TRANSFER_SIDECAR_PATH;
+function getNativeServicesHostPath() {
+  const overridePath = process.env.SIMPLESHELL_NATIVE_SERVICES_PATH;
   const platformArchDir = `${process.platform}-${process.arch}`;
   const candidates = [];
 
@@ -16,29 +16,29 @@ function getTransferNativeScannerPath() {
   }
 
   if (process.resourcesPath) {
-    candidates.push(path.join(process.resourcesPath, SIDECAR_BASENAME));
+    candidates.push(path.join(process.resourcesPath, NATIVE_SERVICES_BASENAME));
     candidates.push(
-      path.join(process.resourcesPath, "bin", platformArchDir, SIDECAR_BASENAME),
+      path.join(process.resourcesPath, "bin", platformArchDir, NATIVE_SERVICES_BASENAME),
     );
   }
 
   candidates.push(
     path.join(
       process.cwd(),
-      "transfernative",
+      "native-services",
       "bin",
       platformArchDir,
-      SIDECAR_BASENAME,
+      NATIVE_SERVICES_BASENAME,
     ),
   );
   candidates.push(
     path.join(
       process.cwd(),
-      "transfernative",
-      "transfer-sidecar",
+      "native-services",
+      "desktop-host",
       "target",
       "release",
-      SIDECAR_BASENAME,
+      NATIVE_SERVICES_BASENAME,
     ),
   );
 
@@ -52,5 +52,5 @@ function getTransferNativeScannerPath() {
 }
 
 module.exports = {
-  getTransferNativeScannerPath,
+  getNativeServicesHostPath,
 };

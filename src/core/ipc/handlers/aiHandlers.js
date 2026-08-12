@@ -1,9 +1,7 @@
 const configService = require("../../../services/configService");
 const { logToFile } = require("../../utils/logger");
 const aiWorkerManager = require("../../workers/aiWorkerManager");
-const { BrowserWindow } = require("electron");
 const {
-  IPC_EVENT_CHANNELS,
   IPC_REQUEST_CHANNELS,
 } = require("../schema/channels");
 const {
@@ -547,11 +545,11 @@ class AIHandlers {
         });
 
         // 发送消息到Worker
-        aiWorker.postMessage({
-          type: "api_request",
-          id: requestId,
-          data: workerData,
-        });
+      aiWorkerManager.postMessage({
+        kind: "request",
+        requestId,
+        payload: workerData,
+      });
 
         // 如果是流式请求，立即返回成功
         if (isStream) {
@@ -586,28 +584,11 @@ class AIHandlers {
     const cancelRequestId = `cancel_${Date.now()}`;
 
     // 尝试通过Worker取消请求
-    aiWorker.postMessage({
-      type: "cancel_request",
-      id: cancelRequestId,
-      data: {
-        sessionId: currentSessionId,
-      },
+    aiWorkerManager.postMessage({
+      kind: "cancel",
+      requestId: cancelRequestId,
+      sessionId: currentSessionId,
     });
-
-    // 获取主窗口
-    const mainWindow = BrowserWindow.getAllWindows()[0];
-    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-      // 发送中断消息给渲染进程
-      mainWindow.webContents.send(IPC_EVENT_CHANNELS.AI_STREAM_END, {
-        tabId: "ai",
-        aborted: true,
-        sessionId: currentSessionId,
-      });
-    }
-
-    // 清理会话ID和映射
-    aiWorkerManager.deleteStreamSession(currentSessionId);
-    aiWorkerManager.clearCurrentSessionId();
 
     return {
       success: true,
@@ -636,14 +617,14 @@ class AIHandlers {
       aiWorkerManager.setRequestCallback(requestId, { resolve, reject });
 
       // 发送消息到worker
-      aiWorker.postMessage({
-        id: requestId,
-        type: "api_request",
-        data: {
-          ...resolvedRequestData,
-          type: "models",
-        },
-      });
+    aiWorkerManager.postMessage({
+      kind: "request",
+      requestId,
+      payload: {
+        ...resolvedRequestData,
+        type: "models",
+      },
+    });
 
       // 设置超时
       setTimeout(() => {

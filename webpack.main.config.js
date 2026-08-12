@@ -26,7 +26,6 @@ module.exports = {
       : false,
   entry: {
     index: "./src/main.js",
-    "workers/ai-worker": "./src/workers/ai-worker.js",
     "workers/sftp-transfer-worker": "./src/workers/sftp-transfer-worker.js",
   },
   resolve: {

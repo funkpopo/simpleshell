@@ -5,8 +5,8 @@ const projectRoot = path.resolve(__dirname, "..");
 const packagePath = path.join(projectRoot, "package.json");
 const cargoPath = path.join(
   projectRoot,
-  "transfernative",
-  "transfer-sidecar",
+  "native-services",
+  "desktop-host",
   "Cargo.toml",
 );
 const readmePath = path.join(projectRoot, "README.md");
@@ -31,10 +31,12 @@ const logoIcoPath = path.join(projectRoot, "src", "assets", "logo.ico");
 const logoPngPath = path.join(projectRoot, "src", "assets", "SimpleShell.png");
 
 const sidecarName =
-  process.platform === "win32" ? "transfer-sidecar.exe" : "transfer-sidecar";
+  process.platform === "win32"
+    ? "simpleshell-native-services.exe"
+    : "simpleshell-native-services";
 const sidecarPath = path.join(
   projectRoot,
-  "transfernative",
+  "native-services",
   "bin",
   `${process.platform}-${process.arch}`,
   sidecarName,
@@ -106,7 +108,7 @@ function main() {
 
   if (cargoVersion !== version) {
     fail(
-      `transfernative/transfer-sidecar/Cargo.toml version (${cargoVersion || "missing"}) must match package.json (${version || "missing"})`,
+      `native-services/desktop-host/Cargo.toml version (${cargoVersion || "missing"}) must match package.json (${version || "missing"})`,
     );
   }
 

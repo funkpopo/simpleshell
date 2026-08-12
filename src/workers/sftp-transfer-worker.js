@@ -1,6 +1,6 @@
 const {
-  getTransferNativeScannerPath,
-} = require("../core/utils/nativeTransferSidecar");
+  getNativeServicesHostPath,
+} = require("../core/utils/nativeServices");
 const {
   invokeNativeRequestWithConfig,
 } = require("../core/utils/nativeSftpClient");
@@ -88,8 +88,8 @@ function terminateCurrentChild(reason = "Transfer cancelled by user") {
 }
 
 function validateWorkerInit(message) {
-  if (!getTransferNativeScannerPath()) {
-    throw new Error("Rust transfer sidecar was not found");
+  if (!getNativeServicesHostPath()) {
+    throw new Error("Native services host was not found");
   }
 
   const sshConfig = message?.payload?.sshConfig || {};

@@ -37,8 +37,10 @@ const WORKER_UNPACK_DIRS = [
   "src/workers",
   "src\\workers",
 ];
-const SIDECAR_BASENAME =
-  process.platform === "win32" ? "transfer-sidecar.exe" : "transfer-sidecar";
+const NATIVE_SERVICES_BASENAME =
+  process.platform === "win32"
+    ? "simpleshell-native-services.exe"
+    : "simpleshell-native-services";
 const WINDOWS_ICON_PATH = path.join(__dirname, "src", "assets", "logo.ico");
 const LINUX_ICON_PATH = path.join(
   __dirname,
@@ -53,7 +55,7 @@ const PACKAGED_SCRIPT_NAMES_TO_REMOVE = new Set([
   "run-checks.js",
   "release-check.js",
   "generate-checksums.js",
-  "prepare-rust-sidecar.js",
+  "prepare-native-services.js",
 ]);
 const NODE_PTY_PREBUILD_DIRS_BY_TARGET = {
   "darwin-arm64": new Set(["darwin-arm64"]),
@@ -572,10 +574,10 @@ module.exports = async () => {
       extraResource: [
         path.join(
           __dirname,
-          "transfernative",
+          "native-services",
           "bin",
           `${process.platform}-${process.arch}`,
-          SIDECAR_BASENAME,
+          NATIVE_SERVICES_BASENAME,
         ),
       ],
       afterPrune: [cleanupPackagedDevelopmentFilesHook],

@@ -201,7 +201,7 @@ simpleshell/
 │   ├── styles/             # Global styles
 │   ├── theme/              # Theme tokens/styles
 │   └── utils/              # Shared utilities
-├── transfernative/         # Native transfer sidecar (Rust)
+├── native-services/        # Rust host for native product services
 ├── forge.config.js         # Electron Forge configuration
 ├── webpack.main.config.js  # Webpack config for Electron main
 └── webpack.renderer.config.js # Webpack config for Electron renderer
@@ -225,9 +225,9 @@ simpleshell/
 - **[node-pty](https://github.com/microsoft/node-pty)** 1.2.0-beta.11 - Pseudo terminal support
 - **[telnet-client](https://www.npmjs.com/package/telnet-client)** 2.2.13 - Telnet client
 
-### **File Transfer (Native Sidecar)**
+### **Native Services Host**
 
-- **Rust sidecar (`transfernative/`)** - Native “transfer-sidecar” to speed up/robustify large transfers
+- **Rust host (`native-services/`)** - `simpleshell-native-services` hosts file-management and AI services behind stable subcommands
 
 ### **Editing, Preview & Rendering**
 

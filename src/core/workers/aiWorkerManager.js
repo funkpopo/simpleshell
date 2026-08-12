@@ -1,449 +1,177 @@
-const { Worker } = require("worker_threads");
+const { spawn } = require("node:child_process");
 const { BrowserWindow } = require("electron");
+const { getNativeServicesHostPath } = require("../utils/nativeServices");
 const { logToFile } = require("../utils/logger");
-const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
-const configService = require("../../services/configService");
-const aiManagerText = (key, params = {}) =>
-  translateLocale(key, { lng: getUiLanguage(configService), ...params });
-const { resolveWorkerScriptPath } = require("../utils/workerScriptResolver");
-const {
-  mainProcessResourceManager,
-} = require("../utils/mainProcessResourceManager");
 const { IPC_EVENT_CHANNELS } = require("../ipc/schema/channels");
 
-// AI Worker状态
-let aiWorker = null;
-let aiRequestMap = new Map();
+const AI_SIDECAR_SCHEMA_VERSION = 1;
+const MAX_SIDECAR_RESTART_ATTEMPTS = 3;
+const SIDECAR_RESTART_BASE_DELAY_MS = 500;
+let aiSidecar = null;
+let stdoutBuffer = "";
 let nextRequestId = 1;
-const streamSessions = new Map();
 let currentSessionId = null;
+let restartTimer = null;
+let restartAttempts = 0;
+let isTerminating = false;
+const requestCallbacks = new Map();
 
-// 资源管理器注册的清理函数（用于避免资源表无限增长/误报）
-let disposeWorkerResource = null;
-let disposeMessageListenerResource = null;
-let disposeErrorListenerResource = null;
-let disposeExitListenerResource = null;
-let disposeRestartTimerResource = null;
+function createError(message, payload = {}) {
+  const error = new Error(message);
+  Object.assign(error, payload);
+  return error;
+}
 
-// 记录当前绑定到 worker 的 handler，便于在重建/退出时主动解绑
-let currentWorkerHandlers = null;
-
-function safeCallDisposer(disposer) {
-  try {
-    if (!disposer) return null;
-    const result = disposer();
-    // removeResource 是 async，这里允许返回 Promise
-    return Promise.resolve(result);
-  } catch (error) {
-    return Promise.reject(error);
+function sendToRenderer(channel, payload) {
+  const window = BrowserWindow.getAllWindows()[0];
+  if (window && !window.webContents.isDestroyed()) {
+    window.webContents.send(channel, payload);
   }
 }
 
-async function cleanupRestartTimerRegistration() {
-  if (!disposeRestartTimerResource) return;
-  const disposer = disposeRestartTimerResource;
-  disposeRestartTimerResource = null;
-  await Promise.allSettled([safeCallDisposer(disposer)]);
+function rejectAll(error) {
+  for (const callback of requestCallbacks.values()) callback.reject(error);
+  requestCallbacks.clear();
 }
 
-function detachCurrentWorkerEventHandlers(worker) {
-  if (!worker || !currentWorkerHandlers) return;
-  try {
-    if (currentWorkerHandlers.messageHandler) {
-      worker.removeListener("message", currentWorkerHandlers.messageHandler);
-    }
-    if (currentWorkerHandlers.errorHandler) {
-      worker.removeListener("error", currentWorkerHandlers.errorHandler);
-    }
-    if (currentWorkerHandlers.exitHandler) {
-      worker.removeListener("exit", currentWorkerHandlers.exitHandler);
-    }
-  } catch {
-    // 忽略解绑异常，避免影响后续清理流程
-  } finally {
-    currentWorkerHandlers = null;
-  }
+function clearRestartTimer() {
+  if (restartTimer) clearTimeout(restartTimer);
+  restartTimer = null;
 }
 
-async function cleanupWorkerRegistrations(
-  { terminateWorker } = { terminateWorker: true },
-) {
-  // 先清理 restart timer 的资源注册（如果存在）
-  await cleanupRestartTimerRegistration();
-
-  // 清理事件监听器资源注册（会触发 removeListener）
-  const listenerDisposers = [
-    disposeMessageListenerResource,
-    disposeErrorListenerResource,
-    disposeExitListenerResource,
-  ].filter(Boolean);
-  disposeMessageListenerResource = null;
-  disposeErrorListenerResource = null;
-  disposeExitListenerResource = null;
-  await Promise.allSettled(listenerDisposers.map(safeCallDisposer));
-
-  // 清理 worker 资源注册（会触发 terminate）
-  if (disposeWorkerResource) {
-    const disposer = disposeWorkerResource;
-    disposeWorkerResource = null;
-    if (terminateWorker) {
-      await Promise.allSettled([safeCallDisposer(disposer)]);
-    } else {
-      // 当前资源管理器的 worker 清理逻辑会 terminate；这里仍然执行，
-      // 但如果 worker 已退出，terminate 通常是幂等/可忽略。
-      await Promise.allSettled([safeCallDisposer(disposer)]);
-    }
-  }
-}
-
-/**
- * 获取worker文件路径
- */
-function getWorkerPath() {
-  return resolveWorkerScriptPath("ai-worker.js", {
-    runtimeDir: __dirname,
-    envVar: "SIMPLESHELL_AI_WORKER_PATH",
-  });
-}
-
-/**
- * 处理Worker发送的类型化消息
- */
-function handleWorkerTypeMessage(type, id, data, result, error) {
-  const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (
-    !mainWindow ||
-    !mainWindow.webContents ||
-    mainWindow.webContents.isDestroyed()
-  ) {
-    logToFile("Cannot send worker message: main window unavailable", "ERROR");
+function scheduleRestart() {
+  if (isTerminating || restartTimer || restartAttempts >= MAX_SIDECAR_RESTART_ATTEMPTS) {
     return;
   }
+  const delay = SIDECAR_RESTART_BASE_DELAY_MS * (2 ** restartAttempts);
+  restartAttempts += 1;
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    const child = createAIWorker();
+    if (!child) scheduleRestart();
+  }, delay);
+  if (typeof restartTimer.unref === "function") restartTimer.unref();
+  logToFile(`Scheduling Rust AI sidecar restart ${restartAttempts}/${MAX_SIDECAR_RESTART_ATTEMPTS} in ${delay}ms`, "WARN");
+}
 
-  switch (type) {
-    case "init":
-      logToFile(`AI Worker initialized: ${JSON.stringify(result)}`, "INFO");
-      break;
-
-    case "stream_chunk":
-      if (data && data.sessionId) {
-        streamSessions.set(data.sessionId, id);
-        mainWindow.webContents.send(IPC_EVENT_CHANNELS.AI_STREAM_CHUNK, {
-          tabId: "ai",
-          chunk: data.chunk,
-          sessionId: data.sessionId,
-        });
+function handleEvent(event) {
+  const callback = event.requestId ? requestCallbacks.get(event.requestId) : null;
+  switch (event.kind) {
+    case "ready":
+      restartAttempts = 0;
+      logToFile("Rust AI sidecar ready", "INFO");
+      return;
+    case "result":
+      if (callback) {
+        callback.resolve(event.result);
+        requestCallbacks.delete(event.requestId);
       }
-      break;
-
-    case "stream_end":
-      if (data && data.sessionId) {
-        mainWindow.webContents.send(IPC_EVENT_CHANNELS.AI_STREAM_END, {
-          tabId: "ai",
-          sessionId: data.sessionId,
-          aborted: data.aborted || false,
+      return;
+    case "streamChunk":
+      sendToRenderer(IPC_EVENT_CHANNELS.AI_STREAM_CHUNK, {
+        tabId: "ai", chunk: event.chunk, sessionId: event.sessionId,
+      });
+      return;
+    case "streamEnd":
+      sendToRenderer(IPC_EVENT_CHANNELS.AI_STREAM_END, {
+        tabId: "ai", sessionId: event.sessionId, aborted: Boolean(event.result?.aborted),
+      });
+      requestCallbacks.delete(event.requestId);
+      if (currentSessionId === event.sessionId) currentSessionId = null;
+      return;
+    case "error": {
+      const error = createError(event.error?.message || "AI sidecar request failed", {
+        statusCode: event.error?.statusCode,
+      });
+      if (event.sessionId) {
+        sendToRenderer(IPC_EVENT_CHANNELS.AI_STREAM_ERROR, {
+          tabId: "ai", sessionId: event.sessionId,
+          error: { message: error.message, statusCode: error.statusCode },
         });
-        streamSessions.delete(data.sessionId);
+        if (currentSessionId === event.sessionId) currentSessionId = null;
       }
-      break;
-
-    case "stream_error":
-      if (data && data.sessionId) {
-        mainWindow.webContents.send(IPC_EVENT_CHANNELS.AI_STREAM_ERROR, {
-          tabId: "ai",
-          sessionId: data.sessionId,
-          error:
-            data.error || {
-              message: aiManagerText("mainProcess.ai.unknownError"),
-            },
-        });
-        streamSessions.delete(data.sessionId);
+      if (callback) {
+        callback.reject(error);
+        requestCallbacks.delete(event.requestId);
       }
-      break;
-
-    case "worker_error":
-      logToFile(`AI Worker internal error: ${error?.message || "Unknown error"}`, "ERROR");
-      break;
-
-    case "worker_exit":
-      logToFile(`AI Worker exit event: ${JSON.stringify(result)}`, "INFO");
-      break;
-
-    default:
-      logToFile(`Unknown worker message type: ${type}`, "WARN");
+    }
   }
 }
 
-/**
- * 创建AI Worker线程
- */
-function createAIWorker() {
-  if (aiWorker) {
-    // 先解绑监听器，避免旧 worker / handler 残留
-    detachCurrentWorkerEventHandlers(aiWorker);
-    // 尽量从资源管理器中移除旧注册，避免资源表增长
-    void cleanupWorkerRegistrations({ terminateWorker: true });
-    // 如果未通过资源管理器登记 worker，则直接终止旧 worker（不等待）
-    if (!disposeWorkerResource) {
-      try {
-        aiWorker.terminate();
-      } catch {
-        // ignore
-      }
-    }
-    aiWorker = null;
+function writeCommand(command) {
+  if (!aiSidecar?.stdin || aiSidecar.stdin.destroyed) {
+    throw createError("Rust AI sidecar is not running", { code: "AI_SIDECAR_UNAVAILABLE" });
   }
+  aiSidecar.stdin.write(`${JSON.stringify({ schemaVersion: AI_SIDECAR_SCHEMA_VERSION, ...command })}\n`, "utf8");
+}
 
-  try {
-    const workerPath = getWorkerPath();
-    logToFile(`Creating AI Worker: ${workerPath}`, "INFO");
-
-    aiWorker = new Worker(workerPath);
-    // AI Worker 属于预期长生命周期资源，避免被 30 分钟阈值误判为泄漏
-    disposeWorkerResource = mainProcessResourceManager.addWorker(
-      aiWorker,
-      "AI Worker",
-      {
-        skipLeakCheck: true,
-      },
-    );
-
-    const messageHandler = (message) => {
-      const { id, type, result, error, data } = message;
-
-      if (type) {
-        handleWorkerTypeMessage(type, id, data, result, error);
-        return;
-      }
-
-      const callback = aiRequestMap.get(id);
-      if (callback) {
-        if (error) {
-          const errorMessage = error.message || "Unknown error";
-          const normalizedError = new Error(errorMessage);
-          if (error.statusCode) {
-            normalizedError.statusCode = error.statusCode;
-          }
-          normalizedError.raw = error;
-          callback.reject(normalizedError);
-        } else {
-          callback.resolve(result);
-        }
-        aiRequestMap.delete(id);
-      } else {
-        logToFile(`Received response for unknown request id: ${id}`, "WARN");
-      }
-    };
-
-    aiWorker.on("message", messageHandler);
-    disposeMessageListenerResource =
-      mainProcessResourceManager.addEventListener(
-        aiWorker,
-        "message",
-        messageHandler,
-        "AI Worker message handler",
-        { skipLeakCheck: true },
-      );
-
-    const errorHandler = (error) => {
-      logToFile(`AI Worker error: ${error.message}`, "ERROR");
-      for (const [id, callback] of aiRequestMap.entries()) {
-        callback.reject(
-          new Error("AI Worker encountered an error: " + error.message),
-        );
-        aiRequestMap.delete(id);
-      }
-      streamSessions.clear();
-    };
-
-    aiWorker.on("error", errorHandler);
-    disposeErrorListenerResource = mainProcessResourceManager.addEventListener(
-      aiWorker,
-      "error",
-      errorHandler,
-      "AI Worker error handler",
-      { skipLeakCheck: true },
-    );
-
-    const exitHandler = (code) => {
-      logToFile(`AI Worker exited, code: ${code}`, "WARN");
-      if (code !== 0) {
-        const timerId = setTimeout(() => {
-          logToFile("Attempting to restart AI Worker", "INFO");
-          // timer 已触发，移除其资源注册（避免资源管理器长期保留一次性 timer）
-          void cleanupRestartTimerRegistration();
-          createAIWorker();
-        }, 1000);
-        // timer 是一次性的，但仍登记以便应用退出时统一清理
-        disposeRestartTimerResource = mainProcessResourceManager.addTimer(
-          timerId,
-          "timeout",
-          "AI Worker restart timer",
-        );
-      }
-      for (const [id, callback] of aiRequestMap.entries()) {
-        callback.reject(
-          new Error(`AI Worker stopped unexpectedly with code ${code}`),
-        );
-        aiRequestMap.delete(id);
-      }
-      streamSessions.clear();
-
-      // worker 已退出，清理当前注册（不阻塞 exit 回调）
-      detachCurrentWorkerEventHandlers(aiWorker);
-      void cleanupWorkerRegistrations({ terminateWorker: false });
-      aiWorker = null;
-    };
-
-    aiWorker.on("exit", exitHandler);
-    disposeExitListenerResource = mainProcessResourceManager.addEventListener(
-      aiWorker,
-      "exit",
-      exitHandler,
-      "AI Worker exit handler",
-      { skipLeakCheck: true },
-    );
-
-    currentWorkerHandlers = { messageHandler, errorHandler, exitHandler };
-
-    // 初始化系统代理配置
-    try {
-      const proxyManager = require("../proxy/proxy-manager");
-      const proxyConfig =
-        proxyManager.getDefaultProxyConfig() ||
-        proxyManager.getSystemProxyConfig();
-      if (proxyConfig) {
-        aiWorker.postMessage({
-          type: "update_proxy",
-          id: `proxy_init_${Date.now()}`,
-          data: proxyConfig,
-        });
-        logToFile(
-          `AI Worker proxy configured: ${proxyConfig.host}:${proxyConfig.port}`,
-          "INFO",
-        );
-      }
-    } catch (proxyError) {
-      logToFile(`AI Worker proxy configuration failed: ${proxyError.message}`, "WARN");
-    }
-
-    return aiWorker;
-  } catch (error) {
-    logToFile(`Failed to create AI Worker: ${error.message}`, "ERROR");
+function createAIWorker() {
+  if (aiSidecar) return aiSidecar;
+  isTerminating = false;
+  clearRestartTimer();
+  const sidecarPath = getNativeServicesHostPath();
+  if (!sidecarPath) {
+    logToFile("Rust AI sidecar binary was not found", "ERROR");
     return null;
   }
-}
-
-/**
- * 获取当前AI Worker实例
- */
-function getAIWorker() {
-  return aiWorker;
-}
-
-/**
- * 确保AI Worker已创建
- */
-function ensureAIWorker() {
-  if (!aiWorker) {
-    logToFile("AI Worker not initialized, attempting to create", "WARN");
-    aiWorker = createAIWorker();
-  }
-  return aiWorker;
-}
-
-/**
- * 终止AI Worker
- */
-async function terminateAIWorker() {
-  if (aiWorker) {
-    try {
-      detachCurrentWorkerEventHandlers(aiWorker);
-      await cleanupWorkerRegistrations({ terminateWorker: true });
-    } catch (err) {
-      logToFile(`Error terminating AI worker: ${err.message}`, "ERROR");
+  const child = spawn(sidecarPath, ["ai-serve"], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  aiSidecar = child;
+  stdoutBuffer = "";
+  child.stdout.on("data", (chunk) => {
+    stdoutBuffer += chunk.toString("utf8");
+    const lines = stdoutBuffer.split(/\r?\n/);
+    stdoutBuffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try { handleEvent(JSON.parse(line)); } catch { logToFile("Rust AI sidecar returned invalid JSON", "ERROR"); }
     }
-    aiWorker = null;
-  }
+  });
+  child.stderr.on("data", () => {});
+  child.on("error", (error) => {
+    logToFile(`Rust AI sidecar process error: ${error.message}`, "ERROR");
+    rejectAll(createError(`Rust AI sidecar process error: ${error.message}`));
+  });
+  child.on("exit", (code, signal) => {
+    if (aiSidecar === child) aiSidecar = null;
+    const error = createError(`Rust AI sidecar stopped unexpectedly (${code ?? signal ?? "unknown"})`);
+    rejectAll(error);
+    if (currentSessionId) {
+      sendToRenderer(IPC_EVENT_CHANNELS.AI_STREAM_ERROR, {
+        tabId: "ai", sessionId: currentSessionId, error: { message: error.message },
+      });
+    }
+    currentSessionId = null;
+    logToFile(`Rust AI sidecar exited: code=${code}, signal=${signal}`, "WARN");
+    scheduleRestart();
+  });
+  try {
+    const proxyManager = require("../proxy/proxy-manager");
+    const proxy = proxyManager.getDefaultProxyConfig() || proxyManager.getSystemProxyConfig();
+    if (proxy) writeCommand({ kind: "proxyUpdate", requestId: `proxy-${Date.now()}`, proxy });
+  } catch (error) { logToFile(`Unable to configure Rust AI sidecar proxy: ${error.message}`, "WARN"); }
+  return child;
 }
 
-/**
- * 生成下一个请求ID
- */
-function getNextRequestId() {
-  return `req_${nextRequestId++}`;
-}
-
-/**
- * 设置请求回调
- */
-function setRequestCallback(requestId, callback) {
-  aiRequestMap.set(requestId, callback);
-}
-
-/**
- * 删除请求回调
- */
-function deleteRequestCallback(requestId) {
-  aiRequestMap.delete(requestId);
-}
-
-/**
- * 检查请求是否存在
- */
-function hasRequest(requestId) {
-  return aiRequestMap.has(requestId);
-}
-
-/**
- * 设置当前会话ID
- */
-function setCurrentSessionId(sessionId) {
-  currentSessionId = sessionId;
-}
-
-/**
- * 获取当前会话ID
- */
-function getCurrentSessionId() {
-  return currentSessionId;
-}
-
-/**
- * 清除当前会话ID
- */
-function clearCurrentSessionId() {
+function getAIWorker() { return aiSidecar; }
+function ensureAIWorker() { return aiSidecar || createAIWorker(); }
+async function terminateAIWorker() {
+  isTerminating = true;
+  clearRestartTimer();
+  const child = aiSidecar;
+  aiSidecar = null;
   currentSessionId = null;
+  rejectAll(createError("Rust AI sidecar terminated"));
+  if (child) child.kill();
 }
+function getNextRequestId() { return `req_${nextRequestId++}`; }
+function setRequestCallback(requestId, callback) { requestCallbacks.set(requestId, callback); }
+function deleteRequestCallback(requestId) { requestCallbacks.delete(requestId); }
+function hasRequest(requestId) { return requestCallbacks.has(requestId); }
+function setCurrentSessionId(value) { currentSessionId = value; }
+function getCurrentSessionId() { return currentSessionId; }
+function clearCurrentSessionId() { currentSessionId = null; }
+function deleteStreamSession() {}
+function postMessage(message) { writeCommand(message); }
+function getDiagnostics() { return { hasWorker: Boolean(aiSidecar), pendingRequests: requestCallbacks.size, streamSessions: currentSessionId ? 1 : 0, hasCurrentSession: Boolean(currentSessionId), transport: "rust-sidecar", restartAttempts, restartScheduled: Boolean(restartTimer) }; }
 
-/**
- * 删除流式会话
- */
-function deleteStreamSession(sessionId) {
-  streamSessions.delete(sessionId);
-}
-
-function getDiagnostics() {
-  return {
-    hasWorker: Boolean(aiWorker),
-    pendingRequests: aiRequestMap.size,
-    streamSessions: streamSessions.size,
-    hasCurrentSession: Boolean(currentSessionId),
-  };
-}
-
-module.exports = {
-  createAIWorker,
-  getAIWorker,
-  ensureAIWorker,
-  terminateAIWorker,
-  getNextRequestId,
-  setRequestCallback,
-  deleteRequestCallback,
-  hasRequest,
-  setCurrentSessionId,
-  getCurrentSessionId,
-  clearCurrentSessionId,
-  deleteStreamSession,
-  getDiagnostics,
-};
+module.exports = { createAIWorker, getAIWorker, ensureAIWorker, terminateAIWorker, getNextRequestId, setRequestCallback, deleteRequestCallback, hasRequest, setCurrentSessionId, getCurrentSessionId, clearCurrentSessionId, deleteStreamSession, postMessage, getDiagnostics };

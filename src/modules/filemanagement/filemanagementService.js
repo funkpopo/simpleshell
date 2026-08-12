@@ -8,8 +8,8 @@ const { app, dialog, BrowserWindow } = require("electron");
 
 const processManager = require("../../core/process/processManager");
 const {
-  getTransferNativeScannerPath,
-} = require("../../core/utils/nativeTransferSidecar");
+  getNativeServicesHostPath,
+} = require("../../core/utils/nativeServices");
 const nativeSftpClient = require("../../core/utils/nativeSftpClient");
 const { logToFile } = require("../../core/utils/logger");
 const { IPC_EVENT_CHANNELS } = require("../../core/ipc/schema/channels");
@@ -1215,10 +1215,10 @@ class FilemanagementService {
   }
 
   async _scanLocalFolderWithNativeSidecar(localFolderPath, options = {}) {
-    const scannerPath = getTransferNativeScannerPath();
+    const scannerPath = getNativeServicesHostPath();
     if (!scannerPath) {
       throw new Error(
-        "Rust transfer sidecar is required for folder scanning but was not found",
+        "Native services host is required for folder scanning but was not found",
       );
     }
 

@@ -17,7 +17,7 @@ module.exports = [
       "node_modules/**",
       "out/**",
       "temp/**",
-      "transfernative/**/target/**",
+      "native-services/**/target/**",
     ],
   },
   js.configs.recommended,

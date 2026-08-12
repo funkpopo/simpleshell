@@ -7,7 +7,7 @@ const configService = require("../../services/configService");
 const { getDiagnosticDirectory, getConfigPath } = require("./appPaths");
 const { getLogFilePath } = require("./logger");
 const { redactSensitiveText } = require("./log-sanitizer");
-const { getTransferNativeScannerPath } = require("./nativeTransferSidecar");
+const { getNativeServicesHostPath } = require("./nativeServices");
 const {
   getLatestNativeSidecarNetworkPath,
 } = require("./nativeSidecarNetworkPath");
@@ -34,8 +34,8 @@ function safeReadRecentLogLines(logFilePath) {
 function readCargoSidecarVersion() {
   const cargoPath = path.join(
     process.cwd(),
-    "transfernative",
-    "transfer-sidecar",
+    "native-services",
+    "desktop-host",
     "Cargo.toml",
   );
 
@@ -254,7 +254,7 @@ async function buildDiagnosticPayload(
   const gpuInfo = await app.getGPUInfo("complete").catch((error) => ({
     error: error.message,
   }));
-  const sidecarPath = getTransferNativeScannerPath();
+  const sidecarPath = getNativeServicesHostPath();
   const sidecarRuntimeVersion = await resolveSidecarRuntimeVersion(sidecarPath);
   const logFilePath = getLogFilePath();
   const recentLines = safeReadRecentLogLines(logFilePath);

@@ -6,32 +6,34 @@ const projectRoot = path.resolve(__dirname, "..");
 const packageManifestPath = path.join(projectRoot, "package.json");
 const manifestPath = path.join(
   projectRoot,
-  "transfernative",
-  "transfer-sidecar",
+  "native-services",
+  "desktop-host",
   "Cargo.toml",
 );
 const platformArchDir = `${process.platform}-${process.arch}`;
 const executableName =
-  process.platform === "win32" ? "transfer-sidecar.exe" : "transfer-sidecar";
+  process.platform === "win32"
+    ? "simpleshell-native-services.exe"
+    : "simpleshell-native-services";
 const buildOutputPath = path.join(
   projectRoot,
-  "transfernative",
-  "transfer-sidecar",
+  "native-services",
+  "desktop-host",
   "target",
   "release",
   executableName,
 );
 const stagedDir = path.join(
   projectRoot,
-  "transfernative",
+  "native-services",
   "bin",
   platformArchDir,
 );
 const stagedPath = path.join(stagedDir, executableName);
-const sourceRoot = path.join(projectRoot, "transfernative", "transfer-sidecar");
+const sourceRoot = path.join(projectRoot, "native-services", "desktop-host");
 
 function log(message) {
-  process.stdout.write(`[prepare-rust-sidecar] ${message}\n`);
+  process.stdout.write(`[prepare-native-services] ${message}\n`);
 }
 
 function readJsonFile(jsonPath) {
@@ -60,7 +62,7 @@ function syncSidecarManifestVersion(appVersion) {
 
   if (!match) {
     throw new Error(
-      `unable to locate package.version in native sidecar manifest: ${manifestPath}`,
+      `unable to locate package.version in native-services manifest: ${manifestPath}`,
     );
   }
 
@@ -150,7 +152,7 @@ function tryBuildWithCargo() {
 
   if (!isCargoAvailable()) {
     throw new Error(
-      "cargo is required to build the Rust transfer sidecar, or provide a prebuilt binary under transfernative/bin",
+      "cargo is required to build native services, or provide a prebuilt host binary under native-services/bin",
     );
   }
 
@@ -166,7 +168,7 @@ function tryBuildWithCargo() {
 
   if (result.error) {
     log(
-      `cargo unavailable, skipping native sidecar build: ${result.error.message}`,
+      `cargo unavailable, skipping native-services build: ${result.error.message}`,
     );
     return false;
   }
@@ -179,11 +181,11 @@ function tryBuildWithCargo() {
 }
 
 function main() {
-  ensureDir(path.join(projectRoot, "transfernative", "bin"));
+  ensureDir(path.join(projectRoot, "native-services", "bin"));
   const appVersion = getAppVersion();
 
   if (!fs.existsSync(manifestPath)) {
-    throw new Error(`native sidecar manifest not found: ${manifestPath}`);
+    throw new Error(`native-services manifest not found: ${manifestPath}`);
   }
 
   syncSidecarManifestVersion(appVersion);
@@ -212,7 +214,7 @@ try {
   main();
 } catch (error) {
   process.stderr.write(
-    `[prepare-rust-sidecar] ${error.message || String(error)}\n`,
+    `[prepare-native-services] ${error.message || String(error)}\n`,
   );
   process.exit(1);
 }

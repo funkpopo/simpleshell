@@ -47,10 +47,10 @@ temp/
 installer/*
 !installer/*.iss
 
-# Rust transfer sidecar source stays in repo; build outputs do not.
-transfernative/bin/*
-!transfernative/bin/README.md
-transfernative/**/target/
+# Native-services source stays in repo; build outputs do not.
+native-services/bin/*
+!native-services/bin/README.md
+native-services/**/target/
 
 # Release metadata generated next to packaged artifacts.
 SHA256SUMS

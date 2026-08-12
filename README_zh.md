@@ -201,7 +201,7 @@ simpleshell/
 │   ├── styles/             # 全局样式
 │   ├── theme/              # 主题样式/Token
 │   └── utils/              # 公共工具
-├── transfernative/         # 原生传输 sidecar（Rust）
+├── native-services/        # 原生产品服务 Rust host
 ├── forge.config.js         # Electron Forge 配置
 ├── webpack.main.config.js  # Electron main 的 Webpack 配置
 └── webpack.renderer.config.js # Electron renderer 的 Webpack 配置
@@ -225,9 +225,9 @@ simpleshell/
 - **[node-pty](https://github.com/microsoft/node-pty)** 1.2.0-beta.11 - 伪终端支持
 - **[telnet-client](https://www.npmjs.com/package/telnet-client)** 2.2.13 - Telnet 客户端
 
-### **文件传输（原生 Sidecar）**
+### **原生服务 Host**
 
-- **Rust sidecar（`transfernative/`）** - 原生 “transfer-sidecar”，用于加速/增强大文件传输可靠性
+- **Rust host（`native-services/`）** - `simpleshell-native-services` 通过稳定子命令承载文件管理和 AI 服务
 
 ### **编辑、预览与渲染**
 

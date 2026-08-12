@@ -314,34 +314,7 @@ fn hex_lower(bytes: &[u8]) -> String {
     output
 }
 
-#[tokio::main]
-async fn main() {
-    install_panic_hook();
-    if let Err(error) = run().await {
-        eprintln!("{}", structured_stderr_error(&error, None));
-        process::exit(1);
-    }
-}
-
-async fn run() -> Result<(), String> {
-    let mut args = env::args().skip(1);
-    let command = args.next().ok_or_else(|| {
-        "missing command, expected scan-folder, sftp-request, or sftp-watch".to_string()
-    })?;
-
-    match command.as_str() {
-        "scan-folder" => run_scan_folder(args),
-        "sftp-request" => run_sftp_request().await,
-        "sftp-watch" => run_sftp_watch().await,
-        "--version" => {
-            println!("{}", env!("CARGO_PKG_VERSION"));
-            Ok(())
-        }
-        other => Err(format!("unsupported command: {other}")),
-    }
-}
-
-fn run_scan_folder(mut args: impl Iterator<Item = String>) -> Result<(), String> {
+pub fn run_scan_folder(mut args: impl Iterator<Item = String>) -> Result<(), String> {
     let mut folder_path: Option<PathBuf> = None;
     let mut relative_base = String::new();
     let mut max_entries: Option<usize> = None;
@@ -415,7 +388,7 @@ fn run_scan_folder(mut args: impl Iterator<Item = String>) -> Result<(), String>
     Ok(())
 }
 
-async fn run_sftp_request() -> Result<(), String> {
+pub async fn run_sftp_request() -> Result<(), String> {
     let mut stdin = io::stdin();
     let mut payload = String::new();
     stdin
@@ -505,7 +478,7 @@ async fn run_sftp_request() -> Result<(), String> {
     Ok(())
 }
 
-async fn run_sftp_watch() -> Result<(), String> {
+pub async fn run_sftp_watch() -> Result<(), String> {
     let mut stdin = io::stdin();
     let mut payload = String::new();
     stdin
@@ -2218,17 +2191,6 @@ fn structured_error_value(
     value
 }
 
-fn structured_stderr_error(message: &str, operation: Option<&str>) -> String {
-    serde_json::to_string(&structured_error_value(
-        operation,
-        None,
-        SIDECAR_PROCESS_TYPE,
-        message,
-        None,
-    ))
-    .unwrap_or_else(|_| message.to_string())
-}
-
 struct ErrorClassification {
     error_code: &'static str,
     error_kind: &'static str,
@@ -2357,7 +2319,7 @@ fn classify_error(message: &str) -> ErrorClassification {
     }
 }
 
-fn install_panic_hook() {
+pub fn install_panic_hook() {
     panic::set_hook(Box::new(|info| {
         let message = info
             .payload()

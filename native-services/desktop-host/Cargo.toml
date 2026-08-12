@@ -1,5 +1,5 @@
 [package]
-name = "transfer-sidecar"
+name = "simpleshell-native-services"
 version = "0.4.40"
 edition = "2021"
 
@@ -14,3 +14,5 @@ serde_json = "1.0.149"
 sha2 = "0.10.9"
 ssh-key = "0.6.7"
 tokio = { version = "1.50.0", features = ["fs", "io-std", "io-util", "macros", "net", "rt-multi-thread", "time"] }
+tokio-util = { version = "0.7.18", features = ["rt"] }
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "socks", "stream"] }

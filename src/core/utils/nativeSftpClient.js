@@ -1,7 +1,7 @@
 const { spawn } = require("child_process");
 
 const processManager = require("../process/processManager");
-const { getTransferNativeScannerPath } = require("./nativeTransferSidecar");
+const { getNativeServicesHostPath } = require("./nativeServices");
 const { processSSHPrivateKeyAsync } = require("./ssh-utils");
 const { getTrustedHostFingerprint } = require("./sshHostKeyTrust");
 const { logToFile } = require("./logger");
@@ -282,14 +282,14 @@ async function resolveSshConfig(tabId, options = {}) {
 }
 
 function invokeNativeRequest(tabId, request, options = {}) {
-  const sidecarPath = getTransferNativeScannerPath();
+  const sidecarPath = getNativeServicesHostPath();
   if (!sidecarPath) {
     logToFile(
       `Native SFTP: sidecar binary not found for ${request?.operation || "unknown-operation"}`,
       "ERROR",
     );
     return Promise.reject(
-      createNativeSidecarError("Rust transfer sidecar was not found", {
+      createNativeSidecarError("Native services host was not found", {
         errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
         errorKind: "sidecar",
         retryable: false,
@@ -408,14 +408,14 @@ function invokeNativeRequestWithConfig(
   options = {},
   resolvedSidecarPath = null,
 ) {
-  const sidecarPath = resolvedSidecarPath || getTransferNativeScannerPath();
+  const sidecarPath = resolvedSidecarPath || getNativeServicesHostPath();
   if (!sidecarPath) {
     logToFile(
       `Native SFTP: sidecar binary not found for ${request?.operation || "unknown-operation"}`,
       "ERROR",
     );
     return Promise.reject(
-      createNativeSidecarError("Rust transfer sidecar was not found", {
+      createNativeSidecarError("Native services host was not found", {
         errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
         errorKind: "sidecar",
         retryable: false,
@@ -578,14 +578,14 @@ function invokeNativeRequestWithConfig(
 }
 
 function watchDirectory(tabId, remotePath, options = {}) {
-  const sidecarPath = getTransferNativeScannerPath();
+  const sidecarPath = getNativeServicesHostPath();
   if (!sidecarPath) {
     logToFile(
       "Native SFTP: sidecar binary not found for watchDirectory",
       "ERROR",
     );
     return Promise.reject(
-      createNativeSidecarError("Rust transfer sidecar was not found", {
+      createNativeSidecarError("Native services host was not found", {
         errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
         errorKind: "sidecar",
         retryable: false,
@@ -610,14 +610,14 @@ function watchDirectoryWithConfig(
   options = {},
   resolvedSidecarPath = null,
 ) {
-  const sidecarPath = resolvedSidecarPath || getTransferNativeScannerPath();
+  const sidecarPath = resolvedSidecarPath || getNativeServicesHostPath();
   if (!sidecarPath) {
     logToFile(
       "Native SFTP: sidecar binary not found for watchDirectory",
       "ERROR",
     );
     return Promise.reject(
-      createNativeSidecarError("Rust transfer sidecar was not found", {
+      createNativeSidecarError("Native services host was not found", {
         errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
         errorKind: "sidecar",
         retryable: false,
