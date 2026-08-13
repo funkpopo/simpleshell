@@ -17,7 +17,6 @@ import {
   Box,
   Typography,
   Paper,
-  Fab,
   Tooltip,
   Alert,
   Menu,
@@ -31,7 +30,7 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import MinimizeIcon from "@mui/icons-material/Minimize";
-import SendIcon from "@mui/icons-material/Send";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import SettingsIcon from "@mui/icons-material/Settings";
 import StopIcon from "@mui/icons-material/Stop";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
@@ -39,13 +38,13 @@ import EditIcon from "@mui/icons-material/Edit";
 import ReplayIcon from "@mui/icons-material/Replay";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import AIIcon from "./AIIcon";
 import AISettings from "./AISettings";
 import ExecutableCommand from "./ExecutableCommand";
 import { useTranslation } from "react-i18next";
 import { RADIUS } from "../theme";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   generateSystemPrompt,
   generateMemoryContext,
@@ -62,28 +61,8 @@ import "./CodeHighlight.css";
 
 const MAX_MARKDOWN_LINK_LENGTH = 2048;
 const API_ERROR_SUMMARY_MAX_LENGTH = 180;
-const MESSAGE_ACTION_BUTTON_SX = {
-  width: 26,
-  height: 26,
-  p: 0.35,
-  borderRadius: "7px",
-  color: "text.secondary",
-  opacity: 0.78,
-  transition: "opacity 0.15s ease, background 0.15s ease, color 0.15s ease",
-  "&:hover": {
-    opacity: 1,
-    backgroundColor: "action.hover",
-    color: "text.primary",
-  },
-  "&.Mui-disabled": {
-    color: "text.disabled",
-    opacity: 0.35,
-  },
-};
-const MESSAGE_ACTION_ICON_SX = {
-  fontSize: 14,
-};
 const ALLOWED_MARKDOWN_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 const MARKDOWN_ALLOWED_ELEMENTS = [
   "p",
   "a",
@@ -98,6 +77,18 @@ const MARKDOWN_ALLOWED_ELEMENTS = [
   "blockquote",
   "hr",
   "br",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "table",
+  "thead",
+  "tbody",
+  "tr",
+  "th",
+  "td",
 ];
 
 const pickApiErrorMessage = (errorLike, fallback) => {
@@ -273,31 +264,60 @@ const FloatingDialog = createFloatingDialog({
   borderRadius: DIALOG_PAPER_RADIUS,
 });
 
+const ThinkSparkIcon = () => (
+  <svg
+    className="ai-think-spark"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    <path
+      d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
 // 思考内容组件
-const ThinkContent = ({ content, isExpanded, onToggle }) => {
+const ThinkContent = ({ content, isExpanded, onToggle, isStreaming }) => {
   const { t } = useTranslation();
   return (
-    <Box className="ai-think-block" onClick={onToggle}>
-      <Box display="flex" alignItems="center" justifyContent="space-between">
+    <Box
+      className={`ai-think-block${isStreaming ? " is-streaming" : ""}`}
+      onClick={onToggle}
+      role="button"
+      tabIndex={0}
+      aria-expanded={isExpanded}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onToggle();
+        }
+      }}
+    >
+      <Box className="ai-think-toggle">
+        <ThinkSparkIcon />
         <Typography className="ai-think-label" variant="caption">
           {t("ai.thinkingProcess")}
         </Typography>
-        {isExpanded ? (
-          <ExpandLessIcon fontSize="small" sx={{ color: "text.secondary" }} />
-        ) : (
-          <ExpandMoreIcon fontSize="small" sx={{ color: "text.secondary" }} />
-        )}
+        <ExpandMoreIcon
+          className={`ai-think-caret${isExpanded ? " is-open" : ""}`}
+          fontSize="small"
+        />
       </Box>
       <Collapse in={isExpanded}>
-        <Typography className="ai-think-body" variant="body2">
-          {content}
-        </Typography>
+        <Box className="ai-think-trace">
+          <Typography className="ai-think-body" variant="body2">
+            {content}
+          </Typography>
+        </Box>
       </Collapse>
     </Box>
   );
 };
 
-/** 流式输出包装：渐变遮罩 + 光标尾迹 + 节流 chunk 淡入 */
+/** 流式输出包装：底边淡入 + 细线光标 + 节流 chunk 淡入 */
 const StreamContent = ({ isStreaming, contentLength = 0, children }) => {
   const [streamTick, setStreamTick] = useState(0);
   const lastLenRef = useRef(0);
@@ -561,10 +581,27 @@ const AIChatWindow = ({
       lastIndex = match.index + match[0].length;
     }
 
-    if (lastIndex < text.length) {
+    const remainder = text.slice(lastIndex);
+    const openThinkMatch = remainder.match(/<think>/i);
+    if (openThinkMatch) {
+      const openThinkIndex = openThinkMatch.index;
+      if (openThinkIndex > 0) {
+        parts.push({
+          type: "text",
+          content: remainder.slice(0, openThinkIndex),
+        });
+      }
+      parts.push({
+        type: "think",
+        content: remainder
+          .slice(openThinkIndex + openThinkMatch[0].length)
+          .trim(),
+        open: true,
+      });
+    } else if (remainder) {
       parts.push({
         type: "text",
-        content: text.slice(lastIndex),
+        content: remainder,
       });
     }
 
@@ -1013,39 +1050,6 @@ const AIChatWindow = ({
 
   const markdownComponents = useMemo(
     () => ({
-      p: ({ children }) => (
-        <Typography variant="body2" sx={{ mb: 1 }}>
-          {children}
-        </Typography>
-      ),
-      code: ({ children }) => (
-        <Box
-          component="code"
-          sx={{
-            backgroundColor: "rgba(0, 0, 0, 0.1)",
-            borderRadius: 1,
-            px: 0.5,
-            py: 0.2,
-            fontFamily: "monospace",
-            fontSize: "0.875em",
-          }}
-        >
-          {children}
-        </Box>
-      ),
-      pre: ({ children }) => (
-        <Box
-          sx={{
-            backgroundColor: "rgba(0, 0, 0, 0.1)",
-            borderRadius: 1,
-            p: 1.5,
-            my: 1,
-            overflowX: "auto",
-          }}
-        >
-          {children}
-        </Box>
-      ),
       a: ({ href, children }) => {
         const safeHref = normalizeSafeMarkdownHref(href);
 
@@ -1094,6 +1098,7 @@ const AIChatWindow = ({
         return (
           <ReactMarkdown
             components={markdownComponents}
+            remarkPlugins={MARKDOWN_REMARK_PLUGINS}
             allowedElements={MARKDOWN_ALLOWED_ELEMENTS}
             unwrapDisallowed
             urlTransform={markdownUrlTransform}
@@ -1152,6 +1157,7 @@ const AIChatWindow = ({
                 <ReactMarkdown
                   key={part.key}
                   components={markdownComponents}
+                  remarkPlugins={MARKDOWN_REMARK_PLUGINS}
                   allowedElements={MARKDOWN_ALLOWED_ELEMENTS}
                   unwrapDisallowed
                   urlTransform={markdownUrlTransform}
@@ -1361,7 +1367,7 @@ const AIChatWindow = ({
               className="ai-chat-header-btn"
               aria-label={t("aiAssistant.minimize")}
             >
-              <AIIcon />
+              <AIIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Typography className="ai-chat-title" variant="h6" noWrap>
@@ -1412,13 +1418,11 @@ const AIChatWindow = ({
               paper: {
                 className: "ai-chat-model-menu",
                 sx: {
-                  border: 1,
-                  borderColor: "divider",
-                  boxShadow: 3,
-                  borderRadius: 2,
+                  borderRadius: "10px",
                   mt: 0.5,
                   minWidth: 168,
                   maxWidth: 280,
+                  overflow: "hidden",
                 },
               },
             }}
@@ -1529,7 +1533,7 @@ const AIChatWindow = ({
                     size="small"
                     startIcon={<SettingsIcon />}
                     onClick={() => setSettingsOpen(true)}
-                    sx={{ borderRadius: "10px", textTransform: "none" }}
+                    className="ai-chat-empty-action"
                   >
                     {t("ai.settings")}
                   </Button>
@@ -1553,35 +1557,24 @@ const AIChatWindow = ({
               isPending || abortController || isStreaming,
             );
 
-            const assistantBody =
-              message.role === "assistant" ? (
-                showThinking ? (
-                  processThinkContent(message.content).map((part, index) =>
-                    part.type === "text" ? (
-                      <React.Fragment key={index}>
-                        {renderMessageContent(
-                          part.content,
-                          message.id,
-                          isStreaming,
-                        )}
-                      </React.Fragment>
-                    ) : (
-                      <ThinkContent
-                        key={index}
-                        content={part.content}
-                        isExpanded={expandedThinking[message.id]}
-                        onToggle={() => toggleThinking(message.id)}
-                      />
-                    ),
-                  )
-                ) : (
-                  renderMessageContent(
-                    message.content.replace(/<think>[\s\S]*?<\/think>/g, ""),
-                    message.id,
-                    isStreaming,
-                  )
-                )
-              ) : null;
+            const assistantParts =
+              message.role === "assistant" && showThinking
+                ? processThinkContent(message.content)
+                : null;
+            const assistantThinkParts = assistantParts
+              ? assistantParts.filter((part) => part.type === "think")
+              : [];
+            const assistantTextContent =
+              message.role === "assistant"
+                ? showThinking
+                  ? assistantParts
+                      .filter((part) => part.type === "text")
+                      .map((part) => part.content)
+                      .join("")
+                  : message.content
+                      .replace(/<think>[\s\S]*?<\/think>/g, "")
+                      .replace(/<think>[\s\S]*$/i, "")
+                : "";
 
             return (
               <Box
@@ -1596,20 +1589,39 @@ const AIChatWindow = ({
                   className={`ai-message-bubble ${isUserMessage ? "is-user" : "is-assistant"}${isStreaming ? " is-streaming" : ""}`}
                 >
                   {message.role === "assistant" ? (
-                    <StreamContent
-                      isStreaming={isStreaming}
-                      contentLength={
-                        typeof message.content === "string"
-                          ? message.content.length
-                          : 0
-                      }
-                    >
-                      {assistantBody}
-                    </StreamContent>
+                    <>
+                      {assistantThinkParts.map((part, index) => (
+                        <ThinkContent
+                          key={`think-${index}`}
+                          content={part.content}
+                          isExpanded={expandedThinking[message.id]}
+                          onToggle={() => toggleThinking(message.id)}
+                          isStreaming={Boolean(isStreaming && part.open)}
+                        />
+                      ))}
+                      {assistantTextContent.trim() ||
+                      (isStreaming && assistantThinkParts.length === 0) ? (
+                        <StreamContent
+                          isStreaming={isStreaming}
+                          contentLength={
+                            typeof assistantTextContent === "string"
+                              ? assistantTextContent.length
+                              : 0
+                          }
+                        >
+                          {renderMessageContent(
+                            assistantTextContent,
+                            message.id,
+                            isStreaming,
+                          )}
+                        </StreamContent>
+                      ) : null}
+                    </>
                   ) : (
                     <Box className="ai-message-content">
                       <ReactMarkdown
                         components={markdownComponents}
+                        remarkPlugins={MARKDOWN_REMARK_PLUGINS}
                         allowedElements={MARKDOWN_ALLOWED_ELEMENTS}
                         unwrapDisallowed
                         urlTransform={markdownUrlTransform}
@@ -1629,10 +1641,10 @@ const AIChatWindow = ({
                             size="small"
                             onClick={() => handleEditMessage(message)}
                             disabled={messageActionsDisabled}
-                            sx={MESSAGE_ACTION_BUTTON_SX}
+                            className="ai-message-action"
                             aria-label={t("ai.editMessage")}
                           >
-                            <EditIcon sx={MESSAGE_ACTION_ICON_SX} />
+                            <EditIcon />
                           </IconButton>
                         </span>
                       </Tooltip>
@@ -1642,10 +1654,10 @@ const AIChatWindow = ({
                             size="small"
                             onClick={() => handleRetryMessage(message)}
                             disabled={messageActionsDisabled}
-                            sx={MESSAGE_ACTION_BUTTON_SX}
+                            className="ai-message-action"
                             aria-label={t("ai.retryMessage")}
                           >
-                            <ReplayIcon sx={MESSAGE_ACTION_ICON_SX} />
+                            <ReplayIcon />
                           </IconButton>
                         </span>
                       </Tooltip>
@@ -1655,10 +1667,10 @@ const AIChatWindow = ({
                     <IconButton
                       size="small"
                       onClick={() => handleCopyMessage(message.content)}
-                      sx={MESSAGE_ACTION_BUTTON_SX}
+                      className="ai-message-action"
                       aria-label={t("ai.copyMessage")}
                     >
-                      <ContentCopyIcon sx={MESSAGE_ACTION_ICON_SX} />
+                      <ContentCopyIcon />
                     </IconButton>
                   </Tooltip>
                 </Box>
@@ -1681,6 +1693,7 @@ const AIChatWindow = ({
                     ? t("ai.editMessage")
                     : t("ai.copyMessage")
                 }
+                role="button"
               />
             ))}
           </Box>
@@ -1699,7 +1712,10 @@ const AIChatWindow = ({
 
         {/* 输入区域 */}
         <Box className="ai-chat-footer">
-          <Box className="ai-chat-composer">
+          <Box
+            className="ai-chat-composer"
+            onClick={() => inputRef.current?.focus()}
+          >
             <TextField
               fullWidth
               multiline
@@ -1722,53 +1738,53 @@ const AIChatWindow = ({
                 minWidth: 0,
               }}
             />
-            {isPending || abortController ? (
-              <Tooltip title={t("ai.stopGenerating")}>
-                <Fab
-                  size="small"
-                  color="error"
-                  onClick={handleAbortRequest}
-                  aria-label={t("ai.stopGenerating")}
-                  className="ai-chat-send-btn"
-                >
-                  <StopIcon />
-                </Fab>
-              </Tooltip>
-            ) : (
-              <Tooltip title={t("ai.sendMessage")}>
-                <span>
-                  <Fab
-                    size="small"
-                    color="primary"
-                    onClick={handleSendMessage}
-                    disabled={
-                      !input.trim() ||
-                      !currentApi ||
-                      !currentApi.apiUrl ||
-                      !hasConfiguredApiKey(currentApi) ||
-                      !currentApi.model
-                    }
-                    aria-label={t("ai.sendMessage")}
-                    className="ai-chat-send-btn"
-                  >
-                    <SendIcon />
-                  </Fab>
-                </span>
-              </Tooltip>
-            )}
-          </Box>
-
-          <Box className="ai-chat-options">
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={showThinking}
-                  onChange={(e) => setShowThinking(e.target.checked)}
+            <Box className="ai-chat-composer-toolbar">
+              <Box className="ai-chat-options">
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={showThinking}
+                      onChange={(e) => setShowThinking(e.target.checked)}
+                    />
+                  }
+                  label={t("ai.showThinking")}
                 />
-              }
-              label={t("ai.showThinking")}
-            />
+              </Box>
+              {isPending || abortController ? (
+                <Tooltip title={t("ai.stopGenerating")}>
+                  <IconButton
+                    size="small"
+                    onClick={handleAbortRequest}
+                    aria-label={t("ai.stopGenerating")}
+                    className="ai-chat-send-btn is-stop"
+                  >
+                    <StopIcon />
+                  </IconButton>
+                </Tooltip>
+              ) : (
+                <Tooltip title={t("ai.sendMessage")}>
+                  <span>
+                    <IconButton
+                      size="small"
+                      color="inherit"
+                      onClick={handleSendMessage}
+                      disabled={
+                        !input.trim() ||
+                        !currentApi ||
+                        !currentApi.apiUrl ||
+                        !hasConfiguredApiKey(currentApi) ||
+                        !currentApi.model
+                      }
+                      aria-label={t("ai.sendMessage")}
+                      className="ai-chat-send-btn"
+                    >
+                      <ArrowUpwardIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
+            </Box>
           </Box>
         </Box>
       </DialogContent>

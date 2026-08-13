@@ -172,25 +172,23 @@ const ExecutableCommand = memo(
     return (
       <>
         <Box
+          className="ai-exec-command"
           sx={{
             display: "flex",
             alignItems: "stretch",
-            bgcolor: "background.paper",
+            bgcolor: "transparent",
             border: "1px solid",
-            borderColor: risk.color,
-            borderRadius: 1,
+            borderColor: "divider",
+            borderRadius: "10px",
             overflow: "hidden",
             my: 1,
-            transition: "all 0.2s ease",
-            "&:hover": {
-              boxShadow: `0 0 8px ${risk.color}40`,
-            },
+            transition: "border-color 0.15s ease",
           }}
         >
           {/* 风险等级标识条 */}
           <Box
             sx={{
-              width: 4,
+              width: 2,
               bgcolor: risk.color,
               flexShrink: 0,
             }}
@@ -211,9 +209,9 @@ const ExecutableCommand = memo(
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                px: 1.5,
+                px: 1.25,
                 py: 0.5,
-                bgcolor: `${risk.color}15`,
+                bgcolor: "transparent",
                 borderBottom: "1px solid",
                 borderColor: "divider",
               }}
@@ -223,12 +221,14 @@ const ExecutableCommand = memo(
                 icon={getRiskIcon(risk)}
                 label={riskLabel}
                 sx={{
-                  height: 22,
-                  fontSize: "0.75rem",
-                  bgcolor: `${risk.color}20`,
+                  height: 20,
+                  fontSize: "11.5px",
+                  fontWeight: 500,
+                  bgcolor: "transparent",
                   color: risk.color,
                   "& .MuiChip-icon": {
                     color: risk.color,
+                    fontSize: 14,
                   },
                 }}
               />
@@ -246,15 +246,13 @@ const ExecutableCommand = memo(
                       onClick={handleExecuteClick}
                       disabled={disabled}
                       sx={{
-                        p: 0.5,
-                        bgcolor: risk.color,
-                        color: "white",
+                        p: 0.4,
+                        borderRadius: "6px",
+                        color: risk.color,
                         "&:hover": {
-                          bgcolor: risk.color,
-                          filter: "brightness(1.1)",
+                          bgcolor: "action.hover",
                         },
                         "&.Mui-disabled": {
-                          bgcolor: "action.disabledBackground",
                           color: "action.disabled",
                         },
                       }}
@@ -270,16 +268,14 @@ const ExecutableCommand = memo(
             {/* 命令文本 */}
             <Box
               sx={{
-                px: 1.5,
+                px: 1.25,
                 py: 1,
                 fontFamily: "monospace",
-                fontSize: "0.875rem",
+                fontSize: "12px",
+                lineHeight: 1.55,
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-all",
-                bgcolor: (theme) =>
-                  theme.palette.mode === "dark"
-                    ? "rgba(0, 0, 0, 0.2)"
-                    : "rgba(0, 0, 0, 0.03)",
+                bgcolor: "transparent",
               }}
             >
               {command}
@@ -335,8 +331,12 @@ export const CommandBlockList = memo(
               alignItems: "center",
               cursor: "pointer",
               py: 0.5,
+              px: 0.5,
+              borderRadius: "6px",
+              color: "text.secondary",
               "&:hover": {
                 bgcolor: "action.hover",
+                color: "text.primary",
               },
             }}
           >
