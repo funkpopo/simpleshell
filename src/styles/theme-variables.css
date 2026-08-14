@@ -62,7 +62,30 @@
   --glow-speed: 18s;
   --grid-speed: calc(var(--particle-speed) + 0.3s);
   --welcome-particle-color: rgba(16, 18, 20, 0.16);
-  --welcome-glow-color: rgba(53, 108, 145, 0.1);
+  --welcome-planet-highlight: rgba(188, 188, 184, 0.24);
+  --welcome-planet-mid: rgba(104, 104, 101, 0.22);
+  --welcome-planet-shadow: rgba(48, 48, 46, 0.29);
+  --welcome-planet-core: rgba(16, 16, 15, 0.4);
+  --welcome-planet-inner-light: rgba(255, 255, 255, 0.2);
+  --welcome-planet-inner-shadow: rgba(3, 3, 3, 0.34);
+  --welcome-planet-rim: rgba(255, 255, 255, 0.46);
+  --welcome-planet-flare: rgba(255, 255, 255, 0.76);
+  --welcome-planet-atmosphere: rgba(255, 255, 255, 0.28);
+  --welcome-planet-haze: rgba(255, 255, 255, 0.16);
+  --welcome-ray-light: rgba(255, 255, 255, 0.18);
+  --welcome-ray-soft: rgba(255, 255, 255, 0.09);
+  --welcome-corona-soft: rgba(255, 255, 255, 0.14);
+  --welcome-day-planet-surface: #d7d9db;
+  --welcome-day-planet-outline: rgba(35, 38, 41, 0.18);
+  --welcome-day-edge-blur: rgba(61, 65, 69, 0.17);
+  --welcome-day-grid: rgba(16, 18, 20, 0.12);
+  --welcome-day-node: rgba(16, 18, 20, 0.82);
+  --welcome-day-node-soft: rgba(16, 18, 20, 0.22);
+  --welcome-day-signal: rgba(21, 23, 25, 0.92);
+  --welcome-day-signal-glow: rgba(21, 23, 25, 0.38);
+  --welcome-day-sphere-shade-soft: rgba(16, 18, 20, 0.025);
+  --welcome-day-sphere-shade: rgba(16, 18, 20, 0.13);
+  --welcome-day-sphere-edge: rgba(16, 18, 20, 0.055);
 }
 
 .dark-theme {
@@ -121,7 +144,19 @@
   --glow-speed: 18s;
   --grid-speed: calc(var(--particle-speed) + 0.3s);
   --welcome-particle-color: rgba(241, 242, 239, 0.16);
-  --welcome-glow-color: rgba(116, 168, 200, 0.12);
+  --welcome-planet-highlight: rgba(100, 100, 98, 0.42);
+  --welcome-planet-mid: rgba(41, 41, 40, 0.66);
+  --welcome-planet-shadow: rgba(12, 12, 12, 0.84);
+  --welcome-planet-core: rgba(2, 2, 2, 0.97);
+  --welcome-planet-inner-light: rgba(255, 255, 255, 0.18);
+  --welcome-planet-inner-shadow: rgba(0, 0, 0, 0.72);
+  --welcome-planet-rim: rgba(255, 255, 255, 0.72);
+  --welcome-planet-flare: rgba(255, 255, 255, 0.98);
+  --welcome-planet-atmosphere: rgba(255, 255, 255, 0.46);
+  --welcome-planet-haze: rgba(255, 255, 255, 0.24);
+  --welcome-ray-light: rgba(255, 255, 255, 0.24);
+  --welcome-ray-soft: rgba(255, 255, 255, 0.1);
+  --welcome-corona-soft: rgba(255, 255, 255, 0.2);
 }
 
 body {

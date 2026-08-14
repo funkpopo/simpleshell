@@ -8,6 +8,135 @@ import { useTranslation } from "react-i18next";
 const MONO_FONT =
   '"Space Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace';
 
+const DAY_PLANET_POINTS = {
+  n1: [18.2, 28.4],
+  n2: [37.6, 31.2],
+  n3: [51.4, 38.6],
+  n4: [24.8, 43.1],
+  n5: [43.5, 48.7],
+  n6: [14.6, 57.4],
+  n7: [34.1, 61.6],
+  n8: [53.6, 58.3],
+  n9: [27.8, 71.4],
+  n10: [46.2, 68.7],
+};
+
+const DAY_PLANET_NODE_SCALES = {
+  n1: 0.72,
+  n2: 0.96,
+  n3: 0.82,
+  n4: 0.68,
+  n5: 1,
+  n6: 0.76,
+  n7: 0.91,
+  n8: 0.7,
+  n9: 0.84,
+  n10: 0.98,
+};
+
+const DAY_PLANET_NODES = Object.entries(DAY_PLANET_POINTS).map(
+  ([id, [x, y]]) => ({
+    id,
+    x: `${x}%`,
+    y: `${y}%`,
+    scale: DAY_PLANET_NODE_SCALES[id],
+  }),
+);
+
+const DAY_PLANET_MERIDIANS = [45, 37, 29, 21, 13, 6];
+
+const DAY_PLANET_LATITUDES = [
+  "M 15 18 C 32 27, 68 27, 85 18",
+  "M 6 28 C 27 38, 73 38, 94 28",
+  "M 2 39 C 27 45, 73 45, 98 39",
+  "M 1 50 C 28 50, 72 50, 99 50",
+  "M 2 61 C 27 55, 73 55, 98 61",
+  "M 6 72 C 27 62, 73 62, 94 72",
+  "M 15 82 C 32 73, 68 73, 85 82",
+  "M 10 23 C 29 32, 71 32, 90 23",
+  "M 3.5 34 C 27 42, 73 42, 96.5 34",
+  "M 3.5 66 C 27 58, 73 58, 96.5 66",
+  "M 10 77 C 29 68, 71 68, 90 77",
+];
+
+const DAY_PLANET_ROUTE_DURATION = "20s";
+
+const toFixed = (value) => Number(value.toFixed(2));
+
+const latitudeHop = (from, to) => {
+  const [x1, y1] = from;
+  const [x2, y2] = to;
+  const bulge = (50 - (y1 + y2) / 2) * 0.042;
+  return `M ${x1} ${y1} C ${toFixed(x1 + (x2 - x1) / 3)} ${toFixed(y1 + (y2 - y1) / 3 + bulge * 0.55)}, ${toFixed(x1 + ((x2 - x1) * 2) / 3)} ${toFixed(y1 + ((y2 - y1) * 2) / 3 + bulge)}, ${x2} ${y2}`;
+};
+
+const meridianHop = (from, to, radius) =>
+  `M ${from[0]} ${from[1]} A ${radius} 49 0 0 0 ${to[0]} ${to[1]}`;
+
+const DAY_PLANET_ROUTES = [
+  {
+    id: "upper-sweep",
+    d: latitudeHop(DAY_PLANET_POINTS.n1, DAY_PLANET_POINTS.n2),
+    from: DAY_PLANET_POINTS.n1,
+    to: DAY_PLANET_POINTS.n2,
+    delay: "-1.2s",
+  },
+  {
+    id: "north-east-link",
+    d: latitudeHop(DAY_PLANET_POINTS.n2, DAY_PLANET_POINTS.n3),
+    from: DAY_PLANET_POINTS.n2,
+    to: DAY_PLANET_POINTS.n3,
+    delay: "-3.4s",
+  },
+  {
+    id: "western-arc",
+    d: meridianHop(DAY_PLANET_POINTS.n1, DAY_PLANET_POINTS.n4, 39),
+    from: DAY_PLANET_POINTS.n1,
+    to: DAY_PLANET_POINTS.n4,
+    delay: "-5.6s",
+  },
+  {
+    id: "central-crossing",
+    d: latitudeHop(DAY_PLANET_POINTS.n4, DAY_PLANET_POINTS.n5),
+    from: DAY_PLANET_POINTS.n4,
+    to: DAY_PLANET_POINTS.n5,
+    delay: "-7.8s",
+  },
+  {
+    id: "eastern-drop",
+    d: meridianHop(DAY_PLANET_POINTS.n3, DAY_PLANET_POINTS.n8, 8),
+    from: DAY_PLANET_POINTS.n3,
+    to: DAY_PLANET_POINTS.n8,
+    delay: "-10s",
+  },
+  {
+    id: "southern-link",
+    d: latitudeHop(DAY_PLANET_POINTS.n7, DAY_PLANET_POINTS.n10),
+    from: DAY_PLANET_POINTS.n7,
+    to: DAY_PLANET_POINTS.n10,
+    delay: "-12.2s",
+  },
+  {
+    id: "lower-west-arc",
+    d: meridianHop(DAY_PLANET_POINTS.n6, DAY_PLANET_POINTS.n9, 35),
+    from: DAY_PLANET_POINTS.n6,
+    to: DAY_PLANET_POINTS.n9,
+    delay: "-14.4s",
+  },
+  {
+    id: "diagonal-transfer",
+    d: latitudeHop(DAY_PLANET_POINTS.n5, DAY_PLANET_POINTS.n10),
+    from: DAY_PLANET_POINTS.n5,
+    to: DAY_PLANET_POINTS.n10,
+    delay: "-16.6s",
+  },
+];
+
+const dayRouteVars = (route) => ({
+  "--route-delay": route.delay,
+  "--route-duration": DAY_PLANET_ROUTE_DURATION,
+});
+
 const WelcomePage = ({
   topConnections,
   onOpenConnection,
@@ -52,18 +181,189 @@ const WelcomePage = ({
             "welcome-particles var(--particle-speed, 0.6s) linear infinite alternate",
           willChange: "transform",
         },
-        "& .welcome-background--glow": {
-          width: { xs: 300, md: 560 },
-          height: { xs: 300, md: 560 },
-          right: { xs: -210, md: -260 },
-          top: { xs: 20, md: "6%" },
-          border: "1px solid var(--welcome-glow-color)",
-          borderRadius: "48% 52% 49% 51%",
-          opacity: 0.72,
-          boxShadow: (currentTheme) =>
-            `0 0 0 68px ${alpha(currentTheme.palette.text.primary, 0.016)}, 0 0 0 136px ${alpha(currentTheme.palette.text.primary, 0.01)}`,
-          animation: "welcome-glow var(--glow-speed, 18s) linear infinite",
+        "& .welcome-background--planet": {
+          width: { xs: 390, sm: 500, md: 680 },
+          height: { xs: 390, sm: 500, md: 680 },
+          right: { xs: -290, sm: -320, md: -330 },
+          top: { xs: 92, sm: "12%", md: "11%" },
+          overflow: "visible",
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle at 27% 24%, var(--welcome-planet-highlight) 0%, var(--welcome-planet-mid) 21%, var(--welcome-planet-shadow) 56%, var(--welcome-planet-core) 78%)",
+          boxShadow:
+            "inset 26px 20px 58px var(--welcome-planet-inner-light), inset -64px -36px 96px var(--welcome-planet-inner-shadow), -8px -2px 18px var(--welcome-planet-rim), -20px -4px 54px var(--welcome-planet-atmosphere), -44px -8px 118px var(--welcome-planet-haze)",
+          animation:
+            "welcome-planet-drift var(--glow-speed, 18s) ease-in-out infinite alternate",
           willChange: "transform",
+          "&::before": {
+            content: '""',
+            position: "absolute",
+            inset: -2,
+            borderRadius: "inherit",
+            background:
+              "conic-gradient(from 166deg, transparent 0deg 94deg, var(--welcome-planet-rim) 116deg, var(--welcome-planet-flare) 142deg, var(--welcome-planet-rim) 165deg, transparent 198deg 360deg)",
+            filter: "blur(2px)",
+            opacity: 0.96,
+            maskImage:
+              "radial-gradient(circle, transparent 0 70%, #000 70.6% 71.7%, transparent 72.4%)",
+            WebkitMaskImage:
+              "radial-gradient(circle, transparent 0 70%, #000 70.6% 71.7%, transparent 72.4%)",
+            transformOrigin: "center",
+            animation: "welcome-edge-light-shift 22s ease-in-out infinite",
+            willChange: "transform, opacity, filter",
+          },
+        },
+        "& .welcome-planet__rim-light": {
+          position: "absolute",
+          borderRadius: "50%",
+          maskImage:
+            "radial-gradient(circle, transparent 0 69.8%, #000 70.5% 72%, transparent 72.8%)",
+          WebkitMaskImage:
+            "radial-gradient(circle, transparent 0 69.8%, #000 70.5% 72%, transparent 72.8%)",
+          transformOrigin: "center",
+        },
+        "& .welcome-planet__rim-light--secondary": {
+          inset: -9,
+          background:
+            "conic-gradient(from 24deg, transparent 0deg 168deg, var(--welcome-corona-soft) 184deg, var(--welcome-planet-flare) 192deg, transparent 207deg 360deg)",
+          filter: "blur(6px) drop-shadow(0 0 14px var(--welcome-planet-haze))",
+          opacity: 0.56,
+          animation: "welcome-rim-orbit-reverse 17s linear infinite",
+        },
+        "& .welcome-planet__rays": {
+          position: "absolute",
+          zIndex: -2,
+          width: "72%",
+          height: "66%",
+          left: "-52%",
+          top: "-17%",
+          transformOrigin: "100% 100%",
+          background:
+            "conic-gradient(from 112deg at 100% 100%, transparent 0deg 5deg, var(--welcome-ray-soft) 8deg, var(--welcome-ray-light) 10deg, transparent 14deg 19deg, var(--welcome-ray-soft) 22deg, transparent 27deg 32deg, var(--welcome-ray-light) 34deg, transparent 38deg 360deg)",
+          filter: "blur(6px)",
+          opacity: 0.54,
+          maskImage:
+            "radial-gradient(circle at 100% 100%, #000 0%, rgba(0, 0, 0, 0.92) 20%, rgba(0, 0, 0, 0.48) 48%, transparent 82%)",
+          WebkitMaskImage:
+            "radial-gradient(circle at 100% 100%, #000 0%, rgba(0, 0, 0, 0.92) 20%, rgba(0, 0, 0, 0.48) 48%, transparent 82%)",
+          animation: "welcome-rays-shift 7.5s ease-in-out infinite alternate",
+        },
+        "& .welcome-planet__day-grid": {
+          position: "absolute",
+          inset: 0,
+          display: "none",
+          overflow: "hidden",
+          borderRadius: "50%",
+          backgroundColor: "var(--welcome-day-planet-surface)",
+          boxShadow: "inset 0 0 0 1px var(--welcome-day-planet-outline)",
+          "&::after": {
+            content: '""',
+            position: "absolute",
+            zIndex: 2,
+            inset: 0,
+            borderRadius: "inherit",
+            background:
+              "radial-gradient(circle at 38% 38%, transparent 0 34%, var(--welcome-day-sphere-shade-soft) 66%, var(--welcome-day-sphere-shade) 100%)",
+            boxShadow: "inset -22px -8px 42px var(--welcome-day-sphere-edge)",
+            pointerEvents: "none",
+          },
+        },
+        "& .welcome-planet__day-mesh": {
+          position: "absolute",
+          zIndex: 1,
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          overflow: "visible",
+          color: "var(--welcome-day-grid)",
+          "& .welcome-planet__mesh-line": {
+            fill: "none",
+            stroke: "currentColor",
+            strokeWidth: 0.36,
+            vectorEffect: "non-scaling-stroke",
+          },
+          "& .welcome-planet__mesh-line--minor": {
+            opacity: 0.68,
+            strokeWidth: 0.26,
+          },
+        },
+        "& .welcome-planet__day-signals": {
+          position: "absolute",
+          zIndex: 4,
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          overflow: "visible",
+          "& .welcome-planet__route-trail": {
+            fill: "none",
+            stroke: "var(--welcome-day-signal)",
+            strokeWidth: 0.9,
+            strokeLinecap: "round",
+            strokeDasharray: "0.48 1",
+            strokeDashoffset: 0.48,
+            vectorEffect: "non-scaling-stroke",
+            opacity: 0,
+            animation:
+              "welcome-day-route-trail var(--route-duration) linear var(--route-delay) infinite",
+          },
+          "& .welcome-planet__route": {
+            fill: "none",
+            stroke: "var(--welcome-day-signal)",
+            strokeWidth: 1.85,
+            strokeLinecap: "round",
+            strokeDasharray: "0.22 1",
+            strokeDashoffset: 0.22,
+            vectorEffect: "non-scaling-stroke",
+            opacity: 0,
+            filter: "drop-shadow(0 0 1.8px var(--welcome-day-signal-glow))",
+            animation:
+              "welcome-day-route var(--route-duration) linear var(--route-delay) infinite",
+          },
+          "& .welcome-planet__route-endpoint": {
+            fill: "var(--welcome-day-planet-surface)",
+            stroke: "var(--welcome-day-signal)",
+            strokeWidth: 0.95,
+            vectorEffect: "non-scaling-stroke",
+            opacity: 0,
+            transformBox: "fill-box",
+            transformOrigin: "center",
+            filter: "drop-shadow(0 0 2.2px var(--welcome-day-signal-glow))",
+          },
+          "& .welcome-planet__route-endpoint--source": {
+            animation:
+              "welcome-day-route-source var(--route-duration) ease-out var(--route-delay) infinite",
+          },
+          "& .welcome-planet__route-endpoint--target": {
+            animation:
+              "welcome-day-route-target var(--route-duration) ease-out var(--route-delay) infinite",
+          },
+        },
+        "& .welcome-planet__day-node": {
+          position: "absolute",
+          zIndex: 3,
+          left: "var(--node-x)",
+          top: "var(--node-y)",
+          width: 6,
+          height: 6,
+          border: "1.25px solid var(--welcome-day-node)",
+          borderRadius: "50%",
+          bgcolor: "var(--welcome-day-planet-surface)",
+          opacity: 0.46,
+          boxShadow: "0 0 0 1px var(--welcome-day-node-soft)",
+          transform: "translate(-50%, -50%) scale(var(--node-depth-scale))",
+          transformOrigin: "center",
+        },
+        ".light-theme & .welcome-background--planet": {
+          background: "var(--welcome-day-planet-surface)",
+          boxShadow:
+            "inset 0 0 0 1px var(--welcome-day-planet-outline), 0 0 16px 2px var(--welcome-day-edge-blur)",
+        },
+        ".light-theme & .welcome-background--planet::before, .light-theme & .welcome-planet__rim-light, .light-theme & .welcome-planet__rays":
+          {
+            display: "none",
+          },
+        ".light-theme & .welcome-planet__day-grid": {
+          display: "block",
         },
         "& .welcome-background--grid": {
           inset: -48,
@@ -75,19 +375,71 @@ const WelcomePage = ({
           willChange: "transform",
         },
         "@media (prefers-reduced-motion: reduce)": {
-          "& .welcome-background": {
-            animation: "none",
-            transform: "none",
-            willChange: "auto",
+          "& .welcome-background, & .welcome-background--planet::before, & .welcome-planet__rim-light, & .welcome-planet__rays, & .welcome-planet__route, & .welcome-planet__route-trail, & .welcome-planet__route-endpoint":
+            {
+              animation: "none",
+              transform: "none",
+              willChange: "auto",
+            },
+          "& .welcome-planet__day-node": {
+            opacity: 0.5,
           },
         },
         "@keyframes welcome-particles": {
           from: { transform: "translate3d(-1px, -1px, 0)" },
           to: { transform: "translate3d(1px, 1px, 0)" },
         },
-        "@keyframes welcome-glow": {
-          from: { transform: "translate3d(0, 0, 0) rotate(0deg)" },
-          to: { transform: "translate3d(0, 0, 0) rotate(360deg)" },
+        "@keyframes welcome-planet-drift": {
+          from: { transform: "translate3d(0, -4px, 0) scale(0.995)" },
+          to: { transform: "translate3d(-10px, 8px, 0) scale(1.012)" },
+        },
+        "@keyframes welcome-edge-light-shift": {
+          "0%, 100%": {
+            opacity: 0.58,
+            filter: "blur(3.5px)",
+            transform: "rotate(-16deg) scale(0.995)",
+          },
+          "34%": {
+            opacity: 0.94,
+            filter: "blur(2px)",
+            transform: "rotate(22deg) scale(1.006)",
+          },
+          "68%": {
+            opacity: 0.72,
+            filter: "blur(3px)",
+            transform: "rotate(58deg) scale(1.012)",
+          },
+        },
+        "@keyframes welcome-rim-orbit-reverse": {
+          from: { transform: "rotate(360deg) scale(0.99)", opacity: 0.28 },
+          "35%, 68%": { opacity: 0.72 },
+          to: { transform: "rotate(0deg) scale(1.015)", opacity: 0.28 },
+        },
+        "@keyframes welcome-rays-shift": {
+          from: { opacity: 0.22, transform: "rotate(-3deg) scale(0.96)" },
+          to: { opacity: 0.56, transform: "rotate(4deg) scale(1.04)" },
+        },
+        "@keyframes welcome-day-route": {
+          "0%, 4%, 20%, 100%": { opacity: 0, strokeDashoffset: 0.22 },
+          "6%": { opacity: 1, strokeDashoffset: 0.08 },
+          "16%": { opacity: 1, strokeDashoffset: -1 },
+          "19%": { opacity: 0, strokeDashoffset: -1.08 },
+        },
+        "@keyframes welcome-day-route-trail": {
+          "0%, 4%, 20%, 100%": { opacity: 0, strokeDashoffset: 0.48 },
+          "7%": { opacity: 0.28, strokeDashoffset: 0.22 },
+          "16%": { opacity: 0.16, strokeDashoffset: -1 },
+          "19%": { opacity: 0, strokeDashoffset: -1.08 },
+        },
+        "@keyframes welcome-day-route-source": {
+          "0%, 3%, 11%, 100%": { opacity: 0, transform: "scale(0.45)" },
+          "5%": { opacity: 1, transform: "scale(1.08)" },
+          "8.5%": { opacity: 0, transform: "scale(1.95)" },
+        },
+        "@keyframes welcome-day-route-target": {
+          "0%, 15%, 22%, 100%": { opacity: 0, transform: "scale(0.45)" },
+          "17%": { opacity: 1, transform: "scale(1.08)" },
+          "20%": { opacity: 0, transform: "scale(1.95)" },
         },
         "@keyframes welcome-grid": {
           from: { transform: "translate3d(0, 0, 0)" },
@@ -113,8 +465,95 @@ const WelcomePage = ({
       />
       <Box
         aria-hidden="true"
-        className="welcome-background welcome-background--glow"
-      />
+        className="welcome-background welcome-background--planet"
+      >
+        <Box className="welcome-planet__rays" />
+        <Box className="welcome-planet__rim-light welcome-planet__rim-light--secondary" />
+        <Box className="welcome-planet__day-grid">
+          <Box
+            component="svg"
+            className="welcome-planet__day-mesh"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="xMidYMid meet"
+          >
+            <circle
+              className="welcome-planet__mesh-line"
+              cx="50"
+              cy="50"
+              r="49"
+            />
+            {DAY_PLANET_MERIDIANS.map((radius, index) => (
+              <ellipse
+                key={`meridian-${radius}`}
+                className={`welcome-planet__mesh-line${index % 2 === 0 ? "" : " welcome-planet__mesh-line--minor"}`}
+                cx="50"
+                cy="50"
+                rx={radius}
+                ry="49"
+              />
+            ))}
+            {DAY_PLANET_LATITUDES.map((path, index) => (
+              <path
+                key={`latitude-${index}`}
+                className={`welcome-planet__mesh-line${index % 2 === 0 ? " welcome-planet__mesh-line--minor" : ""}`}
+                d={path}
+              />
+            ))}
+          </Box>
+          <Box
+            component="svg"
+            className="welcome-planet__day-signals"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="xMidYMid meet"
+          >
+            {DAY_PLANET_ROUTES.map((route) => (
+              <React.Fragment key={route.id}>
+                <Box
+                  component="path"
+                  className="welcome-planet__route-trail"
+                  pathLength="1"
+                  d={route.d}
+                  sx={dayRouteVars(route)}
+                />
+                <Box
+                  component="path"
+                  className="welcome-planet__route"
+                  pathLength="1"
+                  d={route.d}
+                  sx={dayRouteVars(route)}
+                />
+                <Box
+                  component="circle"
+                  className="welcome-planet__route-endpoint welcome-planet__route-endpoint--source"
+                  cx={route.from[0]}
+                  cy={route.from[1]}
+                  r="1.15"
+                  sx={dayRouteVars(route)}
+                />
+                <Box
+                  component="circle"
+                  className="welcome-planet__route-endpoint welcome-planet__route-endpoint--target"
+                  cx={route.to[0]}
+                  cy={route.to[1]}
+                  r="1.15"
+                  sx={dayRouteVars(route)}
+                />
+              </React.Fragment>
+            ))}
+          </Box>
+          {DAY_PLANET_NODES.map((node) => (
+            <Box
+              key={node.id}
+              className="welcome-planet__day-node"
+              sx={{
+                "--node-x": node.x,
+                "--node-y": node.y,
+                "--node-depth-scale": node.scale,
+              }}
+            />
+          ))}
+        </Box>
+      </Box>
       <Box
         sx={{
           position: "relative",
