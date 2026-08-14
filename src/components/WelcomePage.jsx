@@ -30,24 +30,68 @@ const WelcomePage = ({
         width: "100%",
         height: "100%",
         overflow: "auto",
+        isolation: "isolate",
         bgcolor: "background.default",
         color: "text.primary",
-        backgroundImage: (currentTheme) =>
-          `linear-gradient(${alpha(currentTheme.palette.text.primary, 0.035)} 1px, transparent 1px), linear-gradient(90deg, ${alpha(currentTheme.palette.text.primary, 0.035)} 1px, transparent 1px)`,
-        backgroundSize: "48px 48px",
-        "&::after": {
-          content: '""',
+        "& .welcome-background": {
           position: "fixed",
-          width: { xs: 260, md: 520 },
-          height: { xs: 260, md: 520 },
-          right: { xs: -180, md: -240 },
-          top: { xs: 40, md: "8%" },
-          border: "1px solid",
-          borderColor: "divider",
-          borderRadius: "50%",
-          boxShadow: (currentTheme) =>
-            `0 0 0 64px ${alpha(currentTheme.palette.text.primary, 0.018)}, 0 0 0 128px ${alpha(currentTheme.palette.text.primary, 0.012)}`,
+          zIndex: 0,
           pointerEvents: "none",
+          userSelect: "none",
+          contain: "layout style",
+          transform: "translateZ(0)",
+          backfaceVisibility: "hidden",
+        },
+        "& .welcome-background--particles": {
+          inset: -24,
+          opacity: 0.34,
+          backgroundImage:
+            "radial-gradient(circle at 12% 18%, var(--welcome-particle-color) 0 0.7px, transparent 1px), radial-gradient(circle at 73% 31%, var(--welcome-particle-color) 0 0.6px, transparent 0.9px), radial-gradient(circle at 38% 76%, var(--welcome-particle-color) 0 0.65px, transparent 1px)",
+          backgroundSize: "137px 149px, 193px 181px, 229px 211px",
+          animation:
+            "welcome-particles var(--particle-speed, 0.6s) linear infinite alternate",
+          willChange: "transform",
+        },
+        "& .welcome-background--glow": {
+          width: { xs: 300, md: 560 },
+          height: { xs: 300, md: 560 },
+          right: { xs: -210, md: -260 },
+          top: { xs: 20, md: "6%" },
+          border: "1px solid var(--welcome-glow-color)",
+          borderRadius: "48% 52% 49% 51%",
+          opacity: 0.72,
+          boxShadow: (currentTheme) =>
+            `0 0 0 68px ${alpha(currentTheme.palette.text.primary, 0.016)}, 0 0 0 136px ${alpha(currentTheme.palette.text.primary, 0.01)}`,
+          animation: "welcome-glow var(--glow-speed, 18s) linear infinite",
+          willChange: "transform",
+        },
+        "& .welcome-background--grid": {
+          inset: -48,
+          backgroundImage:
+            "linear-gradient(var(--color-grid) 1px, transparent 1px), linear-gradient(90deg, var(--color-grid) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
+          animation:
+            "welcome-grid var(--grid-speed, 0.9s) linear infinite alternate",
+          willChange: "transform",
+        },
+        "@media (prefers-reduced-motion: reduce)": {
+          "& .welcome-background": {
+            animation: "none",
+            transform: "none",
+            willChange: "auto",
+          },
+        },
+        "@keyframes welcome-particles": {
+          from: { transform: "translate3d(-1px, -1px, 0)" },
+          to: { transform: "translate3d(1px, 1px, 0)" },
+        },
+        "@keyframes welcome-glow": {
+          from: { transform: "translate3d(0, 0, 0) rotate(0deg)" },
+          to: { transform: "translate3d(0, 0, 0) rotate(360deg)" },
+        },
+        "@keyframes welcome-grid": {
+          from: { transform: "translate3d(0, 0, 0)" },
+          to: { transform: "translate3d(3px, 3px, 0)" },
         },
         "@keyframes welcome-rise": {
           from: { opacity: 0, transform: "translateY(12px)" },
@@ -59,6 +103,18 @@ const WelcomePage = ({
         },
       }}
     >
+      <Box
+        aria-hidden="true"
+        className="welcome-background welcome-background--grid"
+      />
+      <Box
+        aria-hidden="true"
+        className="welcome-background welcome-background--particles"
+      />
+      <Box
+        aria-hidden="true"
+        className="welcome-background welcome-background--glow"
+      />
       <Box
         sx={{
           position: "relative",
