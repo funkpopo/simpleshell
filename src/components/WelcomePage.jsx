@@ -89,7 +89,7 @@ const WelcomePage = ({
             component="div"
             sx={{
               fontFamily: "inherit",
-              fontSize: "0.68rem",
+              fontSize: "0.75rem",
               fontWeight: 700,
               letterSpacing: "0.16em",
             }}
@@ -112,7 +112,7 @@ const WelcomePage = ({
               sx={{
                 fontFamily: "inherit",
                 color: "text.secondary",
-                fontSize: "0.62rem",
+                fontSize: "0.7rem",
                 letterSpacing: "0.12em",
               }}
             >
@@ -147,7 +147,7 @@ const WelcomePage = ({
                 mb: 2,
                 fontFamily: MONO_FONT,
                 color: "text.secondary",
-                fontSize: "0.66rem",
+                fontSize: "0.75rem",
                 letterSpacing: "0.18em",
                 textTransform: "uppercase",
               }}
@@ -208,7 +208,7 @@ const WelcomePage = ({
               <Typography
                 id="recent-connections-title"
                 variant="subtitle2"
-                sx={{ fontSize: "0.76rem", letterSpacing: "0.08em" }}
+                sx={{ fontSize: "0.875rem", letterSpacing: "0.06em" }}
               >
                 {hasConnections
                   ? t("welcome.lastConnectedServers")
@@ -218,7 +218,7 @@ const WelcomePage = ({
                 sx={{
                   fontFamily: MONO_FONT,
                   color: "text.secondary",
-                  fontSize: "0.62rem",
+                  fontSize: "0.75rem",
                   letterSpacing: "0.12em",
                 }}
               >
@@ -272,7 +272,7 @@ const WelcomePage = ({
                         sx={{
                           fontFamily: MONO_FONT,
                           color: "text.disabled",
-                          fontSize: "0.62rem",
+                          fontSize: "0.75rem",
                         }}
                       >
                         {String(index + 1).padStart(2, "0")}
@@ -281,6 +281,7 @@ const WelcomePage = ({
                         <Typography
                           variant="body2"
                           sx={{
+                            fontSize: "0.9375rem",
                             fontWeight: 650,
                             overflow: "hidden",
                             textOverflow: "ellipsis",
@@ -296,7 +297,7 @@ const WelcomePage = ({
                             mt: 0.25,
                             fontFamily: MONO_FONT,
                             color: "text.secondary",
-                            fontSize: "0.62rem",
+                            fontSize: "0.75rem",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap",
@@ -311,7 +312,7 @@ const WelcomePage = ({
                         sx={{
                           fontFamily: MONO_FONT,
                           color: "text.secondary",
-                          fontSize: "0.58rem",
+                          fontSize: "0.7rem",
                           letterSpacing: "0.08em",
                         }}
                       >
@@ -353,7 +354,7 @@ const WelcomePage = ({
                       sx={{
                         fontFamily: MONO_FONT,
                         color: "text.secondary",
-                        fontSize: "0.62rem",
+                        fontSize: "0.75rem",
                         letterSpacing: "0.08em",
                       }}
                     >
@@ -362,7 +363,7 @@ const WelcomePage = ({
                     <Typography
                       sx={{
                         fontFamily: MONO_FONT,
-                        fontSize: "0.7rem",
+                        fontSize: "0.8125rem",
                         textAlign: "right",
                         wordBreak: "break-word",
                       }}
@@ -377,6 +378,7 @@ const WelcomePage = ({
                     display: "block",
                     mt: 2.5,
                     color: "text.secondary",
+                    fontSize: "0.8125rem",
                     lineHeight: 1.6,
                   }}
                 >
@@ -402,7 +404,7 @@ const WelcomePage = ({
           <Typography
             sx={{
               fontFamily: MONO_FONT,
-              fontSize: "0.58rem",
+              fontSize: "0.7rem",
               letterSpacing: "0.12em",
             }}
           >
@@ -411,7 +413,7 @@ const WelcomePage = ({
           <Typography
             sx={{
               fontFamily: MONO_FONT,
-              fontSize: "0.58rem",
+              fontSize: "0.7rem",
               letterSpacing: "0.12em",
             }}
           >
