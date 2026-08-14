@@ -4,24 +4,25 @@
  */
 .glass-effect {
   background-color: var(--glass-bg);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(18px) saturate(115%);
+  -webkit-backdrop-filter: blur(18px) saturate(115%);
   border: 1px solid var(--glass-border);
-  box-shadow: 0 8px 32px 0 var(--glass-shadow);
+  box-shadow: 0 18px 56px var(--glass-shadow);
 }
 
 .dark-glass-effect {
   background-color: var(--glass-dark-bg);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(18px) saturate(115%);
+  -webkit-backdrop-filter: blur(18px) saturate(115%);
   border: 1px solid var(--glass-dark-border);
-  box-shadow: 0 8px 32px 0 var(--glass-dark-shadow);
+  box-shadow: 0 18px 56px var(--glass-dark-shadow);
 }
 
 /* 通用浮动面板毛玻璃（用于 FloatingDialog 等） */
 .float-glass {
   background-color: var(--float-bg);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(18px) saturate(115%);
+  -webkit-backdrop-filter: blur(18px) saturate(115%);
+  border: 1px solid var(--glass-border);
   box-shadow: var(--float-shadow);
 }

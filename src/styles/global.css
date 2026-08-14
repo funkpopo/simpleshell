@@ -6,8 +6,7 @@ body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     "Noto Sans CJK SC", "Noto Sans SC", "WenQuanYi Micro Hei",
-    "Microsoft YaHei", "PingFang SC",
-    sans-serif;
+    "Microsoft YaHei", "PingFang SC", sans-serif;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -20,6 +19,22 @@ body {
   -webkit-text-size-adjust: 100%;
   user-select: none;
   -webkit-user-select: none;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black, transparent 72%);
 }
 
 #root {
@@ -56,6 +71,65 @@ button,
 .MuiButton-root,
 .MuiFab-root {
   touch-action: manipulation;
+}
+
+/* Keep the legacy raster AI glyph inside the monochrome product language. */
+.ai-icon {
+  filter: grayscale(1) brightness(0);
+  transition:
+    filter 160ms ease,
+    opacity 160ms ease;
+}
+
+.dark-theme .ai-icon {
+  filter: grayscale(1) brightness(0) invert(1);
+}
+
+/*
+ * Main workspace tabs must remain legible regardless of MUI style injection
+ * order. Both foreground and selected surface come from the same theme scope.
+ */
+.simple-shell-tab.MuiTab-root {
+  color: var(--color-text-secondary) !important;
+  background-color: transparent !important;
+  opacity: 1 !important;
+  isolation: isolate;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.simple-shell-tab.MuiTab-root:hover {
+  color: var(--color-text-primary) !important;
+  background-color: var(--color-hover) !important;
+}
+
+.simple-shell-tab.MuiTab-root.Mui-selected {
+  color: var(--tab-selected-fg) !important;
+  background-color: transparent !important;
+  box-shadow: inset 0 -1px 0 var(--tab-selected-indicator) !important;
+  opacity: 1 !important;
+}
+
+.simple-shell-tab.MuiTab-root.Mui-selected:hover {
+  color: var(--tab-selected-fg) !important;
+  background-color: var(--tab-selected-hover-bg) !important;
+}
+
+.simple-shell-tab .tab-label-text {
+  position: relative;
+  z-index: 2;
+  color: inherit !important;
+  -webkit-text-fill-color: currentColor !important;
+  mix-blend-mode: normal;
+  filter: none;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.simple-shell-tab.Mui-selected .tab-label-text {
+  color: var(--tab-selected-fg) !important;
+  -webkit-text-fill-color: var(--tab-selected-fg) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
 }
 
 :focus {
@@ -112,8 +186,8 @@ button,
 
 :focus-visible,
 .Mui-focusVisible {
-  outline: 2px solid var(--color-primary-main);
-  outline-offset: 2px;
+  outline: 1px solid var(--color-primary-main);
+  outline-offset: 3px;
 }
 
 .MuiIconButton-root:focus-visible,
@@ -231,6 +305,21 @@ button,
   [aria-selected="true"] {
     color: HighlightText !important;
     background: Highlight !important;
+  }
+
+  .simple-shell-tab.MuiTab-root.Mui-selected {
+    forced-color-adjust: none;
+    color: var(--tab-selected-fg) !important;
+    background: transparent !important;
+    border-color: transparent !important;
+    border-bottom: 2px solid var(--tab-selected-indicator) !important;
+    box-shadow: none !important;
+  }
+
+  .simple-shell-tab.Mui-selected .tab-label-text {
+    forced-color-adjust: none;
+    color: var(--tab-selected-fg) !important;
+    -webkit-text-fill-color: currentColor !important;
   }
 
   .MuiInputBase-root,

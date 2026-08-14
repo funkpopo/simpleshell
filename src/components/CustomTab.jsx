@@ -1,6 +1,6 @@
 import React, { memo, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Box, Typography, Tab, Tooltip } from "@mui/material";
+import { Box, Tab, Tooltip } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import { useTranslation } from "react-i18next";
@@ -15,6 +15,10 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.label === nextProps.label &&
     prevProps.value === nextProps.value &&
     prevProps.selected === nextProps.selected &&
+    // MUI 9 temporarily injects the Tabs indicator into the selected Tab on
+    // the first render, then removes it after mount. Ignoring that transition
+    // leaves the initial indicator layer permanently mounted over the label.
+    Boolean(prevProps.indicator) === Boolean(nextProps.indicator) &&
     prevProps.index === nextProps.index &&
     prevProps.tabId === nextProps.tabId &&
     prevProps.draggable === nextProps.draggable &&
@@ -98,35 +102,31 @@ const CustomTab = memo((props) => {
       e.dataTransfer.setData("application/json", JSON.stringify(dragData));
       e.dataTransfer.effectAllowed = "move";
 
-      // 创建幽灵元素预览（液态玻璃：多层高光、饱和模糊、柔和色散描边）
+      // 创建与主界面一致的单色拖拽预览
       const createDragPreview = () => {
         const preview = document.createElement("div");
         const isDark = document.body.classList.contains("dark-theme");
 
-        const glassBg = isDark
-          ? "linear-gradient(155deg, rgba(255,255,255,0.14) 0%, rgba(120,160,220,0.08) 42%, rgba(20,24,34,0.72) 100%)"
-          : "linear-gradient(155deg, rgba(255,255,255,0.92) 0%, rgba(230,240,255,0.55) 38%, rgba(255,255,255,0.38) 100%)";
+        const previewBg = isDark
+          ? "rgba(13, 15, 17, 0.96)"
+          : "rgba(255, 255, 252, 0.96)";
 
         preview.style.cssText = `
           position: relative;
-          padding: 8px 16px;
-          background: ${glassBg};
-          color: ${isDark ? "rgba(255,255,255,0.96)" : "rgba(30,34,42,0.94)"};
-          border-radius: 12px;
+          padding: 7px 11px;
+          background: ${previewBg};
+          color: ${isDark ? "#f1f2ef" : "#151719"};
+          border-radius: 3px;
           font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           font-size: 13px;
           font-weight: 600;
           letter-spacing: 0.01em;
           border: 1px solid ${
-            isDark ? "rgba(255, 255, 255, 0.22)" : "rgba(255, 255, 255, 0.85)"
+            isDark ? "rgba(241, 242, 239, 0.2)" : "rgba(16, 18, 20, 0.18)"
           };
-          box-shadow:
-            0 1px 0 rgba(255,255,255,0.35) inset,
-            0 12px 40px rgba(0, 0, 0, ${isDark ? 0.45 : 0.14}),
-            0 4px 16px rgba(80, 140, 255, ${isDark ? 0.2 : 0.12}),
-            0 0 0 1px rgba(120, 170, 255, ${isDark ? 0.12 : 0.08});
-          backdrop-filter: saturate(180%) blur(24px);
-          -webkit-backdrop-filter: saturate(180%) blur(24px);
+          box-shadow: 0 14px 40px rgba(0, 0, 0, ${isDark ? 0.5 : 0.14});
+          backdrop-filter: blur(18px);
+          -webkit-backdrop-filter: blur(18px);
           display: flex;
           align-items: center;
           gap: 6px;
@@ -140,23 +140,6 @@ const CustomTab = memo((props) => {
           overflow: hidden;
           text-overflow: ellipsis;
         `;
-
-        const sheen = document.createElement("div");
-        sheen.style.cssText = `
-          position: absolute;
-          inset: 0;
-          border-radius: inherit;
-          pointer-events: none;
-          background: linear-gradient(
-            118deg,
-            rgba(255,255,255,0.55) 0%,
-            rgba(255,255,255,0.12) 35%,
-            rgba(255,255,255,0) 52%,
-            rgba(120,180,255,0.08) 100%
-          );
-          opacity: ${isDark ? 0.5 : 0.65};
-        `;
-        preview.appendChild(sheen);
 
         const row = document.createElement("div");
         row.style.cssText = `
@@ -172,7 +155,7 @@ const CustomTab = memo((props) => {
         icon.style.cssText = `
           display: inline-flex;
           align-items: center;
-          opacity: ${isDark ? 0.75 : 0.65};
+          opacity: 0.62;
           flex-shrink: 0;
         `;
         icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>`;
@@ -215,6 +198,8 @@ const CustomTab = memo((props) => {
     <>
       <Tab
         {...other}
+        disableRipple
+        className={`simple-shell-tab ${other.className || ""}`.trim()}
         onClick={onClick}
         onContextMenu={
           onContextMenu ? (e) => onContextMenu(e, tabId, index) : undefined
@@ -227,7 +212,13 @@ const CustomTab = memo((props) => {
         onDragEnd={onDragEnd}
         label={
           <Box
-            sx={{ display: "flex", alignItems: "center", position: "relative" }}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              position: "relative",
+              minWidth: 0,
+              width: "100%",
+            }}
           >
             {/* 分组圆点与编号 */}
             {group && (
@@ -262,24 +253,29 @@ const CustomTab = memo((props) => {
                 </Box>
               </Tooltip>
             )}
-            <Typography
-              variant="body2"
+            <Box
               component="span"
+              title={typeof label === "string" ? label : undefined}
+              className="tab-label-text"
               sx={{
-                mr: 1,
+                minWidth: 28,
+                flex: "1 1 auto",
+                mr: onClose ? 0.75 : 0,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
-                maxWidth: {
-                  xs: "150px",
-                  sm: "180px",
-                  md: "220px",
-                }, // 响应式限制宽度，避免挤压其他标签
-                display: "inline-block",
+                color: "inherit",
+                WebkitTextFillColor: "currentColor",
+                opacity: "1 !important",
+                visibility: "visible",
+                fontSize: "0.78rem",
+                fontWeight: "inherit",
+                lineHeight: 1.25,
+                display: "block",
               }}
             >
               {label}
-            </Typography>
+            </Box>
             {statusColor &&
               (statusTooltip ? (
                 <Tooltip title={statusTooltip}>
@@ -326,8 +322,8 @@ const CustomTab = memo((props) => {
                   justifyContent: "center",
                   width: 20,
                   height: 20,
-                  borderRadius: "6px",
-                  opacity: 0.35,
+                  borderRadius: "3px",
+                  opacity: 0,
                   flexShrink: 0,
                   transition:
                     "opacity 0.2s ease, color 0.2s ease, background-color 0.2s ease",
@@ -347,13 +343,16 @@ const CustomTab = memo((props) => {
         sx={{
           textTransform: "none",
           minWidth: "auto",
+          maxWidth: 240,
           minHeight: 30,
           py: 0,
           px: 1.2,
-          borderRadius: dragSessionActive ? "10px" : "8px 8px 0 0",
+          borderRadius: dragSessionActive ? "3px" : 0,
           cursor: isDragSource ? "grabbing" : "pointer",
           userSelect: "none",
-          color: "text.secondary",
+          color: "var(--color-text-secondary) !important",
+          backgroundColor: "transparent !important",
+          opacity: "1 !important",
           transition: [
             "opacity 0.36s cubic-bezier(0.32, 0.72, 0, 1)",
             "transform 0.44s cubic-bezier(0.34, 1.45, 0.64, 1)",
@@ -366,13 +365,10 @@ const CustomTab = memo((props) => {
           ].join(", "),
           willChange: "auto",
           "&:hover": {
-            color: "text.primary",
-            backgroundColor: (theme) =>
-              theme.palette.mode === "dark"
-                ? "rgba(255, 255, 255, 0.08)"
-                : "rgba(0, 0, 0, 0.04)",
+            color: "var(--color-text-primary) !important",
+            backgroundColor: "var(--color-hover) !important",
             "& .tab-close-icon": {
-              opacity: 0.85,
+              opacity: 0.8,
             },
           },
 
@@ -384,47 +380,27 @@ const CustomTab = memo((props) => {
               filter: "saturate(0.92) brightness(0.97)",
             }),
 
-          // 原位占位：下沉的毛玻璃残影，与拖拽预览风格一致
+          // 原位占位：保留清晰轮廓，不引入额外色彩
           ...(isDragSource && {
             cursor: "grabbing",
             opacity: 0.38,
             transform: "scale(0.92) translateY(4px)",
-            WebkitBackdropFilter: "saturate(165%) blur(14px)",
-            backdropFilter: "saturate(165%) blur(14px)",
-            backgroundColor: (theme) =>
-              theme.palette.mode === "dark"
-                ? "rgba(36, 40, 52, 0.58)"
-                : "rgba(255, 255, 255, 0.5)",
-            border: (theme) =>
-              `1px solid ${
-                theme.palette.mode === "dark"
-                  ? "rgba(255,255,255,0.16)"
-                  : "rgba(255,255,255,0.72)"
-              }`,
-            boxShadow: (theme) =>
-              theme.palette.mode === "dark"
-                ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 16px 36px rgba(0,0,0,0.4), 0 0 0 1px rgba(100,170,255,0.14)"
-                : "inset 0 1px 0 rgba(255,255,255,0.9), 0 14px 32px rgba(0,0,0,0.11), 0 0 0 1px rgba(90,150,230,0.1)",
-            filter: "saturate(1.1)",
+            backgroundColor: "background.default",
+            border: "1px solid",
+            borderColor: "divider",
+            boxShadow: "none",
+            filter: "none",
             willChange: "transform, opacity, filter",
           }),
 
-          // 悬停目标：微微浮起 + 液态玻璃高亮
+          // 悬停目标：用单色底和插入线明确落点
           ...(isDraggedOver && {
             position: "relative",
             cursor: "default",
             transform: "scale(1.03) translateY(-2px)",
-            WebkitBackdropFilter: "saturate(180%) blur(12px)",
-            backdropFilter: "saturate(180%) blur(12px)",
-            backgroundColor: (theme) =>
-              theme.palette.mode === "dark"
-                ? "rgba(80, 130, 200, 0.14)"
-                : "rgba(255, 255, 255, 0.72)",
-            boxShadow: (theme) =>
-              theme.palette.mode === "dark"
-                ? "inset 0 1px 0 rgba(255,255,255,0.18), 0 10px 28px rgba(0,0,0,0.32), 0 0 0 1px rgba(130,190,255,0.22)"
-                : "inset 0 1px 0 rgba(255,255,255,0.95), 0 12px 28px rgba(70,130,220,0.12), 0 0 0 1px rgba(120,170,240,0.2)",
-            filter: "saturate(1.08)",
+            backgroundColor: (theme) => alpha(theme.palette.text.primary, 0.1),
+            boxShadow: "none",
+            filter: "none",
             zIndex: 2,
             ...(dragInsertPosition === "before" && {
               "&::before": {
@@ -433,13 +409,11 @@ const CustomTab = memo((props) => {
                 left: 0,
                 top: "18%",
                 bottom: "18%",
-                width: 4,
-                borderRadius: 999,
+                width: 2,
+                borderRadius: 0,
                 zIndex: 1002,
-                background:
-                  "linear-gradient(180deg, rgba(164,210,255,0.95) 0%, rgba(66,165,245,1) 45%, rgba(124,77,255,0.92) 100%)",
-                animation:
-                  "indicatorGlassIn 0.38s cubic-bezier(0.34, 1.45, 0.64, 1) forwards, indicatorGlowPulse 2.1s ease-in-out 0.12s infinite",
+                backgroundColor: "text.primary",
+                animation: "indicatorGlassIn 0.2s ease-out forwards",
               },
             }),
             ...(dragInsertPosition === "after" && {
@@ -449,30 +423,32 @@ const CustomTab = memo((props) => {
                 right: 0,
                 top: "18%",
                 bottom: "18%",
-                width: 4,
-                borderRadius: 999,
+                width: 2,
+                borderRadius: 0,
                 zIndex: 1002,
-                background:
-                  "linear-gradient(180deg, rgba(164,210,255,0.95) 0%, rgba(66,165,245,1) 45%, rgba(124,77,255,0.92) 100%)",
-                animation:
-                  "indicatorGlassIn 0.38s cubic-bezier(0.34, 1.45, 0.64, 1) forwards, indicatorGlowPulse 2.1s ease-in-out 0.12s infinite",
+                backgroundColor: "text.primary",
+                animation: "indicatorGlassIn 0.2s ease-out forwards",
               },
             }),
           }),
           "&.Mui-selected": {
-            color: "text.primary",
-            backgroundColor: (theme) =>
-              theme.palette.mode === "dark"
-                ? "rgba(255, 255, 255, 0.14)"
-                : "rgba(255, 255, 255, 0.92)",
-            boxShadow: (theme) =>
-              theme.palette.mode === "dark"
-                ? "inset 0 1px 0 rgba(255,255,255,0.18), 0 8px 18px rgba(0,0,0,0.28)"
-                : "inset 0 1px 0 rgba(255,255,255,0.95), 0 6px 16px rgba(0,0,0,0.08)",
-            fontWeight: 600,
-            transform: "translateY(-1px)",
+            color: "var(--tab-selected-fg) !important",
+            backgroundColor: "transparent !important",
+            boxShadow:
+              "inset 0 -1px 0 var(--tab-selected-indicator) !important",
+            fontWeight: 650,
+            transform: "none",
+            "& .tab-label-text": {
+              color: "var(--tab-selected-fg) !important",
+              WebkitTextFillColor: "var(--tab-selected-fg) !important",
+              opacity: "1 !important",
+            },
             "& .tab-close-icon": {
-              opacity: 0.72,
+              opacity: 0.64,
+            },
+            "&:hover": {
+              color: "var(--tab-selected-fg) !important",
+              backgroundColor: "var(--tab-selected-hover-bg) !important",
             },
             ...(isDragSource && {
               transform: "scale(0.92) translateY(4px)",

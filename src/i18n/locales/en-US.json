@@ -304,7 +304,10 @@
       "emptyDescription": "Add an SSH host first. After saving it, you can open a terminal immediately or organize it in Connection Manager.",
       "exampleTitle": "Example connection fields",
       "exampleAuth": "Password or private key",
-      "emptyHint": "The sample address is not saved. Use your own server host, port, username, and authentication method."
+      "emptyHint": "The sample address is not saved. Use your own server host, port, username, and authentication method.",
+      "consoleLabel": "Remote operations console",
+      "secureAccess": "Secure remote access",
+      "systemReady": "SYS / READY"
     },
     "terminal": {
       "welcome": "Welcome"

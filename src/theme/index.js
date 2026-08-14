@@ -6,11 +6,11 @@ import { createTheme } from "@mui/material/styles";
 
 const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
 const PRESS_TRANSITION =
-  "transform 100ms ease-out, box-shadow 0.2s ease, background-color 0.2s ease";
+  "transform 120ms cubic-bezier(0.2, 0, 0, 1), border-color 160ms ease, background-color 160ms ease, color 160ms ease";
 
-const RADIUS_SM = 6;
-const RADIUS_MD = 10;
-const RADIUS_LG = 16;
+const RADIUS_SM = 3;
+const RADIUS_MD = 6;
+const RADIUS_LG = 10;
 
 export const RADIUS = { SM: RADIUS_SM, MD: RADIUS_MD, LG: RADIUS_LG };
 
@@ -22,20 +22,17 @@ export const SIDEBAR_THEME_TOKENS = {
   activeBorderWidth: 2,
 };
 
-const primaryColor = (darkMode) => (darkMode ? "#90caf9" : "#1976d2");
+const primaryColor = (darkMode) => (darkMode ? "#f1f2ef" : "#151719");
 const primaryAlpha = (darkMode, alpha) =>
-  darkMode ? `rgba(144, 202, 249, ${alpha})` : `rgba(25, 118, 210, ${alpha})`;
+  darkMode ? `rgba(241, 242, 239, ${alpha})` : `rgba(21, 23, 25, ${alpha})`;
 
 const hoverBg = (darkMode) =>
-  darkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
-const selectedBg = (darkMode) => primaryAlpha(darkMode, 0.12);
-const selectedHoverBg = (darkMode) => primaryAlpha(darkMode, 0.16);
-
-const sh = (darkMode, y, blur, darkOpacity, lightOpacity) =>
-  `0 ${y}px ${blur}px rgba(0,0,0,${darkMode ? darkOpacity : lightOpacity})`;
+  darkMode ? "rgba(241,242,239,0.07)" : "rgba(21,23,25,0.055)";
+const selectedBg = (darkMode) => primaryAlpha(darkMode, 0.1);
+const selectedHoverBg = (darkMode) => primaryAlpha(darkMode, 0.14);
 
 const borderClr = (darkMode) =>
-  darkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)";
+  darkMode ? "rgba(241,242,239,0.16)" : "rgba(16,18,20,0.16)";
 
 const DialogGrowTransition = forwardRef(
   function DialogGrowTransition(props, ref) {
@@ -66,40 +63,70 @@ export const createUnifiedTheme = (darkMode) =>
       mode: darkMode ? "dark" : "light",
       primary: {
         main: primaryColor(darkMode),
-        light: darkMode ? "#bbdefb" : "#42a5f5",
-        dark: darkMode ? "#5c9bd1" : "#1565c0",
+        light: darkMode ? "#ffffff" : "#34383c",
+        dark: darkMode ? "#c7cac6" : "#050607",
+        contrastText: darkMode ? "#08090a" : "#ffffff",
       },
       secondary: {
-        main: darkMode ? "#f48fb1" : "#dc004e",
-        light: darkMode ? "#f8bbd9" : "#e91e63",
-        dark: darkMode ? "#c2185b" : "#ad0e4e",
+        main: darkMode ? "#9ca2a7" : "#60676e",
+        light: darkMode ? "#bcc1c5" : "#7b838b",
+        dark: darkMode ? "#737a80" : "#43494f",
       },
       background: {
-        default: darkMode ? "#121212" : "#e8eaed",
-        paper: darkMode ? "#1e1e1e" : "#f3f4f6",
+        default: darkMode ? "#08090a" : "#f1f1ee",
+        paper: darkMode ? "#0d0f11" : "#f8f8f5",
       },
-      success: { main: darkMode ? "#4caf50" : "#2e7d32" },
-      warning: { main: darkMode ? "#ff9800" : "#ed6c02" },
-      error: { main: darkMode ? "#f44336" : "#d32f2f" },
-      info: { main: darkMode ? "#29b6f6" : "#0288d1" },
+      text: {
+        primary: darkMode ? "#f1f2ef" : "#151719",
+        secondary: darkMode ? "#959ba0" : "#62676c",
+        disabled: darkMode ? "#555b60" : "#999da1",
+      },
+      divider: darkMode ? "rgba(241,242,239,0.09)" : "rgba(16,18,20,0.10)",
+      success: { main: darkMode ? "#65b98b" : "#247a52" },
+      warning: { main: darkMode ? "#d4a253" : "#9a6418" },
+      error: { main: darkMode ? "#e06a63" : "#b53630" },
+      info: { main: darkMode ? "#74a8c8" : "#356c91" },
+      action: {
+        hover: hoverBg(darkMode),
+        selected: selectedBg(darkMode),
+        focus: primaryAlpha(darkMode, 0.16),
+      },
     },
     shape: {
       borderRadius: RADIUS_SM,
     },
     typography: {
       fontFamily: [
-        "-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "Roboto",
-        '"Helvetica Neue"', "Arial", '"Noto Sans CJK SC"', '"Noto Sans SC"',
-        '"WenQuanYi Micro Hei"', '"Microsoft YaHei"', '"PingFang SC"',
+        "-apple-system",
+        "BlinkMacSystemFont",
+        '"Segoe UI"',
+        "Roboto",
+        '"Helvetica Neue"',
+        "Arial",
+        '"Noto Sans CJK SC"',
+        '"Noto Sans SC"',
+        '"WenQuanYi Micro Hei"',
+        '"Microsoft YaHei"',
+        '"PingFang SC"',
         "sans-serif",
       ].join(","),
-      h6: { fontSize: "1rem", fontWeight: 600, lineHeight: 1.3 },
-      subtitle2: { fontSize: "0.875rem", fontWeight: 600, lineHeight: 1.3 },
+      h6: {
+        fontSize: "1rem",
+        fontWeight: 650,
+        lineHeight: 1.3,
+        letterSpacing: "-0.015em",
+      },
+      subtitle2: { fontSize: "0.875rem", fontWeight: 650, lineHeight: 1.3 },
       body2: { fontSize: "0.875rem", lineHeight: 1.5 },
-      caption: { fontSize: "0.75rem", lineHeight: 1.4 },
+      caption: {
+        fontSize: "0.75rem",
+        lineHeight: 1.4,
+        letterSpacing: "0.015em",
+      },
       button: {
         textTransform: "none",
-        fontWeight: 600,
+        fontWeight: 650,
+        letterSpacing: "0.025em",
       },
     },
     components: {
@@ -130,12 +157,13 @@ export const createUnifiedTheme = (darkMode) =>
         styleOverrides: {
           root: {
             textTransform: "none",
-            fontWeight: 600,
+            fontWeight: 650,
             boxShadow: "none",
             transition: PRESS_TRANSITION,
             transform: "translateZ(0)",
             "&:hover": {
-              boxShadow: sh(darkMode, 2, 8, 0.3, 0.15),
+              boxShadow: "none",
+              transform: "translateY(-1px)",
             },
             "&:active": {
               transform: "scale(0.97)",
@@ -146,15 +174,17 @@ export const createUnifiedTheme = (darkMode) =>
             },
           },
           contained: {
-            boxShadow: sh(darkMode, 1, 3, 0.3, 0.12),
+            boxShadow: "none",
+            border: `1px solid ${primaryColor(darkMode)}`,
             "&:hover": {
-              boxShadow: sh(darkMode, 2, 8, 0.4, 0.24),
+              boxShadow: "none",
+              backgroundColor: darkMode ? "#d9dbd7" : "#050607",
             },
           },
           outlined: {
-            borderWidth: "1.5px",
+            borderWidth: "1px",
             "&:hover": {
-              borderWidth: "1.5px",
+              borderWidth: "1px",
               backgroundColor: primaryAlpha(darkMode, 0.08),
             },
           },
@@ -177,10 +207,10 @@ export const createUnifiedTheme = (darkMode) =>
               transition: "all 0.2s ease",
               "&:hover .MuiOutlinedInput-notchedOutline": {
                 borderColor: primaryColor(darkMode),
-                borderWidth: "2px",
+                borderWidth: "1px",
               },
               "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                borderWidth: "2px",
+                borderWidth: "1px",
               },
             },
             "& .MuiInputLabel-outlined": {
@@ -196,13 +226,9 @@ export const createUnifiedTheme = (darkMode) =>
         styleOverrides: {
           root: {
             borderRadius: RADIUS_MD,
-            boxShadow: sh(darkMode, 2, 8, 0.3, 0.12),
+            boxShadow: "none",
             border: `1px solid ${borderClr(darkMode)}`,
-            transition: "all 0.3s ease",
-            "&:hover": {
-              boxShadow: sh(darkMode, 4, 16, 0.4, 0.15),
-              transform: "translateY(-1px)",
-            },
+            transition: "border-color 160ms ease, background-color 160ms ease",
           },
         },
       },
@@ -222,7 +248,7 @@ export const createUnifiedTheme = (darkMode) =>
             transform: "translateZ(0)",
             "&:hover": {
               backgroundColor: hoverBg(darkMode),
-              transform: "scale(1.05)",
+              transform: "translateY(-1px)",
             },
             "&:active": {
               transform: "scale(0.94)",
@@ -246,6 +272,9 @@ export const createUnifiedTheme = (darkMode) =>
             borderRadius: RADIUS_MD,
             backgroundImage: "none",
             border: `1px solid ${borderClr(darkMode)}`,
+            boxShadow: darkMode
+              ? "0 20px 64px rgba(0,0,0,0.62)"
+              : "0 18px 56px rgba(11,13,15,0.16)",
             transformOrigin: "center top",
             willChange: "transform, opacity",
           },
@@ -322,15 +351,13 @@ export const createUnifiedTheme = (darkMode) =>
       MuiChip: {
         styleOverrides: {
           root: {
-            borderRadius: RADIUS_LG,
+            borderRadius: RADIUS_SM,
             fontWeight: 500,
             transition: "all 0.2s ease",
-            "&:hover": {
-              transform: "scale(1.02)",
-            },
+            letterSpacing: "0.035em",
           },
           outlined: {
-            borderWidth: "1.5px",
+            borderWidth: "1px",
           },
         },
       },
@@ -348,9 +375,11 @@ export const createUnifiedTheme = (darkMode) =>
             borderRadius: RADIUS_SM,
             fontSize: "0.75rem",
             backgroundColor: darkMode
-              ? "rgba(97, 97, 97, 0.95)"
-              : "rgba(97, 97, 97, 0.9)",
-            boxShadow: sh(darkMode, 2, 8, 0.3, 0.15),
+              ? "rgba(241,242,239,0.96)"
+              : "rgba(21,23,25,0.96)",
+            color: darkMode ? "#08090a" : "#ffffff",
+            border: `1px solid ${borderClr(!darkMode)}`,
+            boxShadow: "none",
           },
           tooltipPlacementTop: { marginBottom: 4 },
           tooltipPlacementBottom: { marginTop: 4 },
@@ -363,7 +392,9 @@ export const createUnifiedTheme = (darkMode) =>
         styleOverrides: {
           paper: {
             marginTop: 4,
-            boxShadow: sh(darkMode, 4, 16, 0.4, 0.18),
+            boxShadow: darkMode
+              ? "0 14px 44px rgba(0,0,0,0.5)"
+              : "0 14px 44px rgba(11,13,15,0.12)",
             border: `1px solid ${borderClr(darkMode)}`,
           },
         },
@@ -397,7 +428,7 @@ export const createUnifiedTheme = (darkMode) =>
           root: {
             textTransform: "none",
             fontWeight: 500,
-            borderRadius: `${RADIUS_SM}px ${RADIUS_SM}px 0 0`,
+            borderRadius: 0,
             transition: "all 0.2s ease",
             "&:hover": {
               backgroundColor: hoverBg(darkMode),
@@ -412,8 +443,8 @@ export const createUnifiedTheme = (darkMode) =>
       MuiTabs: {
         styleOverrides: {
           indicator: {
-            height: 3,
-            borderRadius: "1.5px 1.5px 0 0",
+            height: 1,
+            borderRadius: 0,
           },
         },
       },

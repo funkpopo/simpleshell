@@ -4,30 +4,29 @@ import { useTranslation } from "react-i18next";
 
 function AIIcon(props) {
   const { t } = useTranslation();
+  const { className = "", style, fontSize, color, ...imageProps } = props;
   return (
     <img
       src={brainSvg}
       alt={t("sidebar.ai")}
+      className={`ai-icon ${className}`.trim()}
       style={{
         width:
-          props.fontSize === "large"
+          fontSize === "large"
             ? "32px"
-            : props.fontSize === "small"
+            : fontSize === "small"
               ? "16px"
               : "24px",
         height:
-          props.fontSize === "large"
+          fontSize === "large"
             ? "32px"
-            : props.fontSize === "small"
+            : fontSize === "small"
               ? "16px"
               : "24px",
-        filter:
-          props.color === "primary"
-            ? "none"
-            : `brightness(${props.color === "disabled" ? 0.5 : 1})`,
-        opacity: props.color === "disabled" ? 0.5 : 1,
+        opacity: color === "disabled" ? 0.5 : 1,
+        ...style,
       }}
-      {...props}
+      {...imageProps}
     />
   );
 }

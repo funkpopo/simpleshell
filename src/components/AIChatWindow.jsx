@@ -1379,10 +1379,7 @@ const AIChatWindow = ({
             <Tooltip title={t("ai.switchModel")}>
               <Chip
                 label={
-                  <Box
-                    component="span"
-                    className="ai-chat-model-chip-content"
-                  >
+                  <Box component="span" className="ai-chat-model-chip-content">
                     <Box component="span" className="ai-chat-model-chip-text">
                       {modelChipLabel}
                     </Box>
@@ -1418,7 +1415,7 @@ const AIChatWindow = ({
               paper: {
                 className: "ai-chat-model-menu",
                 sx: {
-                  borderRadius: "10px",
+                  borderRadius: "var(--radius-md)",
                   mt: 0.5,
                   minWidth: 168,
                   maxWidth: 280,
@@ -1455,7 +1452,10 @@ const AIChatWindow = ({
                       <Typography
                         variant="body2"
                         noWrap
-                        sx={{ width: "100%", fontWeight: isSelected ? 600 : 500 }}
+                        sx={{
+                          width: "100%",
+                          fontWeight: isSelected ? 600 : 500,
+                        }}
                       >
                         {itemLabel}
                       </Typography>

@@ -3875,16 +3875,10 @@ function AppContent() {
             right: 0,
             top: 0,
             bgcolor: "background.paper",
-            color: (theme) =>
-              theme.palette.mode === "light" ? "text.primary" : "inherit",
-            boxShadow: (theme) =>
-              theme.palette.mode === "light"
-                ? "0 1px 3px rgba(0,0,0,0.1)"
-                : "inherit",
-            borderBottom: (theme) =>
-              theme.palette.mode === "light"
-                ? "1px solid rgba(0,0,0,0.08)"
-                : "1px solid rgba(255,255,255,0.08)",
+            color: "text.primary",
+            boxShadow: "none",
+            borderBottom: "1px solid",
+            borderColor: "divider",
           }}
         >
           <Box
@@ -3993,10 +3987,8 @@ function AppContent() {
                 pb: 0,
                 gap: 0.5,
                 WebkitAppRegion: "drag",
-                borderTop: (theme) =>
-                  theme.palette.mode === "light"
-                    ? "1px solid rgba(0,0,0,0.06)"
-                    : "1px solid rgba(255,255,255,0.06)",
+                borderTop: "1px solid",
+                borderColor: "divider",
               }}
             >
               <Box
@@ -4025,14 +4017,13 @@ function AppContent() {
                       px: 0.5,
                     },
                     "& .MuiTabs-flexContainer": {
-                      gap: 0.5,
+                      gap: 0,
                     },
                     "& .MuiTabs-indicator": {
-                      height: 2,
-                      background:
-                        "linear-gradient(90deg, rgba(66,165,245,0.85), rgba(124,77,255,0.85))",
-                      borderRadius: "999px",
-                      bottom: 0,
+                      // Workspace tabs draw their selected marker inside the
+                      // Tab itself. Hiding MUI's separate absolute layer keeps
+                      // it from ever covering a label during mount/hydration.
+                      display: "none",
                     },
                     "& .MuiTabs-scrollButtons": {
                       width: 24,
@@ -4048,10 +4039,25 @@ function AppContent() {
                   }}
                 >
                   {tabs.map((tab, index) => {
+                    const tabConfig =
+                      terminalInstances[`${tab.id}-config`] || {};
+                    const persistedLabel = [
+                      tab.label,
+                      tab.title,
+                      tabConfig.name,
+                      tabConfig.host,
+                    ]
+                      .map((candidate) =>
+                        typeof candidate === "string" ? candidate.trim() : "",
+                      )
+                      .find(Boolean);
                     const label =
                       index === 0
                         ? t("terminal.welcome")
-                        : tab.label || tab.title || "";
+                        : persistedLabel ||
+                          (tab.type === "local"
+                            ? t("common.componentNames.localTerminal")
+                            : t("common.componentNames.terminal"));
                     const tabReconnectStatus = reconnectStateByTabId[tab.id];
                     const tabReconnectColor = getReconnectStatusColor(
                       tabReconnectStatus?.state,

@@ -1,14 +1,15 @@
 /* Theme transition effects */
 .theme-transition * {
   transition:
-    background-color 0.15s ease,
-    background 0.15s ease,
-    color 0.15s ease,
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    fill 0.15s ease,
-    stroke 0.15s ease,
-    filter 0.15s ease !important;
+    background-color var(--theme-transition-duration)
+      var(--theme-transition-easing),
+    background var(--theme-transition-duration) var(--theme-transition-easing),
+    color var(--theme-transition-duration) var(--theme-transition-easing),
+    border-color var(--theme-transition-duration) var(--theme-transition-easing),
+    box-shadow var(--theme-transition-duration) var(--theme-transition-easing),
+    fill var(--theme-transition-duration) var(--theme-transition-easing),
+    stroke var(--theme-transition-duration) var(--theme-transition-easing),
+    filter var(--theme-transition-duration) var(--theme-transition-easing) !important;
 }
 
 /* 为特定元素禁用过渡效果 - 如果需要 */

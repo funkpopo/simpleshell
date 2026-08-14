@@ -304,7 +304,10 @@
       "emptyDescription": "先添加一台 SSH 主机，保存后可直接打开终端，也可从连接管理里继续分组整理。",
       "exampleTitle": "示例连接字段",
       "exampleAuth": "密码或私钥",
-      "emptyHint": "示例地址不会被保存；请填写自己的服务器地址、端口、用户名和认证方式。"
+      "emptyHint": "示例地址不会被保存；请填写自己的服务器地址、端口、用户名和认证方式。",
+      "consoleLabel": "远程控制台",
+      "secureAccess": "安全远程访问",
+      "systemReady": "系统 / 就绪"
     },
     "terminal": {
       "welcome": "欢迎"
