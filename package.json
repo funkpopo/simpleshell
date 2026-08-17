@@ -111,6 +111,6 @@
     "socks-proxy-agent": "10.1.0",
     "ssh2": "1.17.0",
     "systeminformation": "5.33.1",
-    "telnet-client": "2.2.13"
+    "telnet-client": "2.2.14"
   }
 }
