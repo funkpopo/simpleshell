@@ -58,9 +58,9 @@
   --float-shadow: 0 18px 56px rgba(11, 13, 15, 0.16);
   --theme-transition-duration: 0.22s;
   --theme-transition-easing: cubic-bezier(0.2, 0, 0, 1);
-  --particle-speed: 0.6s;
-  --glow-speed: 18s;
-  --grid-speed: calc(var(--particle-speed) + 0.3s);
+  --particle-speed: 12s;
+  --glow-speed: 22s;
+  --grid-speed: 18s;
   --welcome-particle-color: rgba(16, 18, 20, 0.16);
   --welcome-planet-highlight: rgba(188, 188, 184, 0.24);
   --welcome-planet-mid: rgba(104, 104, 101, 0.22);
@@ -75,17 +75,29 @@
   --welcome-ray-light: rgba(255, 255, 255, 0.18);
   --welcome-ray-soft: rgba(255, 255, 255, 0.09);
   --welcome-corona-soft: rgba(255, 255, 255, 0.14);
-  --welcome-day-planet-surface: #d7d9db;
-  --welcome-day-planet-outline: rgba(35, 38, 41, 0.18);
-  --welcome-day-edge-blur: rgba(61, 65, 69, 0.17);
-  --welcome-day-grid: rgba(16, 18, 20, 0.12);
-  --welcome-day-node: rgba(16, 18, 20, 0.82);
-  --welcome-day-node-soft: rgba(16, 18, 20, 0.22);
-  --welcome-day-signal: rgba(21, 23, 25, 0.92);
-  --welcome-day-signal-glow: rgba(21, 23, 25, 0.38);
-  --welcome-day-sphere-shade-soft: rgba(16, 18, 20, 0.025);
-  --welcome-day-sphere-shade: rgba(16, 18, 20, 0.13);
-  --welcome-day-sphere-edge: rgba(16, 18, 20, 0.055);
+  --welcome-day-solar-bloom: rgba(255, 255, 252, 0.96);
+  --welcome-day-solar-haze: rgba(255, 255, 255, 0.56);
+  --welcome-day-ambient-haze: rgba(214, 223, 225, 0.42);
+  --welcome-day-plane-wash: rgba(255, 255, 255, 0.36);
+  --welcome-day-orbit-line: rgba(21, 23, 25, 0.16);
+  --welcome-day-orbit-line-strong: rgba(21, 23, 25, 0.3);
+  --welcome-day-orbit-axis: rgba(21, 23, 25, 0.17);
+  --welcome-day-marker: rgba(21, 23, 25, 0.82);
+  --welcome-day-marker-field: rgba(241, 241, 238, 0.74);
+  --welcome-day-planet-surface: #dfe3e3;
+  --welcome-day-planet-light: rgba(255, 255, 252, 0.76);
+  --welcome-day-planet-shadow: rgba(54, 64, 68, 0.17);
+  --welcome-day-planet-terminator: rgba(53, 62, 66, 0.07);
+  --welcome-day-planet-outline: rgba(35, 42, 45, 0.17);
+  --welcome-day-edge-blur: rgba(69, 80, 84, 0.12);
+  --welcome-day-grid: rgba(21, 28, 31, 0.12);
+  --welcome-day-node: rgba(21, 28, 31, 0.7);
+  --welcome-day-node-soft: rgba(21, 28, 31, 0.16);
+  --welcome-day-signal: rgba(21, 23, 25, 0.74);
+  --welcome-day-signal-glow: rgba(21, 23, 25, 0.25);
+  --welcome-day-sphere-shade-soft: rgba(31, 39, 43, 0.018);
+  --welcome-day-sphere-shade: rgba(31, 39, 43, 0.1);
+  --welcome-day-sphere-edge: rgba(31, 39, 43, 0.045);
 }
 
 .dark-theme {
