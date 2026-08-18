@@ -422,34 +422,43 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
       revealFallbackTimer = null;
     }
 
-    // 最大化/全屏在 show 之前应用，避免先以普通尺寸闪一下再放大
+    const showMainWindow = () => {
+      if (mainWindow.isDestroyed()) {
+        return;
+      }
+
+      clearBootCss();
+      mainWindow.show();
+      emitWindowState();
+
+      // DevTools 在 show 之后打开，避免开发模式下过早弹出/带出隐藏窗口造成闪屏
+      if (process.env.NODE_ENV === "development") {
+        try {
+          mainWindow.webContents.openDevTools({ mode: "detach" });
+        } catch {
+          /* intentionally ignored */
+        }
+      }
+
+      // 硬件加速开启时显式锁定 60Hz，避免高刷新率显示器把渲染推到 144Hz+
+      // 造成不必要的 GPU/CPU 开销；关闭时不调用，沿用系统默认。
+      if (global.__hardwareAccelerationEnabled !== false) {
+        try {
+          mainWindow.webContents.setFrameRate(60);
+        } catch {
+          /* intentionally ignored — older Electron / unsupported */
+        }
+      }
+    };
+
     if (restoredWindowState.fullScreen) {
+      mainWindow.once("enter-full-screen", showMainWindow);
       mainWindow.setFullScreen(true);
     } else if (restoredWindowState.maximized) {
+      mainWindow.once("maximize", showMainWindow);
       mainWindow.maximize();
-    }
-
-    clearBootCss();
-    mainWindow.show();
-    emitWindowState();
-
-    // DevTools 在 show 之后打开，避免开发模式下过早弹出/带出隐藏窗口造成闪屏
-    if (process.env.NODE_ENV === "development") {
-      try {
-        mainWindow.webContents.openDevTools({ mode: "detach" });
-      } catch {
-        /* intentionally ignored */
-      }
-    }
-
-    // 硬件加速开启时显式锁定 60Hz，避免高刷新率显示器把渲染推到 144Hz+
-    // 造成不必要的 GPU/CPU 开销；关闭时不调用，沿用系统默认。
-    if (global.__hardwareAccelerationEnabled !== false) {
-      try {
-        mainWindow.webContents.setFrameRate(60);
-      } catch {
-        /* intentionally ignored — older Electron / unsupported */
-      }
+    } else {
+      showMainWindow();
     }
   };
 

@@ -3898,8 +3898,7 @@ function AppContent() {
                 display: "flex",
                 alignItems: "center",
                 gap: 0.5,
-                // 菜单展开时临时关闭拖拽区，确保点击空白顶部栏可触发收起
-                WebkitAppRegion: open ? "no-drag" : "drag",
+                WebkitAppRegion: "no-drag",
               }}
             >
               <Tooltip title={t("menu.mainMenu")}>
@@ -3973,7 +3972,13 @@ function AppContent() {
                   {t("menu.exit")}
                 </MenuItem>
               </Menu>
-              <Box sx={{ flexGrow: 1 }} />
+              <Box
+                sx={{
+                  flexGrow: 1,
+                  alignSelf: "stretch",
+                  WebkitAppRegion: open ? "no-drag" : "drag",
+                }}
+              />
               <WindowControls />
             </Toolbar>
 
