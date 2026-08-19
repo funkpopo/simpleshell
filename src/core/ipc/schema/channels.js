@@ -539,7 +539,7 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
   defineRequest("FILE_CREATE_FOLDER", "createFolder", "file", args([{}, stringArg()]), STANDARD_RESPONSE_SCHEMA, { permission: "filesystem" }),
   defineRequest("FILE_CREATE", "createFile", "file", args([{}, stringArg()]), STANDARD_RESPONSE_SCHEMA, { permission: "filesystem" }),
   defineRequest("FILE_RENAME", "renameFile", "file", args([{}, stringArg(), stringArg()]), STANDARD_RESPONSE_SCHEMA, { permission: "filesystem" }),
-  defineRequest("FILE_DOWNLOAD", "downloadFile", "file", args([{}, stringArg()]), STANDARD_RESPONSE_SCHEMA, { permission: "filesystem" }),
+  defineRequest("FILE_DOWNLOAD", "downloadFile", "file", args([{}, stringArg(), numberArg()], { minItems: 2, maxItems: 3 }), STANDARD_RESPONSE_SCHEMA, { permission: "filesystem" }),
   defineRequest("FILE_DOWNLOAD_FILES", "downloadFiles", "file", args([{}, arrayArg()]), STANDARD_RESPONSE_SCHEMA, { permission: "filesystem" }),
   defineRequest("FILE_DOWNLOAD_FOLDER", "downloadFolder", "file", args([{}, stringArg()]), STANDARD_RESPONSE_SCHEMA, { permission: "filesystem" }),
   defineRequest("FILE_GET_PERMISSIONS", "getFilePermissions", "file", args([{}, stringArg()]), STANDARD_RESPONSE_SCHEMA, { permission: "filesystem" }),

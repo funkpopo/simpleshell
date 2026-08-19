@@ -862,7 +862,7 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CREATE_FOLDER, tabId, folderPath),
   createFile: (tabId, filePath) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CREATE, tabId, filePath),
-  downloadFile: (tabId, remotePath, progressCallback) => {
+  downloadFile: (tabId, remotePath, progressCallback, knownSize = 0) => {
     // 注册一个临时的进度监听器
     const progressListener = (_, data) => {
       if (data.tabId === tabId && typeof progressCallback === "function") {
@@ -885,7 +885,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.on(IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS, progressListener);
 
     // 发起下载请求并在完成后移除监听器
-    return ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_DOWNLOAD, tabId, remotePath).finally(() => {
+    return ipcRenderer.invoke(
+      IPC_REQUEST_CHANNELS.FILE_DOWNLOAD,
+      tabId,
+      remotePath,
+      Number.isFinite(knownSize) && knownSize >= 0 ? knownSize : 0,
+    ).finally(() => {
       ipcRenderer.removeListener(IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS, progressListener);
     });
   },

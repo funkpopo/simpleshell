@@ -13,14 +13,15 @@ use sha2::{Digest, Sha256};
 use std::cmp::min;
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::net::IpAddr;
 use std::panic;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::fs::OpenOptions as TokioOpenOptions;
-use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
@@ -141,7 +142,9 @@ struct SftpRequest {
     segment_length: Option<u64>,
     remote_write_flags: Option<String>,
     local_write_flags: Option<String>,
+    ensure_parent_directories: Option<bool>,
     watch_interval_ms: Option<u64>,
+    stream_list: Option<bool>,
     max_entries: Option<usize>,
     max_depth: Option<usize>,
     max_bytes: Option<u64>,
@@ -365,7 +368,7 @@ pub fn run_scan_folder(mut args: impl Iterator<Item = String>) -> Result<(), Str
                 );
             }
             "--version" => {
-                println!("{}", env!("CARGO_PKG_VERSION"));
+                emit_stdout_line(env!("CARGO_PKG_VERSION").to_string())?;
                 return Ok(());
             }
             other => return Err(format!("unsupported argument: {other}")),
@@ -384,11 +387,12 @@ pub fn run_scan_folder(mut args: impl Iterator<Item = String>) -> Result<(), Str
     )?;
     let json =
         serde_json::to_string(&result).map_err(|error| format!("failed to serialize: {error}"))?;
-    println!("{json}");
+    emit_stdout_line(json)?;
     Ok(())
 }
 
 pub async fn run_sftp_request() -> Result<(), String> {
+    let stage_started_at = Instant::now();
     let mut stdin = io::stdin();
     let mut payload = String::new();
     stdin
@@ -431,8 +435,13 @@ pub async fn run_sftp_request() -> Result<(), String> {
         .unwrap_or(SIDECAR_SCHEMA_VERSION);
 
     let network_path = resolve_network_path(&envelope.config);
+    let _ = emit_stage(
+        request_id,
+        "requestStarted",
+        stage_started_at.elapsed().as_millis() as u64,
+    );
 
-    let (sftp, handle) = match connect_sftp(&envelope.config).await {
+    let (sftp, handle) = match connect_sftp(&envelope.config, request_id, &stage_started_at).await {
         Ok(value) => value,
         Err(error) => {
             emit_error_result(
@@ -445,7 +454,17 @@ pub async fn run_sftp_request() -> Result<(), String> {
             return Ok(());
         }
     };
+    let _ = emit_stage(
+        request_id,
+        "operationStarted",
+        stage_started_at.elapsed().as_millis() as u64,
+    );
     let result = execute_request(&sftp, &envelope.request, parsed_operation).await;
+    let _ = emit_stage(
+        request_id,
+        "operationCompleted",
+        stage_started_at.elapsed().as_millis() as u64,
+    );
 
     let close_result = sftp.close().await.map_err(|error| error.to_string());
     let _ = handle
@@ -478,7 +497,151 @@ pub async fn run_sftp_request() -> Result<(), String> {
     Ok(())
 }
 
+/// Serve multiple SFTP requests over one SSH/SFTP connection.
+///
+/// The first line is the normal `{config, request}` envelope. Subsequent lines
+/// contain only `SftpRequest` objects and are correlated by requestId. Requests
+/// are deliberately processed serially: this keeps the SFTP client/channel
+/// state predictable while still allowing progress events to be flushed after
+/// every transfer chunk.
+pub async fn run_sftp_session() -> Result<(), String> {
+    let mut lines = BufReader::new(io::stdin()).lines();
+    let first_line = lines
+        .next_line()
+        .await
+        .map_err(|error| format!("failed to read session request: {error}"))?
+        .ok_or_else(|| "SFTP session ended before initialization".to_string())?;
+    let envelope: SftpEnvelope = match serde_json::from_str(first_line.trim()) {
+        Ok(value) => value,
+        Err(error) => {
+            emit_error_result(
+                None,
+                None,
+                SIDECAR_PROCESS_TYPE,
+                &format!("failed to parse session envelope: {error}"),
+                None,
+            )?;
+            return Ok(());
+        }
+    };
+
+    let network_path = resolve_network_path(&envelope.config);
+    let first_request_id = envelope.request.request_id.as_deref();
+    let session_started_at = Instant::now();
+    let _ = emit_stage(
+        first_request_id,
+        "requestStarted",
+        session_started_at.elapsed().as_millis() as u64,
+    );
+    let (sftp, handle) = match connect_sftp(
+        &envelope.config,
+        first_request_id,
+        &session_started_at,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            emit_error_result(
+                Some(&envelope.request.operation),
+                first_request_id,
+                SIDECAR_PROCESS_TYPE,
+                &error,
+                Some(&network_path),
+            )?;
+            return Ok(());
+        }
+    };
+
+    process_session_request(&sftp, &envelope.request, &network_path, false).await?;
+
+    while let Some(line) = lines
+        .next_line()
+        .await
+        .map_err(|error| format!("failed to read SFTP session request: {error}"))?
+    {
+        let request: SftpRequest = match serde_json::from_str(line.trim()) {
+            Ok(value) => value,
+            Err(error) => {
+                emit_error_result(
+                    None,
+                    None,
+                    SIDECAR_PROCESS_TYPE,
+                    &format!("failed to parse SFTP session request: {error}"),
+                    Some(&network_path),
+                )?;
+                continue;
+            }
+        };
+
+        if request.operation == "closeSession" {
+            break;
+        }
+        process_session_request(&sftp, &request, &network_path, true).await?;
+    }
+
+    let close_result = sftp.close().await.map_err(|error| error.to_string());
+    let _ = handle
+        .disconnect(Disconnect::ByApplication, "", "English")
+        .await;
+    close_result
+}
+
+async fn process_session_request(
+    sftp: &Sftp,
+    request: &SftpRequest,
+    network_path: &NetworkPath,
+    emit_request_started: bool,
+) -> Result<(), String> {
+    let operation = request.operation.clone();
+    let request_id = request.request_id.as_deref();
+    let parsed_operation = match SftpOperation::parse(&operation) {
+        Ok(value) => value,
+        Err(error) => {
+            emit_error_result(
+                Some(&operation),
+                request_id,
+                SIDECAR_PROCESS_TYPE,
+                &error,
+                Some(network_path),
+            )?;
+            return Ok(());
+        }
+    };
+    let operation_started_at = Instant::now();
+    if emit_request_started {
+        let _ = emit_stage(
+            request_id,
+            "requestStarted",
+            operation_started_at.elapsed().as_millis() as u64,
+        );
+    }
+    let _ = emit_stage(
+        request_id,
+        "operationStarted",
+        operation_started_at.elapsed().as_millis() as u64,
+    );
+    let result = execute_request(sftp, request, parsed_operation).await;
+    let _ = emit_stage(
+        request_id,
+        "operationCompleted",
+        operation_started_at.elapsed().as_millis() as u64,
+    );
+
+    match result {
+        Ok(value) => emit_result(Some(&operation), request_id, value, Some(network_path)),
+        Err(error) => emit_error_result(
+            Some(&operation),
+            request_id,
+            SIDECAR_PROCESS_TYPE,
+            &error,
+            Some(network_path),
+        ),
+    }
+}
+
 pub async fn run_sftp_watch() -> Result<(), String> {
+    let stage_started_at = Instant::now();
     let mut stdin = io::stdin();
     let mut payload = String::new();
     stdin
@@ -531,7 +694,12 @@ pub async fn run_sftp_watch() -> Result<(), String> {
 
     let network_path = resolve_network_path(&envelope.config);
 
-    let (sftp, handle) = match connect_sftp(&envelope.config).await {
+    let _ = emit_stage(
+        request_id,
+        "requestStarted",
+        stage_started_at.elapsed().as_millis() as u64,
+    );
+    let (sftp, handle) = match connect_sftp(&envelope.config, request_id, &stage_started_at).await {
         Ok(value) => value,
         Err(error) => {
             emit_watch_error(
@@ -916,7 +1084,11 @@ async fn connect_via_socks4_proxy(
     Ok(socket)
 }
 
-async fn connect_sftp(config: &SshConnectionConfig) -> Result<(Sftp, SshHandle), String> {
+async fn connect_sftp(
+    config: &SshConnectionConfig,
+    request_id: Option<&str>,
+    stage_started_at: &Instant,
+) -> Result<(Sftp, SshHandle), String> {
     let client_config = Arc::new(client::Config {
         inactivity_timeout: Some(Duration::from_secs(30)),
         ..Default::default()
@@ -930,6 +1102,11 @@ async fn connect_sftp(config: &SshConnectionConfig) -> Result<(Sftp, SshHandle),
         })?;
 
     let socket = open_ssh_transport(config).await?;
+    let _ = emit_stage(
+        request_id,
+        "tcpConnected",
+        stage_started_at.elapsed().as_millis() as u64,
+    );
     if client_config.as_ref().nodelay {
         let _ = socket.set_nodelay(true);
     }
@@ -953,6 +1130,11 @@ async fn connect_sftp(config: &SshConnectionConfig) -> Result<(Sftp, SshHandle),
             format!("failed to connect SSH session: {error}")
         }
     })?;
+    let _ = emit_stage(
+        request_id,
+        "sshHandshakeCompleted",
+        stage_started_at.elapsed().as_millis() as u64,
+    );
 
     if let Some(private_key) = config.private_key.as_deref() {
         let key = decode_secret_key(private_key, config.passphrase.as_deref())
@@ -987,6 +1169,11 @@ async fn connect_sftp(config: &SshConnectionConfig) -> Result<(Sftp, SshHandle),
     } else {
         return Err("missing SSH credentials for native SFTP request".to_string());
     }
+    let _ = emit_stage(
+        request_id,
+        "authenticated",
+        stage_started_at.elapsed().as_millis() as u64,
+    );
 
     let channel = handle
         .channel_open_session()
@@ -1002,6 +1189,11 @@ async fn connect_sftp(config: &SshConnectionConfig) -> Result<(Sftp, SshHandle),
     let sftp = Sftp::new(writer, reader, SftpOptions::default())
         .await
         .map_err(|error| format!("failed to initialize openssh-sftp-client: {error}"))?;
+    let _ = emit_stage(
+        request_id,
+        "sftpReady",
+        stage_started_at.elapsed().as_millis() as u64,
+    );
 
     Ok((sftp, handle))
 }
@@ -1014,7 +1206,13 @@ async fn execute_request(
     match operation {
         SftpOperation::ListFiles => {
             let path = resolve_directory_path(request.path.as_deref());
-            let entries = list_files(sftp, &path).await?;
+            let entries = list_files_internal(
+                sftp,
+                &path,
+                request.request_id.as_deref(),
+                request.stream_list.unwrap_or(false),
+            )
+            .await?;
             Ok(json!({
                 "success": true,
                 "data": entries,
@@ -1158,6 +1356,7 @@ async fn execute_request(
                 request.segment_offset,
                 request.segment_length,
                 request.remote_write_flags.as_deref(),
+                request.ensure_parent_directories.unwrap_or(false),
             )
             .await?;
             Ok(json!({
@@ -1330,14 +1529,45 @@ fn local_download_open_options(flags: Option<&str>) -> TokioOpenOptions {
     options
 }
 
+fn emit_stdout_line(line: String) -> Result<(), String> {
+    let mut stdout = std::io::stdout().lock();
+    stdout
+        .write_all(line.as_bytes())
+        .map_err(|error| format!("failed to write stdout: {error}"))?;
+    stdout
+        .write_all(b"\n")
+        .map_err(|error| format!("failed to write stdout newline: {error}"))?;
+    stdout
+        .flush()
+        .map_err(|error| format!("failed to flush stdout: {error}"))?;
+    Ok(())
+}
+
+fn emit_stage(
+    request_id: Option<&str>,
+    stage: &str,
+    elapsed_ms: u64,
+) -> Result<(), String> {
+    emit_stdout_line(
+        serde_json::to_string(&json!({
+            "type": "stage",
+            "schemaVersion": SIDECAR_SCHEMA_VERSION,
+            "processType": SIDECAR_PROCESS_TYPE,
+            "requestId": request_id,
+            "stage": stage,
+            "elapsedMs": elapsed_ms,
+        }))
+        .map_err(|error| format!("failed to serialize stage: {error}"))?,
+    )
+}
+
 fn emit_progress(
     request_id: Option<&str>,
     delta_bytes: u64,
     transferred_bytes: u64,
     total_bytes: u64,
 ) -> Result<(), String> {
-    println!(
-        "{}",
+    emit_stdout_line(
         serde_json::to_string(&json!({
             "type": "progress",
             "schemaVersion": SIDECAR_SCHEMA_VERSION,
@@ -1347,12 +1577,38 @@ fn emit_progress(
             "transferredBytes": transferred_bytes,
             "totalBytes": total_bytes,
         }))
-        .map_err(|error| format!("failed to serialize progress: {error}"))?
-    );
-    Ok(())
+        .map_err(|error| format!("failed to serialize progress: {error}"))?,
+    )
+}
+
+fn emit_list_chunk(
+    request_id: Option<&str>,
+    items: Vec<RemoteFileEntry>,
+    done: bool,
+) -> Result<(), String> {
+    emit_stdout_line(
+        serde_json::to_string(&json!({
+            "type": "listChunk",
+            "schemaVersion": SIDECAR_SCHEMA_VERSION,
+            "processType": SIDECAR_PROCESS_TYPE,
+            "requestId": request_id,
+            "items": items,
+            "done": done,
+        }))
+        .map_err(|error| format!("failed to serialize list chunk: {error}"))?,
+    )
 }
 
 async fn list_files(sftp: &Sftp, remote_path: &str) -> Result<Vec<RemoteFileEntry>, String> {
+    list_files_internal(sftp, remote_path, None, false).await
+}
+
+async fn list_files_internal(
+    sftp: &Sftp,
+    remote_path: &str,
+    request_id: Option<&str>,
+    stream_chunks: bool,
+) -> Result<Vec<RemoteFileEntry>, String> {
     let mut fs = sftp.fs();
     let dir = fs
         .open_dir(remote_path)
@@ -1361,6 +1617,8 @@ async fn list_files(sftp: &Sftp, remote_path: &str) -> Result<Vec<RemoteFileEntr
     let read_dir = dir.read_dir();
     futures_util::pin_mut!(read_dir);
     let mut entries = Vec::new();
+    let mut emitted_first_chunk = false;
+    let list_started_at = Instant::now();
 
     while let Some(entry_result) = read_dir.next().await {
         let entry = entry_result.map_err(|error| format!("readdir failed: {error}"))?;
@@ -1396,6 +1654,31 @@ async fn list_files(sftp: &Sftp, remote_path: &str) -> Result<Vec<RemoteFileEntr
             uid: metadata.uid().unwrap_or(0),
             gid: metadata.gid().unwrap_or(0),
         });
+
+        if stream_chunks && entries.len() >= 100 {
+            let chunk = std::mem::take(&mut entries);
+            if !emitted_first_chunk {
+                emit_stage(
+                    request_id,
+                    "firstProgress",
+                    list_started_at.elapsed().as_millis() as u64,
+                )?;
+                emitted_first_chunk = true;
+            }
+            emit_list_chunk(request_id, chunk, false)?;
+        }
+    }
+
+    if stream_chunks {
+        if !emitted_first_chunk {
+            emit_stage(
+                request_id,
+                "firstProgress",
+                list_started_at.elapsed().as_millis() as u64,
+            )?;
+        }
+        emit_list_chunk(request_id, entries, true)?;
+        return Ok(Vec::new());
     }
 
     Ok(entries)
@@ -1651,6 +1934,7 @@ async fn upload_local_file(
     segment_offset: Option<u64>,
     segment_length: Option<u64>,
     remote_write_flags: Option<&str>,
+    ensure_parent_directories: bool,
 ) -> Result<u64, String> {
     let mut local_file = tokio::fs::File::open(local_path)
         .await
@@ -1662,6 +1946,15 @@ async fn upload_local_file(
         .len();
     let (offset, total_bytes) =
         resolve_transfer_window(local_size, segment_offset, segment_length)?;
+
+    if ensure_parent_directories {
+        if let Some(parent) = Path::new(remote_path).parent() {
+            let parent_path = parent.to_string_lossy();
+            if !parent_path.is_empty() && parent_path != "." {
+                create_remote_folders(sftp, &parent_path).await?;
+            }
+        }
+    }
 
     if offset > 0 {
         local_file
@@ -1877,9 +2170,19 @@ async fn create_remote_folders(sftp: &Sftp, remote_path: &str) -> Result<(), Str
                 }
             }
             Err(_) => {
-                fs.create_dir(&probe_path)
-                    .await
-                    .map_err(|error| format!("mkdir failed for {probe_path}: {error}"))?;
+                if let Err(error) = fs.create_dir(&probe_path).await {
+                    let mut verify_fs = sftp.fs();
+                    let verify_metadata = verify_fs.metadata(&probe_path).await.map_err(|_| {
+                        format!("mkdir failed for {probe_path}: {error}")
+                    })?;
+                    let is_dir = verify_metadata
+                        .file_type()
+                        .map(|kind| kind.is_dir())
+                        .unwrap_or(false);
+                    if !is_dir {
+                        return Err(format!("path exists and is not a directory: {probe_path}"));
+                    }
+                }
             }
         }
     }
@@ -2094,8 +2397,7 @@ fn emit_result(
     network_path: Option<&NetworkPath>,
 ) -> Result<(), String> {
     let enriched = enrich_result_metadata(operation, request_id, result, network_path);
-    println!(
-        "{}",
+    emit_stdout_line(
         serde_json::to_string(&json!({
             "type": "result",
             "schemaVersion": SIDECAR_SCHEMA_VERSION,
@@ -2104,9 +2406,8 @@ fn emit_result(
             "requestId": request_id,
             "result": enriched,
         }))
-        .map_err(|error| format!("failed to serialize result: {error}"))?
-    );
-    Ok(())
+        .map_err(|error| format!("failed to serialize result: {error}"))?,
+    )
 }
 
 fn emit_error_result(
@@ -2129,8 +2430,7 @@ fn emit_watch_event(
     event: &str,
     payload: serde_json::Value,
 ) -> Result<(), String> {
-    println!(
-        "{}",
+    emit_stdout_line(
         serde_json::to_string(&json!({
             "type": "watch",
             "schemaVersion": SIDECAR_SCHEMA_VERSION,
@@ -2139,9 +2439,8 @@ fn emit_watch_event(
             "event": event,
             "payload": payload,
         }))
-        .map_err(|error| format!("failed to serialize watch event: {error}"))?
-    );
-    Ok(())
+        .map_err(|error| format!("failed to serialize watch event: {error}"))?,
+    )
 }
 
 fn emit_watch_error(

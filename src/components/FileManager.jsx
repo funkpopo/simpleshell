@@ -4869,6 +4869,9 @@ const FileManager = memo(
                 totalFiles: Math.max(1, totalFiles || 1),
               });
             },
+            Number.isFinite(savedSelectedFile.size) && savedSelectedFile.size >= 0
+              ? savedSelectedFile.size
+              : 0,
           );
 
           if (result?.cancelled || isUserCancellationError(result)) {

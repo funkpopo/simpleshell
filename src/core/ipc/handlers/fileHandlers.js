@@ -349,20 +349,6 @@ class FileHandlers {
       // Fire-and-forget chunk producer
       Promise.resolve()
         .then(async () => {
-          const result = await nativeSftpClient.listFiles(
-            tabId,
-            requestedPath,
-            {
-              onSpawn: (child) => {
-                this.activeDirectoryReads.set(token, {
-                  tabId: String(tabId),
-                  token,
-                  child,
-                });
-              },
-            },
-          );
-
           const send = (payload) => {
             try {
               if (event && event.sender && !event.sender.isDestroyed()) {
@@ -375,6 +361,47 @@ class FileHandlers {
               // ignore send errors (window may be gone)
             }
           };
+
+          let streamedChunkCount = 0;
+          let streamedListDone = false;
+          const result = await nativeSftpClient.listFiles(
+            tabId,
+            requestedPath,
+            {
+              streamList: true,
+              onSpawn: (child) => {
+                this.activeDirectoryReads.set(token, {
+                  tabId: String(tabId),
+                  token,
+                  child,
+                });
+              },
+              onListChunk: (chunk) => {
+                const items = Array.isArray(chunk?.items) ? chunk.items : [];
+                streamedListDone = chunk?.done === true;
+                if (items.length === 0) {
+                  if (streamedListDone) {
+                    send({
+                      tabId,
+                      path: requestedPath,
+                      token,
+                      items: [],
+                      done: true,
+                    });
+                  }
+                  return;
+                }
+                streamedChunkCount += items.length;
+                send({
+                  tabId,
+                  path: requestedPath,
+                  token,
+                  items,
+                  done: streamedListDone,
+                });
+              },
+            },
+          );
 
           if (!result || result.success === false) {
             send({
@@ -389,6 +416,17 @@ class FileHandlers {
               retryable: result?.retryable === true,
               module: result?.module || null,
               operation: result?.operation || null,
+            });
+            return;
+          }
+
+          if (streamedChunkCount > 0 && !streamedListDone) {
+            send({
+              tabId,
+              path: requestedPath,
+              token,
+              items: [],
+              done: true,
             });
             return;
           }
@@ -534,11 +572,12 @@ class FileHandlers {
     return nativeSftpClient.renameFile(tabId, oldPath, newPath);
   }
 
-  async downloadFile(event, tabId, remotePath) {
+  async downloadFile(event, tabId, remotePath, knownSize = 0) {
     const result = await filemanagementService.downloadFile(
       event,
       tabId,
       remotePath,
+      knownSize,
     );
     if (result.success) {
       this.activeTransfers.set(`${tabId}-${remotePath}`, result.transferKey);

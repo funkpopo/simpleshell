@@ -123,6 +123,7 @@ class TransferProcessPool {
         operation: "uploadFileToRemote",
         ...base,
         remoteWriteFlags: taskPayload.remoteWriteFlags,
+        ensureParentDirectories: taskPayload.ensureParentDirectories !== false,
       };
     }
 
@@ -348,6 +349,7 @@ class TransferProcessPool {
       entry.sshConfig,
       request,
       {
+        sessionKey: String(entry.tabId),
         onSpawn: (child) => {
           entry.child = child;
           entry.sidecarPid = child?.pid || null;

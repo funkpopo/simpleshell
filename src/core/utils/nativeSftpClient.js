@@ -16,6 +16,8 @@ const { normalizeErrorMessage } = require("./errorResponse");
 
 const NATIVE_SFTP_SCHEMA_VERSION = 1;
 let nativeRequestSequence = 0;
+const nativeSftpSessions = new Map();
+const NATIVE_SFTP_SESSION_IDLE_TIMEOUT_MS = 30_000;
 
 function createNativeRequestId(operation) {
   nativeRequestSequence = (nativeRequestSequence + 1) % Number.MAX_SAFE_INTEGER;
@@ -38,6 +40,20 @@ function normalizeLogLevel(level, fallback = "WARN") {
   return ["DEBUG", "INFO", "WARN", "ERROR"].includes(normalized)
     ? normalized
     : fallback;
+}
+
+function logNativeStage(operation, requestId, stage, elapsedMs, startedAt) {
+  const numericElapsed = Number(elapsedMs);
+  const nativeElapsed = Number.isFinite(numericElapsed)
+    ? ` nativeElapsedMs=${Math.max(0, numericElapsed)}`
+    : "";
+  const observedElapsed = startedAt
+    ? ` observedElapsedMs=${Math.max(0, Date.now() - startedAt)}`
+    : "";
+  logToFile(
+    `Native SFTP: stage=${stage} operation=${operation || "unknown-operation"} requestId=${requestId || "none"}${nativeElapsed}${observedElapsed}`,
+    "INFO",
+  );
 }
 
 function isExpectedNativeFailure(value, options = {}) {
@@ -303,7 +319,12 @@ function invokeNativeRequest(tabId, request, options = {}) {
   );
 
   return resolveSshConfig(tabId).then((config) =>
-    invokeNativeRequestWithConfig(config, request, options, sidecarPath),
+    invokeNativeRequestWithConfig(
+      config,
+      request,
+      { ...options, sessionKey: options.sessionKey || String(tabId) },
+      sidecarPath,
+    ),
   );
 }
 
@@ -402,6 +423,321 @@ function spawnSidecarSession({
   return child;
 }
 
+class NativeSftpSession {
+  constructor({ sidecarPath, nativeConfig, sessionKey }) {
+    this.sidecarPath = sidecarPath;
+    this.nativeConfig = nativeConfig;
+    this.sessionKey = sessionKey;
+    this.child = null;
+    this.stdoutBuffer = "";
+    this.stderrBuffer = "";
+    this.pending = new Map();
+    this.closed = false;
+    this.closeRequested = false;
+    this.idleTimer = null;
+    this.spawnStartedAt = Date.now();
+    this._spawn();
+  }
+
+  _spawn() {
+    this.child = spawn(this.sidecarPath, ["sftp-session"], {
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    logToFile(
+      `Native SFTP session: spawned sessionKey=${this.sessionKey} pid=${this.child.pid || "unknown"} spawnElapsedMs=${Date.now() - this.spawnStartedAt}`,
+      "INFO",
+    );
+
+    this.child.stdout.on("data", (chunk) => {
+      this.stdoutBuffer += chunk.toString("utf8");
+      const lines = this.stdoutBuffer.split(/\r?\n/);
+      this.stdoutBuffer = lines.pop() || "";
+      for (const line of lines) this._handleLine(line.trim());
+    });
+    this.child.stderr.on("data", (chunk) => {
+      this.stderrBuffer += chunk.toString("utf8");
+    });
+    this.child.on("error", (error) => {
+      this._failAll(
+        createNativeSidecarError(
+          `Failed to start native SFTP session: ${normalizeErrorMessage(error)}`,
+          {
+            errorCode: "NATIVE_SFTP_SESSION_START_FAILED",
+            errorKind: "sidecar",
+            retryable: true,
+            raw: error,
+          },
+        ),
+      );
+    });
+    this.child.on("close", (code, signal) => {
+      if (this.stdoutBuffer.trim()) this._handleLine(this.stdoutBuffer.trim());
+      this.closed = true;
+      logToFile(
+        `Native SFTP session: stage=sidecarClosed sessionKey=${this.sessionKey} code=${code ?? "none"} signal=${signal || "none"}`,
+        "INFO",
+      );
+      const message = this.closeRequested
+        ? null
+        : this.stderrBuffer.trim() ||
+          `Native SFTP session exited with code ${code}`;
+      if (message) {
+        this._failAll(
+          createNativeSidecarError(message, {
+            errorCode: "NATIVE_SFTP_SESSION_CLOSED",
+            errorKind: "sidecar",
+            retryable: true,
+            raw: { code, signal },
+          }),
+        );
+      } else {
+        this._failAll(
+          createNativeSidecarError("Native SFTP session was closed", {
+            errorCode: "NATIVE_SFTP_SESSION_CLOSED",
+            errorKind: "sidecar",
+            retryable: true,
+            raw: { code, signal },
+          }),
+        );
+      }
+    });
+  }
+
+  _handleLine(line) {
+    if (!line) return;
+    let payload;
+    try {
+      payload = JSON.parse(line);
+    } catch (error) {
+      this._failAll(
+        buildInvalidSidecarOutputError(
+          error,
+          { operation: "sftp-session", requestId: null },
+          line,
+        ),
+      );
+      return;
+    }
+
+    const requestId = payload?.requestId;
+    const entry = requestId ? this.pending.get(requestId) : null;
+    if (!entry) return;
+
+    if (payload.type === "stage") {
+      const stage = String(payload.stage || "unknown");
+      if (!entry.observedStages.has(stage)) {
+        entry.observedStages.add(stage);
+        logNativeStage(
+          entry.request.operation,
+          entry.request.requestId,
+          stage,
+          payload.elapsedMs,
+          entry.startedAt,
+        );
+      }
+      if (typeof entry.options.onStage === "function") {
+        entry.options.onStage({
+          requestId: entry.request.requestId,
+          operation: entry.request.operation,
+          stage,
+          elapsedMs: payload.elapsedMs,
+        });
+      }
+      return;
+    }
+    if (payload.type === "progress") {
+      if (!entry.observedStages.has("firstProgress")) {
+        entry.observedStages.add("firstProgress");
+        logNativeStage(
+          entry.request.operation,
+          entry.request.requestId,
+          "firstProgress",
+          null,
+          entry.startedAt,
+        );
+      }
+      entry.options.onProgress?.({
+        requestId: entry.request.requestId,
+        schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
+        ...payload,
+      });
+      return;
+    }
+    if (payload.type === "listChunk") {
+      entry.options.onListChunk?.({
+        requestId: entry.request.requestId,
+        schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
+        ...payload,
+      });
+      return;
+    }
+    if (payload.type !== "result") return;
+
+    this.pending.delete(requestId);
+    this._armIdleTimer();
+    const result = normalizeNativeResultPayload(
+      payload.result || null,
+      entry.request,
+    );
+    if (result?.networkPath) recordNativeSidecarNetworkPath(result.networkPath);
+    if (result?.success === false) {
+      const expectedFailure = isExpectedNativeFailure(result, entry.options);
+      const status = expectedFailure ? "expected error" : "error";
+      logToFile(
+        `Native SFTP session: ${entry.request.operation} completed with ${status} - ${result.error || "unknown error"}`,
+        expectedFailure
+          ? normalizeLogLevel(entry.options.expectedFailureLevel, "DEBUG")
+          : "WARN",
+      );
+    } else {
+      logToFile(
+        `Native SFTP session: ${entry.request.operation} completed successfully requestId=${requestId}`,
+        "INFO",
+      );
+    }
+    entry.resolve(result);
+  }
+
+  _failAll(error) {
+    for (const entry of this.pending.values()) entry.reject(error);
+    this.pending.clear();
+    this.closed = true;
+    if (!this.closeRequested && this.child && !this.child.killed) {
+      try {
+        this.child.kill();
+      } catch {
+        // ignore cleanup failure
+      }
+    }
+  }
+
+  _armIdleTimer() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    if (this.pending.size > 0 || this.closeRequested) return;
+    this.idleTimer = setTimeout(() => this.close(), NATIVE_SFTP_SESSION_IDLE_TIMEOUT_MS);
+    this.idleTimer.unref?.();
+  }
+
+  request(request, options = {}) {
+    if (this.closed || !this.child || this.child.stdin.destroyed) {
+      return Promise.reject(
+        createNativeSidecarError("Native SFTP session is not available", {
+          errorCode: "NATIVE_SFTP_SESSION_UNAVAILABLE",
+          errorKind: "sidecar",
+          retryable: true,
+        }),
+      );
+    }
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    const firstRequest = this.pending.size === 0 && !this.started;
+    this.started = true;
+    if (firstRequest) {
+      logNativeStage(
+        request.operation,
+        request.requestId,
+        "spawnStart",
+        null,
+        this.spawnStartedAt,
+      );
+      logNativeStage(
+        request.operation,
+        request.requestId,
+        "spawned",
+        null,
+        this.spawnStartedAt,
+      );
+    }
+    try {
+      options.onSpawn?.(this.child);
+    } catch {
+      // Callback ownership stays with the caller; a callback failure must not
+      // corrupt the protocol writer.
+    }
+    return new Promise((resolve, reject) => {
+      this.pending.set(request.requestId, {
+        request,
+        options,
+        resolve,
+        reject,
+        startedAt: Date.now(),
+        observedStages: new Set(),
+      });
+      const payload = firstRequest
+        ? {
+            schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
+            config: this.nativeConfig,
+            request,
+          }
+        : request;
+      this.child.stdin.write(`${JSON.stringify(payload)}\n`, "utf8", (error) => {
+        if (!error) return;
+        this.pending.delete(request.requestId);
+        reject(
+          createNativeSidecarError(
+            `Failed to write native SFTP session request: ${normalizeErrorMessage(error)}`,
+            { errorCode: "NATIVE_SFTP_SESSION_WRITE_FAILED", raw: error },
+          ),
+        );
+      });
+    });
+  }
+
+  close() {
+    if (this.closeRequested) return;
+    this.closeRequested = true;
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    if (!this.child || this.child.killed) return;
+    try {
+      this.child.stdin.write(
+        `${JSON.stringify({ operation: "closeSession", requestId: createNativeRequestId("close-session") })}\n`,
+        "utf8",
+        () => this.child.stdin.end(),
+      );
+    } catch {
+      try {
+        this.child.kill();
+      } catch {
+        // ignore shutdown failure
+      }
+    }
+  }
+}
+
+function invokePersistentNativeRequest(
+  sessionKey,
+  sidecarPath,
+  nativeConfig,
+  request,
+  options,
+) {
+  const fingerprint = JSON.stringify(nativeConfig);
+  const expectedFailureLevel = normalizeLogLevel(options.expectedFailureLevel, "DEBUG");
+  const sessionOptions = {
+    ...options,
+    expectedFailureLevel,
+  };
+  let session = nativeSftpSessions.get(sessionKey);
+  if (session && session.fingerprint !== fingerprint) {
+    session.close();
+    nativeSftpSessions.delete(sessionKey);
+    session = null;
+  }
+  if (!session || session.closed) {
+    session = new NativeSftpSession({ sidecarPath, nativeConfig, sessionKey });
+    session.fingerprint = fingerprint;
+    nativeSftpSessions.set(sessionKey, session);
+  }
+  return session.request(request, sessionOptions).catch((error) => {
+    if (session.closed || error?.errorCode === "NATIVE_SFTP_SESSION_CLOSED") {
+      if (nativeSftpSessions.get(sessionKey) === session) {
+        nativeSftpSessions.delete(sessionKey);
+      }
+    }
+    throw error;
+  });
+}
+
 function invokeNativeRequestWithConfig(
   config,
   request,
@@ -432,149 +768,17 @@ function invokeNativeRequestWithConfig(
     return Promise.reject(error);
   }
 
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    let finalResult = null;
-
-    const rejectOnce = (error) => {
-      if (settled) return;
-      settled = true;
-      logToFile(
-        `Native SFTP: ${normalizedRequest.operation || "unknown-operation"} failed - ${normalizeErrorMessage(error)}`,
-        "ERROR",
-      );
-      reject(error);
-    };
-
-    const resolveOnce = (value) => {
-      if (settled) return;
-      settled = true;
-      if (value?.success === false) {
-        const expectedFailure = isExpectedNativeFailure(value, options);
-        const level = expectedFailure
-          ? normalizeLogLevel(options.expectedFailureLevel, "DEBUG")
-          : "WARN";
-        const status = expectedFailure ? "expected error" : "error";
-        logToFile(
-          `Native SFTP: ${normalizedRequest.operation || "unknown-operation"} completed with ${status} - ${value?.error || "unknown error"}`,
-          level,
-        );
-      } else {
-        logToFile(
-          `Native SFTP: ${normalizedRequest.operation || "unknown-operation"} completed successfully`,
-          "INFO",
-        );
-      }
-      resolve(value);
-    };
-
-    const handleOutputLine = (line) => {
-      if (!line) return;
-
-      let payload;
-      try {
-        payload = JSON.parse(line);
-      } catch (error) {
-        rejectOnce(
-          buildInvalidSidecarOutputError(error, normalizedRequest, line),
-        );
-        return;
-      }
-
-      if (payload?.type === "progress") {
-        if (typeof options.onProgress === "function") {
-          options.onProgress({
-            requestId: normalizedRequest.requestId,
-            schemaVersion: NATIVE_SFTP_SCHEMA_VERSION,
-            ...payload,
-          });
-        }
-        return;
-      }
-
-      if (payload?.type === "result") {
-        finalResult = normalizeNativeResultPayload(
-          payload.result || null,
-          normalizedRequest,
-        );
-      }
-    };
-
-    const handleClose = (code, signal, stderrText) => {
-      if (code !== 0) {
-        const structured = normalizeNativeErrorPayload(
-          stderrText || finalResult,
-          (finalResult && finalResult.error) ||
-            `Native SFTP sidecar exited with code ${code}`,
-        );
-        recordCrashMarker(null, {
-          module: "native-sidecar",
-          processType: "native-sidecar",
-          type: "sidecar-exit",
-          reason: structured.error,
-          exitCode: code,
-          operation: normalizedRequest.operation || null,
-          error: structured.error,
-          extra: {
-            requestId: normalizedRequest.requestId,
-            errorCode: structured.errorCode,
-            errorKind: structured.errorKind,
-            retryable: structured.retryable,
-          },
-        });
-        rejectOnce(
-          createNativeSidecarError(structured.error, {
-            ...structured,
-            operation:
-              structured.operation || normalizedRequest.operation || null,
-            requestId: structured.requestId || normalizedRequest.requestId,
-            raw: { ...structured, exitCode: code },
-          }),
-        );
-        return;
-      }
-
-      if (!finalResult) {
-        rejectOnce(
-          createNativeSidecarError(
-            stderrText || "Native SFTP sidecar did not return a result payload",
-            {
-              errorCode: "NATIVE_SFTP_MISSING_RESULT",
-              errorKind: "internal",
-              retryable: false,
-              operation: normalizedRequest.operation || null,
-              requestId: normalizedRequest.requestId,
-            },
-          ),
-        );
-        return;
-      }
-
-      if (finalResult.success === false) {
-        if (finalResult.networkPath) {
-          recordNativeSidecarNetworkPath(finalResult.networkPath);
-        }
-        resolveOnce(finalResult);
-        return;
-      }
-
-      if (finalResult.networkPath) {
-        recordNativeSidecarNetworkPath(finalResult.networkPath);
-      }
-      resolveOnce(finalResult);
-    };
-
-    spawnSidecarSession({
-      sidecarPath,
-      mode: "sftp-request",
-      nativeConfig,
-      request: normalizedRequest,
-      onSpawn: options.onSpawn,
-      onLine: handleOutputLine,
-      onChildError: rejectOnce,
-      onClose: handleClose,
-    });
-  });
+  const sessionKey = String(
+    options.sessionKey ||
+      `connection:${nativeConfig.username}@${nativeConfig.host}:${nativeConfig.port || 22}`,
+  );
+  return invokePersistentNativeRequest(
+    sessionKey,
+    sidecarPath,
+    nativeConfig,
+    normalizedRequest,
+    options,
+  );
 }
 
 function watchDirectory(tabId, remotePath, options = {}) {
@@ -868,6 +1072,7 @@ async function listFiles(tabId, remotePath, options = {}) {
     {
       operation: "listFiles",
       path: remotePath,
+      streamList: options.streamList === true,
     },
     options,
   );
@@ -1031,6 +1236,7 @@ async function uploadFile(tabId, localPath, remotePath, options = {}) {
       segmentOffset: options.segmentOffset,
       segmentLength: options.segmentLength,
       remoteWriteFlags: options.remoteWriteFlags,
+      ensureParentDirectories: options.ensureParentDirectories !== false,
     },
     options,
   );

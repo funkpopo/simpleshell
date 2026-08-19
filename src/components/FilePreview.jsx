@@ -1715,6 +1715,7 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             totalFiles: Math.max(1, totalFiles || 1),
           });
         },
+        Number.isFinite(file.size) && file.size >= 0 ? file.size : 0,
       );
 
       if (result?.cancelled) {

@@ -118,6 +118,7 @@ function buildNativeRequest(task) {
       operation: "uploadFileToRemote",
       ...base,
       remoteWriteFlags: task.remoteWriteFlags,
+      ensureParentDirectories: task.ensureParentDirectories !== false,
     };
   }
 
@@ -144,6 +145,7 @@ async function executeTask(message, taskPayload) {
   const sshConfig = taskPayload?.sshConfig || {};
 
   const result = await invokeNativeRequestWithConfig(sshConfig, request, {
+    sessionKey: String(taskPayload?.tabId || currentTabId || "worker"),
     onSpawn: (child) => {
       if (!currentTaskState) return;
       currentTaskState.child = child;

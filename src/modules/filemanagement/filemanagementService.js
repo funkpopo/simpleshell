@@ -584,24 +584,6 @@ class FilemanagementService {
     return `${direction || "transfer"}::${index}::${remotePath || ""}::${localPath || ""}`;
   }
 
-  async _prepareRemoteChunkUploadTarget(tabId, remotePath, transferKey = null) {
-    if (transferKey) {
-      this._throwIfTransferCancelled(transferKey);
-    }
-    const normalizedRemotePath = this._normalizeRemotePath(remotePath);
-    await this._withBorrowedSftp(tabId, async (sftp) => {
-      const handle = await this._openFileHandle(
-        sftp,
-        normalizedRemotePath,
-        "w",
-      );
-      await this._closeFileHandle(sftp, handle);
-    });
-    if (transferKey) {
-      this._throwIfTransferCancelled(transferKey);
-    }
-  }
-
   async _prepareLocalChunkDownloadTarget(
     tempPath,
     totalBytes,
@@ -1162,42 +1144,33 @@ class FilemanagementService {
       return depthA - depthB;
     });
 
-    await this._withBorrowedSftp(tabId, async (sftp) => {
-      const created = new Set(["", ".", "/"]);
-      for (let index = 0; index < uniqueDirs.length; index += 1) {
-        const fullDirPath = uniqueDirs[index];
-        if (transferKey) {
-          this._throwIfTransferCancelled(transferKey);
-        }
-        const isAbsolute = fullDirPath.startsWith("/");
-        const parts = fullDirPath.split("/").filter(Boolean);
-        let currentPath = isAbsolute ? "/" : "";
-
-        for (const part of parts) {
-          currentPath = currentPath ? path.posix.join(currentPath, part) : part;
-          if (created.has(currentPath)) continue;
-          await this._mkdirIfNeeded(sftp, currentPath);
-          created.add(currentPath);
-        }
-
-        if (transferKey) {
-          const transfer = this._advanceTransferPreparation(transferKey);
-          this._emitTransferProgress(transferKey, {
-            fileName: displayName || transferText("mainProcess.transfer.preparingUpload"),
-            currentFile: transferText("mainProcess.transfer.creatingDirectory", {
-              index: index + 1,
-              total: uniqueDirs.length,
-              path: fullDirPath,
-            }),
-            extra: {
-              preparationCompleted: transfer?.preparationCompleted || 0,
-              preparationTotal: transfer?.preparationTotal || uniqueDirs.length,
-              ...progressExtra,
-            },
-          });
-        }
+    for (let index = 0; index < uniqueDirs.length; index += 1) {
+      const fullDirPath = uniqueDirs[index];
+      if (transferKey) {
+        this._throwIfTransferCancelled(transferKey);
       }
-    });
+
+      // Native createRemoteFolders is recursive and now runs on the same
+      // persistent native SFTP session as the subsequent upload requests.
+      await nativeSftpClient.createRemoteFolders(tabId, fullDirPath);
+
+      if (transferKey) {
+        const transfer = this._advanceTransferPreparation(transferKey);
+        this._emitTransferProgress(transferKey, {
+          fileName: displayName || transferText("mainProcess.transfer.preparingUpload"),
+          currentFile: transferText("mainProcess.transfer.creatingDirectory", {
+            index: index + 1,
+            total: uniqueDirs.length,
+            path: fullDirPath,
+          }),
+          extra: {
+            preparationCompleted: transfer?.preparationCompleted || 0,
+            preparationTotal: transfer?.preparationTotal || uniqueDirs.length,
+            ...progressExtra,
+          },
+        });
+      }
+    }
 
     if (transferKey) {
       const transfer = this._getTransfer(transferKey);
@@ -1435,6 +1408,16 @@ class FilemanagementService {
         maxConcurrency: 1,
         onProgress: (message) => {
           if (message?.taskId !== taskId) return;
+          const reportedTotal = Number(message?.totalBytes);
+          const current = this._getTransfer(transferKey);
+          if (
+            current &&
+            current.totalBytes <= 0 &&
+            Number.isFinite(reportedTotal) &&
+            reportedTotal > 0
+          ) {
+            current.totalBytes = reportedTotal;
+          }
           const delta = Math.max(0, Number(message?.deltaBytes) || 0);
           if (delta <= 0) return;
           trackedBytes += delta;
@@ -1486,7 +1469,7 @@ class FilemanagementService {
     }
   }
 
-  async downloadFile(event, tabId, remotePath) {
+  async downloadFile(event, tabId, remotePath, knownSize = 0) {
     let transferKey = null;
     let chunkTempPath = null;
     try {
@@ -1525,15 +1508,8 @@ class FilemanagementService {
         },
       });
 
-      let fileSize = 0;
-      try {
-        fileSize = await this._withBorrowedSftp(tabId, async (sftp) => {
-          const stats = await this._stat(sftp, normalizedRemotePath);
-          return Number.isFinite(stats?.size) ? stats.size : 0;
-        });
-      } catch {
-        fileSize = 0;
-      }
+      const fileSize =
+        Number.isFinite(knownSize) && knownSize >= 0 ? knownSize : 0;
       const state = this._getTransfer(transferKey);
       if (state) state.totalBytes = fileSize;
 
@@ -2787,11 +2763,6 @@ class FilemanagementService {
     const fileStateMap = new Map();
     try {
       const directories = [...requestedRemoteDirectories];
-      for (const entry of uploadEntries) {
-        directories.push(
-          path.posix.dirname(this._normalizeRemotePath(entry.remotePath)),
-        );
-      }
       await this._ensureRemoteDirectories(tabId, directories, {
         transferKey,
         displayName,
@@ -2826,11 +2797,6 @@ class FilemanagementService {
         const chunkSegments = this._buildChunkSegments(knownSize);
 
         if (chunkSegments.length > 0 && materialized.localPath) {
-          await this._prepareRemoteChunkUploadTarget(
-            tabId,
-            normalizedRemotePath,
-            transferKey,
-          );
           fileStateMap.set(fileTaskKey, {
             fileTaskKey,
             index,
@@ -3317,6 +3283,7 @@ class FilemanagementService {
         }
 
         if (!fileData.localPath) {
+          // 拖放文件缺少可验证的本地路径
           throw new Error(transferText("mainProcess.file.dropFileMissingLocalPath", { path: relativePath }));
         }
 
@@ -3351,6 +3318,7 @@ class FilemanagementService {
         }
 
         if (!folderData.localPath) {
+          // 拖放文件夹缺少可验证的本地路径
           throw new Error(transferText("mainProcess.file.dropFolderMissingLocalPath", { path: relativePath }));
         }
 
