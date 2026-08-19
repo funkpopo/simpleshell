@@ -3760,12 +3760,47 @@ const FileManager = memo(
       setPathInput(e.target.value);
     };
 
+    // 输入法组合回车标记：组合结束后若确实由回车触发，则执行跳转
+    const pathInputSubmitOnCompositionEndRef = useRef(false);
+
+    const submitPathInput = (value) => {
+      const trimmed = typeof value === "string" ? value.trim() : "";
+      if (!trimmed) {
+        return;
+      }
+      setPathInput(trimmed);
+      loadDirectory(trimmed);
+    };
+
     // 处理路径输入提交
     const handlePathInputSubmit = (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        loadDirectory(pathInput);
+      if (e.key !== "Enter") {
+        return;
       }
+
+      // 忽略输入法组合中的回车（中文输入法确认候选词），
+      // 避免 preventDefault 打断组合提交，也避免用未提交的旧值触发跳转
+      if (
+        e.nativeEvent?.isComposing ||
+        e.nativeEvent?.keyCode === 229
+      ) {
+        pathInputSubmitOnCompositionEndRef.current = true;
+        return;
+      }
+
+      pathInputSubmitOnCompositionEndRef.current = false;
+      e.preventDefault();
+      submitPathInput(e.target?.value ?? pathInput);
+    };
+
+    // 输入法组合结束（确认候选词）后，若刚才的回车是组合内的，则执行跳转
+    const handlePathInputCompositionEnd = (e) => {
+      if (!pathInputSubmitOnCompositionEndRef.current) {
+        return;
+      }
+      pathInputSubmitOnCompositionEndRef.current = false;
+      e.preventDefault?.();
+      submitPathInput(e.target?.value ?? pathInput);
     };
 
     // 处理取消传输
@@ -6256,6 +6291,10 @@ const FileManager = memo(
               value={pathInput}
               onChange={handlePathInputChange}
               onKeyDown={handlePathInputSubmit}
+              onCompositionStart={() => {
+                pathInputSubmitOnCompositionEndRef.current = false;
+              }}
+              onCompositionEnd={handlePathInputCompositionEnd}
               placeholder={t("fileManager.enterPath")}
               InputProps={{
                 style: { fontSize: "1.0rem" },
