@@ -276,9 +276,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   }
 
   const qualityLevel =
-    latencyData.qualityLevel ||
-    latencyData.quality?.level ||
-    null;
+    latencyData.qualityLevel || latencyData.quality?.level || null;
   const signalInfo = getSignalInfo(
     latencyData.latency,
     latencyData.status,
@@ -349,7 +347,30 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   return (
     <Fade in={isVisible} timeout={300}>
       <Box sx={containerStyles}>
-        <Tooltip title={tooltipContent} placement={tooltipPlacement} arrow>
+        <Tooltip
+          title={tooltipContent}
+          placement={tooltipPlacement}
+          arrow
+          slotProps={{
+            // The app-wide Tooltip intentionally uses an inverted contrast
+            // surface. Connection details are a floating panel, though, so
+            // keep this one on the same surface and text colors as the app.
+            tooltip: {
+              sx: {
+                backgroundColor: theme.palette.background.paper,
+                color: theme.palette.text.primary,
+                border: `1px solid ${theme.palette.divider}`,
+                boxShadow: theme.shadows[8],
+                maxWidth: 320,
+              },
+            },
+            arrow: {
+              sx: {
+                color: theme.palette.background.paper,
+              },
+            },
+          }}
+        >
           <Chip
             icon={<SignalIcon />}
             label={hasLatencyNumber ? `${latencyData.latency}ms` : "--"}
