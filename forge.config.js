@@ -56,6 +56,7 @@ const PACKAGED_SCRIPT_NAMES_TO_REMOVE = new Set([
   "release-check.js",
   "generate-checksums.js",
   "prepare-native-services.js",
+  "run-forge-release.js",
 ]);
 const NODE_PTY_PREBUILD_DIRS_BY_TARGET = {
   "darwin-arm64": new Set(["darwin-arm64"]),
@@ -437,6 +438,35 @@ const cleanupPackagedNodePtyPrebuilds = async (buildPath, platform, arch) => {
   );
 };
 
+const removePackagedSourceMaps = async (rootPath) => {
+  let entries;
+
+  try {
+    entries = await fs.readdir(rootPath, { withFileTypes: true });
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return;
+    }
+
+    throw error;
+  }
+
+  await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = path.join(rootPath, entry.name);
+
+      if (entry.isDirectory()) {
+        await removePackagedSourceMaps(entryPath);
+        return;
+      }
+
+      if (entry.isFile() && entry.name.toLowerCase().endsWith(".map")) {
+        await fs.unlink(entryPath);
+      }
+    }),
+  );
+};
+
 const cleanupPackagedDevelopmentFilesHook = async ({
   arch,
   buildPath,
@@ -445,6 +475,7 @@ const cleanupPackagedDevelopmentFilesHook = async ({
   await Promise.all([
     cleanupPackagedDevelopmentFiles(buildPath),
     cleanupPackagedNodePtyPrebuilds(buildPath, platform, arch),
+    removePackagedSourceMaps(buildPath),
   ]);
 };
 
