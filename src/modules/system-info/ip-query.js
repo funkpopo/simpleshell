@@ -82,6 +82,160 @@ const DEFAULT_API_PROVIDERS = [
     ownIpOnly: true,
   },
   {
+    name: "ipwho.is (own)",
+    buildUrl: () => `https://ipwho.is/`,
+    transform: (data, ip) => {
+      if (data.success === false) {
+        throw new Error(`ipwho.is API error: ${data.message}`);
+      }
+      return {
+        ret: "ok",
+        data: {
+          ip: data.ip || ip,
+          location: [
+            data.country,
+            data.region,
+            data.city,
+            data.org || data.isp,
+          ].filter(Boolean),
+          latitude: data.latitude,
+          longitude: data.longitude,
+        },
+      };
+    },
+    ownIpOnly: true,
+  },
+  {
+    name: "ipinfo.io (own)",
+    buildUrl: () => `https://ipinfo.io/json`,
+    transform: (data, ip) => {
+      if (data.error) {
+        throw new Error(`ipinfo.io API error: ${data.error.title}`);
+      }
+      const locParts = String(data.loc || "")
+        .split(",")
+        .map(Number);
+      return {
+        ret: "ok",
+        data: {
+          ip: data.ip || ip,
+          location: [
+            data.country,
+            data.region,
+            data.city,
+            data.org || data.isp,
+          ].filter(Boolean),
+          latitude: locParts[0],
+          longitude: locParts[1],
+        },
+      };
+    },
+    ownIpOnly: true,
+  },
+  {
+    name: "ipapi.co (own)",
+    buildUrl: () => `https://ipapi.co/json/`,
+    transform: (data, ip) => {
+      if (data.error) {
+        throw new Error(`ipapi.co API error: ${JSON.stringify(data.reason || data.error)}`);
+      }
+      return {
+        ret: "ok",
+        data: {
+          ip: data.ip || ip,
+          location: [
+            data.country_name,
+            data.region,
+            data.city,
+            data.org,
+          ].filter(Boolean),
+          latitude: data.latitude,
+          longitude: data.longitude,
+        },
+      };
+    },
+    ownIpOnly: true,
+  },
+  {
+    name: "api.vore.top (own)",
+    buildUrl: () => `https://api.vore.top/api/IPdata`,
+    transform: (data, ip) => {
+      if (data.code !== 200) {
+        throw new Error(`api.vore.top API error: ${data.msg}`);
+      }
+      const info = data.data?.ipInfo || {};
+      const latlng = Array.isArray(info.latlng)
+        ? info.latlng.map(Number)
+        : [];
+      return {
+        ret: "ok",
+        data: {
+          ip: data.data?.ip || ip,
+          location: [
+            info.country,
+            info.province,
+            info.city,
+            info.isp,
+          ].filter(Boolean),
+          latitude: latlng[0],
+          longitude: latlng[1],
+        },
+      };
+    },
+    ownIpOnly: true,
+  },
+  {
+    name: "whois.pconline.com.cn (own)",
+    buildUrl: () => `https://whois.pconline.com.cn/ipJson.jsp?json=true`,
+    transform: (data, ip) => {
+      if (data.err) {
+        throw new Error(`pconline API error: ${data.err}`);
+      }
+      return {
+        ret: "ok",
+        data: {
+          ip: data.ip || ip,
+          location: [data.pro, data.city, data.addr].filter(Boolean),
+        },
+      };
+    },
+    ownIpOnly: true,
+  },
+  {
+    name: "whois.pconline.com.cn (own)",
+    buildUrl: () => `https://whois.pconline.com.cn/ipJson.jsp?json=true`,
+    transform: (data, ip) => {
+      if (data.err) {
+        throw new Error(`pconline API error: ${data.err}`);
+      }
+      return {
+        ret: "ok",
+        data: {
+          ip: data.ip || ip,
+          location: [data.pro, data.city, data.addr].filter(Boolean),
+        },
+      };
+    },
+    ownIpOnly: true,
+  },
+  {
+    name: "ip.useragentinfo.com (own)",
+    buildUrl: () => `https://ip.useragentinfo.com/json`,
+    transform: (data, ip) => ({
+      ret: "ok",
+      data: {
+        ip: data.ip || ip,
+        location: [
+          data.country,
+          data.province,
+          data.city,
+          data.isp,
+        ].filter(Boolean),
+      },
+    }),
+    ownIpOnly: true,
+  },
+  {
     name: "geolocation-db.com (lookup)",
     buildUrl: (ip) => `https://geolocation-db.com/json/${ip}`,
     transform: transformGeolocationDB,
@@ -103,6 +257,105 @@ const DEFAULT_API_PROVIDERS = [
         longitude: data.lon,
       },
     }),
+  },
+  {
+    name: "ipwho.is (lookup)",
+    buildUrl: (ip) => `https://ipwho.is/${ip}`,
+    transform: (data, ip) => {
+      if (data.success === false) {
+        throw new Error(`ipwho.is API error: ${data.message}`);
+      }
+      return {
+        ret: "ok",
+        data: {
+          ip: data.ip || ip,
+          location: [
+            data.country,
+            data.region,
+            data.city,
+            data.org || data.isp,
+          ].filter(Boolean),
+          latitude: data.latitude,
+          longitude: data.longitude,
+        },
+      };
+    },
+  },
+  {
+    name: "ipinfo.io (lookup)",
+    buildUrl: (ip) => `https://ipinfo.io/${ip}/json`,
+    transform: (data, ip) => {
+      if (data.error) {
+        throw new Error(`ipinfo.io API error: ${data.error.title}`);
+      }
+      const locParts = String(data.loc || "")
+        .split(",")
+        .map(Number);
+      return {
+        ret: "ok",
+        data: {
+          ip: data.ip || ip,
+          location: [
+            data.country,
+            data.region,
+            data.city,
+            data.org || data.isp,
+          ].filter(Boolean),
+          latitude: locParts[0],
+          longitude: locParts[1],
+        },
+      };
+    },
+  },
+  {
+    name: "ipapi.co (lookup)",
+    buildUrl: (ip) => `https://ipapi.co/${ip}/json/`,
+    transform: (data, ip) => {
+      if (data.error) {
+        throw new Error(`ipapi.co API error: ${JSON.stringify(data.reason || data.error)}`);
+      }
+      return {
+        ret: "ok",
+        data: {
+          ip: data.ip || ip,
+          location: [
+            data.country_name,
+            data.region,
+            data.city,
+            data.org,
+          ].filter(Boolean),
+          latitude: data.latitude,
+          longitude: data.longitude,
+        },
+      };
+    },
+  },
+  {
+    name: "api.vore.top (lookup)",
+    buildUrl: (ip) => `https://api.vore.top/api/IPdata?ip=${ip}`,
+    transform: (data, targetIp) => {
+      if (data.code !== 200) {
+        throw new Error(`api.vore.top API error: ${data.msg}`);
+      }
+      const info = data.data?.ipInfo || {};
+      const latlng = Array.isArray(info.latlng)
+        ? info.latlng.map(Number)
+        : [];
+      return {
+        ret: "ok",
+        data: {
+          ip: data.data?.ip || targetIp,
+          location: [
+            info.country,
+            info.province,
+            info.city,
+            info.isp,
+          ].filter(Boolean),
+          latitude: latlng[0],
+          longitude: latlng[1],
+        },
+      };
+    },
   },
   {
     name: "freegeoip.live",
@@ -378,53 +631,40 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
     } else {
       logger("Querying own IP...", "INFO");
 
-      const providers = {
-        chinese: allProviders.find((p) => p.name === "myip.ipip.net"),
-        geo: allProviders.find((p) => p.name === "geolocation-db.com (own)"),
+      const ownProviders = allProviders.filter((p) => p.ownIpOnly);
+
+      const doNetwork = async () => {
+        try {
+          // Race all own-IP single-shot providers; return the first success.
+          // This resolves as soon as the fastest provider responds instead of
+          // waiting for the slowest one, greatly reducing sidebar latency.
+          const promises = ownProviders.map((provider) =>
+            fetchIpInfo(provider, "", logger, proxyConfig),
+          );
+          const res = await Promise.any(promises);
+          if (res && res.ret === "ok") setToCache("", res);
+          return res;
+        } catch {
+          // Fallback if all own-IP providers fail/missing:
+          // get the public IP first, then look it up against the remaining providers.
+          logger("Own providers failed or missing; using lookup fallback...", "INFO");
+          const publicIp = await getPublicIp(proxyConfig);
+          const lookupProviders = allProviders.filter((p) => !p.ownIpOnly);
+          const standardPromises = lookupProviders.map((provider) =>
+            fetchIpInfo(provider, publicIp, logger, proxyConfig),
+          );
+          const res = await Promise.any(standardPromises);
+          if (res && res.ret === "ok") setToCache("", res);
+          return res;
+        }
       };
 
-      const chinesePromise = providers.chinese
-        ? fetchIpInfo(providers.chinese, "", logger, proxyConfig)
-        : Promise.reject(new Error("Chinese provider not configured"));
-      const geoPromise = providers.geo
-        ? fetchIpInfo(providers.geo, "", logger, proxyConfig)
-        : Promise.reject(new Error("Geo provider not configured"));
-
-      const results = await Promise.allSettled([chinesePromise, geoPromise]);
-      const chineseResult =
-        results[0].status === "fulfilled" ? results[0].value : null;
-      const geoResult =
-        results[1].status === "fulfilled" ? results[1].value : null;
-
-      if (chineseResult || geoResult) {
-        const finalData = {
-          ...geoResult?.data,
-          ...chineseResult?.data,
-        };
-
-        const result = { ret: "ok", data: finalData };
-        setToCache("", result);
-        return result;
-      }
-
-      // Fallback if primary providers fail or don't exist
-      logger("Primary providers failed or missing; using fallback...", "INFO");
-      const standardLookupPromise = (async () => {
-        const publicIp = await getPublicIp(proxyConfig);
-        const lookupProviders = allProviders.filter((p) => !p.ownIpOnly);
-        const standardPromises = lookupProviders.map((provider) =>
-          fetchIpInfo(provider, publicIp, logger, proxyConfig),
-        );
-        const res = await Promise.any(standardPromises);
-        if (res && res.ret === "ok") setToCache("", res);
-        return res;
-      })();
       if (shouldServeStale) {
-        // background refresh
-        standardLookupPromise.catch(() => {});
+        // background refresh; serve stale meanwhile
+        doNetwork().catch(() => {});
         return entry.result;
       }
-      return await standardLookupPromise;
+      return await doNetwork();
     }
   } catch (error) {
     if (typeof logger === "function") {
