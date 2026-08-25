@@ -620,8 +620,6 @@
       "setCurrentFailed": "Failed to set current API",
       "noApiConfigs": "No API configurations, please add one first",
       "currentApi": "Current API",
-      "cloneApi": "Clone Configuration",
-      "clonedConfigHint": "Creating new configuration based on existing one, no need to re-enter API URL and key",
       "fetchModels": "Detect Models",
       "modelsFetched": "Models fetched successfully",
       "fetchModelsFailed": "Failed to fetch models",

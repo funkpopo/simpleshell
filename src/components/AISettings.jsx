@@ -34,7 +34,6 @@ import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { useTranslation } from "react-i18next";
 import {
@@ -270,23 +269,6 @@ const AISettings = ({ open, onClose }) => {
     setEditingConfig(apiConfig);
   };
 
-  // 克隆API配置（基于现有配置快速创建新配置）
-  const handleCloneApi = (apiConfig) => {
-    setConfig({
-      id: "", // 新配置ID为空
-      name: apiConfig.model || apiConfig.name || "",
-      provider: apiConfig.provider || PROVIDER_TYPES.OPENAI,
-      apiUrl: apiConfig.apiUrl, // 保持相同的API URL
-      apiKey: "",
-      hasApiKey: false,
-      model: apiConfig.model, // 可以使用相同的模型或修改
-      streamEnabled: apiConfig.streamEnabled !== false,
-    });
-    setAvailableModels(apiConfig.model ? [apiConfig.model] : []);
-    setEditMode(true);
-    setEditingConfig(null); // 不是编辑现有配置，而是创建新配置
-  };
-
   // 删除API配置 - 打开确认对话框
   const handleDeleteApi = (apiId) => {
     setDeleteTargetId(apiId);
@@ -486,7 +468,11 @@ const AISettings = ({ open, onClose }) => {
     }
 
     if (!window.terminalAPI?.fetchModels) {
-      setError(t("aiSettings.fetchModelsFailed") + ": " + t("aiSettings.apiUnavailable"));
+      setError(
+        t("aiSettings.fetchModelsFailed") +
+          ": " +
+          t("aiSettings.apiUnavailable"),
+      );
       return;
     }
 
@@ -627,7 +613,7 @@ const AISettings = ({ open, onClose }) => {
     <Dialog
       open={open}
       onClose={handleClose}
-      maxWidth="sm"
+      maxWidth="md"
       fullWidth
       sx={{
         zIndex: (theme) => theme.zIndex.modal + 200,
@@ -638,6 +624,9 @@ const AISettings = ({ open, onClose }) => {
       }}
       PaperProps={{
         sx: {
+          width: "min(860px, calc(100vw - 32px))",
+          maxWidth: "none",
+          maxHeight: "min(88vh, 820px)",
           borderRadius: 2,
           backdropFilter: "blur(10px)",
           pointerEvents: "auto",
@@ -791,20 +780,8 @@ const AISettings = ({ open, onClose }) => {
                                 </Box>
                               </CardContent>
                               <CardActions
-                                sx={{ pt: 0, justifyContent: "space-between" }}
+                                sx={{ pt: 0, justifyContent: "flex-end" }}
                               >
-                                <Box>
-                                  <Tooltip title={t("aiSettings.cloneApi")}>
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleCloneApi(apiConfig)}
-                                      color="primary"
-                                      aria-label={t("aiSettings.cloneApi")}
-                                    >
-                                      <ContentCopyIcon />
-                                    </IconButton>
-                                  </Tooltip>
-                                </Box>
                                 <Box>
                                   {currentApiId !== apiConfig.id && (
                                     <Button
@@ -865,13 +842,6 @@ const AISettings = ({ open, onClose }) => {
                               : t("aiSettings.addApi")}
                           </Typography>
                         </Box>
-                        {!editingConfig &&
-                          config.apiUrl &&
-                          hasConfiguredApiKey(config) && (
-                            <Alert severity="success" sx={{ mb: 2 }}>
-                              {t("aiSettings.clonedConfigHint")}
-                            </Alert>
-                          )}
                       </Box>
                       <FormControl fullWidth variant="outlined">
                         <InputLabel>{t("aiSettings.providerType")}</InputLabel>

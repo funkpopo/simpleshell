@@ -620,8 +620,6 @@
       "setCurrentFailed": "设置当前 API 失败",
       "noApiConfigs": "暂无 API 配置，请先新增一条",
       "currentApi": "当前 API",
-      "cloneApi": "克隆配置",
-      "clonedConfigHint": "基于已有配置新建，无需重新输入 API 地址和密钥",
       "fetchModels": "模型探测",
       "modelsFetched": "获取模型列表成功",
       "fetchModelsFailed": "获取模型列表失败",

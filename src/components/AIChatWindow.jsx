@@ -1517,9 +1517,6 @@ const AIChatWindow = ({
         <Box ref={messagesContainerRef} className="ai-chat-messages">
           {messages.length === 0 && (
             <Box className="ai-chat-empty">
-              <Box className="ai-chat-empty-icon" aria-hidden="true">
-                <AIIcon />
-              </Box>
               {!currentApi ||
               !currentApi.apiUrl ||
               !hasConfiguredApiKey(currentApi) ||
@@ -1739,11 +1736,17 @@ const AIChatWindow = ({
               }}
             />
             <Box className="ai-chat-composer-toolbar">
-              <Box className="ai-chat-options">
+              <Box
+                className={`ai-chat-options ${
+                  showThinking ? "is-thinking-enabled" : "is-thinking-disabled"
+                }`}
+              >
                 <FormControlLabel
+                  className="ai-thinking-control"
                   control={
                     <Switch
                       size="small"
+                      className="ai-thinking-switch"
                       checked={showThinking}
                       onChange={(e) => setShowThinking(e.target.checked)}
                     />
