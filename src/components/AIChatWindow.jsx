@@ -284,23 +284,39 @@ const ThinkContent = ({ content, isExpanded, onToggle, isStreaming }) => {
   const { t } = useTranslation();
   return (
     <Box
-      className={`ai-think-block${isStreaming ? " is-streaming" : ""}`}
-      onClick={onToggle}
-      role="button"
-      tabIndex={0}
-      aria-expanded={isExpanded}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onToggle();
-        }
-      }}
+      className={`ai-think-block${isStreaming ? " is-streaming" : ""}${isExpanded ? " is-expanded" : ""}`}
     >
-      <Box className="ai-think-toggle">
-        <ThinkSparkIcon />
-        <Typography className="ai-think-label" variant="caption">
+      <Box
+        className="ai-think-toggle"
+        onClick={onToggle}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        aria-live="polite"
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
+      >
+        <span className="ai-think-spark-wrap" aria-hidden="true">
+          <ThinkSparkIcon />
+        </span>
+        <Typography
+          component="span"
+          className="ai-think-label"
+          variant="caption"
+        >
           {t("ai.thinkingProcess")}
         </Typography>
+        {isStreaming && (
+          <span className="ai-think-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        )}
         <ExpandMoreIcon
           className={`ai-think-caret${isExpanded ? " is-open" : ""}`}
           fontSize="small"
@@ -317,36 +333,11 @@ const ThinkContent = ({ content, isExpanded, onToggle, isStreaming }) => {
   );
 };
 
-/** 流式输出包装：底边淡入 + 细线光标 + 节流 chunk 淡入 */
-const StreamContent = ({ isStreaming, contentLength = 0, children }) => {
-  const [streamTick, setStreamTick] = useState(0);
-  const lastLenRef = useRef(0);
-  const lastTickAtRef = useRef(0);
-
-  useEffect(() => {
-    if (!isStreaming) {
-      lastLenRef.current = contentLength;
-      return undefined;
-    }
-    if (contentLength <= lastLenRef.current) {
-      return undefined;
-    }
-    lastLenRef.current = contentLength;
-    const now =
-      typeof performance !== "undefined" ? performance.now() : Date.now();
-    // 约 16fps 节流，避免逐 token 重启动画造成闪烁
-    if (now - lastTickAtRef.current < 60) {
-      return undefined;
-    }
-    lastTickAtRef.current = now;
-    setStreamTick((tick) => (tick + 1) % 2);
-    return undefined;
-  }, [isStreaming, contentLength]);
-
+/** 流式输出包装：稳定正文，只让最新尾部的细线光标保持呼吸。 */
+const StreamContent = ({ isStreaming, children }) => {
   return (
     <Box
       className={`ai-stream-wrap ${isStreaming ? "ai-stream-active" : "ai-stream-done"}`}
-      data-stream-tick={isStreaming ? String(streamTick) : undefined}
     >
       <Box className="ai-message-content ai-stream-body">{children}</Box>
     </Box>
@@ -1598,14 +1589,7 @@ const AIChatWindow = ({
                       ))}
                       {assistantTextContent.trim() ||
                       (isStreaming && assistantThinkParts.length === 0) ? (
-                        <StreamContent
-                          isStreaming={isStreaming}
-                          contentLength={
-                            typeof assistantTextContent === "string"
-                              ? assistantTextContent.length
-                              : 0
-                          }
-                        >
+                        <StreamContent isStreaming={isStreaming}>
                           {renderMessageContent(
                             assistantTextContent,
                             message.id,

@@ -360,7 +360,7 @@
   opacity: 0.88;
 }
 
-/* Streaming body: soft reveal on the growing tail */
+/* Streaming body: keep the answer steady while only the live tail moves. */
 .ai-stream-wrap {
   position: relative;
 }
@@ -368,38 +368,6 @@
 /* New block / paragraph appears with blur → sharp fade */
 .ai-stream-active .ai-stream-body > *:last-child {
   animation: ai-stream-reveal 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-/*
- * Bottom-edge soft fade: newest line emerges through a gentle
- * gradient mask while tokens are still arriving.
- */
-.ai-stream-active .ai-stream-body {
-  -webkit-mask-image: linear-gradient(
-    180deg,
-    #000 0%,
-    #000 calc(100% - 1.15em),
-    rgba(0, 0, 0, 0.72) calc(100% - 0.35em),
-    rgba(0, 0, 0, 0.4) 100%
-  );
-  mask-image: linear-gradient(
-    180deg,
-    #000 0%,
-    #000 calc(100% - 1.15em),
-    rgba(0, 0, 0, 0.72) calc(100% - 0.35em),
-    rgba(0, 0, 0, 0.4) 100%
-  );
-}
-
-.ai-stream-done .ai-stream-body {
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-
-/* Chunk pulse: brief opacity/blur settle when new tokens land */
-.ai-stream-active[data-stream-tick="0"] .ai-stream-body,
-.ai-stream-active[data-stream-tick="1"] .ai-stream-body {
-  animation: ai-stream-chunk 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes ai-stream-reveal {
@@ -413,24 +381,12 @@
   }
 }
 
-@keyframes ai-stream-chunk {
-  from {
-    opacity: 0.88;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 .ai-stream-active .ai-stream-body {
   position: relative;
   z-index: 1;
 }
 
-/*
- * Hairline caret — Beautiful UI streaming text uses a 2px ink bar,
- * not a glowing primary gradient.
- */
+/* Hairline caret — the only persistent motion in the answer body. */
 .ai-stream-active .ai-stream-body > *:last-child::after,
 .ai-stream-active .ai-stream-body:empty::after {
   content: "";
@@ -490,6 +446,15 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 22px;
+  outline: none;
+}
+
+.ai-think-toggle:focus-visible {
+  border-radius: var(--ai-radius-control);
+  outline: 2px solid
+    color-mix(in srgb, var(--color-primary-main) 42%, transparent);
+  outline-offset: 2px;
 }
 
 .ai-think-spark {
@@ -499,12 +464,74 @@
   color: var(--ai-ink-2);
 }
 
+.ai-think-spark-wrap {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.ai-think-block.is-streaming .ai-think-spark {
+  animation: ai-spark-breathe 1.8s ease-in-out infinite;
+}
+
+@keyframes ai-spark-breathe {
+  0%,
+  100% {
+    opacity: 0.58;
+    transform: scale(0.92) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1) rotate(8deg);
+  }
+}
+
 .ai-think-label {
   font-size: 13px !important;
   font-weight: 500 !important;
   letter-spacing: 0;
   text-transform: none;
   color: var(--ai-ink-2) !important;
+}
+
+.ai-think-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: -3px;
+  color: var(--ai-ink-3);
+}
+
+.ai-think-dots i {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ai-think-dot 1.2s ease-in-out infinite;
+}
+
+.ai-think-dots i:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.ai-think-dots i:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+@keyframes ai-think-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
 }
 
 .ai-think-block.is-streaming .ai-think-label {
@@ -556,6 +583,13 @@
   bottom: 4px;
   width: 1px;
   background: var(--ai-line);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 0.45s var(--ai-ease);
+}
+
+.ai-think-block.is-expanded .ai-think-trace::before {
+  transform: scaleY(1);
 }
 
 .ai-think-body {
@@ -1070,12 +1104,12 @@
 @media (prefers-reduced-motion: reduce) {
   .ai-message-row,
   .ai-stream-active .ai-stream-body > *:last-child,
-  .ai-stream-active[data-stream-tick="0"] .ai-stream-body,
-  .ai-stream-active[data-stream-tick="1"] .ai-stream-body,
   .ai-stream-done .ai-stream-body,
   .ai-stream-active .ai-stream-body > *:last-child::after,
   .ai-stream-active .ai-stream-body:empty::after,
-  .ai-think-block.is-streaming .ai-think-label {
+  .ai-think-block.is-streaming .ai-think-label,
+  .ai-think-block.is-streaming .ai-think-spark,
+  .ai-think-dots i {
     animation: none !important;
   }
 
@@ -1084,11 +1118,6 @@
     color: var(--ai-ink-2) !important;
     -webkit-background-clip: unset;
     background-clip: unset;
-  }
-
-  .ai-stream-active .ai-stream-body {
-    -webkit-mask-image: none;
-    mask-image: none;
   }
 
   .ai-message-actions {
