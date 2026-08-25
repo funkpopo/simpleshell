@@ -71,7 +71,10 @@ export const extractCurrentCommandInput = (term) => {
   return fallbackMatch?.[1] || "";
 };
 
-export const shouldForceTerminalViewportRefresh = (term, inEditorMode = false) => {
+export const shouldForceTerminalViewportRefresh = (
+  term,
+  inEditorMode = false,
+) => {
   if (!term || inEditorMode || term.buffer?.active?.type === "alternate") {
     return false;
   }

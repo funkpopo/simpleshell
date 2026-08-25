@@ -294,7 +294,11 @@ async function testDirectTcpReportsConnectTimeWhenNoBanner() {
 
     const { port } = server.address();
     const started = Date.now();
-    const latency = await service._measureTcpLatencyDirect("127.0.0.1", port, 2000);
+    const latency = await service._measureTcpLatencyDirect(
+      "127.0.0.1",
+      port,
+      2000,
+    );
     const elapsed = Date.now() - started;
 
     assert.ok(

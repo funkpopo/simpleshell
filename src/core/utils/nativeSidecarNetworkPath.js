@@ -45,7 +45,9 @@ function sanitizeProxyConfig(proxyConfig) {
     host: normalized.host,
     port: normalized.port,
     source: normalized.source || "connection",
-    hasAuth: Boolean(proxyConfig.hasAuth || normalized.username || normalized.password),
+    hasAuth: Boolean(
+      proxyConfig.hasAuth || normalized.username || normalized.password,
+    ),
   };
 }
 
@@ -83,7 +85,9 @@ function getLatestNativeSidecarNetworkPath() {
 }
 
 function hasProxyIntent(rawConfig) {
-  return Boolean(rawConfig && rawConfig.proxy && typeof rawConfig.proxy === "object");
+  return Boolean(
+    rawConfig && rawConfig.proxy && typeof rawConfig.proxy === "object",
+  );
 }
 
 function createProxyResolutionError(message, details = {}) {
@@ -111,7 +115,10 @@ async function resolveNativeSidecarNetworkPath(rawConfig, options = {}) {
     getConnectionManager()?.sshConnectionPool?.proxyManager ||
     null;
 
-  if (!proxyManager || typeof proxyManager.resolveProxyConfigAsync !== "function") {
+  if (
+    !proxyManager ||
+    typeof proxyManager.resolveProxyConfigAsync !== "function"
+  ) {
     throw createProxyResolutionError(
       "Native sidecar transfer requires proxy resolution, but ProxyManager is unavailable",
       { retryable: true },

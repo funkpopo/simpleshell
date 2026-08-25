@@ -395,7 +395,11 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
   let bootCssKey = null;
 
   const clearBootCss = () => {
-    if (!bootCssKey || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+    if (
+      !bootCssKey ||
+      mainWindow.isDestroyed() ||
+      mainWindow.webContents.isDestroyed()
+    ) {
       bootCssKey = null;
       return;
     }

@@ -55,11 +55,15 @@ class BaseConnectionPool extends EventEmitter {
    */
   initialize() {
     if (this.isInitialized) {
-      this._logInfo(`${this.config.protocolType} connection pool already initialized`);
+      this._logInfo(
+        `${this.config.protocolType} connection pool already initialized`,
+      );
       return;
     }
 
-    this._logInfo(`Initializing ${this.config.protocolType} connection pool...`);
+    this._logInfo(
+      `Initializing ${this.config.protocolType} connection pool...`,
+    );
 
     // 启动健康检查
     this.startHealthCheck();
@@ -74,7 +78,9 @@ class BaseConnectionPool extends EventEmitter {
    * 清理连接池资源
    */
   cleanup() {
-    this._logInfo(`Cleaning ${this.config.protocolType} connection pool resources...`);
+    this._logInfo(
+      `Cleaning ${this.config.protocolType} connection pool resources...`,
+    );
 
     // 停止健康检查
     this.stopHealthCheck();
@@ -94,7 +100,9 @@ class BaseConnectionPool extends EventEmitter {
     this.isInitialized = false;
     this.emit("cleanup");
 
-    this._logInfo(`${this.config.protocolType} connection pool resources cleaned`);
+    this._logInfo(
+      `${this.config.protocolType} connection pool resources cleaned`,
+    );
   }
 
   /**
@@ -348,7 +356,9 @@ class BaseConnectionPool extends EventEmitter {
             !conn.client.destroyed &&
             typeof conn.client.destroy === "function"
           ) {
-            this._logInfo(`Connection ${key} end() timed out, force destroying`);
+            this._logInfo(
+              `Connection ${key} end() timed out, force destroying`,
+            );
             conn.client.destroy();
           }
         }, 3000);
@@ -459,7 +469,9 @@ class BaseConnectionPool extends EventEmitter {
       return;
     }
 
-    this._logInfo(`Starting health check, interval: ${this.config.healthCheckInterval}ms`);
+    this._logInfo(
+      `Starting health check, interval: ${this.config.healthCheckInterval}ms`,
+    );
 
     this.healthCheckTimer = setInterval(() => {
       this.performHealthCheck();
@@ -506,7 +518,9 @@ class BaseConnectionPool extends EventEmitter {
     const toClose = [];
     let redirectedToRecovery = 0;
 
-    this._logInfo(`Running health check, connection count: ${this.connections.size}`);
+    this._logInfo(
+      `Running health check, connection count: ${this.connections.size}`,
+    );
 
     for (const [key, conn] of this.connections) {
       const hasActiveReference =
@@ -754,7 +768,9 @@ class BaseConnectionPool extends EventEmitter {
     // 限制为最多10个
     this.lastConnections = this.lastConnections.slice(0, 10);
 
-    this._logInfo(`Loaded ${this.lastConnections.length} recent connections from config`);
+    this._logInfo(
+      `Loaded ${this.lastConnections.length} recent connections from config`,
+    );
   }
 
   /**

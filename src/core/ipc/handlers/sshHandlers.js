@@ -17,7 +17,9 @@ const {
   getTerminalProcessExitChannel,
   getTerminalProcessOutputChannel,
 } = require("../schema/channels");
-const { classifyConnectionFailure } = require("../../../shared/connectionErrorAdvice");
+const {
+  classifyConnectionFailure,
+} = require("../../../shared/connectionErrorAdvice");
 const { resolveLanguage, t: mainT } = require("../../../shared/mainI18n");
 const { isAuthErrorMessage } = require("../../../shared/errorClassification");
 const { generateId } = require("../../../shared/common");

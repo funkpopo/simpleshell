@@ -28,8 +28,7 @@ import {
 const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { type, fileName, progress, isCancelled, error, statusText } =
-    transfer;
+  const { type, fileName, progress, isCancelled, error, statusText } = transfer;
 
   const isCompleted = progress >= 100;
   const hasError = !!error;
@@ -306,8 +305,11 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
         {/* 清除已完成按钮 */}
         {completedCount > 0 && (
           <Tooltip title={t("fileManager.transfer.clearCompleted")}>
-            <IconButton size="small" onClick={handleClearCompleted}
-              aria-label={t("fileManager.transfer.clearCompleted")}>
+            <IconButton
+              size="small"
+              onClick={handleClearCompleted}
+              aria-label={t("fileManager.transfer.clearCompleted")}
+            >
               <Close sx={{ fontSize: 16 }} />
             </IconButton>
           </Tooltip>
@@ -328,8 +330,13 @@ const GlobalTransferBar = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
                 ? onToggleFloat(null)
                 : onOpenFloat && onOpenFloat(null)
             }
-          
-            aria-label={isFloatOpen ? t("fileManager.transfer.collapseDetails") : t("fileManager.transfer.viewDetails")}>
+
+            aria-label={
+              isFloatOpen
+                ? t("fileManager.transfer.collapseDetails")
+                : t("fileManager.transfer.viewDetails")
+            }
+          >
             {isFloatOpen ? (
               <ExpandMore sx={{ fontSize: 18 }} />
             ) : (

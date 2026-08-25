@@ -160,7 +160,10 @@ export const useTerminalSuggestions = ({
           x: containerRect.left + 12,
           y: Math.max(containerRect.top + 12, containerRect.bottom - 36),
           cursorHeight: 18,
-          cursorBottom: Math.max(containerRect.top + 30, containerRect.bottom - 18),
+          cursorBottom: Math.max(
+            containerRect.top + 30,
+            containerRect.bottom - 18,
+          ),
         });
         return fallback;
       } catch {
@@ -205,11 +208,10 @@ export const useTerminalSuggestions = ({
 
       try {
         if (window.terminalAPI && window.terminalAPI.getCommandSuggestions) {
-          const response =
-            await window.terminalAPI.getCommandSuggestions(
-              trimmedInput,
-              COMMAND_SUGGESTION_LIMIT,
-            );
+          const response = await window.terminalAPI.getCommandSuggestions(
+            trimmedInput,
+            COMMAND_SUGGESTION_LIMIT,
+          );
           const commandSuggestions = response?.success
             ? response.suggestions
             : [];
@@ -349,8 +351,7 @@ export const useTerminalSuggestions = ({
 
   const closeSuggestions = useCallback(
     (options = {}) => {
-      const shouldSuppressUntilEnter =
-        options?.suppressUntilEnter !== false;
+      const shouldSuppressUntilEnter = options?.suppressUntilEnter !== false;
 
       suggestionRequestIdRef.current += 1;
       setShowSuggestions(false);

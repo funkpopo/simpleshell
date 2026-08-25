@@ -79,7 +79,10 @@ const findNextMatchIndex = (searchText, term, options, fromIndex = 0) => {
   const needle = options.caseSensitive ? term : term.toLowerCase();
   let index = haystack.indexOf(needle, fromIndex);
   while (index !== -1) {
-    if (!options.wholeWord || isWholeWordMatch(searchText, index, needle.length)) {
+    if (
+      !options.wholeWord ||
+      isWholeWordMatch(searchText, index, needle.length)
+    ) {
       return index;
     }
     index = haystack.indexOf(needle, index + 1);

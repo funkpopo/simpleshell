@@ -357,8 +357,7 @@ class ConfigService {
     let backupRetentionDays = 30;
     try {
       const config = this._readConfig();
-      backupRetentionDays =
-        config?.uiSettings?.backupRetentionDays ?? 30;
+      backupRetentionDays = config?.uiSettings?.backupRetentionDays ?? 30;
     } catch {
       // use default
     }
@@ -791,7 +790,9 @@ class ConfigService {
       const connectionCount = this._countConnections(
         normalizedConfig.connections,
       );
-      const lastConnectionCount = Array.isArray(normalizedConfig.lastConnections)
+      const lastConnectionCount = Array.isArray(
+        normalizedConfig.lastConnections,
+      )
         ? normalizedConfig.lastConnections.length
         : 0;
       this._log(

@@ -107,7 +107,13 @@ export function useTerminalSessionEvents({
       handleTabFocus,
     );
     return () => remove();
-  }, [tabId, eventManager, recoverTerminalAfterActivation, terminalRef, termRef]);
+  }, [
+    tabId,
+    eventManager,
+    recoverTerminalAfterActivation,
+    terminalRef,
+    termRef,
+  ]);
 
   useEffect(() => {
     const syncTerminalAfterSessionRestore = (processIdFromEvent = null) => {

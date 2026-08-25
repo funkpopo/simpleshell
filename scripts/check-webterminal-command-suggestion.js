@@ -6,14 +6,12 @@ const {
   readSource,
 } = require("./lib/webterminal-sources.js");
 
-const {
-  IPC_REQUEST_CHANNELS,
-  getChannelDefinition,
-} = require(path.join(ROOT, "src/core/ipc/schema/channels.js"));
-const { validateSchema } = require(path.join(
-  ROOT,
-  "src/core/ipc/schema/validator.js",
-));
+const { IPC_REQUEST_CHANNELS, getChannelDefinition } = require(
+  path.join(ROOT, "src/core/ipc/schema/channels.js"),
+);
+const { validateSchema } = require(
+  path.join(ROOT, "src/core/ipc/schema/validator.js"),
+);
 const {
   isSuggestionTrackingContext,
   shouldDisplayCommandSuggestions,
@@ -21,9 +19,9 @@ const {
   shouldRequestCommandSuggestions,
   shouldResumePromptTrackingOnInput,
 } = require(path.join(ROOT, "src/modules/terminal/commandSuggestionState.js"));
-const {
-  buildCommandSuggestionCursorPosition,
-} = require(path.join(ROOT, "src/modules/terminal/commandSuggestionCursor.js"));
+const { buildCommandSuggestionCursorPosition } = require(
+  path.join(ROOT, "src/modules/terminal/commandSuggestionCursor.js"),
+);
 
 const webTerminalSource = collectWebTerminalSources();
 const commandSuggestionSource = readSource(

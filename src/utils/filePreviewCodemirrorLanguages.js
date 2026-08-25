@@ -5,9 +5,7 @@
  */
 
 export const getFileExtension = (filename) =>
-  filename
-    .slice(((filename.lastIndexOf(".") - 1) >>> 0) + 2)
-    .toLowerCase();
+  filename.slice(((filename.lastIndexOf(".") - 1) >>> 0) + 2).toLowerCase();
 
 /**
  * @param {string} filename

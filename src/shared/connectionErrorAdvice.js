@@ -172,7 +172,8 @@ function detectConnectionFailureKind(error, config = {}) {
 }
 
 function getEndpoint(config = {}) {
-  const host = config.host || config.sshConfig?.host || config.telnetConfig?.host;
+  const host =
+    config.host || config.sshConfig?.host || config.telnetConfig?.host;
   const port =
     config.port ||
     config.sshConfig?.port ||

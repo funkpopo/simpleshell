@@ -178,9 +178,9 @@ function buildSshConnectOptions(
 function isSshClientUsable(sshClient) {
   return Boolean(
     sshClient &&
-      (!sshClient._readableState || !sshClient._readableState.ended) &&
-      (!sshClient._sock ||
-        (sshClient._sock.readable && sshClient._sock.writable)),
+    (!sshClient._readableState || !sshClient._readableState.ended) &&
+    (!sshClient._sock ||
+      (sshClient._sock.readable && sshClient._sock.writable)),
   );
 }
 

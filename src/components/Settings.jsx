@@ -236,7 +236,10 @@ const Settings = memo(({ open, onClose }) => {
             const rawLineHeight = Number(settings.terminalLineHeight);
             setTerminalLineHeight(
               Number.isFinite(rawLineHeight)
-                ? Math.min(1.4, Math.max(1.0, Math.round(rawLineHeight * 100) / 100))
+                ? Math.min(
+                    1.4,
+                    Math.max(1.0, Math.round(rawLineHeight * 100) / 100),
+                  )
                 : 1.0,
             );
             const rawSb = Number(settings.terminalScrollbackLines);
@@ -703,11 +706,31 @@ const Settings = memo(({ open, onClose }) => {
   };
 
   const sidebarItems = [
-    { id: 0, label: t("settings.general"), icon: <SettingsIcon fontSize="small" /> },
-    { id: 1, label: t("settings.terminalAndLogs"), icon: <TerminalIcon fontSize="small" /> },
-    { id: 2, label: t("settings.performanceSettings"), icon: <TuneIcon fontSize="small" /> },
-    { id: 3, label: t("settings.security.title"), icon: <LockIcon fontSize="small" /> },
-    { id: 4, label: t("settings.feedback.title"), icon: <BugReportIcon fontSize="small" /> },
+    {
+      id: 0,
+      label: t("settings.general"),
+      icon: <SettingsIcon fontSize="small" />,
+    },
+    {
+      id: 1,
+      label: t("settings.terminalAndLogs"),
+      icon: <TerminalIcon fontSize="small" />,
+    },
+    {
+      id: 2,
+      label: t("settings.performanceSettings"),
+      icon: <TuneIcon fontSize="small" />,
+    },
+    {
+      id: 3,
+      label: t("settings.security.title"),
+      icon: <LockIcon fontSize="small" />,
+    },
+    {
+      id: 4,
+      label: t("settings.feedback.title"),
+      icon: <BugReportIcon fontSize="small" />,
+    },
   ];
 
   return (
@@ -837,9 +860,7 @@ const Settings = memo(({ open, onClose }) => {
                         <FormControl fullWidth variant="outlined" size="small">
                           <Select
                             value={transferBarMode}
-                            onChange={(e) =>
-                              setTransferBarMode(e.target.value)
-                            }
+                            onChange={(e) => setTransferBarMode(e.target.value)}
                           >
                             <MenuItem value="bottom">
                               {t("settings.transferDisplayBottom")}
@@ -864,9 +885,7 @@ const Settings = memo(({ open, onClose }) => {
                           control={
                             <Switch
                               checked={dndEnabled}
-                              onChange={(e) =>
-                                setDndEnabled(e.target.checked)
-                              }
+                              onChange={(e) => setDndEnabled(e.target.checked)}
                               size="small"
                             />
                           }
@@ -941,9 +960,7 @@ const Settings = memo(({ open, onClose }) => {
                           control={
                             <Switch
                               checked={closeToTray}
-                              onChange={(e) =>
-                                setCloseToTray(e.target.checked)
-                              }
+                              onChange={(e) => setCloseToTray(e.target.checked)}
                               disabled={!trayEnabled}
                               size="small"
                             />
@@ -1016,9 +1033,7 @@ const Settings = memo(({ open, onClose }) => {
                           >
                             {terminalFonts.map((font) => (
                               <MenuItem key={font.value} value={font.value}>
-                                <Typography
-                                  style={{ fontFamily: font.value }}
-                                >
+                                <Typography style={{ fontFamily: font.value }}>
                                   {font.label}
                                 </Typography>
                               </MenuItem>
@@ -1257,9 +1272,7 @@ const Settings = memo(({ open, onClose }) => {
                 <Box>
                   {needsRestart && (
                     <Alert severity="warning" sx={{ mb: 1.5 }}>
-                      <AlertTitle>
-                        {t("settings.restartRequired")}
-                      </AlertTitle>
+                      <AlertTitle>{t("settings.restartRequired")}</AlertTitle>
                       {t("settings.restartMessage")}
                     </Alert>
                   )}
@@ -1416,9 +1429,7 @@ const Settings = memo(({ open, onClose }) => {
                                     <Chip
                                       size="small"
                                       color="warning"
-                                      label={t(
-                                        "settings.gpuSoftwareFallback",
-                                      )}
+                                      label={t("settings.gpuSoftwareFallback")}
                                     />
                                   ) : (
                                     <Chip
@@ -1707,9 +1718,7 @@ const Settings = memo(({ open, onClose }) => {
                       <Chip
                         size="small"
                         color={
-                          crashReporterStatus?.started
-                            ? "success"
-                            : "warning"
+                          crashReporterStatus?.started ? "success" : "warning"
                         }
                         variant="outlined"
                         label={

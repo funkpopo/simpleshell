@@ -41,8 +41,7 @@ const FirstRunDialog = ({
   const [includeDiagnostics, setIncludeDiagnostics] = React.useState(false);
   const [credentialMode, setCredentialMode] = React.useState("system");
   const [masterPassword, setMasterPassword] = React.useState("");
-  const [confirmMasterPassword, setConfirmMasterPassword] =
-    React.useState("");
+  const [confirmMasterPassword, setConfirmMasterPassword] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState("");
 
@@ -152,11 +151,10 @@ const FirstRunDialog = ({
       };
 
       if (window.terminalAPI?.saveUISettings) {
-        const uiResponse = await window.terminalAPI.saveUISettings(nextSettings);
+        const uiResponse =
+          await window.terminalAPI.saveUISettings(nextSettings);
         if (uiResponse?.success === false) {
-          throw new Error(
-            uiResponse.error || t("firstRun.errors.saveFailed"),
-          );
+          throw new Error(uiResponse.error || t("firstRun.errors.saveFailed"));
         }
       }
 

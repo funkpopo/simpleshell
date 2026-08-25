@@ -30,37 +30,46 @@ function forwardBatchMessages(sender, channel, messages, buildErrorLog) {
  */
 function registerBatchHandlers(ipcMain) {
   // 处理批量进度更新
-  safeOn(ipcMain, IPC_EVENT_CHANNELS.TRANSFER_PROGRESS_BATCH, (event, progressDataArray) => {
-    if (!Array.isArray(progressDataArray)) {
-      logToFile("Invalid batch progress data: not an array", "WARN");
-      return;
-    }
+  safeOn(
+    ipcMain,
+    IPC_EVENT_CHANNELS.TRANSFER_PROGRESS_BATCH,
+    (event, progressDataArray) => {
+      if (!Array.isArray(progressDataArray)) {
+        logToFile("Invalid batch progress data: not an array", "WARN");
+        return;
+      }
 
-    // 转发每个进度消息到前端
-    forwardBatchMessages(
-      event.sender,
-      IPC_EVENT_CHANNELS.TRANSFER_PROGRESS,
-      progressDataArray,
-      (error) => `Error forwarding progress data: ${error.message}`,
-    );
-  });
+      // 转发每个进度消息到前端
+      forwardBatchMessages(
+        event.sender,
+        IPC_EVENT_CHANNELS.TRANSFER_PROGRESS,
+        progressDataArray,
+        (error) => `Error forwarding progress data: ${error.message}`,
+      );
+    },
+  );
 
   // 通用批量消息处理器
   // 支持将任何channel的批量消息转发为单独的消息
-  safeOn(ipcMain, IPC_EVENT_CHANNELS.IPC_BATCH_FORWARD, (event, { channel, messages }) => {
-    if (!channel || !Array.isArray(messages)) {
-      logToFile("Invalid batch forward request", "WARN");
-      return;
-    }
+  safeOn(
+    ipcMain,
+    IPC_EVENT_CHANNELS.IPC_BATCH_FORWARD,
+    (event, { channel, messages }) => {
+      if (!channel || !Array.isArray(messages)) {
+        logToFile("Invalid batch forward request", "WARN");
+        return;
+      }
 
-    // 转发每条消息
-    forwardBatchMessages(
-      event.sender,
-      channel,
-      messages,
-      (error) => `Error forwarding batch message to ${channel}: ${error.message}`,
-    );
-  });
+      // 转发每条消息
+      forwardBatchMessages(
+        event.sender,
+        channel,
+        messages,
+        (error) =>
+          `Error forwarding batch message to ${channel}: ${error.message}`,
+      );
+    },
+  );
 
   // 监听所有 :batch 后缀的channel，自动解包并转发
   const batchChannelPattern = /^(.+):batch$/;

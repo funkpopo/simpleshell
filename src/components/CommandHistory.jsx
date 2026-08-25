@@ -225,7 +225,12 @@ const HistoryItem = React.memo(
   },
 );
 
-function CommandHistory({ open, onClose, onSendCommand, sessionContext = null }) {
+function CommandHistory({
+  open,
+  onClose,
+  onSendCommand,
+  sessionContext = null,
+}) {
   const theme = useTheme();
   const { t } = useTranslation();
   const [history, setHistory] = useState([]);

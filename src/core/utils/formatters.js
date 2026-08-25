@@ -79,11 +79,7 @@ export const formatDate = (date, options = {}) => {
 // - fallback：值无法解析为有效日期时返回的文本
 // - requirePositiveNumber：为 true 时仅接受正的有限数字时间戳（属性面板等场景）
 export const formatAbsoluteDateTime = (value, options = {}) => {
-  const {
-    fallback = "",
-    requirePositiveNumber = false,
-    locale,
-  } = options;
+  const { fallback = "", requirePositiveNumber = false, locale } = options;
 
   if (requirePositiveNumber && (!Number.isFinite(value) || value <= 0)) {
     return fallback;
@@ -112,15 +108,11 @@ export const formatLastRefreshTime = (timestamp, options = {}) => {
   }
   if (diff < 60000) {
     const count = Math.floor(diff / 1000);
-    return t
-      ? t("common.date.secondsAgo", { count })
-      : `${count}s ago`;
+    return t ? t("common.date.secondsAgo", { count }) : `${count}s ago`;
   }
   if (diff < 3600000) {
     const count = Math.floor(diff / 60000);
-    return t
-      ? t("common.date.minutesAgo", { count })
-      : `${count}m ago`;
+    return t ? t("common.date.minutesAgo", { count }) : `${count}m ago`;
   }
 
   const date = new Date(timestamp);

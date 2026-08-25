@@ -212,8 +212,7 @@ export function usePromptTracking({
     }
 
     if (promptStateChanged || commandRunningChanged) {
-      const nextIsCommandExecuting =
-        state.commandRunning && !state.promptReady;
+      const nextIsCommandExecuting = state.commandRunning && !state.promptReady;
       isCommandExecutingRef.current = nextIsCommandExecuting;
       setIsCommandExecuting(nextIsCommandExecuting);
     }
@@ -270,7 +269,8 @@ export function usePromptTracking({
     lastExecutedCommandTimeRef.current = now;
 
     const selectedSuggestionCommand =
-      typeof suggestionApiRef.current.suggestionSelectedRef?.current === "string"
+      typeof suggestionApiRef.current.suggestionSelectedRef?.current ===
+      "string"
         ? suggestionApiRef.current.suggestionSelectedRef.current.trim()
         : "";
 
@@ -398,10 +398,7 @@ export function usePromptTracking({
       processId,
       isRemoteInput = false,
       disposables = [],
-      {
-        pendingSystemShortcutRecoveryRef,
-        setContentUpdated,
-      } = {},
+      { pendingSystemShortcutRecoveryRef, setContentUpdated } = {},
     ) => {
       console.debug(
         `[setupCommandDetection] Starting for processId=${processId}, isRemoteInput=${isRemoteInput}, disposables.length=${disposables.length}`,
@@ -525,7 +522,10 @@ export function usePromptTracking({
         const bufferDisposable = term.buffer.onBufferChange(() => {
           bufferTypeObserver.handleBufferTypeChange(term.buffer.active.type);
         });
-        if (bufferDisposable && typeof bufferDisposable.dispose === "function") {
+        if (
+          bufferDisposable &&
+          typeof bufferDisposable.dispose === "function"
+        ) {
           disposables.push(bufferDisposable);
         }
 
@@ -914,7 +914,9 @@ export function usePromptTracking({
                 term.buffer.active
                   .getLine(linesCount - 1 - i)
                   ?.translateToString() || "";
-              if (/(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*$/.test(line)) {
+              if (
+                /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*$/.test(line)
+              ) {
                 inEditorMode = false;
                 setEditorModeState(false);
 

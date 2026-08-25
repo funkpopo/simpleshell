@@ -40,10 +40,14 @@ function clearRestartTimer() {
 }
 
 function scheduleRestart() {
-  if (isTerminating || restartTimer || restartAttempts >= MAX_SIDECAR_RESTART_ATTEMPTS) {
+  if (
+    isTerminating ||
+    restartTimer ||
+    restartAttempts >= MAX_SIDECAR_RESTART_ATTEMPTS
+  ) {
     return;
   }
-  const delay = SIDECAR_RESTART_BASE_DELAY_MS * (2 ** restartAttempts);
+  const delay = SIDECAR_RESTART_BASE_DELAY_MS * 2 ** restartAttempts;
   restartAttempts += 1;
   restartTimer = setTimeout(() => {
     restartTimer = null;
@@ -51,11 +55,16 @@ function scheduleRestart() {
     if (!child) scheduleRestart();
   }, delay);
   if (typeof restartTimer.unref === "function") restartTimer.unref();
-  logToFile(`Scheduling Rust AI sidecar restart ${restartAttempts}/${MAX_SIDECAR_RESTART_ATTEMPTS} in ${delay}ms`, "WARN");
+  logToFile(
+    `Scheduling Rust AI sidecar restart ${restartAttempts}/${MAX_SIDECAR_RESTART_ATTEMPTS} in ${delay}ms`,
+    "WARN",
+  );
 }
 
 function handleEvent(event) {
-  const callback = event.requestId ? requestCallbacks.get(event.requestId) : null;
+  const callback = event.requestId
+    ? requestCallbacks.get(event.requestId)
+    : null;
   switch (event.kind) {
     case "ready":
       restartAttempts = 0;
@@ -69,23 +78,31 @@ function handleEvent(event) {
       return;
     case "streamChunk":
       sendToRenderer(IPC_EVENT_CHANNELS.AI_STREAM_CHUNK, {
-        tabId: "ai", chunk: event.chunk, sessionId: event.sessionId,
+        tabId: "ai",
+        chunk: event.chunk,
+        sessionId: event.sessionId,
       });
       return;
     case "streamEnd":
       sendToRenderer(IPC_EVENT_CHANNELS.AI_STREAM_END, {
-        tabId: "ai", sessionId: event.sessionId, aborted: Boolean(event.result?.aborted),
+        tabId: "ai",
+        sessionId: event.sessionId,
+        aborted: Boolean(event.result?.aborted),
       });
       requestCallbacks.delete(event.requestId);
       if (currentSessionId === event.sessionId) currentSessionId = null;
       return;
     case "error": {
-      const error = createError(event.error?.message || "AI sidecar request failed", {
-        statusCode: event.error?.statusCode,
-      });
+      const error = createError(
+        event.error?.message || "AI sidecar request failed",
+        {
+          statusCode: event.error?.statusCode,
+        },
+      );
       if (event.sessionId) {
         sendToRenderer(IPC_EVENT_CHANNELS.AI_STREAM_ERROR, {
-          tabId: "ai", sessionId: event.sessionId,
+          tabId: "ai",
+          sessionId: event.sessionId,
           error: { message: error.message, statusCode: error.statusCode },
         });
         if (currentSessionId === event.sessionId) currentSessionId = null;
@@ -100,9 +117,14 @@ function handleEvent(event) {
 
 function writeCommand(command) {
   if (!aiSidecar?.stdin || aiSidecar.stdin.destroyed) {
-    throw createError("Rust AI sidecar is not running", { code: "AI_SIDECAR_UNAVAILABLE" });
+    throw createError("Rust AI sidecar is not running", {
+      code: "AI_SIDECAR_UNAVAILABLE",
+    });
   }
-  aiSidecar.stdin.write(`${JSON.stringify({ schemaVersion: AI_SIDECAR_SCHEMA_VERSION, ...command })}\n`, "utf8");
+  aiSidecar.stdin.write(
+    `${JSON.stringify({ schemaVersion: AI_SIDECAR_SCHEMA_VERSION, ...command })}\n`,
+    "utf8",
+  );
 }
 
 function createAIWorker() {
@@ -114,7 +136,10 @@ function createAIWorker() {
     logToFile("Rust AI sidecar binary was not found", "ERROR");
     return null;
   }
-  const child = spawn(sidecarPath, ["ai-serve"], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  const child = spawn(sidecarPath, ["ai-serve"], {
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
+  });
   aiSidecar = child;
   stdoutBuffer = "";
   child.stdout.on("data", (chunk) => {
@@ -123,7 +148,11 @@ function createAIWorker() {
     stdoutBuffer = lines.pop() || "";
     for (const line of lines) {
       if (!line.trim()) continue;
-      try { handleEvent(JSON.parse(line)); } catch { logToFile("Rust AI sidecar returned invalid JSON", "ERROR"); }
+      try {
+        handleEvent(JSON.parse(line));
+      } catch {
+        logToFile("Rust AI sidecar returned invalid JSON", "ERROR");
+      }
     }
   });
   child.stderr.on("data", () => {});
@@ -133,11 +162,15 @@ function createAIWorker() {
   });
   child.on("exit", (code, signal) => {
     if (aiSidecar === child) aiSidecar = null;
-    const error = createError(`Rust AI sidecar stopped unexpectedly (${code ?? signal ?? "unknown"})`);
+    const error = createError(
+      `Rust AI sidecar stopped unexpectedly (${code ?? signal ?? "unknown"})`,
+    );
     rejectAll(error);
     if (currentSessionId) {
       sendToRenderer(IPC_EVENT_CHANNELS.AI_STREAM_ERROR, {
-        tabId: "ai", sessionId: currentSessionId, error: { message: error.message },
+        tabId: "ai",
+        sessionId: currentSessionId,
+        error: { message: error.message },
       });
     }
     currentSessionId = null;
@@ -146,14 +179,30 @@ function createAIWorker() {
   });
   try {
     const proxyManager = require("../proxy/proxy-manager");
-    const proxy = proxyManager.getDefaultProxyConfig() || proxyManager.getSystemProxyConfig();
-    if (proxy) writeCommand({ kind: "proxyUpdate", requestId: `proxy-${Date.now()}`, proxy });
-  } catch (error) { logToFile(`Unable to configure Rust AI sidecar proxy: ${error.message}`, "WARN"); }
+    const proxy =
+      proxyManager.getDefaultProxyConfig() ||
+      proxyManager.getSystemProxyConfig();
+    if (proxy)
+      writeCommand({
+        kind: "proxyUpdate",
+        requestId: `proxy-${Date.now()}`,
+        proxy,
+      });
+  } catch (error) {
+    logToFile(
+      `Unable to configure Rust AI sidecar proxy: ${error.message}`,
+      "WARN",
+    );
+  }
   return child;
 }
 
-function getAIWorker() { return aiSidecar; }
-function ensureAIWorker() { return aiSidecar || createAIWorker(); }
+function getAIWorker() {
+  return aiSidecar;
+}
+function ensureAIWorker() {
+  return aiSidecar || createAIWorker();
+}
 async function terminateAIWorker() {
   isTerminating = true;
   clearRestartTimer();
@@ -163,15 +212,56 @@ async function terminateAIWorker() {
   rejectAll(createError("Rust AI sidecar terminated"));
   if (child) child.kill();
 }
-function getNextRequestId() { return `req_${nextRequestId++}`; }
-function setRequestCallback(requestId, callback) { requestCallbacks.set(requestId, callback); }
-function deleteRequestCallback(requestId) { requestCallbacks.delete(requestId); }
-function hasRequest(requestId) { return requestCallbacks.has(requestId); }
-function setCurrentSessionId(value) { currentSessionId = value; }
-function getCurrentSessionId() { return currentSessionId; }
-function clearCurrentSessionId() { currentSessionId = null; }
+function getNextRequestId() {
+  return `req_${nextRequestId++}`;
+}
+function setRequestCallback(requestId, callback) {
+  requestCallbacks.set(requestId, callback);
+}
+function deleteRequestCallback(requestId) {
+  requestCallbacks.delete(requestId);
+}
+function hasRequest(requestId) {
+  return requestCallbacks.has(requestId);
+}
+function setCurrentSessionId(value) {
+  currentSessionId = value;
+}
+function getCurrentSessionId() {
+  return currentSessionId;
+}
+function clearCurrentSessionId() {
+  currentSessionId = null;
+}
 function deleteStreamSession() {}
-function postMessage(message) { writeCommand(message); }
-function getDiagnostics() { return { hasWorker: Boolean(aiSidecar), pendingRequests: requestCallbacks.size, streamSessions: currentSessionId ? 1 : 0, hasCurrentSession: Boolean(currentSessionId), transport: "rust-sidecar", restartAttempts, restartScheduled: Boolean(restartTimer) }; }
+function postMessage(message) {
+  writeCommand(message);
+}
+function getDiagnostics() {
+  return {
+    hasWorker: Boolean(aiSidecar),
+    pendingRequests: requestCallbacks.size,
+    streamSessions: currentSessionId ? 1 : 0,
+    hasCurrentSession: Boolean(currentSessionId),
+    transport: "rust-sidecar",
+    restartAttempts,
+    restartScheduled: Boolean(restartTimer),
+  };
+}
 
-module.exports = { createAIWorker, getAIWorker, ensureAIWorker, terminateAIWorker, getNextRequestId, setRequestCallback, deleteRequestCallback, hasRequest, setCurrentSessionId, getCurrentSessionId, clearCurrentSessionId, deleteStreamSession, postMessage, getDiagnostics };
+module.exports = {
+  createAIWorker,
+  getAIWorker,
+  ensureAIWorker,
+  terminateAIWorker,
+  getNextRequestId,
+  setRequestCallback,
+  deleteRequestCallback,
+  hasRequest,
+  setCurrentSessionId,
+  getCurrentSessionId,
+  clearCurrentSessionId,
+  deleteStreamSession,
+  postMessage,
+  getDiagnostics,
+};

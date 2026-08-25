@@ -1,6 +1,4 @@
-const {
-  getNativeServicesHostPath,
-} = require("../core/utils/nativeServices");
+const { getNativeServicesHostPath } = require("../core/utils/nativeServices");
 const {
   invokeNativeRequestWithConfig,
 } = require("../core/utils/nativeSftpClient");
@@ -388,7 +386,8 @@ const handleIncomingMessage = (incomingMessage) => {
   Promise.resolve(handleMessage(message)).catch((error) => {
     const envelope = {
       transferKey: message?.transferKey || currentTransferKey || null,
-      taskId: message?.taskId || currentTaskState?.taskKey?.split("::")[1] || null,
+      taskId:
+        message?.taskId || currentTaskState?.taskKey?.split("::")[1] || null,
       tabId: message?.tabId || currentTabId || null,
       attempt: Number.isFinite(message?.attempt) ? message.attempt : 0,
     };

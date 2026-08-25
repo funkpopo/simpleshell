@@ -13,7 +13,9 @@ const SOURCE_EXTENSIONS = new Set([".js", ".jsx"]);
 // Set CHECK_I18N_UNUSED=error to fail on unused keys.
 const UNUSED_MODE = (process.env.CHECK_I18N_UNUSED || "warn").toLowerCase();
 // Set CHECK_I18N_HARDCODED=error to fail on hardcoded UI strings.
-const HARDCODED_MODE = (process.env.CHECK_I18N_HARDCODED || "warn").toLowerCase();
+const HARDCODED_MODE = (
+  process.env.CHECK_I18N_HARDCODED || "warn"
+).toLowerCase();
 
 const TRANSLATION_IDENTIFIERS = new Set([
   "t",
@@ -31,8 +33,7 @@ const TRANSLATION_IDENTIFIERS = new Set([
 ]);
 const TRANSLATION_MEMBER_PROPERTIES = new Set(["t", "current"]);
 
-const parseJson = (filePath) =>
-  JSON.parse(fs.readFileSync(filePath, "utf8"));
+const parseJson = (filePath) => JSON.parse(fs.readFileSync(filePath, "utf8"));
 
 const flatten = (value, prefix = "", output = new Map()) => {
   if (Array.isArray(value)) {
@@ -355,12 +356,17 @@ const collectHardcodedUiStrings = () => {
         return;
       }
       // Ignore import paths, logs, and bilingual error matchers/regexes.
-      if (/^\s*import\s+/.test(withoutLineComment) || /require\s*\(/.test(withoutLineComment)) {
+      if (
+        /^\s*import\s+/.test(withoutLineComment) ||
+        /require\s*\(/.test(withoutLineComment)
+      ) {
         return;
       }
       const prev = index > 0 ? lines[index - 1] : "";
       if (
-        /\bconsole\.(log|warn|error|info|debug)\s*\(/.test(withoutLineComment) ||
+        /\bconsole\.(log|warn|error|info|debug)\s*\(/.test(
+          withoutLineComment,
+        ) ||
         /\bconsole\.(log|warn|error|info|debug)\s*\(/.test(prev) ||
         /\.includes\s*\(/.test(withoutLineComment) ||
         /\.test\s*\(/.test(withoutLineComment) ||

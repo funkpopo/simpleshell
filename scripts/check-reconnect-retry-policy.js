@@ -138,10 +138,7 @@ function testJitterAndFastReconnectDelay() {
     lastError: { code: "ECONNRESET" },
     successRate: 1,
   });
-  assert.ok(
-    fastDelay <= 700,
-    `ECONNRESET 快恢延迟应较短，实际 ${fastDelay}ms`,
-  );
+  assert.ok(fastDelay <= 700, `ECONNRESET 快恢延迟应较短，实际 ${fastDelay}ms`);
 }
 
 function testOnlyWeakDefaultPolicyExists() {
@@ -158,10 +155,9 @@ function testOnlyWeakDefaultPolicyExists() {
   // 确保不再存在多模式预设模块
   let presetsMissing = false;
   try {
-    require(path.join(
-      ROOT,
-      "src/core/connection/network-resilience-presets.js",
-    ));
+    require(
+      path.join(ROOT, "src/core/connection/network-resilience-presets.js"),
+    );
   } catch {
     presetsMissing = true;
   }
@@ -369,7 +365,10 @@ async function run() {
       "default retry policy is weak-network friendly (120s window)",
       testDefaultRetryPolicyIsWeakNetworkFriendly,
     ],
-    ["jitter and fast reconnect delay behave as expected", testJitterAndFastReconnectDelay],
+    [
+      "jitter and fast reconnect delay behave as expected",
+      testJitterAndFastReconnectDelay,
+    ],
     ["only weak default policy exists", testOnlyWeakDefaultPolicyExists],
     [
       "reconnect runs configured retries after failures",

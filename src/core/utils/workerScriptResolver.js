@@ -62,7 +62,11 @@ function resolveWorkerScriptPath(workerBasename, options = {}) {
       path.join(process.resourcesPath, "app.asar", ".webpack", "main"),
       workerBasename,
     );
-    appendWebpackMainCandidates(candidates, process.resourcesPath, workerBasename);
+    appendWebpackMainCandidates(
+      candidates,
+      process.resourcesPath,
+      workerBasename,
+    );
     appendWorkerCandidate(
       candidates,
       path.join(process.resourcesPath, "app.asar.unpacked"),

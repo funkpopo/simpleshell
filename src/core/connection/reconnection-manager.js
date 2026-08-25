@@ -13,7 +13,11 @@ const {
   calculateRetryDelay,
   createManagedSshConnection,
 } = require("./ssh-retry-helper");
-const { t: mainT, normalizeLanguage, getUiLanguage } = require("../../shared/mainI18n");
+const {
+  t: mainT,
+  normalizeLanguage,
+  getUiLanguage,
+} = require("../../shared/mainI18n");
 const configService = require("../../services/configService");
 
 // 重连状态
@@ -88,7 +92,11 @@ class ReconnectionManager extends EventEmitter {
   // 注册连接会话
   registerSession(sessionId, connection, config, options = {}) {
     if (!sessionId || !connection) {
-      throw new Error(mainT("mainProcess.reconnect.registerFailed", { lng: getUiLanguage(configService) }));
+      throw new Error(
+        mainT("mainProcess.reconnect.registerFailed", {
+          lng: getUiLanguage(configService),
+        }),
+      );
     }
 
     const {
@@ -207,7 +215,10 @@ class ReconnectionManager extends EventEmitter {
   setupConnectionListeners(session) {
     const connection = session.connection;
     if (!connection || typeof connection.on !== "function") {
-      logToFile(`Skip reconnect listeners (connection not observable): ${session.id}`, "WARN");
+      logToFile(
+        `Skip reconnect listeners (connection not observable): ${session.id}`,
+        "WARN",
+      );
       return;
     }
 
@@ -306,7 +317,12 @@ class ReconnectionManager extends EventEmitter {
       this._ensureReconnectWindowStarted(session);
       await this.scheduleReconnect(session, resolvedFailureReason);
     } else if (abandonWhenNotReconnectable) {
-      this.abandonReconnection(session, mainT("mainProcess.reconnect.conditionsNotMet", { lng: normalizeLanguage(session?.config?.language) }));
+      this.abandonReconnection(
+        session,
+        mainT("mainProcess.reconnect.conditionsNotMet", {
+          lng: normalizeLanguage(session?.config?.language),
+        }),
+      );
     }
   }
 
@@ -317,7 +333,10 @@ class ReconnectionManager extends EventEmitter {
       error,
       mainLogLevel: "ERROR",
       onIntentionalClose: () => {
-        logToFile(`Ignore intentional-close connection error: ${session.id}`, "DEBUG");
+        logToFile(
+          `Ignore intentional-close connection error: ${session.id}`,
+          "DEBUG",
+        );
       },
       recordPattern: true,
       abandonWhenNotReconnectable: true,
@@ -331,7 +350,10 @@ class ReconnectionManager extends EventEmitter {
       failureReason: FAILURE_REASON.NETWORK,
       mainLogLevel: "INFO",
       onIntentionalClose: () => {
-        logToFile(`Intentional close detected, cleaning reconnect session: ${session.id}`, "DEBUG");
+        logToFile(
+          `Intentional close detected, cleaning reconnect session: ${session.id}`,
+          "DEBUG",
+        );
         this.cancelSession(session.id, "intentional-close");
       },
     });
@@ -344,7 +366,10 @@ class ReconnectionManager extends EventEmitter {
       failureReason: FAILURE_REASON.TIMEOUT,
       mainLogLevel: "WARN",
       onIntentionalClose: () => {
-        logToFile(`Ignore intentional-close connection timeout: ${session.id}`, "DEBUG");
+        logToFile(
+          `Ignore intentional-close connection timeout: ${session.id}`,
+          "DEBUG",
+        );
       },
     });
   }
@@ -553,7 +578,10 @@ class ReconnectionManager extends EventEmitter {
 
     // maxRetries <= 0 表示该原因不允许重连
     if (maxRetries <= 0) {
-      logToFile(`Reconnect conditions not met (reason blocked): ${session.id}`, "WARN");
+      logToFile(
+        `Reconnect conditions not met (reason blocked): ${session.id}`,
+        "WARN",
+      );
       return false;
     }
 
@@ -591,7 +619,10 @@ class ReconnectionManager extends EventEmitter {
       session.isReconnecting = false;
       this.abandonReconnection(
         session,
-        mainT("mainProcess.reconnect.timeoutExceeded", { lng: normalizeLanguage(session?.config?.language), ms: this.config.totalTimeCapMs }),
+        mainT("mainProcess.reconnect.timeoutExceeded", {
+          lng: normalizeLanguage(session?.config?.language),
+          ms: this.config.totalTimeCapMs,
+        }),
       );
       this.emit("reconnectFailed", {
         sessionId: session.id,
@@ -608,7 +639,13 @@ class ReconnectionManager extends EventEmitter {
 
     if (session.retryCount + 1 > maxRetries) {
       session.isReconnecting = false;
-      this.abandonReconnection(session, mainT("mainProcess.reconnect.maxRetriesReached", { lng: normalizeLanguage(session?.config?.language), maxRetries }));
+      this.abandonReconnection(
+        session,
+        mainT("mainProcess.reconnect.maxRetriesReached", {
+          lng: normalizeLanguage(session?.config?.language),
+          maxRetries,
+        }),
+      );
       this.emit("reconnectFailed", {
         sessionId: session.id,
         error: buildMaxRetriesMessage(maxRetries, session?.config?.language),
@@ -816,13 +853,19 @@ class ReconnectionManager extends EventEmitter {
       session.state === RECONNECT_STATE.ABANDONED ||
       session.state === RECONNECT_STATE.PAUSED
     ) {
-      logToFile(`Skip reconnect (state=${session.state}): ${session.id}`, "DEBUG");
+      logToFile(
+        `Skip reconnect (state=${session.state}): ${session.id}`,
+        "DEBUG",
+      );
       return;
     }
 
     // 检查是否正在重连中（防止并发重连）
     if (session.state === RECONNECT_STATE.RECONNECTING) {
-      logToFile(`Skip reconnect (already reconnecting): ${session.id}`, "DEBUG");
+      logToFile(
+        `Skip reconnect (already reconnecting): ${session.id}`,
+        "DEBUG",
+      );
       return;
     }
 
@@ -857,7 +900,12 @@ class ReconnectionManager extends EventEmitter {
       const attemptNumber = session.retryCount;
       const preflight = await this._checkPreflight(session);
       if (!preflight?.ok) {
-        const preflightError = new Error(preflight?.message || mainT("mainProcess.reconnect.preflightFailed", { lng: normalizeLanguage(session?.config?.language) }));
+        const preflightError = new Error(
+          preflight?.message ||
+            mainT("mainProcess.reconnect.preflightFailed", {
+              lng: normalizeLanguage(session?.config?.language),
+            }),
+        );
         if (preflight?.code) {
           preflightError.code = preflight.code;
         }
@@ -883,7 +931,11 @@ class ReconnectionManager extends EventEmitter {
       // 验证连接
       const isValid = await this.validateConnection(newConnection);
       if (!isValid) {
-        throw new Error(mainT("mainProcess.reconnect.validationFailed", { lng: normalizeLanguage(session?.config?.language) }));
+        throw new Error(
+          mainT("mainProcess.reconnect.validationFailed", {
+            lng: normalizeLanguage(session?.config?.language),
+          }),
+        );
       }
 
       if (this._shouldAbortReconnect(session)) {
@@ -950,7 +1002,10 @@ class ReconnectionManager extends EventEmitter {
 
       // 重连过程中再次检查状态，避免在连接已成功时报告错误
       if (session.state === RECONNECT_STATE.CONNECTED) {
-        logToFile(`Reconnect exception ignored (already connected): ${session.id}`, "DEBUG");
+        logToFile(
+          `Reconnect exception ignored (already connected): ${session.id}`,
+          "DEBUG",
+        );
         return;
       }
 
@@ -1001,7 +1056,10 @@ class ReconnectionManager extends EventEmitter {
 
         this.abandonReconnection(
           session,
-          mainT("mainProcess.reconnect.maxRetriesOrConditions", { lng: normalizeLanguage(session?.config?.language), maxRetries }),
+          mainT("mainProcess.reconnect.maxRetriesOrConditions", {
+            lng: normalizeLanguage(session?.config?.language),
+            maxRetries,
+          }),
         );
 
         const userFacingError = this.formatReconnectErrorForUser(
@@ -1131,7 +1189,11 @@ class ReconnectionManager extends EventEmitter {
       typeof newConnection.isClosed === "function" &&
       newConnection.isClosed()
     ) {
-      throw new Error(mainT("mainProcess.reconnect.closedBeforeTakeover", { lng: normalizeLanguage(session?.config?.language) }));
+      throw new Error(
+        mainT("mainProcess.reconnect.closedBeforeTakeover", {
+          lng: normalizeLanguage(session?.config?.language),
+        }),
+      );
     }
 
     if (this.replacingSessions.has(session.id)) {
@@ -1267,7 +1329,10 @@ class ReconnectionManager extends EventEmitter {
 
     this._teardownSession(session, reason);
 
-    logToFile(`Cancelled reconnect session: ${sessionId}, reason=${reason}`, "DEBUG");
+    logToFile(
+      `Cancelled reconnect session: ${sessionId}, reason=${reason}`,
+      "DEBUG",
+    );
     return true;
   }
 
@@ -1331,7 +1396,12 @@ class ReconnectionManager extends EventEmitter {
   ) {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      throw new Error(mainT("mainProcess.reconnect.sessionNotFound", { lng: getUiLanguage(configService), sessionId }));
+      throw new Error(
+        mainT("mainProcess.reconnect.sessionNotFound", {
+          lng: getUiLanguage(configService),
+          sessionId,
+        }),
+      );
     }
 
     this._ensureReconnectWindowStarted(session);
@@ -1357,7 +1427,14 @@ class ReconnectionManager extends EventEmitter {
   waitForReconnect(sessionId, timeoutMs = this.config.totalTimeCapMs) {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      return Promise.reject(new Error(mainT("mainProcess.reconnect.sessionNotFound", { lng: getUiLanguage(configService), sessionId })));
+      return Promise.reject(
+        new Error(
+          mainT("mainProcess.reconnect.sessionNotFound", {
+            lng: getUiLanguage(configService),
+            sessionId,
+          }),
+        ),
+      );
     }
 
     if (session.state === RECONNECT_STATE.CONNECTED) {
@@ -1454,7 +1531,10 @@ class ReconnectionManager extends EventEmitter {
         success: false,
         sessionId,
         state: null,
-        error: mainT("mainProcess.reconnect.sessionNotFound", { lng: getUiLanguage(configService), sessionId }),
+        error: mainT("mainProcess.reconnect.sessionNotFound", {
+          lng: getUiLanguage(configService),
+          sessionId,
+        }),
       };
     }
 
@@ -1467,7 +1547,10 @@ class ReconnectionManager extends EventEmitter {
         success: false,
         sessionId,
         state: previousState,
-        error: mainT("mainProcess.reconnect.cannotPause", { lng: getUiLanguage(configService), state: previousState }),
+        error: mainT("mainProcess.reconnect.cannotPause", {
+          lng: getUiLanguage(configService),
+          state: previousState,
+        }),
       };
     }
 
@@ -1494,7 +1577,10 @@ class ReconnectionManager extends EventEmitter {
         success: false,
         sessionId,
         state: null,
-        error: mainT("mainProcess.reconnect.sessionNotFound", { lng: getUiLanguage(configService), sessionId }),
+        error: mainT("mainProcess.reconnect.sessionNotFound", {
+          lng: getUiLanguage(configService),
+          sessionId,
+        }),
       };
     }
 
@@ -1504,7 +1590,10 @@ class ReconnectionManager extends EventEmitter {
         success: false,
         sessionId,
         state: previousState,
-        error: mainT("mainProcess.reconnect.cannotResume", { lng: getUiLanguage(configService), state: previousState }),
+        error: mainT("mainProcess.reconnect.cannotResume", {
+          lng: getUiLanguage(configService),
+          state: previousState,
+        }),
       };
     }
 

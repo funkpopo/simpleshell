@@ -3,10 +3,7 @@ const REMOTE_PROCESS_LIST_CACHE_TTL_MS = 5000;
 const remoteSystemInfoCache = new WeakMap();
 const remoteProcessListCache = new WeakMap();
 
-const {
-  t: translateLocale,
-  getUiLanguage,
-} = require("../../shared/mainI18n");
+const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
 const configService = require("../../services/configService");
 
 const systemInfoText = (key, params = {}) =>
@@ -563,8 +560,7 @@ const REMOTE_PS_STRATEGIES = [
     stripHeader: true,
   },
   {
-    cmd:
-      'for d in /proc/[0-9]*; do [ -r "$d/comm" ] || continue; pid="${d#/proc/}"; printf "%s|" "$pid"; tr \'\\0\' \' \' <"$d/comm" 2>/dev/null; echo; done',
+    cmd: 'for d in /proc/[0-9]*; do [ -r "$d/comm" ] || continue; pid="${d#/proc/}"; printf "%s|" "$pid"; tr \'\\0\' \' \' <"$d/comm" 2>/dev/null; echo; done',
     parse: parseProcCommLines,
     stripHeader: false,
   },
@@ -592,7 +588,11 @@ async function getRemoteProcessList(sshClient) {
       if (!text) continue;
 
       let lines = text.split("\n").filter((l) => l.length > 0);
-      if (strat.stripHeader && lines.length && looksLikePsHeaderLine(lines[0])) {
+      if (
+        strat.stripHeader &&
+        lines.length &&
+        looksLikePsHeaderLine(lines[0])
+      ) {
         lines = lines.slice(1);
       }
 
@@ -610,7 +610,11 @@ async function getRemoteProcessList(sshClient) {
     }
   }
 
-  if (lastError && lastError.message !== systemInfoText("mainProcess.systemInfo.sshUnavailable")) {
+  if (
+    lastError &&
+    lastError.message !==
+      systemInfoText("mainProcess.systemInfo.sshUnavailable")
+  ) {
     console.warn(
       "[getRemoteProcessList] All strategies failed:",
       lastError.message,

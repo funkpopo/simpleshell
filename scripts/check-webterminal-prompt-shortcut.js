@@ -123,9 +123,7 @@ function run() {
     console.log(`PASS ${name}`);
   });
 
-  console.log(
-    `\n${tests.length} WebTerminal prompt/shortcut checks passed.`,
-  );
+  console.log(`\n${tests.length} WebTerminal prompt/shortcut checks passed.`);
 }
 
 run();

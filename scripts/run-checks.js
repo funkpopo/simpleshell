@@ -21,11 +21,15 @@ for (const scriptName of checkScripts) {
   const relativePath = path.join("scripts", scriptName);
   process.stdout.write(`\n[checks] ${relativePath}\n`);
 
-  const result = spawnSync(process.execPath, [path.join(scriptsDir, scriptName)], {
-    cwd: path.resolve(scriptsDir, ".."),
-    stdio: "inherit",
-    windowsHide: true,
-  });
+  const result = spawnSync(
+    process.execPath,
+    [path.join(scriptsDir, scriptName)],
+    {
+      cwd: path.resolve(scriptsDir, ".."),
+      stdio: "inherit",
+      windowsHide: true,
+    },
+  );
 
   if (result.error) {
     throw result.error;

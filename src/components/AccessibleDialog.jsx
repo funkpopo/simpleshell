@@ -12,7 +12,9 @@ const isEditableTarget = (target) => {
     target.isContentEditable ||
     tagName === "textarea" ||
     tagName === "select" ||
-    (tagName === "input" && target.type !== "button" && target.type !== "submit")
+    (tagName === "input" &&
+      target.type !== "button" &&
+      target.type !== "submit")
   );
 };
 

@@ -900,7 +900,8 @@ const FileManager = memo(
 
     const transferProgressList = transferList;
 
-    // 缓存过期时间（毫秒）
+    // 目录缓存参数
+    const CACHE_EXPIRY_TIME = 10000; // 10秒
     const MAX_DIRECTORY_CACHE_ENTRIES = 500; // 增加条目上限（LRU），防止内存占用过高
 
     // 自动刷新相关参数
@@ -1286,7 +1287,6 @@ const FileManager = memo(
       });
 
       // LRU: 超过上限则删除最旧条目
-      const MAX_DIRECTORY_CACHE_ENTRIES = 500;
       if (cache.size > MAX_DIRECTORY_CACHE_ENTRIES) {
         const oldestPath = cache.keys().next().value;
         cache.delete(oldestPath);
@@ -3780,10 +3780,7 @@ const FileManager = memo(
 
       // 忽略输入法组合中的回车（中文输入法确认候选词），
       // 避免 preventDefault 打断组合提交，也避免用未提交的旧值触发跳转
-      if (
-        e.nativeEvent?.isComposing ||
-        e.nativeEvent?.keyCode === 229
-      ) {
+      if (e.nativeEvent?.isComposing || e.nativeEvent?.keyCode === 229) {
         pathInputSubmitOnCompositionEndRef.current = true;
         return;
       }
@@ -4904,7 +4901,8 @@ const FileManager = memo(
                 totalFiles: Math.max(1, totalFiles || 1),
               });
             },
-            Number.isFinite(savedSelectedFile.size) && savedSelectedFile.size >= 0
+            Number.isFinite(savedSelectedFile.size) &&
+              savedSelectedFile.size >= 0
               ? savedSelectedFile.size
               : 0,
           );

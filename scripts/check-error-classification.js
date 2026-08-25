@@ -223,10 +223,9 @@ function testErrorResponseContract() {
 }
 
 function testConnectionFailureAdvice() {
-  const {
-    CONNECTION_FAILURE_KINDS,
-    classifyConnectionFailure,
-  } = require(path.join(ROOT, "src", "shared", "connectionErrorAdvice"));
+  const { CONNECTION_FAILURE_KINDS, classifyConnectionFailure } = require(
+    path.join(ROOT, "src", "shared", "connectionErrorAdvice"),
+  );
 
   const config = {
     host: "server.example",
@@ -421,9 +420,7 @@ async function run() {
       await fn();
       console.log(`PASS error classification - ${name}`);
     }
-    console.log(
-      `\n${tests.length} error classification checks passed.`,
-    );
+    console.log(`\n${tests.length} error classification checks passed.`);
   } finally {
     clearRequire(IPC_RESPONSE_PATH);
     clearRequire(UPDATE_SERVICE_PATH);

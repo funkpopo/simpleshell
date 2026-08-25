@@ -11,9 +11,7 @@ const handlerSource = read("src/core/ipc/handlers/localTerminalHandlers.js");
 const channelSource = read("src/core/ipc/schema/channels.js");
 const preloadSource = read("src/preload.js");
 const appSource = read("src/app.jsx");
-const {
-  collectWebTerminalSources,
-} = require("./lib/webterminal-sources.js");
+const { collectWebTerminalSources } = require("./lib/webterminal-sources.js");
 const webTerminalSource = collectWebTerminalSources();
 const sidebarSource = read("src/components/LocalTerminalSidebar.jsx");
 const webpackMainSource = read("webpack.main.config.js");
@@ -24,7 +22,9 @@ const localTerminalConfigSource = read(
 const {
   SUPPORTED_LOCAL_TERMINAL_TYPES,
   normalizeLocalTerminalConfig,
-} = require(path.join(ROOT, "src/core/local-terminal/local-terminal-config.js"));
+} = require(
+  path.join(ROOT, "src/core/local-terminal/local-terminal-config.js"),
+);
 
 function assertEmbeddedPtyManager() {
   assert.match(

@@ -60,11 +60,7 @@ const buildCommandSuggestionCursorPosition = ({
   const rawBottom = isFiniteNumber(cursorBottom)
     ? cursorBottom
     : clampedY + safeCursorHeight;
-  const clampedBottom = clamp(
-    rawBottom,
-    clampedY,
-    containerRect.bottom,
-  );
+  const clampedBottom = clamp(rawBottom, clampedY, containerRect.bottom);
 
   const showAbove =
     clampedBottom + suggestionHeight + gap > containerRect.bottom &&

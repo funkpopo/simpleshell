@@ -18,7 +18,12 @@ function getNativeServicesHostPath() {
   if (process.resourcesPath) {
     candidates.push(path.join(process.resourcesPath, NATIVE_SERVICES_BASENAME));
     candidates.push(
-      path.join(process.resourcesPath, "bin", platformArchDir, NATIVE_SERVICES_BASENAME),
+      path.join(
+        process.resourcesPath,
+        "bin",
+        platformArchDir,
+        NATIVE_SERVICES_BASENAME,
+      ),
     );
   }
 

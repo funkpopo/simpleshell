@@ -207,7 +207,9 @@ class TelnetConnectionPool extends BaseConnectionPool {
     }
 
     // 日志中记录详细信息（包含connectionKey），但不影响用户看到的错误
-    this._logInfo(`Telnet connection error detail: ${connectionKey} - ${errorMessage}`);
+    this._logInfo(
+      `Telnet connection error detail: ${connectionKey} - ${errorMessage}`,
+    );
 
     // 创建增强的错误对象（使用简洁的错误消息）
     const enhancedError = new Error(errorMessage);

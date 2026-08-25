@@ -137,7 +137,9 @@ const DEFAULT_API_PROVIDERS = [
     buildUrl: () => `https://ipapi.co/json/`,
     transform: (data, ip) => {
       if (data.error) {
-        throw new Error(`ipapi.co API error: ${JSON.stringify(data.reason || data.error)}`);
+        throw new Error(
+          `ipapi.co API error: ${JSON.stringify(data.reason || data.error)}`,
+        );
       }
       return {
         ret: "ok",
@@ -164,19 +166,14 @@ const DEFAULT_API_PROVIDERS = [
         throw new Error(`api.vore.top API error: ${data.msg}`);
       }
       const info = data.data?.ipInfo || {};
-      const latlng = Array.isArray(info.latlng)
-        ? info.latlng.map(Number)
-        : [];
+      const latlng = Array.isArray(info.latlng) ? info.latlng.map(Number) : [];
       return {
         ret: "ok",
         data: {
           ip: data.data?.ip || ip,
-          location: [
-            info.country,
-            info.province,
-            info.city,
-            info.isp,
-          ].filter(Boolean),
+          location: [info.country, info.province, info.city, info.isp].filter(
+            Boolean,
+          ),
           latitude: latlng[0],
           longitude: latlng[1],
         },
@@ -225,12 +222,9 @@ const DEFAULT_API_PROVIDERS = [
       ret: "ok",
       data: {
         ip: data.ip || ip,
-        location: [
-          data.country,
-          data.province,
-          data.city,
-          data.isp,
-        ].filter(Boolean),
+        location: [data.country, data.province, data.city, data.isp].filter(
+          Boolean,
+        ),
       },
     }),
     ownIpOnly: true,
@@ -312,7 +306,9 @@ const DEFAULT_API_PROVIDERS = [
     buildUrl: (ip) => `https://ipapi.co/${ip}/json/`,
     transform: (data, ip) => {
       if (data.error) {
-        throw new Error(`ipapi.co API error: ${JSON.stringify(data.reason || data.error)}`);
+        throw new Error(
+          `ipapi.co API error: ${JSON.stringify(data.reason || data.error)}`,
+        );
       }
       return {
         ret: "ok",
@@ -338,19 +334,14 @@ const DEFAULT_API_PROVIDERS = [
         throw new Error(`api.vore.top API error: ${data.msg}`);
       }
       const info = data.data?.ipInfo || {};
-      const latlng = Array.isArray(info.latlng)
-        ? info.latlng.map(Number)
-        : [];
+      const latlng = Array.isArray(info.latlng) ? info.latlng.map(Number) : [];
       return {
         ret: "ok",
         data: {
           ip: data.data?.ip || targetIp,
-          location: [
-            info.country,
-            info.province,
-            info.city,
-            info.isp,
-          ].filter(Boolean),
+          location: [info.country, info.province, info.city, info.isp].filter(
+            Boolean,
+          ),
           latitude: latlng[0],
           longitude: latlng[1],
         },
@@ -469,7 +460,13 @@ async function getPublicIp(proxyConfig = null) {
           options.agent = new HttpsProxyAgent(proxyUrl);
         }
       } catch (proxyError) {
-        reject(new Error(ipQueryText("mainProcess.ipQuery.proxyConfigError", { error: proxyError.message })));
+        reject(
+          new Error(
+            ipQueryText("mainProcess.ipQuery.proxyConfigError", {
+              error: proxyError.message,
+            }),
+          ),
+        );
         return;
       }
     }
@@ -527,7 +524,13 @@ function fetchIpInfo(provider, ip, logger, proxyConfig = null) {
           }
         }
       } catch (proxyError) {
-        reject(new Error(ipQueryText("mainProcess.ipQuery.proxyConfigError", { error: proxyError.message })));
+        reject(
+          new Error(
+            ipQueryText("mainProcess.ipQuery.proxyConfigError", {
+              error: proxyError.message,
+            }),
+          ),
+        );
         return;
       }
     }
@@ -569,10 +572,16 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
     if (ip && ip.trim()) {
       const ver = ipUtils.isIP(ip.trim());
       if (ver === 0) {
-        return { ret: "failed", msg: ipQueryText("mainProcess.ipQuery.invalidIp") };
+        return {
+          ret: "failed",
+          msg: ipQueryText("mainProcess.ipQuery.invalidIp"),
+        };
       }
       if (ipUtils.isPrivateOrSpecial(ip.trim())) {
-        return { ret: "failed", msg: ipQueryText("mainProcess.ipQuery.privateOrReserved") };
+        return {
+          ret: "failed",
+          msg: ipQueryText("mainProcess.ipQuery.privateOrReserved"),
+        };
       }
     }
 
@@ -647,7 +656,10 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
         } catch {
           // Fallback if all own-IP providers fail/missing:
           // get the public IP first, then look it up against the remaining providers.
-          logger("Own providers failed or missing; using lookup fallback...", "INFO");
+          logger(
+            "Own providers failed or missing; using lookup fallback...",
+            "INFO",
+          );
           const publicIp = await getPublicIp(proxyConfig);
           const lookupProviders = allProviders.filter((p) => !p.ownIpOnly);
           const standardPromises = lookupProviders.map((provider) =>

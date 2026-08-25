@@ -1,7 +1,8 @@
 const { ipcMain } = require("electron");
 const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
 const configServiceForI18n = require("../../services/configService");
-const systemInfoText = (key) => translateLocale(key, { lng: getUiLanguage(configServiceForI18n) });
+const systemInfoText = (key) =>
+  translateLocale(key, { lng: getUiLanguage(configServiceForI18n) });
 const { logToFile } = require("../utils/logger");
 const { safeHandle, safeOn } = require("../ipc/ipcResponse");
 const { IPC_REQUEST_CHANNELS } = require("../ipc/schema/channels");
@@ -39,7 +40,10 @@ const { isSshClientUsable } = require("../utils/ssh-utils");
 
 // 关键处理器模块（在窗口创建前由 registerCriticalHandlers 统一注册）
 const CRITICAL_HANDLER_MODULES = [
-  { HandlersClass: SettingsHandlers, successLog: "Settings handlers registered" },
+  {
+    HandlersClass: SettingsHandlers,
+    successLog: "Settings handlers registered",
+  },
   { HandlersClass: AppHandlers, successLog: "App handlers registered" },
   { HandlersClass: DialogHandlers, successLog: "Dialog handlers registered" },
   { HandlersClass: WindowHandlers, successLog: "Window handlers registered" },
@@ -132,7 +136,10 @@ class IPCSetup {
       registerReconnectHandlers(connectionManager.sshConnectionPool);
       logToFile("Reconnect handlers registered", "INFO");
     } catch (error) {
-      logToFile(`Failed to register reconnect handlers: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to register reconnect handlers: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 
@@ -144,7 +151,10 @@ class IPCSetup {
       registerBatchHandlers(ipcMain);
       logToFile("IPC batch handlers registered", "INFO");
     } catch (error) {
-      logToFile(`Failed to register IPC batch handlers: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to register IPC batch handlers: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 
@@ -152,11 +162,9 @@ class IPCSetup {
    * 将处理器实例的所有handler注册到ipcMain
    */
   _registerHandlerInstance(handlersInstance) {
-    handlersInstance
-      .getHandlers()
-      .forEach(({ channel, category, handler }) => {
-        safeHandle(ipcMain, channel, handler, { category });
-      });
+    handlersInstance.getHandlers().forEach(({ channel, category, handler }) => {
+      safeHandle(ipcMain, channel, handler, { category });
+    });
   }
 
   /**
@@ -185,7 +193,10 @@ class IPCSetup {
 
       logToFile(`Registered ${handlers.length} latency IPC handlers`, "INFO");
     } catch (error) {
-      logToFile(`Failed to initialize latency service: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to initialize latency service: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 
@@ -233,9 +244,7 @@ class IPCSetup {
       try {
         const systemInfo = require("../../modules/system-info");
         if (!processId || !processManager.hasProcess(processId)) {
-          return awaitLocal
-            ? await getLocal(systemInfo)
-            : getLocal(systemInfo);
+          return awaitLocal ? await getLocal(systemInfo) : getLocal(systemInfo);
         } else {
           const processObj = processManager.getProcess(processId);
           if (
@@ -264,9 +273,7 @@ class IPCSetup {
         logToFile(`Failed to get ${failureSubject}: ${error.message}`, "ERROR");
         try {
           const systemInfo = require("../../modules/system-info");
-          return awaitLocal
-            ? await getLocal(systemInfo)
-            : getLocal(systemInfo);
+          return awaitLocal ? await getLocal(systemInfo) : getLocal(systemInfo);
         } catch {
           return {
             error:
@@ -284,22 +291,37 @@ class IPCSetup {
    * 注册基本终端处理器
    */
   registerBasicTerminalHandlers() {
-    safeHandle(ipcMain, IPC_REQUEST_CHANNELS.TERMINAL_LOAD_CONNECTIONS, async () => {
-      return configService.loadConnections();
-    }, { category: "terminal" });
+    safeHandle(
+      ipcMain,
+      IPC_REQUEST_CHANNELS.TERMINAL_LOAD_CONNECTIONS,
+      async () => {
+        return configService.loadConnections();
+      },
+      { category: "terminal" },
+    );
 
-    safeHandle(ipcMain, IPC_REQUEST_CHANNELS.TERMINAL_GET_CONNECTION_PASSWORD, async (event, connectionId) => {
-      void event;
-      return configService.getSavedConnectionPassword(connectionId);
-    }, { category: "terminal" });
+    safeHandle(
+      ipcMain,
+      IPC_REQUEST_CHANNELS.TERMINAL_GET_CONNECTION_PASSWORD,
+      async (event, connectionId) => {
+        void event;
+        return configService.getSavedConnectionPassword(connectionId);
+      },
+      { category: "terminal" },
+    );
 
-    safeHandle(ipcMain, IPC_REQUEST_CHANNELS.TERMINAL_LOAD_TOP_CONNECTIONS, async () => {
-      try {
-        return configService.loadLastConnections();
-      } catch {
-        return [];
-      }
-    }, { category: "terminal" });
+    safeHandle(
+      ipcMain,
+      IPC_REQUEST_CHANNELS.TERMINAL_LOAD_TOP_CONNECTIONS,
+      async () => {
+        try {
+          return configService.loadLastConnections();
+        } catch {
+          return [];
+        }
+      },
+      { category: "terminal" },
+    );
 
     safeHandle(
       ipcMain,
@@ -349,7 +371,10 @@ class IPCSetup {
       );
       logToFile("Local terminal handlers initialized", "INFO");
     } catch (error) {
-      logToFile(`Failed to initialize local terminal handlers: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to initialize local terminal handlers: ${error.message}`,
+        "ERROR",
+      );
       logToFile(`Stack: ${error.stack}`, "ERROR");
     }
   }
@@ -369,7 +394,10 @@ class IPCSetup {
       this._registerHandlerInstance(this.sshHandlers);
       logToFile("SSH/Telnet handlers registered", "INFO");
     } catch (error) {
-      logToFile(`Failed to initialize SSH/Telnet handlers: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to initialize SSH/Telnet handlers: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 
@@ -395,7 +423,10 @@ class IPCSetup {
       }
       logToFile("Terminal handlers registered", "INFO");
     } catch (error) {
-      logToFile(`Failed to initialize terminal handlers: ${error.message}`, "ERROR");
+      logToFile(
+        `Failed to initialize terminal handlers: ${error.message}`,
+        "ERROR",
+      );
     }
   }
 
@@ -424,7 +455,10 @@ class IPCSetup {
         this.latencyHandlers.cleanup();
         logToFile("Latency service cleaned up", "INFO");
       } catch (error) {
-        logToFile(`Failed to clean up latency service: ${error.message}`, "ERROR");
+        logToFile(
+          `Failed to clean up latency service: ${error.message}`,
+          "ERROR",
+        );
       }
     }
   }
@@ -438,7 +472,10 @@ class IPCSetup {
         await this.localTerminalHandlers.cleanup();
         logToFile("Local terminal handlers cleaned up", "INFO");
       } catch (error) {
-        logToFile(`Failed to clean up local terminal handlers: ${error.message}`, "ERROR");
+        logToFile(
+          `Failed to clean up local terminal handlers: ${error.message}`,
+          "ERROR",
+        );
       }
     }
   }

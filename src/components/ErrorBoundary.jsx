@@ -360,8 +360,7 @@ const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
           disabled={actionBusy}
           onClick={() =>
             runDiagnosticAction(
-              () =>
-                window.terminalAPI?.copyDiagnosticPackage?.(errorContext),
+              () => window.terminalAPI?.copyDiagnosticPackage?.(errorContext),
               t("errorBoundary.diagnosticsCopied"),
             )
           }
@@ -487,12 +486,7 @@ const GlobalErrorFallback = ({ error, onRestart, errorLogger }) => {
 /**
  * 错误回退UI组件
  */
-const ErrorFallback = ({
-  error,
-  onRetry,
-  retryCount,
-  componentName,
-}) => {
+const ErrorFallback = ({ error, onRetry, retryCount, componentName }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const displayComponentName = componentName || t("errorBoundary.component");

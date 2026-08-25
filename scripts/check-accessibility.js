@@ -51,8 +51,7 @@ const getJsxName = (name) => {
 const getAttribute = (openingElement, name) =>
   openingElement?.attributes?.find(
     (attribute) =>
-      attribute.type === "JSXAttribute" &&
-      getJsxName(attribute.name) === name,
+      attribute.type === "JSXAttribute" && getJsxName(attribute.name) === name,
   );
 
 const unwrapExpression = (value) => {
@@ -218,7 +217,9 @@ const main = () => {
         const line = pathRef.node.loc?.start.line || 1;
 
         if (name === "IconButton" || name === "Fab") {
-          if (!isTranslatedAttribute(getAttribute(pathRef.node, "aria-label"))) {
+          if (
+            !isTranslatedAttribute(getAttribute(pathRef.node, "aria-label"))
+          ) {
             issues.push(
               `${relativePath}:${line} ${name} requires a translated aria-label`,
             );

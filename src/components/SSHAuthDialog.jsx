@@ -238,24 +238,16 @@ const SSHAuthDialog = ({
             sx={{ mb: 1.5 }}
           >
             {fingerprintChanged
-              ? t(
-                  "sshAuth.fingerprintWarning",
-                )
+              ? t("sshAuth.fingerprintWarning")
               : showFirstConnectionNotice
-                ? t(
-                    "sshAuth.firstFingerprintNotice",
-                  )
-                : t(
-                    "sshAuth.fingerprintConfirmNotice",
-                  )}
+                ? t("sshAuth.firstFingerprintNotice")
+                : t("sshAuth.fingerprintConfirmNotice")}
           </Alert>
         )}
 
         {!showFingerprintConfirmNotice && fingerprintChanged && (
           <Typography variant="body2" color="warning.main" sx={{ mb: 1 }}>
-            {t(
-              "sshAuth.fingerprintWarning",
-            )}
+            {t("sshAuth.fingerprintWarning")}
           </Typography>
         )}
 
@@ -385,12 +377,8 @@ const SSHAuthDialog = ({
           </FormControl>
           <Typography variant="caption" color="text.secondary">
             {hostTrustMode === "session"
-              ? t(
-                  "sshAuth.trustSessionHint",
-                )
-              : t(
-                  "sshAuth.trustPermanentHint",
-                )}
+              ? t("sshAuth.trustSessionHint")
+              : t("sshAuth.trustPermanentHint")}
           </Typography>
         </Box>
       )}

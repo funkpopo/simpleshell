@@ -457,7 +457,7 @@ function testDragAndDropUsesNativeValidatedLocalPaths() {
 
   assertContains(
     preloadSource,
-    /checkDroppedUploadConflicts:\s*\(tabId,\s*targetFolder,\s*uploadData\)\s*=>\s*ipcRenderer\.invoke\(IPC_REQUEST_CHANNELS\.FILE_CHECK_DROPPED_UPLOAD_CONFLICTS/,
+    /checkDroppedUploadConflicts:\s*\(tabId,\s*targetFolder,\s*uploadData\)\s*=>\s*ipcRenderer\.invoke\(\s*IPC_REQUEST_CHANNELS\.FILE_CHECK_DROPPED_UPLOAD_CONFLICTS/,
     "Preload must expose remote overwrite preflight through IPC.",
   );
 
@@ -795,7 +795,7 @@ function testNativeSftpExpectedFailureLogging() {
 
   assertContains(
     nativeSftpClientSource,
-    /normalizeLogLevel\(options\.expectedFailureLevel,\s*"DEBUG"\)/,
+    /normalizeLogLevel\(\s*options\.expectedFailureLevel,\s*"DEBUG"\s*,?\s*\)/,
     "Native SFTP expected failures must default to DEBUG logging.",
   );
 

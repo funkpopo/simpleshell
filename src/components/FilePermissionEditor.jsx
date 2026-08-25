@@ -124,9 +124,12 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
 
     const octalStr = String(octalValue).padStart(3, "0");
     return {
-      owner: descriptions[octalStr[0]] || t("filePermission.permissions.invalid"),
-      group: descriptions[octalStr[1]] || t("filePermission.permissions.invalid"),
-      other: descriptions[octalStr[2]] || t("filePermission.permissions.invalid"),
+      owner:
+        descriptions[octalStr[0]] || t("filePermission.permissions.invalid"),
+      group:
+        descriptions[octalStr[1]] || t("filePermission.permissions.invalid"),
+      other:
+        descriptions[octalStr[2]] || t("filePermission.permissions.invalid"),
     };
   }, [octalValue, t]);
 
@@ -295,8 +298,8 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
 
         {octalValue.length === 3 && (
           <Alert severity="info" sx={{ mt: 2 }}>
-            {t("filePermission.current")}: {octalValue} ({description.owner} / {description.group} /{" "}
-            {description.other})
+            {t("filePermission.current")}: {octalValue} ({description.owner} /{" "}
+            {description.group} / {description.other})
           </Alert>
         )}
       </Box>

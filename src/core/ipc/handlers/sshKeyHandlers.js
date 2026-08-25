@@ -67,11 +67,7 @@ class SshKeyHandlers {
       };
     } else if (type === "ecdsa") {
       const namedCurve =
-        bits === 256
-          ? "prime256v1"
-          : bits === 384
-            ? "secp384r1"
-            : "secp521r1";
+        bits === 256 ? "prime256v1" : bits === 384 ? "secp384r1" : "secp521r1";
       keyGenOptions = {
         namedCurve: namedCurve,
         publicKeyEncoding: {

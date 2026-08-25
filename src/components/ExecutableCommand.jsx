@@ -234,8 +234,12 @@ const ExecutableCommand = memo(
               />
               <Box sx={{ display: "flex", gap: 0.5 }}>
                 <Tooltip title={copied ? t("ai.copied") : t("ai.copyCommand")}>
-                  <IconButton size="small" onClick={handleCopy} sx={{ p: 0.5 }}
-                    aria-label={copied ? t("ai.copied") : t("ai.copyCommand")}>
+                  <IconButton
+                    size="small"
+                    onClick={handleCopy}
+                    sx={{ p: 0.5 }}
+                    aria-label={copied ? t("ai.copied") : t("ai.copyCommand")}
+                  >
                     <ContentCopyIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -256,8 +260,9 @@ const ExecutableCommand = memo(
                           color: "action.disabled",
                         },
                       }}
-                    
-                      aria-label={t("ai.executeCommand")}>
+
+                      aria-label={t("ai.executeCommand")}
+                    >
                       <PlayArrowIcon fontSize="small" />
                     </IconButton>
                   </span>

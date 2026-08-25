@@ -493,9 +493,7 @@ class TerminalHandlers {
   async selectKeyFile() {
     const result = await dialog.showOpenDialog({
       properties: ["openFile"],
-      filters: [
-        { name: "All Files", extensions: ["*"] },
-      ],
+      filters: [{ name: "All Files", extensions: ["*"] }],
     });
 
     if (!result.canceled && result.filePaths.length > 0) {
@@ -594,10 +592,7 @@ class TerminalHandlers {
           );
           this._removeSSHProcessTabReference(processObj, processId);
         }
-        if (
-          processObj.client &&
-          typeof processObj.client.end === "function"
-        ) {
+        if (processObj.client && typeof processObj.client.end === "function") {
           processObj.client.end();
         }
         if (

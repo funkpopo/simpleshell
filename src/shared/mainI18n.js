@@ -16,9 +16,7 @@ function loadLocaleResources() {
     return resourcesByLanguage;
   }
 
-  // eslint-disable-next-line global-require
   const zhCN = require("../i18n/locales/zh-CN.json");
-  // eslint-disable-next-line global-require
   const enUS = require("../i18n/locales/en-US.json");
 
   resourcesByLanguage = {
@@ -85,8 +83,7 @@ function interpolate(template, params = {}) {
  * @returns {string}
  */
 function t(key, options = {}) {
-  const params =
-    options && typeof options === "object" ? { ...options } : {};
+  const params = options && typeof options === "object" ? { ...options } : {};
   const language = normalizeLanguage(params.lng || params.language);
   delete params.lng;
   delete params.language;

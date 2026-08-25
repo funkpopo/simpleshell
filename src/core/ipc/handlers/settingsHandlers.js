@@ -60,7 +60,10 @@ class SettingsHandlers {
         !win.webContents.isDestroyed?.()
       ) {
         try {
-          win.webContents.send(IPC_EVENT_CHANNELS.COMMAND_HISTORY_CHANGED, payload);
+          win.webContents.send(
+            IPC_EVENT_CHANNELS.COMMAND_HISTORY_CHANGED,
+            payload,
+          );
         } catch (error) {
           logToFile(
             `Error broadcasting command history change: ${error.message}`,
@@ -427,8 +430,7 @@ class SettingsHandlers {
     }
 
     if (sections.includes("cache")) {
-      runtime.cacheCleared =
-        await this.clearRuntimeFileResource("file-cache");
+      runtime.cacheCleared = await this.clearRuntimeFileResource("file-cache");
     }
 
     if (sections.includes("snapshots")) {
@@ -484,10 +486,7 @@ class SettingsHandlers {
   }
 
   async getCommandSuggestions(event, input, maxResults = 10) {
-    const suggestions = commandHistoryService.getSuggestions(
-      input,
-      maxResults,
-    );
+    const suggestions = commandHistoryService.getSuggestions(input, maxResults);
     return { success: true, suggestions };
   }
 

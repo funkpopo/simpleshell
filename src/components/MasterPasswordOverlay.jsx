@@ -140,8 +140,7 @@ const MasterPasswordOverlay = React.memo(
                 right: 10,
                 zIndex: 2,
                 color: "text.secondary",
-                bgcolor: (theme) =>
-                  alpha(theme.palette.background.paper, 0.45),
+                bgcolor: (theme) => alpha(theme.palette.background.paper, 0.45),
                 "&:hover": {
                   color: "text.primary",
                   bgcolor: (theme) => alpha(theme.palette.action.hover, 0.75),

@@ -4,14 +4,12 @@ const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
 const SRC_DIR = path.join(ROOT, "src");
-const {
-  IPC_CHANNEL_DEFINITIONS,
-  getChannelDefinition,
-} = require(path.join(ROOT, "src/core/ipc/schema/channels"));
-const { validateSchema } = require(path.join(
-  ROOT,
-  "src/core/ipc/schema/validator",
-));
+const { IPC_CHANNEL_DEFINITIONS, getChannelDefinition } = require(
+  path.join(ROOT, "src/core/ipc/schema/channels"),
+);
+const { validateSchema } = require(
+  path.join(ROOT, "src/core/ipc/schema/validator"),
+);
 
 const IPC_STRING_PATTERNS = [
   {

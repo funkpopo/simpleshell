@@ -120,18 +120,20 @@ export function SidebarTitleBar({
   return (
     <Box sx={{ ...sidebarTitleBarSx(theme), ...sx }}>
       <Box sx={{ minWidth: 0, flex: 1, pr: 1 }}>
-        <Typography
-          variant="subtitle1"
-          fontWeight="medium"
-          noWrap
-          sx={titleSx}
-        >
+        <Typography variant="subtitle1" fontWeight="medium" noWrap sx={titleSx}>
           {title}
         </Typography>
         {contextLine}
       </Box>
       {actions ? (
-        <Box sx={{ display: "flex", alignItems: "center", flexShrink: 0, ...actionsSx }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            flexShrink: 0,
+            ...actionsSx,
+          }}
+        >
           {actions}
           {closeButton}
         </Box>
@@ -182,11 +184,7 @@ function SidebarPanel({
 }) {
   const theme = useTheme();
   const resolvedElevation =
-    elevation !== undefined
-      ? elevation
-      : theme.palette.mode === "dark"
-        ? 1
-        : 0;
+    elevation !== undefined ? elevation : theme.palette.mode === "dark" ? 1 : 0;
 
   // 滑入/滑出期间开启 willChange，结束后清除
   const [animating, setAnimating] = useState(false);

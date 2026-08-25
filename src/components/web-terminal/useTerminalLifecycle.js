@@ -11,9 +11,7 @@ import {
 import { TerminalPerformanceMonitor } from "../../utils/TerminalPerformanceMonitor.js";
 import { ScrollbackUsageTracker } from "../../utils/ScrollbackUsageTracker.js";
 import { RendererTerminalIOMailbox } from "../../modules/terminal/io/RendererTerminalIOMailbox.js";
-import {
-  shouldIgnoreCommandSuggestionKeyEvent,
-} from "../../modules/terminal/commandSuggestionState.js";
+import { shouldIgnoreCommandSuggestionKeyEvent } from "../../modules/terminal/commandSuggestionState.js";
 import {
   isSystemShortcutRecoveryKey,
   shouldArmSystemShortcutRecovery,
@@ -907,8 +905,7 @@ export function useTerminalLifecycle({
               errorObject?.message ||
               error;
             const rawMessage =
-              typeof errorObject?.error === "string" &&
-              errorObject.error.trim()
+              typeof errorObject?.error === "string" && errorObject.error.trim()
                 ? errorObject.error
                 : typeof errorObject?.message === "string" &&
                     errorObject.message.trim()
@@ -947,9 +944,12 @@ export function useTerminalLifecycle({
                 ? connectionFailure.suggestion.trim()
                 : "";
             return suggestion
-              ? `${baseMessage}\r\n${translate("webTerminal.runtime.connectionAdvice", {
-                  advice: suggestion,
-                })}`
+              ? `${baseMessage}\r\n${translate(
+                  "webTerminal.runtime.connectionAdvice",
+                  {
+                    advice: suggestion,
+                  },
+                )}`
               : baseMessage;
           };
 
@@ -1435,10 +1435,8 @@ export function useTerminalLifecycle({
           "mousemove",
           (e) => handleMouseMoveRef.current(e),
         );
-        lifecycleManager.addEventListener(
-          terminalRef.current,
-          "mouseup",
-          (e) => handleMouseUpRef.current(e),
+        lifecycleManager.addEventListener(terminalRef.current, "mouseup", (e) =>
+          handleMouseUpRef.current(e),
         );
       }
 

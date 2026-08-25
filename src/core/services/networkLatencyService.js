@@ -3,7 +3,8 @@ const { performance } = require("node:perf_hooks");
 const { logToFile } = require("../utils/logger");
 const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
 const configService = require("../../services/configService");
-const latencyText = (key, params = {}) => translateLocale(key, { lng: getUiLanguage(configService), ...params });
+const latencyText = (key, params = {}) =>
+  translateLocale(key, { lng: getUiLanguage(configService), ...params });
 const net = require("node:net");
 const proxyManager = require("../proxy/proxy-manager");
 const {
@@ -122,12 +123,18 @@ class NetworkLatencyService extends EventEmitter {
     proxyConfig = null,
   ) {
     if (!this.isRunning) {
-      logToFile(`Service not started; cannot register connection: ${tabId}`, "WARN");
+      logToFile(
+        `Service not started; cannot register connection: ${tabId}`,
+        "WARN",
+      );
       return;
     }
 
     if (this.latencyData.has(tabId)) {
-      logToFile(`Connection ${tabId} already exists; unregistering old one first`, "DEBUG");
+      logToFile(
+        `Connection ${tabId} already exists; unregistering old one first`,
+        "DEBUG",
+      );
       this.unregisterConnection(tabId);
     }
 
@@ -155,7 +162,10 @@ class NetworkLatencyService extends EventEmitter {
 
     void this._runDueChecks();
 
-    logToFile(`Registered SSH latency probe: ${tabId} -> ${host}:${port}`, "INFO");
+    logToFile(
+      `Registered SSH latency probe: ${tabId} -> ${host}:${port}`,
+      "INFO",
+    );
   }
 
   /**
@@ -201,11 +211,15 @@ class NetworkLatencyService extends EventEmitter {
 
     const data = this.latencyData.get(tabId);
     if (!data) {
-      throw new Error(latencyText("mainProcess.latency.connectionNotRegistered", { tabId }));
+      throw new Error(
+        latencyText("mainProcess.latency.connectionNotRegistered", { tabId }),
+      );
     }
 
     if (!data.sshConnection) {
-      throw new Error(latencyText("mainProcess.latency.sshInstanceMissing", { tabId }));
+      throw new Error(
+        latencyText("mainProcess.latency.sshInstanceMissing", { tabId }),
+      );
     }
 
     // 立即执行延迟检测，使用存储的SSH连接实例
@@ -359,7 +373,10 @@ class NetworkLatencyService extends EventEmitter {
           offline: false,
         });
 
-        logToFile(`SSH latency probe failed for ${tabId}: ${errorMessage}`, "WARN");
+        logToFile(
+          `SSH latency probe failed for ${tabId}: ${errorMessage}`,
+          "WARN",
+        );
 
         this.emit("latency:error", {
           tabId,
@@ -501,7 +518,9 @@ class NetworkLatencyService extends EventEmitter {
   _measureLatencyViaSshExec(sshConnection) {
     return new Promise((resolve, reject) => {
       if (!sshConnection || typeof sshConnection.exec !== "function") {
-        reject(new Error(latencyText("mainProcess.latency.sshInstanceUnavailable")));
+        reject(
+          new Error(latencyText("mainProcess.latency.sshInstanceUnavailable")),
+        );
         return;
       }
 

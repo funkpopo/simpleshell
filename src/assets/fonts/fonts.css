@@ -50,8 +50,7 @@
 .font-fira-code {
   font-family:
     "Fira Code", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK",
-    "WenQuanYi Micro Hei Mono", "Consolas", "Monaco", "Courier New",
-    monospace;
+    "WenQuanYi Micro Hei Mono", "Consolas", "Monaco", "Courier New", monospace;
   font-variant-ligatures: common-ligatures;
   font-feature-settings:
     "liga" 1,
@@ -61,8 +60,7 @@
 .font-space-mono {
   font-family:
     "Space Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK",
-    "WenQuanYi Micro Hei Mono", "Consolas", "Monaco", "Courier New",
-    monospace;
+    "WenQuanYi Micro Hei Mono", "Consolas", "Monaco", "Courier New", monospace;
 }
 
 .font-consolas {

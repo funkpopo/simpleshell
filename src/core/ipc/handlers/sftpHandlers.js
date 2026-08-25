@@ -112,12 +112,7 @@ class SftpHandlers {
 
   async createFileSnapshot(event, tabId, filePath, content, options = {}) {
     void event;
-    return fileSnapshotStore.createSnapshot(
-      tabId,
-      filePath,
-      content,
-      options,
-    );
+    return fileSnapshotStore.createSnapshot(tabId, filePath, content, options);
   }
 
   async getFileSnapshot(event, tabId, filePath, snapshotId) {
@@ -152,9 +147,7 @@ class SftpHandlers {
     );
 
     if (!saveResult?.success) {
-      throw new Error(
-        saveResult?.error || "Failed to save restored snapshot",
-      );
+      throw new Error(saveResult?.error || "Failed to save restored snapshot");
     }
 
     const snapshots = await fileSnapshotStore.listSnapshots(tabId, filePath);

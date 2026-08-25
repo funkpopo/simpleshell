@@ -27,15 +27,11 @@ const {
   buildTransferDisplayName: buildSharedTransferDisplayName,
   getTopLevelTransferItemName,
 } = require("../../shared/transferNameUtils");
-const {
-  t: translateLocale,
-  getUiLanguage,
-} = require("../../shared/mainI18n");
+const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
 const configService = require("../../services/configService");
 
 const transferText = (key, params = {}) =>
   translateLocale(key, { lng: getUiLanguage(configService), ...params });
-
 
 const DIRECTORY_TYPE_MASK = 0o170000;
 const DIRECTORY_MODE = 0o040000;
@@ -1122,7 +1118,11 @@ class FilemanagementService {
   async _ensureRemoteDirectories(
     tabId,
     remoteDirs,
-    { transferKey = null, displayName = transferText("mainProcess.transfer.preparingUpload"), progressExtra = {} } = {},
+    {
+      transferKey = null,
+      displayName = transferText("mainProcess.transfer.preparingUpload"),
+      progressExtra = {},
+    } = {},
   ) {
     const uniqueDirs = Array.from(
       new Set(
@@ -1157,7 +1157,8 @@ class FilemanagementService {
       if (transferKey) {
         const transfer = this._advanceTransferPreparation(transferKey);
         this._emitTransferProgress(transferKey, {
-          fileName: displayName || transferText("mainProcess.transfer.preparingUpload"),
+          fileName:
+            displayName || transferText("mainProcess.transfer.preparingUpload"),
           currentFile: transferText("mainProcess.transfer.creatingDirectory", {
             index: index + 1,
             total: uniqueDirs.length,
@@ -1176,7 +1177,8 @@ class FilemanagementService {
       const transfer = this._getTransfer(transferKey);
       this._emitTransferProgress(transferKey, {
         force: true,
-        fileName: displayName || transferText("mainProcess.transfer.preparingUpload"),
+        fileName:
+          displayName || transferText("mainProcess.transfer.preparingUpload"),
         currentFile: transferText("mainProcess.transfer.directoryReady"),
         extra: {
           preparationCompleted: transfer?.preparationCompleted || 0,
@@ -1492,7 +1494,11 @@ class FilemanagementService {
       );
 
       if (canceled || !filePath) {
-        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
+        return {
+          success: false,
+          cancelled: true,
+          error: transferText("mainProcess.transfer.downloadCancelled"),
+        };
       }
 
       transferKey = this._generateTransferKey(tabId, "download");
@@ -1697,7 +1703,11 @@ class FilemanagementService {
         this._finalizeTransfer(transferKey);
       }
       if (isCancelledError(error)) {
-        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
+        return {
+          success: false,
+          cancelled: true,
+          error: transferText("mainProcess.transfer.downloadCancelled"),
+        };
       }
       this._log(
         `downloadFile failed: ${normalizeErrorMessage(error)}`,
@@ -1712,7 +1722,10 @@ class FilemanagementService {
     const chunkTempCleanup = new Set();
     try {
       if (!Array.isArray(files) || files.length === 0) {
-        return { success: false, error: transferText("mainProcess.transfer.noFilesSelected") };
+        return {
+          success: false,
+          error: transferText("mainProcess.transfer.noFilesSelected"),
+        };
       }
 
       const sender = event?.sender;
@@ -1722,12 +1735,18 @@ class FilemanagementService {
         {
           title: transferText("mainProcess.transfer.selectSaveDirectory"),
           defaultPath: this._resolveDownloadBasePath(tabId),
-          buttonLabel: transferText("mainProcess.transfer.selectDirectoryButton"),
+          buttonLabel: transferText(
+            "mainProcess.transfer.selectDirectoryButton",
+          ),
           properties: ["openDirectory", "createDirectory"],
         },
       );
       if (canceled || !filePaths || filePaths.length === 0) {
-        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
+        return {
+          success: false,
+          cancelled: true,
+          error: transferText("mainProcess.transfer.downloadCancelled"),
+        };
       }
 
       const targetDir = filePaths[0];
@@ -1746,7 +1765,10 @@ class FilemanagementService {
               ),
           ),
           transferText("mainProcess.transfer.fileLabel"),
-        ) || transferText("mainProcess.transfer.batchDownloadTitle", { count: totalFiles });
+        ) ||
+        transferText("mainProcess.transfer.batchDownloadTitle", {
+          count: totalFiles,
+        });
       const sshConfig = await this._resolveTransferSshConfig(tabId);
 
       transferKey = this._generateTransferKey(tabId, "batch-download");
@@ -2131,9 +2153,12 @@ class FilemanagementService {
                 completed,
                 total: totalFiles,
               })
-            : transferText("mainProcess.transfer.batchDownloadCompleteWithFailures", {
-                failed,
-              }),
+            : transferText(
+                "mainProcess.transfer.batchDownloadCompleteWithFailures",
+                {
+                  failed,
+                },
+              ),
       });
       this._finalizeTransfer(transferKey);
 
@@ -2177,7 +2202,11 @@ class FilemanagementService {
         this._finalizeTransfer(transferKey);
       }
       if (isCancelledError(error)) {
-        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
+        return {
+          success: false,
+          cancelled: true,
+          error: transferText("mainProcess.transfer.downloadCancelled"),
+        };
       }
       this._log(
         `downloadFiles failed: ${normalizeErrorMessage(error)}`,
@@ -2201,13 +2230,19 @@ class FilemanagementService {
         {
           title: transferText("mainProcess.transfer.selectSaveDirectory"),
           defaultPath: this._resolveDownloadBasePath(tabId),
-          buttonLabel: transferText("mainProcess.transfer.selectDirectoryButton"),
+          buttonLabel: transferText(
+            "mainProcess.transfer.selectDirectoryButton",
+          ),
           properties: ["openDirectory", "createDirectory"],
         },
       );
 
       if (canceled || !filePaths || filePaths.length === 0) {
-        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
+        return {
+          success: false,
+          cancelled: true,
+          error: transferText("mainProcess.transfer.downloadCancelled"),
+        };
       }
 
       const targetRootDir = filePaths[0];
@@ -2628,10 +2663,13 @@ class FilemanagementService {
           completed,
           failed,
           errors,
-          warning: transferText("mainProcess.transfer.folderPartialDownloadFailed", {
-            completed,
-            total: totalFiles,
-          }),
+          warning: transferText(
+            "mainProcess.transfer.folderPartialDownloadFailed",
+            {
+              completed,
+              total: totalFiles,
+            },
+          ),
           downloadPath: localFolderPath,
         };
       }
@@ -2659,7 +2697,11 @@ class FilemanagementService {
         this._finalizeTransfer(transferKey);
       }
       if (isCancelledError(error)) {
-        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.downloadCancelled") };
+        return {
+          success: false,
+          cancelled: true,
+          error: transferText("mainProcess.transfer.downloadCancelled"),
+        };
       }
       this._log(
         `downloadFolder failed: ${normalizeErrorMessage(error)}`,
@@ -2686,7 +2728,10 @@ class FilemanagementService {
       : [];
 
     if (uploadEntries.length === 0 && requestedRemoteDirectories.length === 0) {
-      return { success: false, error: transferText("mainProcess.transfer.noValidUploadFiles") };
+      return {
+        success: false,
+        error: transferText("mainProcess.transfer.noValidUploadFiles"),
+      };
     }
 
     const sender = event?.sender;
@@ -2747,7 +2792,8 @@ class FilemanagementService {
 
     this._emitTransferProgress(transferKey, {
       force: true,
-      fileName: displayName || transferText("mainProcess.transfer.preparingUpload"),
+      fileName:
+        displayName || transferText("mainProcess.transfer.preparingUpload"),
       currentFile: "",
       currentFileIndex: 0,
       extra: includeOperationComplete
@@ -3215,7 +3261,11 @@ class FilemanagementService {
       );
 
       if (canceled || !filePaths || filePaths.length === 0) {
-        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.uploadCancelled") };
+        return {
+          success: false,
+          cancelled: true,
+          error: transferText("mainProcess.transfer.uploadCancelled"),
+        };
       }
 
       const normalizedTarget = this._normalizeRemotePath(targetFolder);
@@ -3248,11 +3298,17 @@ class FilemanagementService {
       });
     } catch (error) {
       if (isCancelledError(error)) {
-        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.uploadCancelled") };
+        return {
+          success: false,
+          cancelled: true,
+          error: transferText("mainProcess.transfer.uploadCancelled"),
+        };
       }
       return {
         success: false,
-        error: transferText("mainProcess.transfer.uploadFileFailed", { error: normalizeErrorMessage(error) }),
+        error: transferText("mainProcess.transfer.uploadFileFailed", {
+          error: normalizeErrorMessage(error),
+        }),
       };
     }
   }
@@ -3279,19 +3335,29 @@ class FilemanagementService {
           fileData.relativePath,
         );
         if (!relativePath) {
-          throw new Error(transferText("mainProcess.file.dropFileMissingRelativePath"));
+          throw new Error(
+            transferText("mainProcess.file.dropFileMissingRelativePath"),
+          );
         }
 
         if (!fileData.localPath) {
           // 拖放文件缺少可验证的本地路径
-          throw new Error(transferText("mainProcess.file.dropFileMissingLocalPath", { path: relativePath }));
+          throw new Error(
+            transferText("mainProcess.file.dropFileMissingLocalPath", {
+              path: relativePath,
+            }),
+          );
         }
 
         const resolvedLocalPath = path.resolve(fileData.localPath);
         const stats = await fsp.stat(resolvedLocalPath);
         await fsp.access(resolvedLocalPath, fs.constants.R_OK);
         if (!stats.isFile()) {
-          throw new Error(transferText("mainProcess.file.dropNotUploadableFile", { path: relativePath }));
+          throw new Error(
+            transferText("mainProcess.file.dropNotUploadableFile", {
+              path: relativePath,
+            }),
+          );
         }
 
         const remotePath = this._joinRemotePath(normalizedTarget, relativePath);
@@ -3314,19 +3380,29 @@ class FilemanagementService {
           folderData.relativePath,
         );
         if (!relativePath) {
-          throw new Error(transferText("mainProcess.file.dropFolderMissingRelativePath"));
+          throw new Error(
+            transferText("mainProcess.file.dropFolderMissingRelativePath"),
+          );
         }
 
         if (!folderData.localPath) {
           // 拖放文件夹缺少可验证的本地路径
-          throw new Error(transferText("mainProcess.file.dropFolderMissingLocalPath", { path: relativePath }));
+          throw new Error(
+            transferText("mainProcess.file.dropFolderMissingLocalPath", {
+              path: relativePath,
+            }),
+          );
         }
 
         const resolvedLocalPath = path.resolve(folderData.localPath);
         const stats = await fsp.stat(resolvedLocalPath);
         await fsp.access(resolvedLocalPath, fs.constants.R_OK);
         if (!stats.isDirectory()) {
-          throw new Error(transferText("mainProcess.file.dropNotUploadableFolder", { path: relativePath }));
+          throw new Error(
+            transferText("mainProcess.file.dropNotUploadableFolder", {
+              path: relativePath,
+            }),
+          );
         }
         await fsp.readdir(resolvedLocalPath);
 
@@ -3369,7 +3445,9 @@ class FilemanagementService {
       }
       return {
         success: false,
-        error: transferText("mainProcess.transfer.uploadFileFailed", { error: normalizeErrorMessage(error) }),
+        error: transferText("mainProcess.transfer.uploadFileFailed", {
+          error: normalizeErrorMessage(error),
+        }),
       };
     }
   }
@@ -3389,7 +3467,11 @@ class FilemanagementService {
       );
 
       if (canceled || !filePaths || filePaths.length === 0) {
-        return { success: false, cancelled: true, error: transferText("mainProcess.transfer.uploadCancelled") };
+        return {
+          success: false,
+          cancelled: true,
+          error: transferText("mainProcess.transfer.uploadCancelled"),
+        };
       }
 
       const localFolderPath = filePaths[0];
@@ -3484,7 +3566,9 @@ class FilemanagementService {
       }
       return {
         success: false,
-        error: transferText("mainProcess.transfer.uploadFolderFailed", { error: normalizeErrorMessage(error) }),
+        error: transferText("mainProcess.transfer.uploadFolderFailed", {
+          error: normalizeErrorMessage(error),
+        }),
       };
     }
   }

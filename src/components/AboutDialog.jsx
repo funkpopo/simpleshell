@@ -288,8 +288,7 @@ const normalizeDownloadedInstallerInfo = (source, options = {}) => {
   return {
     available: true,
     installerVersion,
-    currentVersion:
-      source.currentVersion || options.currentVersion || null,
+    currentVersion: source.currentVersion || options.currentVersion || null,
     fileName,
     size: source.size || 0,
     sha256: source.sha256 || null,
@@ -423,7 +422,6 @@ const AboutDialog = memo(function AboutDialog({
       cancelled = true;
     };
     // 仅在打开对话框时探测；appVersion 用于展示当前版本号
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- open-driven probe
   }, [open, appVersion]);
 
   // 监听下载进度（仅更新进度条；状态切换由 downloadUpdate 完成校验后负责）

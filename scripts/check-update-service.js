@@ -206,9 +206,7 @@ function withUpdateService({ platform = "win32", routes = new Map() } = {}) {
       throw new Error("spawn should not be called by update checks");
     },
     execFile() {
-      throw new Error(
-        "execFile should not be called by update checks",
-      );
+      throw new Error("execFile should not be called by update checks");
     },
     dialog: { async showMessageBox() {} },
     shell: { showItemInFolder() {} },

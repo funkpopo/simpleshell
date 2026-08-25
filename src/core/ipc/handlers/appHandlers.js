@@ -141,11 +141,8 @@ class AppHandlers {
       global.__hardwareAccelerationEnabled !== false;
     const info = await app.getGPUInfo("complete");
     const aux = info && info.auxAttributes ? info.auxAttributes : {};
-    const devices = Array.isArray(info && info.gpuDevice)
-      ? info.gpuDevice
-      : [];
-    const activeDevice =
-      devices.find((d) => d && d.active) || devices[0] || {};
+    const devices = Array.isArray(info && info.gpuDevice) ? info.gpuDevice : [];
+    const activeDevice = devices.find((d) => d && d.active) || devices[0] || {};
     const vendorId = toHexId(activeDevice.vendorId);
     const deviceId = toHexId(activeDevice.deviceId);
 
@@ -287,8 +284,7 @@ class AppHandlers {
     const { normalizedUrl, protocol } = this.validateExternalUrl(request.url);
 
     const isDefaultProtocol = DEFAULT_EXTERNAL_PROTOCOLS.has(protocol);
-    const isConfirmableProtocol =
-      CONFIRMABLE_EXTERNAL_PROTOCOLS.has(protocol);
+    const isConfirmableProtocol = CONFIRMABLE_EXTERNAL_PROTOCOLS.has(protocol);
 
     if (!isDefaultProtocol) {
       if (!isConfirmableProtocol || !request.allowRestrictedProtocols) {

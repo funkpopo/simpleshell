@@ -78,7 +78,10 @@ function migrateLegacyConfigIfNeeded(app) {
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.copyFileSync(sourcePath, targetPath);
 
-    const legacyBackupDir = path.join(path.dirname(sourcePath), "config-backups");
+    const legacyBackupDir = path.join(
+      path.dirname(sourcePath),
+      "config-backups",
+    );
     const targetBackupDir = getConfigBackupDirectory(app);
     if (fs.existsSync(legacyBackupDir)) {
       fs.mkdirSync(targetBackupDir, { recursive: true });

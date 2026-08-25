@@ -615,7 +615,10 @@ class NativeSftpSession {
   _armIdleTimer() {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     if (this.pending.size > 0 || this.closeRequested) return;
-    this.idleTimer = setTimeout(() => this.close(), NATIVE_SFTP_SESSION_IDLE_TIMEOUT_MS);
+    this.idleTimer = setTimeout(
+      () => this.close(),
+      NATIVE_SFTP_SESSION_IDLE_TIMEOUT_MS,
+    );
     this.idleTimer.unref?.();
   }
 
@@ -670,16 +673,20 @@ class NativeSftpSession {
             request,
           }
         : request;
-      this.child.stdin.write(`${JSON.stringify(payload)}\n`, "utf8", (error) => {
-        if (!error) return;
-        this.pending.delete(request.requestId);
-        reject(
-          createNativeSidecarError(
-            `Failed to write native SFTP session request: ${normalizeErrorMessage(error)}`,
-            { errorCode: "NATIVE_SFTP_SESSION_WRITE_FAILED", raw: error },
-          ),
-        );
-      });
+      this.child.stdin.write(
+        `${JSON.stringify(payload)}\n`,
+        "utf8",
+        (error) => {
+          if (!error) return;
+          this.pending.delete(request.requestId);
+          reject(
+            createNativeSidecarError(
+              `Failed to write native SFTP session request: ${normalizeErrorMessage(error)}`,
+              { errorCode: "NATIVE_SFTP_SESSION_WRITE_FAILED", raw: error },
+            ),
+          );
+        },
+      );
     });
   }
 
@@ -712,7 +719,10 @@ function invokePersistentNativeRequest(
   options,
 ) {
   const fingerprint = JSON.stringify(nativeConfig);
-  const expectedFailureLevel = normalizeLogLevel(options.expectedFailureLevel, "DEBUG");
+  const expectedFailureLevel = normalizeLogLevel(
+    options.expectedFailureLevel,
+    "DEBUG",
+  );
   const sessionOptions = {
     ...options,
     expectedFailureLevel,
@@ -988,8 +998,7 @@ function watchDirectoryWithConfig(
 
       if (code !== 0) {
         const structured = normalizeNativeErrorPayload(
-          stderrText ||
-            `Native SFTP directory watch exited with code ${code}`,
+          stderrText || `Native SFTP directory watch exited with code ${code}`,
         );
         recordCrashMarker(null, {
           module: "native-sidecar",

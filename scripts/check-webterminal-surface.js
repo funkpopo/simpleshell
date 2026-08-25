@@ -127,11 +127,7 @@ assert.match(
   "useTerminalSearch must track caseSensitive",
 );
 assert.match(searchHook, /regex/, "useTerminalSearch must track regex");
-assert.match(
-  searchHook,
-  /wholeWord/,
-  "useTerminalSearch must track wholeWord",
-);
+assert.match(searchHook, /wholeWord/, "useTerminalSearch must track wholeWord");
 // Closing search must clear the term and decorations so reopen starts fresh.
 assert.match(
   searchHook,
@@ -145,21 +141,13 @@ assert.match(
 );
 
 // Shortcut hints match bindings.
-assert.match(
-  contextMenu,
-  /Ctrl\+;/,
-  "context menu must show Ctrl+; for copy",
-);
+assert.match(contextMenu, /Ctrl\+;/, "context menu must show Ctrl+; for copy");
 assert.match(
   contextMenu,
   /Ctrl\+\//,
   "context menu must show Ctrl+/ for search",
 );
-assert.match(
-  contextMenu,
-  /Ctrl\+L/,
-  "context menu must show Ctrl+L for clear",
-);
+assert.match(contextMenu, /Ctrl\+L/, "context menu must show Ctrl+L for clear");
 assert.match(
   webTerminal,
   /e\.key\.toLowerCase\(\)\s*===\s*["']l["']/,

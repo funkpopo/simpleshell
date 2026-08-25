@@ -49,7 +49,10 @@ function wrapIpcHandler(handler, options = {}) {
     const trace = startTrace(channelName, args, { category });
     try {
       if (channelDefinition?.requestSchema) {
-        const validation = validateSchema(channelDefinition.requestSchema, args);
+        const validation = validateSchema(
+          channelDefinition.requestSchema,
+          args,
+        );
         if (!validation.valid) {
           const message = `Invalid IPC request payload for ${channelName}: ${validation.error}`;
           logToFile(message, "WARN");
@@ -99,7 +102,10 @@ function wrapIpcHandler(handler, options = {}) {
         return normalizedResult;
       }
       if (channelDefinition?.responseSchema) {
-        const validation = validateSchema(channelDefinition.responseSchema, result);
+        const validation = validateSchema(
+          channelDefinition.responseSchema,
+          result,
+        );
         if (!validation.valid) {
           const message = `Invalid IPC response payload for ${channelName}: ${validation.error}`;
           logToFile(message, "ERROR");
@@ -133,7 +139,8 @@ function safeHandle(ipcMain, channel, handler, options = {}) {
   }
 
   if (typeof channel !== "string" || channel.trim() === "") {
-    const errorMsg = "safeHandle: channel must be a declared IPC channel string";
+    const errorMsg =
+      "safeHandle: channel must be a declared IPC channel string";
     logToFile(errorMsg, "ERROR");
     throw new Error(errorMsg);
   }

@@ -605,7 +605,8 @@ const WebTerminal = ({
             currentInput,
             inEditorMode: inEditorModeRef.current,
             isCommandExecuting: isCommandExecutingRef.current,
-          }) && Boolean(cursorPosition)
+          }) &&
+          Boolean(cursorPosition)
         }
         position={cursorPosition}
         onSelectSuggestion={handleSuggestionSelect}

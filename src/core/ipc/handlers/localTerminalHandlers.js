@@ -121,7 +121,8 @@ class LocalTerminalHandlers {
       this.ipcMain,
       IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_CLOSE,
       async (_event, tabIdOrProcessId) => {
-        const closed = await this.terminalManager.closeTerminal(tabIdOrProcessId);
+        const closed =
+          await this.terminalManager.closeTerminal(tabIdOrProcessId);
         return { success: true, data: { closed } };
       },
       { category: "local-terminal" },

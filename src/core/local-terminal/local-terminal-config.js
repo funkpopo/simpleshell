@@ -134,7 +134,8 @@ function normalizeLocalTerminalConfig(localConfig = {}, options = {}) {
       : SUPPORTED_LOCAL_TERMINAL_TYPES.POSIX_SHELL);
   const launchArgs = normalizeArgs(input.launchArgs || input.args);
   const distribution =
-    normalizeString(input.distribution) || parseDistributionFromArgs(launchArgs);
+    normalizeString(input.distribution) ||
+    parseDistributionFromArgs(launchArgs);
 
   const requestedCommand =
     normalizeString(input.command) ||

@@ -186,7 +186,9 @@ const ConnectionItem = memo(
 
             {isGroup && (
               <Tooltip
-                title={item.expanded ? t("common.collapse") : t("common.expand")}
+                title={
+                  item.expanded ? t("common.collapse") : t("common.expand")
+                }
               >
                 <IconButton
                   size="small"

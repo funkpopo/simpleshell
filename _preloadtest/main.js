@@ -1,9 +1,17 @@
 const electron = require("electron");
-console.log("ELECTRON MODULE", typeof electron, electron && electron.constructor && electron.constructor.name, electron && Object.keys(electron));
+console.log(
+  "ELECTRON MODULE",
+  typeof electron,
+  electron && electron.constructor && electron.constructor.name,
+  electron && Object.keys(electron),
+);
 const { app, BrowserWindow } = electron;
 
 app.whenReady().then(() => {
-  const preloadPath = process.argv.find((a) => a.startsWith("--preload="))?.replace("--preload=", "") || null;
+  const preloadPath =
+    process.argv
+      .find((a) => a.startsWith("--preload="))
+      ?.replace("--preload=", "") || null;
   const win = new BrowserWindow({
     show: false,
     webPreferences: {

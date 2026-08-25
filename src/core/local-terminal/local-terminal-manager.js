@@ -143,7 +143,10 @@ class LocalTerminalManager extends EventEmitter {
 
   _getActiveByProcessId(processId) {
     for (const terminalInfo of this.activeTerminals.values()) {
-      if (terminalInfo.processId === processId || terminalInfo.tabId === processId) {
+      if (
+        terminalInfo.processId === processId ||
+        terminalInfo.tabId === processId
+      ) {
         return terminalInfo;
       }
     }
@@ -153,9 +156,14 @@ class LocalTerminalManager extends EventEmitter {
   async startEmbeddedTerminal(localConfig = {}, tabId, options = {}) {
     const normalizedConfig = normalizeLocalTerminalConfig(localConfig);
     const normalizedTabId =
-      tabId || localConfig.tabId || normalizedConfig.tabId || `local-${Date.now()}`;
+      tabId ||
+      localConfig.tabId ||
+      normalizedConfig.tabId ||
+      `local-${Date.now()}`;
 
-    if (!isSupportedLocalTerminalType(normalizedConfig.type, process.platform)) {
+    if (
+      !isSupportedLocalTerminalType(normalizedConfig.type, process.platform)
+    ) {
       const error = new Error(
         `Unsupported local terminal type: ${normalizedConfig.type}`,
       );
@@ -267,7 +275,8 @@ class LocalTerminalManager extends EventEmitter {
 
   async closeTerminal(identifier) {
     const terminalInfo =
-      this.activeTerminals.get(identifier) || this._getActiveByProcessId(identifier);
+      this.activeTerminals.get(identifier) ||
+      this._getActiveByProcessId(identifier);
 
     if (!terminalInfo) {
       return false;

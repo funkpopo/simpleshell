@@ -352,10 +352,7 @@ class FileHandlers {
           const send = (payload) => {
             try {
               if (event && event.sender && !event.sender.isDestroyed()) {
-                event.sender.send(
-                  IPC_EVENT_CHANNELS.FILE_LIST_CHUNK,
-                  payload,
-                );
+                event.sender.send(IPC_EVENT_CHANNELS.FILE_LIST_CHUNK, payload);
               }
             } catch {
               // ignore send errors (window may be gone)
@@ -779,7 +776,9 @@ class FileHandlers {
     for (const fileData of rawFiles) {
       const relativePath = normalizeDroppedRelativePath(fileData?.relativePath);
       if (!relativePath) {
-        throw new Error(fileText("mainProcess.file.dropFileMissingRelativePath"));
+        throw new Error(
+          fileText("mainProcess.file.dropFileMissingRelativePath"),
+        );
       }
 
       candidates.push({

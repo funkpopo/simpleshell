@@ -4,10 +4,9 @@ const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
 
-const ReconnectionManager = require(path.join(
-  ROOT,
-  "src/core/connection/reconnection-manager.js",
-));
+const ReconnectionManager = require(
+  path.join(ROOT, "src/core/connection/reconnection-manager.js"),
+);
 const SSHPool = require(path.join(ROOT, "src/core/connection/ssh-pool.js"));
 
 function createFakeConnection() {
@@ -134,9 +133,7 @@ function run() {
     console.log(`PASS ${name}`);
   });
 
-  console.log(
-    `\n${tests.length} reconnect intentional-close checks passed.`,
-  );
+  console.log(`\n${tests.length} reconnect intentional-close checks passed.`);
 }
 
 run();

@@ -38,12 +38,15 @@ function parseStartupThemeFromArgv(argv = process.argv) {
   const list = Array.isArray(argv) ? argv : [];
   const match = list.find(
     (entry) =>
-      typeof entry === "string" && entry.startsWith(STARTUP_DARK_MODE_ARG_PREFIX),
+      typeof entry === "string" &&
+      entry.startsWith(STARTUP_DARK_MODE_ARG_PREFIX),
   );
 
   let darkMode = true;
   if (match) {
-    const value = match.slice(STARTUP_DARK_MODE_ARG_PREFIX.length).toLowerCase();
+    const value = match
+      .slice(STARTUP_DARK_MODE_ARG_PREFIX.length)
+      .toLowerCase();
     darkMode = value !== "0" && value !== "false";
   }
 

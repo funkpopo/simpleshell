@@ -461,7 +461,9 @@ class SSHPool extends BaseConnectionPool {
     finishResolve,
     finishReject,
   ) {
-    if (this._shouldAutoReconnectOnInitialFailure(error, sshConfig, usingProxy)) {
+    if (
+      this._shouldAutoReconnectOnInitialFailure(error, sshConfig, usingProxy)
+    ) {
       void this._startInitialAutoReconnect(
         connectionKey,
         ssh,
@@ -556,7 +558,9 @@ class SSHPool extends BaseConnectionPool {
     }
 
     if (!connectionInfo.client || !connectionInfo.config) {
-      this._logInfo(`Health check hit but cannot take over reconnect (missing context): ${key}`);
+      this._logInfo(
+        `Health check hit but cannot take over reconnect (missing context): ${key}`,
+      );
       return false;
     }
 
@@ -1034,7 +1038,9 @@ class SSHPool extends BaseConnectionPool {
 
     // 用户/系统主动关闭：直接清理，不触发自动重连
     if (isActiveClose) {
-      this._logInfo(`Intentionally closing connection: ${connectionKey}, reason=${closeReason}`);
+      this._logInfo(
+        `Intentionally closing connection: ${connectionKey}, reason=${closeReason}`,
+      );
       try {
         if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
       } catch {
@@ -1050,7 +1056,9 @@ class SSHPool extends BaseConnectionPool {
       connectionInfo.refCount > 0 ||
       this.isConnectionReferencedByTabs(connectionKey)
     ) {
-      this._logInfo(`Unexpected disconnect detected, attempting reconnect: ${connectionKey}`);
+      this._logInfo(
+        `Unexpected disconnect detected, attempting reconnect: ${connectionKey}`,
+      );
 
       const existingStatus =
         this.reconnectionManager.getSessionStatus(connectionKey);

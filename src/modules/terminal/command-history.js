@@ -175,9 +175,7 @@ class CommandHistoryService {
     const normalizedInput = input.trimStart().toLowerCase();
 
     // 首字符即允许触发历史建议查询
-    if (
-      normalizedInput.trim().length < MIN_COMMAND_SUGGESTION_QUERY_LENGTH
-    ) {
+    if (normalizedInput.trim().length < MIN_COMMAND_SUGGESTION_QUERY_LENGTH) {
       return [];
     }
 
