@@ -8,6 +8,7 @@ export function useTerminalContextMenu({
   isActiveRef,
   markPasteIfAllowed,
   handlePasteText,
+  clearTerminal,
   openSearchBar,
   setShowSuggestions,
   setSuggestions,
@@ -78,11 +79,9 @@ export function useTerminalContextMenu({
   }, [handleClose, selectedText]);
 
   const handleClear = useCallback(() => {
-    if (termRef.current) {
-      termRef.current.clear();
-    }
+    clearTerminal();
     handleClose();
-  }, [handleClose, termRef]);
+  }, [clearTerminal, handleClose]);
 
   const handleSearchFromMenu = useCallback(() => {
     if (!isActiveRef.current) return;

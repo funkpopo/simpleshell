@@ -150,12 +150,30 @@ const WebTerminal = ({
     suggestionUiRef,
   });
 
-  const { broadcastInputToGroup } = useTerminalInputSync({
-    tabId,
-    enqueueInputToProcess,
-    termRef,
-    eventManager,
-  });
+  const { broadcastInputToGroup, broadcastTerminalActionToGroup } =
+    useTerminalInputSync({
+      tabId,
+      enqueueInputToProcess,
+      handlePasteText,
+      termRef,
+      eventManager,
+    });
+
+  const handleGroupPasteText = useCallback(
+    (text, options) => {
+      const result = handlePasteText(text, options);
+      if (result?.ok) {
+        broadcastTerminalActionToGroup("paste", { text });
+      }
+      return result;
+    },
+    [broadcastTerminalActionToGroup, handlePasteText],
+  );
+
+  const clearTerminalGroup = useCallback(() => {
+    termRef.current?.clear();
+    broadcastTerminalActionToGroup("clear");
+  }, [broadcastTerminalActionToGroup, termRef]);
 
   const markTerminalContentUpdated = useCallback(() => {
     contentUpdatedRef.current = true;
@@ -352,7 +370,7 @@ const WebTerminal = ({
     useTerminalClipboard({
       termRef,
       markPasteIfAllowed,
-      handlePasteText,
+      handlePasteText: handleGroupPasteText,
     });
 
   const {
@@ -369,7 +387,8 @@ const WebTerminal = ({
     termRef,
     isActiveRef,
     markPasteIfAllowed,
-    handlePasteText,
+    handlePasteText: handleGroupPasteText,
+    clearTerminal: clearTerminalGroup,
     openSearchBar,
     setShowSuggestions,
     setSuggestions,
@@ -419,7 +438,8 @@ const WebTerminal = ({
     syncPromptTrackingFromTerminal,
     clearInputQueue,
     markPasteIfAllowed,
-    handlePasteText,
+    handlePasteText: handleGroupPasteText,
+    clearTerminal: clearTerminalGroup,
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,

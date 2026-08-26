@@ -97,6 +97,7 @@ export function useTerminalLifecycle({
   clearInputQueue,
   markPasteIfAllowed,
   handlePasteText,
+  clearTerminal,
   handleMouseDown,
   handleMouseMove,
   handleMouseUp,
@@ -403,6 +404,7 @@ export function useTerminalLifecycle({
   const setupDataListenerRef = useRef(setupDataListener);
   const handleContextMenuRef = useRef(handleContextMenu);
   const handlePasteTextRef = useRef(handlePasteText);
+  const clearTerminalRef = useRef(clearTerminal);
   const markPasteIfAllowedRef = useRef(markPasteIfAllowed);
   const handleMouseDownRef = useRef(handleMouseDown);
   const handleMouseMoveRef = useRef(handleMouseMove);
@@ -413,6 +415,7 @@ export function useTerminalLifecycle({
     setupDataListenerRef.current = setupDataListener;
     handleContextMenuRef.current = handleContextMenu;
     handlePasteTextRef.current = handlePasteText;
+    clearTerminalRef.current = clearTerminal;
     markPasteIfAllowedRef.current = markPasteIfAllowed;
     handleMouseDownRef.current = handleMouseDown;
     handleMouseMoveRef.current = handleMouseMove;
@@ -1251,7 +1254,7 @@ export function useTerminalLifecycle({
           if (!isActiveRef.current) return;
           e.preventDefault();
           e.stopPropagation();
-          term.clear();
+          clearTerminalRef.current();
         } else if (e.ctrlKey && e.key === "/") {
           if (!isActiveRef.current) return;
 

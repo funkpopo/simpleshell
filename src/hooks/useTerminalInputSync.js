@@ -5,6 +5,7 @@ import { processCache } from "../modules/terminal/controller/terminalSessionStor
 export const useTerminalInputSync = ({
   tabId,
   enqueueInputToProcess,
+  handlePasteText,
   termRef,
   eventManager,
 }) => {
@@ -30,6 +31,36 @@ export const useTerminalInputSync = ({
           }
         });
       }
+    },
+    [tabId],
+  );
+
+  // Some input paths (native paste, middle-click paste and the context menu)
+  // do not pass through xterm's onData callback. Keep them on a separate event
+  // channel so they can use the receiving terminal's normal paste pipeline.
+  const broadcastTerminalActionToGroup = useCallback(
+    (action, payload = {}, sourceTabId = tabId) => {
+      const group = findGroupByTab(tabId);
+      if (!group?.members || group.members.length <= 1) {
+        return;
+      }
+
+      group.members.forEach((targetTabId) => {
+        if (targetTabId === sourceTabId) {
+          return;
+        }
+
+        window.dispatchEvent(
+          new CustomEvent("syncTerminalAction", {
+            detail: {
+              action,
+              payload,
+              sourceTabId,
+              targetTabId,
+            },
+          }),
+        );
+      });
     },
     [tabId],
   );
@@ -80,6 +111,22 @@ export const useTerminalInputSync = ({
       }
     };
 
+    const handleSyncTerminalAction = (event) => {
+      const { action, payload, targetTabId } = event.detail || {};
+      if (targetTabId !== tabId) {
+        return;
+      }
+
+      if (action === "paste" && processCache[tabId]) {
+        handlePasteText(payload?.text);
+        return;
+      }
+
+      if (action === "clear") {
+        termRef.current?.clear();
+      }
+    };
+
     const removeSyncListener = eventManager.addEventListener(
       window,
       "syncTerminalInput",
@@ -90,14 +137,21 @@ export const useTerminalInputSync = ({
       "externalCommandSending",
       handleExternalCommand,
     );
+    const removeActionListener = eventManager.addEventListener(
+      window,
+      "syncTerminalAction",
+      handleSyncTerminalAction,
+    );
 
     return () => {
       removeSyncListener();
       removeExternalListener();
+      removeActionListener();
     };
-  }, [enqueueInputToProcess, eventManager, tabId, termRef]);
+  }, [enqueueInputToProcess, eventManager, handlePasteText, tabId, termRef]);
 
   return {
     broadcastInputToGroup,
+    broadcastTerminalActionToGroup,
   };
 };
