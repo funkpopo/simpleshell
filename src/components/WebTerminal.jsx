@@ -232,6 +232,7 @@ const WebTerminal = ({
     lastExecutedCommandRef,
     lastExecutedCommandTimeRef,
     sendInputToProcess,
+    broadcastInputToGroup,
   });
 
   useEffect(() => {

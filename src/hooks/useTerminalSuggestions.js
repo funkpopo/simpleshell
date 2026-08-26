@@ -34,6 +34,7 @@ export const useTerminalSuggestions = ({
   lastExecutedCommandRef,
   lastExecutedCommandTimeRef,
   sendInputToProcess,
+  broadcastInputToGroup,
 }) => {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -336,9 +337,13 @@ export const useTerminalSuggestions = ({
 
         for (let i = 0; i < deleteCount; i++) {
           sendInputToProcess(processCache[tabId], "\b");
+          broadcastInputToGroup("\b", tabId);
         }
 
         sendInputToProcess(processCache[tabId], suggestion.command);
+        // Choosing a floating suggestion writes directly to the process instead
+        // of going through xterm's onData event, so broadcast it explicitly.
+        broadcastInputToGroup(suggestion.command, tabId);
         setCurrentInput(suggestion.command);
         setShowSuggestions(false);
         setSuggestions([]);
@@ -346,7 +351,7 @@ export const useTerminalSuggestions = ({
         setShowSuggestions(false);
       }
     },
-    [currentInput, sendInputToProcess, tabId, termRef],
+    [broadcastInputToGroup, currentInput, sendInputToProcess, tabId, termRef],
   );
 
   const closeSuggestions = useCallback(
