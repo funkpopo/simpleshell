@@ -14,6 +14,8 @@ const aiText = (key, params = {}) =>
 const CUSTOM_RULE_LEVELS = ["critical", "high", "medium", "low"];
 const MAX_CUSTOM_RULES_PER_LEVEL = 50;
 const MAX_CUSTOM_RULE_PATTERN_LENGTH = 200;
+const AI_PROXY_TYPES = new Set(["http", "https"]);
+const MAX_AI_PROXY_HOST_LENGTH = 255;
 
 const hasNestedQuantifier = (pattern) =>
   /\((?:[^()\\]|\\.|\[[^\]]*\])*(?:[+*]|\{\d+(?:,\d*)?\})(?:[^()\\]|\\.|\[[^\]]*\])*\)(?:[+*]|\{\d+(?:,\d*)?\})/.test(
@@ -119,7 +121,113 @@ class AIHandlers {
       safeSettings.customRiskRules,
     );
 
+    // 代理配置脱敏：不回显密码，仅以 hasProxyPassword 标记是否已保存密码
+    if (
+      safeSettings.proxyConfig &&
+      typeof safeSettings.proxyConfig === "object"
+    ) {
+      safeSettings.proxyConfig = {
+        ...safeSettings.proxyConfig,
+        hasProxyPassword: Boolean(safeSettings.proxyConfig.password),
+        password: "",
+      };
+    }
+
     return safeSettings;
+  }
+
+  _stripProxyMeta(proxyConfig) {
+    if (!proxyConfig || typeof proxyConfig !== "object") {
+      return proxyConfig;
+    }
+    const normalized = { ...proxyConfig };
+    delete normalized.hasProxyPassword;
+    return normalized;
+  }
+
+  _normalizeProxyConfig(proxyConfig) {
+    const cfg =
+      proxyConfig && typeof proxyConfig === "object" ? proxyConfig : {};
+    const enabled = cfg.enabled === true;
+
+    if (!enabled) {
+      return {
+        enabled: false,
+        type: "http",
+        host: "",
+        port: 0,
+        username: "",
+        password: "",
+      };
+    }
+
+    const type = String(cfg.type || "http").toLowerCase();
+    const host = typeof cfg.host === "string" ? cfg.host.trim() : "";
+    const port = Number(cfg.port);
+    const validPort = Number.isInteger(port) && port >= 1 && port <= 65535;
+    if (
+      !AI_PROXY_TYPES.has(type) ||
+      !host ||
+      host.length > MAX_AI_PROXY_HOST_LENGTH ||
+      /[\u0000-\u0020\u007f]/.test(host) ||
+      host.includes("/") ||
+      host.includes("@") ||
+      !validPort
+    ) {
+      throw new Error("Invalid AI proxy configuration");
+    }
+
+    return {
+      enabled: true,
+      type,
+      host,
+      port,
+      username: this._isNonEmptyString(cfg.username)
+        ? String(cfg.username)
+        : "",
+      password: this._isProvidedString(cfg.password)
+        ? String(cfg.password)
+        : "",
+    };
+  }
+
+  /**
+   * 解析 AI 请求应使用的代理。
+   * 若 AI 设置中启用了代理则返回该代理；否则返回 null（回退到默认/系统代理）。
+   * @returns {object|null}
+   */
+  _resolveAIActiveProxy() {
+    const settings = configService.loadAISettings() || {};
+    const aiProxy = settings.proxyConfig;
+    if (!aiProxy || aiProxy.enabled !== true) {
+      return null;
+    }
+    let normalized;
+    try {
+      normalized = this._normalizeProxyConfig(aiProxy);
+    } catch {
+      return null;
+    }
+
+    if (!normalized.enabled) return null;
+
+    return {
+      type: normalized.type,
+      host: normalized.host,
+      port: normalized.port,
+      username: normalized.username ? normalized.username : undefined,
+      password: this._isProvidedString(normalized.password)
+        ? normalized.password
+        : undefined,
+    };
+  }
+
+  _applyAIActiveProxy() {
+    try {
+      aiWorkerManager.updateAIProxy(this._resolveAIActiveProxy());
+    } catch (error) {
+      logToFile(`Failed to apply AI proxy: ${error.message}`, "WARN");
+    }
   }
 
   _stripApiConfigMeta(config) {
@@ -152,6 +260,12 @@ class AIHandlers {
       ? this._stripApiConfigMeta(normalizedSettings.current)
       : null;
 
+    if (normalizedSettings.proxyConfig) {
+      normalizedSettings.proxyConfig = this._normalizeProxyConfig(
+        normalizedSettings.proxyConfig,
+      );
+    }
+
     if (
       Object.prototype.hasOwnProperty.call(
         normalizedSettings,
@@ -168,6 +282,10 @@ class AIHandlers {
 
   _isNonEmptyString(value) {
     return typeof value === "string" && value.trim() !== "";
+  }
+
+  _isProvidedString(value) {
+    return typeof value === "string" && value.length > 0;
   }
 
   _findStoredApiConfig(settings, apiConfigId) {
@@ -258,6 +376,32 @@ class AIHandlers {
     return mergedSettings;
   }
 
+  _preserveStoredProxyPassword(rawSettings, normalizedSettings) {
+    const rawProxy = rawSettings?.proxyConfig;
+    const normalizedProxy = normalizedSettings?.proxyConfig;
+    if (
+      !rawProxy ||
+      typeof rawProxy !== "object" ||
+      !normalizedProxy ||
+      typeof normalizedProxy !== "object" ||
+      rawProxy.hasProxyPassword !== true ||
+      !normalizedProxy.enabled ||
+      this._isProvidedString(normalizedProxy.password)
+    ) {
+      return normalizedSettings;
+    }
+
+    const existingProxy = configService.loadAISettings()?.proxyConfig;
+    if (this._isProvidedString(existingProxy?.password)) {
+      normalizedSettings.proxyConfig = {
+        ...normalizedProxy,
+        password: existingProxy.password,
+      };
+    }
+
+    return normalizedSettings;
+  }
+
   _resolveApiRequestData(requestData) {
     const resolvedData = {
       ...requestData,
@@ -345,6 +489,16 @@ class AIHandlers {
         category: "ai",
         handler: this.saveCustomRiskRules.bind(this),
       },
+      {
+        channel: IPC_REQUEST_CHANNELS.AI_GET_PROXY_CONFIG,
+        category: "ai",
+        handler: this.getProxyConfig.bind(this),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.AI_SAVE_PROXY_CONFIG,
+        category: "ai",
+        handler: this.saveProxyConfig.bind(this),
+      },
     ];
   }
 
@@ -360,6 +514,7 @@ class AIHandlers {
       settings,
       normalizedSettings,
     );
+    this._preserveStoredProxyPassword(settings, mergedInputSettings);
     const mergedSettings = {
       ...existingSettings,
       ...mergedInputSettings,
@@ -495,6 +650,9 @@ class AIHandlers {
         throw new Error(aiText("mainProcess.ai.workerCreateFailed"));
       }
 
+      // 应用 AI 代理配置
+      this._applyAIActiveProxy();
+
       // 生成请求ID
       const requestId = aiWorkerManager.getNextRequestId();
 
@@ -593,6 +751,9 @@ class AIHandlers {
       throw new Error(aiText("mainProcess.ai.workerCreateFailed"));
     }
 
+    // 应用 AI 代理配置
+    this._applyAIActiveProxy();
+
     const requestId = aiWorkerManager.getNextRequestId();
     const timeout = 30000; // 30秒超时
 
@@ -627,6 +788,59 @@ class AIHandlers {
     configService.saveAISettings(currentSettings);
     logToFile("Custom risk rules saved", "INFO");
     return { success: true };
+  }
+
+  async getProxyConfig() {
+    const settings = configService.loadAISettings() || {};
+    const proxyConfig = settings.proxyConfig || null;
+    if (proxyConfig && typeof proxyConfig === "object") {
+      return {
+        ...proxyConfig,
+        hasProxyPassword: Boolean(proxyConfig.password),
+        password: "",
+      };
+    }
+    return null;
+  }
+
+  async saveProxyConfig(event, proxyConfig) {
+    void event;
+    try {
+      const normalized = this._normalizeProxyConfig(proxyConfig);
+      const settings = configService.loadAISettings() || {};
+      const stored = settings.proxyConfig || {};
+
+      // 若前端未回传密码但后端已保存，则保留原密码
+      if (
+        normalized.enabled &&
+        !this._isProvidedString(normalized.password) &&
+        proxyConfig?.hasProxyPassword === true &&
+        this._isProvidedString(stored.password)
+      ) {
+        normalized.password = stored.password;
+      }
+
+      settings.proxyConfig = this._stripProxyMeta(normalized);
+      const saved = configService.saveAISettings(settings);
+
+      // 保存后立即应用到 Rust AI sidecar
+      this._applyAIActiveProxy();
+
+      logToFile(
+        `AI proxy config saved: ${JSON.stringify({
+          enabled: normalized.enabled,
+          type: normalized.type,
+          host: normalized.enabled ? normalized.host : "",
+          port: normalized.enabled ? normalized.port : 0,
+          hasAuth: Boolean(normalized.username && normalized.password),
+        })}`,
+        "INFO",
+      );
+      return saved;
+    } catch (error) {
+      logToFile(`Failed to save AI proxy config: ${error.message}`, "ERROR");
+      return false;
+    }
   }
 }
 

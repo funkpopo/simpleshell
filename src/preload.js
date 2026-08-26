@@ -707,6 +707,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 新增: 保存自定义风险规则
   saveCustomRiskRules: (rules) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SAVE_CUSTOM_RISK_RULES, rules),
+  // 新增: AI 代理配置读取/保存
+  getAISettingsProxy: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_GET_PROXY_CONFIG),
+  saveAISettingsProxy: (proxyConfig) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SAVE_PROXY_CONFIG, proxyConfig),
 
   // 记忆文件管理API
   saveMemory: (memory) =>

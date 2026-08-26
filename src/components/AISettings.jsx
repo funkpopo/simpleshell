@@ -28,6 +28,10 @@ import {
   ListItem,
   ListItemText,
   ListItemSecondaryAction,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Divider,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import AddIcon from "@mui/icons-material/Add";
@@ -35,6 +39,9 @@ import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ProxyIcon from "@mui/icons-material/SettingsEthernet";
+import SaveIcon from "@mui/icons-material/Save";
 import { useTranslation } from "react-i18next";
 import {
   RISK_LEVELS,
@@ -65,6 +72,16 @@ const createEmptyConfig = () => ({
   hasApiKey: false,
   model: "",
   streamEnabled: true,
+});
+
+const createEmptyProxyConfig = () => ({
+  enabled: false,
+  type: "http",
+  host: "",
+  port: "",
+  username: "",
+  password: "",
+  hasProxyPassword: false,
 });
 
 const buildSavableApiConfig = (config) => {
@@ -106,6 +123,11 @@ const AISettings = ({ open, onClose }) => {
 
   // AI配置状态
   const [config, setConfig] = useState(createEmptyConfig());
+
+  // AI代理配置状态
+  const [proxyConfig, setProxyConfig] = useState(createEmptyProxyConfig());
+  const [proxySaving, setProxySaving] = useState(false);
+  const [proxyExpanded, setProxyExpanded] = useState(false);
 
   // 自定义风险规则状态
   const [customRules, setCustomRules] = useState({
@@ -190,6 +212,18 @@ const AISettings = ({ open, onClose }) => {
           // 应用到风险评估模块
           applyCustomRiskRules(normalizedRules);
         }
+
+        // 加载代理配置
+        const storedProxy = settings.proxyConfig;
+        setProxyConfig({
+          enabled: storedProxy?.enabled === true,
+          type: storedProxy?.type === "https" ? "https" : "http",
+          host: storedProxy?.host || "",
+          port: storedProxy?.port ? String(storedProxy.port) : "",
+          username: storedProxy?.username || "",
+          password: "",
+          hasProxyPassword: storedProxy?.hasProxyPassword === true,
+        });
       }
     } catch {
       setError(t("aiSettings.configSaveFailed"));
@@ -591,6 +625,70 @@ const AISettings = ({ open, onClose }) => {
     return RISK_LEVELS[riskKey]?.color || "#666";
   };
 
+  // 更新代理配置字段
+  const handleProxyChange = (field, value) => {
+    setProxyConfig((prev) => ({ ...prev, [field]: value }));
+    setError("");
+    setSuccess("");
+  };
+
+  // 保存代理配置并应用到AI请求
+  const handleSaveProxy = async () => {
+    if (proxyConfig.enabled) {
+      if (!proxyConfig.host.trim()) {
+        setError(t("aiSettings.proxyHostRequired"));
+        return;
+      }
+      const port = Number(proxyConfig.port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        setError(t("aiSettings.proxyPortRequired"));
+        return;
+      }
+    }
+
+    setProxySaving(true);
+    setError("");
+    setSuccess("");
+    try {
+      if (!window.terminalAPI?.saveAISettingsProxy) {
+        setError(
+          t("aiSettings.proxySaveFailed") +
+            ": " +
+            t("aiSettings.apiUnavailable"),
+        );
+        return;
+      }
+      const typedPassword =
+        typeof proxyConfig.password === "string" ? proxyConfig.password : "";
+      const keepStoredPassword = proxyConfig.hasProxyPassword && !typedPassword;
+      const payload = {
+        enabled: proxyConfig.enabled,
+        type: proxyConfig.type || "http",
+        host: proxyConfig.enabled ? proxyConfig.host.trim() : "",
+        port: proxyConfig.enabled ? Number(proxyConfig.port) : 0,
+        username: proxyConfig.enabled ? proxyConfig.username : "",
+        password: proxyConfig.enabled ? typedPassword : "",
+        hasProxyPassword: keepStoredPassword,
+      };
+
+      const result = await window.terminalAPI.saveAISettingsProxy(payload);
+      if (result) {
+        setProxyConfig((prev) => ({
+          ...prev,
+          password: "",
+          hasProxyPassword: keepStoredPassword || Boolean(typedPassword),
+        }));
+        setSuccess(t("aiSettings.proxySaved"));
+      } else {
+        setError(t("aiSettings.proxySaveFailed"));
+      }
+    } catch {
+      setError(t("aiSettings.proxySaveFailed"));
+    } finally {
+      setProxySaving(false);
+    }
+  };
+
   // 获取风险等级标签
   const getRiskLevelLabel = (level) => {
     switch (String(level || "").toLowerCase()) {
@@ -978,6 +1076,160 @@ const AISettings = ({ open, onClose }) => {
                       />
                     </Box>
                   )}
+
+                  {/* 代理配置（可展开） */}
+                  <Divider sx={{ my: 3 }} />
+                  <Accordion
+                    expanded={proxyExpanded}
+                    onChange={(event, expanded) => setProxyExpanded(expanded)}
+                    variant="outlined"
+                  >
+                    <AccordionSummary
+                      expandIcon={<ExpandMoreIcon />}
+                      sx={{
+                        "& .MuiAccordionSummary-content": {
+                          alignItems: "center",
+                          gap: 1.5,
+                        },
+                      }}
+                    >
+                      <ProxyIcon fontSize="small" color="primary" />
+                      <Typography variant="subtitle1" fontWeight="medium">
+                        {t("aiSettings.proxyConfig")}
+                      </Typography>
+                      <Chip
+                        label={
+                          proxyConfig.enabled
+                            ? t("aiSettings.proxyEnabled")
+                            : t("aiSettings.proxyDisabled")
+                        }
+                        size="small"
+                        color={proxyConfig.enabled ? "primary" : "default"}
+                        variant={proxyConfig.enabled ? "filled" : "outlined"}
+                      />
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ mb: 2 }}
+                      >
+                        {t("aiSettings.proxyConfigHelp")}
+                      </Typography>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 2,
+                        }}
+                      >
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={proxyConfig.enabled}
+                              onChange={(e) =>
+                                handleProxyChange("enabled", e.target.checked)
+                              }
+                            />
+                          }
+                          label={t("aiSettings.proxyEnable")}
+                        />
+                        <Box sx={{ display: "flex", gap: 2 }}>
+                          <FormControl
+                            sx={{ minWidth: 150 }}
+                            variant="outlined"
+                          >
+                            <InputLabel>{t("aiSettings.proxyType")}</InputLabel>
+                            <Select
+                              value={proxyConfig.type}
+                              onChange={(e) =>
+                                handleProxyChange("type", e.target.value)
+                              }
+                              label={t("aiSettings.proxyType")}
+                              disabled={!proxyConfig.enabled}
+                              MenuProps={{
+                                sx: {
+                                  zIndex: (theme) => theme.zIndex.modal + 210,
+                                },
+                              }}
+                            >
+                              <MenuItem value="http">HTTP</MenuItem>
+                              <MenuItem value="https">HTTPS</MenuItem>
+                            </Select>
+                          </FormControl>
+                          <TextField
+                            label={t("aiSettings.proxyHost")}
+                            value={proxyConfig.host}
+                            onChange={(e) =>
+                              handleProxyChange("host", e.target.value)
+                            }
+                            disabled={!proxyConfig.enabled}
+                            fullWidth
+                            placeholder="127.0.0.1"
+                            variant="outlined"
+                          />
+                          <TextField
+                            label={t("aiSettings.proxyPort")}
+                            value={proxyConfig.port}
+                            onChange={(e) =>
+                              handleProxyChange("port", e.target.value)
+                            }
+                            disabled={!proxyConfig.enabled}
+                            sx={{ width: 140 }}
+                            placeholder="7890"
+                            variant="outlined"
+                            inputProps={{ inputMode: "numeric" }}
+                          />
+                        </Box>
+                        <Box sx={{ display: "flex", gap: 2 }}>
+                          <TextField
+                            label={t("aiSettings.proxyUsername")}
+                            value={proxyConfig.username}
+                            onChange={(e) =>
+                              handleProxyChange("username", e.target.value)
+                            }
+                            disabled={!proxyConfig.enabled}
+                            fullWidth
+                            variant="outlined"
+                          />
+                          <TextField
+                            label={t("aiSettings.proxyPassword")}
+                            value={proxyConfig.password}
+                            onChange={(e) =>
+                              handleProxyChange("password", e.target.value)
+                            }
+                            disabled={!proxyConfig.enabled}
+                            fullWidth
+                            type="password"
+                            variant="outlined"
+                            helperText={
+                              proxyConfig.hasProxyPassword &&
+                              !proxyConfig.password
+                                ? t("aiSettings.keyStoredInMain")
+                                : undefined
+                            }
+                          />
+                        </Box>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <Button
+                            variant="contained"
+                            startIcon={<SaveIcon />}
+                            onClick={handleSaveProxy}
+                            disabled={proxySaving}
+                          >
+                            {proxySaving
+                              ? t("aiSettings.proxySaving")
+                              : t("aiSettings.proxySave")}
+                          </Button>
+                        </Box>
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
                 </Box>
               )}
 

@@ -215,6 +215,29 @@ async function terminateAIWorker() {
 function getNextRequestId() {
   return `req_${nextRequestId++}`;
 }
+
+/**
+ * 更新 Rust AI sidecar 使用的代理（proxyUpdate）。
+ * 传入 null 时回退到默认代理/系统代理（与创建时的行为一致）。
+ * @param {object|null} proxy - 代理配置（{type, host, port, username?, password?}）
+ */
+function updateAIProxy(proxy) {
+  if (!aiSidecar) return;
+  try {
+    const proxyManager = require("../proxy/proxy-manager");
+    const effective =
+      proxy ||
+      proxyManager.getDefaultProxyConfig() ||
+      proxyManager.getSystemProxyConfig();
+    writeCommand({
+      kind: "proxyUpdate",
+      requestId: `proxy-${Date.now()}`,
+      proxy: effective || null,
+    });
+  } catch (error) {
+    logToFile(`Failed to update AI sidecar proxy: ${error.message}`, "WARN");
+  }
+}
 function setRequestCallback(requestId, callback) {
   requestCallbacks.set(requestId, callback);
 }
@@ -263,5 +286,6 @@ module.exports = {
   clearCurrentSessionId,
   deleteStreamSession,
   postMessage,
+  updateAIProxy,
   getDiagnostics,
 };

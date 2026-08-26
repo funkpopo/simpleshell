@@ -143,6 +143,17 @@ class ConfigService {
           },
           required: ["width", "height"],
         },
+        proxyConfig: {
+          type: "object",
+          properties: {
+            enabled: { type: "boolean" },
+            type: { type: "string", enum: ["http", "https"] },
+            host: { type: "string", maxLength: 255 },
+            port: { type: "integer", minimum: 0, maximum: 65535 },
+            username: { type: "string" },
+            password: { type: "string" },
+          },
+        },
       },
       required: ["configs"],
       default: { configs: [], current: null },
@@ -1297,6 +1308,34 @@ class ConfigService {
     });
   }
 
+  _decryptAISecret(value, label) {
+    if (typeof value !== "string" || value.length === 0) {
+      return "";
+    }
+
+    const decrypted = this.crypto.decryptText(value);
+    if (decrypted !== null && decrypted !== undefined) {
+      return decrypted;
+    }
+
+    if (!this._isCredentialStoreLocked()) {
+      this._log(`ConfigService: Failed to decrypt ${label}.`, "WARN");
+    }
+    return "";
+  }
+
+  _encryptAISecret(value, label) {
+    if (typeof value !== "string" || value.length === 0) {
+      return "";
+    }
+
+    const encrypted = this.crypto.encryptText(value);
+    if (typeof encrypted !== "string" || encrypted.length === 0) {
+      throw new Error(`Failed to encrypt ${label}`);
+    }
+    return encrypted;
+  }
+
   /**
    * 处理 AI 设置以进行解密加载
    * @param {Object} settings - 原始 AI 设置
@@ -1362,6 +1401,16 @@ class ConfigService {
       }
     }
 
+    if (result.proxyConfig && typeof result.proxyConfig === "object") {
+      result.proxyConfig = {
+        ...result.proxyConfig,
+        password: this._decryptAISecret(
+          result.proxyConfig.password,
+          "AI proxy password",
+        ),
+      };
+    }
+
     return result;
   }
 
@@ -1398,6 +1447,21 @@ class ConfigService {
 
     if (settingsToSave.current) {
       settingsToSave.current = normalizeApiConfig(settingsToSave.current);
+    }
+
+    if (
+      settingsToSave.proxyConfig &&
+      typeof settingsToSave.proxyConfig === "object"
+    ) {
+      const proxyConfig = { ...settingsToSave.proxyConfig };
+      delete proxyConfig.hasProxyPassword;
+      if (proxyConfig.password) {
+        proxyConfig.password = this._encryptAISecret(
+          proxyConfig.password,
+          "AI proxy password",
+        );
+      }
+      settingsToSave.proxyConfig = proxyConfig;
     }
 
     if (Array.isArray(settingsToSave.configs) && this.crypto.encryptText) {
@@ -1756,6 +1820,13 @@ class ConfigService {
       result.current = {
         ...result.current,
         apiKey: "",
+      };
+    }
+
+    if (result.proxyConfig && typeof result.proxyConfig === "object") {
+      result.proxyConfig = {
+        ...result.proxyConfig,
+        password: "",
       };
     }
 

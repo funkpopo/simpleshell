@@ -297,6 +297,18 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     "ai",
     args([arrayArg()]),
   ),
+  defineRequest(
+    "AI_GET_PROXY_CONFIG",
+    "ai:getProxyConfig",
+    "ai",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "AI_SAVE_PROXY_CONFIG",
+    "ai:saveProxyConfig",
+    "ai",
+    args([objectArg()]),
+  ),
   defineEvent("AI_STREAM_CHUNK", "stream-chunk", "ai", args([objectArg()])),
   defineEvent("AI_STREAM_END", "stream-end", "ai", args([objectArg()])),
   defineEvent("AI_STREAM_ERROR", "stream-error", "ai", args([objectArg()])),
