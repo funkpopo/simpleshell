@@ -381,61 +381,6 @@ class CleanupManager {
     this.reset();
     this.isDestroyed = true;
   }
-
-  // 清理已存在太久的资源（可选，用于长时间运行场景）
-  cleanupOldResources(maxAge = 3600000) {
-    // 默认 1 小时
-    const now = Date.now();
-    const toRemove = [];
-
-    for (const [id, resource] of this.resources) {
-      if (now - resource.createdAt > maxAge) {
-        toRemove.push(id);
-      }
-    }
-
-    for (const id of toRemove) {
-      console.warn(
-        `自动清理过期资源 (${id}), 存活时间: ${(now - this.resources.get(id).createdAt) / 1000} 秒`,
-      );
-      this.removeResource(id);
-    }
-
-    return toRemove.length;
-  }
-}
-
-/**
- * 带自动清理能力的 useEffect 封装版。
- * 在 effect 中可以直接通过 context 注册需要托管的资源。
- */
-export function useEffectWithCleanup(effect, deps) {
-  useEffect(() => {
-    const manager = new CleanupManager();
-
-    // 提供增强版上下文，方便在 effect 中注册资源
-    const context = {
-      addTimeout: manager.addTimeout.bind(manager),
-      addInterval: manager.addInterval.bind(manager),
-      addEventListener: manager.addEventListener.bind(manager),
-      addResizeObserver: manager.addResizeObserver.bind(manager),
-      addIntersectionObserver: manager.addIntersectionObserver.bind(manager),
-      addMutationObserver: manager.addMutationObserver.bind(manager),
-      addCleanup: manager.addCleanup.bind(manager),
-      createAbortController: manager.createAbortController.bind(manager),
-    };
-
-    // 执行 effect，并传入增强上下文
-    const cleanup = effect(context);
-
-    // 清理阶段：先执行用户自定义清理，再释放所有托管资源
-    return () => {
-      if (typeof cleanup === "function") {
-        cleanup();
-      }
-      manager.cleanup();
-    };
-  }, deps);
 }
 
 /**
@@ -445,7 +390,7 @@ export function useEffectWithCleanup(effect, deps) {
  * 各注册方法均返回“移除函数”，reset() 释放全部资源但保留实例可复用，
  * destroy() 释放全部资源并使实例失效。
  */
-export function createManagedCleanup() {
+function createManagedCleanup() {
   const manager = new CleanupManager();
 
   const toRemover = (id) => () => manager.removeResource(id);

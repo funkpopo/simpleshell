@@ -15,7 +15,6 @@ import {
   DialogContentText,
   DialogActions,
   Button,
-  Collapse,
   Alert,
 } from "@mui/material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
@@ -24,8 +23,6 @@ import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ErrorIcon from "@mui/icons-material/Error";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import InfoIcon from "@mui/icons-material/Info";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { useTranslation } from "react-i18next";
 import { RISK_LEVELS, requiresConfirmation } from "../utils/aiSystemPrompt";
 
@@ -298,82 +295,6 @@ const ExecutableCommand = memo(
           t={t}
         />
       </>
-    );
-  },
-);
-
-/**
- * 命令块列表组件
- * 用于显示多个命令的折叠列表
- */
-export const CommandBlockList = memo(
-  ({
-    commands,
-    onExecute,
-    onCopy,
-    disabled = false,
-    collapsible = true,
-    defaultExpanded = true,
-  }) => {
-    const { t } = useTranslation();
-    const [expanded, setExpanded] = useState(defaultExpanded);
-
-    if (!commands || commands.length === 0) {
-      return null;
-    }
-
-    const highRiskCount = commands.filter(
-      (cmd) => cmd.risk.level >= RISK_LEVELS.HIGH.level,
-    ).length;
-
-    return (
-      <Box sx={{ my: 1 }}>
-        {collapsible && commands.length > 1 && (
-          <Box
-            onClick={() => setExpanded(!expanded)}
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              cursor: "pointer",
-              py: 0.5,
-              px: 0.5,
-              borderRadius: "6px",
-              color: "text.secondary",
-              "&:hover": {
-                bgcolor: "action.hover",
-                color: "text.primary",
-              },
-            }}
-          >
-            {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-            <Typography variant="body2" sx={{ ml: 0.5 }}>
-              {t("ai.commandsCount", { count: commands.length })}
-              {highRiskCount > 0 && (
-                <Typography
-                  component="span"
-                  variant="body2"
-                  sx={{ ml: 1, color: "error.main" }}
-                >
-                  ({t("ai.highRiskCount", { count: highRiskCount })})
-                </Typography>
-              )}
-            </Typography>
-          </Box>
-        )}
-
-        <Collapse in={!collapsible || expanded}>
-          {commands.map((cmd, index) => (
-            <ExecutableCommand
-              key={`${cmd.command}-${index}`}
-              command={cmd.command}
-              risk={cmd.risk}
-              onExecute={onExecute}
-              onCopy={onCopy}
-              disabled={disabled}
-            />
-          ))}
-        </Collapse>
-      </Box>
     );
   },
 );

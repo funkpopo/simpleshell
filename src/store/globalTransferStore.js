@@ -485,21 +485,3 @@ export const useTransferHistory = () => {
     removeHistoryItemById,
   };
 };
-
-/**
- * 内部测试API（仅用于测试）
- */
-export const __globalTransferStoreInternals = {
-  _getTransfersInternal: getTransfersInternal,
-  _getAllTransfersInternal: getAllTransfersInternal,
-  _clearAll: () => {
-    for (const timer of autoRemovalTimers.values()) {
-      clearTimeout(timer.timer);
-    }
-    autoRemovalTimers.clear();
-    transferState.clear();
-    transferHistory.length = 0;
-    listeners.clear();
-    historyListeners.clear();
-  },
-};

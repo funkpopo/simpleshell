@@ -59,50 +59,14 @@ export function useAppDispatch() {
   return context;
 }
 
-// 自定义 Hook：同时获取状态和 dispatch
-export function useApp() {
-  return {
-    state: useAppState(),
-    dispatch: useAppDispatch(),
-  };
-}
-
-// 便捷的 Selector Hooks，用于只订阅特定状态
+// 便捷的 Selector Hook，用于只订阅特定状态
+// （细粒度选择器由调用方以模块级 selector 函数传入）
 export function useAppSelector(selector) {
   const state = useAppState();
   return useMemo(() => selector(state), [state, selector]);
 }
 
-// 特定状态的 Hooks
-export function useTabs() {
-  return useAppSelector((state) => ({
-    tabs: state.tabs,
-    currentTab: state.currentTab,
-  }));
-}
-
-export function useSidebars() {
-  return useAppSelector((state) => ({
-    connectionManagerOpen: state.connectionManagerOpen,
-    resourceMonitorOpen: state.resourceMonitorOpen,
-    fileManagerOpen: state.fileManagerOpen,
-    ipAddressQueryOpen: state.ipAddressQueryOpen,
-    securityToolsOpen: state.securityToolsOpen,
-    shortcutCommandsOpen: state.shortcutCommandsOpen,
-    commandHistoryOpen: state.commandHistoryOpen,
-    activeSidebarMargin: state.activeSidebarMargin,
-    lastOpenedSidebar: state.lastOpenedSidebar,
-  }));
-}
-
-export function useDialogs() {
-  return useAppSelector((state) => ({
-    aboutDialogOpen: state.aboutDialogOpen,
-    settingsDialogOpen: state.settingsDialogOpen,
-    tabContextMenu: state.tabContextMenu,
-  }));
-}
-
+// 特定状态的 Hook
 export function useTheme() {
   return useAppSelector((state) => ({
     darkMode: state.darkMode,
@@ -110,26 +74,3 @@ export function useTheme() {
   }));
 }
 
-export function useAIChat() {
-  return useAppSelector((state) => ({
-    aiChatStatus: state.aiChatStatus,
-    aiInputPreset: state.aiInputPreset,
-  }));
-}
-
-export function useTerminals() {
-  return useAppSelector((state) => ({
-    terminalInstances: state.terminalInstances,
-  }));
-}
-
-export function useConnections() {
-  return useAppSelector((state) => ({
-    connections: state.connections,
-    topConnections: state.topConnections,
-  }));
-}
-
-export function useSyncGroups() {
-  return useAppSelector((state) => state.syncGroups);
-}

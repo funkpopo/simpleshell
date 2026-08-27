@@ -4,8 +4,9 @@
  */
 
 export const DEFAULT_TERMINAL_LINE_HEIGHT = 1.0;
-export const MIN_TERMINAL_LINE_HEIGHT = 1.0;
-export const MAX_TERMINAL_LINE_HEIGHT = 1.4;
+// 行高夹取范围（仅 normalizeTerminalLineHeight 内部使用）
+const MIN_TERMINAL_LINE_HEIGHT = 1.0;
+const MAX_TERMINAL_LINE_HEIGHT = 1.4;
 
 /**
  * Clamp and normalize terminal line height for xterm options.

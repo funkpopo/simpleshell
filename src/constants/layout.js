@@ -28,6 +28,3 @@ export const SIDEBAR_TOKENS = {
   ITEM_INSET_X: 6,
   ACTIVE_BORDER_WIDTH: 2,
 };
-
-// 底部传输栏高度
-export const TRANSFER_BAR_HEIGHT = 56; // px

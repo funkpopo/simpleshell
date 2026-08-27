@@ -7,14 +7,10 @@ const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
 /** 列表项圆角：对齐 --radius-sm */
 export const SIDEBAR_ITEM_RADIUS = "var(--radius-sm, 6px)";
 
-/** 列表项水平 inset（轻微缩进） */
-export const SIDEBAR_ITEM_INSET_X = 0.75;
+// 列表项水平 inset（轻微缩进，仅本模块内部使用）
+const SIDEBAR_ITEM_INSET_X = 0.75;
 
 export const SIDEBAR_TITLE_BAR_HEIGHT = 44;
-
-export const SIDEBAR_RAIL_WIDTH = 48;
-export const SIDEBAR_RAIL_GAP = 0.5;
-export const SIDEBAR_RAIL_SECTION_GAP = 1;
 
 // 侧边栏 Paper 外壳统一样式
 export const sidebarPaperSx = (theme, { borderLeft = true } = {}) => {
@@ -62,10 +58,10 @@ export const sidebarTitleIconButtonSx = {
 export const getSidebarItemSelectedBg = (theme) =>
   alpha(theme.palette.primary.main, SELECTED_OPACITY);
 
-export const getSidebarItemSelectedHoverBg = (theme) =>
+const getSidebarItemSelectedHoverBg = (theme) =>
   alpha(theme.palette.primary.main, SELECTED_HOVER_OPACITY);
 
-export const getSidebarItemHoverBg = (theme) => theme.palette.action.hover;
+const getSidebarItemHoverBg = (theme) => theme.palette.action.hover;
 
 export const getSidebarItemSurfaceBg = (theme) =>
   theme.palette.mode === "dark"

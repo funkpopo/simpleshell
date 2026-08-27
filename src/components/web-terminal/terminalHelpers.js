@@ -82,7 +82,7 @@ export const shouldForceTerminalViewportRefresh = (
   return term.__pendingWrappedInputRefresh === true;
 };
 
-export const getTerminalConfigSignature = (config) => {
+const getTerminalConfigSignature = (config) => {
   if (!config) return "__NO_CONFIG__";
 
   return [
@@ -99,7 +99,7 @@ export const getTerminalConfigSignature = (config) => {
   ].join("|");
 };
 
-export const getLocalTerminalConfigSignature = (config) => {
+const getLocalTerminalConfigSignature = (config) => {
   if (!config) return "__NO_LOCAL_CONFIG__";
 
   return [

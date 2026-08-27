@@ -458,7 +458,6 @@
       "copiedToClipboard": "已复制到剪贴板",
       "skeleton": {
         "loading": "正在加载内容...",
-        "terminal": "正在加载终端...",
         "fileManager": "正在加载文件管理器...",
         "settings": "正在加载设置...",
         "connections": "正在加载连接管理器...",
@@ -682,8 +681,7 @@
       "confirmExecution": "确认执行命令",
       "riskWarning": "此命令风险等级为 {{level}}，请确认是否执行",
       "executeAnyway": "确认执行",
-      "commandsCount": "{{count}} 条命令",
-      "highRiskCount": "{{count}} 条高风险",
+
       "riskLevels": {
         "safe": "安全",
         "low": "低风险",

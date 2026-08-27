@@ -235,4 +235,4 @@ const smartPreload = {
   },
 };
 
-export { preloadComponents, smartPreload };
+export { smartPreload };

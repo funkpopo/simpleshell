@@ -571,4 +571,4 @@ const ErrorFallback = ({ error, onRetry, retryCount, componentName }) => {
 };
 
 export default ErrorBoundary;
-export { GlobalErrorBoundary, GlobalErrorLogger };
+export { GlobalErrorBoundary };

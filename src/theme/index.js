@@ -14,14 +14,6 @@ const RADIUS_LG = 10;
 
 export const RADIUS = { SM: RADIUS_SM, MD: RADIUS_MD, LG: RADIUS_LG };
 
-/** 侧栏视觉 token（与 theme-variables.css / layout.SIDEBAR_TOKENS 对齐） */
-export const SIDEBAR_THEME_TOKENS = {
-  railWidth: 48,
-  railItemGap: 4,
-  itemInsetX: 6,
-  activeBorderWidth: 2,
-};
-
 const primaryColor = (darkMode) => (darkMode ? "#f1f2ef" : "#151719");
 const primaryAlpha = (darkMode, alpha) =>
   darkMode ? `rgba(241, 242, 239, ${alpha})` : `rgba(21, 23, 25, ${alpha})`;

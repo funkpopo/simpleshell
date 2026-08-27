@@ -6,7 +6,8 @@ import {
 } from "../core/syncInputGroups.js";
 
 // Action Types
-export const ActionTypes = {
+// Action 类型常量（模块内部使用）
+const ActionTypes = {
   // Tab Management
   SET_TABS: "SET_TABS",
   ADD_TAB: "ADD_TAB",

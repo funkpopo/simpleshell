@@ -7,16 +7,7 @@ import {
   Typography,
   useTheme,
   alpha,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Tooltip,
-  IconButton,
-  CircularProgress,
 } from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
 import { useTranslation } from "react-i18next";
 import {
   sidebarContentSx,
@@ -422,31 +413,6 @@ export const SidebarLazySkeleton = memo(
   },
 );
 
-export const TerminalSkeleton = memo(() => {
-  const { t } = useTranslation();
-  return (
-    <Box
-      sx={{
-        p: 2,
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <Typography variant="caption" color="text.secondary" sx={{ mb: 2 }}>
-        {t("common.skeleton.terminal")}
-      </Typography>
-      <SkeletonLoader type="terminal" lines={12} />
-    </Box>
-  );
-});
-
-export const ResourceMonitorSkeleton = memo(() => {
-  return null;
-});
-
 export const SettingsSkeleton = memo(() => {
   const { t } = useTranslation();
   return (
@@ -466,163 +432,6 @@ export const SettingsSkeleton = memo(() => {
           </Box>
         </Box>
       ))}
-    </Box>
-  );
-});
-
-export const CommandHistorySkeleton = memo(() => {
-  return (
-    <Box sx={{ p: 1 }}>
-      <SkeletonLoader width="100%" height={36} />
-      <Box sx={{ mt: 2 }}>
-        <SkeletonLoader type="list" lines={6} showAvatar avatarSize={20} />
-      </Box>
-    </Box>
-  );
-});
-
-export const AIChatSkeleton = memo(() => {
-  const { t } = useTranslation();
-  return (
-    <Box sx={{ p: 2 }}>
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        sx={{ mb: 2, display: "block" }}
-      >
-        {t("common.skeleton.aiChat")}
-      </Typography>
-      <SkeletonLoader type="profile" avatarSize={28} />
-      <Box sx={{ mt: 2 }}>
-        <SkeletonLoader type="text" lines={3} spacing={1} />
-      </Box>
-      <Box sx={{ mt: 2, textAlign: "right" }}>
-        <SkeletonLoader type="text" lines={2} width="80%" />
-      </Box>
-    </Box>
-  );
-});
-
-export const LocalTerminalSidebarSkeleton = memo((props) => {
-  const theme = useTheme();
-  const { t } = useTranslation();
-  const { onClose } = props || {};
-  return (
-    <Box
-      sx={{
-        width: "100%",
-        minWidth: 0,
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        backgroundColor: theme.palette.background.paper,
-      }}
-    >
-      {/* 头部（不使用骨架） */}
-      <Box
-        sx={{
-          p: 2,
-          borderBottom: `1px solid ${theme.palette.divider}`,
-          display: "flex",
-          alignItems: "center",
-          gap: 1,
-        }}
-      >
-        <Typography
-          variant="subtitle1"
-          fontWeight="medium"
-          sx={{ flexGrow: 1 }}
-        >
-          {t("localTerminal.title")}
-        </Typography>
-        <Tooltip title={t("localTerminal.refresh")}>
-          <span>
-            <IconButton
-              size="small"
-              disabled
-              aria-label={t("localTerminal.refresh")}
-            >
-              <CircularProgress size={18} />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title={t("common.close")}>
-          <span>
-            <IconButton
-              size="small"
-              onClick={onClose}
-              disabled={!onClose}
-              aria-label={t("common.close")}
-            >
-              <CloseIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
-      </Box>
-
-      {/* 搜索框骨架 */}
-      <Box sx={{ p: 2, pb: 1 }}>
-        <Skeleton
-          variant="rectangular"
-          width="100%"
-          height={36}
-          sx={{ borderRadius: 2 }}
-        />
-      </Box>
-
-      {/* 标题骨架 */}
-      <Box sx={{ px: 2, pb: 1 }}>
-        <Skeleton variant="text" width={150} height={20} />
-      </Box>
-
-      {/* 终端列表骨架（与真实列表一致） */}
-      <Box sx={{ px: 2, flex: 1, overflow: "hidden" }}>
-        <List disablePadding>
-          {Array.from({ length: 6 }, (_, index) => (
-            <ListItem key={index} disablePadding sx={{ mb: 0.5 }}>
-              <ListItemButton
-                sx={{
-                  borderRadius: 1,
-                  minHeight: 48,
-                  py: 1,
-                  pr: 2,
-                  "&:hover": {
-                    backgroundColor: theme.palette.action.hover,
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 40 }}>
-                  <Box
-                    sx={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 1,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      backgroundColor: theme.palette.background.paper,
-                      border: `1px solid ${theme.palette.divider}`,
-                    }}
-                  >
-                    <Skeleton variant="circular" width={20} height={20} />
-                  </Box>
-                </ListItemIcon>
-
-                <ListItemText
-                  primary={
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <Skeleton variant="text" width="60%" height={16} />
-                    </Box>
-                  }
-                  secondary={
-                    <Skeleton variant="text" width="40%" height={12} />
-                  }
-                />
-              </ListItemButton>
-            </ListItem>
-          ))}
-        </List>
-      </Box>
     </Box>
   );
 });

@@ -458,7 +458,6 @@
       "copiedToClipboard": "Copied to clipboard",
       "skeleton": {
         "loading": "Loading content...",
-        "terminal": "Loading terminal...",
         "fileManager": "Loading file manager...",
         "settings": "Loading settings...",
         "connections": "Loading connection manager...",
@@ -682,8 +681,6 @@
       "confirmExecution": "Confirm Command Execution",
       "riskWarning": "This command has risk level {{level}}, confirm to execute?",
       "executeAnyway": "Execute Anyway",
-      "commandsCount": "{{count}} commands",
-      "highRiskCount": "{{count}} high risk",
       "riskLevels": {
         "safe": "Safe",
         "low": "Low Risk",
