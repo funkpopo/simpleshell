@@ -1,7 +1,9 @@
 import { findGroupByTab } from "./syncInputGroups";
 
 /**
- * 分组命令分发器：统一负责将命令同步到分组内所有终端
+ * 分组命令分发器：统一负责将命令同步到分组内所有终端。
+ * 类型策略（与逐键同步、粘贴/清除同步路径一致）：不区分终端类型，
+ * 仅要求目标成员存在活跃进程；同步范围由分组内成员构成决定。
  * @param {string} tabId - 当前终端Tab的ID
  * @param {string} command - 需要分发的命令（不带回车）
  * @param {Array} syncGroups - 当前分组状态（来自 AppContext，由调用方传入）

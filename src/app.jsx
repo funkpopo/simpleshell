@@ -113,6 +113,7 @@ import {
 import {
   disposeTerminalSession,
   getTerminalSessionDiagnostics,
+  processCache as sessionProcessCache,
 } from "./modules/terminal/controller/terminalSessionStore.js";
 
 const SIDEBAR_TRANSITION_MS = 250;
@@ -3445,21 +3446,30 @@ function AppContent() {
     return null;
   }, [tabs, currentTab]);
 
-  // 添加发送快捷命令到终端的函数
+  // 添加发送快捷命令到终端的函数。
+  // 类型策略（与逐键同步、粘贴/清除同步两条路径统一）：
+  // 不区分终端类型（ssh/telnet/local），只要求当前标签存在活跃终端会话；
+  // 同步范围完全由分组内成员构成决定。
   const handleSendCommand = useCallback(
     (command, options = {}) => {
       const panelTab = getCurrentPanelTab();
 
-      if (panelTab && panelTab.type === "ssh") {
-        dispatchCommandToGroup(panelTab.id, command, syncGroups, options);
-        return { success: true };
-      } else if (panelTab) {
-        console.warn("Current tab is not SSH:", panelTab.type);
-        return { success: false, error: t("commandHistory.notSshTab") };
-      } else {
+      if (!panelTab) {
         console.warn("No panel tab found");
-        return { success: false, error: t("commandHistory.noSshConnection") };
+        return { success: false, error: t("commandHistory.noTerminalTab") };
       }
+
+      const processId = sessionProcessCache[panelTab.id];
+      if (!processId) {
+        console.warn("No active terminal session for tab:", panelTab.id);
+        return {
+          success: false,
+          error: t("commandHistory.noActiveSession"),
+        };
+      }
+
+      dispatchCommandToGroup(panelTab.id, command, syncGroups, options);
+      return { success: true };
     },
     [getCurrentPanelTab, syncGroups, t],
   );
