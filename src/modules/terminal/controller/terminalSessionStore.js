@@ -2,7 +2,33 @@ export const terminalCache = {};
 export const fitAddonCache = {};
 export const processCache = {};
 export const disposablesCache = {};
+// xterm 实例注册表：同步输入分组等模块用于向目标终端打输入通道标记。
+// 单一来源，不再暴露到 window（原 window.webTerminalRefs 已移除）。
+export const webTerminalRefs = {};
 const terminalIOMailboxCache = {};
+
+/**
+ * 注册 tab 对应的 xterm 实例（WebTerminal 挂载时调用）。
+ */
+export const registerTerminalRef = (tabId, term) => {
+  if (!tabId || !term) {
+    return;
+  }
+  webTerminalRefs[tabId] = term;
+};
+
+/**
+ * 注销 tab 对应的 xterm 实例；传入 term 时仅在与当前注册一致时删除，
+ * 避免误删后来者（如快速重开同名 tab）。
+ */
+export const unregisterTerminalRef = (tabId, term) => {
+  if (!tabId) {
+    return;
+  }
+  if (!term || webTerminalRefs[tabId] === term) {
+    delete webTerminalRefs[tabId];
+  }
+};
 
 const disposeResource = (resource) => {
   if (!resource || typeof resource.dispose !== "function") {
@@ -50,6 +76,7 @@ export const getTerminalSessionDiagnostics = () => ({
   disposablesCount: Object.keys(disposablesCache).length,
   mailboxCount: Object.keys(terminalIOMailboxCache).length,
   terminalIds: Object.keys(terminalCache),
+  webTerminalRefCount: Object.keys(webTerminalRefs).length,
 });
 
 /**
@@ -172,7 +199,3 @@ export const unregisterTerminalIOMailbox = (tabId, mailbox) => {
     delete terminalIOMailboxCache[tabId];
   }
 };
-
-if (typeof window !== "undefined") {
-  window.processCache = processCache;
-}

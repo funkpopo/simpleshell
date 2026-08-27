@@ -1,7 +1,11 @@
 import { useCallback, useEffect } from "react";
 import { findGroupByTab } from "../core/syncInputGroups";
 import { useAppSelector } from "../store/AppContext.jsx";
-import { processCache } from "../modules/terminal/controller/terminalSessionStore.js";
+import {
+  processCache,
+  registerTerminalRef,
+  unregisterTerminalRef,
+} from "../modules/terminal/controller/terminalSessionStore.js";
 
 const selectSyncGroups = (state) => state.syncGroups;
 
@@ -71,18 +75,12 @@ export const useTerminalInputSync = ({
   );
 
   useEffect(() => {
-    if (typeof window !== "undefined" && !window.webTerminalRefs) {
-      window.webTerminalRefs = {};
-    }
-
     if (termRef.current && tabId) {
-      window.webTerminalRefs[tabId] = termRef.current;
+      registerTerminalRef(tabId, termRef.current);
     }
 
     return () => {
-      if (tabId && window.webTerminalRefs) {
-        delete window.webTerminalRefs[tabId];
-      }
+      unregisterTerminalRef(tabId, termRef.current);
     };
   }, [tabId, termRef]);
 

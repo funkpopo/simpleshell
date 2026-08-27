@@ -732,7 +732,6 @@ function AppContent() {
   const connections = state.connections;
   const topConnections = state.topConnections;
   const fileManagerPaths = state.fileManagerPaths;
-  const processCache = state.processCache;
   const aiChatStatus = state.aiChatStatus;
   const aiInputPreset = state.aiInputPreset;
   const draggedTabIndex = state.draggedTabIndex;
@@ -743,7 +742,6 @@ function AppContent() {
   const connectionsRef = React.useRef(connections);
   const topConnectionsRef = React.useRef(topConnections);
   const terminalInstancesRef = React.useRef(terminalInstances);
-  const processCacheRef = React.useRef(processCache);
   const [connectionStatusByTabId, setConnectionStatusByTabId] = React.useState(
     {},
   );
@@ -759,10 +757,6 @@ function AppContent() {
   React.useEffect(() => {
     terminalInstancesRef.current = terminalInstances;
   }, [terminalInstances]);
-
-  React.useEffect(() => {
-    processCacheRef.current = processCache;
-  }, [processCache]);
 
   React.useEffect(() => {
     if (!uiSettingsLoaded || !connectionsLoaded) {
@@ -1943,28 +1937,17 @@ function AppContent() {
       const { terminalId, processId } = event.detail;
       if (terminalId && processId) {
         // 更新终端实例中的进程ID
+        // 注：进程 ID 的唯一来源是 terminalSessionStore.processCache，
+        // 此处只同步 terminalInstances 供 UI 查询
         dispatch(
           actions.setTerminalInstances({
             ...terminalInstancesRef.current,
             [`${terminalId}-processId`]: processId,
           }),
         );
-
-        // 更新进程缓存
-        dispatch(
-          actions.setProcessCache({
-            ...processCacheRef.current,
-            [terminalId]: processId,
-          }),
-        );
       }
     };
 
-    const removeSshListener = eventManager.addEventListener(
-      window,
-      "sshProcessIdUpdated",
-      handleTerminalProcessIdUpdate,
-    );
     const removeTerminalListener = eventManager.addEventListener(
       window,
       "terminalProcessIdUpdated",
@@ -1972,7 +1955,6 @@ function AppContent() {
     );
 
     return () => {
-      removeSshListener();
       removeTerminalListener();
     };
   }, [dispatch, eventManager]);
@@ -2499,8 +2481,8 @@ function AppContent() {
 
       // 获取当前连接的processId并清理连接
       try {
-        // 从全局processCache获取processId（WebTerminal组件设置的）
-        const processId = window.processCache && window.processCache[tabId];
+        // 从终端会话存储的 processCache 获取processId（WebTerminal组件设置的）
+        const processId = sessionProcessCache[tabId];
         if (
           processId &&
           window.terminalAPI &&
@@ -2728,7 +2710,7 @@ function AppContent() {
     const tabToRemove = tabs[index];
 
     // 关闭SSH/Telnet连接 - 在清理缓存之前先断开连接
-    const processId = processCache[tabToRemove.id];
+    const processId = sessionProcessCache[tabToRemove.id];
     if (
       processId &&
       (tabToRemove.type === "ssh" ||
@@ -2795,10 +2777,8 @@ function AppContent() {
     delete newInstances[`${tabToRemove.id}-refresh`];
     dispatch(actions.setTerminalInstances(newInstances));
 
-    // 清理进程缓存
-    const newCache = { ...processCache };
-    delete newCache[tabToRemove.id];
-    dispatch(actions.setProcessCache(newCache));
+    // 注：进程缓存（terminalSessionStore.processCache）已由上方
+    // disposeTerminalSession(tabToRemove.id) 统一清理，无需在此重复处理。
 
     // 清理文件管理路径记忆
     const newPaths = { ...fileManagerPaths };

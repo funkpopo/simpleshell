@@ -1,4 +1,8 @@
 import { findGroupByTab } from "./syncInputGroups";
+import {
+  processCache,
+  webTerminalRefs,
+} from "../modules/terminal/controller/terminalSessionStore.js";
 
 /**
  * 分组命令分发器：统一负责将命令同步到分组内所有终端。
@@ -14,10 +18,6 @@ export function dispatchCommandToGroup(tabId, command, syncGroups, options = {})
     console.error("window.terminalAPI.sendToProcess not available");
     return;
   }
-  if (!window.processCache) {
-    console.error("window.processCache not available");
-    return;
-  }
 
   const group = findGroupByTab(syncGroups, tabId);
   let members = [tabId];
@@ -26,7 +26,7 @@ export function dispatchCommandToGroup(tabId, command, syncGroups, options = {})
   }
 
   members.forEach((targetTabId) => {
-    const pid = window.processCache[targetTabId];
+    const pid = processCache[targetTabId];
     if (pid) {
       const shouldExecute = options.execute !== false;
       const commandToSend = shouldExecute ? command + "\r" : command;
@@ -35,7 +35,7 @@ export function dispatchCommandToGroup(tabId, command, syncGroups, options = {})
       // the process below; this event only lets the target terminal mark the
       // channel payload so its onData handler can recognize (and skip) a
       // replay without ever swallowing user keystrokes.
-      if (window.webTerminalRefs && window.webTerminalRefs[targetTabId]) {
+      if (webTerminalRefs[targetTabId]) {
         const event = new CustomEvent("externalCommandSending", {
           detail: {
             tabId: targetTabId,

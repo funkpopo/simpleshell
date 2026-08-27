@@ -59,10 +59,6 @@ export const ActionTypes = {
   SET_FILE_MANAGER_PATHS: "SET_FILE_MANAGER_PATHS",
   UPDATE_FILE_MANAGER_PATH: "UPDATE_FILE_MANAGER_PATH",
 
-  // Process Cache
-  SET_PROCESS_CACHE: "SET_PROCESS_CACHE",
-  UPDATE_PROCESS_CACHE: "UPDATE_PROCESS_CACHE",
-
   // AI Chat
   SET_AI_CHAT_STATUS: "SET_AI_CHAT_STATUS",
   SET_AI_INPUT_PRESET: "SET_AI_INPUT_PRESET",
@@ -125,9 +121,6 @@ export const initialState = {
 
   // File Manager State
   fileManagerPaths: {},
-
-  // Process Cache
-  processCache: {},
 
   // AI Chat State
   aiChatStatus: "closed",
@@ -318,19 +311,6 @@ export function appReducer(state = initialState, action) {
         },
       };
 
-    // Process Cache Actions
-    case ActionTypes.SET_PROCESS_CACHE:
-      return { ...state, processCache: action.payload };
-
-    case ActionTypes.UPDATE_PROCESS_CACHE:
-      return {
-        ...state,
-        processCache: {
-          ...state.processCache,
-          [action.payload.sessionId]: action.payload.processId,
-        },
-      };
-
     // AI Chat Actions
     case ActionTypes.SET_AI_CHAT_STATUS:
       return { ...state, aiChatStatus: action.payload };
@@ -486,16 +466,6 @@ export const actions = {
   updateFileManagerPath: (tabId, path) => ({
     type: ActionTypes.UPDATE_FILE_MANAGER_PATH,
     payload: { tabId, path },
-  }),
-
-  // Process Cache Actions
-  setProcessCache: (cache) => ({
-    type: ActionTypes.SET_PROCESS_CACHE,
-    payload: cache,
-  }),
-  updateProcessCache: (sessionId, processId) => ({
-    type: ActionTypes.UPDATE_PROCESS_CACHE,
-    payload: { sessionId, processId },
   }),
 
   // AI Chat Actions

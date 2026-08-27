@@ -67,23 +67,6 @@ export function useTerminalSessionEvents({
   }, [tabId, termRef]);
 
   useEffect(() => {
-    window.sshProcessIdCallback = (terminalId, processId) => {
-      try {
-        window.dispatchEvent(
-          new CustomEvent("sshProcessIdUpdated", {
-            detail: { terminalId, processId },
-          }),
-        );
-      } catch {
-        /* ignore */
-      }
-    };
-    return () => {
-      window.sshProcessIdCallback = null;
-    };
-  }, []);
-
-  useEffect(() => {
     if (!isActive || !termRef.current) return undefined;
     const timers = [80, 160, 260, 380, 520].map((delay) =>
       setTimeout(() => {

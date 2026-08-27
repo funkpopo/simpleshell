@@ -3,7 +3,8 @@
 // 分组状态本体由 appReducer（AppContext）持有，本模块不再维护
 // 模块级可变单例，所有操作都接收并返回新的分组数组。
 
-export const DEFAULT_COLORS = [
+// 分组颜色轮换表（仅本模块内部使用）
+const DEFAULT_COLORS = [
   "#ff0000", // 红
   "#ff9300", // 橙
   "#fffb0d", // 黄
