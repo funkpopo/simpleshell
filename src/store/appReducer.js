@@ -1,3 +1,10 @@
+// 分组状态
+import {
+  addTabToSyncGroup,
+  createSyncGroup,
+  removeTabFromSyncGroups,
+} from "../core/syncInputGroups.js";
+
 // Action Types
 export const ActionTypes = {
   // Tab Management
@@ -6,6 +13,11 @@ export const ActionTypes = {
   REMOVE_TAB: "REMOVE_TAB",
   UPDATE_TAB: "UPDATE_TAB",
   SET_CURRENT_TAB: "SET_CURRENT_TAB",
+
+  // Sync Input Groups
+  CREATE_SYNC_GROUP: "CREATE_SYNC_GROUP",
+  JOIN_SYNC_GROUP: "JOIN_SYNC_GROUP",
+  REMOVE_TAB_FROM_SYNC_GROUPS: "REMOVE_TAB_FROM_SYNC_GROUPS",
 
   // Drag & Drop
   SET_DRAGGED_TAB: "SET_DRAGGED_TAB",
@@ -70,6 +82,9 @@ export const initialState = {
     },
   ],
   currentTab: 0,
+
+  // Sync Input Groups
+  syncGroups: [],
 
   // Drag & Drop State
   draggedTabIndex: null,
@@ -145,6 +160,31 @@ export function appReducer(state = initialState, action) {
 
     case ActionTypes.SET_CURRENT_TAB:
       return { ...state, currentTab: action.payload };
+
+    // Sync Input Group Actions
+    case ActionTypes.CREATE_SYNC_GROUP: {
+      const { groups, group } = createSyncGroup(state.syncGroups);
+      return {
+        ...state,
+        syncGroups: addTabToSyncGroup(groups, action.payload, group.groupId),
+      };
+    }
+
+    case ActionTypes.JOIN_SYNC_GROUP:
+      return {
+        ...state,
+        syncGroups: addTabToSyncGroup(
+          state.syncGroups,
+          action.payload.tabId,
+          action.payload.groupId,
+        ),
+      };
+
+    case ActionTypes.REMOVE_TAB_FROM_SYNC_GROUPS:
+      return {
+        ...state,
+        syncGroups: removeTabFromSyncGroups(state.syncGroups, action.payload),
+      };
 
     // Drag & Drop Actions
     case ActionTypes.SET_DRAGGED_TAB:
@@ -320,6 +360,20 @@ export const actions = {
   setCurrentTab: (index) => ({
     type: ActionTypes.SET_CURRENT_TAB,
     payload: index,
+  }),
+
+  // Sync Input Group Actions
+  createSyncGroup: (tabId) => ({
+    type: ActionTypes.CREATE_SYNC_GROUP,
+    payload: tabId,
+  }),
+  joinSyncGroup: (tabId, groupId) => ({
+    type: ActionTypes.JOIN_SYNC_GROUP,
+    payload: { tabId, groupId },
+  }),
+  removeTabFromSyncGroups: (tabId) => ({
+    type: ActionTypes.REMOVE_TAB_FROM_SYNC_GROUPS,
+    payload: tabId,
   }),
 
   // Drag Actions

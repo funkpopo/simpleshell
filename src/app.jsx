@@ -80,13 +80,7 @@ import {
   sidebarRailButtonSx,
   sidebarRailDividerSx,
 } from "./components/sidebarItemStyles";
-import {
-  findGroupByTab,
-  getGroups,
-  addGroup,
-  addTabToGroup,
-  removeTabFromGroup,
-} from "./core/syncInputGroups";
+import { findGroupByTab } from "./core/syncInputGroups";
 import ListItemText from "@mui/material/ListItemText";
 import Divider from "@mui/material/Divider";
 import AddCircleOutlinedIcon from "@mui/icons-material/AddCircleOutlined";
@@ -715,6 +709,7 @@ function AppContent() {
 
   // ============ 从全局状态读取 ============
   const tabs = state.tabs;
+  const syncGroups = state.syncGroups;
   const latestTabsForActionsRef = useRef(tabs);
   latestTabsForActionsRef.current = tabs;
   const currentTab = state.currentTab;
@@ -2824,7 +2819,8 @@ function AppContent() {
     );
 
     // 同步输入分组：将该标签从所属分组中移除；若为组内最后一个成员，
-    removeTabFromGroup(tabToRemove.id);
+    // 分组自动回收（由 reducer 完成）
+    dispatch(actions.removeTabFromSyncGroups(tabToRemove.id));
 
     const newTabs = tabs.filter((_, i) => i !== index);
     dispatch(actions.setTabs(newTabs));
@@ -3455,7 +3451,7 @@ function AppContent() {
       const panelTab = getCurrentPanelTab();
 
       if (panelTab && panelTab.type === "ssh") {
-        dispatchCommandToGroup(panelTab.id, command, options);
+        dispatchCommandToGroup(panelTab.id, command, syncGroups, options);
         return { success: true };
       } else if (panelTab) {
         console.warn("Current tab is not SSH:", panelTab.type);
@@ -3465,7 +3461,7 @@ function AppContent() {
         return { success: false, error: t("commandHistory.noSshConnection") };
       }
     },
-    [getCurrentPanelTab, t],
+    [getCurrentPanelTab, syncGroups, t],
   );
 
   // 计算右侧面板的当前标签页信息
@@ -3819,21 +3815,18 @@ function AppContent() {
     };
   }, [darkMode, dispatch, aiChatStatus]); // 添加 aiChatStatus 依赖以确保快捷键能正确切换状态
 
-  // 分组操作回调
+  // 分组操作回调：分组状态已收编进 appReducer，直接 dispatch 即可触发刷新，
+  // 不再需要 dispatch(actions.setTabs([...tabs])) 强制刷新 hack
   const handleJoinGroup = (tabId, groupId) => {
-    addTabToGroup(tabId, groupId);
-    dispatch(actions.setTabs([...tabs])); // 触发刷新
+    dispatch(actions.joinSyncGroup(tabId, groupId));
     handleTabContextMenuClose();
   };
   const handleRemoveFromGroup = (tabId) => {
-    removeTabFromGroup(tabId);
-    dispatch(actions.setTabs([...tabs]));
+    dispatch(actions.removeTabFromSyncGroups(tabId));
     handleTabContextMenuClose();
   };
   const handleCreateGroup = (tabId) => {
-    const newGroup = addGroup();
-    addTabToGroup(tabId, newGroup.groupId);
-    dispatch(actions.setTabs([...tabs]));
+    dispatch(actions.createSyncGroup(tabId));
     handleTabContextMenuClose();
   };
 
@@ -4095,6 +4088,7 @@ function AppContent() {
                         selected={currentTab === index}
                         index={index}
                         tabId={tab.id}
+                        group={findGroupByTab(syncGroups, tab.id)}
                         isDragSource={
                           draggedTabIndex !== null && draggedTabIndex === index
                         }
@@ -4273,8 +4267,7 @@ function AppContent() {
             {(() => {
               const tabId = tabContextMenu.tabId;
               if (!tabId) return null;
-              const group = findGroupByTab(tabId);
-              const groups = getGroups();
+              const group = findGroupByTab(syncGroups, tabId);
               const groupMenuItems = [];
               if (group) {
                 groupMenuItems.push(
@@ -4290,7 +4283,7 @@ function AppContent() {
                   </MenuItem>,
                 );
               } else {
-                groups.forEach((g) => {
+                syncGroups.forEach((g) => {
                   groupMenuItems.push(
                     <MenuItem
                       key={g.groupId}

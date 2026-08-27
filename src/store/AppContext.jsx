@@ -129,3 +129,7 @@ export function useConnections() {
     topConnections: state.topConnections,
   }));
 }
+
+export function useSyncGroups() {
+  return useAppSelector((state) => state.syncGroups);
+}

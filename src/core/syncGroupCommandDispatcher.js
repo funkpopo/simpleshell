@@ -4,9 +4,10 @@ import { findGroupByTab } from "./syncInputGroups";
  * 分组命令分发器：统一负责将命令同步到分组内所有终端
  * @param {string} tabId - 当前终端Tab的ID
  * @param {string} command - 需要分发的命令（不带回车）
+ * @param {Array} syncGroups - 当前分组状态（来自 AppContext，由调用方传入）
  * @param {{ execute?: boolean }} options - execute 为 false 时只输入命令，不发送回车
  */
-export function dispatchCommandToGroup(tabId, command, options = {}) {
+export function dispatchCommandToGroup(tabId, command, syncGroups, options = {}) {
   if (!window.terminalAPI || !window.terminalAPI.sendToProcess) {
     console.error("window.terminalAPI.sendToProcess not available");
     return;
@@ -16,7 +17,7 @@ export function dispatchCommandToGroup(tabId, command, options = {}) {
     return;
   }
 
-  const group = findGroupByTab(tabId);
+  const group = findGroupByTab(syncGroups, tabId);
   let members = [tabId];
   if (group && group.members && group.members.length > 1) {
     members = group.members;

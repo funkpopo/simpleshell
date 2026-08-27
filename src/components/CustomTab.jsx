@@ -4,7 +4,6 @@ import { Box, Tab, Tooltip } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import { useTranslation } from "react-i18next";
-import { findGroupByTab } from "../core/syncInputGroups";
 
 // 拖拽指示器与重连动画的 keyframes 定义在 styles/global.css 中
 // （indicatorGlassIn / indicatorGlowPulse / reconnectPulse）
@@ -34,7 +33,8 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.isDraggedOver === nextProps.isDraggedOver &&
     prevProps.dragInsertPosition === nextProps.dragInsertPosition &&
     prevProps.isDragSource === nextProps.isDragSource &&
-    prevProps.dragSessionActive === nextProps.dragSessionActive
+    prevProps.dragSessionActive === nextProps.dragSessionActive &&
+    prevProps.group === nextProps.group
   );
 };
 
@@ -60,11 +60,9 @@ const CustomTab = memo((props) => {
     dragInsertPosition = null, // 插入位置 ('before' | 'after')
     isDragSource = false, // 当前标签是否为被拖动的源（原位占位）
     dragSessionActive = false, // 是否有任意标签正在被拖动
+    group = null, // 所属同步输入分组 { groupId, color, members }，由父组件从全局状态传入
     ...other
   } = props;
-
-  // 分组相关状态
-  const group = findGroupByTab(tabId);
 
   // 优化关闭按钮点击处理
   const handleCloseClick = (e) => {
@@ -485,6 +483,11 @@ CustomTab.propTypes = {
   dragInsertPosition: PropTypes.oneOf(["before", "after", null]),
   isDragSource: PropTypes.bool,
   dragSessionActive: PropTypes.bool,
+  group: PropTypes.shape({
+    groupId: PropTypes.string.isRequired,
+    color: PropTypes.string.isRequired,
+    members: PropTypes.arrayOf(PropTypes.string).isRequired,
+  }),
 };
 
 export default CustomTab;

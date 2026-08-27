@@ -1,6 +1,9 @@
 import { useCallback, useEffect } from "react";
 import { findGroupByTab } from "../core/syncInputGroups";
+import { useAppSelector } from "../store/AppContext.jsx";
 import { processCache } from "../modules/terminal/controller/terminalSessionStore.js";
+
+const selectSyncGroups = (state) => state.syncGroups;
 
 export const useTerminalInputSync = ({
   tabId,
@@ -9,9 +12,11 @@ export const useTerminalInputSync = ({
   termRef,
   eventManager,
 }) => {
+  const syncGroups = useAppSelector(selectSyncGroups);
+
   const broadcastInputToGroup = useCallback(
     (input, sourceTabId) => {
-      const group = findGroupByTab(tabId);
+      const group = findGroupByTab(syncGroups, tabId);
       if (group && group.members && group.members.length > 1) {
         group.members.forEach((targetTabId) => {
           if (
@@ -32,7 +37,7 @@ export const useTerminalInputSync = ({
         });
       }
     },
-    [tabId],
+    [tabId, syncGroups],
   );
 
   // Some input paths (native paste, middle-click paste and the context menu)
@@ -40,7 +45,7 @@ export const useTerminalInputSync = ({
   // channel so they can use the receiving terminal's normal paste pipeline.
   const broadcastTerminalActionToGroup = useCallback(
     (action, payload = {}, sourceTabId = tabId) => {
-      const group = findGroupByTab(tabId);
+      const group = findGroupByTab(syncGroups, tabId);
       if (!group?.members || group.members.length <= 1) {
         return;
       }
@@ -62,7 +67,7 @@ export const useTerminalInputSync = ({
         );
       });
     },
-    [tabId],
+    [tabId, syncGroups],
   );
 
   useEffect(() => {
