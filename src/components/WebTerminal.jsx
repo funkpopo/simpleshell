@@ -157,6 +157,7 @@ const WebTerminal = ({
       handlePasteText,
       termRef,
       eventManager,
+      suggestionUiRef,
     });
 
   const handleGroupPasteText = useCallback(
@@ -242,6 +243,8 @@ const WebTerminal = ({
       setCurrentInput,
       setSuggestionsHiddenByEsc,
       setSuggestionsSuppressedUntilEnter,
+      // 供同步输入分组在成员端刷新补全弹层（避免补全与输入行脱节）
+      getSuggestions,
     };
   }, [
     setShowSuggestions,
@@ -249,6 +252,7 @@ const WebTerminal = ({
     setCurrentInput,
     setSuggestionsHiddenByEsc,
     setSuggestionsSuppressedUntilEnter,
+    getSuggestions,
   ]);
 
   const suggestionApi = {

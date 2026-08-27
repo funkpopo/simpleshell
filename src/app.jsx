@@ -87,6 +87,7 @@ import AddCircleOutlinedIcon from "@mui/icons-material/AddCircleOutlined";
 import AddIcon from "@mui/icons-material/Add";
 import PauseCircleOutlinedIcon from "@mui/icons-material/PauseCircleOutlined";
 import PlayCircleOutlinedIcon from "@mui/icons-material/PlayCircleOutlined";
+import DriveFileMoveOutlinedIcon from "@mui/icons-material/DriveFileMoveOutlined";
 import { dispatchCommandToGroup } from "./core/syncGroupCommandDispatcher";
 import { useCleanupManager } from "./hooks/useAutoCleanup.js";
 import {
@@ -443,7 +444,7 @@ function AppContent() {
   const LATENCY_INFO_MIN_WIDTH = 150;
   const { t, i18n } = useTranslation();
   const eventManager = useCleanupManager(); // 使用统一的事件管理器
-  const { showError, showInfo, showSuccess } = useNotification();
+  const { showError, showInfo, showSuccess, showWarning } = useNotification();
 
   // 使用全局状态和 dispatch
   const state = useAppState();
@@ -3820,6 +3821,39 @@ function AppContent() {
     handleTabContextMenuClose();
   };
 
+  // 同步分组提示 toast：成员不可达 / 并发输入警告（来自分发器或分组内成员端）
+  React.useEffect(() => {
+    const lastNoticeAt = { "member-unreachable": 0, "concurrent-input": 0 };
+    const THROTTLE_MS = {
+      "member-unreachable": 2000,
+      "concurrent-input": 3000,
+    };
+    const handleSyncGroupNotice = (event) => {
+      const detail = event.detail || {};
+      const throttle = THROTTLE_MS[detail.kind];
+      if (!throttle) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastNoticeAt[detail.kind] < throttle) {
+        return;
+      }
+      lastNoticeAt[detail.kind] = now;
+      if (detail.kind === "member-unreachable") {
+        const count =
+          Array.isArray(detail.tabIds) && detail.tabIds.length > 0
+            ? detail.tabIds.length
+            : 1;
+        showWarning(t("syncGroupNotice.memberUnreachable", { count }));
+      } else if (detail.kind === "concurrent-input") {
+        showWarning(t("syncGroupNotice.concurrentInput"));
+      }
+    };
+    window.addEventListener("syncGroupNotice", handleSyncGroupNotice);
+    return () =>
+      window.removeEventListener("syncGroupNotice", handleSyncGroupNotice);
+  }, [showWarning, t]);
+
   // 在主题加载完成前显示加载状态，避免闪烁
   if (themeLoading) {
     return (
@@ -4260,6 +4294,22 @@ function AppContent() {
               const group = findGroupByTab(syncGroups, tabId);
               const groupMenuItems = [];
               if (group) {
+                // 直接移动到其他分组（免去先移除再加入）
+                syncGroups.forEach((g) => {
+                  if (g.groupId === group.groupId) return;
+                  groupMenuItems.push(
+                    <MenuItem
+                      key={`move-${g.groupId}`}
+                      onClick={() => handleJoinGroup(tabId, g.groupId)}
+                    >
+                      <DriveFileMoveOutlinedIcon
+                        fontSize="small"
+                        sx={{ mr: 1, color: g.color }}
+                      />
+                      <ListItemText>{`${t("tabMenu.moveToGroup")} ${g.groupId.replace("G", "")}`}</ListItemText>
+                    </MenuItem>,
+                  );
+                });
                 groupMenuItems.push(
                   <MenuItem
                     key="remove-from-group"

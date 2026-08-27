@@ -222,7 +222,12 @@
       "pauseReconnectDone": "Automatic reconnect paused",
       "resumeReconnectDone": "Automatic reconnect resumed",
       "reconnectSessionRestoreFailedHint": "The transport connection recovered, but the interactive terminal session could not be restored. Refresh the connection.",
-      "syncGroup": "Sync group {{groupId}}"
+      "syncGroup": "Sync group {{groupId}}",
+      "moveToGroup": "Move to Group"
+    },
+    "syncGroupNotice": {
+      "memberUnreachable": "{{count}} terminal(s) in the sync group have no active session; sync was not delivered",
+      "concurrentInput": "Concurrent input detected in the sync group; remote input ignored"
     },
     "about": {
       "title": "About SimpleShell",

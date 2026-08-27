@@ -222,7 +222,12 @@
       "pauseReconnectDone": "已暂停自动重连",
       "resumeReconnectDone": "已恢复自动重连",
       "reconnectSessionRestoreFailedHint": "底层连接已恢复，但终端会话恢复失败，请刷新连接。",
-      "syncGroup": "同步分组 {{groupId}}"
+      "syncGroup": "同步分组 {{groupId}}",
+      "moveToGroup": "移动到分组"
+    },
+    "syncGroupNotice": {
+      "memberUnreachable": "同步分组中有 {{count}} 个终端无活跃会话，本次同步未送达",
+      "concurrentInput": "检测到分组成员正在同时输入，已忽略远端输入"
     },
     "about": {
       "title": "关于 SimpleShell",
