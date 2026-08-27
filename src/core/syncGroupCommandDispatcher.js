@@ -28,14 +28,15 @@ export function dispatchCommandToGroup(tabId, command, options = {}) {
       const shouldExecute = options.execute !== false;
       const commandToSend = shouldExecute ? command + "\r" : command;
 
-      // 标记这是来自快捷命令窗口的输入，避免在WebTerminal中重复处理
+      // Explicit external-input channel notification. The command is sent to
+      // the process below; this event only lets the target terminal mark the
+      // channel payload so its onData handler can recognize (and skip) a
+      // replay without ever swallowing user keystrokes.
       if (window.webTerminalRefs && window.webTerminalRefs[targetTabId]) {
-        // 通过自定义事件通知WebTerminal即将接收外部命令
         const event = new CustomEvent("externalCommandSending", {
           detail: {
             tabId: targetTabId,
             command: commandToSend,
-            timestamp: Date.now(),
           },
         });
         window.dispatchEvent(event);

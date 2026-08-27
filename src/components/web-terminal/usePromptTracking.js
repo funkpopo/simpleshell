@@ -568,25 +568,22 @@ export function usePromptTracking({
 
         scheduleTerminalRedraw(term);
 
+        // External command channel (group quick-command dispatch). The
+        // dispatcher delivers the payload straight to the PTY via IPC, so it
+        // never legitimately surfaces here; this one-shot marker exists only
+        // to recognize a channel replay if one ever does. It is consumed on
+        // the first onData chunk regardless of match — no timestamp window,
+        // no per-character matching — so a stale marker can never swallow
+        // legitimate user keystrokes.
         let shouldSkipSendToProcess = false;
-        if (term._externalCommand) {
-          const extCmd = term._externalCommand;
-          if (extCmd.processedLength < extCmd.totalLength) {
-            const expectedChar = extCmd.command[extCmd.processedLength];
-            if (data === expectedChar) {
-              shouldSkipSendToProcess = true;
-              extCmd.processedLength++;
-
-              if (extCmd.processedLength >= extCmd.totalLength) {
-                delete term._externalCommand;
-              }
-            } else {
-              delete term._externalCommand;
-            }
-          }
+        if (term._externalInputChannel) {
+          shouldSkipSendToProcess = data === term._externalInputChannel.payload;
+          delete term._externalInputChannel;
         }
 
-        if (!isRemoteInput) {
+        // Suppressed channel payloads were already delivered by the
+        // dispatcher; re-broadcasting them would double-send to group members.
+        if (!isRemoteInput && !shouldSkipSendToProcess) {
           broadcastInputToGroup(data, tabId);
         }
 

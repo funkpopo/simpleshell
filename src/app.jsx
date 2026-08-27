@@ -2824,7 +2824,6 @@ function AppContent() {
     );
 
     // 同步输入分组：将该标签从所属分组中移除；若为组内最后一个成员，
-    // 分组会被自动回收，避免上下文菜单出现幽灵组（见 todo.md P0）
     removeTabFromGroup(tabToRemove.id);
 
     const newTabs = tabs.filter((_, i) => i !== index);

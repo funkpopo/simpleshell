@@ -93,21 +93,18 @@ export const useTerminalInputSync = ({
       }
     };
 
+    // Explicit external-input channel marker from the group command
+    // dispatcher. The payload is delivered to the process by the dispatcher
+    // itself; this marker only lets the terminal's onData handler recognize
+    // (and skip) a channel replay. It is consumed on the next onData chunk
+    // regardless of match — no timestamp window, no per-character matching —
+    // so it can never swallow legitimate user keystrokes.
     const handleExternalCommand = (event) => {
-      const { tabId: eventTabId, command, timestamp } = event.detail || {};
+      const { tabId: eventTabId, command } = event.detail || {};
       if (eventTabId === tabId && termRef.current) {
-        termRef.current._externalCommand = {
-          command,
-          timestamp,
-          processedLength: 0,
-          totalLength: command.length,
+        termRef.current._externalInputChannel = {
+          payload: command,
         };
-
-        setTimeout(() => {
-          if (termRef.current && termRef.current._externalCommand) {
-            delete termRef.current._externalCommand;
-          }
-        }, 2000);
       }
     };
 
