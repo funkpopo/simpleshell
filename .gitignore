@@ -35,13 +35,9 @@ temp/
 # vscode
 .vscode
 
-# 忽略.webpack
-.webpack
-.webpack/*
-
-# webpack缓存
-.webpack_cache
-.webpack_cache/*
+# webpack 构建产物与缓存
+.webpack/
+.webpack_cache/
 
 # Inno Setup scripts should stay in repo; generated installers should not.
 installer/*
@@ -71,9 +67,11 @@ release-manifest.json
 *.zip
 *.pdb
 
+# IDE
+.idea/
+
 .claude/
 docs/
 
 CLAUDE.md
 AGENTS.md
-todo.md
