@@ -367,6 +367,36 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
   });
 
   mainWindow.setMenuBarVisibility(false);
+
+  // Windows 实测行为：对隐藏窗口调用 maximize() 会立刻显示并按最大化尺寸 resize。
+  // 若等到 ready-to-show 之后再 maximize，渲染进程首帧仍是普通尺寸，会被 DWM 拉伸到
+  // 全屏，造成「最大化关闭后下次启动闪屏」。因此在这里（窗口尚未绘制任何内容时）
+  // 提前完成最大化，并在同一 tick 内将不透明度置 0（合成器不会呈现可见帧），让渲染
+  // 进程首帧直接按最大化尺寸排版；reveal 时只需恢复不透明度 + show()，全程零 resize。
+  // 注意：maximize + hide 的方案会导致 ready-to-show 永不触发（实测），故采用不透明度方案。
+  let preMaximizedWithHiddenOpacity = false;
+  if (restoredWindowState.maximized && !restoredWindowState.fullScreen) {
+    try {
+      mainWindow.maximize();
+      // 非 Windows 平台对隐藏窗口 maximize 可能不会使其可见，此时无需透明度遮挡
+      if (
+        mainWindow.isVisible() &&
+        typeof mainWindow.setOpacity === "function"
+      ) {
+        mainWindow.setOpacity(0);
+        // 透明阶段窗口已覆盖全屏，忽略鼠标事件，避免启动期间拦截用户点击
+        try {
+          mainWindow.setIgnoreMouseEvents(true);
+        } catch {
+          /* best-effort */
+        }
+        preMaximizedWithHiddenOpacity = true;
+      }
+    } catch {
+      /* 平台差异兜底：reveal 时会走 maximize 事件时序 */
+    }
+  }
+
   registerSessionSecurityHandlers();
   registerWindowSecurityHandlers(mainWindow, webpackEntry);
   registerRendererCrashHandlers(mainWindow);
@@ -432,6 +462,15 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
       }
 
       clearBootCss();
+      if (preMaximizedWithHiddenOpacity) {
+        preMaximizedWithHiddenOpacity = false;
+        try {
+          mainWindow.setOpacity(1);
+          mainWindow.setIgnoreMouseEvents(false);
+        } catch {
+          /* best-effort */
+        }
+      }
       mainWindow.show();
       emitWindowState();
 
@@ -458,7 +497,14 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
     if (restoredWindowState.fullScreen) {
       mainWindow.once("enter-full-screen", showMainWindow);
       mainWindow.setFullScreen(true);
+    } else if (mainWindow.isMaximized()) {
+      // 最大化已在隐藏阶段提前完成（渲染进程首帧已按最大化尺寸绘制），
+      // 直接显示即可；若此处再调用 maximize() 会触发 resize，把已绘制的
+      // 首帧拉伸导致闪屏。
+      showMainWindow();
     } else if (restoredWindowState.maximized) {
+      // 兜底：某些平台/窗口管理器下隐藏阶段的最大化未生效，沿用原有
+      // maximize 事件时序（Windows 上会引入一次拉伸，但保证窗口可见）。
       mainWindow.once("maximize", showMainWindow);
       mainWindow.maximize();
     } else {
