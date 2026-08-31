@@ -448,6 +448,14 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     { permission: "process-control" },
   ),
   defineRequest(
+    "TERMINAL_START_MOSH",
+    "terminal:startMosh",
+    "terminal",
+    args([objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "process-control" },
+  ),
+  defineRequest(
     "TERMINAL_LIST_SERIAL_PORTS",
     "terminal:listSerialPorts",
     "terminal",

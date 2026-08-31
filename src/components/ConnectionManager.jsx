@@ -39,6 +39,7 @@ import { compactContextMenuPaperSx } from "./contextMenuStyles";
 import ComputerIcon from "@mui/icons-material/Computer";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import UsbIcon from "@mui/icons-material/Usb";
+import NetworkPingIcon from "@mui/icons-material/NetworkPing";
 import FolderIcon from "@mui/icons-material/Folder";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import AddIcon from "@mui/icons-material/Add";
@@ -389,6 +390,13 @@ const DEFAULT_SERIAL_FORM = {
   flowControl: "none",
 };
 
+const DEFAULT_MOSH_FORM = {
+  moshBinaryPath: "",
+  moshUseWsl: false,
+  moshPredict: "adaptive",
+  moshServerPort: "",
+};
+
 const parseBaudRate = (value) => {
   const baud = Number.parseInt(value, 10);
   return SERIAL_BAUD_RATES.includes(baud) ? baud : DEFAULT_SERIAL_FORM.baudRate;
@@ -405,6 +413,7 @@ const buildConnectionPayloadFromForm = ({
 
   const shouldPreservePassword =
     protocol !== "serial" &&
+    protocol !== "mosh" &&
     dialogMode === "edit" &&
     selectedItem?.type === "connection" &&
     (formData.passwordMasked === true || formData.passwordTouched !== true) &&
@@ -430,6 +439,32 @@ const buildConnectionPayloadFromForm = ({
       stopBits: Number(formData.stopBits) || DEFAULT_SERIAL_FORM.stopBits,
       parity: formData.parity || DEFAULT_SERIAL_FORM.parity,
       flowControl: formData.flowControl || DEFAULT_SERIAL_FORM.flowControl,
+      os: formData.os,
+      connectionType: formData.connectionType,
+      proxy: null,
+    };
+  }
+
+  // Mosh 连接：port 字段为 SSH 引导端口（mosh 先经 SSH 启动 mosh-server），
+  // 认证由 mosh 客户端在终端内交互完成，不保存密码
+  if (protocol === "mosh") {
+    return {
+      id:
+        id ||
+        (dialogMode === "add"
+          ? generateId("conn")
+          : selectedItem?.id || generateId("conn")),
+      type: "connection",
+      name: String(formData.name || "").trim(),
+      host: String(formData.host || "").trim(),
+      port: parsePortValue(formData.port, 22),
+      username: String(formData.username || "").trim(),
+      password: "",
+      protocol: "mosh",
+      moshBinaryPath: String(formData.moshBinaryPath || "").trim(),
+      moshUseWsl: formData.moshUseWsl === true,
+      moshPredict: formData.moshPredict || DEFAULT_MOSH_FORM.moshPredict,
+      moshServerPort: String(formData.moshServerPort || "").trim(),
       os: formData.os,
       connectionType: formData.connectionType,
       proxy: null,
@@ -638,6 +673,14 @@ const ConnectionListItem = memo(function ConnectionListItem({
     if (connection.protocol === "serial") {
       return (
         <UsbIcon fontSize="small" sx={{ color: theme.palette.info.main }} />
+      );
+    }
+    if (connection.protocol === "mosh") {
+      return (
+        <NetworkPingIcon
+          fontSize="small"
+          sx={{ color: theme.palette.success.main }}
+        />
       );
     }
     return <ComputerIcon fontSize="small" />;
@@ -1196,6 +1239,7 @@ const ConnectionManager = memo(
       connectionType: "",
       protocol: "ssh", // 默认为SSH
       ...DEFAULT_SERIAL_FORM,
+      ...DEFAULT_MOSH_FORM,
       passwordTouched: false,
       passwordRevealed: false,
       passwordMasked: false,
@@ -1322,6 +1366,8 @@ const ConnectionManager = memo(
         os: "",
         connectionType: "",
         protocol: "ssh", // 默认为SSH
+        ...DEFAULT_SERIAL_FORM,
+        ...DEFAULT_MOSH_FORM,
         passwordTouched: false,
         passwordRevealed: false,
         passwordMasked: false,
@@ -1413,6 +1459,16 @@ const ConnectionManager = memo(
                 parity: item.parity || DEFAULT_SERIAL_FORM.parity,
                 flowControl:
                   item.flowControl || DEFAULT_SERIAL_FORM.flowControl,
+              }
+            : {}),
+          // Mosh 参数（仅 protocol 为 mosh 时使用）
+          ...DEFAULT_MOSH_FORM,
+          ...(item.protocol === "mosh"
+            ? {
+                moshBinaryPath: item.moshBinaryPath || "",
+                moshUseWsl: item.moshUseWsl === true,
+                moshPredict: item.moshPredict || DEFAULT_MOSH_FORM.moshPredict,
+                moshServerPort: item.moshServerPort || "",
               }
             : {}),
           passwordTouched: false,
@@ -1673,6 +1729,7 @@ const ConnectionManager = memo(
             // 串口没有端口概念，清空端口字段
             return { ...prev, [name]: value, port: null };
           }
+          // mosh 的端口为 SSH 引导端口，默认 22
           const defaultPort = value === "telnet" ? 23 : 22;
           // 只有在端口是默认值时才更新，如果用户已手动修改则保留
           if (prev.port === 22 || prev.port === 23 || prev.port === null) {
@@ -2920,6 +2977,9 @@ const ConnectionManager = memo(
                       <MenuItem value="serial">
                         {t("connectionManager.serialProtocol")}
                       </MenuItem>
+                      <MenuItem value="mosh">
+                        {t("connectionManager.moshProtocol")}
+                      </MenuItem>
                     </Select>
                   </FormControl>
 
@@ -3087,6 +3147,113 @@ const ConnectionManager = memo(
                             </MenuItem>
                           </Select>
                         </FormControl>
+                      </Box>
+                    </>
+                  ) : formData.protocol === "mosh" ? (
+                    <>
+                      <TextField
+                        label={t("connectionManager.hostAddress")}
+                        name="host"
+                        value={formData.host}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        required
+                      />
+
+                      <TextField
+                        label={t("connectionManager.port")}
+                        name="port"
+                        type="number"
+                        value={formData.port}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        placeholder="22"
+                        helperText={t("connectionManager.moshSshPortHint")}
+                      />
+
+                      <TextField
+                        label={t("connectionManager.username")}
+                        name="username"
+                        value={formData.username}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        helperText={t("connectionManager.moshUsernameHint")}
+                      />
+
+                      <TextField
+                        label={t("connectionManager.moshBinaryPath")}
+                        name="moshBinaryPath"
+                        value={formData.moshBinaryPath}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        placeholder="mosh"
+                        helperText={t("connectionManager.moshBinaryPathHint")}
+                      />
+
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={formData.moshUseWsl === true}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                moshUseWsl: e.target.checked,
+                              }))
+                            }
+                            size="small"
+                          />
+                        }
+                        label={
+                          <Box>
+                            <Typography variant="body2">
+                              {t("connectionManager.moshUseWsl")}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {t("connectionManager.moshUseWslHint")}
+                            </Typography>
+                          </Box>
+                        }
+                      />
+
+                      <Box sx={{ display: "flex", gap: 1 }}>
+                        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.moshPredict")}
+                          </InputLabel>
+                          <Select
+                            name="moshPredict"
+                            value={formData.moshPredict}
+                            label={t("connectionManager.moshPredict")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value="adaptive">
+                              {t("connectionManager.moshPredictAdaptive")}
+                            </MenuItem>
+                            <MenuItem value="always">
+                              {t("connectionManager.moshPredictAlways")}
+                            </MenuItem>
+                            <MenuItem value="never">
+                              {t("connectionManager.moshPredictNever")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                        <TextField
+                          label={t("connectionManager.moshServerPort")}
+                          name="moshServerPort"
+                          value={formData.moshServerPort}
+                          onChange={handleFormChange}
+                          size="small"
+                          sx={{ flex: 1, minWidth: 0 }}
+                          placeholder="60000"
+                          helperText={t("connectionManager.moshServerPortHint")}
+                        />
                       </Box>
                     </>
                   ) : (

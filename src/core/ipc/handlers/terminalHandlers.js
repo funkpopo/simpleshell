@@ -463,6 +463,18 @@ class TerminalHandlers {
           logToFile(`释放串口连接池引用: ${proc.connectionInfo.key}`, "INFO");
         }
 
+        // Mosh会话：释放连接池中的连接引用（终止 mosh 客户端进程）
+        if (proc.type === "mosh" && proc.connectionInfo) {
+          proc.connectionInfo.closeReason = "user";
+          proc.connectionInfo.intentionalClose = true;
+          this.connectionManager.releaseMoshConnection(
+            proc.connectionInfo.key,
+            proc.config?.tabId,
+            { reason: "user", intentional: true },
+          );
+          logToFile(`释放Mosh连接池引用: ${proc.connectionInfo.key}`, "INFO");
+        }
+
         // 移除stdout和stderr的监听器，防止在进程被kill后继续触发
         if (proc.process.stdout) {
           proc.process.stdout.removeAllListeners();

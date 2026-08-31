@@ -203,6 +203,7 @@ class AppCleanup {
     const sshPool = connectionManager.sshConnectionPool;
     const telnetPool = connectionManager.telnetConnectionPool;
     const serialPool = connectionManager.serialConnectionPool;
+    const moshPool = connectionManager.moshConnectionPool;
     const reconnectManager = sshPool?.reconnectionManager;
     const allProcesses =
       typeof processManager.getAllProcesses === "function"
@@ -229,6 +230,11 @@ class AppCleanup {
         tabReferences: serialPool?.tabReferences?.size || 0,
         healthCheckTimerActive: Boolean(serialPool?.healthCheckTimer),
       },
+      mosh: {
+        connections: moshPool?.connections?.size || 0,
+        tabReferences: moshPool?.tabReferences?.size || 0,
+        healthCheckTimerActive: Boolean(moshPool?.healthCheckTimer),
+      },
       filemanagementTransfer:
         filemanagementService &&
         typeof filemanagementService.getTransferRuntimeStats === "function"
@@ -253,6 +259,9 @@ class AppCleanup {
       (snapshot?.serial?.connections || 0) > 0 ||
       (snapshot?.serial?.tabReferences || 0) > 0 ||
       snapshot?.serial?.healthCheckTimerActive ||
+      (snapshot?.mosh?.connections || 0) > 0 ||
+      (snapshot?.mosh?.tabReferences || 0) > 0 ||
+      snapshot?.mosh?.healthCheckTimerActive ||
       (filemanagementStats.activeTransferCount || 0) > 0,
     );
   }

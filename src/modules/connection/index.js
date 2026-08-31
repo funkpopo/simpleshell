@@ -2,6 +2,7 @@ const {
   sshConnectionPool,
   telnetConnectionPool,
   serialConnectionPool,
+  moshConnectionPool,
 } = require("../../core/connection");
 const { logToFile } = require("../../core/utils/logger");
 
@@ -10,6 +11,7 @@ class ConnectionManager {
     this.sshConnectionPool = sshConnectionPool;
     this.telnetConnectionPool = telnetConnectionPool;
     this.serialConnectionPool = serialConnectionPool;
+    this.moshConnectionPool = moshConnectionPool;
   }
 
   initialize() {
@@ -17,6 +19,7 @@ class ConnectionManager {
     this.sshConnectionPool.initialize();
     this.telnetConnectionPool.initialize();
     this.serialConnectionPool.initialize();
+    this.moshConnectionPool.initialize();
   }
 
   cleanup() {
@@ -24,6 +27,7 @@ class ConnectionManager {
     this.sshConnectionPool.cleanup();
     this.telnetConnectionPool.cleanup();
     this.serialConnectionPool.cleanup();
+    this.moshConnectionPool.cleanup();
   }
 
   async getSftpSession(tabId) {
@@ -45,36 +49,41 @@ class ConnectionManager {
   }
 
   getTopConnections(count) {
-    // 合并SSH/Telnet/串口的热门连接
+    // 合并SSH/Telnet/串口/Mosh的热门连接
     const sshTopConnections = this.sshConnectionPool.getTopConnections(count);
     const telnetTopConnections =
       this.telnetConnectionPool.getTopConnections(count);
     const serialTopConnections =
       this.serialConnectionPool.getTopConnections(count);
+    const moshTopConnections = this.moshConnectionPool.getTopConnections(count);
 
     // 合并并按使用次数排序
     const allConnections = [
       ...sshTopConnections,
       ...telnetTopConnections,
       ...serialTopConnections,
+      ...moshTopConnections,
     ];
     return allConnections.slice(0, count);
   }
 
   getLastConnections(count) {
-    // 合并SSH/Telnet/串口的最近连接（获取连接对象,而不是连接ID）
+    // 合并SSH/Telnet/串口/Mosh的最近连接（获取连接对象,而不是连接ID）
     const sshLastConnections =
       this.sshConnectionPool.getLastConnectionsWithDetails(count);
     const telnetLastConnections =
       this.telnetConnectionPool.getLastConnectionsWithDetails(count);
     const serialLastConnections =
       this.serialConnectionPool.getLastConnectionsWithDetails(count);
+    const moshLastConnections =
+      this.moshConnectionPool.getLastConnectionsWithDetails(count);
 
     // 合并两个列表,保持时间顺序（简单合并,实际使用中可能需要更复杂的合并逻辑）
     const allConnections = [
       ...sshLastConnections,
       ...telnetLastConnections,
       ...serialLastConnections,
+      ...moshLastConnections,
     ];
     return allConnections.slice(0, count);
   }
@@ -86,12 +95,15 @@ class ConnectionManager {
       const sshConnections = [];
       const telnetConnections = [];
       const serialConnections = [];
+      const moshConnections = [];
 
       for (const conn of connections) {
         if (conn.protocol === "telnet") {
           telnetConnections.push(conn);
         } else if (conn.protocol === "serial") {
           serialConnections.push(conn);
+        } else if (conn.protocol === "mosh") {
+          moshConnections.push(conn);
         } else {
           // 默认视为SSH连接
           sshConnections.push(conn);
@@ -111,9 +123,12 @@ class ConnectionManager {
           serialConnections,
         );
       }
+      if (moshConnections.length > 0) {
+        this.moshConnectionPool.loadLastConnectionsFromConfig(moshConnections);
+      }
 
       logToFile(
-        `Loaded ${sshConnections.length} SSH, ${telnetConnections.length} Telnet and ${serialConnections.length} Serial last connections`,
+        `Loaded ${sshConnections.length} SSH, ${telnetConnections.length} Telnet, ${serialConnections.length} Serial and ${moshConnections.length} Mosh last connections`,
         "INFO",
       );
     }
@@ -146,9 +161,18 @@ class ConnectionManager {
     this.serialConnectionPool.releaseConnection(connectionKey, tabId, options);
   }
 
+  // Mosh连接池相关方法
+  async getMoshConnection(moshConfig) {
+    return this.moshConnectionPool.getConnection(moshConfig);
+  }
+
+  releaseMoshConnection(connectionKey, tabId = null, options = {}) {
+    this.moshConnectionPool.releaseConnection(connectionKey, tabId, options);
+  }
+
   // 添加标签页引用追踪
   addTabReference(tabId, connectionKey) {
-    // 根据连接键前缀判断是SSH、Telnet还是串口
+    // 根据连接键前缀判断是SSH、Telnet、串口还是Mosh
     if (connectionKey.startsWith("telnet:")) {
       if (this.telnetConnectionPool.addTabReference) {
         this.telnetConnectionPool.addTabReference(tabId, connectionKey);
@@ -156,6 +180,10 @@ class ConnectionManager {
     } else if (connectionKey.startsWith("serial:")) {
       if (this.serialConnectionPool.addTabReference) {
         this.serialConnectionPool.addTabReference(tabId, connectionKey);
+      }
+    } else if (connectionKey.startsWith("mosh:")) {
+      if (this.moshConnectionPool.addTabReference) {
+        this.moshConnectionPool.addTabReference(tabId, connectionKey);
       }
     } else {
       if (this.sshConnectionPool.addTabReference) {
@@ -169,6 +197,7 @@ class ConnectionManager {
       ssh: this.sshConnectionPool.getStatus(),
       telnet: this.telnetConnectionPool.getStatus(),
       serial: this.serialConnectionPool.getStatus(),
+      mosh: this.moshConnectionPool.getStatus(),
     };
   }
 
@@ -177,6 +206,7 @@ class ConnectionManager {
       ssh: this.sshConnectionPool.getDetailedStats(),
       telnet: this.telnetConnectionPool.getDetailedStats(),
       serial: this.serialConnectionPool.getDetailedStats(),
+      mosh: this.moshConnectionPool.getDetailedStats(),
     };
   }
 
@@ -196,6 +226,12 @@ class ConnectionManager {
           intentional: true,
         });
         logToFile(`手动关闭串口连接: ${connectionKey}`, "INFO");
+      } else if (connectionKey.startsWith("mosh:")) {
+        this.moshConnectionPool.closeConnection(connectionKey, {
+          reason: "user",
+          intentional: true,
+        });
+        logToFile(`手动关闭Mosh连接: ${connectionKey}`, "INFO");
       } else {
         this.sshConnectionPool.closeConnection(connectionKey, {
           reason: "user",
@@ -220,7 +256,10 @@ class ConnectionManager {
     const serialCleaned = this.serialConnectionPool.cleanupIdleConnections(
       Math.ceil(count / 2),
     );
-    return sshCleaned || telnetCleaned || serialCleaned;
+    const moshCleaned = this.moshConnectionPool.cleanupIdleConnections(
+      Math.ceil(count / 2),
+    );
+    return sshCleaned || telnetCleaned || serialCleaned || moshCleaned;
   }
 
   // 强制健康检查
@@ -228,6 +267,7 @@ class ConnectionManager {
     this.sshConnectionPool.performHealthCheck();
     this.telnetConnectionPool.performHealthCheck();
     this.serialConnectionPool.performHealthCheck();
+    this.moshConnectionPool.performHealthCheck();
   }
 }
 

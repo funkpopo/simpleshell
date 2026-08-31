@@ -336,7 +336,10 @@ const syncTerminalInstanceConfigs = (terminalInstances, tabs, connections) => {
   for (const tab of tabList) {
     if (
       !tab ||
-      (tab.type !== "ssh" && tab.type !== "telnet" && tab.type !== "serial")
+      (tab.type !== "ssh" &&
+        tab.type !== "telnet" &&
+        tab.type !== "serial" &&
+        tab.type !== "mosh")
     ) {
       continue;
     }
@@ -2726,7 +2729,9 @@ function AppContent() {
           ? "Telnet"
           : connection.protocol === "serial"
             ? "Serial"
-            : "SSH";
+            : connection.protocol === "mosh"
+              ? "Mosh"
+              : "SSH";
       const tabName = connection.name || `${protocol}: ${connection.host}`;
 
       // 创建新标签页
@@ -2807,6 +2812,7 @@ function AppContent() {
       (tabToRemove.type === "ssh" ||
         tabToRemove.type === "telnet" ||
         tabToRemove.type === "serial" ||
+        tabToRemove.type === "mosh" ||
         tabToRemove.type === "local")
     ) {
       window.terminalAPI.killProcess(processId).catch((err) => {
@@ -3673,7 +3679,9 @@ function AppContent() {
   const aiChatConnectionInfo = useMemo(() => {
     if (
       !currentPanelTab ||
-      (currentPanelTab.type !== "ssh" && currentPanelTab.type !== "telnet")
+      (currentPanelTab.type !== "ssh" &&
+        currentPanelTab.type !== "telnet" &&
+        currentPanelTab.type !== "mosh")
     ) {
       return null;
     }
@@ -3711,7 +3719,8 @@ function AppContent() {
     if (
       currentPanelTab.type !== "ssh" &&
       currentPanelTab.type !== "telnet" &&
-      currentPanelTab.type !== "serial"
+      currentPanelTab.type !== "serial" &&
+      currentPanelTab.type !== "mosh"
     ) {
       return null;
     }
@@ -4578,7 +4587,8 @@ function AppContent() {
                           sshConfig={
                             tab.type === "ssh" ||
                             tab.type === "telnet" ||
-                            tab.type === "serial"
+                            tab.type === "serial" ||
+                            tab.type === "mosh"
                               ? terminalInstances[`${tab.id}-config`]
                               : null
                           }

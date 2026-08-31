@@ -23,11 +23,13 @@ const BaseConnectionPool = require("./base-connection-pool");
 const SSHConnectionPool = require("./ssh-pool"); // 已更新为简化的ssh-pool
 const TelnetConnectionPool = require("./telnet-connection-pool");
 const SerialConnectionPool = require("./serial-connection-pool");
+const MoshConnectionPool = require("./mosh-connection-pool");
 
 // 创建单例实例
 const sshConnectionPool = new SSHConnectionPool();
 const telnetConnectionPool = new TelnetConnectionPool();
 const serialConnectionPool = new SerialConnectionPool();
+const moshConnectionPool = new MoshConnectionPool();
 
 /**
  * 初始化所有连接池
@@ -37,6 +39,7 @@ function initializeConnectionPools() {
   sshConnectionPool.initialize();
   telnetConnectionPool.initialize();
   serialConnectionPool.initialize();
+  moshConnectionPool.initialize();
 }
 
 /**
@@ -47,6 +50,7 @@ function cleanupConnectionPools() {
   sshConnectionPool.cleanup();
   telnetConnectionPool.cleanup();
   serialConnectionPool.cleanup();
+  moshConnectionPool.cleanup();
 }
 
 /**
@@ -58,6 +62,7 @@ function getAllConnectionPoolsStatus() {
     ssh: sshConnectionPool.getStatus(),
     telnet: telnetConnectionPool.getStatus(),
     serial: serialConnectionPool.getStatus(),
+    mosh: moshConnectionPool.getStatus(),
   };
 }
 
@@ -70,6 +75,7 @@ function getAllConnectionPoolsStats() {
     ssh: sshConnectionPool.getDetailedStats(),
     telnet: telnetConnectionPool.getDetailedStats(),
     serial: serialConnectionPool.getDetailedStats(),
+    mosh: moshConnectionPool.getDetailedStats(),
   };
 }
 
@@ -81,11 +87,13 @@ module.exports = {
   SSHConnectionPool,
   TelnetConnectionPool,
   SerialConnectionPool,
+  MoshConnectionPool,
 
   // 单例实例
   sshConnectionPool,
   telnetConnectionPool,
   serialConnectionPool,
+  moshConnectionPool,
 
   // 工具函数
   initializeConnectionPools,

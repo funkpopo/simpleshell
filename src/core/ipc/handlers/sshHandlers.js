@@ -77,6 +77,12 @@ function getTerminalText(config, key, params = {}) {
       return mainT("mainProcess.terminal.serialConnectedReused", options);
     case "serialOpened":
       return mainT("mainProcess.terminal.serialOpened", options);
+    case "moshStarted":
+      return mainT("mainProcess.terminal.moshStarted", options);
+    case "moshClosed":
+      return mainT("mainProcess.terminal.moshClosed", options);
+    case "moshError":
+      return mainT("mainProcess.terminal.moshError", options);
     case "droppedBytesWarning":
       return mainT("mainProcess.terminal.droppedBytesWarning", options);
     case "sshConnected":
@@ -156,6 +162,11 @@ class SSHHandlers {
         channel: IPC_REQUEST_CHANNELS.TERMINAL_START_SERIAL,
         category: "terminal",
         handler: this.startSerial.bind(this),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_START_MOSH,
+        category: "terminal",
+        handler: this.startMosh.bind(this),
       },
       {
         channel: IPC_REQUEST_CHANNELS.TERMINAL_LIST_SERIAL_PORTS,
@@ -915,6 +926,15 @@ class SSHHandlers {
       typeof activeProc.process.setWindow === "function"
     ) {
       activeProc.process.setWindow(rows, cols);
+      return true;
+    }
+
+    if (
+      activeProc.type === "mosh" &&
+      activeProc.process &&
+      typeof activeProc.process.resize === "function"
+    ) {
+      activeProc.process.resize(cols, rows);
       return true;
     }
 
@@ -1692,6 +1712,63 @@ class SSHHandlers {
     });
   }
 
+  /**
+   * Mosh 会话事件监听（mosh 客户端经 node-pty 托管）
+   * 输出经 IO 邮箱推送渲染层；进程退出后释放连接池引用并推送退出事件。
+   */
+  _setupMoshEventListeners(ptyProcess, processId, moshConfig, connectionInfo) {
+    const mainWindow = this._getMainWindow();
+    const processMailbox = this._configureProcessMailbox(processId, moshConfig);
+
+    ptyProcess.onData((data) => {
+      try {
+        const text = Buffer.isBuffer(data) ? data.toString() : String(data);
+        if (processMailbox) {
+          processMailbox.emitOutput(text);
+        } else if (mainWindow && !mainWindow.isDestroyed()) {
+          this._emitProcessOutput(processId, text);
+        }
+      } catch (error) {
+        logToFile(`Error handling Mosh data: ${error.message}`, "ERROR");
+      }
+    });
+
+    ptyProcess.onExit(({ exitCode, signal }) => {
+      logToFile(
+        `Mosh session exited for processId ${processId} (code=${exitCode})`,
+        "INFO",
+      );
+
+      // 标记连接已退出，避免连接池健康检查/关闭时重复 kill
+      if (connectionInfo) {
+        connectionInfo.exited = true;
+        connectionInfo.ready = false;
+      }
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        this._emitProcessOutput(
+          processId,
+          `\r\n*** ${getTerminalText(moshConfig, "moshClosed", {
+            code: exitCode ?? 0,
+          })} ***\r\n`,
+        );
+        const exitChannel = getTerminalProcessExitChannel(processId);
+        if (exitChannel) {
+          mainWindow.webContents.send(exitChannel, {
+            code: exitCode ?? 0,
+            signal: signal || null,
+          });
+        }
+      }
+      this._destroyProcessMailbox(processId);
+
+      this.connectionManager.releaseMoshConnection(
+        connectionInfo.key,
+        moshConfig.tabId,
+      );
+    });
+  }
+
   _createProcessInfo(client, connectionInfo, config, type) {
     return {
       process: client,
@@ -2463,6 +2540,66 @@ class SSHHandlers {
       }
     } catch (error) {
       logToFile(`Failed to start Serial connection: ${error.message}`, "ERROR");
+      throw error;
+    }
+  }
+
+  /**
+   * 启动 Mosh 会话（拉起本地 mosh 客户端进程，弱网/漫游场景替代 SSH）
+   * SSH 认证交互（密码/密钥提示）由 mosh 客户端在终端内呈现，用户直接输入。
+   */
+  async startMosh(event, moshConfig) {
+    const processId = this.getNextProcessId();
+    const mainWindow = this._getMainWindow();
+
+    const host = String(moshConfig?.host || "").trim();
+    if (!moshConfig || !host) {
+      logToFile("Invalid Mosh configuration", "ERROR");
+      throw new Error("Invalid Mosh configuration");
+    }
+
+    try {
+      const connectionInfo = await this.connectionManager.getMoshConnection({
+        ...moshConfig,
+        host,
+      });
+      this._broadcastTopConnections();
+      const ptyProcess = connectionInfo.client;
+
+      this._registerConnectionProcess(
+        processId,
+        ptyProcess,
+        connectionInfo,
+        connectionInfo.config,
+        "mosh",
+      );
+
+      if (connectionInfo.ready) {
+        logToFile(`Mosh会话就绪: ${connectionInfo.key}`, "INFO");
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          this._emitProcessOutput(
+            processId,
+            `\r\n*** ${getTerminalText(connectionInfo.config, "moshStarted", {
+              host,
+              port: connectionInfo.config.port,
+            })} ***\r\n`,
+          );
+        }
+
+        this._setupMoshEventListeners(
+          ptyProcess,
+          processId,
+          connectionInfo.config,
+          connectionInfo,
+        );
+        return processId;
+      } else {
+        logToFile(`Mosh会话未就绪`, "ERROR");
+        throw new Error("Mosh session not ready");
+      }
+    } catch (error) {
+      logToFile(`Failed to start Mosh session: ${error.message}`, "ERROR");
       throw error;
     }
   }

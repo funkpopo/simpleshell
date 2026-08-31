@@ -652,7 +652,7 @@ WebTerminal.propTypes = {
   tabId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
   refreshKey: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   sshConfig: PropTypes.object,
-  terminalType: PropTypes.oneOf(["ssh", "telnet", "serial", "local"]),
+  terminalType: PropTypes.oneOf(["ssh", "telnet", "serial", "mosh", "local"]),
   localConfig: PropTypes.object,
   isActive: PropTypes.bool,
 };

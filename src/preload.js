@@ -1827,6 +1827,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   listSerialPorts: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_LIST_SERIAL_PORTS),
 
+  // Mosh 连接相关（弱网/漫游场景，经本地 mosh 客户端托管）
+  startMosh: (moshConfig) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_START_MOSH, moshConfig),
+
   // SSH 认证相关 IPC
   // 监听 SSH 认证请求（主机密钥验证、凭证请求等）
   onSSHAuthRequest: (callback) => {

@@ -985,7 +985,9 @@ export function useTerminalLifecycle({
                   ? window.terminalAPI.startTelnet(localizedSshConfig)
                   : connectProtocol === "serial"
                     ? window.terminalAPI.startSerial(localizedSshConfig)
-                    : window.terminalAPI.startSSH(localizedSshConfig);
+                    : connectProtocol === "mosh"
+                      ? window.terminalAPI.startMosh(localizedSshConfig)
+                      : window.terminalAPI.startSSH(localizedSshConfig);
             }
 
             connectPromise
