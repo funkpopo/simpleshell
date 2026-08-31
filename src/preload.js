@@ -1504,6 +1504,53 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_LOCK_CREDENTIAL_STORE),
   clearLocalData: (options) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_CLEAR_LOCAL_DATA, options),
+
+  // 配置导入/导出/同步相关API
+  configTransferExport: (options) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_EXPORT, options),
+  configTransferImport: (options) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_IMPORT, options),
+  configTransferListSections: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_LIST_SECTIONS),
+  configSyncLoadSettings: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_LOAD_SETTINGS),
+  configSyncSaveSettings: (settings) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_SAVE_SETTINGS, settings),
+  configSyncTest: (settings) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_TEST, settings),
+  configSyncUpload: (options) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_UPLOAD, options),
+  configSyncDownload: (options) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_DOWNLOAD, options),
+  configSyncGetStatus: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_GET_STATUS),
+  configSyncPullNow: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_PULL_NOW),
+  onConfigSyncAutoEvent: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_event, payload) => callback(payload);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.CONFIG_SYNC_AUTO_EVENT, wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener(
+        IPC_EVENT_CHANNELS.CONFIG_SYNC_AUTO_EVENT,
+        wrappedCallback,
+      );
+    };
+  },
+  onConfigTransferImported: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_event, payload) => callback(payload);
+    ipcRenderer.on(
+      IPC_EVENT_CHANNELS.CONFIG_TRANSFER_IMPORTED,
+      wrappedCallback,
+    );
+    return () => {
+      ipcRenderer.removeListener(
+        IPC_EVENT_CHANNELS.CONFIG_TRANSFER_IMPORTED,
+        wrappedCallback,
+      );
+    };
+  },
   onLocalDataCleared: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = (_event, payload) => callback(payload);

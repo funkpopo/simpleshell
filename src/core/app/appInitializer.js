@@ -1,6 +1,7 @@
 const { session } = require("electron");
 const { logToFile, initLogger, updateLogConfig } = require("../utils/logger");
 const configService = require("../../services/configService");
+const configTransferService = require("../../services/configTransferService");
 const externalEditorManager = require("../../modules/sftp/externalEditorManager");
 const fileCache = require("../utils/fileCache");
 const fileSnapshotStore = require("../utils/fileSnapshotStore");
@@ -50,6 +51,16 @@ class AppInitializer {
   initializeConfigService() {
     configService.init(this.app, { logToFile }, require("../utils/crypto"));
     configService.initializeMainConfig();
+
+    // 启动 WebDAV 自动同步调度器（未启用时为空操作）
+    try {
+      configTransferService.startAutoSyncScheduler();
+    } catch (autoSyncError) {
+      logToFile(
+        `Auto-sync scheduler start failed: ${autoSyncError.message}`,
+        "WARN",
+      );
+    }
 
     const logSettings = configService.loadLogSettings();
     updateLogConfig(logSettings);

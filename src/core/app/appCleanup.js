@@ -9,6 +9,7 @@ const processManager = require("../process/processManager");
 const connectionManager = require("../../modules/connection");
 const runtimeFileLifecycle = require("../utils/runtimeFileLifecycle");
 const configService = require("../../services/configService");
+const configTransferService = require("../../services/configTransferService");
 const commandHistoryService = require("../../modules/terminal/command-history");
 const filemanagementService = require("../../modules/filemanagement/filemanagementService");
 const portForwardingService = require("../services/port-forwarding-service");
@@ -181,6 +182,13 @@ class AppCleanup {
    * 清理连接管理器
    */
   cleanupConnectionManager() {
+    // 停止自动同步调度器，避免退出时残留定时器
+    try {
+      configTransferService.stopAutoSyncScheduler();
+      logToFile("自动同步调度器已停止", "INFO");
+    } catch (error) {
+      logToFile(`停止自动同步调度器失败: ${error.message}`, "WARN");
+    }
     // 先停止所有端口转发，避免退出时残留本地监听
     try {
       portForwardingService.stopAll();

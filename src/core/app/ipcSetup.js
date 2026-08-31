@@ -32,6 +32,7 @@ const MemoryHandlers = require("../ipc/handlers/memoryHandlers");
 const ExternalEditorHandlers = require("../ipc/handlers/externalEditorHandlers");
 const RuntimeFileHandlers = require("../ipc/handlers/runtimeFileHandlers");
 const PortForwardingHandlers = require("../ipc/handlers/portForwardingHandlers");
+const ConfigTransferHandlers = require("../ipc/handlers/configTransferHandlers");
 const TerminalIOMailboxManager = require("../terminal/terminalIOMailboxManager");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
@@ -102,6 +103,11 @@ const BOILERPLATE_HANDLER_MODULES = [
     HandlersClass: PortForwardingHandlers,
     successLog: "Port forwarding handlers registered",
     errorLabel: "Failed to initialize port forwarding handlers",
+  },
+  {
+    HandlersClass: ConfigTransferHandlers,
+    successLog: "Config transfer handlers registered",
+    errorLabel: "Failed to initialize config transfer handlers",
   },
 ];
 

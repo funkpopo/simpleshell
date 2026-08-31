@@ -41,6 +41,11 @@ import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import FeedbackIcon from "@mui/icons-material/Feedback";
+import BackupIcon from "@mui/icons-material/Backup";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
+import CloudSyncIcon from "@mui/icons-material/CloudSync";
+import RestoreIcon from "@mui/icons-material/Restore";
 import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../i18n/i18n";
 import { SettingsSkeleton } from "./SkeletonLoader.jsx";
@@ -215,6 +220,25 @@ const Settings = memo(({ open, onClose }) => {
   const [originalPerformanceSettings, setOriginalPerformanceSettings] =
     React.useState({});
 
+  // 配置导入/导出/同步状态
+  const [exportPassword, setExportPassword] = React.useState("");
+  const [exportConfirmPassword, setExportConfirmPassword] = React.useState("");
+  const [importFilePath, setImportFilePath] = React.useState("");
+  const [importPassword, setImportPassword] = React.useState("");
+  const [importMode, setImportMode] = React.useState("merge");
+  const [webdavUrl, setWebdavUrl] = React.useState("");
+  const [webdavUsername, setWebdavUsername] = React.useState("");
+  const [webdavPassword, setWebdavPassword] = React.useState("");
+  const [webdavFileName, setWebdavFileName] = React.useState("");
+  const [configTransferBusy, setConfigTransferBusy] = React.useState("");
+  const [autoSyncEnabled, setAutoSyncEnabled] = React.useState(false);
+  const [autoSyncOnStartup, setAutoSyncOnStartup] = React.useState(true);
+  const [autoSyncIntervalMinutes, setAutoSyncIntervalMinutes] =
+    React.useState(30);
+  const [rememberExportPassword, setRememberExportPassword] =
+    React.useState(false);
+  const [autoSyncStatus, setAutoSyncStatus] = React.useState(null);
+
   // Load settings from config.json via API
   React.useEffect(() => {
     const loadSettings = async () => {
@@ -341,6 +365,38 @@ const Settings = memo(({ open, onClose }) => {
             setCrashReporterStatus(response?.crashReporter || null);
           }
         }
+
+        // 加载 WebDAV 同步设置
+        if (window.terminalAPI?.configSyncLoadSettings) {
+          const response = await window.terminalAPI.configSyncLoadSettings();
+          const syncSettings = response?.success ? response.settings : null;
+          if (syncSettings) {
+            setWebdavUrl(syncSettings.url || "");
+            setWebdavUsername(syncSettings.username || "");
+            setWebdavPassword(syncSettings.password || "");
+            setWebdavFileName(
+              syncSettings.fileName ||
+                syncSettings.defaultRemoteFileName ||
+                "simpleshell-config.ssx",
+            );
+            setAutoSyncEnabled(syncSettings.autoSyncEnabled === true);
+            setAutoSyncOnStartup(syncSettings.autoSyncOnStartup !== false);
+            setAutoSyncIntervalMinutes(
+              Number(syncSettings.autoSyncIntervalMinutes) || 30,
+            );
+            setRememberExportPassword(
+              syncSettings.rememberExportPassword === true,
+            );
+          }
+        }
+
+        // 加载自动同步运行状态
+        if (window.terminalAPI?.configSyncGetStatus) {
+          const response = await window.terminalAPI.configSyncGetStatus();
+          if (response?.success !== false) {
+            setAutoSyncStatus(response?.status || response || null);
+          }
+        }
       } catch {
         /* intentionally ignored */
       } finally {
@@ -450,6 +506,362 @@ const Settings = memo(({ open, onClose }) => {
       source: "settings",
       confirmButtonLabel: t("settings.feedback.openIssue"),
     });
+
+  // ==================== 配置导入/导出/同步 ====================
+
+  const getConfigTransferErrorMessage = (result, fallbackKey) => {
+    const code = result?.errorCode || result?.code;
+    if (code) {
+      const localized = t(`settings.dataSync.errors.${code}`, {
+        defaultValue: "",
+      });
+      if (localized) {
+        return localized;
+      }
+    }
+    return result?.error || result?.message || t(fallbackKey);
+  };
+
+  const buildExportFileName = () => {
+    const now = new Date();
+    const pad = (value) => String(value).padStart(2, "0");
+    const stamp =
+      `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+      `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    return `simpleshell-config-${stamp}.ssx`;
+  };
+
+  const handleExportConfig = async () => {
+    if (exportPassword.length < 4) {
+      showError(t("settings.dataSync.export.passwordRequired"));
+      return;
+    }
+    if (exportPassword !== exportConfirmPassword) {
+      showError(t("settings.dataSync.export.passwordMismatch"));
+      return;
+    }
+    setConfigTransferBusy("export");
+    try {
+      const dialogResult = await window.dialogAPI?.showSaveDialog?.({
+        title: t("settings.dataSync.export.dialogTitle"),
+        defaultPath: buildExportFileName(),
+        filters: [
+          { name: "SimpleShell Config", extensions: ["ssx"] },
+        ],
+      });
+      if (dialogResult?.canceled || !dialogResult?.filePath) {
+        return;
+      }
+      const filePath = dialogResult.filePath;
+      const result = await window.terminalAPI.configTransferExport({
+        filePath,
+        password: exportPassword,
+      });
+      if (result?.success === false) {
+        throw Object.assign(new Error(result.error), { code: result.errorCode });
+      }
+      showSuccess(t("settings.dataSync.export.success"));
+      setExportPassword("");
+      setExportConfirmPassword("");
+    } catch (error) {
+      showError(getConfigTransferErrorMessage(error, "settings.dataSync.export.failed"));
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
+
+  const handlePickImportFile = async () => {
+    try {
+      const dialogResult = await window.dialogAPI?.showOpenDialog?.({
+        title: t("settings.dataSync.import.dialogTitle"),
+        properties: ["openFile"],
+        filters: [
+          { name: "SimpleShell Config", extensions: ["ssx", "json"] },
+          { name: "All Files", extensions: ["*"] },
+        ],
+      });
+      const filePath = dialogResult?.filePaths?.[0];
+      if (dialogResult?.canceled || !filePath) {
+        return;
+      }
+      setImportFilePath(filePath);
+    } catch (error) {
+      showError(error?.message || t("settings.dataSync.import.failed"));
+    }
+  };
+
+  const handleImportConfig = async () => {
+    if (!importFilePath) {
+      showError(t("settings.dataSync.import.noFile"));
+      return;
+    }
+    setConfigTransferBusy("import");
+    try {
+      const result = await window.terminalAPI.configTransferImport({
+        filePath: importFilePath,
+        password: importPassword,
+        mode: importMode,
+      });
+      if (result?.success === false) {
+        throw Object.assign(new Error(result.error), { code: result.errorCode });
+      }
+      showSuccess(t("settings.dataSync.import.success"));
+      setImportPassword("");
+    } catch (error) {
+      showError(getConfigTransferErrorMessage(error, "settings.dataSync.import.failed"));
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
+
+  const persistWebdavSettings = async () => {
+    const saveResult = await window.terminalAPI.configSyncSaveSettings({
+      url: webdavUrl,
+      username: webdavUsername,
+      password: webdavPassword,
+      fileName: webdavFileName,
+    });
+    if (saveResult?.success === false) {
+      throw new Error(saveResult.error || t("settings.dataSync.webdav.saveFailed"));
+    }
+  };
+
+  const handleWebdavTest = async () => {
+    setConfigTransferBusy("webdav-test");
+    try {
+      const result = await window.terminalAPI.configSyncTest({
+        url: webdavUrl,
+        username: webdavUsername,
+        password: webdavPassword,
+        fileName: webdavFileName,
+      });
+      if (result?.success === false) {
+        throw Object.assign(new Error(result.error), { code: result.errorCode });
+      }
+      showSuccess(
+        result?.note === "REMOTE_NOT_FOUND"
+          ? t("settings.dataSync.webdav.testSuccessRemoteMissing")
+          : t("settings.dataSync.webdav.testSuccess"),
+      );
+    } catch (error) {
+      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.testFailed"));
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
+
+  const handleWebdavUpload = async () => {
+    if (exportPassword.length < 4) {
+      showError(t("settings.dataSync.export.passwordRequired"));
+      return;
+    }
+    if (exportPassword !== exportConfirmPassword) {
+      showError(t("settings.dataSync.export.passwordMismatch"));
+      return;
+    }
+    setConfigTransferBusy("webdav-upload");
+    try {
+      await persistWebdavSettings();
+      const result = await window.terminalAPI.configSyncUpload({
+        url: webdavUrl,
+        username: webdavUsername,
+        password: webdavPassword,
+        fileName: webdavFileName,
+        exportPassword,
+      });
+      if (result?.success === false) {
+        throw Object.assign(new Error(result.error), { code: result.errorCode });
+      }
+      showSuccess(t("settings.dataSync.webdav.uploadSuccess"));
+    } catch (error) {
+      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.uploadFailed"));
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
+
+  const handleWebdavDownload = async () => {
+    if (!importPassword) {
+      showError(t("settings.dataSync.import.passwordRequired"));
+      return;
+    }
+    setConfigTransferBusy("webdav-download");
+    try {
+      await persistWebdavSettings();
+      const result = await window.terminalAPI.configSyncDownload({
+        url: webdavUrl,
+        username: webdavUsername,
+        password: webdavPassword,
+        fileName: webdavFileName,
+        importPassword,
+        mode: importMode,
+      });
+      if (result?.success === false) {
+        throw Object.assign(new Error(result.error), { code: result.errorCode });
+      }
+      showSuccess(t("settings.dataSync.webdav.downloadSuccess"));
+      setImportPassword("");
+    } catch (error) {
+      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.downloadFailed"));
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
+
+  // ==================== 自动同步（启动时/定期拉取） ====================
+
+  const refreshAutoSyncStatus = React.useCallback(async () => {
+    try {
+      const response = await window.terminalAPI?.configSyncGetStatus?.();
+      if (response?.success !== false) {
+        setAutoSyncStatus(response?.status || response || null);
+      }
+    } catch {
+      /* intentionally ignored */
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const offEvent = window.terminalAPI?.onConfigSyncAutoEvent?.((payload) => {
+      refreshAutoSyncStatus();
+      // manual 触发的结果由 handleSyncPullNow 直接提示，避免重复 toast
+      if (payload?.trigger === "manual") {
+        return;
+      }
+      const status = payload?.status;
+      if (status === "updated") {
+        showSuccess(t("settings.dataSync.autoSync.autoUpdated"));
+      } else if (status === "error") {
+        showError(
+          t("settings.dataSync.autoSync.autoError", {
+            error: payload?.error || payload?.reason || "",
+          }),
+        );
+      } else if (
+        payload?.trigger === "manual" &&
+        payload?.reason === "UP_TO_DATE"
+      ) {
+        showSuccess(t("settings.dataSync.autoSync.alreadyUpToDate"));
+      }
+    });
+    return () => {
+      if (typeof offEvent === "function") {
+        offEvent();
+      }
+    };
+  }, [open, refreshAutoSyncStatus, showSuccess, showError, t]);
+
+  const persistAutoSyncSettings = async (patch) => {
+    const saveResult = await window.terminalAPI.configSyncSaveSettings(patch);
+    if (saveResult?.success === false) {
+      throw new Error(
+        saveResult.error || t("settings.dataSync.webdav.saveFailed"),
+      );
+    }
+    await refreshAutoSyncStatus();
+  };
+
+  const handleToggleAutoSync = async (checked) => {
+    if (checked) {
+      if (!webdavUrl.trim()) {
+        showError(t("settings.dataSync.errors.WEBDAV_URL_REQUIRED"));
+        setAutoSyncEnabled(false);
+        return;
+      }
+      if (!rememberExportPassword && !exportPassword) {
+        // 自动拉取需要能解密：要求记住导出密码
+        showError(t("settings.dataSync.autoSync.exportPasswordNeeded"));
+        setAutoSyncEnabled(false);
+        return;
+      }
+      try {
+        setConfigTransferBusy("auto-sync");
+        await persistAutoSyncSettings({
+          autoSyncEnabled: true,
+          rememberExportPassword: true,
+          // 当前输入的导出密码非空时更新保存的密码，否则保留已存密码
+          exportPassword,
+          autoSyncOnStartup,
+          autoSyncIntervalMinutes,
+        });
+        setRememberExportPassword(true);
+        setExportPassword("");
+        setExportConfirmPassword("");
+        showSuccess(t("settings.dataSync.autoSync.enabled"));
+      } catch (error) {
+        setAutoSyncEnabled(false);
+        showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.saveFailed"));
+      } finally {
+        setConfigTransferBusy("");
+      }
+    } else {
+      setAutoSyncEnabled(false);
+      try {
+        await persistAutoSyncSettings({ autoSyncEnabled: false });
+      } catch {
+        /* intentionally ignored */
+      }
+    }
+  };
+
+  const handleAutoSyncOptionChange = async (patch) => {
+    try {
+      await persistAutoSyncSettings(patch);
+    } catch (error) {
+      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.saveFailed"));
+    }
+  };
+
+  const handleRememberExportPasswordChange = async (checked) => {
+    if (checked && !exportPassword) {
+      showError(t("settings.dataSync.autoSync.exportPasswordNeeded"));
+      return;
+    }
+    try {
+      await persistAutoSyncSettings({
+        rememberExportPassword: checked,
+        exportPassword: checked ? exportPassword : "",
+      });
+      setRememberExportPassword(checked);
+      if (checked) {
+        setExportPassword("");
+        setExportConfirmPassword("");
+        showSuccess(t("settings.dataSync.autoSync.exportPasswordSaved"));
+      }
+    } catch (error) {
+      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.saveFailed"));
+    }
+  };
+
+  const handleSyncPullNow = async () => {
+    setConfigTransferBusy("sync-pull");
+    try {
+      const result = await window.terminalAPI.configSyncPullNow();
+      if (result?.skipped) {
+        if (result.reason === "UP_TO_DATE") {
+          showSuccess(t("settings.dataSync.autoSync.alreadyUpToDate"));
+        } else if (result.reason !== "BUSY") {
+          showError(
+            t(`settings.dataSync.autoSync.skipped.${result.reason}`, {
+              defaultValue: t("settings.dataSync.autoSync.autoSkipped"),
+            }),
+          );
+        }
+      } else if (result?.success === false) {
+        throw Object.assign(new Error(result.error), {
+          code: result.reason || result.errorCode,
+        });
+      } else if (result?.status === "updated") {
+        showSuccess(t("settings.dataSync.autoSync.pulledNow"));
+      }
+      await refreshAutoSyncStatus();
+    } catch (error) {
+      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.downloadFailed"));
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
 
   // 检查性能设置是否需要重启
   const checkIfRestartNeeded = (newSettings) => {
@@ -728,6 +1140,11 @@ const Settings = memo(({ open, onClose }) => {
     },
     {
       id: 4,
+      label: t("settings.dataSync.title"),
+      icon: <CloudSyncIcon fontSize="small" />,
+    },
+    {
+      id: 5,
       label: t("settings.feedback.title"),
       icon: <BugReportIcon fontSize="small" />,
     },
@@ -1698,8 +2115,454 @@ const Settings = memo(({ open, onClose }) => {
                 </Box>
               )}
 
-              {/* Tab 4: Feedback */}
+              {/* Tab 4: Data & Sync */}
               {activeTab === 4 && (
+                <Box sx={{ maxWidth: 560 }}>
+                  {/* 导出加密包 */}
+                  <Box sx={sectionCardSx}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                        }}
+                      >
+                        <BackupIcon sx={{ color: "primary.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.dataSync.export.title")}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {t("settings.dataSync.export.description")}
+                    </Typography>
+                    <Grid container spacing={1}>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.dataSync.export.password")}
+                          value={exportPassword}
+                          onChange={(e) => setExportPassword(e.target.value)}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.dataSync.export.confirmPassword")}
+                          value={exportConfirmPassword}
+                          onChange={(e) =>
+                            setExportConfirmPassword(e.target.value)
+                          }
+                        />
+                      </Grid>
+                    </Grid>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={rememberExportPassword}
+                          onChange={(e) =>
+                            handleRememberExportPasswordChange(e.target.checked)
+                          }
+                          size="small"
+                        />
+                      }
+                      label={
+                        <Typography variant="body2">
+                          {t("settings.dataSync.autoSync.rememberPassword")}
+                        </Typography>
+                      }
+                    />
+                    <Box sx={{ mt: 1 }}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<BackupIcon />}
+                        disabled={configTransferBusy !== ""}
+                        onClick={handleExportConfig}
+                      >
+                        {configTransferBusy === "export"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.export.button")}
+                      </Button>
+                    </Box>
+                  </Box>
+
+                  {/* 导入配置包 */}
+                  <Box sx={{ ...sectionCardSx, mt: 1.5 }}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                        }}
+                      >
+                        <RestoreIcon sx={{ color: "primary.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.dataSync.import.title")}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {t("settings.dataSync.import.description")}
+                    </Typography>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                        mb: 1,
+                      }}
+                    >
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<FolderOpenIcon />}
+                        onClick={handlePickImportFile}
+                      >
+                        {t("settings.dataSync.import.pickFile")}
+                      </Button>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {importFilePath || t("settings.dataSync.import.noFile")}
+                      </Typography>
+                    </Box>
+                    <Grid container spacing={1}>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.dataSync.import.password")}
+                          value={importPassword}
+                          onChange={(e) => setImportPassword(e.target.value)}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel>
+                            {t("settings.dataSync.import.mode")}
+                          </InputLabel>
+                          <Select
+                            value={importMode}
+                            label={t("settings.dataSync.import.mode")}
+                            onChange={(e) => setImportMode(e.target.value)}
+                          >
+                            <MenuItem value="merge">
+                              {t("settings.dataSync.import.modeMerge")}
+                            </MenuItem>
+                            <MenuItem value="replace">
+                              {t("settings.dataSync.import.modeReplace")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                    </Grid>
+                    <Box sx={{ mt: 1 }}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<RestoreIcon />}
+                        disabled={configTransferBusy !== "" || !importFilePath}
+                        onClick={handleImportConfig}
+                      >
+                        {configTransferBusy === "import"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.import.button")}
+                      </Button>
+                    </Box>
+                  </Box>
+
+                  {/* WebDAV 多机同步 */}
+                  <Box sx={{ ...sectionCardSx, mt: 1.5 }}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                        }}
+                      >
+                        <CloudSyncIcon sx={{ color: "primary.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.dataSync.webdav.title")}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {t("settings.dataSync.webdav.description")}
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label={t("settings.dataSync.webdav.url")}
+                      placeholder={t("settings.dataSync.webdav.urlPlaceholder")}
+                      value={webdavUrl}
+                      onChange={(e) => setWebdavUrl(e.target.value)}
+                      sx={{ mb: 1 }}
+                    />
+                    <Grid container spacing={1}>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label={t("settings.dataSync.webdav.username")}
+                          value={webdavUsername}
+                          onChange={(e) => setWebdavUsername(e.target.value)}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.dataSync.webdav.password")}
+                          value={webdavPassword}
+                          onChange={(e) => setWebdavPassword(e.target.value)}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label={t("settings.dataSync.webdav.fileName")}
+                          value={webdavFileName}
+                          onChange={(e) => setWebdavFileName(e.target.value)}
+                        />
+                      </Grid>
+                    </Grid>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", mt: 0.75, mb: 1 }}
+                    >
+                      {t("settings.dataSync.webdav.hint")}
+                    </Typography>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        gap: 0.75,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        disabled={
+                          configTransferBusy !== "" || !webdavUrl.trim()
+                        }
+                        onClick={handleWebdavTest}
+                      >
+                        {configTransferBusy === "webdav-test"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.webdav.test")}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<CloudUploadIcon />}
+                        disabled={
+                          configTransferBusy !== "" || !webdavUrl.trim()
+                        }
+                        onClick={handleWebdavUpload}
+                      >
+                        {configTransferBusy === "webdav-upload"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.webdav.upload")}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<CloudDownloadIcon />}
+                        disabled={
+                          configTransferBusy !== "" ||
+                          !webdavUrl.trim() ||
+                          !importPassword
+                        }
+                        onClick={handleWebdavDownload}
+                      >
+                        {configTransferBusy === "webdav-download"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.webdav.download")}
+                      </Button>
+                    </Box>
+                  </Box>
+
+                  {/* 自动同步 */}
+                  <Box sx={{ ...sectionCardSx, mt: 1.5 }}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                        }}
+                      >
+                        <CloudSyncIcon sx={{ color: "primary.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.dataSync.autoSync.title")}
+                        </Typography>
+                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={autoSyncEnabled}
+                            onChange={(e) =>
+                              handleToggleAutoSync(e.target.checked)
+                            }
+                            disabled={configTransferBusy !== ""}
+                            size="small"
+                          />
+                        }
+                        label={
+                          <Typography variant="body2">
+                            {t("settings.dataSync.autoSync.enable")}
+                          </Typography>
+                        }
+                      />
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {t("settings.dataSync.autoSync.description")}
+                    </Typography>
+
+                    {autoSyncEnabled && (
+                      <>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={autoSyncOnStartup}
+                              onChange={(e) => {
+                                setAutoSyncOnStartup(e.target.checked);
+                                handleAutoSyncOptionChange({
+                                  autoSyncOnStartup: e.target.checked,
+                                });
+                              }}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.dataSync.autoSync.onStartup")}
+                            </Typography>
+                          }
+                        />
+                        <FormControl fullWidth size="small" sx={{ mt: 0.5 }}>
+                          <InputLabel>
+                            {t("settings.dataSync.autoSync.interval")}
+                          </InputLabel>
+                          <Select
+                            value={autoSyncIntervalMinutes}
+                            label={t("settings.dataSync.autoSync.interval")}
+                            onChange={(e) => {
+                              const value = Number(e.target.value);
+                              setAutoSyncIntervalMinutes(value);
+                              handleAutoSyncOptionChange({
+                                autoSyncIntervalMinutes: value,
+                              });
+                            }}
+                          >
+                            {[
+                              5, 15, 30, 60, 180, 360, 720, 1440,
+                            ].map((minutes) => (
+                              <MenuItem key={minutes} value={minutes}>
+                                {minutes < 60
+                                  ? t(
+                                      "settings.dataSync.autoSync.intervalMinutes",
+                                      { n: minutes },
+                                    )
+                                  : t(
+                                      "settings.dataSync.autoSync.intervalHours",
+                                      { n: minutes / 60 },
+                                    )}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </>
+                    )}
+
+                    <Box sx={{ mt: 1 }}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<CloudDownloadIcon />}
+                        disabled={configTransferBusy !== ""}
+                        onClick={handleSyncPullNow}
+                      >
+                        {configTransferBusy === "sync-pull"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.autoSync.pullNow")}
+                      </Button>
+                    </Box>
+
+                    {autoSyncStatus && (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: "block", mt: 0.75 }}
+                      >
+                        {t("settings.dataSync.autoSync.lastCheck")}
+                        {": "}
+                        {autoSyncStatus.lastCheckAt
+                          ? new Date(
+                              autoSyncStatus.lastCheckAt,
+                            ).toLocaleString()
+                          : "—"}
+                        {" · "}
+                        {t("settings.dataSync.autoSync.lastSync")}
+                        {": "}
+                        {autoSyncStatus.lastSyncAt
+                          ? new Date(autoSyncStatus.lastSyncAt).toLocaleString()
+                          : "—"}
+                        {" · "}
+                        {t(
+                          `settings.dataSync.autoSync.status.${
+                            autoSyncStatus.lastSyncStatus || "never"
+                          }`,
+                        )}
+                        {autoSyncEnabled && autoSyncStatus.nextRunAt
+                          ? ` · ${t("settings.dataSync.autoSync.nextCheck")}: ${new Date(
+                              autoSyncStatus.nextRunAt,
+                            ).toLocaleTimeString()}`
+                          : ""}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              )}
+
+              {/* Tab 5: Feedback */}
+              {activeTab === 5 && (
                 <Box sx={{ maxWidth: 600 }}>
                   <Box sx={sectionCardSx}>
                     <Box sx={sectionTitleRowSx}>
