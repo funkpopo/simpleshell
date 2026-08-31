@@ -1520,7 +1520,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   configSyncLoadSettings: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_LOAD_SETTINGS),
   configSyncSaveSettings: (settings) =>
-    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_SAVE_SETTINGS, settings),
+    ipcRenderer.invoke(
+      IPC_REQUEST_CHANNELS.CONFIG_SYNC_SAVE_SETTINGS,
+      settings,
+    ),
   configSyncTest: (settings) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_TEST, settings),
   configSyncUpload: (options) =>
@@ -1814,6 +1817,15 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       IPC_REQUEST_CHANNELS.TERMINAL_START_TELNET,
       telnetConfig,
     ),
+
+  // 串口（Serial/COM）连接相关
+  startSerial: (serialConfig) =>
+    ipcRenderer.invoke(
+      IPC_REQUEST_CHANNELS.TERMINAL_START_SERIAL,
+      serialConfig,
+    ),
+  listSerialPorts: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_LIST_SERIAL_PORTS),
 
   // SSH 认证相关 IPC
   // 监听 SSH 认证请求（主机密钥验证、凭证请求等）

@@ -89,6 +89,19 @@ module.exports = {
             path.join(__dirname, "node_modules", "node-pty", "prebuilds"),
             path.join(__dirname, ".webpack", "main", "prebuilds"),
           );
+          // @serialport/bindings-cpp resolves its native binding via node-gyp-build
+          // relative to the bundled main file's parent directory (.webpack), so the
+          // prebuilds must be copied there for both dev and packaged runs.
+          copyDirectoryIfExists(
+            path.join(
+              __dirname,
+              "node_modules",
+              "@serialport",
+              "bindings-cpp",
+              "prebuilds",
+            ),
+            path.join(__dirname, ".webpack", "prebuilds"),
+          );
           copyDirectoryIfExists(
             path.join(__dirname, "node_modules", "node-pty", "lib", "worker"),
             path.join(__dirname, ".webpack", "main", "worker"),

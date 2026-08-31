@@ -451,6 +451,18 @@ class TerminalHandlers {
           }
         }
 
+        // 串口连接：释放连接池中的连接引用（关闭独占句柄）
+        if (proc.type === "serial" && proc.connectionInfo) {
+          proc.connectionInfo.closeReason = "user";
+          proc.connectionInfo.intentionalClose = true;
+          this.connectionManager.releaseSerialConnection(
+            proc.connectionInfo.key,
+            proc.config?.tabId,
+            { reason: "user", intentional: true },
+          );
+          logToFile(`释放串口连接池引用: ${proc.connectionInfo.key}`, "INFO");
+        }
+
         // 移除stdout和stderr的监听器，防止在进程被kill后继续触发
         if (proc.process.stdout) {
           proc.process.stdout.removeAllListeners();

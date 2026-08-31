@@ -334,7 +334,10 @@ const syncTerminalInstanceConfigs = (terminalInstances, tabs, connections) => {
   let nextInstances = terminalInstances;
 
   for (const tab of tabList) {
-    if (!tab || (tab.type !== "ssh" && tab.type !== "telnet")) {
+    if (
+      !tab ||
+      (tab.type !== "ssh" && tab.type !== "telnet" && tab.type !== "serial")
+    ) {
       continue;
     }
 
@@ -2718,7 +2721,12 @@ function AppContent() {
       const terminalId = `${connection.protocol || "ssh"}-${Date.now()}`;
 
       // 创建标签名（使用连接配置中的名称）
-      const protocol = connection.protocol === "telnet" ? "Telnet" : "SSH";
+      const protocol =
+        connection.protocol === "telnet"
+          ? "Telnet"
+          : connection.protocol === "serial"
+            ? "Serial"
+            : "SSH";
       const tabName = connection.name || `${protocol}: ${connection.host}`;
 
       // 创建新标签页
@@ -2798,6 +2806,7 @@ function AppContent() {
       processId &&
       (tabToRemove.type === "ssh" ||
         tabToRemove.type === "telnet" ||
+        tabToRemove.type === "serial" ||
         tabToRemove.type === "local")
     ) {
       window.terminalAPI.killProcess(processId).catch((err) => {
@@ -3699,7 +3708,11 @@ function AppContent() {
       };
     }
 
-    if (currentPanelTab.type !== "ssh" && currentPanelTab.type !== "telnet") {
+    if (
+      currentPanelTab.type !== "ssh" &&
+      currentPanelTab.type !== "telnet" &&
+      currentPanelTab.type !== "serial"
+    ) {
       return null;
     }
 
@@ -4563,7 +4576,9 @@ function AppContent() {
                           tabId={tab.id}
                           refreshKey={terminalInstances[`${tab.id}-refresh`]}
                           sshConfig={
-                            tab.type === "ssh" || tab.type === "telnet"
+                            tab.type === "ssh" ||
+                            tab.type === "telnet" ||
+                            tab.type === "serial"
                               ? terminalInstances[`${tab.id}-config`]
                               : null
                           }

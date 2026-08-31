@@ -64,6 +64,18 @@ class ConnectionHandlers {
         port: processInfo.config?.port,
       };
       return { success: true, data: connectionState };
+    } else if (processInfo.type === "serial") {
+      const isOpen = Boolean(processInfo.process?.isOpen);
+      const connectionState = {
+        isConnected: processInfo.ready && isOpen,
+        isConnecting: !processInfo.ready,
+        quality: isOpen ? "good" : "offline",
+        lastUpdate: Date.now(),
+        connectionType: "Serial",
+        host: processInfo.config?.path || processInfo.config?.host,
+        port: processInfo.config?.baudRate,
+      };
+      return { success: true, data: connectionState };
     }
 
     return { success: true, data: null };

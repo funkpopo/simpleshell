@@ -37,6 +37,8 @@ import {
 import { useTheme } from "@mui/material/styles";
 import { compactContextMenuPaperSx } from "./contextMenuStyles";
 import ComputerIcon from "@mui/icons-material/Computer";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import UsbIcon from "@mui/icons-material/Usb";
 import FolderIcon from "@mui/icons-material/Folder";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import AddIcon from "@mui/icons-material/Add";
@@ -374,6 +376,24 @@ const isPortValid = (value) => {
 const hasWhitespace = (value) => /\s/.test(String(value || ""));
 const SAVED_PASSWORD_MASK = "********";
 
+// 串口常用波特率
+const SERIAL_BAUD_RATES = [
+  300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200, 230400,
+  460800, 921600,
+];
+const DEFAULT_SERIAL_FORM = {
+  baudRate: 9600,
+  dataBits: 8,
+  stopBits: 1,
+  parity: "none",
+  flowControl: "none",
+};
+
+const parseBaudRate = (value) => {
+  const baud = Number.parseInt(value, 10);
+  return SERIAL_BAUD_RATES.includes(baud) ? baud : DEFAULT_SERIAL_FORM.baudRate;
+};
+
 const buildConnectionPayloadFromForm = ({
   formData,
   id,
@@ -384,10 +404,37 @@ const buildConnectionPayloadFromForm = ({
   const fallbackPort = protocol === "telnet" ? 23 : 22;
 
   const shouldPreservePassword =
+    protocol !== "serial" &&
     dialogMode === "edit" &&
     selectedItem?.type === "connection" &&
     (formData.passwordMasked === true || formData.passwordTouched !== true) &&
     formData.passwordRevealed !== true;
+
+  // 串口连接：host 字段存端口路径（如 COM3 / /dev/ttyUSB0），无端口/认证概念
+  if (protocol === "serial") {
+    return {
+      id:
+        id ||
+        (dialogMode === "add"
+          ? generateId("conn")
+          : selectedItem?.id || generateId("conn")),
+      type: "connection",
+      name: String(formData.name || "").trim(),
+      host: String(formData.host || "").trim(),
+      port: null,
+      username: "",
+      password: "",
+      protocol: "serial",
+      baudRate: parseBaudRate(formData.baudRate),
+      dataBits: Number(formData.dataBits) || DEFAULT_SERIAL_FORM.dataBits,
+      stopBits: Number(formData.stopBits) || DEFAULT_SERIAL_FORM.stopBits,
+      parity: formData.parity || DEFAULT_SERIAL_FORM.parity,
+      flowControl: formData.flowControl || DEFAULT_SERIAL_FORM.flowControl,
+      os: formData.os,
+      connectionType: formData.connectionType,
+      proxy: null,
+    };
+  }
 
   return {
     id:
@@ -586,6 +633,11 @@ const ConnectionListItem = memo(function ConnectionListItem({
           fontSize="small"
           sx={{ color: theme.palette.warning.main }}
         />
+      );
+    }
+    if (connection.protocol === "serial") {
+      return (
+        <UsbIcon fontSize="small" sx={{ color: theme.palette.info.main }} />
       );
     }
     return <ComputerIcon fontSize="small" />;
@@ -1142,7 +1194,8 @@ const ConnectionManager = memo(
       parentGroup: "",
       os: "",
       connectionType: "",
-      protocol: "ssh", // 新增：连接协议，默认为SSH
+      protocol: "ssh", // 默认为SSH
+      ...DEFAULT_SERIAL_FORM,
       passwordTouched: false,
       passwordRevealed: false,
       passwordMasked: false,
@@ -1165,6 +1218,10 @@ const ConnectionManager = memo(
     });
     const [connectionTestResult, setConnectionTestResult] = useState(null);
     const [testingConnection, setTestingConnection] = useState(false);
+
+    // 串口检测状态
+    const [serialPorts, setSerialPorts] = useState([]);
+    const [serialPortsLoading, setSerialPortsLoading] = useState(false);
 
     const filteredItems = useMemo(() => {
       let items;
@@ -1327,7 +1384,10 @@ const ConnectionManager = memo(
         setPrivateKeyCheck({ status: "idle", message: "", permissions: null });
         setConnectionTestResult(null);
         // 确保端口值与协议类型匹配
-        const port = item.port || (item.protocol === "telnet" ? 23 : 22);
+        const port =
+          item.protocol === "serial"
+            ? null
+            : item.port || (item.protocol === "telnet" ? 23 : 22);
         const hasSavedPassword = Boolean(item.password);
         setFormData({
           name: item.name,
@@ -1343,6 +1403,18 @@ const ConnectionManager = memo(
           os: item.os || "",
           connectionType: item.connectionType || "",
           protocol: item.protocol || "ssh",
+          // 串口参数（仅 protocol 为 serial 时使用）
+          ...DEFAULT_SERIAL_FORM,
+          ...(item.protocol === "serial"
+            ? {
+                baudRate: item.baudRate || DEFAULT_SERIAL_FORM.baudRate,
+                dataBits: item.dataBits || DEFAULT_SERIAL_FORM.dataBits,
+                stopBits: item.stopBits || DEFAULT_SERIAL_FORM.stopBits,
+                parity: item.parity || DEFAULT_SERIAL_FORM.parity,
+                flowControl:
+                  item.flowControl || DEFAULT_SERIAL_FORM.flowControl,
+              }
+            : {}),
           passwordTouched: false,
           passwordRevealed: false,
           passwordMasked: hasSavedPassword,
@@ -1550,6 +1622,46 @@ const ConnectionManager = memo(
       setShowPassword(false);
     }, []);
 
+    // 检测本机可用串口
+    const handleRefreshSerialPorts = useCallback(async () => {
+      if (!window.terminalAPI?.listSerialPorts) {
+        return;
+      }
+      setSerialPortsLoading(true);
+      try {
+        const result = await window.terminalAPI.listSerialPorts();
+        if (result?.success && Array.isArray(result.data)) {
+          setSerialPorts(result.data);
+        } else {
+          setSerialPorts([]);
+        }
+      } catch {
+        setSerialPorts([]);
+      } finally {
+        setSerialPortsLoading(false);
+      }
+    }, []);
+
+    // 串口协议下打开/切换时自动检测一次
+    useEffect(() => {
+      if (
+        dialogOpen &&
+        dialogType === "connection" &&
+        formData.protocol === "serial" &&
+        serialPorts.length === 0 &&
+        !serialPortsLoading
+      ) {
+        handleRefreshSerialPorts();
+      }
+    }, [
+      dialogOpen,
+      dialogType,
+      formData.protocol,
+      handleRefreshSerialPorts,
+      serialPorts.length,
+      serialPortsLoading,
+    ]);
+
     const handleFormChange = useCallback((e) => {
       const { name, value } = e.target;
 
@@ -1557,9 +1669,13 @@ const ConnectionManager = memo(
       setFormData((prev) => {
         // 如果修改的是协议字段，根据协议类型自动更新端口值
         if (name === "protocol") {
+          if (value === "serial") {
+            // 串口没有端口概念，清空端口字段
+            return { ...prev, [name]: value, port: null };
+          }
           const defaultPort = value === "telnet" ? 23 : 22;
           // 只有在端口是默认值时才更新，如果用户已手动修改则保留
-          if (prev.port === 22 || prev.port === 23) {
+          if (prev.port === 22 || prev.port === 23 || prev.port === null) {
             return { ...prev, [name]: value, port: defaultPort };
           }
         }
@@ -1875,12 +1991,16 @@ const ConnectionManager = memo(
         return;
       }
 
-      // 只有在创建连接时才检查主机地址
+      // 只有在创建连接时才检查主机地址（串口协议下为端口路径）
       if (
         dialogType === "connection" &&
         (!formData.host || !formData.host.trim())
       ) {
-        showError(t("connectionManager.hostRequired"));
+        if (formData.protocol === "serial") {
+          showError(t("connectionManager.serialPortRequired"));
+        } else {
+          showError(t("connectionManager.hostRequired"));
+        }
         return;
       }
 
@@ -2797,192 +2917,377 @@ const ConnectionManager = memo(
                     >
                       <MenuItem value="ssh">SSH</MenuItem>
                       <MenuItem value="telnet">Telnet</MenuItem>
+                      <MenuItem value="serial">
+                        {t("connectionManager.serialProtocol")}
+                      </MenuItem>
                     </Select>
                   </FormControl>
 
-                  <TextField
-                    label={t("connectionManager.hostAddress")}
-                    name="host"
-                    value={formData.host}
-                    onChange={handleFormChange}
-                    fullWidth
-                    size="small"
-                    required
-                  />
+                  {formData.protocol === "serial" ? (
+                    <>
+                      <Box
+                        sx={{ display: "flex", gap: 1, alignItems: "center" }}
+                      >
+                        <TextField
+                          label={t("connectionManager.serialPortPath")}
+                          name="host"
+                          value={formData.host}
+                          onChange={handleFormChange}
+                          fullWidth
+                          size="small"
+                          required
+                          placeholder="COM3"
+                          helperText={t("connectionManager.serialPortPathHint")}
+                          sx={{ flexGrow: 1, minWidth: 0 }}
+                        />
+                        <Tooltip title={t("connectionManager.detectPorts")}>
+                          <span>
+                            <IconButton
+                              aria-label={t("connectionManager.detectPorts")}
+                              size="small"
+                              onClick={handleRefreshSerialPorts}
+                              disabled={serialPortsLoading}
+                              sx={{
+                                width: 40,
+                                height: 40,
+                                flexShrink: 0,
+                                border: 1,
+                                borderColor: "divider",
+                                borderRadius: 1,
+                              }}
+                            >
+                              {serialPortsLoading ? (
+                                <CircularProgress size={18} />
+                              ) : (
+                                <RefreshIcon fontSize="small" />
+                              )}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Box>
 
-                  <TextField
-                    label={t("connectionManager.port")}
-                    name="port"
-                    type="number"
-                    value={formData.port}
-                    onChange={handleFormChange}
-                    fullWidth
-                    size="small"
-                    placeholder={formData.protocol === "telnet" ? "23" : "22"}
-                  />
+                      {serialPorts.length > 0 && (
+                        <FormControl fullWidth size="small">
+                          <InputLabel>
+                            {t("connectionManager.detectedPorts")}
+                          </InputLabel>
+                          <Select
+                            name="detectedSerialPort"
+                            value=""
+                            label={t("connectionManager.detectedPorts")}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  host: e.target.value,
+                                }));
+                              }
+                            }}
+                          >
+                            {serialPorts.map((port) => (
+                              <MenuItem key={port.path} value={port.path}>
+                                {port.friendlyName &&
+                                port.friendlyName !== port.path
+                                  ? `${port.path} - ${port.friendlyName}`
+                                  : port.path}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      )}
 
-                  <TextField
-                    label={t("connectionManager.username")}
-                    name="username"
-                    value={formData.username}
-                    onChange={handleFormChange}
-                    fullWidth
-                    size="small"
-                  />
+                      <Box sx={{ display: "flex", gap: 1 }}>
+                        <FormControl size="small" sx={{ flex: 2, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.baudRate")}
+                          </InputLabel>
+                          <Select
+                            name="baudRate"
+                            value={formData.baudRate}
+                            label={t("connectionManager.baudRate")}
+                            onChange={handleFormChange}
+                          >
+                            {SERIAL_BAUD_RATES.map((rate) => (
+                              <MenuItem key={rate} value={rate}>
+                                {rate}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.dataBits")}
+                          </InputLabel>
+                          <Select
+                            name="dataBits"
+                            value={formData.dataBits}
+                            label={t("connectionManager.dataBits")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value={7}>7</MenuItem>
+                            <MenuItem value={8}>8</MenuItem>
+                          </Select>
+                        </FormControl>
+                        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.stopBits")}
+                          </InputLabel>
+                          <Select
+                            name="stopBits"
+                            value={formData.stopBits}
+                            label={t("connectionManager.stopBits")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value={1}>1</MenuItem>
+                            <MenuItem value={2}>2</MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Box>
 
-                  <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                    <TextField
-                      label={t("connectionManager.password")}
-                      name="password"
-                      type={showPassword ? "text" : "password"}
-                      value={formData.password}
-                      onChange={handleFormChange}
-                      fullWidth
-                      size="small"
-                      disabled={
-                        formData.protocol === "ssh" &&
-                        formData.authType === "privateKey"
-                      }
-                      sx={{ flex: 1, minWidth: 0 }}
-                    />
-                    <Tooltip
-                      title={
-                        showPassword
-                          ? t("common.hidePassword")
-                          : t("common.showPassword")
-                      }
-                    >
-                      <span>
-                        <IconButton
-                          aria-label={
+                      <Box sx={{ display: "flex", gap: 1 }}>
+                        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.parity")}
+                          </InputLabel>
+                          <Select
+                            name="parity"
+                            value={formData.parity}
+                            label={t("connectionManager.parity")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value="none">
+                              {t("connectionManager.parityNone")}
+                            </MenuItem>
+                            <MenuItem value="even">
+                              {t("connectionManager.parityEven")}
+                            </MenuItem>
+                            <MenuItem value="odd">
+                              {t("connectionManager.parityOdd")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.flowControl")}
+                          </InputLabel>
+                          <Select
+                            name="flowControl"
+                            value={formData.flowControl}
+                            label={t("connectionManager.flowControl")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value="none">
+                              {t("connectionManager.flowControlNone")}
+                            </MenuItem>
+                            <MenuItem value="rtscts">
+                              {t("connectionManager.flowControlRtsCts")}
+                            </MenuItem>
+                            <MenuItem value="xonxoff">
+                              {t("connectionManager.flowControlXonXoff")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Box>
+                    </>
+                  ) : (
+                    <>
+                      <TextField
+                        label={t("connectionManager.hostAddress")}
+                        name="host"
+                        value={formData.host}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        required
+                      />
+
+                      <TextField
+                        label={t("connectionManager.port")}
+                        name="port"
+                        type="number"
+                        value={formData.port}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        placeholder={
+                          formData.protocol === "telnet" ? "23" : "22"
+                        }
+                      />
+
+                      <TextField
+                        label={t("connectionManager.username")}
+                        name="username"
+                        value={formData.username}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                      />
+
+                      <Box
+                        sx={{ display: "flex", gap: 1, alignItems: "center" }}
+                      >
+                        <TextField
+                          label={t("connectionManager.password")}
+                          name="password"
+                          type={showPassword ? "text" : "password"}
+                          value={formData.password}
+                          onChange={handleFormChange}
+                          fullWidth
+                          size="small"
+                          disabled={
+                            formData.protocol === "ssh" &&
+                            formData.authType === "privateKey"
+                          }
+                          sx={{ flex: 1, minWidth: 0 }}
+                        />
+                        <Tooltip
+                          title={
                             showPassword
                               ? t("common.hidePassword")
                               : t("common.showPassword")
                           }
-                          size="small"
-                          onClick={handleTogglePasswordVisibility}
-                          disabled={
-                            revealingPassword ||
-                            (formData.protocol === "ssh" &&
-                              formData.authType === "privateKey")
-                          }
-                          sx={{
-                            width: 40,
-                            height: 40,
-                            flexShrink: 0,
-                            border: 1,
-                            borderColor: "divider",
-                            borderRadius: 1,
-                          }}
                         >
-                          {revealingPassword ? (
-                            <CircularProgress size={18} />
-                          ) : showPassword ? (
-                            <VisibilityOffIcon fontSize="small" />
-                          ) : (
-                            <VisibilityIcon fontSize="small" />
-                          )}
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </Box>
-
-                  {formData.protocol === "ssh" && (
-                    <FormControl fullWidth size="small" sx={{ mt: 1 }}>
-                      <InputLabel>{t("connectionManager.authType")}</InputLabel>
-                      <Select
-                        name="authType"
-                        value={formData.authType || "password"}
-                        label={t("connectionManager.authType")}
-                        onChange={handleFormChange}
-                      >
-                        <MenuItem value="password">
-                          {t("connectionManager.passwordAuth")}
-                        </MenuItem>
-                        <MenuItem value="privateKey">
-                          {t("connectionManager.privateKeyAuth")}
-                        </MenuItem>
-                        <MenuItem value="agent">
-                          {t("connectionManager.agentAuth")}
-                        </MenuItem>
-                      </Select>
-                    </FormControl>
-                  )}
-
-                  {formData.protocol === "ssh" &&
-                    formData.authType === "privateKey" && (
-                      <Box sx={{ display: "flex", mt: 1 }}>
-                        <TextField
-                          label={t("connectionManager.privateKeyPath")}
-                          name="privateKeyPath"
-                          value={formData.privateKeyPath}
-                          onChange={handleFormChange}
-                          fullWidth
-                          size="small"
-                          sx={{ flexGrow: 1 }}
-                        />
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          sx={{ ml: 1 }}
-                          onClick={() => {
-                            if (
-                              window.terminalAPI &&
-                              window.terminalAPI.selectKeyFile
-                            ) {
-                              window.terminalAPI
-                                .selectKeyFile()
-                                .then((result) => {
-                                  if (result && result.success && result.path) {
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      privateKeyPath: result.path,
-                                    }));
-                                  }
-                                });
-                            }
-                          }}
-                        >
-                          {t("connectionManager.browse")}
-                        </Button>
-                      </Box>
-                    )}
-
-                  {formData.protocol === "ssh" &&
-                    formData.authType === "agent" && (
-                      <Box sx={{ mt: 1 }}>
-                        <TextField
-                          label={t("connectionManager.agentPath")}
-                          name="agentPath"
-                          value={formData.agentPath || ""}
-                          onChange={handleFormChange}
-                          fullWidth
-                          size="small"
-                          placeholder={t("connectionManager.agentPathPlaceholder")}
-                          helperText={t("connectionManager.agentPathHint")}
-                        />
-                        <FormControlLabel
-                          sx={{ mt: 1 }}
-                          control={
-                            <Checkbox
-                              checked={formData.agentForward === true}
-                              onChange={(e) =>
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  agentForward: e.target.checked,
-                                }))
+                          <span>
+                            <IconButton
+                              aria-label={
+                                showPassword
+                                  ? t("common.hidePassword")
+                                  : t("common.showPassword")
                               }
                               size="small"
-                            />
-                          }
-                          label={
-                            <Typography variant="body2">
-                              {t("connectionManager.agentForward")}
-                            </Typography>
-                          }
-                        />
+                              onClick={handleTogglePasswordVisibility}
+                              disabled={
+                                revealingPassword ||
+                                (formData.protocol === "ssh" &&
+                                  formData.authType === "privateKey")
+                              }
+                              sx={{
+                                width: 40,
+                                height: 40,
+                                flexShrink: 0,
+                                border: 1,
+                                borderColor: "divider",
+                                borderRadius: 1,
+                              }}
+                            >
+                              {revealingPassword ? (
+                                <CircularProgress size={18} />
+                              ) : showPassword ? (
+                                <VisibilityOffIcon fontSize="small" />
+                              ) : (
+                                <VisibilityIcon fontSize="small" />
+                              )}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
                       </Box>
-                    )}
+
+                      {formData.protocol === "ssh" && (
+                        <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+                          <InputLabel>
+                            {t("connectionManager.authType")}
+                          </InputLabel>
+                          <Select
+                            name="authType"
+                            value={formData.authType || "password"}
+                            label={t("connectionManager.authType")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value="password">
+                              {t("connectionManager.passwordAuth")}
+                            </MenuItem>
+                            <MenuItem value="privateKey">
+                              {t("connectionManager.privateKeyAuth")}
+                            </MenuItem>
+                            <MenuItem value="agent">
+                              {t("connectionManager.agentAuth")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      )}
+
+                      {formData.protocol === "ssh" &&
+                        formData.authType === "privateKey" && (
+                          <Box sx={{ display: "flex", mt: 1 }}>
+                            <TextField
+                              label={t("connectionManager.privateKeyPath")}
+                              name="privateKeyPath"
+                              value={formData.privateKeyPath}
+                              onChange={handleFormChange}
+                              fullWidth
+                              size="small"
+                              sx={{ flexGrow: 1 }}
+                            />
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              sx={{ ml: 1 }}
+                              onClick={() => {
+                                if (
+                                  window.terminalAPI &&
+                                  window.terminalAPI.selectKeyFile
+                                ) {
+                                  window.terminalAPI
+                                    .selectKeyFile()
+                                    .then((result) => {
+                                      if (
+                                        result &&
+                                        result.success &&
+                                        result.path
+                                      ) {
+                                        setFormData((prev) => ({
+                                          ...prev,
+                                          privateKeyPath: result.path,
+                                        }));
+                                      }
+                                    });
+                                }
+                              }}
+                            >
+                              {t("connectionManager.browse")}
+                            </Button>
+                          </Box>
+                        )}
+
+                      {formData.protocol === "ssh" &&
+                        formData.authType === "agent" && (
+                          <Box sx={{ mt: 1 }}>
+                            <TextField
+                              label={t("connectionManager.agentPath")}
+                              name="agentPath"
+                              value={formData.agentPath || ""}
+                              onChange={handleFormChange}
+                              fullWidth
+                              size="small"
+                              placeholder={t(
+                                "connectionManager.agentPathPlaceholder",
+                              )}
+                              helperText={t("connectionManager.agentPathHint")}
+                            />
+                            <FormControlLabel
+                              sx={{ mt: 1 }}
+                              control={
+                                <Checkbox
+                                  checked={formData.agentForward === true}
+                                  onChange={(e) =>
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      agentForward: e.target.checked,
+                                    }))
+                                  }
+                                  size="small"
+                                />
+                              }
+                              label={
+                                <Typography variant="body2">
+                                  {t("connectionManager.agentForward")}
+                                </Typography>
+                              }
+                            />
+                          </Box>
+                        )}
+                    </>
+                  )}
 
                   <FormControl fullWidth size="small">
                     <InputLabel>{t("connectionManager.group")}</InputLabel>

@@ -22,10 +22,12 @@
 const BaseConnectionPool = require("./base-connection-pool");
 const SSHConnectionPool = require("./ssh-pool"); // 已更新为简化的ssh-pool
 const TelnetConnectionPool = require("./telnet-connection-pool");
+const SerialConnectionPool = require("./serial-connection-pool");
 
 // 创建单例实例
 const sshConnectionPool = new SSHConnectionPool();
 const telnetConnectionPool = new TelnetConnectionPool();
+const serialConnectionPool = new SerialConnectionPool();
 
 /**
  * 初始化所有连接池
@@ -34,6 +36,7 @@ const telnetConnectionPool = new TelnetConnectionPool();
 function initializeConnectionPools() {
   sshConnectionPool.initialize();
   telnetConnectionPool.initialize();
+  serialConnectionPool.initialize();
 }
 
 /**
@@ -43,6 +46,7 @@ function initializeConnectionPools() {
 function cleanupConnectionPools() {
   sshConnectionPool.cleanup();
   telnetConnectionPool.cleanup();
+  serialConnectionPool.cleanup();
 }
 
 /**
@@ -53,6 +57,7 @@ function getAllConnectionPoolsStatus() {
   return {
     ssh: sshConnectionPool.getStatus(),
     telnet: telnetConnectionPool.getStatus(),
+    serial: serialConnectionPool.getStatus(),
   };
 }
 
@@ -64,6 +69,7 @@ function getAllConnectionPoolsStats() {
   return {
     ssh: sshConnectionPool.getDetailedStats(),
     telnet: telnetConnectionPool.getDetailedStats(),
+    serial: serialConnectionPool.getDetailedStats(),
   };
 }
 
@@ -74,10 +80,12 @@ module.exports = {
   // 具体实现类
   SSHConnectionPool,
   TelnetConnectionPool,
+  SerialConnectionPool,
 
   // 单例实例
   sshConnectionPool,
   telnetConnectionPool,
+  serialConnectionPool,
 
   // 工具函数
   initializeConnectionPools,

@@ -979,10 +979,13 @@ export function useTerminalLifecycle({
               connectPromise =
                 window.terminalAPI.startLocalTerminal(localizedLocalConfig);
             } else {
+              const connectProtocol = localizedSshConfig.protocol || "ssh";
               connectPromise =
-                localizedSshConfig.protocol === "telnet"
+                connectProtocol === "telnet"
                   ? window.terminalAPI.startTelnet(localizedSshConfig)
-                  : window.terminalAPI.startSSH(localizedSshConfig);
+                  : connectProtocol === "serial"
+                    ? window.terminalAPI.startSerial(localizedSshConfig)
+                    : window.terminalAPI.startSSH(localizedSshConfig);
             }
 
             connectPromise

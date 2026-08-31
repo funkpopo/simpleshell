@@ -26,6 +26,8 @@ const WORKER_UNPACK_DIRS = [
   ".webpack\\main\\workers",
   ".webpack/main/prebuilds",
   ".webpack\\main\\prebuilds",
+  ".webpack/prebuilds",
+  ".webpack\\prebuilds",
   ".webpack/main/worker",
   ".webpack\\main\\worker",
   ".webpack/main/shared",
@@ -405,7 +407,12 @@ const cleanupPackagedDevelopmentFiles = async (buildPath) => {
 };
 
 const cleanupPackagedNodePtyPrebuilds = async (buildPath, platform, arch) => {
-  const prebuildsDir = path.join(buildPath, ".webpack", "main", "prebuilds");
+  // node-pty 预编译位于 .webpack/main/prebuilds，
+  // @serialport/bindings-cpp 预编译位于 .webpack/prebuilds（node-gyp-build 解析路径不同）
+  const prebuildsDirs = [
+    path.join(buildPath, ".webpack", "main", "prebuilds"),
+    path.join(buildPath, ".webpack", "prebuilds"),
+  ];
   const targetKey = `${platform}-${arch}`;
   const prebuildDirsToKeep = NODE_PTY_PREBUILD_DIRS_BY_TARGET[targetKey];
 
@@ -413,28 +420,33 @@ const cleanupPackagedNodePtyPrebuilds = async (buildPath, platform, arch) => {
     return;
   }
 
-  let entries;
-  try {
-    entries = await fs.readdir(prebuildsDir, { withFileTypes: true });
-  } catch (error) {
-    if (error && error.code === "ENOENT") {
-      return;
-    }
-
-    throw error;
-  }
-
   await Promise.all(
-    entries
-      .filter(
-        (entry) => entry.isDirectory() && !prebuildDirsToKeep.has(entry.name),
-      )
-      .map((entry) =>
-        fs.rm(path.join(prebuildsDir, entry.name), {
-          force: true,
-          recursive: true,
-        }),
-      ),
+    prebuildsDirs.map(async (prebuildsDir) => {
+      let entries;
+      try {
+        entries = await fs.readdir(prebuildsDir, { withFileTypes: true });
+      } catch (error) {
+        if (error && error.code === "ENOENT") {
+          return;
+        }
+
+        throw error;
+      }
+
+      await Promise.all(
+        entries
+          .filter(
+            (entry) =>
+              entry.isDirectory() && !prebuildDirsToKeep.has(entry.name),
+          )
+          .map((entry) =>
+            fs.rm(path.join(prebuildsDir, entry.name), {
+              force: true,
+              recursive: true,
+            }),
+          ),
+      );
+    }),
   );
 };
 

@@ -109,10 +109,14 @@
     "react-window-infinite-loader": "2.0.1",
     "rehype-highlight": "7.0.2",
     "remark-gfm": "4.0.1",
+    "serialport": "13.0.0",
     "socks-proxy-agent": "10.1.0",
     "ssh2": "1.17.0",
     "systeminformation": "5.33.1",
     "telnet-client": "2.2.14",
     "zmodem2": "1.4.0"
+  },
+  "allowScripts": {
+    "@serialport/bindings-cpp@13.0.0": true
   }
 }

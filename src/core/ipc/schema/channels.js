@@ -440,6 +440,21 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     { permission: "network" },
   ),
   defineRequest(
+    "TERMINAL_START_SERIAL",
+    "terminal:startSerial",
+    "terminal",
+    args([objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "process-control" },
+  ),
+  defineRequest(
+    "TERMINAL_LIST_SERIAL_PORTS",
+    "terminal:listSerialPorts",
+    "terminal",
+    NO_ARGS_SCHEMA,
+    STANDARD_RESPONSE_SCHEMA,
+  ),
+  defineRequest(
     "TERMINAL_UPDATE_CONNECTION_CREDENTIALS",
     "terminal:updateConnectionCredentials",
     "terminal",

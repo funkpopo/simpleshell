@@ -69,6 +69,14 @@ function getTerminalText(config, key, params = {}) {
       return mainT("mainProcess.terminal.telnetClosed", options);
     case "telnetTimeout":
       return mainT("mainProcess.terminal.telnetTimeout", options);
+    case "serialClosed":
+      return mainT("mainProcess.terminal.serialClosed", options);
+    case "serialError":
+      return mainT("mainProcess.terminal.serialError", options);
+    case "serialConnectedReused":
+      return mainT("mainProcess.terminal.serialConnectedReused", options);
+    case "serialOpened":
+      return mainT("mainProcess.terminal.serialOpened", options);
     case "droppedBytesWarning":
       return mainT("mainProcess.terminal.droppedBytesWarning", options);
     case "sshConnected":
@@ -143,6 +151,16 @@ class SSHHandlers {
         channel: IPC_REQUEST_CHANNELS.TERMINAL_START_TELNET,
         category: "terminal",
         handler: this.startTelnet.bind(this),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_START_SERIAL,
+        category: "terminal",
+        handler: this.startSerial.bind(this),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_LIST_SERIAL_PORTS,
+        category: "terminal",
+        handler: this.listSerialPorts.bind(this),
       },
       {
         channel: IPC_REQUEST_CHANNELS.SSH_AUTH_RESPONSE,
@@ -708,19 +726,20 @@ class SSHHandlers {
         throw new Error("Authentication cancelled by user");
       }
 
-      const answers = (Array.isArray(authData.prompts) ? authData.prompts : []).map(
-        (_, index) => {
-          const userAnswer = Array.isArray(result.answers)
-            ? result.answers[index]
-            : undefined;
-          if (typeof userAnswer === "string") {
-            return userAnswer;
-          }
-          const prefilled =
-            Array.isArray(authData.prefill) ? authData.prefill[index] : null;
-          return typeof prefilled === "string" ? prefilled : "";
-        },
-      );
+      const answers = (
+        Array.isArray(authData.prompts) ? authData.prompts : []
+      ).map((_, index) => {
+        const userAnswer = Array.isArray(result.answers)
+          ? result.answers[index]
+          : undefined;
+        if (typeof userAnswer === "string") {
+          return userAnswer;
+        }
+        const prefilled = Array.isArray(authData.prefill)
+          ? authData.prefill[index]
+          : null;
+        return typeof prefilled === "string" ? prefilled : "";
+      });
       return { answers };
     };
   }
@@ -1599,6 +1618,80 @@ class SSHHandlers {
     });
   }
 
+  _setupSerialEventListeners(port, processId, serialConfig, connectionInfo) {
+    const mainWindow = this._getMainWindow();
+    const processMailbox = this._configureProcessMailbox(
+      processId,
+      serialConfig,
+    );
+
+    port.on("data", (data) => {
+      try {
+        const text = Buffer.isBuffer(data) ? data.toString() : String(data);
+        if (processMailbox) {
+          processMailbox.emitOutput(text);
+        } else if (mainWindow && !mainWindow.isDestroyed()) {
+          this._emitProcessOutput(processId, text);
+        }
+      } catch (error) {
+        logToFile(`Error handling Serial data: ${error.message}`, "ERROR");
+      }
+    });
+
+    port.on("error", (err) => {
+      logToFile(
+        `Serial error for processId ${processId}: ${err?.message || err}`,
+        "ERROR",
+      );
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        this._emitProcessOutput(
+          processId,
+          `\r\n*** ${getTerminalText(serialConfig, "serialError", {
+            message: err?.message || String(err),
+          })} ***\r\n`,
+        );
+        const exitChannel = getTerminalProcessExitChannel(processId);
+        if (exitChannel) {
+          mainWindow.webContents.send(exitChannel, {
+            code: 1,
+            signal: null,
+          });
+        }
+      }
+      this._destroyProcessMailbox(processId);
+
+      this.connectionManager.releaseSerialConnection(
+        connectionInfo.key,
+        serialConfig.tabId,
+      );
+    });
+
+    port.on("close", () => {
+      logToFile(`Serial connection closed for processId ${processId}`, "INFO");
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        this._emitProcessOutput(
+          processId,
+          `\r\n*** ${getTerminalText(serialConfig, "serialClosed")} ***\r\n`,
+        );
+        const exitChannel = getTerminalProcessExitChannel(processId);
+        if (exitChannel) {
+          mainWindow.webContents.send(exitChannel, {
+            code: 0,
+            signal: null,
+          });
+        }
+      }
+      this._destroyProcessMailbox(processId);
+
+      this.connectionManager.releaseSerialConnection(
+        connectionInfo.key,
+        serialConfig.tabId,
+      );
+    });
+  }
+
   _createProcessInfo(client, connectionInfo, config, type) {
     return {
       process: client,
@@ -2288,6 +2381,88 @@ class SSHHandlers {
       }
     } catch (error) {
       logToFile(`Failed to start Telnet connection: ${error.message}`, "ERROR");
+      throw error;
+    }
+  }
+
+  /**
+   * 列出本机可用串口（供连接编辑对话框下拉选择）
+   */
+  async listSerialPorts() {
+    try {
+      const { SerialPort } = require("serialport");
+      const ports = await SerialPort.list();
+      return {
+        success: true,
+        data: ports.map((port) => ({
+          path: port.path,
+          friendlyName: port.friendlyName || port.friendly_name || port.path,
+          manufacturer: port.manufacturer || "",
+          serialNumber: port.serialNumber || "",
+          vendorId: port.vendorId || "",
+          productId: port.productId || "",
+        })),
+      };
+    } catch (error) {
+      logToFile(`Failed to list serial ports: ${error.message}`, "ERROR");
+      return { success: false, error: error.message, data: [] };
+    }
+  }
+
+  async startSerial(event, serialConfig) {
+    const processId = this.getNextProcessId();
+    const mainWindow = this._getMainWindow();
+
+    const portPath = String(
+      serialConfig?.path || serialConfig?.host || "",
+    ).trim();
+    if (!serialConfig || !portPath) {
+      logToFile("Invalid Serial configuration", "ERROR");
+      throw new Error("Invalid Serial configuration");
+    }
+
+    try {
+      const connectionInfo = await this.connectionManager.getSerialConnection({
+        ...serialConfig,
+        path: portPath,
+      });
+      this._broadcastTopConnections();
+      const port = connectionInfo.client;
+
+      this._registerConnectionProcess(
+        processId,
+        port,
+        connectionInfo,
+        connectionInfo.config,
+        "serial",
+      );
+
+      if (connectionInfo.ready) {
+        logToFile(`串口连接就绪: ${connectionInfo.key}`, "INFO");
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          this._emitProcessOutput(
+            processId,
+            `\r\n*** ${getTerminalText(connectionInfo.config, "serialOpened", {
+              path: portPath,
+              baudRate: connectionInfo.config.baudRate,
+            })} ***\r\n`,
+          );
+        }
+
+        this._setupSerialEventListeners(
+          port,
+          processId,
+          connectionInfo.config,
+          connectionInfo,
+        );
+        return processId;
+      } else {
+        logToFile(`串口连接未就绪`, "ERROR");
+        throw new Error("Serial connection not ready");
+      }
+    } catch (error) {
+      logToFile(`Failed to start Serial connection: ${error.message}`, "ERROR");
       throw error;
     }
   }

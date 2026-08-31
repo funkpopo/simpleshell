@@ -1,6 +1,7 @@
 const {
   sshConnectionPool,
   telnetConnectionPool,
+  serialConnectionPool,
 } = require("../../core/connection");
 const { logToFile } = require("../../core/utils/logger");
 
@@ -8,19 +9,21 @@ class ConnectionManager {
   constructor() {
     this.sshConnectionPool = sshConnectionPool;
     this.telnetConnectionPool = telnetConnectionPool;
+    this.serialConnectionPool = serialConnectionPool;
   }
 
   initialize() {
     logToFile("Connection manager initialized", "INFO");
     this.sshConnectionPool.initialize();
     this.telnetConnectionPool.initialize();
-    // sftpCore is initialized separately in main.js with proper dependencies
+    this.serialConnectionPool.initialize();
   }
 
   cleanup() {
     logToFile("Connection manager cleanup", "INFO");
     this.sshConnectionPool.cleanup();
     this.telnetConnectionPool.cleanup();
+    this.serialConnectionPool.cleanup();
   }
 
   async getSftpSession(tabId) {
@@ -42,25 +45,37 @@ class ConnectionManager {
   }
 
   getTopConnections(count) {
-    // 合并SSH和Telnet的热门连接
+    // 合并SSH/Telnet/串口的热门连接
     const sshTopConnections = this.sshConnectionPool.getTopConnections(count);
     const telnetTopConnections =
       this.telnetConnectionPool.getTopConnections(count);
+    const serialTopConnections =
+      this.serialConnectionPool.getTopConnections(count);
 
     // 合并并按使用次数排序
-    const allConnections = [...sshTopConnections, ...telnetTopConnections];
+    const allConnections = [
+      ...sshTopConnections,
+      ...telnetTopConnections,
+      ...serialTopConnections,
+    ];
     return allConnections.slice(0, count);
   }
 
   getLastConnections(count) {
-    // 合并SSH和Telnet的最近连接（获取连接对象,而不是连接ID）
+    // 合并SSH/Telnet/串口的最近连接（获取连接对象,而不是连接ID）
     const sshLastConnections =
       this.sshConnectionPool.getLastConnectionsWithDetails(count);
     const telnetLastConnections =
       this.telnetConnectionPool.getLastConnectionsWithDetails(count);
+    const serialLastConnections =
+      this.serialConnectionPool.getLastConnectionsWithDetails(count);
 
     // 合并两个列表,保持时间顺序（简单合并,实际使用中可能需要更复杂的合并逻辑）
-    const allConnections = [...sshLastConnections, ...telnetLastConnections];
+    const allConnections = [
+      ...sshLastConnections,
+      ...telnetLastConnections,
+      ...serialLastConnections,
+    ];
     return allConnections.slice(0, count);
   }
 
@@ -70,10 +85,13 @@ class ConnectionManager {
       // 根据协议类型分别加载到对应的连接池
       const sshConnections = [];
       const telnetConnections = [];
+      const serialConnections = [];
 
       for (const conn of connections) {
         if (conn.protocol === "telnet") {
           telnetConnections.push(conn);
+        } else if (conn.protocol === "serial") {
+          serialConnections.push(conn);
         } else {
           // 默认视为SSH连接
           sshConnections.push(conn);
@@ -88,9 +106,14 @@ class ConnectionManager {
           telnetConnections,
         );
       }
+      if (serialConnections.length > 0) {
+        this.serialConnectionPool.loadLastConnectionsFromConfig(
+          serialConnections,
+        );
+      }
 
       logToFile(
-        `Loaded ${sshConnections.length} SSH and ${telnetConnections.length} Telnet last connections`,
+        `Loaded ${sshConnections.length} SSH, ${telnetConnections.length} Telnet and ${serialConnections.length} Serial last connections`,
         "INFO",
       );
     }
@@ -114,12 +137,25 @@ class ConnectionManager {
     this.telnetConnectionPool.releaseConnection(connectionKey, tabId, options);
   }
 
+  // 串口连接池相关方法
+  async getSerialConnection(serialConfig) {
+    return this.serialConnectionPool.getConnection(serialConfig);
+  }
+
+  releaseSerialConnection(connectionKey, tabId = null, options = {}) {
+    this.serialConnectionPool.releaseConnection(connectionKey, tabId, options);
+  }
+
   // 添加标签页引用追踪
   addTabReference(tabId, connectionKey) {
-    // 根据连接键前缀判断是SSH还是Telnet
+    // 根据连接键前缀判断是SSH、Telnet还是串口
     if (connectionKey.startsWith("telnet:")) {
       if (this.telnetConnectionPool.addTabReference) {
         this.telnetConnectionPool.addTabReference(tabId, connectionKey);
+      }
+    } else if (connectionKey.startsWith("serial:")) {
+      if (this.serialConnectionPool.addTabReference) {
+        this.serialConnectionPool.addTabReference(tabId, connectionKey);
       }
     } else {
       if (this.sshConnectionPool.addTabReference) {
@@ -132,6 +168,7 @@ class ConnectionManager {
     return {
       ssh: this.sshConnectionPool.getStatus(),
       telnet: this.telnetConnectionPool.getStatus(),
+      serial: this.serialConnectionPool.getStatus(),
     };
   }
 
@@ -139,19 +176,26 @@ class ConnectionManager {
     return {
       ssh: this.sshConnectionPool.getDetailedStats(),
       telnet: this.telnetConnectionPool.getDetailedStats(),
+      serial: this.serialConnectionPool.getDetailedStats(),
     };
   }
 
   // 优雅关闭指定连接
   async closeConnection(connectionKey) {
     try {
-      // 根据连接键前缀判断是SSH还是Telnet
+      // 根据连接键前缀判断是SSH、Telnet还是串口
       if (connectionKey.startsWith("telnet:")) {
         this.telnetConnectionPool.closeConnection(connectionKey, {
           reason: "user",
           intentional: true,
         });
         logToFile(`手动关闭Telnet连接: ${connectionKey}`, "INFO");
+      } else if (connectionKey.startsWith("serial:")) {
+        this.serialConnectionPool.closeConnection(connectionKey, {
+          reason: "user",
+          intentional: true,
+        });
+        logToFile(`手动关闭串口连接: ${connectionKey}`, "INFO");
       } else {
         this.sshConnectionPool.closeConnection(connectionKey, {
           reason: "user",
@@ -173,13 +217,17 @@ class ConnectionManager {
     const telnetCleaned = this.telnetConnectionPool.cleanupIdleConnections(
       Math.ceil(count / 2),
     );
-    return sshCleaned || telnetCleaned;
+    const serialCleaned = this.serialConnectionPool.cleanupIdleConnections(
+      Math.ceil(count / 2),
+    );
+    return sshCleaned || telnetCleaned || serialCleaned;
   }
 
   // 强制健康检查
   performHealthCheck() {
     this.sshConnectionPool.performHealthCheck();
     this.telnetConnectionPool.performHealthCheck();
+    this.serialConnectionPool.performHealthCheck();
   }
 }
 

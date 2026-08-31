@@ -202,6 +202,7 @@ class AppCleanup {
   buildCleanupSnapshot(stage) {
     const sshPool = connectionManager.sshConnectionPool;
     const telnetPool = connectionManager.telnetConnectionPool;
+    const serialPool = connectionManager.serialConnectionPool;
     const reconnectManager = sshPool?.reconnectionManager;
     const allProcesses =
       typeof processManager.getAllProcesses === "function"
@@ -222,6 +223,11 @@ class AppCleanup {
         connections: telnetPool?.connections?.size || 0,
         tabReferences: telnetPool?.tabReferences?.size || 0,
         healthCheckTimerActive: Boolean(telnetPool?.healthCheckTimer),
+      },
+      serial: {
+        connections: serialPool?.connections?.size || 0,
+        tabReferences: serialPool?.tabReferences?.size || 0,
+        healthCheckTimerActive: Boolean(serialPool?.healthCheckTimer),
       },
       filemanagementTransfer:
         filemanagementService &&
@@ -244,6 +250,9 @@ class AppCleanup {
       (snapshot?.telnet?.connections || 0) > 0 ||
       (snapshot?.telnet?.tabReferences || 0) > 0 ||
       snapshot?.telnet?.healthCheckTimerActive ||
+      (snapshot?.serial?.connections || 0) > 0 ||
+      (snapshot?.serial?.tabReferences || 0) > 0 ||
+      snapshot?.serial?.healthCheckTimerActive ||
       (filemanagementStats.activeTransferCount || 0) > 0,
     );
   }
