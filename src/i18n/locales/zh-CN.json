@@ -539,7 +539,7 @@
       "proxyUsername": "代理用户名 (可选)",
       "proxyPassword": "代理密码 (可选)",
       "protocol": "协议",
-      "serialProtocol": "串口 (Serial)",
+      "serialProtocol": "Serial",
       "serialPortPath": "串口路径",
       "serialPortPathHint": "如 COM3（Windows）或 /dev/ttyUSB0（Linux/macOS）",
       "serialPortRequired": "串口路径不能为空",
