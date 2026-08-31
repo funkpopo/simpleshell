@@ -404,6 +404,12 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     args([{}]),
   ),
   defineRequest(
+    "TERMINAL_GET_METRICS_SAMPLE",
+    "terminal:getMetricsSample",
+    "terminal",
+    args([{}]),
+  ),
+  defineRequest(
     "TERMINAL_GET_PROCESS_LIST",
     "terminal:getProcessList",
     "terminal",
@@ -1312,6 +1318,12 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     "CONFIG_SYNC_AUTO_EVENT",
     "settings:configSyncAutoEvent",
     "settings",
+    args([objectArg()]),
+  ),
+  defineEvent(
+    "DISK_ALERT_EVENT",
+    "disk:alertEvent",
+    "terminal",
     args([objectArg()]),
   ),
   defineRequest(

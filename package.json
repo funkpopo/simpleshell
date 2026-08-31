@@ -6,6 +6,7 @@
   "main": ".webpack/main",
   "scripts": {
     "format": "prettier --write .",
+    "postinstall": "node scripts/patch-xterm.js",
     "prepare:native-services": "node scripts/prepare-native-services.js",
     "prepare:winstaller-vendor": "node scripts/prepare-winstaller-vendor.js",
     "start": "npm run prepare:native-services && set NODE_ENV=development && electron-forge start",

@@ -36,6 +36,7 @@ const ConfigTransferHandlers = require("../ipc/handlers/configTransferHandlers")
 const TerminalIOMailboxManager = require("../terminal/terminalIOMailboxManager");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
+const diskAlertService = require("../services/diskAlertService");
 const connectionManager = require("../../modules/connection");
 const { getPrimaryWindow } = require("../window/windowManager");
 const { isSshClientUsable } = require("../utils/ssh-utils");
@@ -353,6 +354,22 @@ class IPCSetup {
 
     safeHandle(
       ipcMain,
+      IPC_REQUEST_CHANNELS.TERMINAL_GET_METRICS_SAMPLE,
+      this._createRemoteAwareInfoHandler({
+        getLocal: (systemInfo) => systemInfo.getLocalMetricsSample(),
+        getRemote: (systemInfo, sshClient) =>
+          systemInfo.getRemoteMetricsSample(sshClient),
+        awaitLocal: true,
+        fallbackTarget: "local metrics sample",
+        failureSubject: "metrics sample",
+        getFailureMessage: () =>
+          systemInfoText("mainProcess.systemInfo.getSystemInfoFailed"),
+      }),
+      { category: "terminal" },
+    );
+
+    safeHandle(
+      ipcMain,
       IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_LIST,
       this._createRemoteAwareInfoHandler({
         getLocal: (systemInfo) => systemInfo.getProcessList(),
@@ -456,6 +473,8 @@ class IPCSetup {
     BOILERPLATE_HANDLER_MODULES.forEach((module) => {
       this.initializeHandlerModule(module);
     });
+    // 磁盘空间告警（内部有启动延迟，不阻塞窗口创建）
+    diskAlertService.start();
   }
 
   /**
@@ -496,6 +515,11 @@ class IPCSetup {
    * 清理所有资源
    */
   async cleanup() {
+    try {
+      diskAlertService.stop();
+    } catch (error) {
+      logToFile(`Failed to stop disk alert service: ${error.message}`, "WARN");
+    }
     this.cleanupLatencyHandlers();
     await this.cleanupLocalTerminalHandlers();
   }

@@ -178,6 +178,13 @@ const Settings = memo(({ open, onClose }) => {
   const [externalEditorEnabled, setExternalEditorEnabled] =
     React.useState(false);
   const [externalEditorCommand, setExternalEditorCommand] = React.useState("");
+  const [diskAlertEnabled, setDiskAlertEnabled] = React.useState(true);
+  const [diskAlertThreshold, setDiskAlertThreshold] = React.useState(90);
+  const [diskAlertIntervalSeconds, setDiskAlertIntervalSeconds] =
+    React.useState(60);
+  // 资源监控显示模式：independent 独立 CPU/内存卡片 / trend 历史趋势曲线（二选一）
+  const [resourceMonitorDisplayMode, setResourceMonitorDisplayMode] =
+    React.useState("independent");
   const [logLevel, setLogLevel] = React.useState("WARN");
   const [maxFileSize, setMaxFileSize] = React.useState(5);
   const [cleanupIntervalDays, setCleanupIntervalDays] = React.useState(7);
@@ -287,6 +294,33 @@ const Settings = memo(({ open, onClose }) => {
                 settings.externalEditorCommand ||
                 "",
             );
+
+            // 加载磁盘空间告警设置
+            const diskAlertSettings = settings.diskAlert || {};
+            setDiskAlertEnabled(diskAlertSettings.enabled !== false);
+            const rawThreshold = Number(diskAlertSettings.thresholdPercent);
+            setDiskAlertThreshold(
+              Number.isFinite(rawThreshold) &&
+                rawThreshold >= 50 &&
+                rawThreshold <= 99
+                ? Math.floor(rawThreshold)
+                : 90,
+            );
+            const rawInterval = Number(diskAlertSettings.intervalSeconds);
+            setDiskAlertIntervalSeconds(
+              Number.isFinite(rawInterval) && rawInterval >= 30
+                ? Math.floor(rawInterval)
+                : 60,
+            );
+
+            // 加载资源监控显示模式
+            const resourceMonitorSettings = settings.resourceMonitor || {};
+            setResourceMonitorDisplayMode(
+              resourceMonitorSettings.displayMode === "trend"
+                ? "trend"
+                : "independent",
+            );
+
             const performanceSettings = settings.performance || {
               imageSupported: true,
               cacheEnabled: true,
@@ -545,9 +579,7 @@ const Settings = memo(({ open, onClose }) => {
       const dialogResult = await window.dialogAPI?.showSaveDialog?.({
         title: t("settings.dataSync.export.dialogTitle"),
         defaultPath: buildExportFileName(),
-        filters: [
-          { name: "SimpleShell Config", extensions: ["ssx"] },
-        ],
+        filters: [{ name: "SimpleShell Config", extensions: ["ssx"] }],
       });
       if (dialogResult?.canceled || !dialogResult?.filePath) {
         return;
@@ -558,13 +590,17 @@ const Settings = memo(({ open, onClose }) => {
         password: exportPassword,
       });
       if (result?.success === false) {
-        throw Object.assign(new Error(result.error), { code: result.errorCode });
+        throw Object.assign(new Error(result.error), {
+          code: result.errorCode,
+        });
       }
       showSuccess(t("settings.dataSync.export.success"));
       setExportPassword("");
       setExportConfirmPassword("");
     } catch (error) {
-      showError(getConfigTransferErrorMessage(error, "settings.dataSync.export.failed"));
+      showError(
+        getConfigTransferErrorMessage(error, "settings.dataSync.export.failed"),
+      );
     } finally {
       setConfigTransferBusy("");
     }
@@ -603,12 +639,16 @@ const Settings = memo(({ open, onClose }) => {
         mode: importMode,
       });
       if (result?.success === false) {
-        throw Object.assign(new Error(result.error), { code: result.errorCode });
+        throw Object.assign(new Error(result.error), {
+          code: result.errorCode,
+        });
       }
       showSuccess(t("settings.dataSync.import.success"));
       setImportPassword("");
     } catch (error) {
-      showError(getConfigTransferErrorMessage(error, "settings.dataSync.import.failed"));
+      showError(
+        getConfigTransferErrorMessage(error, "settings.dataSync.import.failed"),
+      );
     } finally {
       setConfigTransferBusy("");
     }
@@ -622,7 +662,9 @@ const Settings = memo(({ open, onClose }) => {
       fileName: webdavFileName,
     });
     if (saveResult?.success === false) {
-      throw new Error(saveResult.error || t("settings.dataSync.webdav.saveFailed"));
+      throw new Error(
+        saveResult.error || t("settings.dataSync.webdav.saveFailed"),
+      );
     }
   };
 
@@ -636,7 +678,9 @@ const Settings = memo(({ open, onClose }) => {
         fileName: webdavFileName,
       });
       if (result?.success === false) {
-        throw Object.assign(new Error(result.error), { code: result.errorCode });
+        throw Object.assign(new Error(result.error), {
+          code: result.errorCode,
+        });
       }
       showSuccess(
         result?.note === "REMOTE_NOT_FOUND"
@@ -644,7 +688,12 @@ const Settings = memo(({ open, onClose }) => {
           : t("settings.dataSync.webdav.testSuccess"),
       );
     } catch (error) {
-      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.testFailed"));
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.testFailed",
+        ),
+      );
     } finally {
       setConfigTransferBusy("");
     }
@@ -670,11 +719,18 @@ const Settings = memo(({ open, onClose }) => {
         exportPassword,
       });
       if (result?.success === false) {
-        throw Object.assign(new Error(result.error), { code: result.errorCode });
+        throw Object.assign(new Error(result.error), {
+          code: result.errorCode,
+        });
       }
       showSuccess(t("settings.dataSync.webdav.uploadSuccess"));
     } catch (error) {
-      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.uploadFailed"));
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.uploadFailed",
+        ),
+      );
     } finally {
       setConfigTransferBusy("");
     }
@@ -697,12 +753,19 @@ const Settings = memo(({ open, onClose }) => {
         mode: importMode,
       });
       if (result?.success === false) {
-        throw Object.assign(new Error(result.error), { code: result.errorCode });
+        throw Object.assign(new Error(result.error), {
+          code: result.errorCode,
+        });
       }
       showSuccess(t("settings.dataSync.webdav.downloadSuccess"));
       setImportPassword("");
     } catch (error) {
-      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.downloadFailed"));
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.downloadFailed",
+        ),
+      );
     } finally {
       setConfigTransferBusy("");
     }
@@ -791,7 +854,12 @@ const Settings = memo(({ open, onClose }) => {
         showSuccess(t("settings.dataSync.autoSync.enabled"));
       } catch (error) {
         setAutoSyncEnabled(false);
-        showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.saveFailed"));
+        showError(
+          getConfigTransferErrorMessage(
+            error,
+            "settings.dataSync.webdav.saveFailed",
+          ),
+        );
       } finally {
         setConfigTransferBusy("");
       }
@@ -809,7 +877,12 @@ const Settings = memo(({ open, onClose }) => {
     try {
       await persistAutoSyncSettings(patch);
     } catch (error) {
-      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.saveFailed"));
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.saveFailed",
+        ),
+      );
     }
   };
 
@@ -830,7 +903,12 @@ const Settings = memo(({ open, onClose }) => {
         showSuccess(t("settings.dataSync.autoSync.exportPasswordSaved"));
       }
     } catch (error) {
-      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.saveFailed"));
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.saveFailed",
+        ),
+      );
     }
   };
 
@@ -857,7 +935,12 @@ const Settings = memo(({ open, onClose }) => {
       }
       await refreshAutoSyncStatus();
     } catch (error) {
-      showError(getConfigTransferErrorMessage(error, "settings.dataSync.webdav.downloadFailed"));
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.downloadFailed",
+        ),
+      );
     } finally {
       setConfigTransferBusy("");
     }
@@ -1019,6 +1102,21 @@ const Settings = memo(({ open, onClose }) => {
             enabled: externalEditorEnabled,
             command: externalEditorCommand.trim(),
           },
+          diskAlert: {
+            enabled: diskAlertEnabled,
+            thresholdPercent: Math.min(
+              99,
+              Math.max(50, Math.floor(Number(diskAlertThreshold) || 90)),
+            ),
+            intervalSeconds: Math.min(
+              3600,
+              Math.max(30, Math.floor(Number(diskAlertIntervalSeconds) || 60)),
+            ),
+          },
+          resourceMonitor: {
+            displayMode:
+              resourceMonitorDisplayMode === "trend" ? "trend" : "independent",
+          },
         };
         await window.terminalAPI.saveUISettings(settings);
       }
@@ -1100,6 +1198,12 @@ const Settings = memo(({ open, onClose }) => {
             externalEditor: {
               enabled: externalEditorEnabled,
               command: externalEditorCommand.trim(),
+            },
+            resourceMonitor: {
+              displayMode:
+                resourceMonitorDisplayMode === "trend"
+                  ? "trend"
+                  : "independent",
             },
           },
         }),
@@ -1424,6 +1528,96 @@ const Settings = memo(({ open, onClose }) => {
                         }
                         disabled={!externalEditorEnabled}
                       />
+                    </Box>
+
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.diskAlert.title")}
+                    </Typography>
+                    <Box sx={sectionCardSx}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={diskAlertEnabled}
+                            onChange={(e) =>
+                              setDiskAlertEnabled(e.target.checked)
+                            }
+                            size="small"
+                          />
+                        }
+                        label={
+                          <Typography variant="body2">
+                            {t("settings.diskAlert.enable")}
+                          </Typography>
+                        }
+                        sx={{ mb: 1 }}
+                      />
+                      <Box
+                        sx={{
+                          display: "flex",
+                          gap: 1.5,
+                          flexWrap: "wrap",
+                          opacity: diskAlertEnabled ? 1 : 0.5,
+                          pointerEvents: diskAlertEnabled ? "auto" : "none",
+                        }}
+                      >
+                        <TextField
+                          size="small"
+                          type="number"
+                          label={t("settings.diskAlert.threshold")}
+                          value={diskAlertThreshold}
+                          onChange={(e) =>
+                            setDiskAlertThreshold(e.target.value)
+                          }
+                          inputProps={{ min: 50, max: 99 }}
+                          sx={{ width: 160 }}
+                        />
+                        <TextField
+                          size="small"
+                          select
+                          label={t("settings.diskAlert.interval")}
+                          value={diskAlertIntervalSeconds}
+                          onChange={(e) =>
+                            setDiskAlertIntervalSeconds(Number(e.target.value))
+                          }
+                          sx={{ width: 160 }}
+                        >
+                          {[30, 60, 120, 300, 600].map((seconds) => (
+                            <MenuItem key={seconds} value={seconds}>
+                              {t("settings.diskAlert.intervalSeconds", {
+                                seconds,
+                              })}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      </Box>
+                    </Box>
+
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.resourceMonitor.title")}
+                    </Typography>
+                    <Box sx={sectionCardSx}>
+                      <FormControl fullWidth variant="outlined" size="small">
+                        <Select
+                          value={resourceMonitorDisplayMode}
+                          onChange={(e) =>
+                            setResourceMonitorDisplayMode(e.target.value)
+                          }
+                        >
+                          <MenuItem value="independent">
+                            {t("settings.resourceMonitor.modeIndependent")}
+                          </MenuItem>
+                          <MenuItem value="trend">
+                            {t("settings.resourceMonitor.modeTrend")}
+                          </MenuItem>
+                        </Select>
+                      </FormControl>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ mt: 0.75, display: "block" }}
+                      >
+                        {t("settings.resourceMonitor.modeHint")}
+                      </Typography>
                     </Box>
                   </Grid>
                 </Grid>
@@ -2491,21 +2685,21 @@ const Settings = memo(({ open, onClose }) => {
                               });
                             }}
                           >
-                            {[
-                              5, 15, 30, 60, 180, 360, 720, 1440,
-                            ].map((minutes) => (
-                              <MenuItem key={minutes} value={minutes}>
-                                {minutes < 60
-                                  ? t(
-                                      "settings.dataSync.autoSync.intervalMinutes",
-                                      { n: minutes },
-                                    )
-                                  : t(
-                                      "settings.dataSync.autoSync.intervalHours",
-                                      { n: minutes / 60 },
-                                    )}
-                              </MenuItem>
-                            ))}
+                            {[5, 15, 30, 60, 180, 360, 720, 1440].map(
+                              (minutes) => (
+                                <MenuItem key={minutes} value={minutes}>
+                                  {minutes < 60
+                                    ? t(
+                                        "settings.dataSync.autoSync.intervalMinutes",
+                                        { n: minutes },
+                                      )
+                                    : t(
+                                        "settings.dataSync.autoSync.intervalHours",
+                                        { n: minutes / 60 },
+                                      )}
+                                </MenuItem>
+                              ),
+                            )}
                           </Select>
                         </FormControl>
                       </>

@@ -97,6 +97,19 @@
         "commandPlaceholder": "e.g. C:\\Users\\xxx\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\notebook.exe",
         "enable": "Use external editor"
       },
+      "diskAlert": {
+        "title": "Disk Space Alert",
+        "enable": "Enable disk space alerts (local machine & all SSH sessions)",
+        "threshold": "Alert threshold (usage ≥)",
+        "interval": "Check interval",
+        "intervalSeconds": "{{seconds}}s"
+      },
+      "resourceMonitor": {
+        "title": "Resource Monitor Display",
+        "modeIndependent": "Independent cards",
+        "modeTrend": "History trends",
+        "modeHint": "Pick one: \"Independent cards\" shows the original CPU / memory info cards; \"History trends\" shows live charts of CPU / memory / network throughput / disk I/O over time (last 10 minutes). Disk partitions are shown in both modes."
+      },
       "security": {
         "title": "Credential Encryption",
         "description": "When enabled, SSH passwords and AI API keys are encrypted with the random key plus the master password. When disabled, only the random key is used.",
@@ -1415,6 +1428,14 @@
       "usedMemory": "Used Memory",
       "freeMemory": "Free Memory",
       "processes": "Processes",
+      "historyTitle": "History",
+      "chartCpu": "CPU Usage",
+      "chartMemory": "Memory Usage",
+      "chartNetwork": "Network Throughput",
+      "chartDiskIo": "Disk I/O",
+      "disksTitle": "Disks",
+      "noDiskData": "No disk data yet",
+      "diskFreeSuffix": "free",
       "cpuShort": "CPU",
       "memoryShort": "Memory",
       "topProcessesHint": "Sorted by memory usage, showing top {{count}} processes",
@@ -1429,6 +1450,12 @@
         "processListFailed": "Failed to get process list",
         "fetchProcessList": "Error while getting process list"
       }
+    },
+    "diskAlert": {
+      "tabTooltip": "Disk space alert: {{summary}}",
+      "alertToast": "Disk space alert: {{host}} {{mounts}}",
+      "clearToast": "Disk space recovered: {{host}} {{mounts}}",
+      "localHost": "Local"
     },
     "errorBoundary": {
       "appTitle": "The application encountered a critical error",

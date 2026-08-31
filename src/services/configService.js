@@ -1212,9 +1212,7 @@ class ConfigService {
   savePortForwards(portForwards) {
     return this._saveSection("port forwards", {
       write: (config) => {
-        config.portForwards = Array.isArray(portForwards)
-          ? portForwards
-          : [];
+        config.portForwards = Array.isArray(portForwards) ? portForwards : [];
       },
     });
   }
@@ -1634,6 +1632,9 @@ class ConfigService {
       terminalLineHeight: 1.0,
       performance: {},
       externalEditor: {},
+      resourceMonitor: {
+        displayMode: "independent",
+      },
       desktopIntegration: {
         trayEnabled: false,
         closeToTray: false,

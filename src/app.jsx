@@ -121,6 +121,8 @@ import {
 
 const SIDEBAR_TRANSITION_MS = 250;
 const SIDEBAR_UNMOUNT_DELAY_MS = SIDEBAR_TRANSITION_MS + 40;
+// 磁盘空间告警标签颜色（琥珀黄，与重连状态色区分）
+const DISK_ALERT_TAB_COLOR = "#e0a800";
 const UPDATE_REMINDER_STORAGE_KEY = "simpleshell.update.remindAt";
 const UPDATE_REMINDER_DELAY_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_SIDEBAR_WIDTH = SIDEBAR_WIDTHS.DEFAULT;
@@ -824,6 +826,7 @@ function AppContent() {
     {},
   );
   const [reconnectStateByTabId, setReconnectStateByTabId] = React.useState({});
+  const [diskAlertsByTabId, setDiskAlertsByTabId] = React.useState({});
   const [reconnectActionTabId, setReconnectActionTabId] = React.useState(null);
   const [reconnectNow, setReconnectNow] = React.useState(Date.now());
 
@@ -970,6 +973,20 @@ function AppContent() {
 
       Object.entries(previous).forEach(([tabId, value]) => {
         if (activeTabIds.has(tabId)) {
+          next[tabId] = value;
+        } else {
+          changed = true;
+        }
+      });
+
+      return changed ? next : previous;
+    });
+    setDiskAlertsByTabId((previous) => {
+      let changed = false;
+      const next = {};
+
+      Object.entries(previous).forEach(([tabId, value]) => {
+        if (activeTabIds.has(tabId) || activeTabIds.has(Number(tabId))) {
           next[tabId] = value;
         } else {
           changed = true;
@@ -1185,6 +1202,62 @@ function AppContent() {
       window.terminalAPI?.removeReconnectListeners?.();
     };
   }, [clearReconnectStatus, t, updateReconnectStatus]);
+
+  // 磁盘空间告警：更新标签页告警状态并弹出通知（主进程仅在状态变化时推送）
+  React.useEffect(() => {
+    if (!window.terminalAPI?.onDiskAlertEvent) return undefined;
+
+    const formatMounts = (mounts = []) =>
+      Array.isArray(mounts)
+        ? mounts.map((m) => `${m.mount} ${m.usedPercent}%`).join(", ")
+        : "";
+    const formatHost = (payload) =>
+      payload.isLocal ? t("diskAlert.localHost") : payload.host || "SSH";
+
+    const handleDiskAlertEvent = (payload) => {
+      if (!payload || !payload.targetKey) return;
+
+      if (payload.kind === "alert") {
+        if (payload.tabId) {
+          const tabKey = String(payload.tabId);
+          setDiskAlertsByTabId((previous) => ({
+            ...previous,
+            [tabKey]: {
+              host: payload.host,
+              isLocal: payload.isLocal === true,
+              threshold: payload.threshold,
+              mounts: Array.isArray(payload.mounts) ? payload.mounts : [],
+              updatedAt: payload.timestamp || Date.now(),
+            },
+          }));
+        }
+        showWarning(
+          t("diskAlert.alertToast", {
+            host: formatHost(payload),
+            mounts: formatMounts(payload.mounts),
+          }),
+        );
+      } else if (payload.kind === "clear") {
+        if (payload.tabId) {
+          const tabKey = String(payload.tabId);
+          setDiskAlertsByTabId((previous) => {
+            if (!previous[tabKey]) return previous;
+            const next = { ...previous };
+            delete next[tabKey];
+            return next;
+          });
+        }
+        showInfo(
+          t("diskAlert.clearToast", {
+            host: formatHost(payload),
+            mounts: formatMounts(payload.mounts),
+          }),
+        );
+      }
+    };
+
+    return window.terminalAPI.onDiskAlertEvent(handleDiskAlertEvent);
+  }, [t, showWarning, showInfo]);
 
   // 监听 SSH 认证请求
   React.useEffect(() => {
@@ -4110,13 +4183,33 @@ function AppContent() {
                       t,
                       tabReconnectStatus,
                     );
+                    // 磁盘空间告警：标签变黄（重连状态优先展示）
+                    const tabDiskAlert =
+                      diskAlertsByTabId[String(tab.id)] || null;
+                    const tabDiskAlertColor = tabDiskAlert
+                      ? DISK_ALERT_TAB_COLOR
+                      : null;
+                    const tabDiskAlertSummary = tabDiskAlert
+                      ? (tabDiskAlert.mounts || [])
+                          .map((m) => `${m.mount} ${m.usedPercent}%`)
+                          .join(", ")
+                      : "";
 
                     return (
                       <CustomTab
                         key={tab.id}
                         label={label}
-                        statusColor={tabReconnectColor}
-                        statusTooltip={tabReconnectTooltip}
+                        statusColor={
+                          tabReconnectColor || tabDiskAlertColor || null
+                        }
+                        statusTooltip={
+                          tabReconnectTooltip ||
+                          (tabDiskAlert
+                            ? t("diskAlert.tabTooltip", {
+                                summary: tabDiskAlertSummary,
+                              })
+                            : null)
+                        }
                         onClose={
                           tab.id !== "welcome" ? handleTabCloseRequest : null
                         }

@@ -558,6 +558,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       IPC_REQUEST_CHANNELS.TERMINAL_GET_SYSTEM_INFO,
       processId,
     ),
+  getMetricsSample: (processId) =>
+    ipcRenderer.invoke(
+      IPC_REQUEST_CHANNELS.TERMINAL_GET_METRICS_SAMPLE,
+      processId,
+    ),
   getProcessList: (processId) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_LIST,
@@ -1533,6 +1538,17 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     return () => {
       ipcRenderer.removeListener(
         IPC_EVENT_CHANNELS.CONFIG_SYNC_AUTO_EVENT,
+        wrappedCallback,
+      );
+    };
+  },
+  onDiskAlertEvent: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_event, payload) => callback(payload);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.DISK_ALERT_EVENT, wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener(
+        IPC_EVENT_CHANNELS.DISK_ALERT_EVENT,
         wrappedCallback,
       );
     };
