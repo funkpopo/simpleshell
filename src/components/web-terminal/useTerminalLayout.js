@@ -25,6 +25,9 @@ export function useTerminalLayout({
     cols: 0,
     rows: 0,
   });
+  // 上次已向远端同步过尺寸的进程：新 pty（新建/重连）必须强制同步一次，
+  // 即使本地 cols/rows 未变化（覆盖后台标签页连接等 visibility 之前的情况）
+  const lastSyncedProcessIdRef = useRef(null);
 
   const attachTerminalToContainer = useCallback(
     (termInstance = null) => {
@@ -128,6 +131,13 @@ export function useTerminalLayout({
         const rect = container.getBoundingClientRect();
         const previous = lastLayoutGeometryRef.current;
         const forceResizeMessage = String(reason).includes("force");
+        // 连接就绪/会话恢复时，远端 pty 以默认尺寸创建（与本地拟合结果无关），
+        // 即使本地 cols/rows 未变化也必须强制向远端同步一次真实尺寸，
+        // 否则 top/vim 等全屏程序会按错误的宽高渲染，直到下次几何变化
+        const forceRemoteResize =
+          forceResizeMessage ||
+          reason === "connection-ready" ||
+          reason === "session-restored";
         const sizeChanged =
           Math.abs(rect.width - previous.width) > 0.5 ||
           Math.abs(rect.height - previous.height) > 0.5;
@@ -153,11 +163,23 @@ export function useTerminalLayout({
         };
 
         const processId = processCache[tabId];
-        if (processId && (colsChanged || rowsChanged || forceResizeMessage)) {
+        const processChanged =
+          Boolean(processId) &&
+          String(processId) !== lastSyncedProcessIdRef.current;
+        if (
+          processId &&
+          (colsChanged ||
+            rowsChanged ||
+            forceResizeMessage ||
+            forceRemoteResize ||
+            processChanged)
+        ) {
           sendResizeIfNeeded(processId, tabId, term.cols, term.rows, {
-            force: forceResizeMessage,
-            immediate: forceResizeMessage,
+            force: forceResizeMessage || forceRemoteResize || processChanged,
+            immediate:
+              forceResizeMessage || forceRemoteResize || processChanged,
           });
+          lastSyncedProcessIdRef.current = String(processId);
         }
 
         // Canvas and WebGL both need an explicit refresh after forced fit so

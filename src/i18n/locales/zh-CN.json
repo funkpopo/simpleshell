@@ -1539,7 +1539,15 @@
         "droppedBytesWarning": "输出过快，已丢弃 {{dropped}} 字节（请适当降低输出速率）",
         "sshConnected": "{{host}} 已连接",
         "telnetError": "Telnet连接错误: {{message}}",
-        "telnetConnectedReused": "{{host}} Telnet连接已建立（复用现有连接）"
+        "telnetConnectedReused": "{{host}} Telnet连接已建立（复用现有连接）",
+        "zmodemReceivingStarted": "ZMODEM 接收开始（对端发送文件）",
+        "zmodemSendingStarted": "ZMODEM 发送开始（等待选择本地文件）",
+        "zmodemUploadSelectFiles": "检测到对端 rz，请在弹窗中选择要上传的文件",
+        "zmodemFileReceived": "已接收: {{name}} ({{size}}) -> {{path}}",
+        "zmodemFileSent": "已发送: {{name}} ({{size}})",
+        "zmodemSessionDone": "ZMODEM 传输完成",
+        "zmodemSessionCancelled": "ZMODEM 传输已取消",
+        "zmodemSessionFailed": "ZMODEM 传输失败: {{error}}"
       },
       "reconnect": {
         "maxRetries": "达到最大重试次数（{{maxRetries}}次），请检查代理/VPN/网络后刷新或重新打开连接。",

@@ -1538,7 +1538,15 @@
         "droppedBytesWarning": "Output is too fast. Dropped {{dropped}} bytes. Please reduce the output rate.",
         "sshConnected": "{{host}} connected",
         "telnetError": "Telnet connection error: {{message}}",
-        "telnetConnectedReused": "{{host}} Telnet connection established (reused existing connection)"
+        "telnetConnectedReused": "{{host}} Telnet connection established (reused existing connection)",
+        "zmodemReceivingStarted": "ZMODEM receive started (peer is sending files)",
+        "zmodemSendingStarted": "ZMODEM send started (waiting for local file selection)",
+        "zmodemUploadSelectFiles": "Peer rz detected. Select files to upload in the dialog",
+        "zmodemFileReceived": "Received: {{name}} ({{size}}) -> {{path}}",
+        "zmodemFileSent": "Sent: {{name}} ({{size}})",
+        "zmodemSessionDone": "ZMODEM transfer complete",
+        "zmodemSessionCancelled": "ZMODEM transfer cancelled",
+        "zmodemSessionFailed": "ZMODEM transfer failed: {{error}}"
       },
       "reconnect": {
         "maxRetries": "Reached the maximum retry count ({{maxRetries}}). Check proxy/VPN/network and refresh or reopen the connection.",

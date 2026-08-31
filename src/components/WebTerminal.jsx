@@ -24,6 +24,7 @@ import { useTerminalClipboard } from "./web-terminal/useTerminalClipboard.js";
 import { useTerminalContextMenu } from "./web-terminal/useTerminalContextMenu.js";
 import { useTerminalLifecycle } from "./web-terminal/useTerminalLifecycle.js";
 import { useTerminalSessionEvents } from "./web-terminal/useTerminalSessionEvents.js";
+import useZmodemTransfer from "./web-terminal/useZmodemTransfer.js";
 
 const WebTerminal = ({
   tabId,
@@ -465,6 +466,9 @@ const WebTerminal = ({
     lastPasteTimeRef,
     setSearchAddonVersion,
   });
+
+  // ZMODEM（rz/sz）传输进度汇入全局传输状态（与 SFTP 传输共用 UI）
+  useZmodemTransfer({ tabId });
 
   useTerminalSessionEvents({
     tabId,

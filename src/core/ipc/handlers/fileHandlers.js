@@ -19,6 +19,9 @@ const {
   getUiLanguage,
 } = require("../../../shared/mainI18n");
 const configService = require("../../../services/configService");
+const {
+  zmodemTransferService,
+} = require("../../terminal/zmodemTransferService");
 
 const fileText = (key, params = {}) =>
   translateLocale(key, { lng: getUiLanguage(configService), ...params });
@@ -852,6 +855,14 @@ class FileHandlers {
   }
 
   async cancelTransfer(event, tabId, transferKey) {
+    // ZMODEM（rz/sz）传输复用全局传输 UI 的取消入口，
+    // transferKey 形如 "zmodem:<processId>"，在此路由到 ZMODEM 服务
+    if (typeof transferKey === "string" && transferKey.startsWith("zmodem:")) {
+      const processId = transferKey.slice("zmodem:".length);
+      const cancelled = zmodemTransferService.cancelTransfer(processId);
+      return { success: true, cancelled };
+    }
+
     if (
       filemanagementService &&
       typeof filemanagementService.cancelTransfer === "function"

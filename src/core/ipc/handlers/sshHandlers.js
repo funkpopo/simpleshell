@@ -21,6 +21,9 @@ const {
   classifyConnectionFailure,
 } = require("../../../shared/connectionErrorAdvice");
 const { resolveLanguage, t: mainT } = require("../../../shared/mainI18n");
+const {
+  zmodemTransferService,
+} = require("../../terminal/zmodemTransferService");
 const { isAuthErrorMessage } = require("../../../shared/errorClassification");
 const { generateId } = require("../../../shared/common");
 const {
@@ -1156,6 +1159,21 @@ class SSHHandlers {
       this._emitProcessOutput(processId, payload);
     };
 
+    // ZMODEM 会话期间向终端注入状态提示（不参与背压统计）
+    const emitZmodemTerminalText = (text) => {
+      emitOutput(text, { trackBackpressure: false });
+    };
+
+    // ZMODEM 检测上下文：原始字节先经 zmodemTransferService 过滤，
+    // 会话活跃时协议字节被拦截，仅透传非 ZMODEM 字节
+    const feedZmodem = (chunk) =>
+      zmodemTransferService.feedOutput(processId, chunk, {
+        stream,
+        tabId: sshConfig.tabId,
+        sshConfig,
+        emitTerminalText: emitZmodemTerminalText,
+      });
+
     const emitDroppedBytesWarning = () => {
       if (!droppedBytes) {
         return;
@@ -1230,7 +1248,14 @@ class SSHHandlers {
 
     const dataHandler = (data) => {
       try {
-        let chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
+        let chunk = feedZmodem(
+          Buffer.isBuffer(data) ? data : Buffer.from(data),
+        );
+        if (!chunk || !chunk.length) {
+          // ZMODEM 会话拦截了全部字节，无终端输出
+          this._setProcessBufferedBytes(processId, buffer.length);
+          return;
+        }
         const totalLength = buffer.length + chunk.length;
 
         // 溢出时保留最近数据（环形缓冲思想），并累计丢弃字节用于可观测告警
@@ -1353,7 +1378,7 @@ class SSHHandlers {
         );
       }
 
-      // 清理SFTP传输
+      // 清理SFTP传输与 ZMODEM 会话
       try {
         filemanagementService.cleanupTransfersForTab(processId);
         if (sshConfig.tabId && sshConfig.tabId !== processId) {
@@ -1362,6 +1387,14 @@ class SSHHandlers {
       } catch (err) {
         logToFile(
           `Error cleaning up native transfers on SSH close: ${err.message}`,
+          "ERROR",
+        );
+      }
+      try {
+        zmodemTransferService.destroyProcess(processId);
+      } catch (err) {
+        logToFile(
+          `Error cleaning up ZMODEM session on SSH close: ${err.message}`,
           "ERROR",
         );
       }

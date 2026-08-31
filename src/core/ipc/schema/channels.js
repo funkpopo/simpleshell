@@ -494,6 +494,19 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     args([objectArg()]),
     { dynamic: true },
   ),
+  defineEvent(
+    "ZMODEM_EVENT",
+    "zmodem:event",
+    "terminal",
+    objectPayloadArgs(["processId", "type"]),
+  ),
+  defineEvent(
+    "ZMODEM_CANCEL",
+    "zmodem:cancel",
+    "terminal",
+    objectPayloadArgs(["processId"]),
+    { permission: "process-control" },
+  ),
 
   defineRequest(
     "SSH_AUTH_RESPONSE",

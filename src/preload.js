@@ -322,6 +322,26 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       wrappers.delete(callback);
     };
   },
+  // ZMODEM（rz/sz）传输事件
+  onZmodemEvent: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_event, data) => callback(data);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.ZMODEM_EVENT, wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener(
+        IPC_EVENT_CHANNELS.ZMODEM_EVENT,
+        wrappedCallback,
+      );
+    };
+  },
+  cancelZmodemTransfer: (processId) => {
+    if (processId === undefined || processId === null) {
+      return false;
+    }
+    ipcRenderer.send(IPC_EVENT_CHANNELS.ZMODEM_CANCEL, { processId });
+    return true;
+  },
+
   removeTerminalMailboxListener: (processId, callback) => {
     const channel = getTerminalIOMailboxOutputChannel(processId);
     if (!channel) {

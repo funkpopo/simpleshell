@@ -4,6 +4,9 @@ const { broadcastToAllWindows } = require("../../window/windowManager");
 const configService = require("../../../services/configService");
 const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
 const {
+  zmodemTransferService,
+} = require("../../terminal/zmodemTransferService");
+const {
   TERMINAL_IO_MAILBOX_CHANNEL,
   TERMINAL_IO_MESSAGE_TYPES,
 } = require("../../../modules/terminal/io/terminalIOMailboxProtocol");
@@ -115,6 +118,11 @@ class TerminalHandlers {
         category: "terminal",
         handler: this.handleMailboxMessage.bind(this),
       },
+      {
+        channel: IPC_EVENT_CHANNELS.ZMODEM_CANCEL,
+        category: "terminal",
+        handler: this.cancelZmodemTransfer.bind(this),
+      },
     ];
   }
 
@@ -141,6 +149,24 @@ class TerminalHandlers {
     }
 
     this.writeToProcess(processId, input);
+  }
+
+  /**
+   * 取消进行中的 ZMODEM 传输（发送 CAN 中止序列）
+   */
+  cancelZmodemTransfer(_event, payload) {
+    const processId = payload?.processId;
+    if (processId === undefined || processId === null) {
+      return false;
+    }
+    const cancelled = zmodemTransferService.cancelTransfer(processId);
+    if (!cancelled) {
+      logToFile(
+        `Ignore ZMODEM cancel: no active session for ${processId}`,
+        "DEBUG",
+      );
+    }
+    return cancelled;
   }
 
   /**
@@ -189,6 +215,15 @@ class TerminalHandlers {
   writeToProcess(processId, data) {
     if (data === undefined || data === null) {
       return false;
+    }
+
+    // ZMODEM 会话期间拦截用户输入，避免键入字节破坏传输协议流
+    if (zmodemTransferService.hasActiveSession(processId)) {
+      logToFile(
+        `Suppressed user input during ZMODEM session for process ${processId}`,
+        "DEBUG",
+      );
+      return true;
     }
 
     const input = typeof data === "string" ? data : data.toString();
@@ -383,6 +418,10 @@ class TerminalHandlers {
           proc.config.tabId !== processId
         ) {
           filemanagementService.cleanupTransfersForTab(proc.config.tabId);
+        }
+        zmodemTransferService.destroyProcess(processId);
+        if (proc.config?.tabId && proc.config.tabId !== processId) {
+          zmodemTransferService.destroyProcess(proc.config.tabId);
         }
 
         // 如果是SSH连接，释放连接池中的连接引用
