@@ -34,6 +34,7 @@ const ActionTypes = {
   SET_FILE_MANAGER_OPEN: "SET_FILE_MANAGER_OPEN",
   SET_IP_ADDRESS_QUERY_OPEN: "SET_IP_ADDRESS_QUERY_OPEN",
   SET_SECURITY_TOOLS_OPEN: "SET_SECURITY_TOOLS_OPEN",
+  SET_PORT_FORWARDING_OPEN: "SET_PORT_FORWARDING_OPEN",
   SET_SHORTCUT_COMMANDS_OPEN: "SET_SHORTCUT_COMMANDS_OPEN",
   SET_COMMAND_HISTORY_OPEN: "SET_COMMAND_HISTORY_OPEN",
   SET_ACTIVE_SIDEBAR_MARGIN: "SET_ACTIVE_SIDEBAR_MARGIN",
@@ -95,6 +96,7 @@ export const initialState = {
   fileManagerOpen: false,
   ipAddressQueryOpen: false,
   securityToolsOpen: false,
+  portForwardingOpen: false,
   shortcutCommandsOpen: false,
   commandHistoryOpen: false,
   activeSidebarMargin: 0,
@@ -234,6 +236,9 @@ export function appReducer(state = initialState, action) {
 
     case ActionTypes.SET_SECURITY_TOOLS_OPEN:
       return { ...state, securityToolsOpen: action.payload };
+
+    case ActionTypes.SET_PORT_FORWARDING_OPEN:
+      return { ...state, portForwardingOpen: action.payload };
 
     case ActionTypes.SET_SHORTCUT_COMMANDS_OPEN:
       return { ...state, shortcutCommandsOpen: action.payload };
@@ -396,6 +401,10 @@ export const actions = {
   }),
   setSecurityToolsOpen: (open) => ({
     type: ActionTypes.SET_SECURITY_TOOLS_OPEN,
+    payload: open,
+  }),
+  setPortForwardingOpen: (open) => ({
+    type: ActionTypes.SET_PORT_FORWARDING_OPEN,
     payload: open,
   }),
   setShortcutCommandsOpen: (open) => ({

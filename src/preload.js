@@ -447,6 +447,36 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   getReconnectStatistics: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_GET_STATISTICS),
 
+  // 端口转发（SSH隧道）管理API
+  getPortForwardRules: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_GET_RULES),
+  savePortForwardRule: (rule) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_SAVE_RULE, rule),
+  deletePortForwardRule: (ruleId) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_DELETE_RULE, ruleId),
+  startPortForwardRule: (ruleId, tabId) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_START_RULE, { ruleId, tabId }),
+  stopPortForwardRule: (ruleId) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_STOP_RULE, ruleId),
+  getPortForwardActiveSessions: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_GET_ACTIVE_SESSIONS),
+  getPortForwardStatus: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_GET_STATUS),
+  onPortForwardStatusUpdated: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const wrappedCallback = (_event, data) => callback(data);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.PF_STATUS_UPDATED, wrappedCallback);
+    return () => {
+      ipcRenderer.removeListener(
+        IPC_EVENT_CHANNELS.PF_STATUS_UPDATED,
+        wrappedCallback,
+      );
+    };
+  },
+  removePortForwardListeners: () => {
+    ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.PF_STATUS_UPDATED);
+  },
+
   // 重连事件监听器
   onReconnectStart: (callback) =>
     ipcRenderer.on(IPC_EVENT_CHANNELS.RECONNECT_STARTED, callback),

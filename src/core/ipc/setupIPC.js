@@ -22,6 +22,7 @@
  * - sshKeyHandlers.js - SSH密钥处理器
  * - memoryHandlers.js - 记忆文件处理器
  * - externalEditorHandlers.js - 外部编辑器处理器
+ * - portForwardingHandlers.js - 端口转发（SSH隧道）处理器
  *
  * 处理器注册由 src/core/app/ipcSetup.js 统一管理
  */

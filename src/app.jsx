@@ -42,6 +42,7 @@ import FeedbackIcon from "@mui/icons-material/Feedback";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import PublicIcon from "@mui/icons-material/Public";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
+import SettingsEthernetIcon from "@mui/icons-material/SettingsEthernet";
 import ComputerIcon from "@mui/icons-material/Computer";
 import WelcomePage from "./components/WelcomePage.jsx";
 import {
@@ -53,6 +54,7 @@ import {
   ResourceMonitorWithSuspense as ResourceMonitor,
   IPAddressQueryWithSuspense as IPAddressQuery,
   SecurityToolsWithSuspense as SecurityTools,
+  PortForwardingDialogWithSuspense as PortForwardingDialog,
   SettingsWithSuspense as Settings,
   CommandHistoryWithSuspense as CommandHistory,
   ShortcutCommandsWithSuspense as ShortcutCommands,
@@ -720,6 +722,7 @@ function AppContent() {
   const fileManagerOpen = state.fileManagerOpen;
   const ipAddressQueryOpen = state.ipAddressQueryOpen;
   const securityToolsOpen = state.securityToolsOpen;
+  const portForwardingOpen = state.portForwardingOpen;
   const shortcutCommandsOpen = state.shortcutCommandsOpen;
   const commandHistoryOpen = state.commandHistoryOpen;
   const activeSidebarMargin = state.activeSidebarMargin;
@@ -1363,6 +1366,7 @@ function AppContent() {
   const commandHistoryPresent = useDelayedPresence(commandHistoryOpen);
   const ipAddressQueryPresent = useDelayedPresence(ipAddressQueryOpen);
   const securityToolsPresent = useDelayedPresence(securityToolsOpen);
+  const portForwardingPresent = useDelayedPresence(portForwardingOpen);
   const localTerminalSidebarPresent = useDelayedPresence(
     localTerminalSidebarOpen,
   );
@@ -1403,6 +1407,7 @@ function AppContent() {
       const openSidebars = [
         ["localTerminal", localTerminalSidebarOpen],
         ["password", securityToolsOpen],
+        ["forwarding", portForwardingOpen],
         ["ipquery", ipAddressQueryOpen],
         ["history", commandHistoryOpen],
         ["shortcut", shortcutCommandsOpen],
@@ -1423,6 +1428,7 @@ function AppContent() {
       fileManagerOpen,
       ipAddressQueryOpen,
       localTerminalSidebarOpen,
+      portForwardingOpen,
       resourceMonitorOpen,
       securityToolsOpen,
       shortcutCommandsOpen,
@@ -1785,6 +1791,7 @@ function AppContent() {
         history: commandHistoryOpen,
         ipquery: ipAddressQueryOpen,
         password: securityToolsOpen,
+        forwarding: portForwardingOpen,
         localTerminal: localTerminalSidebarOpen,
       };
       const activeSidebar = isSidebarOpen[lastOpenedSidebar]
@@ -1799,6 +1806,7 @@ function AppContent() {
         (commandHistoryOpen && activeSidebar === "history") ||
         (ipAddressQueryOpen && activeSidebar === "ipquery") ||
         (securityToolsOpen && activeSidebar === "password") ||
+        (portForwardingOpen && activeSidebar === "forwarding") ||
         (localTerminalSidebarOpen && activeSidebar === "localTerminal")
       ) {
         return sidebarWidth;
@@ -1844,6 +1852,7 @@ function AppContent() {
     shortcutCommandsOpen,
     commandHistoryOpen,
     ipAddressQueryOpen,
+    portForwardingOpen,
     securityToolsOpen,
     localTerminalSidebarOpen,
     lastOpenedSidebar,
@@ -3335,6 +3344,16 @@ function AppContent() {
     );
   };
 
+  // 切换端口转发管理侧边栏
+  const togglePortForwarding = () => {
+    runSidebarToggle(
+      portForwardingOpen,
+      (open) => dispatch(actions.setPortForwardingOpen(open)),
+      "forwarding",
+      { notifyResize: false },
+    );
+  };
+
   // 切换本地终端侧边栏
   const toggleLocalTerminalSidebar = () => {
     runSidebarToggle(
@@ -4716,6 +4735,29 @@ function AppContent() {
                     position: "absolute",
                     top: 0,
                     left: 0,
+                    zIndex: lastOpenedSidebar === "forwarding" ? 107 : 92,
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                  }}
+                >
+                  {portForwardingPresent && (
+                    <PortForwardingDialog
+                      open={portForwardingOpen}
+                      onClose={() => {
+                        dispatch(actions.setPortForwardingOpen(false));
+                        setFallbackSidebarAfterClose("forwarding");
+                      }}
+                      sessionContext={sidebarSessionContext}
+                    />
+                  )}
+                </Box>
+
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
                     zIndex: lastOpenedSidebar === "localTerminal" ? 108 : 91,
                     width: "100%",
                     height: "100%",
@@ -4879,6 +4921,22 @@ function AppContent() {
                     aria-label={t("sidebar.securityTool")}
                   >
                     <VpnKeyIcon />
+                  </IconButton>
+                </SidebarTooltip>
+
+                <SidebarTooltip
+                  title={t("sidebar.portForwarding")}
+                  placement={sidebarTooltipPlacement}
+                >
+                  <IconButton
+                    {...intentPreloadProps("portForwarding")}
+                    onClick={togglePortForwarding}
+                    sx={(theme) =>
+                      sidebarRailButtonSx(theme, portForwardingOpen)
+                    }
+                    aria-label={t("sidebar.portForwarding")}
+                  >
+                    <SettingsEthernetIcon />
                   </IconButton>
                 </SidebarTooltip>
 

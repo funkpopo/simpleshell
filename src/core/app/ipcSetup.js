@@ -31,6 +31,7 @@ const SshKeyHandlers = require("../ipc/handlers/sshKeyHandlers");
 const MemoryHandlers = require("../ipc/handlers/memoryHandlers");
 const ExternalEditorHandlers = require("../ipc/handlers/externalEditorHandlers");
 const RuntimeFileHandlers = require("../ipc/handlers/runtimeFileHandlers");
+const PortForwardingHandlers = require("../ipc/handlers/portForwardingHandlers");
 const TerminalIOMailboxManager = require("../terminal/terminalIOMailboxManager");
 const configService = require("../../services/configService");
 const processManager = require("../process/processManager");
@@ -96,6 +97,11 @@ const BOILERPLATE_HANDLER_MODULES = [
     HandlersClass: RuntimeFileHandlers,
     successLog: "Runtime file lifecycle handlers registered",
     errorLabel: "Failed to initialize runtime file lifecycle handlers",
+  },
+  {
+    HandlersClass: PortForwardingHandlers,
+    successLog: "Port forwarding handlers registered",
+    errorLabel: "Failed to initialize port forwarding handlers",
   },
 ];
 

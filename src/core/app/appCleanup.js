@@ -11,6 +11,7 @@ const runtimeFileLifecycle = require("../utils/runtimeFileLifecycle");
 const configService = require("../../services/configService");
 const commandHistoryService = require("../../modules/terminal/command-history");
 const filemanagementService = require("../../modules/filemanagement/filemanagementService");
+const portForwardingService = require("../services/port-forwarding-service");
 
 /**
  * 应用清理模块
@@ -180,6 +181,13 @@ class AppCleanup {
    * 清理连接管理器
    */
   cleanupConnectionManager() {
+    // 先停止所有端口转发，避免退出时残留本地监听
+    try {
+      portForwardingService.stopAll();
+      logToFile("端口转发已全部停止", "INFO");
+    } catch (error) {
+      logToFile(`停止端口转发失败: ${error.message}`, "ERROR");
+    }
     connectionManager.cleanup();
   }
 

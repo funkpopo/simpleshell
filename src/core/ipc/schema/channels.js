@@ -1284,7 +1284,6 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     args([objectArg()]),
   ),
 
-  defineRequest("PROXY_GET_STATUS", "proxy:getStatus", "proxy", NO_ARGS_SCHEMA),
   defineRequest(
     "PROXY_GET_DEFAULT_CONFIG",
     "proxy:getDefaultConfig",
@@ -1302,6 +1301,59 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     "proxy:getSystemConfig",
     "proxy",
     NO_ARGS_SCHEMA,
+  ),
+
+  defineRequest("PROXY_GET_STATUS", "proxy:getStatus", "proxy", NO_ARGS_SCHEMA),
+  defineRequest(
+    "PF_GET_RULES",
+    "port-forward:getRules",
+    "port-forward",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "PF_SAVE_RULE",
+    "port-forward:saveRule",
+    "port-forward",
+    args([objectArg()]),
+  ),
+  defineRequest(
+    "PF_DELETE_RULE",
+    "port-forward:deleteRule",
+    "port-forward",
+    args([stringArg()]),
+  ),
+  defineRequest(
+    "PF_START_RULE",
+    "port-forward:startRule",
+    "port-forward",
+    objectPayloadArgs(["ruleId", "tabId"], {
+      ruleId: { type: "string", minLength: 1 },
+      tabId: { type: "string", minLength: 1 },
+    }),
+  ),
+  defineRequest(
+    "PF_STOP_RULE",
+    "port-forward:stopRule",
+    "port-forward",
+    args([stringArg()]),
+  ),
+  defineRequest(
+    "PF_GET_ACTIVE_SESSIONS",
+    "port-forward:getActiveSessions",
+    "port-forward",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "PF_GET_STATUS",
+    "port-forward:getStatus",
+    "port-forward",
+    NO_ARGS_SCHEMA,
+  ),
+  defineEvent(
+    "PF_STATUS_UPDATED",
+    "port-forward:statusUpdated",
+    "port-forward",
+    args([objectArg()]),
   ),
 
   defineRequest("MEMORY_SAVE", "memory:save", "memory", args([objectArg()])),

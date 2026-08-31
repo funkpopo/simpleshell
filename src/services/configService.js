@@ -468,6 +468,7 @@ class ConfigService {
       },
       topConnections: [],
       lastConnections: [],
+      portForwards: [],
     };
   }
 
@@ -503,6 +504,9 @@ class ConfigService {
       lastConnections: Array.isArray(source.lastConnections)
         ? source.lastConnections
         : defaultConfig.lastConnections,
+      portForwards: Array.isArray(source.portForwards)
+        ? source.portForwards
+        : defaultConfig.portForwards,
       commandHistory:
         source.commandHistory !== undefined
           ? source.commandHistory
@@ -1180,6 +1184,37 @@ class ConfigService {
           return this._processConnectionsForLoad(config.connections);
         }
         return undefined;
+      },
+    });
+  }
+
+  /**
+   * 加载端口转发规则配置
+   * @returns {Array} 端口转发规则数组
+   */
+  loadPortForwards() {
+    return this._loadSection("port forwards", {
+      fallback: () => [],
+      read: (config) => {
+        if (Array.isArray(config.portForwards)) {
+          return config.portForwards;
+        }
+        return undefined;
+      },
+    });
+  }
+
+  /**
+   * 保存端口转发规则配置
+   * @param {Array} portForwards - 端口转发规则数组
+   * @returns {boolean} 是否成功
+   */
+  savePortForwards(portForwards) {
+    return this._saveSection("port forwards", {
+      write: (config) => {
+        config.portForwards = Array.isArray(portForwards)
+          ? portForwards
+          : [];
       },
     });
   }

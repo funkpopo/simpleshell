@@ -250,6 +250,7 @@
       "shortcutCommands": "快捷命令",
       "ipQuery": "IP 地址查询",
       "securityTool": "安全工具",
+      "portForwarding": "端口转发",
       "localTerminal": "本地终端",
       "resize": "调整侧边栏宽度",
       "moveToLeft": "将侧边栏移动到左侧",
@@ -259,6 +260,46 @@
       "sessionConnecting": "连接中",
       "sessionDisconnected": "未连接",
       "sessionLocal": "本机"
+    },
+    "portForwarding": {
+      "title": "端口转发",
+      "session": "SSH 会话",
+      "selectSessionFirst": "请先选择一个活跃的 SSH 会话",
+      "noActiveSessions": "暂无活跃的 SSH 会话，请先连接到服务器",
+      "empty": "暂无转发规则，点击 + 新增",
+      "addRule": "新增转发规则",
+      "editRule": "编辑转发规则",
+      "ruleName": "规则名称",
+      "ruleNamePlaceholder": "可选，便于识别规则",
+      "type": "转发类型",
+      "typeOptions": {
+        "local": "本地转发 (L)",
+        "remote": "远程转发 (R)",
+        "dynamic": "动态转发 (D / SOCKS5)"
+      },
+      "typeHelp": {
+        "local": "本地监听端口，经由 SSH 转发到远端目标地址",
+        "remote": "在远端服务器监听端口，转发回本地目标地址",
+        "dynamic": "本地 SOCKS5 代理，目标地址由访问请求决定"
+      },
+      "listenHost": "监听地址",
+      "listenPort": "监听端口",
+      "targetHost": "目标地址",
+      "targetPort": "目标端口",
+      "autoStart": "连接后自动启动",
+      "start": "启动",
+      "stop": "停止",
+      "edit": "编辑",
+      "delete": "删除",
+      "status": {
+        "running": "运行中",
+        "stopped": "已停止",
+        "error": "错误"
+      },
+      "loadFailed": "加载转发规则失败",
+      "saveFailed": "保存转发规则失败",
+      "deleteFailed": "删除转发规则失败",
+      "toggleFailed": "操作转发规则失败"
     },
     "latency": {
       "connectionInfo": "连接信息",
@@ -473,6 +514,7 @@
         "shortcutCommands": "正在加载快捷命令...",
         "localTerminal": "正在加载本地终端...",
         "securityTools": "正在加载安全工具...",
+        "portForwarding": "正在加载端口转发...",
         "firstRun": "正在加载首次运行向导...",
         "about": "正在加载关于信息...",
         "webTerminal": "正在加载终端..."
@@ -489,6 +531,7 @@
         "connectionManager": "连接管理器",
         "fileManager": "文件管理器",
         "securityTools": "安全工具",
+        "portForwarding": "端口转发",
         "aiAssistant": "AI 助手",
         "firstRun": "首次运行向导",
         "about": "关于对话框"

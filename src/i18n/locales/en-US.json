@@ -250,6 +250,7 @@
       "shortcutCommands": "Shortcut Commands",
       "ipQuery": "IP Address Query",
       "securityTool": "Security Tools",
+      "portForwarding": "Port Forwarding",
       "localTerminal": "Local Terminal",
       "resize": "Resize sidebar",
       "moveToLeft": "Move sidebar to left",
@@ -259,6 +260,46 @@
       "sessionConnecting": "Connecting",
       "sessionDisconnected": "Disconnected",
       "sessionLocal": "Local"
+    },
+    "portForwarding": {
+      "title": "Port Forwarding",
+      "session": "SSH Session",
+      "selectSessionFirst": "Please select an active SSH session first",
+      "noActiveSessions": "No active SSH sessions. Connect to a server first.",
+      "empty": "No forward rules yet. Click + to add one.",
+      "addRule": "Add Forward Rule",
+      "editRule": "Edit Forward Rule",
+      "ruleName": "Rule Name",
+      "ruleNamePlaceholder": "Optional, for identification",
+      "type": "Forward Type",
+      "typeOptions": {
+        "local": "Local (L)",
+        "remote": "Remote (R)",
+        "dynamic": "Dynamic (D / SOCKS5)"
+      },
+      "typeHelp": {
+        "local": "Listen locally, forward through SSH to a remote target",
+        "remote": "Listen on the remote server, forward back to a local target",
+        "dynamic": "Local SOCKS5 proxy; the target is decided by each request"
+      },
+      "listenHost": "Listen Host",
+      "listenPort": "Listen Port",
+      "targetHost": "Target Host",
+      "targetPort": "Target Port",
+      "autoStart": "Start automatically after connect",
+      "start": "Start",
+      "stop": "Stop",
+      "edit": "Edit",
+      "delete": "Delete",
+      "status": {
+        "running": "Running",
+        "stopped": "Stopped",
+        "error": "Error"
+      },
+      "loadFailed": "Failed to load forward rules",
+      "saveFailed": "Failed to save forward rule",
+      "deleteFailed": "Failed to delete forward rule",
+      "toggleFailed": "Failed to toggle forward rule"
     },
     "latency": {
       "connectionInfo": "Connection Info",
@@ -473,6 +514,7 @@
         "shortcutCommands": "Loading shortcut commands...",
         "localTerminal": "Loading local terminal...",
         "securityTools": "Loading security tools...",
+        "portForwarding": "Loading port forwarding...",
         "firstRun": "Loading first-run wizard...",
         "about": "Loading about dialog...",
         "webTerminal": "Loading terminal..."
@@ -489,6 +531,7 @@
         "connectionManager": "Connection Manager",
         "fileManager": "File Manager",
         "securityTools": "Security Tools",
+        "portForwarding": "Port Forwarding",
         "aiAssistant": "AI Assistant",
         "firstRun": "First-run Wizard",
         "about": "About Dialog"

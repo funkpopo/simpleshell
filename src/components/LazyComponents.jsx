@@ -151,6 +151,13 @@ export const SecurityToolsWithSuspense = createLazySidebarComponent(
   "security",
 );
 
+export const PortForwardingDialogWithSuspense = createLazySidebarComponent(
+  () => import("./PortForwardingDialog.jsx"),
+  (t) => t("common.skeleton.portForwarding"),
+  (t) => t("common.componentNames.portForwarding"),
+  "forwarding",
+);
+
 export const AIChatWindowWithSuspense = createLazyComponent(
   () => import("./AIChatWindow.jsx"),
   (t) => t("common.skeleton.aiChat"),
@@ -177,6 +184,7 @@ const preloadComponents = {
   resourceMonitor: () => import("./ResourceMonitor.jsx"),
   ipAddressQuery: () => import("./IPAddressQuery.jsx"),
   securityTools: () => import("./SecurityTools.jsx"),
+  portForwarding: () => import("./PortForwardingDialog.jsx"),
   settings: () => import("./Settings.jsx"),
   commandHistory: () => import("./CommandHistory.jsx"),
   shortcutCommands: () => import("./ShortcutCommands.jsx"),
