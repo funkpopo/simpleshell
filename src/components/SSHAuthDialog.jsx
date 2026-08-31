@@ -42,11 +42,14 @@ const SSHAuthDialog = ({
   const theme = useTheme();
   const { t } = useTranslation();
 
-  // 对话框步骤: 'hostVerify' | 'credentials'
+  // 对话框步骤: 'hostVerify' | 'credentials' | 'keyboardInteractive'
   const [step, setStep] = useState("hostVerify");
 
-  // 凭证步骤的标签页: 0 = 密码, 1 = 公钥
+  // 凭证步骤的标签页: 0 = 密码, 1 = 公钥, 2 = SSH Agent
   const [credTabValue, setCredTabValue] = useState(0);
+
+  // keyboard-interactive（2FA/OTP）提示答案
+  const [kbdAnswers, setKbdAnswers] = useState([]);
 
   // 表单数据
   const [username, setUsername] = useState("");
@@ -76,9 +79,24 @@ const SSHAuthDialog = ({
       setShowPassword(false);
       setHostTrustMode(authData.fingerprintChanged ? "session" : "permanent");
 
+      // keyboard-interactive（2FA/OTP）：按提示数量初始化答案，预填自动代答项
+      if (authData.step === "keyboardInteractive") {
+        const prompts = Array.isArray(authData.prompts) ? authData.prompts : [];
+        const prefill = Array.isArray(authData.prefill) ? authData.prefill : [];
+        setKbdAnswers(
+          prompts.map((_, index) =>
+            typeof prefill[index] === "string" ? prefill[index] : "",
+          ),
+        );
+      } else {
+        setKbdAnswers([]);
+      }
+
       // 根据连接配置设置认证类型
       if (connectionConfig?.authType === "privateKey") {
         setCredTabValue(1);
+      } else if (connectionConfig?.authType === "agent") {
+        setCredTabValue(2);
       } else {
         setCredTabValue(0);
       }
@@ -121,7 +139,18 @@ const SSHAuthDialog = ({
 
   // 处理凭证步骤的继续
   const handleCredentialsContinue = useCallback(() => {
-    const authType = credTabValue === 0 ? "password" : "privateKey";
+    // keyboard-interactive（2FA/OTP）步骤：提交提示答案
+    if (step === "keyboardInteractive") {
+      onConfirm({ answers: kbdAnswers });
+      return;
+    }
+
+    const authType =
+      credTabValue === 0
+        ? "password"
+        : credTabValue === 1
+          ? "privateKey"
+          : "agent";
 
     if (authType === "password" && !password) {
       return;
@@ -139,7 +168,7 @@ const SSHAuthDialog = ({
       autoLogin,
       acceptHostKey: true,
     });
-  }, [username, password, privateKeyPath, credTabValue, autoLogin, onConfirm]);
+  }, [step, kbdAnswers, username, password, privateKeyPath, credTabValue, autoLogin, onConfirm]);
 
   // 处理取消
   const handleCancel = useCallback(() => {
@@ -385,6 +414,68 @@ const SSHAuthDialog = ({
     </Box>
   );
 
+  // 渲染 keyboard-interactive（2FA/OTP）步骤
+  const renderKeyboardInteractiveStep = () => {
+    const prompts = Array.isArray(authData?.prompts) ? authData.prompts : [];
+    return (
+      <Box sx={{ pt: 1 }}>
+        {renderHostInfo()}
+        <Alert severity="info" sx={{ mb: 2 }}>
+          {t("sshAuth.keyboardInteractiveNotice")}
+        </Alert>
+        {authData?.kbdName && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: "block", mb: 1, fontFamily: "monospace" }}
+          >
+            {authData.kbdName}
+          </Typography>
+        )}
+        {authData?.instructions && (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ mb: 2, whiteSpace: "pre-wrap" }}
+          >
+            {authData.instructions}
+          </Typography>
+        )}
+        {prompts.map((promptInfo, index) => (
+          <Box key={`kbd-prompt-${index}`} sx={{ mb: 2 }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mb: 0.5 }}
+            >
+              {promptInfo?.prompt || t("sshAuth.keyboardInteractiveDefaultPrompt")}
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              autoFocus={index === 0}
+              type={promptInfo?.echo ? "text" : "password"}
+              value={kbdAnswers[index] || ""}
+              onChange={(e) =>
+                setKbdAnswers((previous) => {
+                  const next = [...previous];
+                  next[index] = e.target.value;
+                  return next;
+                })
+              }
+              onKeyDown={handleKeyDown}
+            />
+          </Box>
+        ))}
+        {prompts.length === 0 && (
+          <Typography variant="body2" color="text.secondary">
+            {t("sshAuth.keyboardInteractiveNoPrompts")}
+          </Typography>
+        )}
+      </Box>
+    );
+  };
+
   // 渲染凭证步骤
   const renderCredentialsStep = () => {
     // 部分隐藏用户名用于显示
@@ -402,6 +493,7 @@ const SSHAuthDialog = ({
         >
           <Tab label={t("sshAuth.password")} />
           <Tab label={t("sshAuth.publicKey")} />
+          <Tab label={t("sshAuth.agent")} />
         </Tabs>
 
         <Box sx={{ pt: 2 }}>
@@ -496,6 +588,14 @@ const SSHAuthDialog = ({
               </Box>
             </Box>
           )}
+
+          {credTabValue === 2 && (
+            <Box>
+              <Alert severity="info">
+                {t("sshAuth.agentNotice")}
+              </Alert>
+            </Box>
+          )}
         </Box>
       </>
     );
@@ -503,6 +603,10 @@ const SSHAuthDialog = ({
 
   // 计算标题
   const getTitle = () => {
+    if (step === "keyboardInteractive") {
+      return t("sshAuth.keyboardInteractiveTitle");
+    }
+
     if (step === "hostVerify" && authData?.requireCredentials === false) {
       return t("sshAuth.fingerprintTitle");
     }
@@ -547,9 +651,11 @@ const SSHAuthDialog = ({
       </DialogTitle>
 
       <DialogContent sx={{ pt: 0, pb: 1 }}>
-        {step === "hostVerify"
-          ? renderHostVerifyStep()
-          : renderCredentialsStep()}
+        {step === "keyboardInteractive"
+          ? renderKeyboardInteractiveStep()
+          : step === "hostVerify"
+            ? renderHostVerifyStep()
+            : renderCredentialsStep()}
       </DialogContent>
 
       {authData?.requireCredentials !== false && (
@@ -586,6 +692,11 @@ const SSHAuthDialog = ({
               : handleCredentialsContinue
           }
           disabled={
+            (step === "keyboardInteractive" &&
+              authData?.prompts?.some?.(
+                (promptInfo, index) =>
+                  promptInfo?.echo !== true && !(kbdAnswers[index] || "").length,
+              ) === true) ||
             (step === "hostVerify" &&
               authData?.requireCredentials !== false &&
               !username.trim()) ||
@@ -594,9 +705,11 @@ const SSHAuthDialog = ({
           }
           sx={{ minWidth: 80 }}
         >
-          {step === "hostVerify" && authData?.requireCredentials === false
-            ? t("sshAuth.confirmAndConnect")
-            : t("sshAuth.continue")}
+          {step === "keyboardInteractive"
+            ? t("sshAuth.submitAnswers")
+            : step === "hostVerify" && authData?.requireCredentials === false
+              ? t("sshAuth.confirmAndConnect")
+              : t("sshAuth.continue")}
         </Button>
       </DialogActions>
     </Dialog>

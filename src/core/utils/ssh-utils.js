@@ -166,7 +166,47 @@ function buildSshConnectOptions(
     options.hostVerifier = processedConfig.hostVerifier;
   }
 
+  // keyboard-interactive（2FA/OTP）：始终启用，配合 `keyboard-interactive` 事件处理
+  options.tryKeyboard = true;
+
+  // SSH Agent 认证（authType === "agent"）
+  if (
+    String(processedConfig.authType || "").toLowerCase() === "agent"
+  ) {
+    const agentPath = resolveSshAgentPath(processedConfig);
+    if (agentPath) {
+      options.agent = agentPath;
+    }
+    options.agentForward = processedConfig.agentForward === true;
+  }
+
   return options;
+}
+
+const WINDOWS_OPENSSH_AGENT_PIPE = "\\\\.\\pipe\\openssh-ssh-agent";
+
+/**
+ * 解析 SSH Agent 套接字/管道路径
+ * @param {Object} sshConfig - SSH 配置
+ * @returns {string|null} agent 路径，无法解析时返回 null
+ */
+function resolveSshAgentPath(sshConfig = {}) {
+  const customPath =
+    typeof sshConfig.agentPath === "string" ? sshConfig.agentPath.trim() : "";
+  // 允许显式指定 "pageant"（Windows PuTTY Pageant，ssh2 原生支持）
+  if (customPath.toLowerCase() === "pageant") {
+    return "pageant";
+  }
+  if (customPath) {
+    return customPath;
+  }
+  if (process.env.SSH_AUTH_SOCK) {
+    return process.env.SSH_AUTH_SOCK;
+  }
+  if (process.platform === "win32") {
+    return WINDOWS_OPENSSH_AGENT_PIPE;
+  }
+  return null;
 }
 
 /**
@@ -269,5 +309,6 @@ module.exports = {
   extractTabIdFromSessionKey,
   processSSHPrivateKeyAsync,
   buildSshConnectOptions,
+  resolveSshAgentPath,
   createChannelPoolManager,
 };

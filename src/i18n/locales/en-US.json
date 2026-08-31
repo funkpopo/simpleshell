@@ -546,6 +546,11 @@
       "authType": "Authentication Method",
       "passwordAuth": "Password Authentication",
       "privateKeyAuth": "Key Authentication",
+      "agentAuth": "SSH Agent Authentication",
+      "agentPath": "SSH Agent Path (optional)",
+      "agentPathPlaceholder": "Defaults to SSH_AUTH_SOCK / Windows OpenSSH agent pipe",
+      "agentPathHint": "Leave empty to auto-detect; on Windows you can enter 'pageant' to use PuTTY Pageant.",
+      "agentForward": "Enable agent forwarding (reuse local keys on the server)",
       "privateKeyPath": "Private Key Path",
       "browse": "Browse...",
       "group": "Group",
@@ -579,6 +584,7 @@
         "usernameMissing": "Enter the SSH username.",
         "auth": "Authentication",
         "passwordAuthOk": "Password authentication is selected. If the password is not saved, you will be prompted when connecting.",
+        "agentAuthOk": "SSH agent authentication is selected.",
         "privateKeySelected": "Private key authentication is selected.",
         "privateKeyMissing": "Select a private key file.",
         "proxy": "Proxy",
@@ -978,7 +984,14 @@
       "fingerprintWarning": "Server fingerprint has changed. Please verify this is expected.",
       "previousFingerprint": "Previous Fingerprint",
       "authFailed": "Authentication failed",
-      "pleaseRetry": "Invalid username or password, please try again"
+      "pleaseRetry": "Invalid username or password, please try again",
+      "agent": "SSH Agent",
+      "agentNotice": "Authenticate using keys loaded in your local SSH agent (ssh-agent). Make sure the agent has the key loaded.",
+      "keyboardInteractiveNotice": "The server requires interactive verification (2FA/OTP). Please answer the following prompts:",
+      "keyboardInteractiveTitle": "Server Interactive Verification",
+      "keyboardInteractiveDefaultPrompt": "Enter verification info",
+      "keyboardInteractiveNoPrompts": "The server provided no prompts; verification cannot continue.",
+      "submitAnswers": "Submit & Connect"
     },
     "filePermission": {
       "title": "File Permissions",
@@ -1834,7 +1847,8 @@
         "connectionRefused": "Connection refused: cannot connect to {{host}}:{{port}}{{proxy}}",
         "hostNotFound": "Host not found: cannot resolve hostname {{host}}",
         "connectionTimeout": "Connection timed out: {{host}}:{{port}}",
-        "throughProxy": " (through proxy)"
+        "throughProxy": " (through proxy)",
+        "keyboardInteractiveUnsupported": "The server requires interactive verification (keyboard-interactive), which cannot prompt for input in this context"
       }
     },
     "connectionAdvice": {

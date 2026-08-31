@@ -678,6 +678,54 @@ class SSHHandlers {
   }
 
   /**
+   * 创建 keyboard-interactive（2FA/OTP）应答器
+   * 将服务器提示转发到渲染层对话框，等待用户输入后返回答案数组
+   */
+  _createKeyboardInteractiveResponder(sshConfig) {
+    return async ({ name, instructions, prompts, prefill }) => {
+      const authData = {
+        step: "keyboardInteractive",
+        host: sshConfig.host,
+        port: sshConfig.port || 22,
+        requireCredentials: false,
+        connectionId: sshConfig.id,
+        username: sshConfig.username || "",
+        existingUsername: sshConfig.username || "",
+        kbdName: name || null,
+        instructions: instructions || null,
+        prompts: (Array.isArray(prompts) ? prompts : []).map((p) => ({
+          prompt: String(p?.prompt || ""),
+          echo: p?.echo === true,
+        })),
+        prefill: (Array.isArray(prefill) ? prefill : []).map((v) =>
+          typeof v === "string" ? v : null,
+        ),
+        isRetry: false,
+      };
+
+      const result = await this._requestUserAuth(sshConfig.tabId, authData);
+      if (!result || result.cancelled) {
+        throw new Error("Authentication cancelled by user");
+      }
+
+      const answers = (Array.isArray(authData.prompts) ? authData.prompts : []).map(
+        (_, index) => {
+          const userAnswer = Array.isArray(result.answers)
+            ? result.answers[index]
+            : undefined;
+          if (typeof userAnswer === "string") {
+            return userAnswer;
+          }
+          const prefilled =
+            Array.isArray(authData.prefill) ? authData.prefill[index] : null;
+          return typeof prefilled === "string" ? prefilled : "";
+        },
+      );
+      return { answers };
+    };
+  }
+
+  /**
    * 为 SSH 配置附加主机指纹校验能力
    */
   _attachHostVerificationConfig(sshConfig) {
@@ -686,6 +734,9 @@ class SSHHandlers {
       hostHash: "sha256",
     };
     connectionConfig.hostVerifier = this._createHostVerifier(connectionConfig);
+    // keyboard-interactive / 2FA：注入用户应答器（连接建立与断线重连共用）
+    connectionConfig.keyboardInteractiveResponder =
+      this._createKeyboardInteractiveResponder(connectionConfig);
     return connectionConfig;
   }
 
@@ -1698,12 +1749,13 @@ class SSHHandlers {
     let finalConfig = { ...sshConfig };
     let lastAuthResult = null;
 
-    // 检查是否需要预先认证（没有用户名或密码/密钥）
+    // 检查是否需要预先认证（没有用户名或密码/密钥/Agent）
     const needsPreAuth =
       !sshConfig.username ||
       (!sshConfig.password &&
         !sshConfig.privateKeyPath &&
-        sshConfig.authType !== "privateKey");
+        sshConfig.authType !== "privateKey" &&
+        sshConfig.authType !== "agent");
 
     while (authRetryCount <= maxAuthRetries) {
       try {

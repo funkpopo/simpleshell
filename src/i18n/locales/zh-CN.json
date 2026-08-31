@@ -546,6 +546,11 @@
       "authType": "认证方式",
       "passwordAuth": "密码认证",
       "privateKeyAuth": "密钥认证",
+      "agentAuth": "SSH 代理认证",
+      "agentPath": "SSH 代理路径（可选）",
+      "agentPathPlaceholder": "默认使用 SSH_AUTH_SOCK / Windows OpenSSH 代理管道",
+      "agentPathHint": "留空则自动探测；Windows 可填 pageant 使用 PuTTY Pageant。",
+      "agentForward": "启用 Agent 转发（在服务器上复用本机密钥）",
       "privateKeyPath": "私钥路径",
       "browse": "浏览...",
       "group": "分组",
@@ -579,6 +584,7 @@
         "usernameMissing": "请输入 SSH 用户名。",
         "auth": "认证方式",
         "passwordAuthOk": "已选择密码认证；如果不保存密码，连接时会提示输入。",
+        "agentAuthOk": "已选择 SSH 代理认证。",
         "privateKeySelected": "已选择私钥认证。",
         "privateKeyMissing": "请选择私钥文件。",
         "proxy": "代理",
@@ -979,7 +985,14 @@
       "fingerprintWarning": "服务器指纹已更改，请确认是否为预期更改。",
       "previousFingerprint": "历史指纹",
       "authFailed": "认证失败",
-      "pleaseRetry": "用户名或密码错误，请重新输入"
+      "pleaseRetry": "用户名或密码错误，请重新输入",
+      "agent": "SSH 代理",
+      "agentNotice": "将使用本机 SSH 代理 (ssh-agent) 中的密钥进行认证。请确认代理已加载对应密钥。",
+      "keyboardInteractiveNotice": "服务器要求交互式验证（2FA/OTP），请回答以下问题：",
+      "keyboardInteractiveTitle": "服务器交互式验证",
+      "keyboardInteractiveDefaultPrompt": "请输入验证信息",
+      "keyboardInteractiveNoPrompts": "服务器未提供任何提示，无法继续验证。",
+      "submitAnswers": "提交并连接"
     },
     "filePermission": {
       "title": "文件权限设置",
@@ -1835,7 +1848,8 @@
         "connectionRefused": "连接被拒绝: 无法连接到 {{host}}:{{port}}{{proxy}}",
         "hostNotFound": "主机不存在: 无法解析主机名 {{host}}",
         "connectionTimeout": "连接超时: {{host}}:{{port}}",
-        "throughProxy": " (通过代理)"
+        "throughProxy": " (通过代理)",
+        "keyboardInteractiveUnsupported": "服务器要求交互式验证（keyboard-interactive），当前上下文无法弹出输入框"
       }
     },
     "connectionAdvice": {

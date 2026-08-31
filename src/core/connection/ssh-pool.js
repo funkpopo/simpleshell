@@ -22,6 +22,10 @@ const {
   classifyConnectionFailure,
 } = require("../../shared/connectionErrorAdvice");
 const { isAuthErrorMessage } = require("../../shared/errorClassification");
+const {
+  attachKeyboardInteractiveSupport,
+  hasInteractiveAuthCapability,
+} = require("./ssh-interactive-auth");
 const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
 const ReconnectionManager = require("./reconnection-manager");
 
@@ -231,6 +235,8 @@ class SSHPool extends BaseConnectionPool {
       };
 
       const ssh = new Client();
+      // keyboard-interactive / 2FA：在 connect 前注册事件处理（需配合 tryKeyboard）
+      attachKeyboardInteractiveSupport(ssh, sshConfig);
       const connectionInfo = {
         client: ssh,
         config: sshConfig,
@@ -250,15 +256,14 @@ class SSHPool extends BaseConnectionPool {
       // 先放入连接池：即使初次连接失败，也允许后续自动重连替换 connectionInfo.client
       this.connections.set(connectionKey, connectionInfo);
 
-      // hostVerifier 可能需要用户交互确认，超时窗口适当放宽
+      // hostVerifier / keyboard-interactive 可能需要用户交互确认，超时窗口适当放宽
       const baseConnectionTimeout = Math.max(
         this.config.connectionTimeout,
         networkProfile.readyTimeout + 5000,
       );
-      const connectionTimeoutMs =
-        typeof sshConfig.hostVerifier === "function"
-          ? Math.max(baseConnectionTimeout, 5 * 60 * 1000)
-          : baseConnectionTimeout;
+      const connectionTimeoutMs = hasInteractiveAuthCapability(sshConfig)
+        ? Math.max(baseConnectionTimeout, 5 * 60 * 1000)
+        : baseConnectionTimeout;
 
       // 设置连接超时
       const timeout = setTimeout(() => {

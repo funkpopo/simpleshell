@@ -28,6 +28,7 @@ import {
   Menu,
   Tooltip,
   Switch,
+  Checkbox,
   FormControlLabel,
   Divider,
   Alert,
@@ -405,6 +406,8 @@ const buildConnectionPayloadFromForm = ({
     _preservePassword: shouldPreservePassword,
     authType: formData.authType || "password",
     privateKeyPath: String(formData.privateKeyPath || "").trim(),
+    agentPath: String(formData.agentPath || "").trim(),
+    agentForward: formData.agentForward === true,
     os: formData.os,
     connectionType: formData.connectionType,
     protocol,
@@ -474,13 +477,16 @@ const getConnectionValidationSteps = (t, formData, privateKeyCheck) => {
       title: t("connectionManager.validation.auth"),
       ok:
         authType === "password" ||
+        authType === "agent" ||
         (isPrivateKeyAuth && Boolean(privateKeyPath)),
       message:
-        authType === "password"
-          ? t("connectionManager.validation.passwordAuthOk")
-          : privateKeyPath
-            ? t("connectionManager.validation.privateKeySelected")
-            : t("connectionManager.validation.privateKeyMissing"),
+        authType === "agent"
+          ? t("connectionManager.validation.agentAuthOk")
+          : authType === "password"
+            ? t("connectionManager.validation.passwordAuthOk")
+            : privateKeyPath
+              ? t("connectionManager.validation.privateKeySelected")
+              : t("connectionManager.validation.privateKeyMissing"),
     },
     {
       key: "proxy",
@@ -1131,6 +1137,8 @@ const ConnectionManager = memo(
       password: "",
       authType: "password",
       privateKeyPath: "",
+      agentPath: "",
+      agentForward: false,
       parentGroup: "",
       os: "",
       connectionType: "",
@@ -1251,6 +1259,8 @@ const ConnectionManager = memo(
         password: "",
         authType: "password",
         privateKeyPath: "",
+        agentPath: "",
+        agentForward: false,
         parentGroup: parentGroupId || "",
         os: "",
         connectionType: "",
@@ -1327,6 +1337,8 @@ const ConnectionManager = memo(
           password: hasSavedPassword ? SAVED_PASSWORD_MASK : "",
           authType: item.authType || "password",
           privateKeyPath: item.privateKeyPath || "",
+          agentPath: item.agentPath || "",
+          agentForward: item.agentForward === true,
           parentGroup: parentGroup ? parentGroup.id : "",
           os: item.os || "",
           connectionType: item.connectionType || "",
@@ -2890,6 +2902,9 @@ const ConnectionManager = memo(
                         <MenuItem value="privateKey">
                           {t("connectionManager.privateKeyAuth")}
                         </MenuItem>
+                        <MenuItem value="agent">
+                          {t("connectionManager.agentAuth")}
+                        </MenuItem>
                       </Select>
                     </FormControl>
                   )}
@@ -2930,6 +2945,42 @@ const ConnectionManager = memo(
                         >
                           {t("connectionManager.browse")}
                         </Button>
+                      </Box>
+                    )}
+
+                  {formData.protocol === "ssh" &&
+                    formData.authType === "agent" && (
+                      <Box sx={{ mt: 1 }}>
+                        <TextField
+                          label={t("connectionManager.agentPath")}
+                          name="agentPath"
+                          value={formData.agentPath || ""}
+                          onChange={handleFormChange}
+                          fullWidth
+                          size="small"
+                          placeholder={t("connectionManager.agentPathPlaceholder")}
+                          helperText={t("connectionManager.agentPathHint")}
+                        />
+                        <FormControlLabel
+                          sx={{ mt: 1 }}
+                          control={
+                            <Checkbox
+                              checked={formData.agentForward === true}
+                              onChange={(e) =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  agentForward: e.target.checked,
+                                }))
+                              }
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("connectionManager.agentForward")}
+                            </Typography>
+                          }
+                        />
                       </Box>
                     )}
 

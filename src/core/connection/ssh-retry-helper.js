@@ -12,6 +12,10 @@ const {
   applySocketNetworkProfile,
 } = require("../utils/ssh-network-profile");
 const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
+const {
+  attachKeyboardInteractiveSupport,
+  hasInteractiveAuthCapability,
+} = require("./ssh-interactive-auth");
 const { sleep } = require("../../shared/common");
 const {
   isAuthErrorMessage,
@@ -554,14 +558,22 @@ async function createManagedSshConnection(sshConfig, options = {}) {
   const processedConfig = await processSSHPrivateKeyAsync(sshConfig);
   const networkProfile = resolveSshNetworkProfile(processedConfig);
   const baseTimeout = Math.max(15000, networkProfile.readyTimeout + 5000);
+  // 交互式认证（hostVerifier / keyboard-interactive）需要用户输入，放宽到 5 分钟
+  const interactiveMinTimeout = hasInteractiveAuthCapability(processedConfig)
+    ? 5 * 60 * 1000
+    : 0;
   const connectionTimeoutMs = Number.isFinite(options.connectionTimeoutMs)
-    ? Math.max(1000, Math.floor(options.connectionTimeoutMs))
-    : typeof processedConfig.hostVerifier === "function"
-      ? Math.max(baseTimeout, 5 * 60 * 1000)
-      : baseTimeout;
+    ? Math.max(
+        1000,
+        Math.floor(options.connectionTimeoutMs),
+        interactiveMinTimeout,
+      )
+    : Math.max(baseTimeout, interactiveMinTimeout);
 
   return new Promise((resolve, reject) => {
     const ssh = new ClientCtor();
+    // keyboard-interactive / 2FA：在 connect 前注册事件处理（需配合 tryKeyboard）
+    attachKeyboardInteractiveSupport(ssh, processedConfig);
     let proxySocket = null;
     let settled = false;
     let cleanedUp = false;
