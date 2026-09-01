@@ -1720,7 +1720,20 @@ class SSHHandlers {
     const mainWindow = this._getMainWindow();
     const processMailbox = this._configureProcessMailbox(processId, moshConfig);
 
-    ptyProcess.onData((data) => {
+    // 连接池可能复用同一 pty 进程（渲染层重载/重复 startMosh），
+    // 注册前先移除旧监听，避免 onData/onExit 叠加导致输出重复、退出事件重复处理
+    if (connectionInfo && Array.isArray(connectionInfo.ptyListeners)) {
+      const staleListeners = connectionInfo.ptyListeners.splice(0);
+      for (const stale of staleListeners) {
+        try {
+          stale?.dispose?.();
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    const dataListener = ptyProcess.onData((data) => {
       try {
         const text = Buffer.isBuffer(data) ? data.toString() : String(data);
         if (processMailbox) {
@@ -1733,7 +1746,12 @@ class SSHHandlers {
       }
     });
 
-    ptyProcess.onExit(({ exitCode, signal }) => {
+    const exitListener = ptyProcess.onExit(({ exitCode, signal }) => {
+      // 进程已退出，清空监听引用，避免持有 dispose 句柄
+      if (connectionInfo && Array.isArray(connectionInfo.ptyListeners)) {
+        connectionInfo.ptyListeners.length = 0;
+      }
+
       logToFile(
         `Mosh session exited for processId ${processId} (code=${exitCode})`,
         "INFO",
@@ -1767,6 +1785,14 @@ class SSHHandlers {
         moshConfig.tabId,
       );
     });
+
+    // 保存监听句柄，供连接复用/退出时清理
+    if (connectionInfo) {
+      if (!Array.isArray(connectionInfo.ptyListeners)) {
+        connectionInfo.ptyListeners = [];
+      }
+      connectionInfo.ptyListeners.push(dataListener, exitListener);
+    }
   }
 
   _createProcessInfo(client, connectionInfo, config, type) {

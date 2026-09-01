@@ -170,6 +170,10 @@
           "testFailed": "WebDAV connection failed",
           "uploadSuccess": "Config package uploaded to WebDAV",
           "uploadFailed": "Failed to upload to WebDAV",
+          "conflictMessage": "The remote config package differs from this device",
+          "conflictDetail": "The remote package may have been updated by another device. Uploading now will overwrite it, and unsynced changes from other devices will be lost.",
+          "conflictOverwrite": "Overwrite anyway",
+          "conflictCancel": "Cancel",
           "downloadSuccess": "Config package downloaded from WebDAV and imported",
           "downloadFailed": "Failed to download from WebDAV",
           "saveFailed": "Failed to save sync settings"
@@ -223,7 +227,8 @@
           "WEBDAV_URL_INVALID": "Invalid WebDAV URL (http/https required)",
           "WEBDAV_AUTH_FAILED": "WebDAV authentication failed. Please check the username and password",
           "WEBDAV_REMOTE_NOT_FOUND": "No config package exists on the server yet",
-          "WEBDAV_REQUEST_FAILED": "WebDAV request failed. Please check the URL and network"
+          "WEBDAV_REQUEST_FAILED": "WebDAV request failed. Please check the URL and network",
+          "WEBDAV_CONFLICT": "The remote config package was updated by another device. The upload was cancelled to avoid overwriting it"
         }
       },
       "feedback": {

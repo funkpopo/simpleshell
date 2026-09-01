@@ -178,7 +178,7 @@ const Settings = memo(({ open, onClose }) => {
   const [externalEditorEnabled, setExternalEditorEnabled] =
     React.useState(false);
   const [externalEditorCommand, setExternalEditorCommand] = React.useState("");
-  const [diskAlertEnabled, setDiskAlertEnabled] = React.useState(true);
+  const [diskAlertEnabled, setDiskAlertEnabled] = React.useState(false);
   const [diskAlertThreshold, setDiskAlertThreshold] = React.useState(90);
   const [diskAlertIntervalSeconds, setDiskAlertIntervalSeconds] =
     React.useState(60);
@@ -295,9 +295,9 @@ const Settings = memo(({ open, onClose }) => {
                 "",
             );
 
-            // 加载磁盘空间告警设置
+            // 加载磁盘空间告警设置（与主进程默认值一致：未配置时默认关闭）
             const diskAlertSettings = settings.diskAlert || {};
-            setDiskAlertEnabled(diskAlertSettings.enabled !== false);
+            setDiskAlertEnabled(diskAlertSettings.enabled === true);
             const rawThreshold = Number(diskAlertSettings.thresholdPercent);
             setDiskAlertThreshold(
               Number.isFinite(rawThreshold) &&
@@ -699,7 +699,7 @@ const Settings = memo(({ open, onClose }) => {
     }
   };
 
-  const handleWebdavUpload = async () => {
+  const handleWebdavUpload = async (force = false) => {
     if (exportPassword.length < 4) {
       showError(t("settings.dataSync.export.passwordRequired"));
       return;
@@ -711,17 +711,44 @@ const Settings = memo(({ open, onClose }) => {
     setConfigTransferBusy("webdav-upload");
     try {
       await persistWebdavSettings();
-      const result = await window.terminalAPI.configSyncUpload({
-        url: webdavUrl,
-        username: webdavUsername,
-        password: webdavPassword,
-        fileName: webdavFileName,
-        exportPassword,
-      });
-      if (result?.success === false) {
-        throw Object.assign(new Error(result.error), {
-          code: result.errorCode,
+      const upload = async () => {
+        const result = await window.terminalAPI.configSyncUpload({
+          url: webdavUrl,
+          username: webdavUsername,
+          password: webdavPassword,
+          fileName: webdavFileName,
+          exportPassword,
+          force,
         });
+        if (result?.success === false) {
+          throw Object.assign(new Error(result.error), {
+            code: result.errorCode,
+          });
+        }
+        return result;
+      };
+      try {
+        await upload();
+      } catch (error) {
+        if (error?.code !== "WEBDAV_CONFLICT") {
+          throw error;
+        }
+        // 远端配置包与本地不一致：提示用户确认是否覆盖，避免多设备后写者覆盖前写者
+        const answer = await window.dialogAPI?.showMessageBox?.({
+          type: "warning",
+          buttons: [
+            t("settings.dataSync.webdav.conflictOverwrite"),
+            t("settings.dataSync.webdav.conflictCancel"),
+          ],
+          defaultId: 1,
+          cancelId: 1,
+          message: t("settings.dataSync.webdav.conflictMessage"),
+          detail: t("settings.dataSync.webdav.conflictDetail"),
+        });
+        if (!answer || answer.response !== 0) {
+          return;
+        }
+        await upload();
       }
       showSuccess(t("settings.dataSync.webdav.uploadSuccess"));
     } catch (error) {
@@ -2584,7 +2611,7 @@ const Settings = memo(({ open, onClose }) => {
                         disabled={
                           configTransferBusy !== "" || !webdavUrl.trim()
                         }
-                        onClick={handleWebdavUpload}
+                        onClick={() => handleWebdavUpload(false)}
                       >
                         {configTransferBusy === "webdav-upload"
                           ? t("settings.dataSync.working")

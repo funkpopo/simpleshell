@@ -170,6 +170,10 @@
           "testFailed": "WebDAV 连接失败",
           "uploadSuccess": "配置包已上传到 WebDAV",
           "uploadFailed": "上传到 WebDAV 失败",
+          "conflictMessage": "服务器上的配置包与本机不一致",
+          "conflictDetail": "远端配置包可能已被其他设备更新。继续上传将用本机配置覆盖远端，其他设备的未同步更改会丢失。",
+          "conflictOverwrite": "仍然覆盖",
+          "conflictCancel": "取消",
           "downloadSuccess": "已从 WebDAV 下载并导入配置包",
           "downloadFailed": "从 WebDAV 下载失败",
           "saveFailed": "保存同步设置失败"
@@ -223,7 +227,8 @@
           "WEBDAV_URL_INVALID": "WebDAV 地址格式不正确（需要 http/https）",
           "WEBDAV_AUTH_FAILED": "WebDAV 认证失败，请检查用户名和密码",
           "WEBDAV_REMOTE_NOT_FOUND": "服务器上还没有配置包",
-          "WEBDAV_REQUEST_FAILED": "WebDAV 请求失败，请检查地址和网络"
+          "WEBDAV_REQUEST_FAILED": "WebDAV 请求失败，请检查地址和网络",
+          "WEBDAV_CONFLICT": "服务器上的配置包已被其他设备更新，为避免覆盖，本次上传已取消"
         }
       },
       "feedback": {

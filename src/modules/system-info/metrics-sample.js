@@ -18,7 +18,15 @@ const { isSshClientUsable } = require("../../core/utils/ssh-utils");
 
 const SECTOR_SIZE = 512;
 // /proc/diskstats 中过滤掉虚拟/重叠设备，避免 dm-/loop 等与底层盘重复计数
-const DISKSTATS_SKIP_PREFIXES = ["dm-", "loop", "ram", "zram", "md", "fd", "sr"];
+const DISKSTATS_SKIP_PREFIXES = [
+  "dm-",
+  "loop",
+  "ram",
+  "zram",
+  "md",
+  "fd",
+  "sr",
+];
 
 // ===================== 差分状态 =====================
 
@@ -185,11 +193,19 @@ function execSshCapture(sshClient, command, timeoutMs = 15000) {
     }
 
     let settled = false;
-    const timer = setTimeout(() => {
+    let activeStream = null;
+    const settleWithTimeout = () => {
       if (settled) return;
       settled = true;
+      // 超时时主动关闭 exec 通道，避免远端命令挂住导致通道泄漏
+      try {
+        activeStream?.close?.();
+      } catch {
+        // ignore
+      }
       reject(new Error("SSH command timeout"));
-    }, timeoutMs);
+    };
+    const timer = setTimeout(settleWithTimeout, timeoutMs);
 
     try {
       sshClient.exec(command, (err, stream) => {
@@ -201,6 +217,7 @@ function execSshCapture(sshClient, command, timeoutMs = 15000) {
           }
           return;
         }
+        activeStream = stream;
 
         let stdout = "";
         stream.on("data", (data) => {
@@ -238,7 +255,10 @@ function parseProcStatCpu(text) {
     .find((l) => l.startsWith("cpu "));
   if (!line) return null;
 
-  const nums = line.split(/\s+/).slice(1).map((v) => parseInt(v, 10) || 0);
+  const nums = line
+    .split(/\s+/)
+    .slice(1)
+    .map((v) => parseInt(v, 10) || 0);
   if (nums.length < 4) return null;
   const total = nums.reduce((sum, n) => sum + n, 0);
   const idle = (nums[3] || 0) + (nums[4] || 0); // idle + iowait
@@ -291,7 +311,10 @@ function parseProcNetDev(text) {
     const iface = match[1].trim();
     if (!iface || iface === "lo") continue;
 
-    const fields = match[2].trim().split(/\s+/).map((v) => parseInt(v, 10));
+    const fields = match[2]
+      .trim()
+      .split(/\s+/)
+      .map((v) => parseInt(v, 10));
     if (!Number.isFinite(fields[0]) || !Number.isFinite(fields[8])) continue;
 
     rx += fields[0];
@@ -325,9 +348,7 @@ function parseProcDiskstats(text) {
     if (!m) return false;
     const base1 = m[1];
     const base2 = base1.endsWith("p") ? base1.slice(0, -1) : null;
-    return (
-      (base1 && names.has(base1)) || (base2 && names.has(base2))
-    );
+    return (base1 && names.has(base1)) || (base2 && names.has(base2));
   };
 
   let readBytes = 0;
@@ -380,7 +401,11 @@ function parseDfOutput(text) {
 
     const [fs, totalK, usedK, availK, capacity, mount] = parts;
     if (DF_SKIP_FS_PREFIXES.some((p) => fs.startsWith(p))) continue;
-    if (DF_SKIP_MOUNT_PREFIXES.some((p) => mount === p || mount.startsWith(`${p}/`))) {
+    if (
+      DF_SKIP_MOUNT_PREFIXES.some(
+        (p) => mount === p || mount.startsWith(`${p}/`),
+      )
+    ) {
       continue;
     }
     if (seenMounts.has(mount)) continue;
@@ -411,37 +436,59 @@ async function getRemoteDiskUsage(sshClient) {
   return parseDfOutput(dfOutput || "");
 }
 
-/** Windows 远程兜底采样（无网络/磁盘 IO 速率） */
+/** Windows 远程兜底采样（无网络/磁盘 IO 速率）
+ *
+ * 优先使用 PowerShell Get-CimInstance：wmic 在 Win11 24H2+ 已被移除，
+ * 继续依赖 wmic 会让 Windows 远程监控静默退化为全 null。
+ * 输出用 Format-List（"Key : value"），解析时同时兼容 wmic 风格的 "Key=value"。
+ */
+const WINDOWS_PS_CPU_COMMAND =
+  'powershell -NoProfile -Command "(Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select-Object -ExpandProperty Average)"';
+const WINDOWS_PS_MEM_COMMAND =
+  'powershell -NoProfile -Command "Get-CimInstance Win32_OperatingSystem | Select-Object FreePhysicalMemory,TotalVisibleMemorySize | Format-List"';
+const WINDOWS_PS_DISK_COMMAND =
+  'powershell -NoProfile -Command "Get-CimInstance Win32_LogicalDisk | Select-Object DeviceID,FreeSpace,Size | Format-List"';
+
+// 兼容 wmic 的 "Key=value" 与 PowerShell Format-List 的 "Key : value"
+const matchValue = (text, key) =>
+  text.match(new RegExp(`${key}\\s*[:=]\\s*\\S+`))?.[0] ?? null;
+const parseValueNumber = (text, key) => {
+  const pair = matchValue(text, key);
+  if (!pair) return null;
+  const value = pair.split(/[:=]/).slice(1).join(":").trim();
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? n : null;
+};
+const parseValueString = (text, key) => {
+  const pair = matchValue(text, key);
+  if (!pair) return null;
+  return pair.split(/[:=]/).slice(1).join(":").trim() || null;
+};
+
 async function getWindowsRemoteMetricsSample(sshClient) {
   const ts = Date.now();
 
   const [cpuOutput, memOutput, diskOutput] = await Promise.all([
-    execSshCapture(sshClient, "wmic cpu get LoadPercentage /value").catch(
-      () => null,
-    ),
-    execSshCapture(
-      sshClient,
-      "wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /value",
-    ).catch(() => null),
-    execSshCapture(
-      sshClient,
-      "wmic logicaldisk get DeviceID,FreeSpace,Size /value",
-    ).catch(() => null),
+    execSshCapture(sshClient, WINDOWS_PS_CPU_COMMAND).catch(() => null),
+    execSshCapture(sshClient, WINDOWS_PS_MEM_COMMAND).catch(() => null),
+    execSshCapture(sshClient, WINDOWS_PS_DISK_COMMAND).catch(() => null),
   ]);
 
   let cpu = null;
   if (cpuOutput) {
-    const m = cpuOutput.match(/LoadPercentage=(\d+)/);
-    if (m) cpu = clampPercent(m[1]);
+    // CPU 命令直接输出平均值数字；兼容 wmic 风格的 LoadPercentage=N
+    const raw = matchValue(cpuOutput, "LoadPercentage") ?? cpuOutput;
+    const load = parseInt(String(raw).match(/\d+/)?.[0] ?? "", 10);
+    if (Number.isFinite(load)) cpu = clampPercent(load);
   }
 
   let memory = { total: 0, used: 0, free: 0, usagePercent: 0 };
   if (memOutput) {
-    const freeM = memOutput.match(/FreePhysicalMemory=(\d+)/);
-    const totalM = memOutput.match(/TotalVisibleMemorySize=(\d+)/);
-    if (freeM && totalM) {
-      const total = parseInt(totalM[1], 10) * 1024;
-      const free = parseInt(freeM[1], 10) * 1024;
+    const freeK = parseValueNumber(memOutput, "FreePhysicalMemory");
+    const totalK = parseValueNumber(memOutput, "TotalVisibleMemorySize");
+    if (freeK !== null && totalK !== null) {
+      const total = totalK * 1024;
+      const free = freeK * 1024;
       const used = Math.max(0, total - free);
       memory = {
         total,
@@ -456,19 +503,18 @@ async function getWindowsRemoteMetricsSample(sshClient) {
   if (diskOutput) {
     const blocks = diskOutput.split(/(?:\r?\n){2,}/);
     for (const block of blocks) {
-      const idM = block.match(/DeviceID=(\S+)/);
-      const freeM = block.match(/FreeSpace=(\d+)/);
-      const sizeM = block.match(/Size=(\d+)/);
-      if (!idM || !sizeM) continue;
-      const total = parseInt(sizeM[1], 10);
-      if (!(total > 0)) continue;
-      const free = freeM ? parseInt(freeM[1], 10) : 0;
-      const used = Math.max(0, total - free);
+      const id = parseValueString(block, "DeviceID");
+      const free = parseValueNumber(block, "FreeSpace");
+      const size = parseValueNumber(block, "Size");
+      if (!id || size === null || !(size > 0)) continue;
+      const total = size;
+      const freeBytes = free === null ? 0 : free;
+      const used = Math.max(0, total - freeBytes);
       disks.push({
-        mount: idM[1],
+        mount: id,
         total,
         used,
-        free,
+        free: freeBytes,
         usedPercent: clampPercent((used / total) * 100),
       });
     }
@@ -549,7 +595,9 @@ async function getRemoteMetricsSample(sshClient) {
         }
       } else {
         // 首个样本：开机以来的平均使用率
-        cpu = clampPercent(((cpuStat.total - cpuStat.idle) / cpuStat.total) * 100);
+        cpu = clampPercent(
+          ((cpuStat.total - cpuStat.idle) / cpuStat.total) * 100,
+        );
       }
     }
 
@@ -567,7 +615,11 @@ async function getRemoteMetricsSample(sshClient) {
       ? computePerSec(netCounters.tx, prev?.netCounters?.tx, elapsed)
       : null;
     const readPerSec = diskCounters
-      ? computePerSec(diskCounters.readBytes, prev?.diskCounters?.readBytes, elapsed)
+      ? computePerSec(
+          diskCounters.readBytes,
+          prev?.diskCounters?.readBytes,
+          elapsed,
+        )
       : null;
     const writePerSec = diskCounters
       ? computePerSec(

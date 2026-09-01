@@ -185,6 +185,7 @@ class MoshConnectionPool extends BaseConnectionPool {
       ready: false,
       stream: null,
       listeners: new Set(),
+      ptyListeners: [],
       exited: false,
     };
 
@@ -256,6 +257,16 @@ class MoshConnectionPool extends BaseConnectionPool {
 
     if (conn.listeners && conn.listeners.size > 0) {
       conn.listeners.clear();
+    }
+    if (Array.isArray(conn.ptyListeners)) {
+      const staleListeners = conn.ptyListeners.splice(0);
+      for (const stale of staleListeners) {
+        try {
+          stale?.dispose?.();
+        } catch {
+          // ignore
+        }
+      }
     }
 
     const ptyProcess = conn.client;

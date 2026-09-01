@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const fs = require("fs");
+const fsp = fs.promises;
 const http = require("http");
 const https = require("https");
 const os = require("os");
@@ -166,7 +167,8 @@ class ConfigTransferService {
     for (const item of items) {
       if (!item || typeof item !== "object") continue;
       if (item.type === "connection") count += 1;
-      else if (item.type === "group") count += this._countConnections(item.items);
+      else if (item.type === "group")
+        count += this._countConnections(item.items);
     }
     return count;
   }
@@ -192,22 +194,37 @@ class ConfigTransferService {
 
   /**
    * 由导出密码派生加密密钥（盐值随导出随机生成并写入包内）
+   * 使用异步派生：scrypt 成本参数下同步计算约耗时 50-100ms，会阻塞主进程。
    */
-  _derivePackageKey(password, salt) {
-    return crypto.scryptSync(String(password), `${KDF_CONTEXT}:${salt}`, KEY_LENGTH, {
-      ...SCRYPT_COST,
+  _derivePackageKeyAsync(password, salt) {
+    return new Promise((resolve, reject) => {
+      crypto.scrypt(
+        String(password),
+        `${KDF_CONTEXT}:${salt}`,
+        KEY_LENGTH,
+        { ...SCRYPT_COST },
+        (error, derivedKey) => {
+          if (error) reject(error);
+          else resolve(derivedKey);
+        },
+      );
     });
   }
 
-  _encryptPayload(payloadJson, password) {
+  async _encryptPayload(payloadJson, password) {
     const salt = crypto.randomBytes(KDF_SALT_LENGTH).toString("hex");
-    const key = this._derivePackageKey(password, salt);
-    const compressed = zlib.gzipSync(Buffer.from(payloadJson, "utf8"));
+    const key = await this._derivePackageKeyAsync(password, salt);
+    const compressed = await zlib.promises.gzip(
+      Buffer.from(payloadJson, "utf8"),
+    );
     const iv = crypto.randomBytes(IV_LENGTH);
     const cipher = crypto.createCipheriv("aes-256-gcm", key, iv, {
       authTagLength: 16,
     });
-    const encrypted = Buffer.concat([cipher.update(compressed), cipher.final()]);
+    const encrypted = Buffer.concat([
+      cipher.update(compressed),
+      cipher.final(),
+    ]);
     return {
       kdf: {
         algorithm: "scrypt",
@@ -224,7 +241,7 @@ class ConfigTransferService {
     };
   }
 
-  _decryptPackage(packageObject, password) {
+  async _decryptPackage(packageObject, password) {
     if (!packageObject || packageObject.magic !== EXPORT_MAGIC) {
       throw new Error("INVALID_PACKAGE");
     }
@@ -235,7 +252,7 @@ class ConfigTransferService {
     if (kdf.algorithm !== "scrypt" || !kdf.salt) {
       throw new Error("INVALID_PACKAGE");
     }
-    const key = this._derivePackageKey(password, kdf.salt);
+    const key = await this._derivePackageKeyAsync(password, kdf.salt);
     const iv = Buffer.from(packageObject.iv, "hex");
     const authTag = Buffer.from(packageObject.authTag, "hex");
     const encrypted = Buffer.from(packageObject.data, "hex");
@@ -246,14 +263,19 @@ class ConfigTransferService {
         authTagLength: 16,
       });
       decipher.setAuthTag(authTag);
-      compressed = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+      compressed = Buffer.concat([
+        decipher.update(encrypted),
+        decipher.final(),
+      ]);
     } catch {
       const error = new Error("DECRYPT_FAILED");
       error.code = "DECRYPT_FAILED";
       throw error;
     }
 
-    const payloadJson = zlib.gunzipSync(compressed).toString("utf8");
+    const payloadJson = (await zlib.promises.gunzip(compressed)).toString(
+      "utf8",
+    );
     const payload = JSON.parse(payloadJson);
     if (!payload || typeof payload !== "object" || !payload.sections) {
       throw new Error("INVALID_PACKAGE");
@@ -266,9 +288,10 @@ class ConfigTransferService {
    * @param {Object} options - { filePath, password, sections }
    * @returns {Object} { success, filePath, summary }
    */
-  exportToFile(options = {}) {
+  async exportToFile(options = {}) {
     const filePath = String(options.filePath || "").trim();
-    const password = typeof options.password === "string" ? options.password : "";
+    const password =
+      typeof options.password === "string" ? options.password : "";
     if (!filePath) {
       throw new Error("Export file path is required");
     }
@@ -287,12 +310,17 @@ class ConfigTransferService {
       version: EXPORT_VERSION,
       createdAt: new Date().toISOString(),
       sections: sectionList,
-      ...this._encryptPayload(JSON.stringify(payload), password),
+      ...(await this._encryptPayload(JSON.stringify(payload), password)),
     };
 
+    // 全程异步 IO + 线程池加密，避免大数据量时卡住主进程
     const tempPath = `${filePath}.tmp-${process.pid}`;
-    fs.writeFileSync(tempPath, JSON.stringify(packageObject, null, 2), "utf8");
-    fs.renameSync(tempPath, filePath);
+    await fsp.writeFile(
+      tempPath,
+      JSON.stringify(packageObject, null, 2),
+      "utf8",
+    );
+    await fsp.rename(tempPath, filePath);
 
     const summary = this._summarizePayload(payload);
     this._log(
@@ -308,14 +336,15 @@ class ConfigTransferService {
    * @param {Object} options - { filePath, password, mode: "merge"|"replace", sections }
    * @returns {Object} { success, applied, summary }
    */
-  importFromFile(options = {}) {
+  async importFromFile(options = {}) {
     const filePath = String(options.filePath || "").trim();
-    const password = typeof options.password === "string" ? options.password : "";
+    const password =
+      typeof options.password === "string" ? options.password : "";
     if (!filePath) {
       throw new Error("Import file path is required");
     }
 
-    const raw = fs.readFileSync(filePath, "utf8");
+    const raw = await fsp.readFile(filePath, "utf8");
     let packageObject;
     try {
       packageObject = JSON.parse(raw);
@@ -323,7 +352,7 @@ class ConfigTransferService {
       throw new Error("INVALID_PACKAGE");
     }
 
-    const payload = this._decryptPackage(packageObject, password);
+    const payload = await this._decryptPackage(packageObject, password);
     const applied = this._applyImportedPayload(payload, {
       mode: options.mode === "replace" ? "replace" : "merge",
       sections: options.sections,
@@ -352,7 +381,8 @@ class ConfigTransferService {
     const imported = payload.sections || {};
     const applied = [];
 
-    const shouldApply = (section) => sectionFilter === null || sectionFilter.has(section);
+    const shouldApply = (section) =>
+      sectionFilter === null || sectionFilter.has(section);
 
     if (imported.connections !== undefined && shouldApply("connections")) {
       if (mode === "replace") {
@@ -362,7 +392,10 @@ class ConfigTransferService {
       } else {
         const currentConnections = configService.loadConnections();
         configService.saveConnections(
-          this._mergeConnectionTrees(currentConnections, imported.connections || []),
+          this._mergeConnectionTrees(
+            currentConnections,
+            imported.connections || [],
+          ),
         );
         const currentTop = configService.loadTopConnections();
         configService.saveTopConnections(
@@ -370,7 +403,10 @@ class ConfigTransferService {
         );
         const currentLast = configService.loadLastConnections();
         configService.saveLastConnections(
-          this._mergeConnectionTrees(currentLast, imported.lastConnections || []),
+          this._mergeConnectionTrees(
+            currentLast,
+            imported.lastConnections || [],
+          ),
         );
       }
       applied.push("connections");
@@ -406,7 +442,10 @@ class ConfigTransferService {
       applied.push("uiSettings");
     }
 
-    if (imported.shortcutCommands !== undefined && shouldApply("shortcutCommands")) {
+    if (
+      imported.shortcutCommands !== undefined &&
+      shouldApply("shortcutCommands")
+    ) {
       const importedCommands = imported.shortcutCommands || {};
       if (mode === "replace") {
         configService.saveShortcutCommands(importedCommands);
@@ -420,7 +459,10 @@ class ConfigTransferService {
       applied.push("shortcutCommands");
     }
 
-    if (Array.isArray(imported.commandHistory) && shouldApply("commandHistory")) {
+    if (
+      Array.isArray(imported.commandHistory) &&
+      shouldApply("commandHistory")
+    ) {
       if (mode === "replace") {
         configService.saveCommandHistory(imported.commandHistory);
       } else {
@@ -595,22 +637,28 @@ class ConfigTransferService {
     }
 
     const baseDir = parsed.pathname.replace(/\/+$/, "");
-    const fileName = String(settings.fileName || DEFAULT_REMOTE_FILE_NAME)
-      .trim()
-      .replace(/^\/+/, "")
-      .replace(/\\/g, "/") || DEFAULT_REMOTE_FILE_NAME;
+    const fileName =
+      String(settings.fileName || DEFAULT_REMOTE_FILE_NAME)
+        .trim()
+        .replace(/^\/+/, "")
+        .replace(/\\/g, "/") || DEFAULT_REMOTE_FILE_NAME;
 
     return {
       protocol: parsed.protocol === "https:" ? "https" : "http",
       host: parsed.hostname,
-      port: parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 443 : 80,
-      auth: parsed.username || parsed.password
-        ? `${decodeURIComponent(parsed.username)}:${decodeURIComponent(parsed.password)}`
-        : [settings.username, settings.password].every(
-              (value) => typeof value === "string" && value.length > 0,
-            )
-          ? `${settings.username}:${settings.password}`
-          : "",
+      port: parsed.port
+        ? Number(parsed.port)
+        : parsed.protocol === "https:"
+          ? 443
+          : 80,
+      auth:
+        parsed.username || parsed.password
+          ? `${decodeURIComponent(parsed.username)}:${decodeURIComponent(parsed.password)}`
+          : [settings.username, settings.password].every(
+                (value) => typeof value === "string" && value.length > 0,
+              )
+            ? `${settings.username}:${settings.password}`
+            : "",
       basePath: baseDir,
       fileName,
       url,
@@ -674,7 +722,11 @@ class ConfigTransferService {
       return { success: true, status: response.status };
     }
     if (response.status === 404) {
-      return { success: true, status: response.status, note: "REMOTE_NOT_FOUND" };
+      return {
+        success: true,
+        status: response.status,
+        note: "REMOTE_NOT_FOUND",
+      };
     }
     if (response.status === 401 || response.status === 403) {
       const error = new Error("WebDAV authentication failed");
@@ -696,7 +748,7 @@ class ConfigTransferService {
     let summary = null;
 
     if (options.filePath && fs.existsSync(options.filePath)) {
-      packageBuffer = fs.readFileSync(options.filePath);
+      packageBuffer = await fsp.readFile(options.filePath);
     } else {
       // 未指定本地文件时先在临时目录生成导出包再上传
       this._assertCredentialStoreUnlocked();
@@ -705,19 +757,62 @@ class ConfigTransferService {
         `simpleshell-sync-${Date.now()}-${process.pid}${EXPORT_FILE_EXTENSION}`,
       );
       try {
-        const exportResult = this.exportToFile({
+        const exportResult = await this.exportToFile({
           filePath: tempPath,
           password: options.exportPassword,
           sections: options.sections,
         });
         summary = exportResult.summary;
-        packageBuffer = fs.readFileSync(tempPath);
+        packageBuffer = await fsp.readFile(tempPath);
       } finally {
         try {
-          fs.unlinkSync(tempPath);
+          await fsp.unlink(tempPath);
         } catch {
           // ignore
         }
+      }
+    }
+
+    const localHash = crypto
+      .createHash("sha256")
+      .update(packageBuffer)
+      .digest("hex");
+
+    // 冲突保护：上传前先 GET 远端包比对哈希，
+    // 避免两台设备同时自动同步时后写者整包覆盖前写者的配置
+    if (options.force !== true) {
+      const remote = await this._webdavRequest({
+        settings: options,
+        method: "GET",
+      });
+      if (remote.status === 401 || remote.status === 403) {
+        const error = new Error("WebDAV authentication failed");
+        error.code = "WEBDAV_AUTH_FAILED";
+        throw error;
+      }
+      if (remote.status === 200) {
+        const remoteHash = crypto
+          .createHash("sha256")
+          .update(remote.body)
+          .digest("hex");
+        if (remoteHash !== localHash) {
+          const error = new Error(
+            "Remote config package has changed since the last sync",
+          );
+          error.code = "WEBDAV_CONFLICT";
+          error.remoteBytes = remote.body.length;
+          this._log(
+            "ConfigTransferService: Upload aborted - remote package hash mismatch (possible concurrent modification)",
+            "WARN",
+          );
+          throw error;
+        }
+      } else if (remote.status !== 404) {
+        // 404 = 远端尚无配置包，允许直接上传；其余状态视为请求失败
+        const error = new Error(`WebDAV upload failed (HTTP ${remote.status})`);
+        error.code = "WEBDAV_REQUEST_FAILED";
+        error.status = remote.status;
+        throw error;
       }
     }
 
@@ -770,7 +865,9 @@ class ConfigTransferService {
       throw error;
     }
     if (response.status !== 200) {
-      const error = new Error(`WebDAV download failed (HTTP ${response.status})`);
+      const error = new Error(
+        `WebDAV download failed (HTTP ${response.status})`,
+      );
       error.code = "WEBDAV_REQUEST_FAILED";
       error.status = response.status;
       throw error;
@@ -779,8 +876,8 @@ class ConfigTransferService {
     const packageBuffer = response.body;
     if (options.filePath) {
       const tempPath = `${options.filePath}.tmp-${process.pid}`;
-      fs.writeFileSync(tempPath, packageBuffer);
-      fs.renameSync(tempPath, options.filePath);
+      await fsp.writeFile(tempPath, packageBuffer);
+      await fsp.rename(tempPath, options.filePath);
       return {
         success: true,
         filePath: options.filePath,
@@ -795,7 +892,10 @@ class ConfigTransferService {
     } catch {
       throw new Error("INVALID_PACKAGE");
     }
-    const payload = this._decryptPackage(packageObject, options.importPassword || "");
+    const payload = await this._decryptPackage(
+      packageObject,
+      options.importPassword || "",
+    );
     const applied = this._applyImportedPayload(payload, {
       mode: options.mode === "replace" ? "replace" : "merge",
       sections: options.sections,
@@ -960,8 +1060,7 @@ class ConfigTransferService {
   // ==================== 自动同步（启动时/定期拉取） ====================
 
   setAutoSyncNotifier(notifier) {
-    this._autoSyncNotifier =
-      typeof notifier === "function" ? notifier : null;
+    this._autoSyncNotifier = typeof notifier === "function" ? notifier : null;
   }
 
   _notifyAutoSync(trigger, result) {
@@ -1042,7 +1141,11 @@ class ConfigTransferService {
     const credStatus = configService.getCredentialSecurityStatus();
     if (credStatus?.requiresUnlock) {
       this._recordSyncResult("locked", "credential store locked");
-      return { success: false, skipped: true, reason: "CREDENTIAL_STORE_LOCKED" };
+      return {
+        success: false,
+        skipped: true,
+        reason: "CREDENTIAL_STORE_LOCKED",
+      };
     }
 
     const importPassword = this._decryptStoredValue(raw.storedExportPassword);
@@ -1110,7 +1213,11 @@ class ConfigTransferService {
       .update(response.body)
       .digest("hex");
     if (remoteHash === raw.lastRemoteHash) {
-      this._recordSyncResult("up-to-date", "remote package unchanged", remoteHash);
+      this._recordSyncResult(
+        "up-to-date",
+        "remote package unchanged",
+        remoteHash,
+      );
       return {
         success: true,
         skipped: true,
@@ -1134,7 +1241,7 @@ class ConfigTransferService {
 
     let payload;
     try {
-      payload = this._decryptPackage(packageObject, importPassword);
+      payload = await this._decryptPackage(packageObject, importPassword);
     } catch (error) {
       const reason = error.code || "DECRYPT_FAILED";
       this._recordSyncResult("error", reason);
@@ -1148,7 +1255,11 @@ class ConfigTransferService {
 
     const applied = this._applyImportedPayload(payload, { mode: "merge" });
     const summary = this._summarizePayload(payload);
-    this._recordSyncResult("updated", `applied: ${applied.join(",")}`, remoteHash);
+    this._recordSyncResult(
+      "updated",
+      `applied: ${applied.join(",")}`,
+      remoteHash,
+    );
     this._log(
       `ConfigTransferService: Auto-sync (${trigger}) pulled and imported remote config (applied=${applied.join(",")})`,
       "INFO",

@@ -24,7 +24,8 @@ const {
 } = require("../../modules/system-info/metrics-sample");
 
 const DEFAULT_SETTINGS = Object.freeze({
-  enabled: true,
+  // 默认关闭：定时 df 采样对用户是隐形的后台流量，需要用户在设置里显式开启
+  enabled: false,
   thresholdPercent: 90,
   intervalSeconds: 60,
 });
@@ -52,7 +53,7 @@ class DiskAlertService {
       const thresholdPercent = Number(raw.thresholdPercent);
       const intervalSeconds = Number(raw.intervalSeconds);
       return {
-        enabled: raw.enabled !== false,
+        enabled: raw.enabled === true,
         thresholdPercent:
           Number.isFinite(thresholdPercent) &&
           thresholdPercent >= 50 &&
@@ -101,10 +102,7 @@ class DiskAlertService {
         try {
           await this.tick(settings);
         } catch (error) {
-          logToFile(
-            `DiskAlertService tick failed: ${error.message}`,
-            "WARN",
-          );
+          logToFile(`DiskAlertService tick failed: ${error.message}`, "WARN");
         }
       }
       this._schedule(settings.intervalSeconds * 1000);
@@ -133,44 +131,67 @@ class DiskAlertService {
     }
   }
 
-  /** 汇总本机 + 所有活跃 SSH 会话的采样目标 */
+  /** 汇总本机 + 所有活跃 SSH 会话的采样目标（同一主机的多标签页聚合为一个目标） */
   _collectTargets() {
     const targets = [
       {
         targetKey: "__local__",
         tabId: null,
+        tabIds: [],
         host: getLocalHostname(),
         isLocal: true,
         isSsh: false,
       },
     ];
 
-    const seenClients = new Set();
     try {
+      // 按连接聚合：同一 client（同一主机连接）可能被多个标签页引用，
+      // 告警时所有引用该连接的标签页都应收到事件
+      const clientGroups = new Map();
       for (const [, proc] of processManager.getAllProcesses()) {
         if (!proc || proc.type !== "ssh2") continue;
         const client = proc.connectionInfo?.client || proc.process;
         if (!client || !isSshClientUsable(client)) continue;
-        if (seenClients.has(client)) continue;
-        seenClients.add(client);
 
-        const tabId = proc.config?.tabId != null ? String(proc.config.tabId) : null;
-        const host =
-          proc.config?.host || proc.config?.name || "SSH";
-        targets.push({
-          targetKey: tabId || `ssh-${targets.length}`,
-          tabId,
-          host,
-          isLocal: false,
-          isSsh: true,
-          sshClient: client,
-        });
+        const tabId =
+          proc.config?.tabId != null ? String(proc.config.tabId) : null;
+        const host = proc.config?.host || proc.config?.name || "SSH";
+
+        let group = clientGroups.get(client);
+        if (!group) {
+          // targetKey 从连接配置派生（host:port:username），不含 tabId，
+          // 目标增减后不会漂移
+          const cfg = proc.config || {};
+          const connKey = `ssh-${cfg.host || host}:${cfg.port || 22}:${
+            cfg.username || ""
+          }`;
+          group = {
+            targetKey: connKey,
+            tabIds: [],
+            host,
+            isLocal: false,
+            isSsh: true,
+            sshClient: client,
+          };
+          clientGroups.set(client, group);
+          targets.push(group);
+        }
+        if (tabId && !group.tabIds.includes(tabId)) {
+          group.tabIds.push(tabId);
+        }
       }
     } catch (error) {
       logToFile(
         `DiskAlertService collect targets failed: ${error.message}`,
         "WARN",
       );
+    }
+
+    // 兼容旧字段：tabId 指向第一个标签页
+    for (const target of targets) {
+      if (target.isSsh) {
+        target.tabId = target.tabIds[0] || null;
+      }
     }
 
     return targets;
@@ -203,7 +224,9 @@ class DiskAlertService {
       alerted: new Set(),
     };
 
-    const over = disks.filter((d) => d.usedPercent >= settings.thresholdPercent);
+    const over = disks.filter(
+      (d) => d.usedPercent >= settings.thresholdPercent,
+    );
     const recovered = disks.filter(
       (d) =>
         state.alerted.has(d.mount) &&
@@ -238,10 +261,10 @@ class DiskAlertService {
   }
 
   _emit(target, kind, mounts, settings) {
-    const payload = {
+    const buildPayload = (tabId) => ({
       kind,
       targetKey: target.targetKey,
-      tabId: target.tabId,
+      tabId,
       host: target.host,
       isLocal: target.isLocal,
       threshold: settings.thresholdPercent,
@@ -253,15 +276,19 @@ class DiskAlertService {
         free: d.free,
       })),
       timestamp: Date.now(),
-    };
+    });
 
+    // 同一主机的所有关联标签页都要收到事件（否则部分标签不会变黄）
+    const tabIds = target.isSsh ? target.tabIds : [null];
     try {
-      broadcastToAllWindows(IPC_EVENT_CHANNELS.DISK_ALERT_EVENT, payload);
+      for (const tabId of tabIds) {
+        broadcastToAllWindows(
+          IPC_EVENT_CHANNELS.DISK_ALERT_EVENT,
+          buildPayload(tabId),
+        );
+      }
     } catch (error) {
-      logToFile(
-        `DiskAlertService broadcast failed: ${error.message}`,
-        "WARN",
-      );
+      logToFile(`DiskAlertService broadcast failed: ${error.message}`, "WARN");
     }
 
     logToFile(
