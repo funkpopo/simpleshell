@@ -37,6 +37,7 @@ const SOCKS_ATYP_IPV6 = 0x04;
 
 const MAX_RULES = 100;
 const IDLE_SOCKET_TIMEOUT_MS = 10 * 60 * 1000;
+const MAX_SOCKS_HANDSHAKE_BYTES = 64 * 1024;
 
 const DEFAULT_RULE = Object.freeze({
   listenHost: "127.0.0.1",
@@ -79,6 +80,8 @@ class PortForwardingService extends EventEmitter {
     super();
     /** @type {Map<string, object>} ruleId -> 运行时信息 */
     this.activeForwards = new Map();
+    /** @type {Set<string>} 自动启动重试中的 ruleId（去重，避免重试风暴） */
+    this._autoStartRetrying = new Set();
     this.initialized = false;
   }
 
@@ -118,50 +121,64 @@ class PortForwardingService extends EventEmitter {
   }
 
   /**
-   * 为指定会话自动启动所有 autoStart 规则（带短重试，等待进程注册完成）
+   * 为指定会话自动启动所有 autoStart 规则
+   *
+   * 重试按 ruleId 维度独立进行（_startRuleWithRetry），失败规则只重试自身，
+   * 且通过 _autoStartRetrying 去重，避免 M 条失败规则按 M^attempt 放大的重试风暴。
    * @private
    */
-  _autoStartRulesForTab(tabId, attempt = 0) {
-    const MAX_ATTEMPTS = 5;
-    const RETRY_DELAY_MS = 1000;
-
+  _autoStartRulesForTab(tabId) {
     const rules = this.loadRules().filter(
       (rule) =>
         rule.autoStart === true &&
-        !this.activeForwards.has(rule.id),
+        !this.activeForwards.has(rule.id) &&
+        !this._autoStartRetrying.has(rule.id),
     );
 
     if (rules.length === 0) return;
 
-    let pending = rules.length;
-    let clientReady = false;
-
     for (const rule of rules) {
-      this.startRule(rule.id, tabId)
-        .then(() => {
-          clientReady = true;
-          logToFile(
-            `PortForward auto-started: ${describeRule(rule)} (${rule.id}) for tab ${tabId}`,
-            "INFO",
-          );
-        })
-        .catch((error) => {
-          if (attempt + 1 < MAX_ATTEMPTS && !this.activeForwards.has(rule.id)) {
-            setTimeout(() => {
-              this._autoStartRulesForTab(tabId, attempt + 1);
-            }, RETRY_DELAY_MS);
-          } else if (!clientReady && attempt + 1 >= MAX_ATTEMPTS) {
-            logToFile(
-              `PortForward auto-start failed: ${rule.id} - ${error.message}`,
-              "WARN",
-            );
-          }
-        })
-        .finally(() => {
-          pending -= 1;
-        });
+      this._autoStartRetrying.add(rule.id);
+      this._startRuleWithRetry(rule, tabId, 0);
     }
-    void pending;
+  }
+
+  /**
+   * 启动单条规则，失败时仅针对该规则做有限次重试
+   * @private
+   */
+  _startRuleWithRetry(rule, tabId, attempt) {
+    const MAX_ATTEMPTS = 5;
+    const RETRY_DELAY_MS = 1000;
+
+    if (this.activeForwards.has(rule.id)) {
+      this._autoStartRetrying.delete(rule.id);
+      return;
+    }
+
+    this.startRule(rule.id, tabId)
+      .then(() => {
+        this._autoStartRetrying.delete(rule.id);
+        logToFile(
+          `PortForward auto-started: ${describeRule(rule)} (${rule.id}) for tab ${tabId}`,
+          "INFO",
+        );
+      })
+      .catch((error) => {
+        if (attempt + 1 < MAX_ATTEMPTS && !this.activeForwards.has(rule.id)) {
+          // 保持 _autoStartRetrying 中的标记，仅重试这一条规则
+          setTimeout(() => {
+            if (!this._autoStartRetrying.has(rule.id)) return;
+            this._startRuleWithRetry(rule, tabId, attempt + 1);
+          }, RETRY_DELAY_MS);
+        } else {
+          this._autoStartRetrying.delete(rule.id);
+          logToFile(
+            `PortForward auto-start failed: ${rule.id} - ${error.message}`,
+            "WARN",
+          );
+        }
+      });
   }
 
   // ------------------------------------------------------------------
@@ -518,6 +535,8 @@ class PortForwardingService extends EventEmitter {
       });
 
       server.listen(rule.listenPort, rule.listenHost, () => {
+        // 监听就绪，标记为运行中（否则对外状态永远停留在 "stopped"）
+        runtime.status = FORWARD_STATUS.RUNNING;
         logToFile(
           `PortForward local listening: ${describeRule(rule)} (${ruleId})`,
           "INFO",
@@ -529,8 +548,10 @@ class PortForwardingService extends EventEmitter {
 
   /**
    * 通过 SSH forwardOut 把本地 socket 桥接到远端目标
+   * @param {Function} [onTunnelReady] 隧道建立结果回调：(error|null)，
+   *   供 SOCKS5 等需要先确认隧道成功再回复客户端的场景使用
    */
-  _handleOutboundTunnelClient(runtime, socket, dstHost, dstPort) {
+  _handleOutboundTunnelClient(runtime, socket, dstHost, dstPort, onTunnelReady) {
     const { client, rule } = runtime;
     runtime.sockets.add(socket);
     socket.setTimeout(IDLE_SOCKET_TIMEOUT_MS);
@@ -561,10 +582,15 @@ class PortForwardingService extends EventEmitter {
       dstPort,
       (error, stream) => {
         if (error || !stream) {
+          const tunnelError = error || new Error("no stream from forwardOut");
           logToFile(
-            `PortForward forwardOut failed (${rule.id}): ${error?.message || "no stream"}`,
+            `PortForward forwardOut failed (${rule.id}): ${tunnelError.message}`,
             "WARN",
           );
+          // 先通知调用方（可回复客户端），再清理，避免 socket 被销毁后无法写回
+          if (typeof onTunnelReady === "function") {
+            onTunnelReady(tunnelError);
+          }
           cleanup();
           return;
         }
@@ -572,6 +598,9 @@ class PortForwardingService extends EventEmitter {
         stream.on("error", cleanup);
         stream.pipe(socket);
         socket.pipe(stream);
+        if (typeof onTunnelReady === "function") {
+          onTunnelReady(null);
+        }
       },
     );
   }
@@ -598,6 +627,8 @@ class PortForwardingService extends EventEmitter {
       });
 
       server.listen(rule.listenPort, rule.listenHost, () => {
+        // 监听就绪，标记为运行中（否则对外状态永远停留在 "stopped"）
+        runtime.status = FORWARD_STATUS.RUNNING;
         logToFile(
           `PortForward dynamic (SOCKS5) listening: ${describeRule(rule)} (${ruleId})`,
           "INFO",
@@ -647,6 +678,20 @@ class PortForwardingService extends EventEmitter {
     };
 
     socket.on("data", function onData(chunk) {
+      // 握手阶段缓冲区上限：恶意/异常客户端无限灌数据时直接断开，防止内存被撑爆
+      if (
+        state.phase !== "bridging" &&
+        state.buffer.length + chunk.length > MAX_SOCKS_HANDSHAKE_BYTES
+      ) {
+        logToFile(
+          `PortForward SOCKS5 handshake buffer overflow from ${socket.remoteAddress || "local"} (${runtime.rule.id})`,
+          "WARN",
+        );
+        socket.removeListener("data", onData);
+        cleanup();
+        return;
+      }
+
       state.buffer = Buffer.concat([state.buffer, chunk]);
 
       if (state.phase === "greeting") {
@@ -726,8 +771,23 @@ class PortForwardingService extends EventEmitter {
         socket.removeListener("data", onData);
         state.phase = "bridging";
 
-        writeReply(0x00, atyp);
-        this._handleOutboundTunnelClient(runtime, socket, dstHost, dstPort);
+        // RFC 1928：等 SSH 隧道真正建立成功后再回复 0x00，
+        // 失败则回通用错误 0x01，避免客户端收到"成功"后发送的数据被静默丢弃
+        this._handleOutboundTunnelClient(
+          runtime,
+          socket,
+          dstHost,
+          dstPort,
+          (tunnelError) => {
+            if (tunnelError) {
+              writeReply(0x01, atyp);
+              // 等回复刷出后再断开，避免 destroy 丢弃错误响应
+              setTimeout(cleanup, 100);
+            } else {
+              writeReply(0x00, atyp);
+            }
+          },
+        );
       }
     }.bind(this));
   }
@@ -808,6 +868,8 @@ class PortForwardingService extends EventEmitter {
             `PortForward remote bound: ${rule.listenHost}:${realPort} -> ${rule.remoteHost}:${rule.remotePort} (${ruleId})`,
             "INFO",
           );
+          // 服务器端绑定成功，标记为运行中
+          runtime.status = FORWARD_STATUS.RUNNING;
           resolve();
         });
       } catch (error) {
