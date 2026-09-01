@@ -347,7 +347,17 @@ class SerialConnectionPool extends BaseConnectionPool {
       code === "ENOENT" ||
       lowerMessage.includes("file not found") ||
       lowerMessage.includes("no such file") ||
-      lowerMessage.includes("cannot find")
+      lowerMessage.includes("cannot find") ||
+      // USB 断开/句柄失效（serialport v12 unix-read 标记 disconnect，
+      // C++ 层报错文本含 strerror(errno)）
+      err?.disconnect === true ||
+      code === "EBADF" ||
+      code === "ENXIO" ||
+      code === "EIO" ||
+      lowerMessage.includes("bad file descriptor") ||
+      lowerMessage.includes("no such device or address") ||
+      lowerMessage.includes("input/output error") ||
+      lowerMessage.includes("device not configured")
     ) {
       errorMessage = mainT("mainProcess.serial.portNotFound", { lng, path });
     } else if (
@@ -355,9 +365,11 @@ class SerialConnectionPool extends BaseConnectionPool {
       code === "EACCES" ||
       code === "EPERM" ||
       lowerMessage.includes("access denied") ||
+      lowerMessage.includes("access is denied") ||
       lowerMessage.includes("permission denied") ||
       lowerMessage.includes("device busy") ||
       lowerMessage.includes("resource busy") ||
+      lowerMessage.includes("device or resource busy") ||
       lowerMessage.includes("locked")
     ) {
       errorMessage = mainT("mainProcess.serial.portBusy", { lng, path });
@@ -383,7 +395,7 @@ class SerialConnectionPool extends BaseConnectionPool {
 
     // 创建增强的错误对象（使用简洁的错误消息）
     const enhancedError = new Error(errorMessage);
-    enhancedError.code = err?.code || null;
+    enhancedError.code = err?.code || (err?.disconnect ? "EDISCONNECT" : null);
     enhancedError.originalError = err;
     enhancedError.connectionKey = connectionKey;
     enhancedError.serialConfig = {

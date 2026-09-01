@@ -228,7 +228,8 @@
           "WEBDAV_AUTH_FAILED": "WebDAV 认证失败，请检查用户名和密码",
           "WEBDAV_REMOTE_NOT_FOUND": "服务器上还没有配置包",
           "WEBDAV_REQUEST_FAILED": "WebDAV 请求失败，请检查地址和网络",
-          "WEBDAV_CONFLICT": "服务器上的配置包已被其他设备更新，为避免覆盖，本次上传已取消"
+          "WEBDAV_CONFLICT": "服务器上的配置包已被其他设备更新，为避免覆盖，本次上传已取消",
+          "PACKAGE_TOO_LARGE": "配置包解压后体积超过 50MB 限制，已拒绝导入"
         }
       },
       "feedback": {

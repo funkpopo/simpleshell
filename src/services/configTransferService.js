@@ -6,7 +6,12 @@ const https = require("https");
 const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
+const { promisify } = require("util");
 const configService = require("./configService");
+
+// Node 22 起移除了 zlib.promises，改用 util.promisify 包装回调式 API（全版本兼容）
+const gzipAsync = promisify(zlib.gzip);
+const gunzipAsync = promisify(zlib.gunzip);
 
 /**
  * ConfigTransferService - 配置导入/导出/同步服务
@@ -38,6 +43,10 @@ const AUTO_SYNC_DEFAULT_INTERVAL_MIN = 30;
 const KDF_SALT_LENGTH = 16;
 const KEY_LENGTH = 32;
 const IV_LENGTH = 12;
+// 合并导入命令历史的上限：防止长期自动同步导致 commandHistory 无限膨胀
+const MAX_MERGED_COMMAND_HISTORY = 20000;
+// 配置包解压后载荷上限：防恶意 .ssx 的 zip-bomb 放大攻击
+const MAX_DECOMPRESSED_PAYLOAD_BYTES = 50 * 1024 * 1024;
 const SCRYPT_COST = {
   N: 16384,
   r: 8,
@@ -214,9 +223,7 @@ class ConfigTransferService {
   async _encryptPayload(payloadJson, password) {
     const salt = crypto.randomBytes(KDF_SALT_LENGTH).toString("hex");
     const key = await this._derivePackageKeyAsync(password, salt);
-    const compressed = await zlib.promises.gzip(
-      Buffer.from(payloadJson, "utf8"),
-    );
+    const compressed = await gzipAsync(Buffer.from(payloadJson, "utf8"));
     const iv = crypto.randomBytes(IV_LENGTH);
     const cipher = crypto.createCipheriv("aes-256-gcm", key, iv, {
       authTagLength: 16,
@@ -273,9 +280,21 @@ class ConfigTransferService {
       throw error;
     }
 
-    const payloadJson = (await zlib.promises.gunzip(compressed)).toString(
-      "utf8",
-    );
+    let decompressed;
+    try {
+      decompressed = await gunzipAsync(compressed, {
+        maxOutputLength: MAX_DECOMPRESSED_PAYLOAD_BYTES,
+      });
+    } catch (error) {
+      if (error?.code === "ERR_BUFFER_TOO_LARGE") {
+        const tooLarge = new Error("PACKAGE_TOO_LARGE");
+        tooLarge.code = "PACKAGE_TOO_LARGE";
+        throw tooLarge;
+      }
+      // 解密成功但解压失败：包体损坏
+      throw new Error("INVALID_PACKAGE");
+    }
+    const payloadJson = decompressed.toString("utf8");
     const payload = JSON.parse(payloadJson);
     if (!payload || typeof payload !== "object" || !payload.sections) {
       throw new Error("INVALID_PACKAGE");
@@ -610,7 +629,9 @@ class ConfigTransferService {
     };
     addAll(currentHistory);
     addAll(importedHistory);
-    return Array.from(merged.values());
+    // 容量上限：保留最近的 MAX_MERGED_COMMAND_HISTORY 条，避免历史无限膨胀
+    const mergedList = Array.from(merged.values());
+    return mergedList.slice(Math.max(0, mergedList.length - MAX_MERGED_COMMAND_HISTORY));
   }
 
   // ==================== WebDAV 同步 ====================

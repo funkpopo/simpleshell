@@ -228,7 +228,8 @@
           "WEBDAV_AUTH_FAILED": "WebDAV authentication failed. Please check the username and password",
           "WEBDAV_REMOTE_NOT_FOUND": "No config package exists on the server yet",
           "WEBDAV_REQUEST_FAILED": "WebDAV request failed. Please check the URL and network",
-          "WEBDAV_CONFLICT": "The remote config package was updated by another device. The upload was cancelled to avoid overwriting it"
+          "WEBDAV_CONFLICT": "The remote config package was updated by another device. The upload was cancelled to avoid overwriting it",
+          "PACKAGE_TOO_LARGE": "The decompressed config package exceeds the 50 MB limit and was rejected"
         }
       },
       "feedback": {

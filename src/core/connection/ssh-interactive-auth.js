@@ -13,6 +13,10 @@ const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
 
 const PASSWORD_PROMPT_PATTERN = /password|密码|passcode/i;
 
+// responder 超时：渲染层对话框若长时间不响应，避免 SSH 认证无限挂起。
+// 给足用户输入验证码的时间（5 分钟）。
+const RESPONDER_TIMEOUT_MS = 5 * 60 * 1000;
+
 /**
  * 判断单个 keyboard-interactive 提示是否可用已存储的密码自动代答
  * @param {Object} promptInfo - { prompt, echo }
@@ -78,14 +82,29 @@ async function resolveKeyboardInteractiveAnswers({
     );
   }
 
-  const result = await responder({
-    name: typeof name === "string" ? name : "",
-    instructions: typeof instructions === "string" ? instructions : "",
-    prompts: promptList.map((p) => ({
-      prompt: typeof p?.prompt === "string" ? p.prompt : "",
-      echo: p?.echo === true,
-    })),
-    prefill: answers,
+  const result = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const timeoutError = new Error("Keyboard-interactive response timeout");
+      timeoutError.code = "KEYBOARD_INTERACTIVE_TIMEOUT";
+      reject(timeoutError);
+    }, RESPONDER_TIMEOUT_MS);
+    responder({
+      name: typeof name === "string" ? name : "",
+      instructions: typeof instructions === "string" ? instructions : "",
+      prompts: promptList.map((p) => ({
+        prompt: typeof p?.prompt === "string" ? p.prompt : "",
+        echo: p?.echo === true,
+      })),
+      prefill: answers,
+    })
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
   });
 
   if (!result || result.cancelled) {
