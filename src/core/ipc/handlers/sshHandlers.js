@@ -83,6 +83,8 @@ function getTerminalText(config, key, params = {}) {
       return mainT("mainProcess.terminal.moshClosed", options);
     case "moshError":
       return mainT("mainProcess.terminal.moshError", options);
+    case "moshFailedHint":
+      return mainT("mainProcess.terminal.moshFailedHint", options);
     case "droppedBytesWarning":
       return mainT("mainProcess.terminal.droppedBytesWarning", options);
     case "sshConnected":
@@ -100,6 +102,25 @@ function getTerminalText(config, key, params = {}) {
 function extractTabIdFromConnectionKey(connectionKey) {
   return extractTabIdFromSessionKey(connectionKey);
 }
+
+// Mosh 启动失败探测：认证失败/mosh-server 启动失败发生在 pty 内部，
+// 不会走 connectionFailure 错误建议流程。监视最初几秒输出中的特征文本，
+// 命中后向终端显式提示失败原因（进程随后由 onExit 正常收尾）
+const MOSH_FAILURE_PROBE_MS = 10000;
+const MOSH_FAILURE_PROBE_MAX_BYTES = 8192;
+// 特征命中后等待进程退出的确认窗口：
+// 仅当进程在窗口内以非零码退出才确认启动失败，避免 MOTD 等文本误报
+const MOSH_FAILURE_EXIT_WINDOW_MS = 5000;
+const MOSH_FAILURE_MARKERS = [
+  "mosh did not make a successful connection",
+  "mosh-server: command not found",
+  "mosh: command not found",
+  "permission denied",
+  "ssh_exchange_identification",
+  "kex_exchange_identification",
+  "connection refused",
+  "connection timed out",
+];
 
 /**
  * SSH/Telnet连接相关的IPC处理器
@@ -1720,6 +1741,40 @@ class SSHHandlers {
     const mainWindow = this._getMainWindow();
     const processMailbox = this._configureProcessMailbox(processId, moshConfig);
 
+    // 启动失败探测状态：仅在最初几秒/前几 KB 输出内生效，避免误伤正常会话。
+    // 特征命中只是候选，需进程在窗口内非零退出才确认（消除 MOTD 误报）
+    let moshProbeBuffer = "";
+    let moshProbeSettled = false;
+    let pendingFailureMarker = null;
+    let pendingFailureTimer = null;
+    const moshProbeTimer = setTimeout(() => {
+      moshProbeSettled = true;
+    }, MOSH_FAILURE_PROBE_MS);
+    const settleMoshProbe = () => {
+      if (!moshProbeSettled) {
+        moshProbeSettled = true;
+        clearTimeout(moshProbeTimer);
+      }
+    };
+    const clearPendingFailure = () => {
+      pendingFailureMarker = null;
+      clearTimeout(pendingFailureTimer);
+    };
+    const emitFailureHint = () => {
+      const marker = pendingFailureMarker;
+      clearPendingFailure();
+      logToFile(
+        `Mosh startup failure detected for processId ${processId}: "${marker}"`,
+        "WARN",
+      );
+      const hint = `\r\n*** ${getTerminalText(moshConfig, "moshFailedHint")} ***\r\n`;
+      if (processMailbox) {
+        processMailbox.emitOutput(hint);
+      } else if (mainWindow && !mainWindow.isDestroyed()) {
+        this._emitProcessOutput(processId, hint);
+      }
+    };
+
     // 连接池可能复用同一 pty 进程（渲染层重载/重复 startMosh），
     // 注册前先移除旧监听，避免 onData/onExit 叠加导致输出重复、退出事件重复处理
     if (connectionInfo && Array.isArray(connectionInfo.ptyListeners)) {
@@ -1736,6 +1791,27 @@ class SSHHandlers {
     const dataListener = ptyProcess.onData((data) => {
       try {
         const text = Buffer.isBuffer(data) ? data.toString() : String(data);
+
+        if (!moshProbeSettled) {
+          moshProbeBuffer += text;
+          const lowerBuffer = moshProbeBuffer.toLowerCase();
+          const marker = MOSH_FAILURE_MARKERS.find((m) =>
+            lowerBuffer.includes(m),
+          );
+          if (marker) {
+            settleMoshProbe();
+            // 记录候选并在确认窗口内等待非零退出，命中才提示
+            pendingFailureMarker = marker;
+            clearTimeout(pendingFailureTimer);
+            pendingFailureTimer = setTimeout(
+              clearPendingFailure,
+              MOSH_FAILURE_EXIT_WINDOW_MS,
+            );
+          } else if (moshProbeBuffer.length > MOSH_FAILURE_PROBE_MAX_BYTES) {
+            settleMoshProbe();
+          }
+        }
+
         if (processMailbox) {
           processMailbox.emitOutput(text);
         } else if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1747,7 +1823,14 @@ class SSHHandlers {
     });
 
     const exitListener = ptyProcess.onExit(({ exitCode, signal }) => {
-      // 进程已退出，清空监听引用，避免持有 dispose 句柄
+      // 进程已退出，停止失败探测并清空监听引用，避免持有 dispose 句柄
+      settleMoshProbe();
+      // 探测窗口内特征命中 + 非零退出 → 确认启动失败，先于关闭消息提示
+      if (pendingFailureMarker && (exitCode ?? 0) !== 0) {
+        emitFailureHint();
+      } else {
+        clearPendingFailure();
+      }
       if (connectionInfo && Array.isArray(connectionInfo.ptyListeners)) {
         connectionInfo.ptyListeners.length = 0;
       }

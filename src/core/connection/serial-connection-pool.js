@@ -348,9 +348,9 @@ class SerialConnectionPool extends BaseConnectionPool {
       lowerMessage.includes("file not found") ||
       lowerMessage.includes("no such file") ||
       lowerMessage.includes("cannot find") ||
-      // USB 断开/句柄失效（serialport v12 unix-read 标记 disconnect，
-      // C++ 层报错文本含 strerror(errno)）
-      err?.disconnect === true ||
+      // USB 断开/句柄失效（serialport v12 @serialport/stream unix-read
+      // 标记 err.disconnected == true，C++ 层报错文本含 strerror(errno)）
+      err?.disconnected === true ||
       code === "EBADF" ||
       code === "ENXIO" ||
       code === "EIO" ||
@@ -395,7 +395,8 @@ class SerialConnectionPool extends BaseConnectionPool {
 
     // 创建增强的错误对象（使用简洁的错误消息）
     const enhancedError = new Error(errorMessage);
-    enhancedError.code = err?.code || (err?.disconnect ? "EDISCONNECT" : null);
+    enhancedError.code =
+      err?.code || (err?.disconnected ? "EDISCONNECT" : null);
     enhancedError.originalError = err;
     enhancedError.connectionKey = connectionKey;
     enhancedError.serialConfig = {

@@ -217,6 +217,16 @@ function execSshCapture(sshClient, command, timeoutMs = 15000) {
           }
           return;
         }
+        // 超时先于 exec 回调触发：此时通道已被废弃，
+        // 直接关闭 stream 并返回，避免挂上 data 监听继续收数据造成通道泄漏
+        if (settled) {
+          try {
+            stream?.close?.();
+          } catch {
+            // ignore
+          }
+          return;
+        }
         activeStream = stream;
 
         let stdout = "";

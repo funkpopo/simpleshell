@@ -34,6 +34,11 @@ const DEFAULT_MOSH_OPTIONS = {
 const DEFAULT_SSH_PORT = 22;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
+// WSL 模式关闭时，向 pty 写入 exit 后等待内部 mosh 会话退出的宽限期，
+// 超时后仍兜底 kill wsl.exe 宿主进程
+const MOSH_WSL_EXIT_GRACE_MS = 1500;
+// WSL 模式关闭时，Ctrl-C 与 exit 之间的间隔，给远端前台程序响应中断的时间
+const MOSH_WSL_INTERRUPT_DELAY_MS = 200;
 
 /**
  * 归一化Mosh连接配置
@@ -270,12 +275,55 @@ class MoshConnectionPool extends BaseConnectionPool {
     }
 
     const ptyProcess = conn.client;
-    try {
-      if (ptyProcess && !conn.exited && typeof ptyProcess.kill === "function") {
-        ptyProcess.kill();
+    const isWslSession = conn.config?.moshUseWsl === true;
+    if (ptyProcess && !conn.exited && typeof ptyProcess.kill === "function") {
+      // 连接池自身的退出标记：上方已清理 ptyListeners，
+      // 若不重挂则 conn.exited 永远不会置位，兜底 kill 必然执行。
+      // 挂上后进程自行退出时即可跳过无意义的 kill
+      let disposeExitMarker = null;
+      if (typeof ptyProcess.onExit === "function") {
+        const exitMarker = ptyProcess.onExit(() => {
+          conn.exited = true;
+        });
+        disposeExitMarker = () => {
+          try {
+            exitMarker?.dispose?.();
+          } catch {
+            // ignore
+          }
+        };
       }
-    } catch (error) {
-      this._logError(`Error killing mosh process: ${key}`, error);
+
+      if (isWslSession && typeof ptyProcess.write === "function") {
+        // WSL 模式：pty 进程只是 wsl.exe 宿主，直接 kill 不会终止
+        // 发行版内的 mosh/mosh-server，会残留孤儿进程占用服务端 UDP 端口。
+        // 先发 Ctrl-C 取消远端可能正在运行的前台程序/挂起的交互提示，
+        // 稍后再写 exit 让 shell 会话自行退出（shell 退出后 mosh-server 随之终止），
+        // 最后兜底 kill 宿主进程
+        try {
+          ptyProcess.write("\x03");
+        } catch (error) {
+          this._logError(`Error writing Ctrl-C to mosh WSL pty: ${key}`, error);
+        }
+        setTimeout(() => {
+          if (conn.exited) return;
+          try {
+            ptyProcess.write("exit\r");
+          } catch (error) {
+            this._logError(`Error writing exit to mosh WSL pty: ${key}`, error);
+          }
+        }, MOSH_WSL_INTERRUPT_DELAY_MS);
+      }
+
+      setTimeout(() => {
+        disposeExitMarker?.();
+        if (conn.exited) return;
+        try {
+          ptyProcess.kill();
+        } catch (error) {
+          this._logError(`Error killing mosh process: ${key}`, error);
+        }
+      }, MOSH_WSL_EXIT_GRACE_MS);
     }
 
     this.emit("connectionClosed", {

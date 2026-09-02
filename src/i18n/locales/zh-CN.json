@@ -1722,6 +1722,7 @@
         "moshStarted": "已启动到 {{host}}:{{port}} 的 Mosh 会话（支持漫游：断网/IP 切换后会话自动恢复）",
         "moshClosed": "Mosh 会话已关闭（退出码 {{code}}）",
         "moshError": "Mosh 会话错误: {{message}}",
+        "moshFailedHint": "Mosh 连接失败：请检查主机、SSH 端口、用户名与密码是否正确，以及服务器上是否已安装 mosh",
         "droppedBytesWarning": "输出过快，已丢弃 {{dropped}} 字节（请适当降低输出速率）",
         "sshConnected": "{{host}} 已连接",
         "telnetError": "Telnet连接错误: {{message}}",

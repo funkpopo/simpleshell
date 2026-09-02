@@ -220,6 +220,70 @@ class ConfigTransferService {
     });
   }
 
+  /**
+   * 递归排序对象键，生成与键序无关的规范化结构。
+   * 用于计算载荷的内容哈希：同样的配置内容无论字段顺序如何都得到相同哈希。
+   */
+  _canonicalize(value) {
+    if (Array.isArray(value)) {
+      return value.map((item) => this._canonicalize(item));
+    }
+    if (value && typeof value === "object") {
+      const result = {};
+      for (const key of Object.keys(value).sort()) {
+        result[key] = this._canonicalize(value[key]);
+      }
+      return result;
+    }
+    return value;
+  }
+
+  /**
+   * 计算载荷的规范化内容哈希（sha256）。
+   * 加密包因随机 salt/IV 每次导出字节都不同，冲突检测必须比对内容哈希而非密文字节。
+   */
+  _computePayloadHash(payloadJson) {
+    let payload;
+    try {
+      payload = JSON.parse(payloadJson);
+    } catch {
+      return null;
+    }
+    return crypto
+      .createHash("sha256")
+      .update(JSON.stringify(this._canonicalize(payload)))
+      .digest("hex");
+  }
+
+  /**
+   * 解析配置包并取其载荷哈希。
+   * 优先读包内 payloadHash 元数据；旧格式包（无该字段）在有导出密码时
+   * 解密后现场计算；无法取得时返回 null（由调用方按冲突处理）。
+   */
+  async _getPackagePayloadHash(packageBuffer, exportPassword) {
+    let packageObject;
+    try {
+      packageObject = JSON.parse(packageBuffer.toString("utf8"));
+    } catch {
+      return null;
+    }
+    if (typeof packageObject.payloadHash === "string") {
+      return packageObject.payloadHash;
+    }
+    if (typeof exportPassword === "string" && exportPassword.length >= 4) {
+      try {
+        const payload = await this._decryptPackage(
+          packageObject,
+          exportPassword,
+        );
+        return this._computePayloadHash(JSON.stringify(payload));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
   async _encryptPayload(payloadJson, password) {
     const salt = crypto.randomBytes(KDF_SALT_LENGTH).toString("hex");
     const key = await this._derivePackageKeyAsync(password, salt);
@@ -323,13 +387,17 @@ class ConfigTransferService {
     this._assertCredentialStoreUnlocked();
     const sectionList = this._normalizeSections(options.sections);
     const payload = this._buildExportPayload(sectionList);
+    const payloadJson = JSON.stringify(payload);
 
     const packageObject = {
       magic: EXPORT_MAGIC,
       version: EXPORT_VERSION,
       createdAt: new Date().toISOString(),
       sections: sectionList,
-      ...(await this._encryptPayload(JSON.stringify(payload), password)),
+      // 载荷内容哈希（键序规范化）：WebDAV 冲突检测依赖它，
+      // 密文本身因随机 salt/IV 每次都不同，无法直接比对
+      payloadHash: this._computePayloadHash(payloadJson),
+      ...(await this._encryptPayload(payloadJson, password)),
     };
 
     // 全程异步 IO + 线程池加密，避免大数据量时卡住主进程
@@ -619,19 +687,36 @@ class ConfigTransferService {
           return;
         }
         const existing = merged.get(key);
-        if (
-          !existing ||
-          (Number(entry.count) || 0) > (Number(existing.count) || 0)
-        ) {
-          merged.set(key, { ...existing, ...entry, command: key });
+        if (!existing) {
+          merged.set(key, { ...entry, command: key });
+        } else {
+          const next = { ...existing };
+          if ((Number(entry.count) || 0) > (Number(existing.count) || 0)) {
+            // 导入记录使用次数更高：整体覆盖（含各自字段）
+            Object.assign(next, entry);
+          } else if (
+            (Number(entry.timestamp) || 0) >
+            (Number(existing.timestamp) || 0)
+          ) {
+            // 本地 count 更高：仅采纳导入记录更新的时间戳，
+            // 保证按时间排序/截断时反映真实的“最近使用”
+            next.timestamp = entry.timestamp;
+          }
+          next.command = key;
+          merged.set(key, next);
         }
       });
     };
     addAll(currentHistory);
     addAll(importedHistory);
-    // 容量上限：保留最近的 MAX_MERGED_COMMAND_HISTORY 条，避免历史无限膨胀
+    // 容量上限：保留最近的 MAX_MERGED_COMMAND_HISTORY 条，避免历史无限膨胀。
+    // Map 插入序 ≠ 时间序（当前设备尾部 + 导入记录），
+    // 先按 timestamp 倒序排序再截断，才是时间意义上的“最近”
     const mergedList = Array.from(merged.values());
-    return mergedList.slice(Math.max(0, mergedList.length - MAX_MERGED_COMMAND_HISTORY));
+    mergedList.sort(
+      (a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0),
+    );
+    return mergedList.slice(0, MAX_MERGED_COMMAND_HISTORY);
   }
 
   // ==================== WebDAV 同步 ====================
@@ -794,12 +879,14 @@ class ConfigTransferService {
       }
     }
 
-    const localHash = crypto
+    // 远端包字节哈希：上传成功后写入 lastRemoteHash 供自动拉取比对
+    const localBytesHash = crypto
       .createHash("sha256")
       .update(packageBuffer)
       .digest("hex");
 
-    // 冲突保护：上传前先 GET 远端包比对哈希，
+    // 冲突保护：上传前先 GET 远端包，比对载荷内容哈希（而非密文字节，
+    // 后者因随机 salt/IV 每次导出都不同），
     // 避免两台设备同时自动同步时后写者整包覆盖前写者的配置
     if (options.force !== true) {
       const remote = await this._webdavRequest({
@@ -812,18 +899,23 @@ class ConfigTransferService {
         throw error;
       }
       if (remote.status === 200) {
-        const remoteHash = crypto
-          .createHash("sha256")
-          .update(remote.body)
-          .digest("hex");
-        if (remoteHash !== localHash) {
+        // 本地/远端包哈希提取互相独立，并行执行（旧格式包需 scrypt 解密）
+        const [localPayloadHash, remotePayloadHash] = await Promise.all([
+          this._getPackagePayloadHash(packageBuffer, options.exportPassword),
+          this._getPackagePayloadHash(remote.body, options.exportPassword),
+        ]);
+        if (
+          !localPayloadHash ||
+          !remotePayloadHash ||
+          localPayloadHash !== remotePayloadHash
+        ) {
           const error = new Error(
             "Remote config package has changed since the last sync",
           );
           error.code = "WEBDAV_CONFLICT";
           error.remoteBytes = remote.body.length;
           this._log(
-            "ConfigTransferService: Upload aborted - remote package hash mismatch (possible concurrent modification)",
+            `ConfigTransferService: Upload aborted - remote package payload mismatch (localHash=${localPayloadHash || "unavailable"}, remoteHash=${remotePayloadHash || "unavailable"}; possible concurrent modification)`,
             "WARN",
           );
           throw error;
@@ -858,6 +950,20 @@ class ConfigTransferService {
       `ConfigTransferService: Config package uploaded to WebDAV (${response.status}, ${packageBuffer.length} bytes)`,
       "INFO",
     );
+
+    // 上传成功后记录远端包字节哈希，避免下次自动拉取把本次上传误判为远端更新
+    try {
+      const raw = this._readRawSyncSettings();
+      const uploadedUrl = String(options.url || "").trim();
+      if (raw.url && uploadedUrl && raw.url === uploadedUrl) {
+        this._updateSyncSettingsState({
+          lastRemoteHash: localBytesHash,
+        });
+      }
+    } catch {
+      // ignore
+    }
+
     return {
       success: true,
       status: response.status,

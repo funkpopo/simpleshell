@@ -88,15 +88,26 @@ async function resolveKeyboardInteractiveAnswers({
       timeoutError.code = "KEYBOARD_INTERACTIVE_TIMEOUT";
       reject(timeoutError);
     }, RESPONDER_TIMEOUT_MS);
-    responder({
-      name: typeof name === "string" ? name : "",
-      instructions: typeof instructions === "string" ? instructions : "",
-      prompts: promptList.map((p) => ({
-        prompt: typeof p?.prompt === "string" ? p.prompt : "",
-        echo: p?.echo === true,
-      })),
-      prefill: answers,
-    })
+
+    // responder 可能同步抛异常（或不返回 promise）：
+    // 必须在 .then/.catch 挂上之前清掉定时器，否则空转 5 分钟拖慢退出
+    let responderResult;
+    try {
+      responderResult = responder({
+        name: typeof name === "string" ? name : "",
+        instructions: typeof instructions === "string" ? instructions : "",
+        prompts: promptList.map((p) => ({
+          prompt: typeof p?.prompt === "string" ? p.prompt : "",
+          echo: p?.echo === true,
+        })),
+        prefill: answers,
+      });
+    } catch (error) {
+      clearTimeout(timer);
+      reject(error);
+      return;
+    }
+    Promise.resolve(responderResult)
       .then((value) => {
         clearTimeout(timer);
         resolve(value);

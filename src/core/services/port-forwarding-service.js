@@ -38,6 +38,9 @@ const SOCKS_ATYP_IPV6 = 0x04;
 const MAX_RULES = 100;
 const IDLE_SOCKET_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_SOCKS_HANDSHAKE_BYTES = 64 * 1024;
+// auto-start 单次启动的兑底超时：startRule 无内置超时，
+// 永不 settle 时避免 _autoStartRetrying 去重集永久卡住该规则
+const START_RULE_TIMEOUT_MS = 30 * 1000;
 
 const DEFAULT_RULE = Object.freeze({
   listenHost: "127.0.0.1",
@@ -143,6 +146,25 @@ class PortForwardingService extends EventEmitter {
     }
   }
 
+  /** 给不自我限制的 promise 加超时兑底 */
+  _withTimeout(promise, timeoutMs, message) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(message));
+      }, timeoutMs);
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
+  }
+
   /**
    * 启动单条规则，失败时仅针对该规则做有限次重试
    * @private
@@ -156,7 +178,13 @@ class PortForwardingService extends EventEmitter {
       return;
     }
 
-    this.startRule(rule.id, tabId)
+    // startRule 无内置启动超时：若 promise 永不 settle，
+    // 去重集会永久卡住该规则的后续 auto-start，这里加兑底超时保护
+    this._withTimeout(
+      this.startRule(rule.id, tabId),
+      START_RULE_TIMEOUT_MS,
+      `PortForward start timeout (${rule.id})`,
+    )
       .then(() => {
         this._autoStartRetrying.delete(rule.id);
         logToFile(
@@ -656,7 +684,7 @@ class PortForwardingService extends EventEmitter {
 
     const state = { buffer: Buffer.alloc(0), phase: "greeting" };
 
-    const writeReply = (code, atyp = SOCKS_ATYP_IPV4) => {
+    const writeReply = (code, atyp = SOCKS_ATYP_IPV4, onFlush = null) => {
       // BND.ADDR 固定 0.0.0.0:0（客户端一般不使用）
       const reply = Buffer.from([
         SOCKS_VERSION,
@@ -671,7 +699,11 @@ class PortForwardingService extends EventEmitter {
         0,
       ]);
       try {
-        socket.write(reply);
+        socket.write(reply, () => {
+          if (typeof onFlush === "function") {
+            onFlush();
+          }
+        });
       } catch {
         /* intentionally ignored */
       }
@@ -780,9 +812,15 @@ class PortForwardingService extends EventEmitter {
           dstPort,
           (tunnelError) => {
             if (tunnelError) {
-              writeReply(0x01, atyp);
-              // 等回复刷出后再断开，避免 destroy 丢弃错误响应
-              setTimeout(cleanup, 100);
+              // 等错误回复刷出后再半关连接（close 事件随后触发 cleanup），
+              // 避免 destroy 截断错误响应
+              writeReply(0x01, atyp, () => {
+                try {
+                  socket.end();
+                } catch {
+                  cleanup();
+                }
+              });
             } else {
               writeReply(0x00, atyp);
             }

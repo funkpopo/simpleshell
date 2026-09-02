@@ -711,14 +711,16 @@ const Settings = memo(({ open, onClose }) => {
     setConfigTransferBusy("webdav-upload");
     try {
       await persistWebdavSettings();
-      const upload = async () => {
+      const upload = async (forceOverride) => {
         const result = await window.terminalAPI.configSyncUpload({
           url: webdavUrl,
           username: webdavUsername,
           password: webdavPassword,
           fileName: webdavFileName,
           exportPassword,
-          force,
+          // 确认覆盖后重试时必须以 force=true 重新上传，
+          // 否则会捕获外层 force=false 再次冲突造成死循环
+          force: forceOverride ?? force,
         });
         if (result?.success === false) {
           throw Object.assign(new Error(result.error), {
@@ -748,7 +750,7 @@ const Settings = memo(({ open, onClose }) => {
         if (!answer || answer.response !== 0) {
           return;
         }
-        await upload();
+        await upload(true);
       }
       showSuccess(t("settings.dataSync.webdav.uploadSuccess"));
     } catch (error) {

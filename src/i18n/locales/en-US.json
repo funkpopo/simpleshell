@@ -1721,6 +1721,7 @@
         "moshStarted": "Mosh session to {{host}}:{{port}} started (roaming enabled: survives network changes and IP switches)",
         "moshClosed": "Mosh session closed (exit code {{code}})",
         "moshError": "Mosh session error: {{message}}",
+        "moshFailedHint": "Mosh connection failed: please verify the host, SSH port, username and password, and that mosh is installed on the server",
         "droppedBytesWarning": "Output is too fast. Dropped {{dropped}} bytes. Please reduce the output rate.",
         "sshConnected": "{{host}} connected",
         "telnetError": "Telnet connection error: {{message}}",

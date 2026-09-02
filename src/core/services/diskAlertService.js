@@ -160,11 +160,11 @@ class DiskAlertService {
         let group = clientGroups.get(client);
         if (!group) {
           // targetKey 从连接配置派生（host:port:username），不含 tabId，
-          // 目标增减后不会漂移
+          // 目标增减后不会漂移；username 中的 ":" 转义避免 key 分段歧义
           const cfg = proc.config || {};
-          const connKey = `ssh-${cfg.host || host}:${cfg.port || 22}:${
-            cfg.username || ""
-          }`;
+          const connKey = `ssh-${cfg.host || host}:${cfg.port || 22}:${String(
+            cfg.username || "",
+          ).replace(/:/g, "%3A")}`;
           group = {
             targetKey: connKey,
             tabIds: [],
