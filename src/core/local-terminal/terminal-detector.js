@@ -106,13 +106,14 @@ class TerminalDetector {
         adminRequired: false,
       },
       // WSL (Windows Subsystem for Linux)
+      // 注意：可用性完全由 checkWSLAvailability 判定（wsl.exe 本体即使
+      // 没有任何已安装发行版也会存在），名称与发行版在检测时动态填充
       {
-        name: "WSL (Ubuntu)",
+        name: "WSL",
         type: SUPPORTED_LOCAL_TERMINAL_TYPES.WINDOWS_WSL,
         executable: "wsl.exe",
         systemCommand: "wsl.exe",
         priority: 10,
-        launchArgs: ["--distribution", "Ubuntu"],
         adminRequired: false,
       },
     ];
@@ -253,7 +254,10 @@ class TerminalDetector {
       }
 
       // 4. 系统命令查询
-      if (terminal.systemCommand) {
+      //    WSL 类型除外：wsl.exe 在没有任何已安装发行版时依然可以被
+      //    where 解析到，若参与判定会导致已注销的发行版仍显示为可用，
+      //    其可用性完全由 checkWSLAvailability 决定
+      if (terminal.systemCommand && terminal.type !== "wsl") {
         checks.push(
           (async () => {
             const resolvedPath = await this.resolveSystemCommandPath(
@@ -374,7 +378,14 @@ class TerminalDetector {
       return;
     }
 
-    await this.checkWSLAvailability(wslTerminal);
+    const available = await this.checkWSLAvailability(wslTerminal);
+    if (!available) {
+      // 所有发行版均已被移除（或 WSL 不可用），从检测列表中剔除，
+      // 避免侧边栏继续显示已不存在的发行版
+      this.detectedTerminals = this.detectedTerminals.filter(
+        (terminal) => terminal !== wslTerminal,
+      );
+    }
   }
 
   async resolveSystemCommandPath(command, timeout = 2000) {
@@ -428,69 +439,69 @@ class TerminalDetector {
       // 清理可能包含的空字符
       const cleanOutput = wslList.replace(/\0/g, "");
 
-      if (
-        cleanOutput.includes("Ubuntu") ||
-        cleanOutput.includes("Debian") ||
-        cleanOutput.includes("Alpine") ||
-        cleanOutput.includes("Windows Subsystem for Linux") ||
-        cleanOutput.includes("docker-desktop") ||
-        cleanOutput.includes("SUSE") ||
-        cleanOutput.includes("CentOS") ||
-        cleanOutput.includes("Fedora") ||
-        cleanOutput.includes("NAME")
-      ) {
-        // 包含 NAME/发行版等关键字说明 WSL 已安装
-        terminal.executablePath = "wsl.exe";
+      // 直接解析发行版列表：没有已安装发行版时 wsl.exe 输出的是错误
+      // 提示（如 "Windows Subsystem for Linux has no installed
+      // distributions"），不会产生有效的发行版条目
+      const distributions = this.parseWSLDistributions(cleanOutput);
 
-        // 解析可用的 WSL 发行版
-        const distributions = this.parseWSLDistributions(cleanOutput);
+      // 过滤 docker-desktop/podman 等非实际发行版
+      const validDistributions = distributions.filter(
+        (dist) =>
+          !dist.name.toLowerCase().includes("docker-desktop") &&
+          !dist.name.toLowerCase().includes("podman-machine"),
+      );
 
-        // 过滤 docker-desktop/podman 等非实际发行版
-        const validDistributions = distributions.filter(
-          (dist) =>
-            !dist.name.toLowerCase().includes("docker-desktop") &&
-            !dist.name.toLowerCase().includes("podman-machine"),
-        );
-
-        if (validDistributions.length > 0) {
-          const runningCount = validDistributions.filter(
-            (dist) => dist.runtimeState === "running",
-          ).length;
-          const checkedAt = Date.now();
-
-          terminal.availableDistributions = validDistributions;
-          terminal.runtimeStatus = {
-            state: runningCount > 0 ? "running" : "stopped",
-            runningCount,
-            totalCount: validDistributions.length,
-            checkedAt,
-          };
-
-          // 多个发行版时，后续可提供选择
-          if (validDistributions.length > 1) {
-            terminal.hasMultipleDistributions = true;
-          }
-
-          const defaultDistribution =
-            validDistributions.find((dist) => dist.isDefault) ||
-            validDistributions[0];
-          if (defaultDistribution?.name) {
-            terminal.name = `WSL (${defaultDistribution.name})`;
-          }
-
-          this.wslStatusCacheTime = checkedAt;
-
-          return true;
-        } else {
-          return false;
-        }
+      if (validDistributions.length === 0) {
+        // 没有任何可用的发行版（可能已被全部注销），
+        // 清理残留的旧状态，避免 UI 继续显示已移除的发行版
+        this.clearWSLState(terminal);
+        this.wslStatusCacheTime = Date.now();
+        return false;
       }
 
-      return false;
+      const runningCount = validDistributions.filter(
+        (dist) => dist.runtimeState === "running",
+      ).length;
+      const checkedAt = Date.now();
+
+      terminal.availableDistributions = validDistributions;
+      terminal.runtimeStatus = {
+        state: runningCount > 0 ? "running" : "stopped",
+        runningCount,
+        totalCount: validDistributions.length,
+        checkedAt,
+      };
+
+      // 多个发行版时，后续可提供选择
+      if (validDistributions.length > 1) {
+        terminal.hasMultipleDistributions = true;
+      }
+
+      const defaultDistribution =
+        validDistributions.find((dist) => dist.isDefault) ||
+        validDistributions[0];
+      if (defaultDistribution?.name) {
+        terminal.name = `WSL (${defaultDistribution.name})`;
+      }
+
+      this.wslStatusCacheTime = checkedAt;
+
+      return true;
     } catch {
       // WSL 不可用或执行失败
+      this.clearWSLState(terminal);
       return false;
     }
+  }
+
+  /**
+   * 清理 WSL 终端条目上的残留状态
+   */
+  clearWSLState(terminal) {
+    delete terminal.availableDistributions;
+    delete terminal.runtimeStatus;
+    delete terminal.hasMultipleDistributions;
+    terminal.name = "WSL";
   }
 
   /**
@@ -513,20 +524,16 @@ class TerminalDetector {
         const cleanLine = trimmed.replace(/^\*\s*/, "");
         const parts = cleanLine.split(/\s+/);
 
-        if (parts.length >= 2) {
+        if (parts.length >= 3 && /^\d+$/.test(parts[2])) {
           const name = parts[0];
           const state = parts[1];
-          const version = parts[2] || "WSL1";
+          const version = parts[2];
           const runtimeState = state.toLowerCase();
 
-          // 仅在必要字段有效时加入结果
-          if (
-            name &&
-            state &&
-            name !== "STATE" &&
-            name !== "NAME" &&
-            state !== "STATE"
-          ) {
+          // 仅在必要字段有效时加入结果。
+          // 要求第三列为数字（VERSION），可过滤掉错误提示文本
+          //（如中英文的 "没有已安装的分发" 提示）被误解析为发行版
+          if (name && state && name !== "STATE" && name !== "NAME") {
             const distribution = {
               name,
               state,
