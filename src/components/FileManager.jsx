@@ -30,7 +30,7 @@ import {
   DialogActions,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import { alpha } from "@mui/material/styles";
+import { alpha, darken, lighten } from "@mui/material/styles";
 import { FileManagerSkeleton } from "./SkeletonLoader.jsx";
 import { compactContextMenuPaperSx } from "./contextMenuStyles";
 import FolderIcon from "@mui/icons-material/Folder";
@@ -7203,13 +7203,17 @@ const FileManager = memo(
               left: 0,
               right: 0,
               bottom: 0,
-              // 遮罩颜色随主题变化：仅颜色不同，透明度保持一致
+              // 遮罩颜色随主题变化：用 lighten/darken 把颜色预先混成不透明色。
+              // 注意：这里不能用 rgba 半透明色！侧边栏内容 Box 是独立合成层
+              //（transform + contain: paint），遮罩又因 containerType: "size"
+              // 被单独提升，Chromium 合成半透明遮罩时会透出 z-index 更低的其他
+              // 侧边栏内容（与 Paper 级别注释踩过的坑相同）。
               backgroundColor:
                 theme.palette.mode === "light"
-                  ? "rgba(255, 255, 255, 0.45)"
-                  : "rgba(0, 0, 0, 0.45)",
+                  ? lighten(theme.palette.background.paper, 0.45)
+                  : darken(theme.palette.background.paper, 0.45),
               // 注意：此处不可加 backdropFilter，与 containerType: "size" 同用时
-              // Chromium 的 backdrop root 会被破坏，导致遮罩后方渲染成不透明纯色
+              // Chromium 的 backdrop root 会被破坏，导致遮罩后方渲染异常
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
