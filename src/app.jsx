@@ -727,7 +727,7 @@ function AppContent() {
   const currentTab = state.currentTab;
   const connectionManagerOpen = state.connectionManagerOpen;
   const resourceMonitorOpen = state.resourceMonitorOpen;
-  const fileManagerOpen = state.fileManagerOpen;
+  const fileManagerOpenByTabId = state.fileManagerOpenByTabId;
   const ipAddressQueryOpen = state.ipAddressQueryOpen;
   const securityToolsOpen = state.securityToolsOpen;
   const portForwardingOpen = state.portForwardingOpen;
@@ -751,6 +751,17 @@ function AppContent() {
   const dragInsertPosition = state.dragInsertPosition;
   const anchorEl = state.anchorEl;
   const open = Boolean(anchorEl);
+
+  // 当前面板标签页（侧边栏跟随当前标签页）
+  const currentPanelTab =
+    currentTab > 0 && tabs[currentTab] ? tabs[currentTab] : null;
+  // 文件管理侧边栏状态按标签页独立记忆：
+  // 仅 SSH 标签页可打开，未记录过的标签页默认关闭，
+  // 切换/新建标签页不会影响其他标签页各自的开关状态
+  const fileManagerOpen =
+    currentPanelTab?.type === "ssh"
+      ? Boolean(fileManagerOpenByTabId[currentPanelTab.id])
+      : false;
   const connectionsRef = React.useRef(connections);
   const topConnectionsRef = React.useRef(topConnections);
   const terminalInstancesRef = React.useRef(terminalInstances);
@@ -826,8 +837,7 @@ function AppContent() {
     }
   }, [dispatch]);
 
-  // 锁定的文件管理器tabId（在打开时不随标签页切换而变化）
-  const [lockedFileManagerTabId, setLockedFileManagerTabId] = useState(null);
+  // 文件管理侧边栏的导航历史：按标签页独立记忆
   const [fileManagerHistoryByTabId, setFileManagerHistoryByTabId] = useState(
     {},
   );
@@ -1449,7 +1459,6 @@ function AppContent() {
   const localTerminalSidebarPresent = useDelayedPresence(
     localTerminalSidebarOpen,
   );
-  const [prevTabsLength, setPrevTabsLength] = React.useState(tabs.length);
   const [transferFloatOpen, setTransferFloatOpen] = React.useState(false);
   const [transferFloatInitialTransfer, setTransferFloatInitialTransfer] =
     React.useState(null);
@@ -1847,18 +1856,6 @@ function AppContent() {
   // 注意: 移除了自动切换到新标签页的useEffect
   // 新标签页的切换现在在 handleCreateSSHConnection 中直接处理
   // 以避免竞态条件导致的重复标签页问题
-  React.useEffect(() => {
-    // 仅处理SFTP面板锁定更新，不再自动切换标签页
-    if (tabs.length > prevTabsLength) {
-      const newTab = tabs[tabs.length - 1];
-      if (newTab && newTab.type === "ssh") {
-        setLockedFileManagerTabId((prevLockedId) => {
-          return prevLockedId !== null ? newTab.id : prevLockedId;
-        });
-      }
-    }
-    setPrevTabsLength(tabs.length);
-  }, [tabs.length, prevTabsLength]);
 
   React.useEffect(() => {
     const getSidebarWidth = () => {
@@ -2477,16 +2474,8 @@ function AppContent() {
     (event, newValue) => {
       dispatch(actions.setCurrentTab(newValue));
 
-      // 如果切换到SSH标签页，检查SFTP面板是否已打开，如果是则更新锁定的tabId
-      if (newValue < tabs.length) {
-        const newTab = tabs[newValue];
-        if (newTab && newTab.type === "ssh") {
-          setLockedFileManagerTabId((prevLockedId) => {
-            // 只有在之前有锁定的情况下才更新（即SFTP面板已打开）
-            return prevLockedId !== null ? newTab.id : prevLockedId;
-          });
-        }
-      }
+      // 文件管理侧边栏状态已按标签页独立存储，切换标签页时
+      // 各标签页恢复各自的开关状态，无需额外的锁定/同步逻辑
 
       // 触发自定义事件，通知WebTerminal组件进行大小调整
       if (newValue < tabs.length) {
@@ -2565,7 +2554,7 @@ function AppContent() {
 
       // 先关闭所有侧边栏以避免连接错误
       dispatch(actions.setResourceMonitorOpen(false));
-      dispatch(actions.setFileManagerOpen(false));
+      dispatch(actions.setFileManagerOpenForTab(tabId, false));
       dispatch(actions.setIpAddressQueryOpen(false));
 
       // 获取当前连接的processId并清理连接
@@ -2848,14 +2837,13 @@ function AppContent() {
       );
     }
 
-    // 检查文件管理器是否为该标签页打开，如果是则关闭它
-    if (
-      fileManagerOpen &&
-      (fileManagerProps.tabId === tabToRemove.id ||
-        lockedFileManagerTabId === tabToRemove.id)
-    ) {
-      dispatch(actions.setFileManagerOpen(false));
-      setLockedFileManagerTabId(null);
+    // 清理被关闭标签页的文件管理侧边栏状态（状态按标签页独立存储，
+    // 不影响其他标签页各自的开关状态）
+    if (fileManagerOpenByTabId[tabToRemove.id]) {
+      dispatch(actions.setFileManagerOpenForTab(tabToRemove.id, false));
+      if (fileManagerOpen) {
+        setFallbackSidebarAfterClose("file");
+      }
     }
 
     // 检查资源监控是否为该标签页打开，如果是则关闭它
@@ -3170,42 +3158,40 @@ function AppContent() {
   }, [dispatch, runSidebarClose]);
 
   // 切换文件管理侧边栏
-  // （比通用 toggle 多出 SSH 连接状态守卫与 tabId 锁定逻辑，保留独立实现）
+  // 状态按当前标签页独立存储：新开标签页默认关闭，不影响其他标签页已打开的侧边栏
   const toggleFileManager = () => {
-    const currentPanelTab = getCurrentPanelTab();
+    const panelTab = getCurrentPanelTab();
+    if (!panelTab) {
+      return;
+    }
+
     if (!fileManagerOpen && !isCurrentPanelSshConnected) {
-      if (currentPanelTab?.type === "ssh") {
-        void loadTabConnectionStatus(currentPanelTab.id);
+      if (panelTab.type === "ssh") {
+        void loadTabConnectionStatus(panelTab.id);
       }
       return;
     }
 
     const willOpen = !fileManagerOpen;
-    dispatch(actions.setFileManagerOpen(willOpen));
+    dispatch(actions.setFileManagerOpenForTab(panelTab.id, willOpen));
 
-    // 如果要打开文件管理侧边栏，锁定当前标签页的 tabId
     if (willOpen) {
       dispatch(actions.setLastOpenedSidebar("file"));
-      const panelTab = getCurrentPanelTab();
-      if (panelTab) {
-        setLockedFileManagerTabId(panelTab.id);
-      }
     } else {
       setFallbackSidebarAfterClose("file");
-      setLockedFileManagerTabId(null);
     }
 
     notifyTerminalResize();
   };
 
-  // 关闭文件管理侧边栏
+  // 关闭文件管理侧边栏（仅影响当前标签页）
   const handleCloseFileManager = () => {
-    runSidebarClose(
-      (open) => dispatch(actions.setFileManagerOpen(open)),
-      "file",
-    );
-    // 清除锁定的tabId
-    setLockedFileManagerTabId(null);
+    const panelTab = getCurrentPanelTab();
+    runSidebarClose((open) => {
+      if (panelTab) {
+        dispatch(actions.setFileManagerOpenForTab(panelTab.id, open));
+      }
+    }, "file");
   };
 
   // 更新文件管理路径记忆
@@ -3563,7 +3549,6 @@ function AppContent() {
   );
 
   // 计算右侧面板的当前标签页信息
-  const currentPanelTab = getCurrentPanelTab();
   const currentPanelConnectionStatus = currentPanelTab
     ? connectionStatusByTabId[currentPanelTab.id]
     : null;
@@ -3586,12 +3571,11 @@ function AppContent() {
       return;
     }
 
-    const targetTabId = lockedFileManagerTabId || currentPanelTab?.id || null;
-    const targetTab = targetTabId
-      ? tabs.find((tab) => tab.id === targetTabId)
-      : null;
-    const targetStatus = targetTabId
-      ? connectionStatusByTabId[targetTabId]
+    // 仅校验当前标签页（侧边栏所属的标签页）的连接状态；
+    // 未连接时仅关闭该标签页自己的侧边栏状态
+    const targetTab = currentPanelTab;
+    const targetStatus = targetTab
+      ? connectionStatusByTabId[targetTab.id]
       : null;
     const targetConnected =
       targetTab?.type === "ssh" &&
@@ -3599,9 +3583,10 @@ function AppContent() {
       targetStatus?.isConnecting !== true;
 
     if (!targetConnected) {
-      dispatch(actions.setFileManagerOpen(false));
+      if (targetTab) {
+        dispatch(actions.setFileManagerOpenForTab(targetTab.id, false));
+      }
       setFallbackSidebarAfterClose("file");
-      setLockedFileManagerTabId(null);
       notifyTerminalResize();
     }
   }, [
@@ -3609,8 +3594,6 @@ function AppContent() {
     currentPanelTab,
     dispatch,
     fileManagerOpen,
-    lockedFileManagerTabId,
-    tabs,
     setFallbackSidebarAfterClose,
   ]);
 
@@ -3628,11 +3611,9 @@ function AppContent() {
     );
   }, [resourceMonitorOpen, currentPanelTab, terminalInstances]);
 
-  // 计算文件管理器的props（使用锁定的tabId）
+  // 计算文件管理器的props（跟随当前标签页，状态按标签页独立）
   const fileManagerProps = useMemo(() => {
-    // 如果没有锁定的tabId，则使用当前激活的标签页
-    const targetTabId =
-      lockedFileManagerTabId || (currentPanelTab ? currentPanelTab.id : null);
+    const targetTabId = currentPanelTab ? currentPanelTab.id : null;
 
     if (!targetTabId) {
       return {
@@ -3668,7 +3649,6 @@ function AppContent() {
     };
   }, [
     fileManagerHistoryByTabId,
-    lockedFileManagerTabId,
     currentPanelTab,
     tabs,
     terminalInstances,

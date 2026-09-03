@@ -31,7 +31,7 @@ const ActionTypes = {
   // Sidebar Management
   SET_CONNECTION_MANAGER_OPEN: "SET_CONNECTION_MANAGER_OPEN",
   SET_RESOURCE_MONITOR_OPEN: "SET_RESOURCE_MONITOR_OPEN",
-  SET_FILE_MANAGER_OPEN: "SET_FILE_MANAGER_OPEN",
+  SET_FILE_MANAGER_OPEN_FOR_TAB: "SET_FILE_MANAGER_OPEN_FOR_TAB",
   SET_IP_ADDRESS_QUERY_OPEN: "SET_IP_ADDRESS_QUERY_OPEN",
   SET_SECURITY_TOOLS_OPEN: "SET_SECURITY_TOOLS_OPEN",
   SET_PORT_FORWARDING_OPEN: "SET_PORT_FORWARDING_OPEN",
@@ -93,7 +93,8 @@ export const initialState = {
   // Sidebar State
   connectionManagerOpen: false,
   resourceMonitorOpen: false,
-  fileManagerOpen: false,
+  // 文件管理侧边栏开关状态：按标签页（终端会话）独立记忆
+  fileManagerOpenByTabId: {},
   ipAddressQueryOpen: false,
   securityToolsOpen: false,
   portForwardingOpen: false,
@@ -228,8 +229,20 @@ export function appReducer(state = initialState, action) {
     case ActionTypes.SET_RESOURCE_MONITOR_OPEN:
       return { ...state, resourceMonitorOpen: action.payload };
 
-    case ActionTypes.SET_FILE_MANAGER_OPEN:
-      return { ...state, fileManagerOpen: action.payload };
+    case ActionTypes.SET_FILE_MANAGER_OPEN_FOR_TAB: {
+      const { tabId, open } = action.payload || {};
+      if (!tabId) return state;
+      if (Boolean(state.fileManagerOpenByTabId[tabId]) === Boolean(open)) {
+        return state;
+      }
+      return {
+        ...state,
+        fileManagerOpenByTabId: {
+          ...state.fileManagerOpenByTabId,
+          [tabId]: Boolean(open),
+        },
+      };
+    }
 
     case ActionTypes.SET_IP_ADDRESS_QUERY_OPEN:
       return { ...state, ipAddressQueryOpen: action.payload };
@@ -391,9 +404,9 @@ export const actions = {
     type: ActionTypes.SET_RESOURCE_MONITOR_OPEN,
     payload: open,
   }),
-  setFileManagerOpen: (open) => ({
-    type: ActionTypes.SET_FILE_MANAGER_OPEN,
-    payload: open,
+  setFileManagerOpenForTab: (tabId, open) => ({
+    type: ActionTypes.SET_FILE_MANAGER_OPEN_FOR_TAB,
+    payload: { tabId, open },
   }),
   setIpAddressQueryOpen: (open) => ({
     type: ActionTypes.SET_IP_ADDRESS_QUERY_OPEN,
