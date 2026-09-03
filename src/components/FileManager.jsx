@@ -6027,9 +6027,9 @@ const FileManager = memo(
         sx={{
           ...sidebarPaperSx(theme),
           position: "relative",
-          // 拖拽时的视觉反馈
+          // 拖拽时的视觉反馈（不可用半透明色覆盖背景，否则 Paper 会变透明透出底层深色背景）
           ...(isDragging && {
-            backgroundColor: theme.palette.action.hover,
+            backgroundColor: "background.paper",
             border: `2px dashed ${theme.palette.primary.main}`,
             boxShadow: `0 0 20px ${theme.palette.primary.main}30`,
           }),
@@ -7203,8 +7203,13 @@ const FileManager = memo(
               left: 0,
               right: 0,
               bottom: 0,
-              backgroundColor: "rgba(25, 118, 210, 0.08)",
-              backdropFilter: "blur(2px)",
+              // 遮罩颜色随主题变化：仅颜色不同，透明度保持一致
+              backgroundColor:
+                theme.palette.mode === "light"
+                  ? "rgba(255, 255, 255, 0.45)"
+                  : "rgba(0, 0, 0, 0.45)",
+              // 注意：此处不可加 backdropFilter，与 containerType: "size" 同用时
+              // Chromium 的 backdrop root 会被破坏，导致遮罩后方渲染成不透明纯色
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
