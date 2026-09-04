@@ -4,7 +4,8 @@
  * GPU 加速，不影响性能
  */
 
-/* 主题切换遮罩层 */
+/* 主题切换遮罩层：基础透明度为 0，只在动画进行中由关键帧提升不透明度，
+   避免 prefers-reduced-motion 禁用动画时遮罩长时间停留在屏幕上 */
 .theme-switch-overlay {
   position: fixed;
   top: 0;
@@ -14,7 +15,7 @@
   pointer-events: none;
   z-index: 9998;
   will-change: clip-path, opacity;
-  opacity: 0.85;
+  opacity: 0;
   mix-blend-mode: normal;
 }
 

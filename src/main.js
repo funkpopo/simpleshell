@@ -28,6 +28,9 @@ const { sleep } = require("./shared/common");
 
 const PRODUCT_NAME = "SimpleShell";
 
+// [TEMP-DEBUG] 远程调试端口，排查窗口按钮样式用，问题解决后移除
+app.commandLine.appendSwitch("remote-debugging-port", "9222");
+
 if (typeof app.setName === "function") {
   app.setName(PRODUCT_NAME);
 }

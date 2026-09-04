@@ -79,18 +79,24 @@ const WindowControls = () => {
 
   const isExpanded = windowState.isFullScreen || windowState.isMaximized;
 
-  const baseHover =
-    theme.palette.mode === "light"
-      ? "rgba(0, 0, 0, 0.06)"
-      : "rgba(255, 255, 255, 0.08)";
+  const isLight = theme.palette.mode === "light";
 
-  const iconColor =
-    theme.palette.mode === "light"
-      ? theme.palette.grey[700]
-      : theme.palette.grey[200];
+  const idleBg = isLight
+    ? "rgba(21, 23, 25, 0.08)"
+    : "rgba(241, 242, 239, 0.10)";
+  const hoverBg = isLight
+    ? "rgba(21, 23, 25, 0.16)"
+    : "rgba(241, 242, 239, 0.18)";
+
+  // 浅色背景下使用正文主色，保证窗口控制按钮清晰可辨
+  const iconColor = isLight
+    ? theme.palette.text.primary
+    : theme.palette.grey[100];
 
   const controlSize = 32;
 
+  // 用 && 提升特异性，避免被 MuiIconButton 的全局 styleOverrides 覆盖；
+  // 常驻淡色圆底 + 加粗笔画，确保细线图标在浅色背景下也有足够视觉分量
   const buttonSx = {
     width: controlSize,
     height: controlSize,
@@ -99,13 +105,20 @@ const WindowControls = () => {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    color: iconColor,
     transition: "background-color 0.15s ease",
-    "&:hover": {
-      backgroundColor: baseHover,
+    "&&": {
+      color: iconColor,
+      backgroundColor: idleBg,
     },
-    "& .MuiSvgIcon-root": {
-      fontSize: "1.1rem",
+    "&&:hover": {
+      backgroundColor: hoverBg,
+      color: iconColor,
+    },
+    "&& .MuiSvgIcon-root": {
+      fontSize: "1.25rem",
+      color: "inherit",
+      strokeWidth: isLight ? 1.1 : 0,
+      stroke: isLight ? "currentColor" : "transparent",
     },
   };
 
@@ -163,11 +176,15 @@ const WindowControls = () => {
           onClick={handleClose}
           sx={{
             ...buttonSx,
-            color:
-              theme.palette.mode === "light"
+            "&&": {
+              color: isLight
                 ? theme.palette.error.dark
                 : theme.palette.error.light,
-            "&:hover": {
+              backgroundColor: isLight
+                ? "rgba(181, 54, 48, 0.12)"
+                : "rgba(224, 106, 99, 0.14)",
+            },
+            "&&:hover": {
               backgroundColor: theme.palette.error.main,
               color: theme.palette.error.contrastText,
             },

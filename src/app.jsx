@@ -3993,6 +3993,10 @@ function AppContent() {
             boxShadow: "none",
             borderBottom: "1px solid",
             borderColor: "divider",
+            // 欢迎页的 fixed 背景层（z-index 0）会盖过 static 定位的标题栏，
+            // 建立层级关系确保标题栏及其窗口控制按钮始终绘制在欢迎页背景之上
+            position: "relative",
+            zIndex: 2,
           }}
         >
           <Box
