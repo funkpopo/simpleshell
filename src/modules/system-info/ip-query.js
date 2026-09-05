@@ -57,9 +57,11 @@ const transformGeolocationDB = (data, ip) => {
 };
 
 // 默认API提供商
-const DEFAULT_API_PROVIDERS = [
+// modes: "own"（查本机IP）、"lookup"（查指定IP）；两者都支持时 buildUrl(ip?) 按入参切换
+const IP_API_PROVIDERS = [
   {
     name: "myip.ipip.net",
+    modes: ["own"],
     buildUrl: () => `https://myip.ipip.net/json`,
     transform: (data) => {
       if (data.ret !== "ok") {
@@ -73,17 +75,18 @@ const DEFAULT_API_PROVIDERS = [
         },
       };
     },
-    ownIpOnly: true,
   },
   {
-    name: "geolocation-db.com (own)",
-    buildUrl: () => `https://geolocation-db.com/json/`,
+    name: "geolocation-db.com",
+    modes: ["own", "lookup"],
+    buildUrl: (ip) =>
+      ip ? `https://geolocation-db.com/json/${ip}` : `https://geolocation-db.com/json/`,
     transform: transformGeolocationDB,
-    ownIpOnly: true,
   },
   {
-    name: "ipwho.is (own)",
-    buildUrl: () => `https://ipwho.is/`,
+    name: "ipwho.is",
+    modes: ["own", "lookup"],
+    buildUrl: (ip) => (ip ? `https://ipwho.is/${ip}` : `https://ipwho.is/`),
     transform: (data, ip) => {
       if (data.success === false) {
         throw new Error(`ipwho.is API error: ${data.message}`);
@@ -103,11 +106,11 @@ const DEFAULT_API_PROVIDERS = [
         },
       };
     },
-    ownIpOnly: true,
   },
   {
-    name: "ipinfo.io (own)",
-    buildUrl: () => `https://ipinfo.io/json`,
+    name: "ipinfo.io",
+    modes: ["own", "lookup"],
+    buildUrl: (ip) => (ip ? `https://ipinfo.io/${ip}/json` : `https://ipinfo.io/json`),
     transform: (data, ip) => {
       if (data.error) {
         throw new Error(`ipinfo.io API error: ${data.error.title}`);
@@ -130,11 +133,11 @@ const DEFAULT_API_PROVIDERS = [
         },
       };
     },
-    ownIpOnly: true,
   },
   {
-    name: "ipapi.co (own)",
-    buildUrl: () => `https://ipapi.co/json/`,
+    name: "ipapi.co",
+    modes: ["own", "lookup"],
+    buildUrl: (ip) => (ip ? `https://ipapi.co/${ip}/json/` : `https://ipapi.co/json/`),
     transform: (data, ip) => {
       if (data.error) {
         throw new Error(
@@ -156,11 +159,12 @@ const DEFAULT_API_PROVIDERS = [
         },
       };
     },
-    ownIpOnly: true,
   },
   {
-    name: "api.vore.top (own)",
-    buildUrl: () => `https://api.vore.top/api/IPdata`,
+    name: "api.vore.top",
+    modes: ["own", "lookup"],
+    buildUrl: (ip) =>
+      ip ? `https://api.vore.top/api/IPdata?ip=${ip}` : `https://api.vore.top/api/IPdata`,
     transform: (data, ip) => {
       if (data.code !== 200) {
         throw new Error(`api.vore.top API error: ${data.msg}`);
@@ -179,10 +183,10 @@ const DEFAULT_API_PROVIDERS = [
         },
       };
     },
-    ownIpOnly: true,
   },
   {
-    name: "whois.pconline.com.cn (own)",
+    name: "whois.pconline.com.cn",
+    modes: ["own"],
     buildUrl: () => `https://whois.pconline.com.cn/ipJson.jsp?json=true`,
     transform: (data, ip) => {
       if (data.err) {
@@ -196,27 +200,10 @@ const DEFAULT_API_PROVIDERS = [
         },
       };
     },
-    ownIpOnly: true,
   },
   {
-    name: "whois.pconline.com.cn (own)",
-    buildUrl: () => `https://whois.pconline.com.cn/ipJson.jsp?json=true`,
-    transform: (data, ip) => {
-      if (data.err) {
-        throw new Error(`pconline API error: ${data.err}`);
-      }
-      return {
-        ret: "ok",
-        data: {
-          ip: data.ip || ip,
-          location: [data.pro, data.city, data.addr].filter(Boolean),
-        },
-      };
-    },
-    ownIpOnly: true,
-  },
-  {
-    name: "ip.useragentinfo.com (own)",
+    name: "ip.useragentinfo.com",
+    modes: ["own"],
     buildUrl: () => `https://ip.useragentinfo.com/json`,
     transform: (data, ip) => ({
       ret: "ok",
@@ -227,15 +214,10 @@ const DEFAULT_API_PROVIDERS = [
         ),
       },
     }),
-    ownIpOnly: true,
-  },
-  {
-    name: "geolocation-db.com (lookup)",
-    buildUrl: (ip) => `https://geolocation-db.com/json/${ip}`,
-    transform: transformGeolocationDB,
   },
   {
     name: "ip-api.com",
+    modes: ["lookup"],
     buildUrl: (ip) => `https://ip-api.com/json/${ip}`,
     transform: (data, ip) => ({
       ret: "ok",
@@ -253,103 +235,8 @@ const DEFAULT_API_PROVIDERS = [
     }),
   },
   {
-    name: "ipwho.is (lookup)",
-    buildUrl: (ip) => `https://ipwho.is/${ip}`,
-    transform: (data, ip) => {
-      if (data.success === false) {
-        throw new Error(`ipwho.is API error: ${data.message}`);
-      }
-      return {
-        ret: "ok",
-        data: {
-          ip: data.ip || ip,
-          location: [
-            data.country,
-            data.region,
-            data.city,
-            data.org || data.isp,
-          ].filter(Boolean),
-          latitude: data.latitude,
-          longitude: data.longitude,
-        },
-      };
-    },
-  },
-  {
-    name: "ipinfo.io (lookup)",
-    buildUrl: (ip) => `https://ipinfo.io/${ip}/json`,
-    transform: (data, ip) => {
-      if (data.error) {
-        throw new Error(`ipinfo.io API error: ${data.error.title}`);
-      }
-      const locParts = String(data.loc || "")
-        .split(",")
-        .map(Number);
-      return {
-        ret: "ok",
-        data: {
-          ip: data.ip || ip,
-          location: [
-            data.country,
-            data.region,
-            data.city,
-            data.org || data.isp,
-          ].filter(Boolean),
-          latitude: locParts[0],
-          longitude: locParts[1],
-        },
-      };
-    },
-  },
-  {
-    name: "ipapi.co (lookup)",
-    buildUrl: (ip) => `https://ipapi.co/${ip}/json/`,
-    transform: (data, ip) => {
-      if (data.error) {
-        throw new Error(
-          `ipapi.co API error: ${JSON.stringify(data.reason || data.error)}`,
-        );
-      }
-      return {
-        ret: "ok",
-        data: {
-          ip: data.ip || ip,
-          location: [
-            data.country_name,
-            data.region,
-            data.city,
-            data.org,
-          ].filter(Boolean),
-          latitude: data.latitude,
-          longitude: data.longitude,
-        },
-      };
-    },
-  },
-  {
-    name: "api.vore.top (lookup)",
-    buildUrl: (ip) => `https://api.vore.top/api/IPdata?ip=${ip}`,
-    transform: (data, targetIp) => {
-      if (data.code !== 200) {
-        throw new Error(`api.vore.top API error: ${data.msg}`);
-      }
-      const info = data.data?.ipInfo || {};
-      const latlng = Array.isArray(info.latlng) ? info.latlng.map(Number) : [];
-      return {
-        ret: "ok",
-        data: {
-          ip: data.data?.ip || targetIp,
-          location: [info.country, info.province, info.city, info.isp].filter(
-            Boolean,
-          ),
-          latitude: latlng[0],
-          longitude: latlng[1],
-        },
-      };
-    },
-  },
-  {
     name: "freegeoip.live",
+    modes: ["lookup"],
     buildUrl: (ip) => `https://freegeoip.live/json/${ip}`,
     transform: (data, ip) => ({
       ret: "ok",
@@ -368,6 +255,7 @@ const DEFAULT_API_PROVIDERS = [
   },
   {
     name: "ip.sb",
+    modes: ["lookup"],
     buildUrl: (ip) => `https://api.ip.sb/geoip/${ip}`,
     transform: (data, ip) => ({
       ret: "ok",
@@ -386,6 +274,7 @@ const DEFAULT_API_PROVIDERS = [
   },
   {
     name: "yaohud.cn",
+    modes: ["lookup"],
     buildUrl: (ip) => `https://api.yaohud.cn/api/v5/geoip?ip=${ip}`,
     transform: (data, ip) => {
       if (data.code !== 200) {
@@ -408,10 +297,17 @@ const DEFAULT_API_PROVIDERS = [
   },
 ];
 
+const ownIpProvidersOf = (providers) =>
+  providers.filter((p) => p.modes.includes("own"));
+const lookupProvidersOf = (providers) =>
+  providers.filter((p) => p.modes.includes("lookup"));
+
+
 // 需要Key的API提供商
 const KEY_API_PROVIDERS = {
   ip2location: {
     name: "ip2location.io",
+    modes: ["lookup"],
     buildUrl: (ip, key) => `https://api.ip2location.io/?key=${key}&ip=${ip}`,
     transform: (data, ip) => {
       if (data.error) {
@@ -598,7 +494,7 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
     const shouldServeStale =
       !!entry && now - entry.ts >= CACHE_TTL_MS && SWR_ENABLED;
 
-    const allProviders = [...DEFAULT_API_PROVIDERS];
+    const allProviders = [...IP_API_PROVIDERS];
     // Dynamically add key-based providers if their keys are present
     for (const key in KEY_API_PROVIDERS) {
       if (KEY_API_PROVIDERS[key].key) {
@@ -621,7 +517,7 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
     if (ip) {
       logger(`Querying IP address: ${ip}`, "INFO");
       const doNetwork = async () => {
-        const lookupProviders = allProviders.filter((p) => !p.ownIpOnly);
+        const lookupProviders = lookupProvidersOf(allProviders);
         const promises = lookupProviders.map((provider) =>
           fetchIpInfo(provider, ip, logger, proxyConfig),
         );
@@ -640,7 +536,7 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
     } else {
       logger("Querying own IP...", "INFO");
 
-      const ownProviders = allProviders.filter((p) => p.ownIpOnly);
+      const ownProviders = ownIpProvidersOf(allProviders);
 
       const doNetwork = async () => {
         try {
@@ -661,7 +557,7 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
             "INFO",
           );
           const publicIp = await getPublicIp(proxyConfig);
-          const lookupProviders = allProviders.filter((p) => !p.ownIpOnly);
+          const lookupProviders = lookupProvidersOf(allProviders);
           const standardPromises = lookupProviders.map((provider) =>
             fetchIpInfo(provider, publicIp, logger, proxyConfig),
           );
