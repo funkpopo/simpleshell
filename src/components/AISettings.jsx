@@ -303,6 +303,23 @@ const AISettings = ({ open, onClose }) => {
     setEditingConfig(apiConfig);
   };
 
+  // 执行配置动作并统一处理成功/失败提示（失败时 setError 并重新加载设置）
+  const runConfigAction = async (action, successMessage, failedMessage) => {
+    try {
+      const result = await action();
+      if (result) {
+        setSuccess(successMessage);
+        await loadSettings(); // 重新加载设置
+        return true;
+      }
+      setError(failedMessage);
+      return false;
+    } catch {
+      setError(failedMessage);
+      return false;
+    }
+  };
+
   // 删除API配置 - 打开确认对话框
   const handleDeleteApi = (apiId) => {
     setDeleteTargetId(apiId);
@@ -313,20 +330,14 @@ const AISettings = ({ open, onClose }) => {
   const handleConfirmDelete = async () => {
     if (!deleteTargetId) return;
 
-    try {
-      const result = await window.terminalAPI.deleteApiConfig(deleteTargetId);
-      if (result) {
-        setSuccess(t("aiSettings.deleteSuccess"));
-        await loadSettings(); // 重新加载设置
-      } else {
-        setError(t("aiSettings.deleteFailed"));
-      }
-    } catch {
-      setError(t("aiSettings.deleteFailed"));
-    } finally {
-      setDeleteConfirmOpen(false);
-      setDeleteTargetId(null);
-    }
+    await runConfigAction(
+      () => window.terminalAPI.deleteApiConfig(deleteTargetId),
+      t("aiSettings.deleteSuccess"),
+      t("aiSettings.deleteFailed"),
+    );
+
+    setDeleteConfirmOpen(false);
+    setDeleteTargetId(null);
   };
 
   // 取消删除
@@ -337,17 +348,11 @@ const AISettings = ({ open, onClose }) => {
 
   // 设置为当前API
   const handleSetCurrent = async (apiId) => {
-    try {
-      const result = await window.terminalAPI.setCurrentApiConfig(apiId);
-      if (result) {
-        setSuccess(t("aiSettings.setCurrentSuccess"));
-        await loadSettings(); // 重新加载设置
-      } else {
-        setError(t("aiSettings.setCurrentFailed"));
-      }
-    } catch {
-      setError(t("aiSettings.setCurrentFailed"));
-    }
+    await runConfigAction(
+      () => window.terminalAPI.setCurrentApiConfig(apiId),
+      t("aiSettings.setCurrentSuccess"),
+      t("aiSettings.setCurrentFailed"),
+    );
   };
 
   // 取消编辑

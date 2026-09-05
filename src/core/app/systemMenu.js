@@ -50,6 +50,18 @@ function buildAppMenuItems() {
   ];
 }
 
+function buildEditSubmenu() {
+  return [
+    { role: "undo" },
+    { role: "redo" },
+    { type: "separator" },
+    { role: "cut" },
+    { role: "copy" },
+    { role: "paste" },
+    { role: "selectAll" },
+  ];
+}
+
 function buildDarwinTemplate() {
   return [
     {
@@ -65,15 +77,7 @@ function buildDarwinTemplate() {
     },
     {
       label: "Edit",
-      submenu: [
-        { role: "undo" },
-        { role: "redo" },
-        { type: "separator" },
-        { role: "cut" },
-        { role: "copy" },
-        { role: "paste" },
-        { role: "selectAll" },
-      ],
+      submenu: buildEditSubmenu(),
     },
     {
       label: "Window",
@@ -103,15 +107,7 @@ function buildDefaultTemplate() {
     },
     {
       label: "Edit",
-      submenu: [
-        { role: "undo" },
-        { role: "redo" },
-        { type: "separator" },
-        { role: "cut" },
-        { role: "copy" },
-        { role: "paste" },
-        { role: "selectAll" },
-      ],
+      submenu: buildEditSubmenu(),
     },
     {
       label: "Window",

@@ -160,6 +160,43 @@ function hasTerminalProcess(terminalId) {
  * @param {Function} options.onSftpCleanup SFTP清理回调
  * @param {Function} options.onConnectionRelease 连接释放回调
  */
+/**
+ * 移除监听器并关闭/终止进程传输通道（kill 或 SSH stream close）
+ * @param {string} id - 进程ID（用于日志）
+ * @param {Object} procRecord - 进程记录
+ * @param {string} [logContext] - 日志上下文后缀
+ */
+const detachAndTerminateProcess = (id, procRecord, logContext = "") => {
+  if (procRecord.process.stdout) {
+    procRecord.process.stdout.removeAllListeners();
+  }
+  if (procRecord.process.stderr) {
+    procRecord.process.stderr.removeAllListeners();
+  }
+
+  // 对于SSH连接，关闭stream
+  if (procRecord.type === "ssh2" && procRecord.stream) {
+    try {
+      procRecord.stream.close();
+      logToFile(`关闭SSH stream${logContext}: ${id}`, "INFO");
+    } catch (error) {
+      logToFile(
+        `Error closing SSH stream${logContext} ${id}: ${error.message}`,
+        "ERROR",
+      );
+    }
+  } else {
+    // 终止其他类型的进程
+    try {
+      if (typeof procRecord.process.kill === "function") {
+        procRecord.process.kill();
+      }
+    } catch (error) {
+      logToFile(`Error killing process ${id}: ${error.message}`, "ERROR");
+    }
+  }
+};
+
 function cleanupProcess(processId, options = {}) {
   const proc = childProcesses.get(processId);
   if (!proc) return;
@@ -177,39 +214,9 @@ function cleanupProcess(processId, options = {}) {
       onConnectionRelease(proc);
     }
 
-    // 移除事件监听器
+    // 移除事件监听器并终止进程
     if (proc.process) {
-      if (proc.process.stdout) {
-        proc.process.stdout.removeAllListeners();
-      }
-      if (proc.process.stderr) {
-        proc.process.stderr.removeAllListeners();
-      }
-
-      // 对于SSH连接，关闭stream
-      if (proc.type === "ssh2" && proc.stream) {
-        try {
-          proc.stream.close();
-          logToFile(`关闭SSH stream: ${processId}`, "INFO");
-        } catch (error) {
-          logToFile(
-            `Error closing SSH stream ${processId}: ${error.message}`,
-            "ERROR",
-          );
-        }
-      } else {
-        // 终止其他类型的进程
-        try {
-          if (typeof proc.process.kill === "function") {
-            proc.process.kill();
-          }
-        } catch (error) {
-          logToFile(
-            `Error killing process ${processId}: ${error.message}`,
-            "ERROR",
-          );
-        }
-      }
+      detachAndTerminateProcess(processId, proc);
     }
 
     // 删除进程映射
@@ -261,32 +268,7 @@ function cleanupAllProcesses(options = {}) {
 
       // 清理进程
       if (proc.process) {
-        if (proc.process.stdout) {
-          proc.process.stdout.removeAllListeners();
-        }
-        if (proc.process.stderr) {
-          proc.process.stderr.removeAllListeners();
-        }
-
-        if (proc.type === "ssh2" && proc.stream) {
-          try {
-            proc.stream.close();
-            logToFile(`关闭SSH stream (cleanup all): ${id}`, "INFO");
-          } catch (error) {
-            logToFile(
-              `Error closing SSH stream during cleanup ${id}: ${error.message}`,
-              "ERROR",
-            );
-          }
-        } else {
-          try {
-            if (typeof proc.process.kill === "function") {
-              proc.process.kill();
-            }
-          } catch (error) {
-            logToFile(`Error killing process ${id}: ${error.message}`, "ERROR");
-          }
-        }
+        detachAndTerminateProcess(id, proc, " (cleanup all)");
       }
     } catch (error) {
       logToFile(`Error cleaning up process ${id}: ${error.message}`, "ERROR");

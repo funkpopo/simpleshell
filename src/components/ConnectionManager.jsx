@@ -1565,35 +1565,41 @@ const ConnectionManager = memo(
       setConnectionListContextMenu(null);
     }, []);
 
-    const openConnectionContextMenuFromEvent = useCallback(
-      (event, connection, parentGroup) => {
+    const openConnectionListContextMenuFromEvent = useCallback(
+      (event, payload) => {
         setConnectionListContextMenu({
           mouseX: event.clientX,
           mouseY: event.clientY,
-          kind: "connection",
-          connection,
-          parentGroup: parentGroup ?? null,
+          ...payload,
         });
       },
       [],
     );
 
-    const openGroupContextMenuFromEvent = useCallback((event, group) => {
-      setConnectionListContextMenu({
-        mouseX: event.clientX,
-        mouseY: event.clientY,
-        kind: "group",
-        group,
-      });
-    }, []);
+    const openConnectionContextMenuFromEvent = useCallback(
+      (event, connection, parentGroup) => {
+        openConnectionListContextMenuFromEvent(event, {
+          kind: "connection",
+          connection,
+          parentGroup: parentGroup ?? null,
+        });
+      },
+      [openConnectionListContextMenuFromEvent],
+    );
 
-    const openBlankContextMenuFromEvent = useCallback((event) => {
-      setConnectionListContextMenu({
-        mouseX: event.clientX,
-        mouseY: event.clientY,
-        kind: "blank",
-      });
-    }, []);
+    const openGroupContextMenuFromEvent = useCallback(
+      (event, group) => {
+        openConnectionListContextMenuFromEvent(event, { kind: "group", group });
+      },
+      [openConnectionListContextMenuFromEvent],
+    );
+
+    const openBlankContextMenuFromEvent = useCallback(
+      (event) => {
+        openConnectionListContextMenuFromEvent(event, { kind: "blank" });
+      },
+      [openConnectionListContextMenuFromEvent],
+    );
 
     // 空白区域右键：新建连接 / 新建分组（忽略已有连接项/分组行）
     const handleBlankContextMenu = useCallback(

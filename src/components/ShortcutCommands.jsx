@@ -377,31 +377,39 @@ function ShortcutCommands({
   });
 
   // 处理添加命令
-  const handleAddCommand = () => {
-    setCurrentCommand({
-      id: "",
-      name: "",
-      command: "",
-      category: categories.length > 0 ? categories[0].id : "",
-      params: [],
-      tags: [],
-    });
-    setDialogType("command");
-    setDialogAction("add");
+  // 打开新增/编辑对话框的公共流程
+  const openEntityDialog = (setCurrent, entity, entityType, action) => {
+    setCurrent(entity);
+    setDialogType(entityType);
+    setDialogAction(action);
     setDialogOpen(true);
     handleMenuClose();
+  };
+
+  const handleAddCommand = () => {
+    openEntityDialog(
+      setCurrentCommand,
+      {
+        id: "",
+        name: "",
+        command: "",
+        category: categories.length > 0 ? categories[0].id : "",
+        params: [],
+        tags: [],
+      },
+      "command",
+      "add",
+    );
   };
 
   // 处理编辑命令
   const handleEditCommand = (commandId) => {
     const command = commands.find((cmd) => cmd.id === commandId);
     if (command) {
-      setCurrentCommand({ ...command });
-      setDialogType("command");
-      setDialogAction("edit");
-      setDialogOpen(true);
+      openEntityDialog(setCurrentCommand, { ...command }, "command", "edit");
+    } else {
+      handleMenuClose();
     }
-    handleMenuClose();
   };
 
   // 处理删除命令
@@ -414,27 +422,26 @@ function ShortcutCommands({
 
   // 处理添加分类
   const handleAddCategory = () => {
-    setCurrentCategory({
-      id: "",
-      name: "",
-      color: "#" + Math.floor(Math.random() * 16777215).toString(16),
-    });
-    setDialogType("category");
-    setDialogAction("add");
-    setDialogOpen(true);
-    handleMenuClose();
+    openEntityDialog(
+      setCurrentCategory,
+      {
+        id: "",
+        name: "",
+        color: "#" + Math.floor(Math.random() * 16777215).toString(16),
+      },
+      "category",
+      "add",
+    );
   };
 
   // 处理编辑分类
   const handleEditCategory = (categoryId) => {
     const category = categories.find((cat) => cat.id === categoryId);
     if (category) {
-      setCurrentCategory({ ...category });
-      setDialogType("category");
-      setDialogAction("edit");
-      setDialogOpen(true);
+      openEntityDialog(setCurrentCategory, { ...category }, "category", "edit");
+    } else {
+      handleMenuClose();
     }
-    handleMenuClose();
   };
 
   // 处理删除分类
