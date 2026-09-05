@@ -1,6 +1,6 @@
 const { StringDecoder } = require("string_decoder");
 const { logToFile } = require("../../utils/logger");
-const terminalManager = require("../../../modules/terminal");
+const outputProcessor = require("../../../modules/terminal/output-processor");
 const crypto = require("crypto");
 const configService = require("../../../services/configService");
 const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
@@ -1330,7 +1330,7 @@ class SSHHandlers {
           return;
         }
 
-        const processedOutput = terminalManager.processOutput(
+        const processedOutput = outputProcessor.processTerminalOutput(
           processId,
           output,
         );
