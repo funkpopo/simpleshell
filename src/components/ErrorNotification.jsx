@@ -6,12 +6,186 @@ import Button from "@mui/material/Button";
 import Collapse from "@mui/material/Collapse";
 import Box from "@mui/material/Box";
 import { useTranslation } from "react-i18next";
-import {
-  classifyErrorForNotification,
-  translateError,
-} from "../utils/errorTranslator";
+import i18n from "../i18n/i18n";
+import errorClassification from "../shared/errorClassification";
+
+const {
+  ERROR_NOTIFICATION_LEVELS,
+  ERROR_TYPES: ErrorType,
+  classifyError,
+  detectErrorType: detectSharedErrorType,
+} = errorClassification;
+
+// ------------------------------------------------------------------
+// 用户友好的错误翻译（原 utils/errorTranslator，唯一消费者为本组件）
+// ------------------------------------------------------------------
+
+const getClassificationLabel = (category) => {
+  switch (category) {
+    case ERROR_NOTIFICATION_LEVELS.RECOVERABLE:
+      return i18n.t("errors.classification.recoverable");
+    case ERROR_NOTIFICATION_LEVELS.RETRY:
+      return i18n.t("errors.classification.retry");
+    case ERROR_NOTIFICATION_LEVELS.FATAL:
+      return i18n.t("errors.classification.fatal");
+    case ERROR_NOTIFICATION_LEVELS.FEEDBACK:
+    default:
+      return i18n.t("errors.classification.feedback");
+  }
+};
+
+function detectErrorType(error) {
+  return detectSharedErrorType(error);
+}
+
+function classifyErrorForNotification(error) {
+  const explicit =
+    typeof error === "object" && error?.errorClassification
+      ? error.errorClassification
+      : null;
+  const classification = explicit || classifyError(error);
+  const category =
+    classification.category || ERROR_NOTIFICATION_LEVELS.FEEDBACK;
+
+  return {
+    ...classification,
+    category,
+    label: getClassificationLabel(category),
+    severity: classification.severity || "error",
+    persistent: classification.persistent === true,
+    showFeedback: classification.showFeedback === true,
+    showDiagnostics: classification.showDiagnostics === true,
+  };
+}
 
 const AUTO_HIDE_DURATION_MS = 5000;
+
+function getClassifiedErrorTranslation(error, classification) {
+  const category =
+    classification.category || ERROR_NOTIFICATION_LEVELS.FEEDBACK;
+  const originalMessage =
+    typeof error === "string"
+      ? error
+      : error?.message || error?.error || error?.reason || "Unknown error";
+
+  const base = {
+    severity: classification.severity || "error",
+    originalError: originalMessage,
+    errorType: classification.code || "UNKNOWN",
+    classification,
+  };
+
+  const messages = {
+    [ERROR_NOTIFICATION_LEVELS.RECOVERABLE]: {
+      title: i18n.t("errors.classified.recoverable.title"),
+      message: i18n.t("errors.classified.recoverable.message", {
+        message: originalMessage,
+        code: classification.code || "",
+      }),
+      solutions: i18n.t("errors.classified.recoverable.solutions", {
+        returnObjects: true,
+      }),
+      action: i18n.t("errors.classified.recoverable.action"),
+    },
+    [ERROR_NOTIFICATION_LEVELS.RETRY]: {
+      title: i18n.t("errors.classified.retry.title"),
+      message: i18n.t("errors.classified.retry.message", {
+        message: originalMessage,
+        code: classification.code || "",
+      }),
+      solutions: i18n.t("errors.classified.retry.solutions", {
+        returnObjects: true,
+      }),
+      action: i18n.t("errors.classified.retry.action"),
+    },
+    [ERROR_NOTIFICATION_LEVELS.FATAL]: {
+      title: i18n.t("errors.classified.fatal.title"),
+      message: i18n.t("errors.classified.fatal.message", {
+        message: originalMessage,
+        code: classification.code || "",
+      }),
+      solutions: i18n.t("errors.classified.fatal.solutions", {
+        returnObjects: true,
+      }),
+      action: i18n.t("errors.classified.fatal.action"),
+    },
+    [ERROR_NOTIFICATION_LEVELS.FEEDBACK]: {
+      title: i18n.t("errors.classified.feedback.title"),
+      message: i18n.t("errors.classified.feedback.message", {
+        message: originalMessage,
+        code: classification.code || "",
+      }),
+      solutions: i18n.t("errors.classified.feedback.solutions", {
+        returnObjects: true,
+      }),
+      action: i18n.t("errors.classified.feedback.action"),
+    },
+  };
+
+  return { ...base, ...messages[category] };
+}
+
+// 已知错误码 → i18n 文案键的映射（errors.<TYPE>.*）
+const KNOWN_ERROR_I18N_KEYS = {
+  [ErrorType.CONNECTION_REFUSED]: "ECONNREFUSED",
+  [ErrorType.CONNECTION_TIMEOUT]: "ETIMEDOUT",
+  [ErrorType.HOST_UNREACHABLE]: "EHOSTUNREACH",
+  [ErrorType.HOST_NOT_FOUND]: "ENOTFOUND",
+  [ErrorType.CONNECTION_RESET]: "ECONNRESET",
+  [ErrorType.NETWORK_UNREACHABLE]: "ENETUNREACH",
+  [ErrorType.AUTH_FAILED]: "AUTH_FAILED",
+  [ErrorType.KEY_ERROR]: "KEY_ERROR",
+  [ErrorType.PERMISSION_DENIED]: "EACCES",
+  [ErrorType.FILE_NOT_FOUND]: "ENOENT",
+  [ErrorType.OPERATION_TIMEOUT]: "OPERATION_TIMEOUT",
+};
+
+function getKnownErrorTranslation(errorType, originalMessage, classification) {
+  const i18nKey = KNOWN_ERROR_I18N_KEYS[errorType];
+  if (!i18nKey) {
+    return null;
+  }
+
+  return {
+    severity: classification.severity,
+    originalError: originalMessage,
+    errorType,
+    classification,
+    title: i18n.t(`errors.${i18nKey}.title`),
+    message: i18n.t(`errors.${i18nKey}.message`),
+    solutions: i18n.t(`errors.${i18nKey}.solutions`, {
+      returnObjects: true,
+    }),
+    action: i18n.t(`errors.${i18nKey}.action`),
+  };
+}
+
+/**
+ * 翻译错误信息为用户友好的格式
+ * @param {Error|string} error - 错误对象或错误消息
+ * @returns {Object} - 翻译后的错误信息对象
+ */
+function translateError(error) {
+  const errorType = detectErrorType(error);
+  const classification = classifyErrorForNotification(error);
+  const originalMessage =
+    typeof error === "string"
+      ? error
+      : error?.message || error?.error || i18n.t("common.unknownError");
+
+  if (errorType) {
+    const knownError = getKnownErrorTranslation(
+      errorType,
+      originalMessage,
+      classification,
+    );
+    if (knownError) {
+      return knownError;
+    }
+  }
+
+  return getClassifiedErrorTranslation(error, classification);
+}
 
 /**
  * 错误通知组件
