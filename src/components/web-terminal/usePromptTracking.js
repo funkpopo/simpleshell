@@ -439,6 +439,42 @@ export function usePromptTracking({
         currentLineBeforeTab = null;
       };
 
+      // 抑制状态下继续输入：当输入偏离锚点（或被清空）时解除抑制
+      const maybeReleaseSuggestionSuppression = (inputBuffer) => {
+        if (!suggestionsSuppressedRef.current) {
+          return;
+        }
+        try {
+          const anchor = (
+            suppressionContextRef.current?.input || ""
+          ).trim();
+          const nowInput = inputBuffer.trim();
+          if (!anchor || nowInput.length === 0 || nowInput !== anchor) {
+            setSuggestionsSuppressedUntilEnter(false);
+            setSuggestionsHiddenByEsc(false);
+          }
+        } catch {
+          /* intentionally ignored */
+        }
+      };
+
+      // 未被 ESC 隐藏/抑制且无命令执行时请求建议刷新，否则仅刷新光标
+      const scheduleSuggestionRefreshOrCursor = (inputBuffer) => {
+        if (
+          !suggestionsHiddenByEscRef.current &&
+          !suggestionsSuppressedRef.current &&
+          !isCommandExecutingRef.current
+        ) {
+          scheduleInputUiRefresh({
+            cursor: true,
+            requestSuggestions: true,
+            suggestionInput: inputBuffer,
+          });
+        } else {
+          scheduleInputUiRefresh({ cursor: true });
+        }
+      };
+
       const extractCommand = (line) => {
         const normalizedLine =
           typeof line === "string" ? line : line?.toString?.() || "";
@@ -652,36 +688,8 @@ export function usePromptTracking({
             if (!inEditorMode) {
               setCurrentInput(currentInputBuffer);
 
-              if (suggestionsSuppressedRef.current) {
-                try {
-                  const anchor = (
-                    suppressionContextRef.current?.input || ""
-                  ).trim();
-                  const nowInput = currentInputBuffer.trim();
-                  if (!anchor || nowInput.length === 0 || nowInput !== anchor) {
-                    setSuggestionsSuppressedUntilEnter(false);
-                    setSuggestionsHiddenByEsc(false);
-                  }
-                } catch {
-                  /* intentionally ignored */
-                }
-              }
-
-              // Continuing input after suppression must clear live refs before
-              // checking whether to request suggestions.
-              if (
-                !suggestionsHiddenByEscRef.current &&
-                !suggestionsSuppressedRef.current &&
-                !isCommandExecutingRef.current
-              ) {
-                scheduleInputUiRefresh({
-                  cursor: true,
-                  requestSuggestions: true,
-                  suggestionInput: currentInputBuffer,
-                });
-              } else {
-                scheduleInputUiRefresh({ cursor: true });
-              }
+              maybeReleaseSuggestionSuppression(currentInputBuffer);
+              scheduleSuggestionRefreshOrCursor(currentInputBuffer);
 
               if (currentInputBuffer.length === 0) {
                 setSuggestionsHiddenByEsc(false);
@@ -859,34 +867,8 @@ export function usePromptTracking({
           ) {
             setCurrentInput(currentInputBuffer);
 
-            if (suggestionsSuppressedRef.current) {
-              try {
-                const anchor = (
-                  suppressionContextRef.current?.input || ""
-                ).trim();
-                const nowInput = currentInputBuffer.trim();
-                if (!anchor || nowInput.length === 0 || nowInput !== anchor) {
-                  setSuggestionsSuppressedUntilEnter(false);
-                  setSuggestionsHiddenByEsc(false);
-                }
-              } catch {
-                /* intentionally ignored */
-              }
-            }
-
-            if (
-              !suggestionsHiddenByEscRef.current &&
-              !suggestionsSuppressedRef.current &&
-              !isCommandExecutingRef.current
-            ) {
-              scheduleInputUiRefresh({
-                cursor: true,
-                requestSuggestions: true,
-                suggestionInput: currentInputBuffer,
-              });
-            } else {
-              scheduleInputUiRefresh({ cursor: true });
-            }
+            maybeReleaseSuggestionSuppression(currentInputBuffer);
+            scheduleSuggestionRefreshOrCursor(currentInputBuffer);
           } else {
             scheduleInputUiRefresh({ cursor: true });
           }

@@ -136,39 +136,23 @@ class TerminalDetector {
   }
 
   /**
-   * 检测 macOS 系统可用的终端
+   * 检测 macOS 系统可用的终端（与 Linux 共用 POSIX 检测逻辑）
    */
   async detectMacOSTerminals() {
-    const shellPath = getDefaultPosixShell();
-    const terminals = [
-      {
-        name: path.basename(shellPath),
-        type: SUPPORTED_LOCAL_TERMINAL_TYPES.POSIX_SHELL,
-        executable: shellPath,
-        priority: 10,
-      },
-    ];
-
-    // 并行检查所有终端
-    const results = await Promise.allSettled(
-      terminals.map((terminal) => this.checkTerminalAvailability(terminal)),
-    );
-
-    results.forEach((result, index) => {
-      if (result.status === "fulfilled" && result.value) {
-        this.detectedTerminals.push(terminals[index]);
-      }
-    });
-
-    this.detectedTerminals.sort(
-      (a, b) => (b.priority || 0) - (a.priority || 0),
-    );
+    return this._detectPosixTerminals();
   }
 
   /**
    * 检测 Linux 系统可用的终端
    */
   async detectLinuxTerminals() {
+    return this._detectPosixTerminals();
+  }
+
+  /**
+   * POSIX 平台（macOS/Linux）共用的终端检测：默认 shell + 并行可用性检查 + 优先级排序
+   */
+  async _detectPosixTerminals() {
     const shellPath = getDefaultPosixShell();
     const terminals = [
       {
