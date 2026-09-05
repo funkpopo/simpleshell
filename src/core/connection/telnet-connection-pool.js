@@ -212,26 +212,20 @@ class TelnetConnectionPool extends BaseConnectionPool {
     );
 
     // 创建增强的错误对象（使用简洁的错误消息）
-    const enhancedError = new Error(errorMessage);
-    enhancedError.code = err?.code || null;
-    enhancedError.originalError = err;
-    enhancedError.connectionKey = connectionKey;
-    enhancedError.telnetConfig = {
-      host: telnetConfig.host,
-      port: telnetConfig.port || 23,
-      username: telnetConfig.username,
-      hasPassword: !!telnetConfig.password,
-      language: telnetConfig.language || null,
+    return this._buildEnhancedConnectionError({
+      message: errorMessage,
+      err,
+      connectionKey,
+      configKey: "telnetConfig",
       protocol: "telnet",
-    };
-    enhancedError.connectionFailure = classifyConnectionFailure(enhancedError, {
-      ...enhancedError.telnetConfig,
-      protocol: "telnet",
+      config: {
+        host: telnetConfig.host,
+        port: telnetConfig.port || 23,
+        username: telnetConfig.username,
+        hasPassword: !!telnetConfig.password,
+        language: telnetConfig.language || null,
+      },
     });
-    enhancedError.connectionFailureKind = enhancedError.connectionFailure.kind;
-    enhancedError.connectionAdvice = enhancedError.connectionFailure.suggestion;
-
-    return enhancedError;
   }
 }
 

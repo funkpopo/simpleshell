@@ -981,34 +981,30 @@ class SSHPool extends BaseConnectionPool {
     );
 
     // 创建增强的错误对象（使用简洁的错误消息，不包含技术细节）
-    const enhancedError = new Error(errorMessage);
-    enhancedError.originalError = err;
-    enhancedError.connectionKey = connectionKey;
-    enhancedError.code =
-      err?.code ||
-      err?.originalError?.code ||
-      (isProxyError ? "EPROXYUNAVAILABLE" : null);
-    enhancedError.sshConfig = {
-      host: sshConfig.host,
-      port: sshConfig.port || 22,
-      username: sshConfig.username,
-      hasPassword: !!sshConfig.password,
-      hasPrivateKey: !!processedConfig.privateKey,
-      hasPrivateKeyPath: !!sshConfig.privateKeyPath,
-      usingProxy: usingProxy,
-      proxyType: usingProxy ? resolvedProxyConfig.type : null,
-      isProxyError: isProxyError,
-      authType: sshConfig.authType || null,
-      language: sshConfig.language || null,
-    };
-    enhancedError.connectionFailure = classifyConnectionFailure(enhancedError, {
-      ...enhancedError.sshConfig,
+    return this._buildEnhancedConnectionError({
+      message: errorMessage,
+      err,
+      connectionKey,
+      configKey: "sshConfig",
       protocol: "ssh",
+      code:
+        err?.code ||
+        err?.originalError?.code ||
+        (isProxyError ? "EPROXYUNAVAILABLE" : null),
+      config: {
+        host: sshConfig.host,
+        port: sshConfig.port || 22,
+        username: sshConfig.username,
+        hasPassword: !!sshConfig.password,
+        hasPrivateKey: !!processedConfig.privateKey,
+        hasPrivateKeyPath: !!sshConfig.privateKeyPath,
+        usingProxy: usingProxy,
+        proxyType: usingProxy ? resolvedProxyConfig.type : null,
+        isProxyError: isProxyError,
+        authType: sshConfig.authType || null,
+        language: sshConfig.language || null,
+      },
     });
-    enhancedError.connectionFailureKind = enhancedError.connectionFailure.kind;
-    enhancedError.connectionAdvice = enhancedError.connectionFailure.suggestion;
-
-    return enhancedError;
   }
 
   /**

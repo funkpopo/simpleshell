@@ -5,6 +5,7 @@
 
 const EventEmitter = require("events");
 const { logToFile } = require("../utils/logger");
+const { classifyConnectionFailure } = require("../../shared/errorClassification");
 
 const CLOSE_REASON = Object.freeze({
   USER: "user",
@@ -314,15 +315,16 @@ class BaseConnectionPool extends EventEmitter {
   }
 
   /**
-   * 关闭连接
-   * @param {string} key - 连接键
+   * 关闭连接的公共前置：定位连接、规范化关闭选项、标记关闭原因并从池中移除。
+   * @returns {{conn: Object, closeOptions: Object, removedTabIds: string[]} | null}
+   *          连接不存在时返回 null
    */
-  closeConnection(key, options = {}) {
+  _beginConnectionClose(key, options = {}) {
     const conn = this.connections.get(key);
 
     if (!conn) {
       this._logInfo(`Tried to close non-existent connection: ${key}`);
-      return;
+      return null;
     }
 
     const closeOptions = this._normalizeCloseOptions(
@@ -343,6 +345,66 @@ class BaseConnectionPool extends EventEmitter {
     if (conn.listeners && conn.listeners.size > 0) {
       conn.listeners.clear();
     }
+
+    return { conn, closeOptions, removedTabIds };
+  }
+
+  /** 关闭连接的公共后置：广播 connectionClosed 事件 */
+  _finishConnectionClose(key, conn, closeOptions, removedTabIds) {
+    this.emit("connectionClosed", {
+      key,
+      connection: conn,
+      reason: closeOptions.reason,
+      intentional: closeOptions.intentional,
+      removedTabIds,
+    });
+  }
+
+  /**
+   * 构建增强的连接错误对象（统一附加错误分类/建议字段）
+   * @param {Object} params
+   * @param {string} params.message - 面向用户的错误消息
+   * @param {Error} params.err - 原始错误
+   * @param {string} params.connectionKey - 连接键
+   * @param {string} params.configKey - 挂载脱敏配置的字段名（sshConfig/telnetConfig/moshConfig）
+   * @param {Object} params.config - 脱敏后的配置对象
+   * @param {string} params.protocol - 协议标识（ssh/telnet/mosh）
+   * @param {string|null} [params.code] - 错误码
+   */
+  _buildEnhancedConnectionError({
+    message,
+    err,
+    connectionKey,
+    configKey,
+    config,
+    protocol,
+    code = null,
+  }) {
+    const enhancedError = new Error(message);
+    enhancedError.originalError = err;
+    enhancedError.connectionKey = connectionKey;
+    enhancedError.code = code;
+    enhancedError[configKey] = config;
+    enhancedError.connectionFailure = classifyConnectionFailure(enhancedError, {
+      ...config,
+      protocol,
+    });
+    enhancedError.connectionFailureKind = enhancedError.connectionFailure.kind;
+    enhancedError.connectionAdvice = enhancedError.connectionFailure.suggestion;
+    return enhancedError;
+  }
+
+  /**
+   * 关闭连接
+   * @param {string} key - 连接键
+   */
+  closeConnection(key, options = {}) {
+    const closed = this._beginConnectionClose(key, options);
+    if (!closed) {
+      return;
+    }
+
+    const { conn, closeOptions, removedTabIds } = closed;
 
     try {
       // 优先使用 end() 方法发送正确的断开信号
@@ -378,13 +440,7 @@ class BaseConnectionPool extends EventEmitter {
       }
     }
 
-    this.emit("connectionClosed", {
-      key,
-      connection: conn,
-      reason: closeOptions.reason,
-      intentional: closeOptions.intentional,
-      removedTabIds,
-    });
+    this._finishConnectionClose(key, conn, closeOptions, removedTabIds);
   }
 
   /**

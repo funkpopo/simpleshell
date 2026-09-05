@@ -241,28 +241,13 @@ class MoshConnectionPool extends BaseConnectionPool {
    * @param {Object} options - 关闭选项
    */
   closeConnection(key, options = {}) {
-    const conn = this.connections.get(key);
-
-    if (!conn) {
-      this._logInfo(`Tried to close non-existent connection: ${key}`);
+    const closed = this._beginConnectionClose(key, options);
+    if (!closed) {
       return;
     }
 
-    const closeOptions = this._normalizeCloseOptions(
-      options,
-      BaseConnectionPool.CLOSE_REASON.SYSTEM,
-    );
-    this._logInfo(`Closing connection: ${key}, reason=${closeOptions.reason}`);
+    const { conn, closeOptions, removedTabIds } = closed;
 
-    conn.intentionalClose = closeOptions.intentional;
-    conn.closeReason = closeOptions.reason;
-
-    this.connections.delete(key);
-    const removedTabIds = this._removeTabReferencesForConnection(key);
-
-    if (conn.listeners && conn.listeners.size > 0) {
-      conn.listeners.clear();
-    }
     if (Array.isArray(conn.ptyListeners)) {
       const staleListeners = conn.ptyListeners.splice(0);
       for (const stale of staleListeners) {
@@ -326,13 +311,7 @@ class MoshConnectionPool extends BaseConnectionPool {
       }, MOSH_WSL_EXIT_GRACE_MS);
     }
 
-    this.emit("connectionClosed", {
-      key,
-      connection: conn,
-      reason: closeOptions.reason,
-      intentional: closeOptions.intentional,
-      removedTabIds,
-    });
+    this._finishConnectionClose(key, conn, closeOptions, removedTabIds);
   }
 
   /**
@@ -427,27 +406,21 @@ class MoshConnectionPool extends BaseConnectionPool {
     );
 
     // 创建增强的错误对象（使用简洁的错误消息）
-    const enhancedError = new Error(errorMessage);
-    enhancedError.code = err?.code || null;
-    enhancedError.originalError = err;
-    enhancedError.connectionKey = connectionKey;
-    enhancedError.moshConfig = {
-      host,
-      port: options?.port || DEFAULT_SSH_PORT,
-      username: options?.username || "",
-      moshBinary: binary,
-      moshUseWsl: options?.moshUseWsl === true,
-      language: options?.language || null,
+    return this._buildEnhancedConnectionError({
+      message: errorMessage,
+      err,
+      connectionKey,
+      configKey: "moshConfig",
       protocol: "mosh",
-    };
-    enhancedError.connectionFailure = classifyConnectionFailure(enhancedError, {
-      ...enhancedError.moshConfig,
-      protocol: "mosh",
+      config: {
+        host,
+        port: options?.port || DEFAULT_SSH_PORT,
+        username: options?.username || "",
+        moshBinary: binary,
+        moshUseWsl: options?.moshUseWsl === true,
+        language: options?.language || null,
+      },
     });
-    enhancedError.connectionFailureKind = enhancedError.connectionFailure.kind;
-    enhancedError.connectionAdvice = enhancedError.connectionFailure.suggestion;
-
-    return enhancedError;
   }
 }
 

@@ -219,28 +219,12 @@ class SerialConnectionPool extends BaseConnectionPool {
    * @param {Object} options - 关闭选项
    */
   closeConnection(key, options = {}) {
-    const conn = this.connections.get(key);
-
-    if (!conn) {
-      this._logInfo(`Tried to close non-existent connection: ${key}`);
+    const closed = this._beginConnectionClose(key, options);
+    if (!closed) {
       return;
     }
 
-    const closeOptions = this._normalizeCloseOptions(
-      options,
-      BaseConnectionPool.CLOSE_REASON.SYSTEM,
-    );
-    this._logInfo(`Closing connection: ${key}, reason=${closeOptions.reason}`);
-
-    conn.intentionalClose = closeOptions.intentional;
-    conn.closeReason = closeOptions.reason;
-
-    this.connections.delete(key);
-    const removedTabIds = this._removeTabReferencesForConnection(key);
-
-    if (conn.listeners && conn.listeners.size > 0) {
-      conn.listeners.clear();
-    }
+    const { conn, closeOptions, removedTabIds } = closed;
 
     const port = conn.client;
     try {
@@ -272,13 +256,7 @@ class SerialConnectionPool extends BaseConnectionPool {
       }
     }
 
-    this.emit("connectionClosed", {
-      key,
-      connection: conn,
-      reason: closeOptions.reason,
-      intentional: closeOptions.intentional,
-      removedTabIds,
-    });
+    this._finishConnectionClose(key, conn, closeOptions, removedTabIds);
   }
 
   /**
