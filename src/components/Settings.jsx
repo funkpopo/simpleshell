@@ -1029,6 +1029,68 @@ const Settings = memo(({ open, onClose }) => {
     setNeedsRestart(checkIfRestartNeeded(newSettings));
   };
 
+  // 构建 UI 设置快照（保存与广播共用，避免字段/ clamp 逻辑重复维护）
+  const buildUISettingsSnapshot = () => ({
+    language,
+    fontSize,
+    editorFont,
+    terminalFont,
+    terminalFontSize,
+    terminalFontWeight,
+    terminalLineHeight: Math.min(
+      1.4,
+      Math.max(
+        1.0,
+        Math.round((Number(terminalLineHeight) || 1.0) * 100) / 100,
+      ),
+    ),
+    terminalScrollbackLines: Math.min(
+      500000,
+      Math.max(
+        1000,
+        Math.floor(Number(terminalScrollbackLines)) || 50000,
+      ),
+    ),
+    darkMode,
+    performance: {
+      imageSupported,
+      cacheEnabled,
+      prefetchEnabled,
+      webglEnabled: hardwareAccelerationEnabled,
+      hardwareAcceleration: hardwareAccelerationEnabled,
+    },
+    dnd: {
+      enabled: dndEnabled,
+      autoScroll: dndAutoScroll,
+      compactDragPreview: dndCompactPreview,
+    },
+    desktopIntegration: {
+      trayEnabled,
+      closeToTray: trayEnabled && closeToTray,
+    },
+    transferBarMode,
+    backupRetentionDays,
+    externalEditor: {
+      enabled: externalEditorEnabled,
+      command: externalEditorCommand.trim(),
+    },
+    diskAlert: {
+      enabled: diskAlertEnabled,
+      thresholdPercent: Math.min(
+        99,
+        Math.max(50, Math.floor(Number(diskAlertThreshold) || 90)),
+      ),
+      intervalSeconds: Math.min(
+        3600,
+        Math.max(30, Math.floor(Number(diskAlertIntervalSeconds) || 60)),
+      ),
+    },
+    resourceMonitor: {
+      displayMode:
+        resourceMonitorDisplayMode === "trend" ? "trend" : "independent",
+    },
+  });
+
   // Save settings
   const handleSave = async () => {
     try {
@@ -1087,66 +1149,7 @@ const Settings = memo(({ open, onClose }) => {
 
       // 保存UI设置
       if (window.terminalAPI?.saveUISettings) {
-        const settings = {
-          language,
-          fontSize,
-          editorFont,
-          terminalFont,
-          terminalFontSize,
-          terminalFontWeight,
-          terminalLineHeight: Math.min(
-            1.4,
-            Math.max(
-              1.0,
-              Math.round((Number(terminalLineHeight) || 1.0) * 100) / 100,
-            ),
-          ),
-          terminalScrollbackLines: Math.min(
-            500000,
-            Math.max(
-              1000,
-              Math.floor(Number(terminalScrollbackLines)) || 50000,
-            ),
-          ),
-          darkMode,
-          performance: {
-            imageSupported,
-            cacheEnabled,
-            prefetchEnabled,
-            webglEnabled: hardwareAccelerationEnabled,
-            hardwareAcceleration: hardwareAccelerationEnabled,
-          },
-          dnd: {
-            enabled: dndEnabled,
-            autoScroll: dndAutoScroll,
-            compactDragPreview: dndCompactPreview,
-          },
-          desktopIntegration: {
-            trayEnabled,
-            closeToTray: trayEnabled && closeToTray,
-          },
-          transferBarMode,
-          backupRetentionDays,
-          externalEditor: {
-            enabled: externalEditorEnabled,
-            command: externalEditorCommand.trim(),
-          },
-          diskAlert: {
-            enabled: diskAlertEnabled,
-            thresholdPercent: Math.min(
-              99,
-              Math.max(50, Math.floor(Number(diskAlertThreshold) || 90)),
-            ),
-            intervalSeconds: Math.min(
-              3600,
-              Math.max(30, Math.floor(Number(diskAlertIntervalSeconds) || 60)),
-            ),
-          },
-          resourceMonitor: {
-            displayMode:
-              resourceMonitorDisplayMode === "trend" ? "trend" : "independent",
-          },
-        };
+        const settings = buildUISettingsSnapshot();
         await window.terminalAPI.saveUISettings(settings);
       }
 
@@ -1185,56 +1188,7 @@ const Settings = memo(({ open, onClose }) => {
       // Notify app to apply changes
       window.dispatchEvent(
         new CustomEvent("settingsChanged", {
-          detail: {
-            language,
-            fontSize,
-            editorFont,
-            terminalFont,
-            terminalFontSize,
-            terminalFontWeight,
-            terminalLineHeight: Math.min(
-              1.4,
-              Math.max(
-                1.0,
-                Math.round((Number(terminalLineHeight) || 1.0) * 100) / 100,
-              ),
-            ),
-            terminalScrollbackLines: Math.min(
-              500000,
-              Math.max(
-                1000,
-                Math.floor(Number(terminalScrollbackLines)) || 50000,
-              ),
-            ),
-            darkMode,
-            performance: {
-              imageSupported,
-              cacheEnabled,
-              prefetchEnabled,
-              webglEnabled: hardwareAccelerationEnabled,
-              hardwareAcceleration: hardwareAccelerationEnabled,
-            },
-            dnd: {
-              enabled: dndEnabled,
-              autoScroll: dndAutoScroll,
-              compactDragPreview: dndCompactPreview,
-            },
-            desktopIntegration: {
-              trayEnabled,
-              closeToTray: trayEnabled && closeToTray,
-            },
-            transferBarMode,
-            externalEditor: {
-              enabled: externalEditorEnabled,
-              command: externalEditorCommand.trim(),
-            },
-            resourceMonitor: {
-              displayMode:
-                resourceMonitorDisplayMode === "trend"
-                  ? "trend"
-                  : "independent",
-            },
-          },
+          detail: buildUISettingsSnapshot(),
         }),
       );
 
