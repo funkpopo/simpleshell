@@ -8,6 +8,13 @@
  */
 
 import i18n from "../i18n/i18n";
+import {
+  CUSTOM_RULE_LEVELS,
+  validateCustomRiskPattern,
+  normalizeCustomRiskRules,
+} from "../shared/aiRiskRules";
+
+export { validateCustomRiskPattern, normalizeCustomRiskRules };
 
 const normalizePromptLanguage = (language) => {
   if (typeof language !== "string" || !language.trim()) {
@@ -63,18 +70,6 @@ export const RISK_LEVELS = {
 };
 
 const RISK_LEVEL_ORDER = ["critical", "high", "medium", "low"];
-const CUSTOM_RULE_LEVELS = ["critical", "high", "medium", "low"];
-const MAX_CUSTOM_RULES_PER_LEVEL = 50;
-const MAX_CUSTOM_RULE_PATTERN_LENGTH = 200;
-
-const hasNestedQuantifier = (pattern) =>
-  /\((?:[^()\\]|\\.|\[[^\]]*\])*(?:[+*]|\{\d+(?:,\d*)?\})(?:[^()\\]|\\.|\[[^\]]*\])*\)(?:[+*]|\{\d+(?:,\d*)?\})/.test(
-    pattern,
-  );
-
-const hasRepeatedWildcard = (pattern) => /(?:\.\*){2,}/.test(pattern);
-
-const hasControlCharacter = (pattern) => /[\u0000-\u001f\u007f]/.test(pattern);
 
 const getRiskLevelByName = (riskName) => {
   const normalizedName = String(riskName || "").toLowerCase();
@@ -191,71 +186,6 @@ let customRules = {
   medium: [],
   low: [],
 };
-
-export function validateCustomRiskPattern(pattern) {
-  const normalizedPattern = typeof pattern === "string" ? pattern.trim() : "";
-
-  if (!normalizedPattern) {
-    return { valid: false, reason: "empty" };
-  }
-
-  if (normalizedPattern.length > MAX_CUSTOM_RULE_PATTERN_LENGTH) {
-    return { valid: false, reason: "tooLong" };
-  }
-
-  if (hasControlCharacter(normalizedPattern)) {
-    return { valid: false, reason: "controlCharacter" };
-  }
-
-  if (
-    hasNestedQuantifier(normalizedPattern) ||
-    hasRepeatedWildcard(normalizedPattern)
-  ) {
-    return { valid: false, reason: "unsafeComplexity" };
-  }
-
-  try {
-    new RegExp(normalizedPattern, "i");
-  } catch {
-    return { valid: false, reason: "syntax" };
-  }
-
-  return { valid: true, pattern: normalizedPattern };
-}
-
-export function normalizeCustomRiskRules(rules) {
-  const normalizedRules = {
-    critical: [],
-    high: [],
-    medium: [],
-    low: [],
-  };
-
-  if (!rules || typeof rules !== "object") {
-    return normalizedRules;
-  }
-
-  for (const level of CUSTOM_RULE_LEVELS) {
-    const patterns = Array.isArray(rules[level]) ? rules[level] : [];
-    const seenPatterns = new Set();
-
-    for (const rawPattern of patterns) {
-      if (normalizedRules[level].length >= MAX_CUSTOM_RULES_PER_LEVEL) {
-        break;
-      }
-
-      const validation = validateCustomRiskPattern(rawPattern);
-      if (!validation.valid || seenPatterns.has(validation.pattern)) {
-        continue;
-      }
-
-      seenPatterns.add(validation.pattern);
-      normalizedRules[level].push(validation.pattern);
-    }
-  }
-
-  return normalizedRules;
-}
 
 /**
  * 设置自定义风险评估规则

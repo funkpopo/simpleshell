@@ -6,81 +6,16 @@ const {
   t: translateLocale,
   getUiLanguage,
 } = require("../../../shared/mainI18n");
+const {
+  normalizeCustomRiskRules,
+} = require("../../../shared/aiRiskRules");
 
 // Wrapper keeps call sites static for check-i18n; implementation uses a non-t name.
 const aiText = (key, params = {}) =>
   translateLocale(key, { lng: getUiLanguage(configService), ...params });
 
-const CUSTOM_RULE_LEVELS = ["critical", "high", "medium", "low"];
-const MAX_CUSTOM_RULES_PER_LEVEL = 50;
-const MAX_CUSTOM_RULE_PATTERN_LENGTH = 200;
 const AI_PROXY_TYPES = new Set(["http", "https"]);
 const MAX_AI_PROXY_HOST_LENGTH = 255;
-
-const hasNestedQuantifier = (pattern) =>
-  /\((?:[^()\\]|\\.|\[[^\]]*\])*(?:[+*]|\{\d+(?:,\d*)?\})(?:[^()\\]|\\.|\[[^\]]*\])*\)(?:[+*]|\{\d+(?:,\d*)?\})/.test(
-    pattern,
-  );
-
-const hasRepeatedWildcard = (pattern) => /(?:\.\*){2,}/.test(pattern);
-
-const hasControlCharacter = (pattern) => /[\u0000-\u001f\u007f]/.test(pattern);
-
-const validateCustomRiskPattern = (pattern) => {
-  const normalizedPattern = typeof pattern === "string" ? pattern.trim() : "";
-
-  if (
-    !normalizedPattern ||
-    normalizedPattern.length > MAX_CUSTOM_RULE_PATTERN_LENGTH ||
-    hasControlCharacter(normalizedPattern) ||
-    hasNestedQuantifier(normalizedPattern) ||
-    hasRepeatedWildcard(normalizedPattern)
-  ) {
-    return null;
-  }
-
-  try {
-    new RegExp(normalizedPattern, "i");
-  } catch {
-    return null;
-  }
-
-  return normalizedPattern;
-};
-
-const normalizeCustomRiskRules = (rules) => {
-  const normalizedRules = {
-    critical: [],
-    high: [],
-    medium: [],
-    low: [],
-  };
-
-  if (!rules || typeof rules !== "object") {
-    return normalizedRules;
-  }
-
-  for (const level of CUSTOM_RULE_LEVELS) {
-    const patterns = Array.isArray(rules[level]) ? rules[level] : [];
-    const seenPatterns = new Set();
-
-    for (const rawPattern of patterns) {
-      if (normalizedRules[level].length >= MAX_CUSTOM_RULES_PER_LEVEL) {
-        break;
-      }
-
-      const pattern = validateCustomRiskPattern(rawPattern);
-      if (!pattern || seenPatterns.has(pattern)) {
-        continue;
-      }
-
-      seenPatterns.add(pattern);
-      normalizedRules[level].push(pattern);
-    }
-  }
-
-  return normalizedRules;
-};
 
 /**
  * AI相关的IPC处理器
