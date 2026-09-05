@@ -763,7 +763,7 @@ function testDragAndDropUsesNativeValidatedLocalPaths() {
 
   assertContains(
     filemanagementServiceSource,
-    /_chooseConcurrency\(\s*tasks\.length,\s*totalBytes,\s*true,\s*"upload",?\s*\)/,
+    /directoryMode:\s*true,\s*\n\s*direction:\s*"upload",/,
     "Dropped folder uploads must select upload-specific transfer concurrency.",
   );
 
