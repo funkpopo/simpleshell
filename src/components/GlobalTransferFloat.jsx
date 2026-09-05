@@ -18,7 +18,7 @@ import {
   useAllGlobalTransfers,
   cancelTransferWithNotice,
 } from "../store/globalTransferStore.js";
-import { formatFileSize } from "../core/utils/formatters.js";
+import { formatFileSize, formatSpeed } from "../core/utils/formatters.js";
 import {
   sumTransferFileCount,
   getDisplayCompletedFileCount,
@@ -34,12 +34,6 @@ import {
   getProgressTrackColor,
   getDangerHoverSx,
 } from "./transferStatusStyles.jsx";
-
-// 格式化传输速度
-const formatSpeed = (bytesPerSecond) => {
-  if (!bytesPerSecond || bytesPerSecond === 0) return "";
-  return formatFileSize(bytesPerSecond) + "/s";
-};
 
 // 格式化剩余时间
 const formatTime = (seconds, t) => {

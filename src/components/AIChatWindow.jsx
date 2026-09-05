@@ -8,6 +8,7 @@ import React, {
   useTransition,
 } from "react";
 import { createFloatingDialog } from "./styledDialogs.jsx";
+import { clamp } from "../shared/common";
 import useDragResize from "../hooks/useDragResize.js";
 import {
   DialogTitle,
@@ -232,7 +233,7 @@ const MIN_HEIGHT = 540;
 const MAX_WIDTH = 800;
 const MAX_HEIGHT = 900;
 
-const clampValue = (value, min, max) => Math.min(max, Math.max(min, value));
+
 
 const normalizeWindowSize = (size) => {
   if (!size || typeof size !== "object") {
@@ -246,8 +247,8 @@ const normalizeWindowSize = (size) => {
   }
 
   return {
-    width: clampValue(Math.round(width), MIN_WIDTH, MAX_WIDTH),
-    height: clampValue(Math.round(height), MIN_HEIGHT, MAX_HEIGHT),
+    width: clamp(Math.round(width), MIN_WIDTH, MAX_WIDTH),
+    height: clamp(Math.round(height), MIN_HEIGHT, MAX_HEIGHT),
   };
 };
 
@@ -418,13 +419,13 @@ const AIChatWindow = ({
 
   const getWidthLimit = useCallback(() => {
     const viewportLimit = window.innerWidth - DIALOG_RIGHT_GAP * 2;
-    return clampValue(viewportLimit, MIN_WIDTH, MAX_WIDTH);
+    return clamp(viewportLimit, MIN_WIDTH, MAX_WIDTH);
   }, []);
 
   const getHeightLimit = useCallback(() => {
     const viewportLimit =
       window.innerHeight - DIALOG_BOTTOM_GAP - DIALOG_TOP_GAP;
-    return clampValue(viewportLimit, MIN_HEIGHT, MAX_HEIGHT);
+    return clamp(viewportLimit, MIN_HEIGHT, MAX_HEIGHT);
   }, []);
 
   // 窗口尺寸变化时，确保浮窗不会超过当前视口
@@ -432,8 +433,8 @@ const AIChatWindow = ({
     const syncSizeWithViewport = () => {
       const maxWidth = getWidthLimit();
       const maxHeight = getHeightLimit();
-      setWindowWidth((prev) => clampValue(prev, MIN_WIDTH, maxWidth));
-      setWindowHeight((prev) => clampValue(prev, MIN_HEIGHT, maxHeight));
+      setWindowWidth((prev) => clamp(prev, MIN_WIDTH, maxWidth));
+      setWindowHeight((prev) => clamp(prev, MIN_HEIGHT, maxHeight));
     };
 
     syncSizeWithViewport();
@@ -516,9 +517,9 @@ const AIChatWindow = ({
         if (normalizedSize) {
           const maxWidth = getWidthLimit();
           const maxHeight = getHeightLimit();
-          setWindowWidth(clampValue(normalizedSize.width, MIN_WIDTH, maxWidth));
+          setWindowWidth(clamp(normalizedSize.width, MIN_WIDTH, maxWidth));
           setWindowHeight(
-            clampValue(normalizedSize.height, MIN_HEIGHT, maxHeight),
+            clamp(normalizedSize.height, MIN_HEIGHT, maxHeight),
           );
         }
       }

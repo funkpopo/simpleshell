@@ -26,23 +26,7 @@ const WATCHDOG_INTERVAL_MS = 5 * 1000;
 // 会在提示符后立即连续发送，超过该时长仍无后续数据即视为普通输出
 const SCAN_TAIL_FLUSH_DELAY_MS = 500;
 
-const formatBytes = (bytes) => {
-  const value = Number(bytes);
-  if (!Number.isFinite(value) || value < 0) {
-    return "0 B";
-  }
-  if (value < 1024) {
-    return `${value} B`;
-  }
-  const units = ["KB", "MB", "GB", "TB"];
-  let scaled = value;
-  let unitIndex = -1;
-  do {
-    scaled /= 1024;
-    unitIndex += 1;
-  } while (scaled >= 1024 && unitIndex < units.length - 1);
-  return `${scaled >= 100 ? Math.round(scaled) : scaled.toFixed(1)} ${units[unitIndex]}`;
-};
+const { formatBytes } = require("../../shared/common");
 
 const uniqueSavePath = async (dir, fileName) => {
   const ext = path.extname(fileName);

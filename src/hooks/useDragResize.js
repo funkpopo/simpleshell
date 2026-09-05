@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+import { clamp } from "../shared/common";
 
 const CURSOR_BY_MODE = {
   both: "nwse-resize",

@@ -119,6 +119,16 @@ export const formatLastRefreshTime = (timestamp, options = {}) => {
   return `${date.getHours()}:${date.getMinutes().toString().padStart(2, "0")}`;
 };
 
+/**
+ * 格式化传输速度（字节/秒 → "1.5 MB/s"）
+ * @param {number} bytesPerSecond
+ * @returns {string} 无效或零速度返回空字符串
+ */
+export const formatSpeed = (bytesPerSecond) => {
+  if (!bytesPerSecond || bytesPerSecond === 0) return "";
+  return formatFileSize(bytesPerSecond) + "/s";
+};
+
 export const formatNumber = (num) => {
   if (typeof num !== "number" || isNaN(num)) return "0";
 
