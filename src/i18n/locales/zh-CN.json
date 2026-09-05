@@ -214,8 +214,7 @@
             "EXPORT_PASSWORD_NOT_SAVED": "未记住导出密码，无法自动解密",
             "WEBDAV_REMOTE_NOT_FOUND": "服务器上还没有配置包",
             "WEBDAV_AUTH_FAILED": "WebDAV 认证失败，请检查用户名和密码",
-            "WEBDAV_REQUEST_FAILED": "WebDAV 请求失败，请检查地址和网络",
-            "BUSY": "上一个同步任务仍在进行中"
+            "WEBDAV_REQUEST_FAILED": "WebDAV 请求失败，请检查地址和网络"
           }
         },
         "errors": {

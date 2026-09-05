@@ -214,8 +214,7 @@
             "EXPORT_PASSWORD_NOT_SAVED": "Export password not remembered, cannot decrypt automatically",
             "WEBDAV_REMOTE_NOT_FOUND": "No config package exists on the server yet",
             "WEBDAV_AUTH_FAILED": "WebDAV authentication failed. Please check the username and password",
-            "WEBDAV_REQUEST_FAILED": "WebDAV request failed. Please check the URL and network",
-            "BUSY": "The previous sync task is still running"
+            "WEBDAV_REQUEST_FAILED": "WebDAV request failed. Please check the URL and network"
           }
         },
         "errors": {

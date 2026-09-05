@@ -543,17 +543,96 @@ const Settings = memo(({ open, onClose }) => {
 
   // ==================== 配置导入/导出/同步 ====================
 
+  // dataSync 错误码白名单：check-i18n 要求 t() 使用静态字面量 key，
+  // 后端返回的错误码只能映射到已定义翻译的错误码
   const getConfigTransferErrorMessage = (result, fallbackKey) => {
     const code = result?.errorCode || result?.code;
-    if (code) {
-      const localized = t(`settings.dataSync.errors.${code}`, {
-        defaultValue: "",
-      });
-      if (localized) {
-        return localized;
-      }
+    switch (code) {
+      case "CREDENTIAL_STORE_LOCKED":
+        return t("settings.dataSync.errors.CREDENTIAL_STORE_LOCKED");
+      case "DECRYPT_FAILED":
+        return t("settings.dataSync.errors.DECRYPT_FAILED");
+      case "INVALID_PACKAGE":
+        return t("settings.dataSync.errors.INVALID_PACKAGE");
+      case "PACKAGE_TOO_LARGE":
+        return t("settings.dataSync.errors.PACKAGE_TOO_LARGE");
+      case "PASSWORD_TOO_WEAK":
+        return t("settings.dataSync.errors.PASSWORD_TOO_WEAK");
+      case "WEBDAV_AUTH_FAILED":
+        return t("settings.dataSync.errors.WEBDAV_AUTH_FAILED");
+      case "WEBDAV_CONFLICT":
+        return t("settings.dataSync.errors.WEBDAV_CONFLICT");
+      case "WEBDAV_REMOTE_NOT_FOUND":
+        return t("settings.dataSync.errors.WEBDAV_REMOTE_NOT_FOUND");
+      case "WEBDAV_REQUEST_FAILED":
+        return t("settings.dataSync.errors.WEBDAV_REQUEST_FAILED");
+      case "WEBDAV_URL_INVALID":
+        return t("settings.dataSync.errors.WEBDAV_URL_INVALID");
+      case "WEBDAV_URL_REQUIRED":
+        return t("settings.dataSync.errors.WEBDAV_URL_REQUIRED");
+      default:
+        break;
     }
-    return result?.error || result?.message || t(fallbackKey);
+
+    // fallbackKey 同样静态映射（调用点均为固定值）
+    switch (fallbackKey) {
+      case "settings.dataSync.export.failed":
+        return t("settings.dataSync.export.failed");
+      case "settings.dataSync.import.failed":
+        return t("settings.dataSync.import.failed");
+      case "settings.dataSync.webdav.testFailed":
+        return t("settings.dataSync.webdav.testFailed");
+      case "settings.dataSync.webdav.uploadFailed":
+        return t("settings.dataSync.webdav.uploadFailed");
+      case "settings.dataSync.webdav.downloadFailed":
+        return t("settings.dataSync.webdav.downloadFailed");
+      case "settings.dataSync.webdav.saveFailed":
+        return t("settings.dataSync.webdav.saveFailed");
+      default:
+        break;
+    }
+
+    return result?.error || result?.message || fallbackKey;
+  };
+
+  // 自动同步跳过原因白名单（未识别原因回退到通用提示）
+  const getAutoSyncSkippedMessage = (reason) => {
+    switch (reason) {
+      case "CREDENTIAL_STORE_LOCKED":
+        return t("settings.dataSync.autoSync.skipped.CREDENTIAL_STORE_LOCKED");
+      case "EXPORT_PASSWORD_NOT_SAVED":
+        return t("settings.dataSync.autoSync.skipped.EXPORT_PASSWORD_NOT_SAVED");
+      case "NO_URL":
+        return t("settings.dataSync.autoSync.skipped.NO_URL");
+      case "WEBDAV_AUTH_FAILED":
+        return t("settings.dataSync.autoSync.skipped.WEBDAV_AUTH_FAILED");
+      case "WEBDAV_REMOTE_NOT_FOUND":
+        return t("settings.dataSync.autoSync.skipped.WEBDAV_REMOTE_NOT_FOUND");
+      case "WEBDAV_REQUEST_FAILED":
+        return t("settings.dataSync.autoSync.skipped.WEBDAV_REQUEST_FAILED");
+      default:
+        return t("settings.dataSync.autoSync.autoSkipped");
+    }
+  };
+
+  // 最近一次自动同步状态白名单
+  const getAutoSyncStatusMessage = (status) => {
+    switch (status) {
+      case "error":
+        return t("settings.dataSync.autoSync.status.error");
+      case "locked":
+        return t("settings.dataSync.autoSync.status.locked");
+      case "no-export-password":
+        return t("settings.dataSync.autoSync.status.no-export-password");
+      case "remote-missing":
+        return t("settings.dataSync.autoSync.status.remote-missing");
+      case "up-to-date":
+        return t("settings.dataSync.autoSync.status.up-to-date");
+      case "updated":
+        return t("settings.dataSync.autoSync.status.updated");
+      default:
+        return t("settings.dataSync.autoSync.status.never");
+    }
   };
 
   const buildExportFileName = () => {
@@ -949,11 +1028,7 @@ const Settings = memo(({ open, onClose }) => {
         if (result.reason === "UP_TO_DATE") {
           showSuccess(t("settings.dataSync.autoSync.alreadyUpToDate"));
         } else if (result.reason !== "BUSY") {
-          showError(
-            t(`settings.dataSync.autoSync.skipped.${result.reason}`, {
-              defaultValue: t("settings.dataSync.autoSync.autoSkipped"),
-            }),
-          );
+          showError(getAutoSyncSkippedMessage(result.reason));
         }
       } else if (result?.success === false) {
         throw Object.assign(new Error(result.error), {
@@ -2722,10 +2797,8 @@ const Settings = memo(({ open, onClose }) => {
                           ? new Date(autoSyncStatus.lastSyncAt).toLocaleString()
                           : "—"}
                         {" · "}
-                        {t(
-                          `settings.dataSync.autoSync.status.${
-                            autoSyncStatus.lastSyncStatus || "never"
-                          }`,
+                        {getAutoSyncStatusMessage(
+                          autoSyncStatus.lastSyncStatus,
                         )}
                         {autoSyncEnabled && autoSyncStatus.nextRunAt
                           ? ` · ${t("settings.dataSync.autoSync.nextCheck")}: ${new Date(

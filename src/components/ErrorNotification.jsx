@@ -125,25 +125,100 @@ function getClassifiedErrorTranslation(error, classification) {
   return { ...base, ...messages[category] };
 }
 
-// 已知错误码 → i18n 文案键的映射（errors.<TYPE>.*）
-const KNOWN_ERROR_I18N_KEYS = {
-  [ErrorType.CONNECTION_REFUSED]: "ECONNREFUSED",
-  [ErrorType.CONNECTION_TIMEOUT]: "ETIMEDOUT",
-  [ErrorType.HOST_UNREACHABLE]: "EHOSTUNREACH",
-  [ErrorType.HOST_NOT_FOUND]: "ENOTFOUND",
-  [ErrorType.CONNECTION_RESET]: "ECONNRESET",
-  [ErrorType.NETWORK_UNREACHABLE]: "ENETUNREACH",
-  [ErrorType.AUTH_FAILED]: "AUTH_FAILED",
-  [ErrorType.KEY_ERROR]: "KEY_ERROR",
-  [ErrorType.PERMISSION_DENIED]: "EACCES",
-  [ErrorType.FILE_NOT_FOUND]: "ENOENT",
-  [ErrorType.OPERATION_TIMEOUT]: "OPERATION_TIMEOUT",
-};
-
+// 已知错误码 → 静态 i18n 文案（check-i18n 要求 t() 使用静态字面量 key）
 function getKnownErrorTranslation(errorType, originalMessage, classification) {
-  const i18nKey = KNOWN_ERROR_I18N_KEYS[errorType];
-  if (!i18nKey) {
-    return null;
+  let title = null;
+  let message = null;
+  let solutions = null;
+  let action = null;
+
+  switch (errorType) {
+    case ErrorType.CONNECTION_REFUSED:
+      title = i18n.t("errors.ECONNREFUSED.title");
+      message = i18n.t("errors.ECONNREFUSED.message");
+      solutions = i18n.t("errors.ECONNREFUSED.solutions", {
+        returnObjects: true,
+      });
+      action = i18n.t("errors.ECONNREFUSED.action");
+      break;
+    case ErrorType.CONNECTION_TIMEOUT:
+      title = i18n.t("errors.ETIMEDOUT.title");
+      message = i18n.t("errors.ETIMEDOUT.message");
+      solutions = i18n.t("errors.ETIMEDOUT.solutions", {
+        returnObjects: true,
+      });
+      action = i18n.t("errors.ETIMEDOUT.action");
+      break;
+    case ErrorType.HOST_UNREACHABLE:
+      title = i18n.t("errors.EHOSTUNREACH.title");
+      message = i18n.t("errors.EHOSTUNREACH.message");
+      solutions = i18n.t("errors.EHOSTUNREACH.solutions", {
+        returnObjects: true,
+      });
+      action = i18n.t("errors.EHOSTUNREACH.action");
+      break;
+    case ErrorType.HOST_NOT_FOUND:
+      title = i18n.t("errors.ENOTFOUND.title");
+      message = i18n.t("errors.ENOTFOUND.message");
+      solutions = i18n.t("errors.ENOTFOUND.solutions", {
+        returnObjects: true,
+      });
+      action = i18n.t("errors.ENOTFOUND.action");
+      break;
+    case ErrorType.CONNECTION_RESET:
+      title = i18n.t("errors.ECONNRESET.title");
+      message = i18n.t("errors.ECONNRESET.message");
+      solutions = i18n.t("errors.ECONNRESET.solutions", {
+        returnObjects: true,
+      });
+      action = i18n.t("errors.ECONNRESET.action");
+      break;
+    case ErrorType.NETWORK_UNREACHABLE:
+      title = i18n.t("errors.ENETUNREACH.title");
+      message = i18n.t("errors.ENETUNREACH.message");
+      solutions = i18n.t("errors.ENETUNREACH.solutions", {
+        returnObjects: true,
+      });
+      action = i18n.t("errors.ENETUNREACH.action");
+      break;
+    case ErrorType.AUTH_FAILED:
+      title = i18n.t("errors.AUTH_FAILED.title");
+      message = i18n.t("errors.AUTH_FAILED.message");
+      solutions = i18n.t("errors.AUTH_FAILED.solutions", {
+        returnObjects: true,
+      });
+      action = i18n.t("errors.AUTH_FAILED.action");
+      break;
+    case ErrorType.KEY_ERROR:
+      title = i18n.t("errors.KEY_ERROR.title");
+      message = i18n.t("errors.KEY_ERROR.message");
+      solutions = i18n.t("errors.KEY_ERROR.solutions", {
+        returnObjects: true,
+      });
+      action = i18n.t("errors.KEY_ERROR.action");
+      break;
+    case ErrorType.PERMISSION_DENIED:
+      title = i18n.t("errors.EACCES.title");
+      message = i18n.t("errors.EACCES.message");
+      solutions = i18n.t("errors.EACCES.solutions", { returnObjects: true });
+      action = i18n.t("errors.EACCES.action");
+      break;
+    case ErrorType.FILE_NOT_FOUND:
+      title = i18n.t("errors.ENOENT.title");
+      message = i18n.t("errors.ENOENT.message");
+      solutions = i18n.t("errors.ENOENT.solutions", { returnObjects: true });
+      action = i18n.t("errors.ENOENT.action");
+      break;
+    case ErrorType.OPERATION_TIMEOUT:
+      title = i18n.t("errors.OPERATION_TIMEOUT.title");
+      message = i18n.t("errors.OPERATION_TIMEOUT.message");
+      solutions = i18n.t("errors.OPERATION_TIMEOUT.solutions", {
+        returnObjects: true,
+      });
+      action = i18n.t("errors.OPERATION_TIMEOUT.action");
+      break;
+    default:
+      return null;
   }
 
   return {
@@ -151,12 +226,10 @@ function getKnownErrorTranslation(errorType, originalMessage, classification) {
     originalError: originalMessage,
     errorType,
     classification,
-    title: i18n.t(`errors.${i18nKey}.title`),
-    message: i18n.t(`errors.${i18nKey}.message`),
-    solutions: i18n.t(`errors.${i18nKey}.solutions`, {
-      returnObjects: true,
-    }),
-    action: i18n.t(`errors.${i18nKey}.action`),
+    title,
+    message,
+    solutions,
+    action,
   };
 }
 
