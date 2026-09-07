@@ -37,9 +37,9 @@ export const useTerminalSuggestions = ({
   broadcastInputToGroup,
 }) => {
   const [suggestions, setSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showSuggestions, setShowSuggestionsState] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(null);
-  const [currentInput, setCurrentInput] = useState("");
+  const [currentInput, setCurrentInputState] = useState("");
   const [suggestionsHiddenByEsc, setSuggestionsHiddenByEscState] =
     useState(false);
   const [
@@ -53,6 +53,31 @@ export const useTerminalSuggestions = ({
   const suggestionSelectedRef = useRef(false);
   const getSuggestionsRef = useRef(null);
   const suggestionRequestIdRef = useRef(0);
+  const currentInputRef = useRef("");
+
+  const setShowSuggestions = useCallback((value) => {
+    if (value === false) {
+      suggestionRequestIdRef.current += 1;
+    }
+    setShowSuggestionsState(value);
+  }, []);
+
+  const setCurrentInput = useCallback((value) => {
+    const nextValue =
+      typeof value === "function" ? value(currentInputRef.current) : value;
+    if (nextValue !== currentInputRef.current) {
+      suggestionRequestIdRef.current += 1;
+      currentInputRef.current = nextValue;
+    }
+    setCurrentInputState(nextValue);
+  }, []);
+
+  useEffect(
+    () => () => {
+      suggestionRequestIdRef.current += 1;
+    },
+    [],
+  );
 
   const setSuggestionsHiddenByEsc = useCallback((value) => {
     const nextValue =
@@ -60,6 +85,9 @@ export const useTerminalSuggestions = ({
         ? Boolean(value(suggestionsHiddenByEscRef.current))
         : Boolean(value);
     suggestionsHiddenByEscRef.current = nextValue;
+    if (nextValue) {
+      suggestionRequestIdRef.current += 1;
+    }
     setSuggestionsHiddenByEscState(nextValue);
   }, []);
 
@@ -69,6 +97,9 @@ export const useTerminalSuggestions = ({
         ? Boolean(value(suggestionsSuppressedRef.current))
         : Boolean(value);
     suggestionsSuppressedRef.current = nextValue;
+    if (nextValue) {
+      suggestionRequestIdRef.current += 1;
+    }
     setSuggestionsSuppressedUntilEnterState(nextValue);
   }, []);
 
@@ -183,7 +214,9 @@ export const useTerminalSuggestions = ({
         !input ||
         input.trim() === "" ||
         inEditorModeRef.current ||
-        isCommandExecutingRef.current
+        isCommandExecutingRef.current ||
+        suggestionsHiddenByEscRef.current ||
+        suggestionsSuppressedRef.current
       ) {
         setSuggestions([]);
         setShowSuggestions(false);
@@ -250,15 +283,7 @@ export const useTerminalSuggestions = ({
                 return;
               }
 
-              const nextPosition = updateCursorPosition(
-                filteredSuggestions.length,
-              );
-              if (!nextPosition) {
-                setSuggestions([]);
-                setShowSuggestions(false);
-                return;
-              }
-
+              updateCursorPosition(filteredSuggestions.length);
               setSuggestions(filteredSuggestions);
               setShowSuggestions(true);
             } else {
@@ -274,6 +299,9 @@ export const useTerminalSuggestions = ({
           setShowSuggestions(false);
         }
       } catch {
+        if (requestId !== suggestionRequestIdRef.current) {
+          return;
+        }
         setSuggestions([]);
         setShowSuggestions(false);
       }
@@ -284,8 +312,31 @@ export const useTerminalSuggestions = ({
       lastExecutedCommandRef,
       lastExecutedCommandTimeRef,
       updateCursorPosition,
+      setShowSuggestions,
     ],
   );
+
+  useEffect(() => {
+    if (!showSuggestions || suggestions.length === 0) {
+      return;
+    }
+    const refreshPosition = () => updateCursorPosition(suggestions.length);
+    const observer =
+      typeof ResizeObserver === "function"
+        ? new ResizeObserver(refreshPosition)
+        : null;
+    if (terminalRef.current) {
+      observer?.observe(terminalRef.current);
+    }
+    window.addEventListener("resize", refreshPosition);
+    window.addEventListener("positionUpdate", refreshPosition);
+    refreshPosition();
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", refreshPosition);
+      window.removeEventListener("positionUpdate", refreshPosition);
+    };
+  }, [showSuggestions, suggestions.length, terminalRef, updateCursorPosition]);
 
   useEffect(() => {
     getSuggestionsRef.current = getSuggestions;

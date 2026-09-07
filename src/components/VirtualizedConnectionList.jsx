@@ -328,11 +328,10 @@ const VirtualizedConnectionList = ({
   const containerRef = useRef(null);
   const listRef = useRef(null);
   const [containerHeight, setContainerHeight] = useState(400);
-  const [expandedGroups, setExpandedGroups] = useState(new Set());
-
-  useEffect(() => {
-    setExpandedGroups(collectExpandedGroups(connections));
-  }, [connections]);
+  const expandedGroups = useMemo(
+    () => collectExpandedGroups(connections),
+    [connections],
+  );
 
   // Dynamic height calculation
   useEffect(() => {
@@ -356,15 +355,6 @@ const VirtualizedConnectionList = ({
   // Track expanded groups
   const handleToggleGroup = useCallback(
     (groupId) => {
-      setExpandedGroups((prev) => {
-        const newExpanded = new Set(prev);
-        if (newExpanded.has(groupId)) {
-          newExpanded.delete(groupId);
-        } else {
-          newExpanded.add(groupId);
-        }
-        return newExpanded;
-      });
       onToggleGroup?.(groupId);
     },
     [onToggleGroup],

@@ -1330,16 +1330,6 @@ const ConnectionManager = memo(
           return item;
         });
 
-        // 保存到配置文件
-        if (window.terminalAPI?.saveConnections) {
-          isSavingRef.current = true;
-          window.terminalAPI.saveConnections(newConnections).finally(() => {
-            setTimeout(() => {
-              isSavingRef.current = false;
-            }, 100);
-          });
-        }
-
         // 确保状态更新
         return newConnections;
       });
