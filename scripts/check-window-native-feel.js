@@ -703,7 +703,7 @@ function testDragAndDropUsesNativeValidatedLocalPaths() {
 
   assertContains(
     filemanagementServiceSource,
-    /Upload entry requires a validated localPath/,
+    /mainProcess\.transfer\.errors\.uploadEntryMissingLocalPath/,
     "Upload service must require validated local paths for upload entries.",
   );
 

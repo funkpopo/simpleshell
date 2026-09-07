@@ -12,33 +12,18 @@ const {
 } = require("../../core/utils/nativeSftpClient");
 const { normalizeErrorMessage } = require("../../core/utils/errorResponse");
 const { buildCancelledError } = require("./transferShared");
+const { t: fallbackTranslate } = require("../../shared/mainI18n");
 const { sleep } = require("../../shared/common");
 
 const DEFAULT_MAX_QUEUE_SIZE = 20000;
 
-function createTaskRuntimeError(message, payload = {}) {
-  const error = new Error(message || "Transfer task failed");
-  const raw = payload.raw && typeof payload.raw === "object" ? payload.raw : {};
-  const code = payload.code || raw.errorCode || raw.code || null;
-  if (code) {
-    error.code = code;
-    error.errorCode = code;
-  }
-  error.errorKind = payload.errorKind || raw.errorKind || null;
-  error.retryable = payload.retryable === true || raw.retryable === true;
-  error.module = payload.module || raw.module || null;
-  error.operation = payload.operation || raw.operation || null;
-  if (payload.cancelled) {
-    error.cancelled = true;
-    error.userCancelled = true;
-  }
-  error.worker = payload.worker || null;
-  error.raw = payload.raw || null;
-  return error;
-}
-
 class TransferProcessPool {
   constructor(options = {}) {
+    this.translate =
+      typeof options.translate === "function"
+        ? options.translate
+        : (key, params) => fallbackTranslate(key, params);
+
     const cpuCount = Math.max(2, os.cpus()?.length || 4);
     const sessionCap =
       Number.isFinite(SESSION_CONFIG?.MAX_SESSIONS_PER_TAB) &&
@@ -88,10 +73,42 @@ class TransferProcessPool {
     return `${transferKey}::${taskId}`;
   }
 
+  /**
+   * 构建任务运行时错误对象（附带 code/errorKind/retryable 等分类信息）。
+   * 默认错误文案走主进程翻译（mainProcess.transfer.errors.*）。
+   */
+  _createTaskRuntimeError(message, payload = {}) {
+    const error = new Error(
+      message || this.translate("mainProcess.transfer.errors.taskFailed"),
+    );
+    const raw =
+      payload.raw && typeof payload.raw === "object" ? payload.raw : {};
+    const code = payload.code || raw.errorCode || raw.code || null;
+    if (code) {
+      error.code = code;
+      error.errorCode = code;
+    }
+    error.errorKind = payload.errorKind || raw.errorKind || null;
+    error.retryable = payload.retryable === true || raw.retryable === true;
+    error.module = payload.module || raw.module || null;
+    error.operation = payload.operation || raw.operation || null;
+    if (payload.cancelled) {
+      error.cancelled = true;
+      error.userCancelled = true;
+    }
+    error.worker = payload.worker || null;
+    error.raw = payload.raw || null;
+    return error;
+  }
+
   _ensureQueueCapacity(taskCount) {
     if (this.taskQueue.length + taskCount <= this.maxQueueSize) return;
     throw new Error(
-      `Transfer queue overflow: pending=${this.taskQueue.length}, incoming=${taskCount}, limit=${this.maxQueueSize}`,
+      this.translate("mainProcess.transfer.errors.queueOverflow", {
+        pending: this.taskQueue.length,
+        incoming: taskCount,
+        limit: this.maxQueueSize,
+      }),
     );
   }
 
@@ -116,7 +133,9 @@ class TransferProcessPool {
 
     if (taskPayload.direction === "upload") {
       if (!taskPayload.remotePath || !taskPayload.localPath) {
-        throw new Error("Upload task missing remotePath/localPath");
+        throw new Error(
+          this.translate("mainProcess.transfer.errors.uploadMissingPaths"),
+        );
       }
 
       return {
@@ -129,7 +148,9 @@ class TransferProcessPool {
 
     if (taskPayload.direction === "download") {
       if (!taskPayload.remotePath || !taskPayload.localPath) {
-        throw new Error("Download task missing remotePath/localPath");
+        throw new Error(
+          this.translate("mainProcess.transfer.errors.downloadMissingPaths"),
+        );
       }
 
       return {
@@ -139,7 +160,11 @@ class TransferProcessPool {
       };
     }
 
-    throw new Error(`Unsupported transfer direction: ${taskPayload.direction}`);
+    throw new Error(
+      this.translate("mainProcess.transfer.errors.unsupportedDirection", {
+        direction: taskPayload.direction,
+      }),
+    );
   }
 
   _buildProgressPayload(entry, payload = {}) {
@@ -275,9 +300,10 @@ class TransferProcessPool {
     this.runningTasks.delete(entry.taskKey);
   }
 
-  _releaseTaskChild(entry, reason = "Transfer cancelled by user") {
+  _releaseTaskChild(entry, reason = null) {
     if (!entry) return;
-    entry.cancelReason = reason;
+    entry.cancelReason =
+      reason || this.translate("mainProcess.transfer.errors.cancelledByUser");
     if (!entry.child) return;
 
     try {
@@ -316,7 +342,11 @@ class TransferProcessPool {
         this.taskQueue.splice(index, 1);
         this._rejectTask(
           taskKey,
-          buildCancelledError("Transfer cancelled before dispatch"),
+          buildCancelledError(
+            this.translate(
+              "mainProcess.transfer.errors.cancelledBeforeDispatch",
+            ),
+          ),
         );
         index -= 1;
         continue;
@@ -340,7 +370,10 @@ class TransferProcessPool {
       entry.cancelRequested
     ) {
       throw buildCancelledError(
-        entry.cancelReason || "Transfer cancelled before sidecar execution",
+        entry.cancelReason ||
+          this.translate(
+            "mainProcess.transfer.errors.cancelledBeforeSidecarExecution",
+          ),
       );
     }
 
@@ -360,7 +393,8 @@ class TransferProcessPool {
           ) {
             this._releaseTaskChild(
               entry,
-              entry.cancelReason || "Transfer cancelled by user",
+              entry.cancelReason ||
+                this.translate("mainProcess.transfer.errors.cancelledByUser"),
             );
           }
         },
@@ -372,7 +406,8 @@ class TransferProcessPool {
           ) {
             this._releaseTaskChild(
               entry,
-              entry.cancelReason || "Transfer cancelled by user",
+              entry.cancelReason ||
+                this.translate("mainProcess.transfer.errors.cancelledByUser"),
             );
             return;
           }
@@ -391,13 +426,15 @@ class TransferProcessPool {
       entry.cancelRequested
     ) {
       throw buildCancelledError(
-        entry.cancelReason || "Transfer cancelled by user",
+        entry.cancelReason ||
+          this.translate("mainProcess.transfer.errors.cancelledByUser"),
       );
     }
 
     if (result?.success === false) {
-      throw createTaskRuntimeError(
-        result.error || "Native transfer task failed",
+      throw this._createTaskRuntimeError(
+        result.error ||
+          this.translate("mainProcess.transfer.errors.nativeTransferFailed"),
         {
           code: result.errorCode || result.code,
           errorKind: result.errorKind,
@@ -434,7 +471,8 @@ class TransferProcessPool {
           entry.cancelRequested
         ) {
           throw buildCancelledError(
-            entry.cancelReason || "Transfer cancelled by user",
+            entry.cancelReason ||
+              this.translate("mainProcess.transfer.errors.cancelledByUser"),
           );
         }
 
@@ -463,7 +501,7 @@ class TransferProcessPool {
           const retryable = isRetryableTransferError(error);
           const hasMoreAttempts = attempt < maxAttempts;
           if (!retryable || !hasMoreAttempts) {
-            throw createTaskRuntimeError(normalizeErrorMessage(error), {
+            throw this._createTaskRuntimeError(normalizeErrorMessage(error), {
               code: error?.code || error?.errorCode,
               errorKind: error?.errorKind,
               retryable,
@@ -486,10 +524,13 @@ class TransferProcessPool {
 
       throw (
         lastError ||
-        createTaskRuntimeError("Transfer task failed after retries", {
-          retryable: true,
-          worker: "native-sidecar",
-        })
+        this._createTaskRuntimeError(
+          this.translate("mainProcess.transfer.errors.taskFailedAfterRetries"),
+          {
+            retryable: true,
+            worker: "native-sidecar",
+          },
+        )
       );
     } catch (error) {
       const normalizedError =
@@ -502,7 +543,7 @@ class TransferProcessPool {
             )
           : error?.retryable !== undefined
             ? error
-            : createTaskRuntimeError(normalizeErrorMessage(error), {
+            : this._createTaskRuntimeError(normalizeErrorMessage(error), {
                 code: error?.code || error?.errorCode,
                 errorKind: error?.errorKind,
                 retryable: isRetryableTransferError(error),
@@ -580,20 +621,28 @@ class TransferProcessPool {
     onTaskError = null,
   }) {
     if (this._isShutdown) {
-      throw new Error("Transfer process pool already shutdown");
+      throw new Error(
+        this.translate("mainProcess.transfer.errors.poolShutdown"),
+      );
     }
 
     if (!transferKey || !tabId) {
-      throw new Error("transferKey and tabId are required");
+      throw new Error(
+        this.translate("mainProcess.transfer.errors.missingTransferContext"),
+      );
     }
 
     if (!sshConfig?.host || !sshConfig?.username) {
-      throw new Error("sshConfig.host and sshConfig.username are required");
+      throw new Error(
+        this.translate("mainProcess.transfer.errors.missingSshConfig"),
+      );
     }
 
     if (this.transferCancelled.has(transferKey)) {
       this._clearTransferState(transferKey);
-      throw buildCancelledError("Transfer cancelled before task queueing");
+      throw buildCancelledError(
+        this.translate("mainProcess.transfer.errors.cancelledBeforeQueueing"),
+      );
     }
 
     if (!Array.isArray(tasks) || tasks.length === 0) {
@@ -612,12 +661,18 @@ class TransferProcessPool {
     const taskPromises = tasks.map((task) => {
       const taskId = String(task?.taskId || "");
       if (!taskId) {
-        throw new Error("Each task requires taskId");
+        throw new Error(
+          this.translate("mainProcess.transfer.errors.missingTaskId"),
+        );
       }
 
       const taskKey = this._getTaskKey(transferKey, taskId);
       if (this.pendingTasks.has(taskKey)) {
-        throw new Error(`Duplicate taskKey detected: ${taskKey}`);
+        throw new Error(
+          this.translate("mainProcess.transfer.errors.duplicateTaskKey", {
+            taskKey,
+          }),
+        );
       }
 
       return new Promise((resolve, reject) => {
@@ -691,7 +746,10 @@ class TransferProcessPool {
 
   cancelTransfer(transferKey) {
     if (!transferKey) {
-      return { success: false, error: "transferKey is required" };
+      return {
+        success: false,
+        error: this.translate("mainProcess.transfer.errors.missingTransferKey"),
+      };
     }
 
     this.transferCancelled.add(transferKey);
@@ -707,7 +765,11 @@ class TransferProcessPool {
     for (const taskKey of queued) {
       this._rejectTask(
         taskKey,
-        buildCancelledError("Transfer cancelled before sidecar execution"),
+        buildCancelledError(
+          this.translate(
+            "mainProcess.transfer.errors.cancelledBeforeSidecarExecution",
+          ),
+        ),
       );
     }
 
@@ -715,7 +777,9 @@ class TransferProcessPool {
     for (const entry of this.runningTasks.values()) {
       if (entry.transferKey !== transferKey) continue;
       entry.cancelRequested = true;
-      entry.cancelReason = "Transfer cancelled by user";
+      entry.cancelReason = this.translate(
+        "mainProcess.transfer.errors.cancelledByUser",
+      );
       runningNotified += 1;
       this._releaseTaskChild(entry, entry.cancelReason);
     }
@@ -736,10 +800,13 @@ class TransferProcessPool {
     for (const taskKey of queuedKeys) {
       this._rejectTask(
         taskKey,
-        createTaskRuntimeError("Transfer process pool shutdown", {
-          cancelled: true,
-          worker: "native-sidecar",
-        }),
+        this._createTaskRuntimeError(
+          this.translate("mainProcess.transfer.errors.poolShutdown"),
+          {
+            cancelled: true,
+            worker: "native-sidecar",
+          },
+        ),
       );
     }
 
@@ -748,14 +815,19 @@ class TransferProcessPool {
       const entry = this.runningTasks.get(taskKey);
       if (!entry) continue;
       entry.cancelRequested = true;
-      entry.cancelReason = "Transfer process pool shutdown";
+      entry.cancelReason = this.translate(
+        "mainProcess.transfer.errors.poolShutdown",
+      );
       this._releaseTaskChild(entry, entry.cancelReason);
       this._rejectTask(
         taskKey,
-        createTaskRuntimeError("Transfer process pool shutdown", {
-          cancelled: true,
-          worker: "native-sidecar",
-        }),
+        this._createTaskRuntimeError(
+          this.translate("mainProcess.transfer.errors.poolShutdown"),
+          {
+            cancelled: true,
+            worker: "native-sidecar",
+          },
+        ),
       );
     }
 

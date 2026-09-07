@@ -180,7 +180,9 @@ class FilemanagementService {
 
     const currentStats = this.transferProcessPool?.getRuntimeStats?.();
     if (!this.transferProcessPool || currentStats?.shutdown) {
-      this.transferProcessPool = new TransferProcessPool();
+      this.transferProcessPool = new TransferProcessPool({
+        translate: transferText,
+      });
       this._log("Transfer process pool initialized", "INFO");
     }
 
@@ -297,7 +299,9 @@ class FilemanagementService {
     this._throwIfTransferCancelled(transferKey);
 
     if (!entry?.localPath) {
-      throw new Error("Upload entry requires a validated localPath");
+      throw new Error(
+        transferText("mainProcess.transfer.errors.uploadEntryMissingLocalPath"),
+      );
     }
 
     return {
@@ -677,13 +681,16 @@ class FilemanagementService {
     stream.once("end", cleanup);
   }
 
-  _destroyTransferStreams(transferKey, reason = "Transfer cancelled by user") {
+  _destroyTransferStreams(transferKey, reason = null) {
     const transfer = this._getTransfer(transferKey);
     if (!transfer) return;
 
+    const destroyReason =
+      reason || transferText("mainProcess.transfer.errors.cancelledByUser");
+
     for (const stream of transfer.activeStreams) {
       try {
-        stream.destroy(new Error(reason));
+        stream.destroy(new Error(destroyReason));
       } catch {
         // ignore stream destruction errors
       }
@@ -827,7 +834,10 @@ class FilemanagementService {
     if (transfer.cancelled) {
       this._recordCancelLatency(transfer);
     }
-    this._destroyTransferStreams(transferKey, "Transfer finalized");
+    this._destroyTransferStreams(
+      transferKey,
+      transferText("mainProcess.transfer.errors.transferFinalized"),
+    );
     this.activeTransfers.delete(transferKey);
     if (
       this.transferProcessPool &&
@@ -913,7 +923,11 @@ class FilemanagementService {
         return;
       }
       if (stats) {
-        throw new Error(`Path exists and is not a directory: ${remotePath}`);
+        throw new Error(
+          transferText("mainProcess.transfer.errors.remotePathNotDirectory", {
+            path: remotePath,
+          }),
+        );
       }
       throw mkdirError;
     }
@@ -988,7 +1002,9 @@ class FilemanagementService {
               token,
               items: [],
               done: true,
-              error: response?.error || "Failed to list directory",
+              error:
+                response?.error ||
+                transferText("mainProcess.transfer.errors.listDirectoryFailed"),
             });
             return;
           }
@@ -1054,10 +1070,16 @@ class FilemanagementService {
   async cancelTransfer(event, tabId, transferKey) {
     const transfer = this._getTransfer(transferKey);
     if (!transfer) {
-      return { success: false, error: "Transfer not found" };
+      return {
+        success: false,
+        error: transferText("mainProcess.transfer.errors.transferNotFound"),
+      };
     }
     if (String(transfer.tabId) !== String(tabId)) {
-      return { success: false, error: "Transfer does not belong to tab" };
+      return {
+        success: false,
+        error: transferText("mainProcess.transfer.errors.transferTabMismatch"),
+      };
     }
 
     transfer.cancelled = true;
@@ -1065,7 +1087,10 @@ class FilemanagementService {
     if (this.transferProcessPool) {
       this.transferProcessPool.cancelTransfer(transferKey);
     }
-    this._destroyTransferStreams(transferKey, "Transfer cancelled by user");
+    this._destroyTransferStreams(
+      transferKey,
+      transferText("mainProcess.transfer.errors.cancelledByUser"),
+    );
     this._emitTransferProgress(transferKey, {
       force: true,
       fileName: this._getTransferDisplayName(transfer),
@@ -1081,7 +1106,11 @@ class FilemanagementService {
 
   cleanupTransfersForTab(tabId) {
     if (tabId === undefined || tabId === null) {
-      return { success: false, cleanedCount: 0, error: "Invalid tabId" };
+      return {
+        success: false,
+        cleanedCount: 0,
+        error: transferText("mainProcess.transfer.errors.invalidTabId"),
+      };
     }
 
     let cleanedCount = 0;
@@ -1094,7 +1123,7 @@ class FilemanagementService {
       }
       this._destroyTransferStreams(
         transferKey,
-        "Transfer cancelled due to tab cleanup",
+        transferText("mainProcess.transfer.errors.cancelledDueToTabCleanup"),
       );
       this._emitTransferProgress(transferKey, {
         force: true,
@@ -1193,7 +1222,7 @@ class FilemanagementService {
     const scannerPath = getNativeServicesHostPath();
     if (!scannerPath) {
       throw new Error(
-        "Native services host is required for folder scanning but was not found",
+        transferText("mainProcess.transfer.errors.scannerHostMissing"),
       );
     }
 
@@ -1232,7 +1261,11 @@ class FilemanagementService {
 
           const payload = String(stdout || "").trim();
           if (!payload) {
-            reject(new Error("Native scanner returned empty output"));
+            reject(
+              new Error(
+                transferText("mainProcess.transfer.errors.scannerEmptyOutput"),
+              ),
+            );
             return;
           }
 
@@ -1241,7 +1274,9 @@ class FilemanagementService {
           } catch (parseError) {
             reject(
               new Error(
-                `Native scanner returned invalid JSON: ${normalizeErrorMessage(parseError)}`,
+                transferText("mainProcess.transfer.errors.scannerInvalidJson", {
+                  error: normalizeErrorMessage(parseError),
+                }),
               ),
             );
           }
@@ -1313,7 +1348,10 @@ class FilemanagementService {
 
     const result = await nativeSftpClient.scanRemoteFolderTree(tabId, rootPath);
     if (!result?.success) {
-      throw new Error(result?.error || "scan remote folder tree failed");
+      throw new Error(
+        result?.error ||
+          transferText("mainProcess.transfer.errors.scanRemoteFolderFailed"),
+      );
     }
 
     if (transferKey) {
@@ -1447,7 +1485,9 @@ class FilemanagementService {
           ) {
             return;
           }
-          taskFailedMessage = message?.error?.message || "Download task failed";
+          taskFailedMessage =
+            message?.error?.message ||
+            transferText("mainProcess.transfer.errors.downloadTaskFailed");
         },
       });
 
@@ -1619,7 +1659,10 @@ class FilemanagementService {
             }
             chunkTaskFailed = true;
             chunkErrors.push(
-              message?.error?.message || "Download chunk task failed",
+              message?.error?.message ||
+                transferText(
+                  "mainProcess.transfer.errors.downloadChunkTaskFailed",
+                ),
             );
           },
         });
@@ -1628,7 +1671,12 @@ class FilemanagementService {
           throw buildCancelledError();
         }
         if (chunkTaskFailed) {
-          throw new Error(chunkErrors[0] || "Download chunk task failed");
+          throw new Error(
+            chunkErrors[0] ||
+              transferText(
+                "mainProcess.transfer.errors.downloadChunkTaskFailed",
+              ),
+          );
         }
         this._throwIfTransferCancelled(transferKey);
         await fsp.rename(chunkTempPath, filePath);
@@ -1875,7 +1923,9 @@ class FilemanagementService {
         counters.failed += 1;
         errors.push({
           fileName: fileState.fileName,
-          error: "Download chunk incomplete",
+          error: transferText(
+            "mainProcess.transfer.errors.downloadChunkIncomplete",
+          ),
         });
         continue;
       }
@@ -1896,7 +1946,9 @@ class FilemanagementService {
         counters.failed += 1;
         errors.push({
           fileName: fileState.fileName,
-          error: `Chunk merge failed: ${normalizeErrorMessage(renameError)}`,
+          error: transferText("mainProcess.transfer.errors.chunkMergeFailed", {
+            error: normalizeErrorMessage(renameError),
+          }),
         });
       }
     }
@@ -2175,7 +2227,9 @@ class FilemanagementService {
           });
         },
         getTaskLabel: (taskMeta) => taskMeta?.fileName,
-        taskErrorLabel: "Download task failed",
+        taskErrorLabel: transferText(
+          "mainProcess.transfer.errors.downloadTaskFailed",
+        ),
       });
 
       if (this._isTransferCancelled(transferKey)) {
@@ -2532,7 +2586,9 @@ class FilemanagementService {
           });
         },
         getTaskLabel: (taskMeta) => taskMeta?.fileName,
-        taskErrorLabel: "Download task failed",
+        taskErrorLabel: transferText(
+          "mainProcess.transfer.errors.downloadTaskFailed",
+        ),
       });
 
       if (this._isTransferCancelled(transferKey)) {
@@ -2926,7 +2982,9 @@ class FilemanagementService {
           });
         },
         getTaskLabel: (taskMeta) => taskMeta?.fileLabel,
-        taskErrorLabel: "Upload task failed",
+        taskErrorLabel: transferText(
+          "mainProcess.transfer.errors.uploadTaskFailed",
+        ),
       });
 
       if (this._isTransferCancelled(transferKey)) {
@@ -2972,7 +3030,9 @@ class FilemanagementService {
           counters.failed += 1;
           errors.push({
             fileName: fileState.fileLabel,
-            error: "Upload chunk incomplete",
+            error: transferText(
+              "mainProcess.transfer.errors.uploadChunkIncomplete",
+            ),
           });
           failedChunkRemotePaths.push(fileState.remotePath);
           continue;
@@ -3450,7 +3510,10 @@ class FilemanagementService {
         if (this.transferProcessPool) {
           this.transferProcessPool.cancelTransfer(transferKey);
         }
-        this._destroyTransferStreams(transferKey, "Application cleanup");
+        this._destroyTransferStreams(
+          transferKey,
+          transferText("mainProcess.transfer.errors.applicationCleanup"),
+        );
       } catch {
         // ignore cleanup error
       }

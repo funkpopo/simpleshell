@@ -1,5 +1,9 @@
-function buildCancelledError(message = "Transfer cancelled by user") {
-  const error = new Error(message);
+const { t: mainTranslate } = require("../../shared/mainI18n");
+
+function buildCancelledError(message) {
+  const error = new Error(
+    message || mainTranslate("mainProcess.transfer.errors.cancelledByUser"),
+  );
   error.cancelled = true;
   error.userCancelled = true;
   return error;
