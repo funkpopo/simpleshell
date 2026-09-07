@@ -307,13 +307,83 @@ const HARDCODED_SKIP_FILES = new Set([
   path.normalize("shared/connectionErrorAdvice.js"),
   path.normalize("shared/errorClassification.js"),
   path.normalize("shared/mainI18n.js"),
+  // Bilingual retryable/session error matcher lists (matching logic, not UI text).
+  path.normalize(path.join("modules", "sftp", "sftpConfig.js")),
 ]);
+
+// Renderer UI surfaces scanned for hardcoded strings (both Chinese and English).
+const HARDCODED_CORE_SURFACE_DIRS = new Set([
+  "components",
+  "hooks",
+  "contexts",
+  "store",
+]);
+// Service-layer modules: Chinese + UI-property English literals are flagged;
+// generic English sentences here are mostly internal error strings (tracked
+// separately as error-message i18n work), so a blanket scan would be too noisy.
+const HARDCODED_MODULE_SURFACE_DIRS = new Set(["modules"]);
+
+const isCoreUiSurface = (parts, rel) =>
+  HARDCODED_CORE_SURFACE_DIRS.has(parts[0]) ||
+  rel === "app.jsx" ||
+  rel === path.join("core", "utils", "formatters.js");
+
+const isModuleUiSurface = (parts) =>
+  HARDCODED_MODULE_SURFACE_DIRS.has(parts[0]);
+
+const UI_PROP_ASSIGN =
+  /\b(title|label|placeholder|helperText|aria-label|message|description|tooltip|text|header|subtitle|hint|button|caption)\s*[:=]\s*['"`]/i;
+
+const ENGLISH_CHARSET = /^[A-Za-z0-9 ,.!?%:()'-]+$/;
+const ENGLISH_WORD = /^[A-Za-z][A-Za-z'-]*$/;
+
+// A string counts as English prose when it has 2+ purely alphabetic words and
+// at least one all-lowercase word (excludes brand/protocol tokens like
+// "Liberation Mono", acronyms such as "SSH2", font names, etc.).
+const looksLikeEnglishProse = (value) => {
+  if (value.length < 4 || !ENGLISH_CHARSET.test(value)) {
+    return false;
+  }
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length < 2) {
+    return false;
+  }
+  return (
+    words.every((word) => ENGLISH_WORD.test(word)) &&
+    words.some((word) => /^[a-z][a-z'-]+$/.test(word))
+  );
+};
+
+// Single capitalized word in a UI-property position (e.g. label: "Welcome").
+const looksLikeEnglishUiWord = (value) => /^[A-Z][a-z]{2,}$/.test(value);
+
+// JSX text between tags: >中文< or >English prose< — no braces/equals inside.
+const JSX_TEXT_PATTERN = />([^<>={}]{3,})</g;
+
+const isHardcodedJsxText = (value) =>
+  /[\u4e00-\u9fff]/.test(value) || looksLikeEnglishProse(value);
+
+const extractQuotedStrings = (line) => {
+  const values = [];
+  const quoted = /['"`]([^'"`\n]+)['"`]/g;
+  let match;
+  while ((match = quoted.exec(line)) !== null) {
+    values.push(match[1]);
+  }
+  return values;
+};
 
 const collectHardcodedUiStrings = () => {
   const findings = [];
-  const chineseChar = /[\u4e00-\u9fff]/;
-  const uiPropAssign =
-    /\b(title|label|placeholder|helperText|aria-label|message|description|tooltip|text|header|subtitle|hint|button|caption)\s*[:=]\s*['"`]/i;
+  const pushFinding = (filePath, lineNo, sample) => {
+    const clean = sample.replace(/\s+/g, " ").trim().slice(0, 80);
+    if (clean) {
+      findings.push({
+        loc: `${path.relative(ROOT, filePath)}:${lineNo}`,
+        sample: clean,
+      });
+    }
+  };
 
   for (const filePath of readSourceFiles(SRC_DIR)) {
     const rel = path.relative(SRC_DIR, filePath);
@@ -325,13 +395,9 @@ const collectHardcodedUiStrings = () => {
       continue;
     }
 
-    // Focus on renderer UI components; skip hooks/main logs (too many matchers).
-    const isUiSurface =
-      parts[0] === "components" ||
-      rel === "app.jsx" ||
-      rel === path.join("core", "utils", "formatters.js");
-
-    if (!isUiSurface) {
+    const isCoreSurface = isCoreUiSurface(parts, rel);
+    const isModuleSurface = isModuleUiSurface(parts);
+    if (!isCoreSurface && !isModuleSurface) {
       continue;
     }
 
@@ -348,26 +414,25 @@ const collectHardcodedUiStrings = () => {
       ) {
         return;
       }
-      if (!chineseChar.test(withoutLineComment)) {
+      const hasChinese = /[\u4e00-\u9fff]/.test(withoutLineComment);
+      if (!hasChinese && !/['"`]/.test(withoutLineComment)) {
         return;
       }
-      // Skip pure comments mixed on line after code? Keep simple: require quotes.
-      if (!/['"`]/.test(withoutLineComment)) {
-        return;
-      }
-      // Ignore import paths, logs, and bilingual error matchers/regexes.
-      if (
-        /^\s*import\s+/.test(withoutLineComment) ||
-        /require\s*\(/.test(withoutLineComment)
-      ) {
-        return;
-      }
+      // Ignore import paths, log utilities, and bilingual matchers/regexes.
       const prev = index > 0 ? lines[index - 1] : "";
       if (
+        /^\s*import\s+/.test(withoutLineComment) ||
+        /require\s*\(/.test(withoutLineComment) ||
         /\bconsole\.(log|warn|error|info|debug)\s*\(/.test(
           withoutLineComment,
         ) ||
         /\bconsole\.(log|warn|error|info|debug)\s*\(/.test(prev) ||
+        /\blogToFile\s*\(/.test(withoutLineComment) ||
+        /\bcase\s+['"`]/.test(withoutLineComment) ||
+        /\b(rel|target|className)\s*=/.test(withoutLineComment) ||
+        /\b(contain|willChange|transformOrigin|preserveAspectRatio)\s*[:=]/.test(
+          withoutLineComment,
+        ) ||
         /\.includes\s*\(/.test(withoutLineComment) ||
         /\.test\s*\(/.test(withoutLineComment) ||
         /new\s+RegExp\s*\(/.test(withoutLineComment) ||
@@ -377,27 +442,69 @@ const collectHardcodedUiStrings = () => {
         return;
       }
 
-      // Only flag likely UI-facing assignments or JSX text-ish lines
-      const likelyUi =
-        uiPropAssign.test(withoutLineComment) ||
-        /['"`][^'"`]*[\u4e00-\u9fff][^'"`]*['"`]/.test(withoutLineComment);
+      // 1) Quoted strings.
+      for (const value of extractQuotedStrings(withoutLineComment)) {
+        if (/\$\{/.test(value)) {
+          // Interpolated templates are rarely UI literals; skip to cut noise.
+          continue;
+        }
 
-      if (!likelyUi) {
-        return;
+        if (hasChinese) {
+          // Chinese: flag quoted Chinese on a likely UI-facing line.
+          const likelyUi =
+            UI_PROP_ASSIGN.test(withoutLineComment) ||
+            /['"`][^'"`]*[\u4e00-\u9fff][^'"`]*['"`]/.test(withoutLineComment);
+          if (
+            likelyUi &&
+            /[\u4e00-\u9fff]/.test(value) &&
+            // Quoted-string matchers (`x === "中文"`) are matching logic.
+            !/===|!==/.test(withoutLineComment)
+          ) {
+            pushFinding(filePath, index + 1, value);
+            break;
+          }
+          continue;
+        }
+
+        // English: heuristic detection of hardcoded UI literals.
+        const isUiProp = UI_PROP_ASSIGN.test(withoutLineComment);
+        if (isCoreSurface && looksLikeEnglishProse(value)) {
+          // t()-mapping tables (`"Go to line": t(...)`) and context-provider
+          // developer errors are not user-visible UI text.
+          if (
+            /\bt\s*\(/.test(withoutLineComment) ||
+            /===|!==/.test(withoutLineComment) ||
+            /must be used (within|with)\b/.test(value)
+          ) {
+            continue;
+          }
+          pushFinding(filePath, index + 1, value);
+          break;
+        }
+        if (
+          isUiProp &&
+          (looksLikeEnglishProse(value) || looksLikeEnglishUiWord(value)) &&
+          !/[\u4e00-\u9fff]/.test(value)
+        ) {
+          pushFinding(filePath, index + 1, value);
+          break;
+        }
       }
 
-      // Extract a short sample
-      const match = withoutLineComment.match(
-        /['"`]([^'"`]*[\u4e00-\u9fff][^'"`]*)['"`]/,
-      );
-      if (!match) {
-        return;
+      // 2) JSX text between tags (>中文< / >English prose<) — only when the
+      // line has no quoted sample already reported above.
+      if (!/['"`][^'"`]*[\u4e00-\u9fff][^'"`]*['"`]/.test(withoutLineComment)) {
+        JSX_TEXT_PATTERN.lastIndex = 0;
+        let jsxMatch;
+        while (
+          (jsxMatch = JSX_TEXT_PATTERN.exec(withoutLineComment)) !== null
+        ) {
+          if (isHardcodedJsxText(jsxMatch[1])) {
+            pushFinding(filePath, index + 1, jsxMatch[1]);
+            break;
+          }
+        }
       }
-
-      findings.push({
-        loc: `${path.relative(ROOT, filePath)}:${index + 1}`,
-        sample: match[1].replace(/\s+/g, " ").slice(0, 80),
-      });
     });
   }
 
@@ -516,7 +623,7 @@ const main = () => {
 
   const hardcoded = collectHardcodedUiStrings();
   if (hardcoded.length > 0) {
-    const message = `Hardcoded Chinese UI strings in renderer (${hardcoded.length}): ${hardcoded
+    const message = `Hardcoded UI strings in renderer (${hardcoded.length}): ${hardcoded
       .slice(0, 8)
       .map((item) => `${item.loc} "${item.sample}"`)
       .join("; ")}${hardcoded.length > 8 ? "; ..." : ""}`;
@@ -527,6 +634,11 @@ const main = () => {
       }
     } else if (HARDCODED_MODE !== "off") {
       warnings.push(message);
+      if (process.env.CHECK_I18N_HARDCODED_VERBOSE === "1") {
+        for (const item of hardcoded) {
+          warnings.push(`hardcoded UI: ${item.loc} -> "${item.sample}"`);
+        }
+      }
     }
   }
 
