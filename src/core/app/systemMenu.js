@@ -1,4 +1,5 @@
 const { BrowserWindow, Menu, app } = require("electron");
+const configService = require("../../services/configService");
 const { safeSendToRenderer } = require("../window/windowManager");
 
 const MENU_ACTIONS = Object.freeze({
@@ -10,6 +11,12 @@ const MENU_ACTIONS = Object.freeze({
   FEEDBACK_ISSUE: "feedback-issue",
 });
 
+// 获取当前 UI 语言下的 mainT 与语言码（惰性加载以避免初始化顺序耦合）。
+function getMenuT() {
+  const { t: mainT, getUiLanguage } = require("../../shared/mainI18n");
+  return { mainT, lng: getUiLanguage(configService) };
+}
+
 function sendMenuAction(action) {
   safeSendToRenderer("app:menu-action", {
     action,
@@ -19,31 +26,32 @@ function sendMenuAction(action) {
 }
 
 function buildAppMenuItems() {
+  const { mainT, lng } = getMenuT();
   return [
     {
-      label: "About SimpleShell",
+      label: mainT("mainProcess.menu.about", { lng }),
       click: () => sendMenuAction(MENU_ACTIONS.ABOUT),
     },
     {
-      label: "Settings...",
+      label: mainT("mainProcess.menu.settings", { lng }),
       accelerator: "CmdOrCtrl+,",
       click: () => sendMenuAction(MENU_ACTIONS.SETTINGS),
     },
     {
-      label: "Check for Updates...",
+      label: mainT("mainProcess.menu.checkForUpdates", { lng }),
       click: () => sendMenuAction(MENU_ACTIONS.CHECK_FOR_UPDATES),
     },
     { type: "separator" },
     {
-      label: "Open Logs",
+      label: mainT("mainProcess.menu.openLogs", { lng }),
       click: () => sendMenuAction(MENU_ACTIONS.OPEN_LOG_DIRECTORY),
     },
     {
-      label: "Export Diagnostics",
+      label: mainT("mainProcess.menu.exportDiagnostics", { lng }),
       click: () => sendMenuAction(MENU_ACTIONS.EXPORT_DIAGNOSTICS),
     },
     {
-      label: "Feedback Issue",
+      label: mainT("mainProcess.menu.feedbackIssue", { lng }),
       click: () => sendMenuAction(MENU_ACTIONS.FEEDBACK_ISSUE),
     },
     { type: "separator" },
@@ -51,70 +59,91 @@ function buildAppMenuItems() {
 }
 
 function buildEditSubmenu() {
+  const { mainT, lng } = getMenuT();
   return [
-    { role: "undo" },
-    { role: "redo" },
+    { role: "undo", label: mainT("mainProcess.menu.undo", { lng }) },
+    { role: "redo", label: mainT("mainProcess.menu.redo", { lng }) },
     { type: "separator" },
-    { role: "cut" },
-    { role: "copy" },
-    { role: "paste" },
-    { role: "selectAll" },
+    { role: "cut", label: mainT("mainProcess.menu.cut", { lng }) },
+    { role: "copy", label: mainT("mainProcess.menu.copy", { lng }) },
+    { role: "paste", label: mainT("mainProcess.menu.paste", { lng }) },
+    {
+      role: "selectAll",
+      label: mainT("mainProcess.menu.selectAll", { lng }),
+    },
   ];
 }
 
 function buildDarwinTemplate() {
+  const { mainT, lng } = getMenuT();
   return [
     {
       label: app.name || "SimpleShell",
       submenu: [
         ...buildAppMenuItems(),
-        { role: "hide" },
-        { role: "hideOthers" },
-        { role: "unhide" },
+        {
+          role: "hide",
+          label: mainT("mainProcess.menu.hide", {
+            lng,
+            appName: app.name || "SimpleShell",
+          }),
+        },
+        {
+          role: "hideOthers",
+          label: mainT("mainProcess.menu.hideOthers", { lng }),
+        },
+        { role: "unhide", label: mainT("mainProcess.menu.unhide", { lng }) },
         { type: "separator" },
-        { role: "quit" },
+        { role: "quit", label: mainT("mainProcess.menu.quit", { lng }) },
       ],
     },
     {
-      label: "Edit",
+      label: mainT("mainProcess.menu.edit", { lng }),
       submenu: buildEditSubmenu(),
     },
     {
-      label: "Window",
+      label: mainT("mainProcess.menu.window", { lng }),
       submenu: [
-        { role: "minimize" },
-        { role: "zoom" },
+        {
+          role: "minimize",
+          label: mainT("mainProcess.menu.minimize", { lng }),
+        },
+        { role: "zoom", label: mainT("mainProcess.menu.zoom", { lng }) },
         { type: "separator" },
-        { role: "front" },
-        { role: "close" },
+        { role: "front", label: mainT("mainProcess.menu.front", { lng }) },
+        { role: "close", label: mainT("mainProcess.menu.close", { lng }) },
       ],
     },
   ];
 }
 
 function buildDefaultTemplate() {
+  const { mainT, lng } = getMenuT();
   return [
     {
-      label: "File",
+      label: mainT("mainProcess.menu.file", { lng }),
       submenu: [
         ...buildAppMenuItems(),
         {
-          label: "Quit",
+          label: mainT("mainProcess.menu.quit", { lng }),
           accelerator: "CmdOrCtrl+Q",
           click: () => app.quit(),
         },
       ],
     },
     {
-      label: "Edit",
+      label: mainT("mainProcess.menu.edit", { lng }),
       submenu: buildEditSubmenu(),
     },
     {
-      label: "Window",
+      label: mainT("mainProcess.menu.window", { lng }),
       submenu: [
-        { role: "minimize" },
         {
-          label: "Maximize",
+          role: "minimize",
+          label: mainT("mainProcess.menu.minimize", { lng }),
+        },
+        {
+          label: mainT("mainProcess.menu.maximize", { lng }),
           click: () => {
             const targetWindow = BrowserWindow.getFocusedWindow();
             if (!targetWindow || targetWindow.isDestroyed()) {
@@ -127,7 +156,7 @@ function buildDefaultTemplate() {
             }
           },
         },
-        { role: "close" },
+        { role: "close", label: mainT("mainProcess.menu.close", { lng }) },
       ],
     },
   ];
@@ -138,10 +167,17 @@ function installSystemMenu() {
     process.platform === "darwin"
       ? buildDarwinTemplate()
       : buildDefaultTemplate();
+
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// 语言切换后按新语言重建菜单。
+function rebuildSystemMenu() {
+  installSystemMenu();
 }
 
 module.exports = {
   installSystemMenu,
+  rebuildSystemMenu,
   MENU_ACTIONS,
 };

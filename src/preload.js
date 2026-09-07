@@ -1119,7 +1119,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
         data.transferKey || "",
       ],
       invoke: () =>
-        ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_DOWNLOAD_FILES, tabId, files),
+        ipcRenderer.invoke(
+          IPC_REQUEST_CHANNELS.FILE_DOWNLOAD_FILES,
+          tabId,
+          files,
+        ),
     }),
   // 新增API
   openFileInExternalEditor: (tabId, remotePath) =>
@@ -1585,6 +1589,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   // 窗口重新加载
   reloadWindow: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_RELOAD_WINDOW),
+
+  // 重建系统菜单（语言切换后由渲染层触发）
+  rebuildSystemMenu: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_REBUILD_SYSTEM_MENU),
 
   // 窗口控制API
   minimizeWindow: () =>

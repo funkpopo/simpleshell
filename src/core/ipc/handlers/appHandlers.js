@@ -51,6 +51,11 @@ class AppHandlers {
         handler: this.reloadWindow.bind(this),
       },
       {
+        channel: IPC_REQUEST_CHANNELS.APP_REBUILD_SYSTEM_MENU,
+        category: "app",
+        handler: this.rebuildSystemMenu.bind(this),
+      },
+      {
         channel: IPC_REQUEST_CHANNELS.CLIPBOARD_READ_TEXT,
         category: "clipboard",
         handler: this.readClipboardText.bind(this),
@@ -181,6 +186,14 @@ class AppHandlers {
     }
     mainWindow.reload();
     logToFile("Window reloaded", "INFO");
+    return { success: true };
+  }
+
+  async rebuildSystemMenu() {
+    // 惰性 require 以避免与 core/app 模块的加载顺序耦合
+    const { rebuildSystemMenu } = require("../../app/systemMenu");
+    rebuildSystemMenu();
+    logToFile("System menu rebuilt via IPC", "INFO");
     return { success: true };
   }
 

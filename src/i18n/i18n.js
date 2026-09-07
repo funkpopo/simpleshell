@@ -62,6 +62,12 @@ export const changeLanguage = (lng) => {
   const normalizedLanguage = normalizeLanguage(lng);
   if (i18n.language !== normalizedLanguage) {
     i18n.changeLanguage(normalizedLanguage);
+    // 通知主进程按新语言重建系统菜单（文件/编辑/窗口等）
+    try {
+      window.terminalAPI?.rebuildSystemMenu?.();
+    } catch {
+      // IPC 桥未就绪时静默忽略（菜单保持启动时语言）
+    }
   }
 };
 

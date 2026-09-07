@@ -126,6 +126,12 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
   defineRequest("APP_CLOSE", "app:close", "app", NO_ARGS_SCHEMA),
   defineRequest("APP_RELOAD_WINDOW", "app:reloadWindow", "app", NO_ARGS_SCHEMA),
   defineRequest(
+    "APP_REBUILD_SYSTEM_MENU",
+    "app:rebuildSystemMenu",
+    "app",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
     "CLIPBOARD_READ_TEXT",
     "clipboard:readText",
     "clipboard",
