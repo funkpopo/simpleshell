@@ -35,6 +35,35 @@ const TRANSLATION_MEMBER_PROPERTIES = new Set(["t", "current"]);
 
 const parseJson = (filePath) => JSON.parse(fs.readFileSync(filePath, "utf8"));
 
+// i18next v4 plural suffixes. Keys like `items_one` / `items_other` belong to
+// the same plural family as the base key `items`; zh-CN (no plural categories)
+// only carries the base key and relies on i18next's fallback from
+// `key_other` to `key`.
+const PLURAL_SUFFIX_RE = /_(zero|one|two|few|many|other)$/;
+
+const splitPluralKey = (key) => {
+  const match = key.match(PLURAL_SUFFIX_RE);
+  if (!match) {
+    return { family: key, variant: "" };
+  }
+  return { family: key.slice(0, match.index), variant: match[1] };
+};
+
+const pluralLabel = (family, variant) =>
+  variant ? `${family}_${variant}` : family;
+
+const buildFamilies = (flatMap) => {
+  const families = new Map();
+  for (const [key, value] of flatMap) {
+    const { family, variant } = splitPluralKey(key);
+    if (!families.has(family)) {
+      families.set(family, new Map());
+    }
+    families.get(family).set(variant, value);
+  }
+  return families;
+};
+
 const flatten = (value, prefix = "", output = new Map()) => {
   if (Array.isArray(value)) {
     output.set(prefix, value);
@@ -524,20 +553,24 @@ const main = () => {
     localeMaps.set(locale, flatten(parsed.translation || parsed));
   }
 
+  const localeFamilies = new Map();
+  for (const locale of LOCALES) {
+    localeFamilies.set(locale, buildFamilies(localeMaps.get(locale)));
+  }
+
   const [baseLocale, ...otherLocales] = LOCALES;
-  const base = localeMaps.get(baseLocale);
+  const base = localeFamilies.get(baseLocale);
   const baseKeys = new Set(base.keys());
 
   for (const locale of otherLocales) {
-    const map = localeMaps.get(locale);
-    const keys = new Set(map.keys());
+    const families = localeFamilies.get(locale);
 
     for (const key of baseKeys) {
-      if (!keys.has(key)) {
+      if (!families.has(key)) {
         issues.push(`${locale} is missing key: ${key}`);
       }
     }
-    for (const key of keys) {
+    for (const key of families.keys()) {
       if (!baseKeys.has(key)) {
         issues.push(`${locale} has extra key: ${key}`);
       }
@@ -545,27 +578,46 @@ const main = () => {
   }
 
   for (const key of baseKeys) {
-    const values = LOCALES.map((locale) => ({
+    const entries = LOCALES.map((locale) => ({
       locale,
-      value: localeMaps.get(locale).get(key),
+      variants: localeFamilies.get(locale).get(key),
     }));
 
-    for (const { locale, value } of values) {
+    const values = entries.flatMap(({ locale, variants }) =>
+      [...variants].map(([variant, value]) => ({
+        locale,
+        label: pluralLabel(key, variant),
+        value,
+      })),
+    );
+
+    for (const { locale, label, value } of values) {
       if (typeof value === "string" && value.trim().length === 0) {
-        issues.push(`${locale}.${key} is an empty translation`);
+        issues.push(`${locale}.${label} is an empty translation`);
       }
     }
 
-    const interpolationSignatures = values.map(({ locale, value }) => ({
-      locale,
+    // A plural family with several variants must provide the "other" form;
+    // locales without plural categories (zh-CN) use a single base key.
+    for (const { locale, variants } of entries) {
+      if (variants.size > 1 && !variants.has("other")) {
+        issues.push(
+          `${locale}.${key} has plural variants without an "other" form`,
+        );
+      }
+    }
+
+    // All variants of a family must share the same interpolation signature.
+    const [first, ...rest] = values.map(({ label, value }) => ({
+      label,
       names: getInterpolationNames(value).join(","),
     }));
-    const [first] = interpolationSignatures;
-    for (const current of interpolationSignatures.slice(1)) {
+    for (const current of rest) {
       if (current.names !== first.names) {
         issues.push(
-          `Interpolation mismatch for ${key}: ${first.locale}=[${first.names}], ${current.locale}=[${current.names}]`,
+          `Interpolation mismatch for ${key}: ${first.label}=[${first.names}], ${current.label}=[${current.names}]`,
         );
+        break;
       }
     }
   }
@@ -583,9 +635,18 @@ const main = () => {
   const { calls, invalidDefaults, dynamicCalls } = collectTranslationCalls();
   const usedKeys = new Set(calls.map((call) => call.key));
 
+  // A call key resolves either exactly or via any variant of its plural family
+  // (e.g. en-US may only define `items_one`/`items_other` for `items`).
+  const localeHasKey = (locale, key) => {
+    if (localeMaps.get(locale).has(key)) {
+      return true;
+    }
+    return localeFamilies.get(locale).has(splitPluralKey(key).family);
+  };
+
   for (const { key, loc } of calls) {
     for (const locale of LOCALES) {
-      if (!localeMaps.get(locale).has(key)) {
+      if (!localeHasKey(locale, key)) {
         issues.push(`${loc} uses missing ${locale} key: ${key}`);
       }
     }
@@ -603,7 +664,17 @@ const main = () => {
 
   issues.push(...compareReadmeHeadings());
 
-  const unusedKeys = [...baseKeys].filter((key) => !usedKeys.has(key)).sort();
+  const unusedKeys = [...baseKeys]
+    .filter((key) => {
+      const variants = base.get(key);
+      for (const variant of variants.keys()) {
+        if (usedKeys.has(pluralLabel(key, variant))) {
+          return false;
+        }
+      }
+      return true;
+    })
+    .sort();
   if (unusedKeys.length > 0) {
     const message = `Unused translation keys (${unusedKeys.length}): ${unusedKeys.slice(0, 20).join(", ")}${unusedKeys.length > 20 ? ", ..." : ""}`;
     if (UNUSED_MODE === "error") {
@@ -647,8 +718,10 @@ const main = () => {
     for (const locale of LOCALES) {
       const root = localeRoots.get(locale);
       const translation = root.translation || root;
-      for (const key of unusedKeys) {
-        unflattenDelete(translation, key);
+      for (const key of localeMaps.get(locale).keys()) {
+        if (unusedKeys.includes(splitPluralKey(key).family)) {
+          unflattenDelete(translation, key);
+        }
       }
       const filePath = path.join(LOCALE_DIR, `${locale}.json`);
       fs.writeFileSync(filePath, `${JSON.stringify(root, null, 2)}\n`, "utf8");
