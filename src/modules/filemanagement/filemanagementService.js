@@ -15,6 +15,13 @@ const { logToFile } = require("../../core/utils/logger");
 const { IPC_EVENT_CHANNELS } = require("../../core/ipc/schema/channels");
 const connectionManager = require("../connection");
 const TransferProcessPool = require("./transferProcessPool");
+const ResumableTransfer = require("./resumableTransfer");
+const {
+  TransferResumeStore,
+  connectionIdentity,
+  resumeError,
+} = require("./transferResume");
+const { validateAlgorithm } = require("./transferIntegrity");
 const {
   buildCancelledError,
   toPosixPath,
@@ -109,6 +116,9 @@ class FilemanagementService {
     this.activeTransfers = new Map();
     this.inflightDirectoryReads = new Map();
     this.transferProcessPool = null;
+    this.resumeStore = new TransferResumeStore(
+      path.join(app.getPath("userData"), "transfer-recovery"),
+    );
     this.transferProcessPoolIdleTimer = null;
     this.transferMetrics = {
       startedAt: Date.now(),
@@ -435,12 +445,8 @@ class FilemanagementService {
     return {
       stat: (remotePath, callback) => {
         nativeSftpClient
-          .getFilePermissions(tabId, remotePath)
+          .statFile(tabId, remotePath)
           .then((result) => {
-            if (!result?.success) {
-              callback(new Error(result?.error || "stat failed"));
-              return;
-            }
             callback(null, this._toShimStats(result));
           })
           .catch(callback);
@@ -593,20 +599,11 @@ class FilemanagementService {
       this._throwIfTransferCancelled(transferKey);
     }
     await fsp.mkdir(path.dirname(tempPath), { recursive: true });
-    const handle = await fsp.open(tempPath, "w");
-    await handle.close();
-    await fsp.truncate(tempPath, Math.max(0, Number(totalBytes) || 0));
+    // Allocation belongs to ResumableTransfer, after manifest validation.
+    void totalBytes;
     if (transferKey) {
       this._throwIfTransferCancelled(transferKey);
     }
-  }
-
-  async _cleanupLocalTempPaths(paths = []) {
-    if (!Array.isArray(paths) || paths.length === 0) return;
-    const uniquePaths = Array.from(new Set(paths.filter(Boolean)));
-    await Promise.allSettled(
-      uniquePaths.map((filePath) => fsp.rm(filePath, { force: true })),
-    );
   }
 
   _registerTransfer({
@@ -638,6 +635,15 @@ class FilemanagementService {
       cancelled: false,
       cancelRequestedAt: 0,
       cancelLatencyRecorded: false,
+      abortController: new AbortController(),
+      status: "transferring",
+      algorithm: configService.loadUISettings().transferIntegrity
+        ? "sha256"
+        : null,
+      resumeIds: new Set(),
+      verifiedFiles: 0,
+      validatingFiles: new Set(),
+      networkBytes: 0,
       activeStreams: new Set(),
       metadata: { ...metadata },
       displayName: normalizeTransferName(metadata?.displayName),
@@ -770,7 +776,7 @@ class FilemanagementService {
     transfer.lastEmitAt = now;
 
     const elapsedSec = Math.max(0.001, (now - transfer.startAt) / 1000);
-    const speed = transfer.transferredBytes / elapsedSec;
+    const speed = transfer.networkBytes / elapsedSec;
     const remainingBytes = Math.max(
       0,
       transfer.totalBytes - transfer.transferredBytes,
@@ -808,7 +814,18 @@ class FilemanagementService {
     const payload = {
       tabId: transfer.tabId,
       transferKey,
-      progress,
+      progress:
+        transfer.processedFiles < transfer.totalFiles
+          ? Math.min(99.9, progress)
+          : progress,
+      status: transfer.status,
+      algorithm: transfer.algorithm,
+      verified:
+        transfer.verifiedFiles > 0 &&
+        transfer.verifiedFiles === transfer.totalFiles,
+      integrity: transfer.integrity || null,
+      resumeIds: [...transfer.resumeIds],
+      type: transfer.type,
       fileName: resolvedFileName,
       currentFile,
       transferredBytes: transfer.transferredBytes,
@@ -826,6 +843,11 @@ class FilemanagementService {
 
     const finalChannel = channel || transfer.progressChannel;
     this._safeSend(transfer.sender, finalChannel, payload);
+    this._safeSend(
+      transfer.sender,
+      IPC_EVENT_CHANNELS.SFTP_TRANSFER_STATE,
+      payload,
+    );
   }
 
   _finalizeTransfer(transferKey) {
@@ -838,6 +860,23 @@ class FilemanagementService {
       transferKey,
       transferText("mainProcess.transfer.errors.transferFinalized"),
     );
+    transfer.status = transfer.cancelled
+      ? "paused"
+      : transfer.lastError
+        ? "error"
+        : "completed";
+    this._emitTransferProgress(transferKey, {
+      force: true,
+      extra: {
+        operationComplete: true,
+        status: transfer.status,
+        error: transfer.lastError
+          ? normalizeErrorMessage(transfer.lastError)
+          : null,
+        errorKind: transfer.lastError?.errorKind || null,
+        retryable: transfer.lastError?.retryable === true,
+      },
+    });
     this.activeTransfers.delete(transferKey);
     if (
       this.transferProcessPool &&
@@ -1083,6 +1122,7 @@ class FilemanagementService {
     }
 
     transfer.cancelled = true;
+    transfer.abortController.abort(buildCancelledError());
     transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
     if (this.transferProcessPool) {
       this.transferProcessPool.cancelTransfer(transferKey);
@@ -1117,6 +1157,7 @@ class FilemanagementService {
     for (const [transferKey, transfer] of this.activeTransfers.entries()) {
       if (String(transfer.tabId) !== String(tabId)) continue;
       transfer.cancelled = true;
+      transfer.abortController.abort(buildCancelledError());
       transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
       if (this.transferProcessPool) {
         this.transferProcessPool.cancelTransfer(transferKey);
@@ -1405,115 +1446,292 @@ class FilemanagementService {
     return path.posix.basename(normalized);
   }
 
+  async listResumableTransfers() {
+    const records = await this.resumeStore.list();
+    const active = new Set(
+      [...this.activeTransfers.values()].flatMap((state) => [
+        ...state.resumeIds,
+      ]),
+    );
+    const result = [];
+    for (const record of records) {
+      if (active.has(record.id)) continue;
+      let tabId = null;
+      for (const [key, process] of processManager.getAllProcesses()) {
+        const config = process.config;
+        if (
+          !config?.host ||
+          !config.username ||
+          process.ready === false ||
+          config.host.toLowerCase() !== record.connection.host ||
+          Number(config.port || 22) !== record.connection.port ||
+          config.username !== record.connection.username
+        )
+          continue;
+        const sessionKey = process.tabId || config.tabId || key;
+        const resolved = await this._resolveTransferSshConfig(sessionKey);
+        if (
+          JSON.stringify(connectionIdentity(resolved)) ===
+          JSON.stringify(record.connection)
+        ) {
+          tabId = sessionKey;
+          break;
+        }
+      }
+      result.push({
+        id: record.id,
+        tabId,
+        direction: record.direction,
+        fileName: path.basename(record.localPath),
+        localPath: record.localPath,
+        remotePath: record.remotePath,
+        host: record.connection.host,
+        username: record.connection.username,
+        totalBytes: record.manifest?.totalSize || 0,
+        completedBytes:
+          record.manifest?.segments.reduce(
+            (sum, segment) => sum + (segment.done ? segment.length : 0),
+            0,
+          ) || 0,
+        algorithm: record.manifest?.algorithm || null,
+        error: record.error || null,
+        errorKind: record.errorKind || null,
+      });
+    }
+    return { success: true, tasks: result };
+  }
+
+  async setTransferIntegrity(event, tabId, transferKey, algorithm) {
+    void event;
+    validateAlgorithm(algorithm);
+    const state = this._getTransfer(transferKey);
+    if (
+      !state ||
+      String(state.tabId) !== String(tabId) ||
+      state.cancelled ||
+      state.processedFiles > 0 ||
+      state.verifiedFiles > 0 ||
+      state.validatingFiles.size > 0
+    ) {
+      throw resumeError(
+        "Task verification can only be enabled before its first file completes",
+      );
+    }
+    state.algorithm = algorithm;
+    this._emitTransferProgress(transferKey, { force: true });
+    return { success: true, algorithm };
+  }
+
+  async discardResumableTransfer(event, tabId, id) {
+    void event;
+    const record = await this.resumeStore.getRecord(id);
+    if (
+      [...this.activeTransfers.values()].some((state) =>
+        state.resumeIds.has(id),
+      )
+    )
+      throw resumeError(
+        "Pause the transfer before cleaning retained files",
+        "transfer-busy",
+      );
+    const release = this.resumeStore.acquire(record);
+    try {
+      if (record.direction === "download")
+        await fsp.rm(record.partPath, { force: true });
+      else {
+        const config = await this._resolveTransferSshConfig(tabId);
+        if (
+          JSON.stringify(connectionIdentity(config)) !==
+          JSON.stringify(record.connection)
+        )
+          throw resumeError("Resume connection identity does not match");
+        const result = await nativeSftpClient.deleteFile(
+          tabId,
+          record.partPath,
+          false,
+        );
+        if (result?.errorCode !== "NATIVE_SFTP_NOT_FOUND")
+          nativeSftpClient.requireNativeSuccess(result);
+      }
+      await this.resumeStore.remove(record);
+      return { success: true };
+    } finally {
+      release();
+    }
+  }
+
+  async resumeTransfer(event, tabId, id, options = {}) {
+    const record = await this.resumeStore.getRecord(id);
+    const sshConfig = await this._resolveTransferSshConfig(tabId);
+    if (
+      JSON.stringify(connectionIdentity(sshConfig)) !==
+      JSON.stringify(record.connection)
+    )
+      throw resumeError("Resume connection identity does not match");
+    if (options.algorithm != null) validateAlgorithm(options.algorithm);
+    if (options.restart === true)
+      await this.discardResumableTransfer(event, tabId, id);
+    const manifest = options.restart
+      ? null
+      : await this.resumeStore.read(record);
+    const transferKey = this._generateTransferKey(
+      tabId,
+      `resume-${record.direction}`,
+    );
+    const state = this._registerTransfer({
+      transferKey,
+      tabId,
+      type: record.direction,
+      sender: event.sender,
+      progressChannel: IPC_EVENT_CHANNELS.TRANSFER_PROGRESS,
+      totalFiles: 1,
+      totalBytes: manifest?.totalSize || 0,
+      metadata: { displayName: path.basename(record.localPath) },
+    });
+    state.algorithm =
+      options.algorithm || manifest?.algorithm || state.algorithm;
+    state.resumeIds.add(id);
+    this._emitTransferProgress(transferKey, { force: true });
+    try {
+      const result = await this._runResumableFile({
+        ...record,
+        tabId,
+        transferKey,
+        sshConfig,
+        fileName: path.basename(record.localPath),
+        onBytes: (bytes) => {
+          state.transferredBytes += bytes;
+          this._emitTransferProgress(transferKey);
+        },
+      });
+      state.processedFiles = 1;
+      return { success: true, transferKey, ...result };
+    } catch (error) {
+      state.lastError = error;
+      return {
+        success: false,
+        cancelled: state.cancelled,
+        error: error.message,
+        errorKind: error.errorKind,
+        algorithm: error.algorithm,
+        localHash: error.localHash,
+        remoteHash: error.remoteHash,
+      };
+    } finally {
+      this._finalizeTransfer(transferKey);
+    }
+  }
+
+  async _runResumableFile({
+    tabId,
+    transferKey,
+    sshConfig,
+    direction,
+    localPath,
+    remotePath,
+    onBytes,
+    fileName,
+  }) {
+    const state = this._getTransfer(transferKey);
+    this._throwIfTransferCancelled(transferKey);
+    const record = this.resumeStore.describe({
+      direction,
+      localPath,
+      remotePath,
+      connection: connectionIdentity(sshConfig),
+    });
+    state.resumeIds.add(record.id);
+    let tracked = 0;
+    let network = 0;
+    const runner = new ResumableTransfer({
+      store: this.resumeStore,
+      pool: this._ensureTransferProcessPool(),
+      record,
+      sshConfig,
+      tabId,
+      transferKey,
+      signal: state.abortController.signal,
+      segments: (size) =>
+        this._buildChunkSegments(size).length
+          ? this._buildChunkSegments(size)
+          : [{ offset: 0, length: size }],
+      getAlgorithm: () => state.algorithm,
+      maxConcurrency: this._chooseConcurrency(
+        16,
+        state.totalBytes,
+        false,
+        direction,
+      ),
+      log: (message) => this._log(message),
+      onRecord: (id) => {
+        state.resumeIds.add(id);
+      },
+      onProgress: (bytes, size, networkBytes) => {
+        state.networkBytes += networkBytes - network;
+        network = networkBytes;
+        if (state.totalFiles === 1) state.totalBytes = size;
+        onBytes(bytes - tracked);
+        tracked = bytes;
+      },
+      onState: (status, integrity) => {
+        if (status === "validating") state.validatingFiles.add(record.id);
+        else state.validatingFiles.delete(record.id);
+        state.status =
+          state.validatingFiles.size > 0
+            ? "validating"
+            : status === "file-completed"
+              ? "transferring"
+              : status;
+        if (status === "file-completed" && integrity.verified)
+          state.verifiedFiles += 1;
+        if (integrity.algorithm) {
+          state.integrity = integrity;
+          state.algorithm = integrity.algorithm;
+        }
+        this._emitTransferProgress(transferKey, {
+          force: true,
+          currentFile: fileName,
+        });
+      },
+    });
+    try {
+      return await runner.run();
+    } catch (error) {
+      state.lastError = error;
+      state.validatingFiles.delete(record.id);
+      if (error.localHash)
+        state.integrity = {
+          algorithm: error.algorithm,
+          localHash: error.localHash,
+          remoteHash: error.remoteHash,
+          verified: false,
+        };
+      throw error;
+    }
+  }
+
   async _downloadFileToPath({
     tabId,
     transferKey,
     remotePath,
     localPath,
-    knownSize,
     onBytes,
   }) {
-    this._throwIfTransferCancelled(transferKey);
-    const normalizedRemotePath = this._normalizeRemotePath(remotePath);
-    const tmpPath = `${localPath}.part`;
-    await fsp.mkdir(path.dirname(localPath), { recursive: true });
-    this._throwIfTransferCancelled(transferKey);
     const sshConfig = await this._resolveTransferSshConfig(tabId);
-    const taskId = this._generateTaskId("download-single");
-    const fileLabel =
-      path.posix.basename(normalizedRemotePath) || normalizedRemotePath;
-    let trackedBytes = 0;
-    let taskFailedMessage = null;
-
-    try {
-      const transferProcessPool = this._ensureTransferProcessPool();
-      await transferProcessPool.runTasks({
-        transferKey,
-        tabId,
-        sshConfig,
-        tasks: [
-          {
-            taskId,
-            direction: "download",
-            remotePath: normalizedRemotePath,
-            localPath: tmpPath,
-            totalBytes:
-              Number.isFinite(knownSize) && knownSize > 0
-                ? knownSize
-                : undefined,
-            fileName: fileLabel,
-            currentFile: fileLabel,
-          },
-        ],
-        maxConcurrency: 1,
-        onProgress: (message) => {
-          if (message?.taskId !== taskId) return;
-          const reportedTotal = Number(message?.totalBytes);
-          const current = this._getTransfer(transferKey);
-          if (
-            current &&
-            current.totalBytes <= 0 &&
-            Number.isFinite(reportedTotal) &&
-            reportedTotal > 0
-          ) {
-            current.totalBytes = reportedTotal;
-          }
-          const delta = Math.max(0, Number(message?.deltaBytes) || 0);
-          if (delta <= 0) return;
-          trackedBytes += delta;
-          if (typeof onBytes === "function") {
-            onBytes(delta);
-          }
-        },
-        onTaskDone: (message) => {
-          if (message?.taskId !== taskId) return;
-          const reportedTotal =
-            Number.isFinite(knownSize) && knownSize > 0
-              ? knownSize
-              : Number(message?.totalBytes) || 0;
-          const remainder = Math.max(0, reportedTotal - trackedBytes);
-          if (remainder <= 0) return;
-          trackedBytes += remainder;
-          if (typeof onBytes === "function") {
-            onBytes(remainder);
-          }
-        },
-        onTaskError: (message) => {
-          if (
-            message?.error?.cancelled ||
-            this._isTransferCancelled(transferKey)
-          ) {
-            return;
-          }
-          taskFailedMessage =
-            message?.error?.message ||
-            transferText("mainProcess.transfer.errors.downloadTaskFailed");
-        },
-      });
-
-      if (this._isTransferCancelled(transferKey)) {
-        throw buildCancelledError();
-      }
-      if (taskFailedMessage) {
-        throw new Error(taskFailedMessage);
-      }
-
-      this._throwIfTransferCancelled(transferKey);
-      await fsp.rename(tmpPath, localPath);
-      return trackedBytes;
-    } catch (error) {
-      try {
-        await fsp.rm(tmpPath, { force: true });
-      } catch {
-        // ignore cleanup failure
-      }
-      throw error;
-    }
+    return this._runResumableFile({
+      tabId,
+      transferKey,
+      sshConfig,
+      direction: "download",
+      remotePath: this._normalizeRemotePath(remotePath),
+      localPath,
+      onBytes,
+      fileName: path.posix.basename(remotePath),
+    });
   }
 
   async downloadFile(event, tabId, remotePath, knownSize = 0) {
     let transferKey = null;
-    let chunkTempPath = null;
     try {
       const sender = event?.sender;
       const normalizedRemotePath = this._normalizeRemotePath(remotePath);
@@ -1567,140 +1785,22 @@ class FilemanagementService {
       });
       this._throwIfTransferCancelled(transferKey);
 
-      if (this._buildChunkSegments(fileSize).length > 0) {
-        const sshConfig = await this._resolveTransferSshConfig(tabId);
-        const chunkSegments = this._buildChunkSegments(fileSize);
-        chunkTempPath = `${filePath}.part`;
-        await this._prepareLocalChunkDownloadTarget(
-          chunkTempPath,
-          fileSize,
-          transferKey,
-        );
-
-        const taskMetaMap = new Map();
-        const taskTransferredBytes = new Map();
-        let chunkTaskFailed = false;
-        const chunkErrors = [];
-        const tasks = chunkSegments.map((segment) => {
-          this._throwIfTransferCancelled(transferKey);
-          const taskId = this._generateTaskId("download-single-chunk");
-          taskMetaMap.set(taskId, {
-            knownSize: segment.length,
-            segmentIndex: segment.index,
-            segmentCount: chunkSegments.length,
-          });
-          return {
-            taskId,
-            direction: "download",
-            remotePath: normalizedRemotePath,
-            localPath: chunkTempPath,
-            totalBytes: segment.length,
+      await this._downloadFileToPath({
+        tabId,
+        transferKey,
+        remotePath: normalizedRemotePath,
+        localPath: filePath,
+        onBytes: (bytes) => {
+          const current = this._getTransfer(transferKey);
+          if (!current) return;
+          current.transferredBytes += bytes;
+          this._emitTransferProgress(transferKey, {
             fileName: defaultName || normalizedRemotePath,
             currentFile: defaultName || normalizedRemotePath,
-            segmentOffset: segment.offset,
-            segmentLength: segment.length,
-            segmentIndex: segment.index,
-            segmentCount: chunkSegments.length,
-            localWriteFlags: "r+",
-          };
-        });
-        this._throwIfTransferCancelled(transferKey);
-
-        const transferProcessPool = this._ensureTransferProcessPool();
-        await transferProcessPool.runTasks({
-          transferKey,
-          tabId,
-          sshConfig,
-          tasks,
-          maxConcurrency: this._chooseConcurrency(
-            chunkSegments.length,
-            fileSize,
-            false,
-            "download",
-          ),
-          onProgress: (message) => {
-            const taskMeta = taskMetaMap.get(message?.taskId);
-            if (!taskMeta) return;
-            const deltaBytes = Math.max(0, Number(message?.deltaBytes) || 0);
-            if (deltaBytes > 0) {
-              taskTransferredBytes.set(
-                message.taskId,
-                (taskTransferredBytes.get(message.taskId) || 0) + deltaBytes,
-              );
-            }
-            const current = this._getTransfer(transferKey);
-            if (!current) return;
-            current.transferredBytes += deltaBytes;
-            this._emitTransferProgress(transferKey, {
-              channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
-              fileName: defaultName || normalizedRemotePath,
-              currentFile: defaultName || normalizedRemotePath,
-              currentFileIndex: 1,
-            });
-          },
-          onTaskDone: (message) => {
-            const taskMeta = taskMetaMap.get(message?.taskId);
-            if (!taskMeta) return;
-            const current = this._getTransfer(transferKey);
-            if (!current) return;
-            const tracked = taskTransferredBytes.get(message.taskId) || 0;
-            const reportedTotal = Number.isFinite(taskMeta.knownSize)
-              ? taskMeta.knownSize
-              : Number(message?.totalBytes) || 0;
-            const remainder = Math.max(0, reportedTotal - tracked);
-            current.transferredBytes += remainder;
-          },
-          onTaskError: (message) => {
-            if (
-              message?.error?.cancelled ||
-              this._isTransferCancelled(transferKey)
-            ) {
-              return;
-            }
-            chunkTaskFailed = true;
-            chunkErrors.push(
-              message?.error?.message ||
-                transferText(
-                  "mainProcess.transfer.errors.downloadChunkTaskFailed",
-                ),
-            );
-          },
-        });
-
-        if (this._isTransferCancelled(transferKey)) {
-          throw buildCancelledError();
-        }
-        if (chunkTaskFailed) {
-          throw new Error(
-            chunkErrors[0] ||
-              transferText(
-                "mainProcess.transfer.errors.downloadChunkTaskFailed",
-              ),
-          );
-        }
-        this._throwIfTransferCancelled(transferKey);
-        await fsp.rename(chunkTempPath, filePath);
-        chunkTempPath = null;
-      } else {
-        await this._downloadFileToPath({
-          tabId,
-          transferKey,
-          remotePath: normalizedRemotePath,
-          localPath: filePath,
-          knownSize: fileSize,
-          onBytes: (bytes) => {
-            const current = this._getTransfer(transferKey);
-            if (!current) return;
-            current.transferredBytes += bytes;
-            this._emitTransferProgress(transferKey, {
-              channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
-              fileName: defaultName || normalizedRemotePath,
-              currentFile: defaultName || normalizedRemotePath,
-              currentFileIndex: 1,
-            });
-          },
-        });
-      }
+            currentFileIndex: 1,
+          });
+        },
+      });
 
       const finalState = this._getTransfer(transferKey);
       if (finalState) {
@@ -1734,12 +1834,9 @@ class FilemanagementService {
         message: transferText("mainProcess.transfer.downloadComplete"),
       };
     } catch (error) {
-      if (chunkTempPath) {
-        await this._cleanupLocalTempPaths([chunkTempPath]);
-        chunkTempPath = null;
-      }
       if (transferKey) {
         const transferState = this._getTransfer(transferKey);
+        if (transferState) transferState.lastError = error;
         this._recordTransferMetrics({
           transferredBytes: transferState?.transferredBytes || 0,
           completed: 0,
@@ -1778,101 +1875,71 @@ class FilemanagementService {
     directoryMode,
     direction,
     taskMetaMap,
-    taskTransferredBytes,
     fileStateMap,
     counters,
     errors,
     emitTaskProgress,
     getTaskLabel,
-    taskErrorLabel,
   }) {
+    const files = [
+      ...new Map(
+        tasks.map((task) => [taskMetaMap.get(task.taskId).fileTaskKey, task]),
+      ).values(),
+    ];
+    let next = 0;
     const concurrency = this._chooseConcurrency(
-      tasks.length,
+      files.length,
       totalBytes,
       directoryMode,
       direction,
     );
-
-    const transferProcessPool = this._ensureTransferProcessPool();
-    await transferProcessPool.runTasks({
-      transferKey,
-      tabId,
-      sshConfig,
-      tasks,
-      maxConcurrency: concurrency,
-      onProgress: (message) => {
-        const taskId = message?.taskId;
-        const taskMeta = taskMetaMap.get(taskId);
-        if (!taskMeta) return;
-
-        const deltaBytes = Math.max(0, Number(message?.deltaBytes) || 0);
-        if (deltaBytes > 0) {
-          taskTransferredBytes.set(
-            taskId,
-            (taskTransferredBytes.get(taskId) || 0) + deltaBytes,
-          );
-        }
-
+    const runNext = async () => {
+      while (next < files.length && !this._isTransferCancelled(transferKey)) {
+        const task = files[next++];
+        const meta = taskMetaMap.get(task.taskId);
+        const file = fileStateMap.get(meta.fileTaskKey);
         const state = this._getTransfer(transferKey);
-        if (!state) return;
-        state.transferredBytes += deltaBytes;
-
-        emitTaskProgress(taskMeta);
-      },
-      onTaskDone: (message) => {
-        const taskId = message?.taskId;
-        const taskMeta = taskMetaMap.get(taskId);
-        if (!taskMeta) return;
-
-        const state = this._getTransfer(transferKey);
-        const reportedTotal = Number.isFinite(taskMeta.knownSize)
-          ? taskMeta.knownSize
-          : Number(message?.totalBytes) || 0;
-        const tracked = taskTransferredBytes.get(taskId) || 0;
-        const remainder = Math.max(0, reportedTotal - tracked);
-        if (state) {
-          state.transferredBytes += remainder;
-        }
-
-        const fileState = fileStateMap.get(taskMeta.fileTaskKey);
-        if (!fileState) return;
-        if (taskMeta.chunked) {
-          fileState.completedSegments += 1;
-        } else {
-          counters.completed += 1;
-          if (state) {
+        try {
+          await this._runResumableFile({
+            tabId,
+            transferKey,
+            sshConfig,
+            direction,
+            remotePath: task.remotePath,
+            localPath:
+              direction === "download" ? file.localPath : task.localPath,
+            fileName: getTaskLabel(meta),
+            onBytes: (delta) => {
+              state.transferredBytes += delta;
+              emitTaskProgress(meta);
+            },
+          });
+          file.committed = true;
+          if (file.chunked) file.completedSegments = file.totalSegments;
+          else {
+            counters.completed += 1;
             state.processedFiles += 1;
           }
+          emitTaskProgress(meta, true);
+        } catch (error) {
+          if (this._isTransferCancelled(transferKey)) break;
+          file.failed = true;
+          counters.failed += 1;
+          errors.push({
+            fileName: getTaskLabel(meta),
+            error: error.message,
+            errorKind: error.errorKind,
+            retryable: error.retryable === true,
+            localHash: error.localHash,
+            remoteHash: error.remoteHash,
+            algorithm: error.algorithm,
+          });
         }
-
-        emitTaskProgress(taskMeta, !taskMeta.chunked);
-      },
-      onTaskError: (message) => {
-        if (
-          message?.error?.cancelled ||
-          this._isTransferCancelled(transferKey)
-        ) {
-          return;
-        }
-
-        const taskMeta = taskMetaMap.get(message?.taskId);
-        if (!taskMeta) return;
-        const fileState = fileStateMap.get(taskMeta.fileTaskKey);
-        if (!fileState) return;
-        if (fileState.failed) return;
-
-        fileState.failed = true;
-        counters.failed += 1;
-        errors.push({
-          fileName:
-            getTaskLabel(taskMeta) ||
-            message?.fileName ||
-            message?.taskId ||
-            "unknown-file",
-          error: taskErrorLabel,
-        });
-      },
-    });
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, files.length) }, runNext),
+    );
   }
 
   /**
@@ -1886,10 +1953,7 @@ class FilemanagementService {
     emitCancelled,
     buildResult,
   }) {
-    if (chunkTempCleanup) {
-      await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
-      chunkTempCleanup.clear();
-    }
+    if (chunkTempCleanup) chunkTempCleanup.clear();
     emitCancelled();
     const cancelledState = this._getTransfer(transferKey);
     this._recordTransferMetrics({
@@ -1905,7 +1969,7 @@ class FilemanagementService {
   }
 
   /**
-   * 合并分块下载：把完成的分块临时文件重命名为最终文件，并清理失败分块
+   * 汇总分块下载：确认统一传输器已提交目标，保留失败任务的断点数据
    */
   async _mergeChunkedDownloads({
     transferKey,
@@ -1931,7 +1995,7 @@ class FilemanagementService {
       }
 
       try {
-        await fsp.rename(fileState.tempPath, fileState.localPath);
+        if (!fileState.committed) throw new Error("Transfer was not committed");
         chunkTempCleanup.delete(fileState.tempPath);
         counters.completed += 1;
 
@@ -1951,17 +2015,6 @@ class FilemanagementService {
           }),
         });
       }
-    }
-
-    const failedTempPaths = [];
-    for (const fileState of fileStateMap.values()) {
-      this._throwIfTransferCancelled(transferKey);
-      if (!fileState.chunked || !fileState.failed) continue;
-      failedTempPaths.push(fileState.tempPath);
-    }
-    await this._cleanupLocalTempPaths(failedTempPaths);
-    for (const tempPath of failedTempPaths) {
-      chunkTempCleanup.delete(tempPath);
     }
   }
 
@@ -1990,7 +2043,7 @@ class FilemanagementService {
   }
 
   /**
-   * 批传输异常处理：清理临时文件、记录指标并返回统一错误结果
+   * 批传输异常处理：保留断点文件、记录失败状态及指标并返回统一错误结果
    */
   async _handleBatchTransferError({
     transferKey,
@@ -1998,12 +2051,10 @@ class FilemanagementService {
     error,
     logLabel,
   }) {
-    if (chunkTempCleanup) {
-      await this._cleanupLocalTempPaths(Array.from(chunkTempCleanup));
-      chunkTempCleanup.clear();
-    }
+    if (chunkTempCleanup) chunkTempCleanup.clear();
     if (transferKey) {
       const transferState = this._getTransfer(transferKey);
+      if (transferState) transferState.lastError = error;
       this._recordTransferMetrics({
         transferredBytes: transferState?.transferredBytes || 0,
         completed: 0,
@@ -3017,12 +3068,10 @@ class FilemanagementService {
         });
       }
 
-      const failedChunkRemotePaths = [];
       for (const fileState of fileStateMap.values()) {
         this._throwIfTransferCancelled(transferKey);
         if (!fileState.chunked) continue;
         if (fileState.failed) {
-          failedChunkRemotePaths.push(fileState.remotePath);
           continue;
         }
         if (fileState.completedSegments < fileState.totalSegments) {
@@ -3034,7 +3083,6 @@ class FilemanagementService {
               "mainProcess.transfer.errors.uploadChunkIncomplete",
             ),
           });
-          failedChunkRemotePaths.push(fileState.remotePath);
           continue;
         }
 
@@ -3051,18 +3099,6 @@ class FilemanagementService {
           extra: includeOperationComplete
             ? { operationComplete: false, cancelled: false }
             : {},
-        });
-      }
-
-      if (failedChunkRemotePaths.length > 0) {
-        await this._withBorrowedSftp(tabId, async (sftp) => {
-          for (const remotePath of failedChunkRemotePaths) {
-            try {
-              await this._unlink(sftp, remotePath);
-            } catch {
-              // ignore cleanup failure
-            }
-          }
         });
       }
 
@@ -3151,6 +3187,7 @@ class FilemanagementService {
     } catch (error) {
       const state = this._getTransfer(transferKey);
       if (state) {
+        state.lastError = error;
         this._recordTransferMetrics({
           transferredBytes: state.transferredBytes || 0,
           completed: counters.completed,
@@ -3428,25 +3465,6 @@ class FilemanagementService {
 
       const scan = await this._scanLocalFolder(localFolderPath);
       this._throwIfTransferCancelled(transferKey);
-      if (!scan.files || scan.files.length === 0) {
-        this._emitTransferProgress(transferKey, {
-          force: true,
-          fileName: folderName,
-          currentFile: "",
-          currentFileIndex: 0,
-          extra: { operationComplete: true, cancelled: false },
-        });
-        this._finalizeTransfer(transferKey);
-        transferKey = null;
-        return {
-          success: true,
-          uploadedCount: 0,
-          totalFiles: 0,
-          failedCount: 0,
-          message: transferText("mainProcess.transfer.emptyFolderNoUpload"),
-        };
-      }
-
       const entries = scan.files.map((file) => ({
         localPath: file.localPath,
         fileName: file.fileName,
@@ -3459,6 +3477,12 @@ class FilemanagementService {
         event,
         tabId,
         entries,
+        remoteDirectories: [
+          remoteBase,
+          ...scan.directories.map((relative) =>
+            this._joinRemotePath(remoteBase, relative),
+          ),
+        ],
         transferKey,
         progressChannel,
         transferType: "upload-folder",
@@ -3473,6 +3497,7 @@ class FilemanagementService {
     } catch (error) {
       if (transferKey) {
         const state = this._getTransfer(transferKey);
+        if (state) state.lastError = error;
         this._recordTransferMetrics({
           transferredBytes: state?.transferredBytes || 0,
           completed: 0,
@@ -3506,6 +3531,7 @@ class FilemanagementService {
     for (const [transferKey, transfer] of this.activeTransfers.entries()) {
       try {
         transfer.cancelled = true;
+        transfer.abortController.abort(buildCancelledError());
         transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
         if (this.transferProcessPool) {
           this.transferProcessPool.cancelTransfer(transferKey);
@@ -3517,6 +3543,23 @@ class FilemanagementService {
       } catch {
         // ignore cleanup error
       }
+      transfer.status = transfer.cancelled
+        ? "paused"
+        : transfer.lastError
+          ? "error"
+          : "completed";
+      this._emitTransferProgress(transferKey, {
+        force: true,
+        extra: {
+          operationComplete: true,
+          status: transfer.status,
+          error: transfer.lastError
+            ? normalizeErrorMessage(transfer.lastError)
+            : null,
+          errorKind: transfer.lastError?.errorKind || null,
+          retryable: transfer.lastError?.retryable === true,
+        },
+      });
       this.activeTransfers.delete(transferKey);
     }
     if (this.transferProcessPool) {

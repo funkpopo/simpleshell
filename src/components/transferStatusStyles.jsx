@@ -6,6 +6,22 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ErrorIcon from "@mui/icons-material/Error";
 import CancelIcon from "@mui/icons-material/Cancel";
+import CircularProgress from "@mui/material/CircularProgress";
+
+export const getIntegrityStatusText = (transfer, t) => {
+  if (transfer.status === "error" || transfer.error)
+    return t("fileManager.transfer.status.failed");
+  if (transfer.status === "validating")
+    return t("fileManager.transfer.validating");
+  if (transfer.status === "retransmitting")
+    return t("fileManager.transfer.integrityRetransmitting");
+  if (transfer.verified)
+    return t("fileManager.transfer.verified", {
+      algorithm: transfer.algorithm?.toUpperCase(),
+    });
+  if (transfer.status === "paused") return t("fileManager.transfer.paused");
+  return transfer.statusText || transfer.currentFile || "";
+};
 
 /**
  * 传输组件（GlobalTransferBar / GlobalTransferFloat / TransferSidebar）共享的
@@ -41,6 +57,8 @@ export const getTransferIcon = (type, sx) => {
 
 /** 状态图标：错误/部分完成/已取消/已完成，进行中返回 null */
 export const getStatusIcon = (transfer, fontSize = 16) => {
+  if (transfer.status === "validating")
+    return <CircularProgress size={fontSize} aria-label="checksum" />;
   const { progress, isCancelled, error, warning } = transfer;
   if (error) {
     return <ErrorIcon sx={{ fontSize, color: "error.main" }} />;

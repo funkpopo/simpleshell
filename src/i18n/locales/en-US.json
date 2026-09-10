@@ -254,7 +254,9 @@
         "openIssueFailed": "Failed to open feedback issue",
         "issueOpened": "GitHub Issue page opened",
         "saveFailed": "Failed to save error reporting settings"
-      }
+      },
+      "transferIntegrity": "Verify transfers after completion (SHA-256)",
+      "transferIntegrityHelp": "Read remote files over SFTP to verify integrity. Large files require additional reading time; a mismatch triggers one full file retransmission."
     },
     "masterPassword": {
       "title": "Enter Master Password",
@@ -1384,7 +1386,20 @@
           "folderDownloadCancelled": "Folder download cancelled",
           "folderDownloadFailed": "Folder download failed",
           "transferCancelled": "Transfer cancelled"
-        }
+        },
+        "validating": "Verifying…",
+        "verified": "Verified ✓ · {{algorithm}}",
+        "integrityRetransmitting": "Integrity mismatch, retransmitting (1/1)…",
+        "paused": "Paused; resume from the transfer panel",
+        "pause": "Pause and retain progress",
+        "taskOptions": "Task options",
+        "verifyThisTask": "Verify this task ({{algorithm}})",
+        "resumableTasks": "Resumable transfers ({{count}})",
+        "connectToResume": "Connect to the original host to resume",
+        "resume": "Resume",
+        "restart": "Restart transfer",
+        "resumeAndVerify": "Resume and verify",
+        "cleanRetained": "Clean retained files"
       },
       "propertiesDialog": {
         "loading": "Loading properties...",

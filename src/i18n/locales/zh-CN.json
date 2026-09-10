@@ -254,7 +254,9 @@
         "openIssueFailed": "打开问题反馈失败",
         "issueOpened": "已打开 GitHub Issue 页面",
         "saveFailed": "保存错误报告设置失败"
-      }
+      },
+      "transferIntegrity": "传输完成后校验（SHA-256）",
+      "transferIntegrityHelp": "通过 SFTP 读取远端文件进行完整性校验。大文件需要额外读取时间；校验不一致时整文件重传一次。"
     },
     "masterPassword": {
       "title": "输入主密码",
@@ -1365,7 +1367,20 @@
           "folderDownloadCancelled": "文件夹下载已取消",
           "folderDownloadFailed": "文件夹下载失败",
           "transferCancelled": "传输已取消"
-        }
+        },
+        "validating": "校验中…",
+        "verified": "已校验 ✓ · {{algorithm}}",
+        "integrityRetransmitting": "校验不一致，正在重传（1/1）…",
+        "paused": "已暂停，可从传输面板续传",
+        "pause": "暂停并保留进度",
+        "taskOptions": "任务选项",
+        "verifyThisTask": "仅此任务校验（{{algorithm}}）",
+        "resumableTasks": "可续传任务（{{count}}）",
+        "connectToResume": "连接原主机后可续传",
+        "resume": "续传",
+        "restart": "重新传输",
+        "resumeAndVerify": "续传并校验",
+        "cleanRetained": "清理残留"
       },
       "propertiesDialog": {
         "loading": "正在读取属性...",

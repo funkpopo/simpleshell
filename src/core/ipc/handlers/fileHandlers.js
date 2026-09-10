@@ -108,6 +108,28 @@ class FileHandlers {
   getHandlers() {
     return [
       {
+        channel: IPC_REQUEST_CHANNELS.FILE_LIST_RESUMABLE,
+        category: "file",
+        handler: () => filemanagementService.listResumableTransfers(),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.FILE_RESUME_TRANSFER,
+        category: "file",
+        handler: (...args) => filemanagementService.resumeTransfer(...args),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.FILE_DISCARD_RESUMABLE,
+        category: "file",
+        handler: (...args) =>
+          filemanagementService.discardResumableTransfer(...args),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.FILE_TRANSFER_INTEGRITY,
+        category: "file",
+        handler: (...args) =>
+          filemanagementService.setTransferIntegrity(...args),
+      },
+      {
         channel: IPC_REQUEST_CHANNELS.FILE_LIST,
         category: "file",
         handler: this.listFiles.bind(this),

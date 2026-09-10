@@ -220,6 +220,7 @@ const Settings = memo(({ open, onClose }) => {
 
   // 传输栏显示模式: "bottom" | "sidebar"
   const [transferBarMode, setTransferBarMode] = React.useState("bottom");
+  const [transferIntegrity, setTransferIntegrity] = React.useState(false);
 
   // 需要重启的设置变更标志
   const [needsRestart, setNeedsRestart] = React.useState(false);
@@ -342,6 +343,7 @@ const Settings = memo(({ open, onClose }) => {
 
             // 传输栏显示模式
             setTransferBarMode(settings.transferBarMode || "bottom");
+            setTransferIntegrity(settings.transferIntegrity === true);
 
             // 备份保留天数
             if (settings.backupRetentionDays !== undefined) {
@@ -601,7 +603,9 @@ const Settings = memo(({ open, onClose }) => {
       case "CREDENTIAL_STORE_LOCKED":
         return t("settings.dataSync.autoSync.skipped.CREDENTIAL_STORE_LOCKED");
       case "EXPORT_PASSWORD_NOT_SAVED":
-        return t("settings.dataSync.autoSync.skipped.EXPORT_PASSWORD_NOT_SAVED");
+        return t(
+          "settings.dataSync.autoSync.skipped.EXPORT_PASSWORD_NOT_SAVED",
+        );
       case "NO_URL":
         return t("settings.dataSync.autoSync.skipped.NO_URL");
       case "WEBDAV_AUTH_FAILED":
@@ -1121,10 +1125,7 @@ const Settings = memo(({ open, onClose }) => {
     ),
     terminalScrollbackLines: Math.min(
       500000,
-      Math.max(
-        1000,
-        Math.floor(Number(terminalScrollbackLines)) || 50000,
-      ),
+      Math.max(1000, Math.floor(Number(terminalScrollbackLines)) || 50000),
     ),
     darkMode,
     performance: {
@@ -1144,6 +1145,7 @@ const Settings = memo(({ open, onClose }) => {
       closeToTray: trayEnabled && closeToTray,
     },
     transferBarMode,
+    transferIntegrity,
     backupRetentionDays,
     externalEditor: {
       enabled: externalEditorEnabled,
@@ -1449,6 +1451,25 @@ const Settings = memo(({ open, onClose }) => {
                             </MenuItem>
                           </Select>
                         </FormControl>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={transferIntegrity}
+                              onChange={(event) =>
+                                setTransferIntegrity(event.target.checked)
+                              }
+                              size="small"
+                            />
+                          }
+                          label={t("settings.transferIntegrity")}
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          display="block"
+                        >
+                          {t("settings.transferIntegrityHelp")}
+                        </Typography>
                       </Box>
                     </Box>
                   </Grid>

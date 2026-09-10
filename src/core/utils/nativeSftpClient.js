@@ -748,6 +748,21 @@ function invokePersistentNativeRequest(
   });
 }
 
+function closeNativeSession(sessionKey) {
+  const session = nativeSftpSessions.get(sessionKey);
+  if (!session) return;
+  nativeSftpSessions.delete(sessionKey);
+  if (session.idleTimer) clearTimeout(session.idleTimer);
+  session.idleTimer = null;
+  session._failAll(
+    createNativeSidecarError("Transfer session retired", {
+      errorCode: "NATIVE_SFTP_SESSION_CLOSED",
+      errorKind: "sidecar",
+      retryable: true,
+    }),
+  );
+}
+
 function invokeNativeRequestWithConfig(
   config,
   request,
@@ -1075,6 +1090,46 @@ function watchDirectoryWithConfig(
   });
 }
 
+function requireNativeSuccess(result) {
+  if (result?.success === true) return result;
+  const details = normalizeNativeErrorPayload(
+    result,
+    "Native SFTP operation failed",
+  );
+  throw Object.assign(new Error(details.error), details);
+}
+
+async function statFile(tabId, remotePath, options = {}) {
+  const result = await invokeNativeRequest(
+    tabId,
+    {
+      operation: "statFile",
+      path: remotePath,
+    },
+    options,
+  );
+  return requireNativeSuccess(result).stats;
+}
+
+async function checksumFile(tabId, remotePath, algorithm, options = {}) {
+  if (!["md5", "sha256"].includes(algorithm)) {
+    throw new Error(`Unsupported checksum algorithm: ${algorithm}`);
+  }
+  return requireNativeSuccess(
+    await invokeNativeRequest(
+      tabId,
+      {
+        operation: "checksumFile",
+        path: remotePath,
+        algorithm,
+        segmentOffset: options.segmentOffset,
+        segmentLength: options.segmentLength,
+      },
+      options,
+    ),
+  );
+}
+
 async function listFiles(tabId, remotePath, options = {}) {
   return invokeNativeRequest(
     tabId,
@@ -1267,6 +1322,10 @@ async function downloadFile(tabId, remotePath, localPath, options = {}) {
 }
 
 module.exports = {
+  closeNativeSession,
+  requireNativeSuccess,
+  statFile,
+  checksumFile,
   resolveSshConfig,
   invokeNativeRequestWithConfig,
   listFiles,

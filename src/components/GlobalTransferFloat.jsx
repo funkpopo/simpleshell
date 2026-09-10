@@ -33,6 +33,7 @@ import {
   getTransferStatusTextColor,
   getProgressTrackColor,
   getDangerHoverSx,
+  getIntegrityStatusText,
 } from "./transferStatusStyles.jsx";
 
 // 格式化剩余时间
@@ -72,10 +73,10 @@ const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
     remainingTime = 0,
     totalFiles = 0,
     currentFile,
-    statusText = "",
     warning = "",
   } = transfer;
 
+  const statusText = getIntegrityStatusText(transfer, t);
   const isCompleted = progress >= 100;
   const hasError = !!error;
   const hasWarning = !!warning;

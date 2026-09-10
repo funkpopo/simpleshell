@@ -1325,6 +1325,33 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }),
   cancelTransfer: (tabId, type) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CANCEL_TRANSFER, tabId, type),
+  listResumableTransfers: () =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_LIST_RESUMABLE),
+  resumeTransfer: (tabId, id, options = {}) =>
+    ipcRenderer.invoke(
+      IPC_REQUEST_CHANNELS.FILE_RESUME_TRANSFER,
+      tabId,
+      id,
+      options,
+    ),
+  discardResumableTransfer: (tabId, id) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_DISCARD_RESUMABLE, tabId, id),
+  setTransferIntegrity: (tabId, key, algorithm) =>
+    ipcRenderer.invoke(
+      IPC_REQUEST_CHANNELS.FILE_TRANSFER_INTEGRITY,
+      tabId,
+      key,
+      algorithm,
+    ),
+  onSftpTransferState: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on(IPC_EVENT_CHANNELS.SFTP_TRANSFER_STATE, listener);
+    return () =>
+      ipcRenderer.removeListener(
+        IPC_EVENT_CHANNELS.SFTP_TRANSFER_STATE,
+        listener,
+      );
+  },
   getAbsolutePath: (tabId, relativePath) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.FILE_GET_ABSOLUTE_PATH,

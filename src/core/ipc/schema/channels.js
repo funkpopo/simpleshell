@@ -85,6 +85,44 @@ const defineEvent = (
 });
 
 const IPC_CHANNEL_DEFINITIONS = Object.freeze([
+  defineRequest(
+    "FILE_LIST_RESUMABLE",
+    "file:list-resumable",
+    "file",
+    NO_ARGS_SCHEMA,
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "filesystem" },
+  ),
+  defineRequest(
+    "FILE_RESUME_TRANSFER",
+    "file:resume-transfer",
+    "file",
+    args([{}, stringArg(), objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "filesystem" },
+  ),
+  defineRequest(
+    "FILE_DISCARD_RESUMABLE",
+    "file:discard-resumable",
+    "file",
+    args([{}, stringArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "filesystem" },
+  ),
+  defineRequest(
+    "FILE_TRANSFER_INTEGRITY",
+    "file:transfer-integrity",
+    "file",
+    args([{}, stringArg(), { enum: ["md5", "sha256"] }]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "filesystem" },
+  ),
+  defineEvent(
+    "SFTP_TRANSFER_STATE",
+    "sftp:transfer-state",
+    "file",
+    args([objectArg()]),
+  ),
   defineRequest("WINDOW_MINIMIZE", "window:minimize", "window", NO_ARGS_SCHEMA),
   defineRequest(
     "WINDOW_TOGGLE_MAXIMIZE",

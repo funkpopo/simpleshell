@@ -20,6 +20,7 @@ import {
   getStatusIcon,
   getTransferStatusChipColors,
   getDangerHoverSx,
+  getIntegrityStatusText,
 } from "./transferStatusStyles.jsx";
 
 /**
@@ -28,13 +29,13 @@ import {
 const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { type, fileName, progress, isCancelled, error, statusText } = transfer;
+  const { type, fileName, progress, isCancelled, error } = transfer;
 
   const isCompleted = progress >= 100;
   const hasError = !!error;
   const statusIcon = getStatusIcon(transfer, 14);
   const showDelete = isCompleted || hasError || isCancelled;
-  const secondaryText = statusText || sshHost || "";
+  const secondaryText = getIntegrityStatusText(transfer, t) || sshHost || "";
   const chipColors = getTransferStatusChipColors(theme, transfer);
 
   return (

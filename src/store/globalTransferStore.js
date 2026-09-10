@@ -8,6 +8,7 @@ import { generateId } from "../shared/common";
 
 // 全局传输状态，按tabId组织
 const transferState = new Map();
+const sftpStates = new Map();
 // 传输历史记录（保留已完成的传输）
 const transferHistory = [];
 // 历史记录最大数量
@@ -185,7 +186,13 @@ const updateTransfer = (tabId, transferId, updateData = {}) => {
   const { autoRemoveDelay, ...rest } = updateData || {};
 
   const next = transfers.map((transfer) =>
-    transfer.transferId === transferId ? { ...transfer, ...rest } : transfer,
+    transfer.transferId === transferId
+      ? {
+          ...transfer,
+          ...rest,
+          ...sftpStates.get(rest.transferKey || transfer.transferKey),
+        }
+      : transfer,
   );
 
   setTransfersInternal(tabId, next);
@@ -319,6 +326,11 @@ const isTransferEqual = (a, b) => {
   // 比较关键字段
   return (
     a.transferId === b.transferId &&
+    a.status === b.status &&
+    a.verified === b.verified &&
+    a.algorithm === b.algorithm &&
+    a.integrity === b.integrity &&
+    a.resumeIds === b.resumeIds &&
     a.progress === b.progress &&
     a.fileName === b.fileName &&
     a.statusText === b.statusText &&
@@ -336,6 +348,42 @@ const isTransferEqual = (a, b) => {
     a.isCompleted === b.isCompleted &&
     a.tabId === b.tabId
   );
+};
+
+export const applySftpTransferState = (payload) => {
+  const { tabId, transferKey } = payload;
+  if (!tabId || !transferKey) return;
+  const state = {
+    status: payload.status,
+    algorithm: payload.algorithm,
+    verified: payload.verified,
+    integrity: payload.integrity,
+    resumeIds: payload.resumeIds,
+    errorKind: payload.errorKind,
+    retryable: payload.retryable,
+    progress:
+      payload.status === "completed" ? 100 : Math.min(99.9, payload.progress),
+    transferredBytes: payload.transferredBytes,
+    totalBytes: payload.totalBytes,
+    transferSpeed: payload.transferSpeed,
+    ...(payload.error ? { error: payload.error } : {}),
+    ...(payload.status === "paused" ? { isCancelled: true } : {}),
+  };
+  sftpStates.set(transferKey, state);
+  const existing = getTransfersInternal(tabId).find(
+    (item) => item.transferKey === transferKey,
+  );
+  if (existing) updateTransfer(tabId, existing.transferId, state);
+  else if (transferKey.includes("-resume-")) {
+    addTransfer(tabId, { ...payload, ...state, transferId: transferKey });
+  }
+  if (sftpStates.size > 500) {
+    for (const [key, value] of sftpStates) {
+      if (["completed", "error", "paused"].includes(value.status))
+        sftpStates.delete(key);
+      if (sftpStates.size <= 400) break;
+    }
+  }
 };
 
 // 用于比较两个传输列表是否相等

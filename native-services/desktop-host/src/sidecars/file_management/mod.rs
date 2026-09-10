@@ -1,6 +1,7 @@
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
 use futures_util::StreamExt;
+use md5::Md5;
 use openssh_sftp_client::file::{OpenOptions, TokioCompatFile};
 use openssh_sftp_client::metadata::{MetaData, MetaDataBuilder, Permissions};
 use openssh_sftp_client::{Sftp, SftpOptions};
@@ -31,6 +32,55 @@ const SIDECAR_PROCESS_TYPE: &str = "native-sidecar";
 const MODE_TYPE_MASK: u32 = 0o170000;
 const MODE_TYPE_DIRECTORY: u32 = 0o040000;
 const MODE_TYPE_FILE: u32 = 0o100000;
+
+#[cfg(test)]
+mod transfer_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn streaming_hash_vectors() {
+        assert_eq!(
+            hash_reader::<_, Md5>(&mut &b"abc"[..]).await.unwrap(),
+            "900150983cd24fb0d6963f7d28e17f72"
+        );
+        assert_eq!(
+            hash_reader::<_, Sha256>(&mut &b"abc"[..]).await.unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            hash_reader::<_, Md5>(&mut &b""[..]).await.unwrap(),
+            "d41d8cd98f00b204e9800998ecf8427e"
+        );
+        let bytes = vec![0x5a; 1024 * 1024 + 17];
+        assert_eq!(
+            hash_reader::<_, Sha256>(&mut &bytes[..]).await.unwrap(),
+            format!("{:x}", Sha256::digest(&bytes))
+        );
+    }
+
+    #[test]
+    fn transfer_windows_and_protocol() {
+        assert_eq!(
+            resolve_transfer_window(100, Some(60), None).unwrap(),
+            (60, 40)
+        );
+        assert_eq!(
+            resolve_transfer_window(0, Some(0), Some(0)).unwrap(),
+            (0, 0)
+        );
+        assert!(resolve_transfer_window(100, Some(101), None).is_err());
+        assert!(resolve_transfer_window(100, Some(80), Some(21)).is_err());
+        assert_eq!(
+            SftpOperation::parse("statFile").unwrap(),
+            SftpOperation::StatFile
+        );
+        assert_eq!(
+            SftpOperation::parse("checksumFile").unwrap(),
+            SftpOperation::ChecksumFile
+        );
+        assert!(!classify_error("checksum source changed while reading").retryable);
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -129,6 +179,7 @@ struct SftpRequest {
     schema_version: Option<u32>,
     request_id: Option<String>,
     operation: String,
+    algorithm: Option<String>,
     path: Option<String>,
     local_path: Option<String>,
     source_path: Option<String>,
@@ -152,6 +203,10 @@ struct SftpRequest {
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 enum SftpOperation {
+    #[serde(rename = "statFile")]
+    StatFile,
+    #[serde(rename = "checksumFile")]
+    ChecksumFile,
     #[serde(rename = "listFiles")]
     ListFiles,
     #[serde(rename = "scanRemoteFolderTree")]
@@ -533,25 +588,20 @@ pub async fn run_sftp_session() -> Result<(), String> {
         "requestStarted",
         session_started_at.elapsed().as_millis() as u64,
     );
-    let (sftp, handle) = match connect_sftp(
-        &envelope.config,
-        first_request_id,
-        &session_started_at,
-    )
-    .await
-    {
-        Ok(value) => value,
-        Err(error) => {
-            emit_error_result(
-                Some(&envelope.request.operation),
-                first_request_id,
-                SIDECAR_PROCESS_TYPE,
-                &error,
-                Some(&network_path),
-            )?;
-            return Ok(());
-        }
-    };
+    let (sftp, handle) =
+        match connect_sftp(&envelope.config, first_request_id, &session_started_at).await {
+            Ok(value) => value,
+            Err(error) => {
+                emit_error_result(
+                    Some(&envelope.request.operation),
+                    first_request_id,
+                    SIDECAR_PROCESS_TYPE,
+                    &error,
+                    Some(&network_path),
+                )?;
+                return Ok(());
+            }
+        };
 
     process_session_request(&sftp, &envelope.request, &network_path, false).await?;
 
@@ -1204,6 +1254,23 @@ async fn execute_request(
     operation: SftpOperation,
 ) -> Result<serde_json::Value, String> {
     match operation {
+        SftpOperation::StatFile => {
+            let path = required_path(request.path.as_deref(), "path")?;
+            Ok(json!({ "success": true, "stats": stat_path(sftp, path).await? }))
+        }
+        SftpOperation::ChecksumFile => {
+            let path = required_path(request.path.as_deref(), "path")?;
+            let algorithm = required_path(request.algorithm.as_deref(), "algorithm")?;
+            let digest = checksum_remote_file(
+                sftp,
+                path,
+                algorithm,
+                request.segment_offset,
+                request.segment_length,
+            )
+            .await?;
+            Ok(json!({ "success": true, "algorithm": algorithm, "digest": digest }))
+        }
         SftpOperation::ListFiles => {
             let path = resolve_directory_path(request.path.as_deref());
             let entries = list_files_internal(
@@ -1487,7 +1554,7 @@ fn remote_upload_open_options(sftp: &Sftp, flags: Option<&str>) -> OpenOptions {
     if normalized.starts_with('r') {
         options.read(true);
         if normalized.contains('+') {
-            options.write(true).create(true);
+            options.write(true);
         }
         return options;
     }
@@ -1505,10 +1572,8 @@ fn local_download_open_options(flags: Option<&str>) -> TokioOpenOptions {
     let normalized = flags.unwrap_or("").trim().to_ascii_lowercase();
     let mut options = TokioOpenOptions::new();
 
-    options.create(true);
-
     if normalized.contains('a') {
-        options.append(true);
+        options.append(true).create(true);
         return options;
     }
 
@@ -1521,11 +1586,11 @@ fn local_download_open_options(flags: Option<&str>) -> TokioOpenOptions {
     }
 
     if normalized.contains('+') {
-        options.read(true).write(true);
+        options.read(true).write(true).create(true);
         return options;
     }
 
-    options.write(true).truncate(true);
+    options.write(true).create(true).truncate(true);
     options
 }
 
@@ -1543,11 +1608,7 @@ fn emit_stdout_line(line: String) -> Result<(), String> {
     Ok(())
 }
 
-fn emit_stage(
-    request_id: Option<&str>,
-    stage: &str,
-    elapsed_ms: u64,
-) -> Result<(), String> {
+fn emit_stage(request_id: Option<&str>, stage: &str, elapsed_ms: u64) -> Result<(), String> {
     emit_stdout_line(
         serde_json::to_string(&json!({
             "type": "stage",
@@ -2086,8 +2147,76 @@ async fn download_remote_file(
         .flush()
         .await
         .map_err(|error| format!("flush local file failed: {error}"))?;
+    local_file
+        .sync_all()
+        .await
+        .map_err(|error| format!("sync local file failed: {error}"))?;
 
     Ok(transferred)
+}
+
+async fn hash_reader<R: io::AsyncRead + Unpin, D: Digest + Default>(
+    reader: &mut R,
+) -> Result<String, String> {
+    let mut hash = D::default();
+    let mut buffer = vec![0u8; 256 * 1024];
+    loop {
+        let count = reader
+            .read(&mut buffer)
+            .await
+            .map_err(|error| format!("checksum read failed: {error}"))?;
+        if count == 0 {
+            break;
+        }
+        hash.update(&buffer[..count]);
+    }
+    Ok(hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
+async fn checksum_remote_file(
+    sftp: &Sftp,
+    path: &str,
+    algorithm: &str,
+    offset: Option<u64>,
+    length: Option<u64>,
+) -> Result<String, String> {
+    if algorithm != "md5" && algorithm != "sha256" {
+        return Err(format!("unsupported checksum algorithm: {algorithm}"));
+    }
+    let before = stat_path(sftp, path).await?;
+    if before.is_directory {
+        return Err("checksum requires a regular file".to_string());
+    }
+    let file = sftp
+        .open(path)
+        .await
+        .map_err(|error| format!("checksum open failed: {error}"))?;
+    let reader = TokioCompatFile::new(file);
+    futures_util::pin_mut!(reader);
+    let (offset, length) = resolve_transfer_window(before.size, offset, length)?;
+    reader
+        .as_mut()
+        .seek(std::io::SeekFrom::Start(offset))
+        .await
+        .map_err(|error| format!("checksum seek failed: {error}"))?;
+    let mut reader = reader.take(length);
+    let digest = match algorithm {
+        "md5" => hash_reader::<_, Md5>(&mut reader).await?,
+        "sha256" => hash_reader::<_, Sha256>(&mut reader).await?,
+        _ => unreachable!(),
+    };
+    if reader.limit() != 0 {
+        return Err("checksum source truncated while reading".to_string());
+    }
+    let after = stat_path(sftp, path).await?;
+    if before.size != after.size || before.modify_time != after.modify_time {
+        return Err("checksum source changed while reading".to_string());
+    }
+    Ok(digest)
 }
 
 async fn create_file(sftp: &Sftp, remote_path: &str) -> Result<(), String> {
@@ -2172,9 +2301,10 @@ async fn create_remote_folders(sftp: &Sftp, remote_path: &str) -> Result<(), Str
             Err(_) => {
                 if let Err(error) = fs.create_dir(&probe_path).await {
                     let mut verify_fs = sftp.fs();
-                    let verify_metadata = verify_fs.metadata(&probe_path).await.map_err(|_| {
-                        format!("mkdir failed for {probe_path}: {error}")
-                    })?;
+                    let verify_metadata = verify_fs
+                        .metadata(&probe_path)
+                        .await
+                        .map_err(|_| format!("mkdir failed for {probe_path}: {error}"))?;
                     let is_dir = verify_metadata
                         .file_type()
                         .map(|kind| kind.is_dir())
@@ -2498,6 +2628,13 @@ struct ErrorClassification {
 
 fn classify_error(message: &str) -> ErrorClassification {
     let lower = message.to_ascii_lowercase();
+    if lower.contains("checksum source") {
+        return ErrorClassification {
+            error_code: "NATIVE_SFTP_SOURCE_CHANGED",
+            error_kind: "source-changed",
+            retryable: false,
+        };
+    }
 
     if lower.contains("failed to parse request")
         || lower.contains("is required")

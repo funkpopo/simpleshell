@@ -113,6 +113,7 @@ import ErrorNotification from "./components/ErrorNotification.jsx";
 import GlobalTransferBar from "./components/GlobalTransferBar.jsx";
 import GlobalTransferFloat from "./components/GlobalTransferFloat.jsx";
 import TransferSidebar from "./components/TransferSidebar.jsx";
+import { applySftpTransferState } from "./store/globalTransferStore.js";
 import TransferSidebarButton from "./components/TransferSidebarButton.jsx";
 import { useNotification } from "./contexts/NotificationContext.jsx";
 import {
@@ -1488,6 +1489,11 @@ function AppContent() {
   const [sidebarResizing, setSidebarResizing] = React.useState(false);
   // 传输侧边栏状态
   const [transferSidebarOpen, setTransferSidebarOpen] = React.useState(false);
+  const [resumableTransferCount, setResumableTransferCount] = React.useState(0);
+  React.useEffect(
+    () => window.terminalAPI.onSftpTransferState(applySftpTransferState),
+    [],
+  );
   // 最后激活的浮动窗口（用于控制z-index层叠顺序）: "ai" | "transfer"
   const [lastActiveFloatWindow, setLastActiveFloatWindow] =
     React.useState("ai");
@@ -5332,10 +5338,11 @@ function AppContent() {
                   </IconButton>
                 </SidebarTooltip>
 
-                {transferBarMode === "sidebar" && (
+                {
                   <TransferSidebarButton
                     ref={transferSidebarButtonRef}
                     isOpen={transferSidebarOpen}
+                    resumableCount={resumableTransferCount}
                     onClick={() => {
                       const newState = !transferSidebarOpen;
                       setTransferSidebarOpen(newState);
@@ -5345,7 +5352,7 @@ function AppContent() {
                     }}
                     tooltipPlacement={sidebarTooltipPlacement}
                   />
-                )}
+                }
 
                 <Box sx={sidebarRailDividerSx} />
 
@@ -5465,16 +5472,17 @@ function AppContent() {
         />
       )}
 
-      {/* 文件传输浮动窗口 - 仅在sidebar模式下显示 */}
-      {transferBarMode === "sidebar" && (
+      {/* 所有显示模式均可打开传输面板，恢复重启后保留的任务。 */}
+      {
         <TransferSidebar
           open={transferSidebarOpen}
+          onRecoveryCount={setResumableTransferCount}
           onClose={() => setTransferSidebarOpen(false)}
           zIndex={lastActiveFloatWindow === "transfer" ? 1310 : 1300}
           onFocus={() => setLastActiveFloatWindow("transfer")}
           anchorEl={transferSidebarButtonRef.current}
         />
-      )}
+      }
 
       {firstRunDialogOpen && (
         <FirstRunDialog

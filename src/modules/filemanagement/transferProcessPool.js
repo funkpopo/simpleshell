@@ -9,6 +9,7 @@ const {
 const { logToFile } = require("../../core/utils/logger");
 const {
   invokeNativeRequestWithConfig,
+  closeNativeSession,
 } = require("../../core/utils/nativeSftpClient");
 const { normalizeErrorMessage } = require("../../core/utils/errorResponse");
 const { buildCancelledError } = require("./transferShared");
@@ -172,7 +173,7 @@ class TransferProcessPool {
       transferKey: entry.transferKey,
       taskId: entry.taskId,
       tabId: entry.tabId,
-      attempt: 0,
+      attempt: entry.attempt || 0,
       timestamp: Date.now(),
       workerPid: entry.sidecarPid || null,
       deltaBytes: Math.max(0, Number(payload?.deltaBytes) || 0),
@@ -382,7 +383,7 @@ class TransferProcessPool {
       entry.sshConfig,
       request,
       {
-        sessionKey: String(entry.tabId),
+        sessionKey: `transfer:${entry.taskKey}`,
         onSpawn: (child) => {
           entry.child = child;
           entry.sidecarPid = child?.pid || null;
@@ -477,10 +478,20 @@ class TransferProcessPool {
         }
 
         try {
-          const payload = await this._executeTask(entry);
+          if (entry.beforeAttempt) {
+            entry.taskPayload = await entry.beforeAttempt({
+              task: entry.taskPayload,
+              attempt,
+              error: lastError,
+            });
+          }
+          const payload = entry.taskPayload.skipTransfer
+            ? this._buildDonePayload(entry, { transferredBytes: 0 })
+            : await this._executeTask(entry);
           if (payload && typeof payload === "object") {
             payload.attempt = attempt;
           }
+          if (entry.onTaskDone) await entry.onTaskDone(payload);
           this._resolveTask(entry.taskKey, payload);
           return;
         } catch (error) {
@@ -518,6 +529,7 @@ class TransferProcessPool {
             "WARN",
           );
           entry.child = null;
+          closeNativeSession(`transfer:${entry.taskKey}`);
           await sleep(delayMs);
         }
       }
@@ -555,6 +567,7 @@ class TransferProcessPool {
       this._rejectTask(entry.taskKey, normalizedError);
     } finally {
       entry.child = null;
+      closeNativeSession(`transfer:${entry.taskKey}`);
       void this._dispatchLoop();
     }
   }
@@ -586,7 +599,6 @@ class TransferProcessPool {
 
     this.pendingTasks.delete(taskKey);
     this._markTaskFinished(entry);
-    this._safeInvokeCallback(entry.onTaskDone, resultPayload);
     entry.resolve(resultPayload);
   }
 
@@ -619,6 +631,7 @@ class TransferProcessPool {
     onProgress = null,
     onTaskDone = null,
     onTaskError = null,
+    beforeAttempt = null,
   }) {
     if (this._isShutdown) {
       throw new Error(
@@ -686,6 +699,7 @@ class TransferProcessPool {
           onProgress,
           onTaskDone,
           onTaskError,
+          beforeAttempt,
           resolve,
           reject,
           status: "queued",
