@@ -5,9 +5,6 @@
 
 const BaseConnectionPool = require("./base-connection-pool");
 const Telnet = require("telnet-client");
-const {
-  classifyConnectionFailure,
-} = require("../../shared/connectionErrorAdvice");
 
 /**
  * Telnet连接池类

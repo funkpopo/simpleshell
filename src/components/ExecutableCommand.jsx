@@ -2,7 +2,7 @@
  * 可执行命令组件
  * 显示AI回复中的命令块，带有风险等级标识和执行按钮
  */
-import React, { useState, memo } from "react";
+import React, { useState, useEffect, memo } from "react";
 import Dialog from "./AccessibleDialog.jsx";
 import {
   Box,
@@ -142,7 +142,11 @@ const ExecutableCommand = memo(
 
     const riskLabel = getRiskLevelText(t, risk.name);
 
+    useEffect(() => {
+      if (disabled) setConfirmOpen(false);
+    }, [disabled]);
     const handleExecuteClick = () => {
+      if (disabled) return;
       if (requiresConfirmation(risk)) {
         setConfirmOpen(true);
       } else {
@@ -152,7 +156,7 @@ const ExecutableCommand = memo(
 
     const handleConfirm = () => {
       setConfirmOpen(false);
-      onExecute?.(command);
+      if (!disabled) onExecute?.(command);
     };
 
     const handleCopy = async () => {

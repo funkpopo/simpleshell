@@ -4,6 +4,11 @@ import {
   createSyncGroup,
   removeTabFromSyncGroups,
 } from "../core/syncInputGroups.js";
+import {
+  addPaneToLayout,
+  getSinglePaneLayout,
+  removePaneFromLayout,
+} from "../modules/terminal/paneLayout.js";
 
 // Action Types
 // Action 类型常量（模块内部使用）
@@ -17,6 +22,9 @@ const ActionTypes = {
 
   // Split Terminal Panes
   ADD_PANE: "ADD_PANE",
+  ADOPT_TAB: "ADOPT_TAB",
+  UNSPLIT_TAB: "UNSPLIT_TAB",
+  FORGET_SESSIONS: "FORGET_SESSIONS",
   REMOVE_PANE: "REMOVE_PANE",
   SET_LAYOUT_DIRECTION: "SET_LAYOUT_DIRECTION",
   SET_RATIOS: "SET_RATIOS",
@@ -178,6 +186,99 @@ export function appReducer(state = initialState, action) {
       return { ...state, currentTab: action.payload };
 
     // Split Terminal Pane Actions
+    case ActionTypes.ADOPT_TAB: {
+      const { tabId, sourceTabId, zone } = action.payload;
+      const sourceTab = state.tabs.find((tab) => tab.id === sourceTabId);
+      const targetTab = state.tabs.find((tab) => tab.id === tabId);
+      if (
+        !sourceTab ||
+        !targetTab ||
+        sourceTabId === tabId ||
+        sourceTabId === "welcome" ||
+        tabId === "welcome" ||
+        state.splitLayouts[sourceTabId]
+      )
+        return state;
+      const layout = state.splitLayouts[tabId] ?? getSinglePaneLayout(tabId);
+      if (
+        layout.panes.length >= MAX_TARGET_PANES ||
+        layout.panes.includes(sourceTabId)
+      )
+        return state;
+      const tabs = state.tabs.filter((tab) => tab.id !== sourceTabId);
+      return {
+        ...state,
+        tabs,
+        currentTab: tabs.findIndex((tab) => tab.id === tabId),
+        tabHistoryStack: [],
+        fileManagerOpenByTabId: {
+          ...state.fileManagerOpenByTabId,
+          [tabId]: Boolean(
+            state.fileManagerOpenByTabId[tabId] ||
+            state.fileManagerOpenByTabId[sourceTabId],
+          ),
+        },
+        panes: {
+          ...state.panes,
+          [sourceTabId]: {
+            id: sourceTabId,
+            parentTabId: tabId,
+            type: sourceTab.type,
+            label: sourceTab.label,
+            tab: sourceTab,
+            adoptedFromTab: true,
+          },
+        },
+        splitLayouts: {
+          ...state.splitLayouts,
+          [tabId]: addPaneToLayout(layout, sourceTabId, zone),
+        },
+      };
+    }
+
+    case ActionTypes.UNSPLIT_TAB: {
+      const tabId = action.payload;
+      const layout = state.splitLayouts[tabId];
+      if (!layout) return state;
+      const rootIndex = state.tabs.findIndex((tab) => tab.id === tabId);
+      const restored = layout.panes
+        .filter((id) => id !== tabId)
+        .map((id) => state.panes[id].tab);
+      const tabs = [...state.tabs];
+      tabs.splice(rootIndex + 1, 0, ...restored);
+      const next = appReducer(state, actions.resetTabLayout(tabId));
+      return {
+        ...next,
+        tabs,
+        currentTab: tabs.findIndex(
+          (tab) => tab.id === state.tabs[state.currentTab].id,
+        ),
+        tabHistoryStack: [],
+      };
+    }
+
+    case ActionTypes.FORGET_SESSIONS: {
+      const terminalInstances = { ...state.terminalInstances };
+      const fileManagerPaths = { ...state.fileManagerPaths };
+      const fileManagerOpenByTabId = { ...state.fileManagerOpenByTabId };
+      let syncGroups = state.syncGroups;
+      for (const id of action.payload) {
+        for (const suffix of ["", "-config", "-processId", "-refresh"])
+          delete terminalInstances[`${id}${suffix}`];
+        delete fileManagerPaths[id];
+        delete fileManagerOpenByTabId[id];
+        syncGroups = removeTabFromSyncGroups(syncGroups, id);
+      }
+      return {
+        ...state,
+        terminalInstances,
+        fileManagerPaths,
+        fileManagerOpenByTabId,
+        syncGroups,
+        tabHistoryStack: [],
+      };
+    }
+
     case ActionTypes.ADD_PANE: {
       const { tabId, paneId, direction, paneType, label } =
         action.payload || {};
@@ -194,6 +295,7 @@ export function appReducer(state = initialState, action) {
           parentTabId: tabId,
           type: paneType || "ssh",
           label: label || null,
+          tab: { id: paneId, type: paneType || "ssh", label: label || paneId },
           adoptedFromTab: Boolean(action.payload.adoptedFromTab),
           createdAt: Date.now(),
         },
@@ -232,9 +334,35 @@ export function appReducer(state = initialState, action) {
       if (!tabId || !paneId) return state;
       const layout = state.splitLayouts[tabId];
       if (!layout || !layout.panes.includes(paneId)) return state;
-      const remaining = layout.panes.filter((id) => id !== paneId);
+      const nextLayout = removePaneFromLayout(layout, paneId);
+      const remaining = nextLayout.panes;
       const nextPanes = { ...state.panes };
       delete nextPanes[paneId];
+      // 关闭根窗格只结束该会话。提升存活窗格为宿主，保留所有 sessionKey。
+      if (paneId === tabId && remaining.length > 0) {
+        const newHostId = remaining[0];
+        const newHostTab = state.panes[newHostId].tab;
+        const tabs = state.tabs.map((tab) =>
+          tab.id === tabId ? newHostTab : tab,
+        );
+        delete nextPanes[newHostId];
+        for (const id of remaining.slice(1))
+          nextPanes[id] = { ...nextPanes[id], parentTabId: newHostId };
+        const splitLayouts = { ...state.splitLayouts };
+        delete splitLayouts[tabId];
+        if (remaining.length > 1) splitLayouts[newHostId] = nextLayout;
+        return {
+          ...state,
+          tabs,
+          panes: nextPanes,
+          splitLayouts,
+          fileManagerOpenByTabId: {
+            ...state.fileManagerOpenByTabId,
+            [newHostId]: Boolean(state.fileManagerOpenByTabId[tabId]),
+          },
+          tabHistoryStack: [],
+        };
+      }
       if (
         remaining.length === 0 ||
         (remaining.length <= 1 && remaining[0] === tabId)
@@ -244,22 +372,12 @@ export function appReducer(state = initialState, action) {
         delete nextLayouts[tabId];
         return { ...state, panes: nextPanes, splitLayouts: nextLayouts };
       }
-      const paneCount = remaining.length;
-      const nextFocused =
-        layout.focusedPaneId === paneId
-          ? remaining[remaining.length - 1]
-          : layout.focusedPaneId;
       return {
         ...state,
         panes: nextPanes,
         splitLayouts: {
           ...state.splitLayouts,
-          [tabId]: {
-            ...layout,
-            panes: remaining,
-            ratios: [...Array(Math.max(1, paneCount - 1)).fill(50)],
-            focusedPaneId: nextFocused,
-          },
+          [tabId]: nextLayout,
         },
       };
     }
@@ -542,6 +660,15 @@ export const actions = {
   }),
 
   // Split Terminal Pane Actions
+  adoptTab: (tabId, sourceTabId, zone) => ({
+    type: ActionTypes.ADOPT_TAB,
+    payload: { tabId, sourceTabId, zone },
+  }),
+  unsplitTab: (tabId) => ({ type: ActionTypes.UNSPLIT_TAB, payload: tabId }),
+  forgetSessions: (ids) => ({
+    type: ActionTypes.FORGET_SESSIONS,
+    payload: ids,
+  }),
   addPane: (
     tabId,
     paneId,

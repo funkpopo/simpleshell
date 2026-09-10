@@ -48,7 +48,6 @@ import ComputerIcon from "@mui/icons-material/Computer";
 import WelcomePage from "./components/WelcomePage.jsx";
 import {
   AboutDialogWithSuspense as AboutDialog,
-  AIChatWindowWithSuspense as AIChatWindow,
   ConnectionManagerWithSuspense as ConnectionManager,
   FileManagerWithSuspense as FileManager,
   FirstRunDialogWithSuspense as FirstRunDialog,
@@ -68,8 +67,19 @@ import TerminalIcon from "@mui/icons-material/Terminal";
 import FirstPageIcon from "@mui/icons-material/FirstPage";
 import LastPageIcon from "@mui/icons-material/LastPage";
 import CustomTab from "./components/CustomTab.jsx";
-import PaneGrid from "./components/terminal-pane/PaneGrid.jsx";
-import { getParentTabId, MAX_PANES } from "./modules/terminal/paneLayout.js";
+import AIChatWorkspace from "./components/AIChatWorkspace.jsx";
+import { sendCommandToActiveSession } from "./modules/terminal/activeSessionActions.js";
+import TerminalWorkspace from "./components/terminal-pane/TerminalWorkspace.jsx";
+import {
+  getParentTabId,
+  getFocusedSessionKey,
+  isSessionFileManagerOpen,
+  getSessionDescriptor,
+  getSessionFileManagerProps,
+  retainLiveSessionEntries,
+  getLiveSessionKeys,
+  MAX_PANES,
+} from "./modules/terminal/paneLayout.js";
 import NetworkLatencyIndicator from "./components/NetworkLatencyIndicator.jsx";
 import WindowControls from "./components/WindowControls.jsx";
 import SSHAuthDialog from "./components/SSHAuthDialog.jsx";
@@ -93,7 +103,6 @@ import AddIcon from "@mui/icons-material/Add";
 import PauseCircleOutlinedIcon from "@mui/icons-material/PauseCircleOutlined";
 import PlayCircleOutlinedIcon from "@mui/icons-material/PlayCircleOutlined";
 import DriveFileMoveOutlinedIcon from "@mui/icons-material/DriveFileMoveOutlined";
-import { dispatchCommandToGroup } from "./core/syncGroupCommandDispatcher";
 import { useCleanupManager } from "./hooks/useAutoCleanup.js";
 import {
   openLogDirectory,
@@ -119,7 +128,6 @@ import {
 import {
   disposeTerminalSession,
   getTerminalSessionDiagnostics,
-  preserveTerminalSessions,
   processCache as sessionProcessCache,
 } from "./modules/terminal/controller/terminalSessionStore.js";
 
@@ -730,7 +738,7 @@ function AppContent() {
   latestTabsForActionsRef.current = tabs;
   const currentTab = state.currentTab;
   const connectionManagerOpen = state.connectionManagerOpen;
-  const resourceMonitorOpen = state.resourceMonitorOpen;
+  const resourceMonitorRequested = state.resourceMonitorOpen;
   const fileManagerOpenByTabId = state.fileManagerOpenByTabId;
   const ipAddressQueryOpen = state.ipAddressQueryOpen;
   const securityToolsOpen = state.securityToolsOpen;
@@ -763,22 +771,52 @@ function AppContent() {
     currentTab > 0 && tabs[currentTab] ? tabs[currentTab] : null;
   // 分屏时会话键跟随聚焦窗格：侧边栏（资源监控/文件管理/AI/会话上下文）
   // 展示聚焦窗格的连接信息；无分屏时等于 tabId
-  const activeSessionKey = currentPanelTab
-    ? splitLayouts[currentPanelTab.id]?.focusedPaneId || currentPanelTab.id
-    : null;
-  // 文件管理侧边栏状态按标签页独立记忆：
-  // 仅 SSH 标签页可打开，未记录过的标签页默认关闭，
-  // 切换/新建标签页不会影响其他标签页各自的开关状态
-  const fileManagerOpen =
-    currentPanelTab?.type === "ssh"
-      ? Boolean(fileManagerOpenByTabId[currentPanelTab.id])
-      : false;
+  const activeSessionKey = getFocusedSessionKey(state);
+  const sessionActionStateRef = useRef(state);
+  sessionActionStateRef.current = state;
   const connectionsRef = React.useRef(connections);
   const topConnectionsRef = React.useRef(topConnections);
   const terminalInstancesRef = React.useRef(terminalInstances);
   const [connectionStatusByTabId, setConnectionStatusByTabId] = React.useState(
     {},
   );
+
+  const activeSession = useMemo(
+    () =>
+      getSessionDescriptor(
+        state,
+        activeSessionKey,
+        connectionStatusByTabId,
+        sessionProcessCache,
+      ),
+    [
+      tabs,
+      paneRegistry,
+      terminalInstances,
+      activeSessionKey,
+      connectionStatusByTabId,
+    ],
+  );
+  const canMonitorCurrentSession =
+    !activeSession ||
+    activeSession.type === "local" ||
+    (activeSession.type === "ssh" && Boolean(activeSession.processId));
+  const resourceMonitorOpen =
+    resourceMonitorRequested && canMonitorCurrentSession;
+  const liveSessionKeys = useMemo(
+    () => getLiveSessionKeys(tabs, splitLayouts),
+    [tabs, splitLayouts],
+  );
+  const liveSessionKeysRef = useRef(new Set());
+  liveSessionKeysRef.current = new Set(liveSessionKeys);
+  const terminalSessions = useMemo(
+    () =>
+      liveSessionKeys
+        .map((id) => getSessionDescriptor(state, id))
+        .filter((session) => session && terminalInstances[session.sessionKey]),
+    [liveSessionKeys, tabs, paneRegistry, terminalInstances],
+  );
+  const fileManagerOpen = isSessionFileManagerOpen(state, activeSession);
 
   React.useEffect(() => {
     connectionsRef.current = connections;
@@ -858,7 +896,7 @@ function AppContent() {
   const [reconnectNow, setReconnectNow] = React.useState(Date.now());
 
   const updateReconnectStatus = useCallback((tabId, updater, options = {}) => {
-    if (!tabId) {
+    if (!tabId || !liveSessionKeysRef.current.has(tabId)) {
       return;
     }
 
@@ -920,6 +958,7 @@ function AppContent() {
 
     try {
       const response = await window.terminalAPI.getTabConnectionStatus(tabId);
+      if (!liveSessionKeysRef.current.has(tabId)) return;
       const status = response?.success ? response.data : null;
       setConnectionStatusByTabId((previous) => {
         if (!status) {
@@ -953,6 +992,7 @@ function AppContent() {
 
       try {
         const status = await window.terminalAPI.getReconnectStatus({ tabId });
+        if (!liveSessionKeysRef.current.has(tabId)) return;
         const normalizedState = normalizeReconnectUiState(status?.state);
         if (!normalizedState) {
           return;
@@ -979,50 +1019,14 @@ function AppContent() {
   );
 
   React.useEffect(() => {
-    const activeTabIds = new Set(tabs.map((tab) => tab.id));
-    setReconnectStateByTabId((previous) => {
-      let changed = false;
-      const next = {};
-
-      Object.entries(previous).forEach(([tabId, value]) => {
-        if (activeTabIds.has(tabId)) {
-          next[tabId] = value;
-        } else {
-          changed = true;
-        }
-      });
-
-      return changed ? next : previous;
-    });
-    setConnectionStatusByTabId((previous) => {
-      let changed = false;
-      const next = {};
-
-      Object.entries(previous).forEach(([tabId, value]) => {
-        if (activeTabIds.has(tabId)) {
-          next[tabId] = value;
-        } else {
-          changed = true;
-        }
-      });
-
-      return changed ? next : previous;
-    });
-    setDiskAlertsByTabId((previous) => {
-      let changed = false;
-      const next = {};
-
-      Object.entries(previous).forEach(([tabId, value]) => {
-        if (activeTabIds.has(tabId) || activeTabIds.has(Number(tabId))) {
-          next[tabId] = value;
-        } else {
-          changed = true;
-        }
-      });
-
-      return changed ? next : previous;
-    });
-  }, [tabs]);
+    const activeTabIds = new Set(liveSessionKeys);
+    const retain = (previous) =>
+      retainLiveSessionEntries(previous, activeTabIds);
+    setReconnectStateByTabId(retain);
+    setConnectionStatusByTabId(retain);
+    setDiskAlertsByTabId(retain);
+    setFileManagerHistoryByTabId(retain);
+  }, [liveSessionKeys]);
 
   React.useEffect(() => {
     if (!window.terminalAPI) {
@@ -1152,6 +1156,8 @@ function AppContent() {
       if (!payload?.tabId) {
         return;
       }
+
+      if (!liveSessionKeysRef.current.has(payload.tabId)) return;
 
       setConnectionStatusByTabId((previous) => ({
         ...previous,
@@ -2655,30 +2661,7 @@ function AppContent() {
       return;
     }
 
-    const adoptedPaneIds = layout.panes.filter((id) => id !== tabId);
-    const restoredTabs = adoptedPaneIds.map((paneId) => {
-      const paneInfo = paneRegistry[paneId];
-      const config = terminalInstances[`${paneId}-config`];
-      return {
-        id: paneId,
-        label:
-          paneInfo?.label ||
-          config?.name ||
-          `${config?.username ? `${config.username}@` : ""}${config?.host || ""}` ||
-          paneId,
-        type: paneInfo?.type || "ssh",
-        connectionId: config?.connectionId || config?.id,
-      };
-    });
-
-    // 按原分屏顺序紧随根标签插入，恢复原标签顺序
-    const newTabs = [...currentTabs];
-    newTabs.splice(rootIndex + 1, 0, ...restoredTabs);
-    // 标记所有窗格会话将被同键重挂载（分屏窗格 → 单窗格标签），
-    // 卸载清理保留 xterm/进程缓存，避免拆分后清屏重连
-    preserveTerminalSessions(layout.panes);
-    dispatch(actions.setTabs(newTabs));
-    dispatch(actions.resetTabLayout(tabId));
+    dispatch(actions.unsplitTab(tabId));
     notifyTerminalResize();
     handleTabContextMenuClose();
   }, [
@@ -2922,13 +2905,6 @@ function AppContent() {
       dispatch(actions.setResourceMonitorOpen(false));
     }
 
-    // 从缓存中移除对应的终端实例
-    const newInstances = { ...terminalInstances };
-    delete newInstances[tabToRemove.id];
-    delete newInstances[`${tabToRemove.id}-config`];
-    delete newInstances[`${tabToRemove.id}-processId`];
-    delete newInstances[`${tabToRemove.id}-refresh`];
-
     // 分屏窗格：整组窗格随 tab 一并关闭（逐个结束会话并清理实例缓存）。
     // 被拖入的窗格（adoptedFromTab）的 sessionKey 是原 tabId，同理清理。
     const closingLayout = splitLayouts[tabToRemove.id];
@@ -2942,25 +2918,17 @@ function AppContent() {
           });
         }
         disposeTerminalSession(paneId);
-        delete newInstances[paneId];
-        delete newInstances[`${paneId}-config`];
-        delete newInstances[`${paneId}-processId`];
-        delete newInstances[`${paneId}-refresh`];
         // 同步分组中的窗格成员一并移除
         dispatch(actions.removeTabFromSyncGroups(paneId));
       });
       dispatch(actions.resetTabLayout(tabToRemove.id));
     }
 
-    dispatch(actions.setTerminalInstances(newInstances));
-
+    dispatch(actions.forgetSessions(closingLayout?.panes ?? [tabToRemove.id]));
     // 注：进程缓存（terminalSessionStore.processCache）已由上方
     // disposeTerminalSession(tabToRemove.id) 统一清理，无需在此重复处理。
 
     // 清理文件管理路径记忆
-    const newPaths = { ...fileManagerPaths };
-    delete newPaths[tabToRemove.id];
-    dispatch(actions.setFileManagerPaths(newPaths));
     setFileManagerHistoryByTabId((previous) => {
       if (!previous[tabToRemove.id]) {
         return previous;
@@ -3032,81 +3000,54 @@ function AppContent() {
   const [paneDragId, setPaneDragId] = useState(null);
   const [paneDragOverId, setPaneDragOverId] = useState(null);
 
-  // 释放窗格会话：杀进程 / 释放渲染端缓存 / 清理 terminalInstances
+  // 会话清理按键执行；状态删除交给 reducer，批量关闭不会复活前一项缓存。
   const teardownPaneSession = useCallback(
     (paneId) => {
       const processId = sessionProcessCache[paneId];
-      if (processId && window.terminalAPI?.killProcess) {
-        window.terminalAPI.killProcess(processId).catch((err) => {
-          console.warn(`关闭窗格会话时出错: ${err.message}`);
-        });
-      }
-      if (paneRegistryRef.current[paneId]?.type === "local") {
-        window.terminalAPI?.closeLocalTerminal?.(paneId)?.catch?.(() => {});
-      }
+      if (processId)
+        window.terminalAPI
+          .killProcess(processId)
+          .catch((error) => console.warn(error));
       disposeTerminalSession(paneId);
-
-      const next = { ...(terminalInstancesRef.current || {}) };
-      delete next[paneId];
-      delete next[`${paneId}-config`];
-      delete next[`${paneId}-processId`];
-      delete next[`${paneId}-refresh`];
-      dispatch(actions.setTerminalInstances(next));
+      dispatch(actions.forgetSessions([paneId]));
     },
     [dispatch],
   );
 
   const cleanupDragStateRef = useRef(null);
 
-  // 关闭窗格：根窗格 / 无布局 → 关闭整个 tab；否则仅结束该窗格会话。
-  // 若关闭后只剩一个非根窗格（孤儿会话无法独立存活），同样关闭整个 tab。
+  // 关闭仅作用于指定会话；移除根窗格时 reducer 提升存活窗格为宿主。
   const handleClosePane = useCallback(
     (tabId, paneId) => {
-      if (!tabId || !paneId) return;
       const layout = splitLayoutsRef.current[tabId];
-      const remaining = layout
-        ? layout.panes.filter((id) => id !== paneId)
-        : [];
-      const orphanedRoot =
-        !layout ||
-        paneId === tabId ||
-        remaining.length === 0 ||
-        (remaining.length === 1 && remaining[0] !== tabId);
-      if (orphanedRoot) {
-        // 关闭根窗格（或会导致孤儿窗格）等同于关闭标签页
+      if (!layout) {
         const index = latestTabsForActionsRef.current.findIndex(
-          (item) => item.id === tabId,
+          (tab) => tab.id === tabId,
         );
-        if (index >= 0) {
-          handleCloseTabRef.current(index);
-        }
+        if (index >= 0 && tabId === paneId) handleCloseTabRef.current(index);
         return;
       }
-
-      teardownPaneSession(paneId);
+      if (!layout.panes.includes(paneId)) return;
       dispatch(actions.removePane(tabId, paneId));
-      // 同步分组中该窗格成员一并移除（组内最后一个成员时分组自动回收）
-      dispatch(actions.removeTabFromSyncGroups(paneId));
+      teardownPaneSession(paneId);
       notifyTerminalResize();
     },
     [dispatch, teardownPaneSession],
   );
 
-  // 关闭其他窗格（保留指定窗格）。为保证不产生孤儿会话：
-  // - 保留的是根窗格 → 移除全部虚拟窗格，布局回收，回到单窗格路径；
-  // - 保留的是虚拟窗格 → 根窗格一并保留（结果为 根 + 聚焦 两个窗格）
   const handleCloseOtherPanes = useCallback(
     (tabId, paneId) => {
       const layout = splitLayoutsRef.current[tabId];
-      if (!layout) return;
-      layout.panes
-        .filter((id) => id !== paneId && (paneId === tabId || id !== tabId))
-        .forEach((otherId) => {
-          teardownPaneSession(otherId);
-          dispatch(actions.removePane(tabId, otherId));
-          dispatch(actions.removeTabFromSyncGroups(otherId));
-        });
-      dispatch(actions.focusPane(tabId, paneId));
+      if (!layout?.panes.includes(paneId)) return;
+      // 根窗格最后移除，使前面的删除始终使用同一宿主。
+      const closing = layout.panes.filter(
+        (id) => id !== paneId && id !== tabId,
+      );
+      if (paneId !== tabId) closing.push(tabId);
+      closing.forEach((id) => {
+        dispatch(actions.removePane(tabId, id));
+        teardownPaneSession(id);
+      });
       notifyTerminalResize();
     },
     [dispatch, teardownPaneSession],
@@ -3144,54 +3085,11 @@ function AppContent() {
         return;
       }
 
-      let direction = targetLayout?.direction || "row";
-      if (!targetLayout) {
-        direction = zone === "top" || zone === "bottom" ? "column" : "row";
-      } else if (direction !== "grid") {
-        if (zone === "left" || zone === "right") {
-          direction = "row";
-        } else if (zone === "top" || zone === "bottom") {
-          direction = "column";
-        }
+      if (splitLayoutsRef.current[sourceTab.id]) {
+        showWarning(t("terminal.pane.splitSourceBlocked"));
+        return;
       }
-      // 合并结果达到 3 格及以上时固定 2×2 网格布局
-      if (currentPanes.length + 1 >= 3) {
-        direction = "grid";
-      }
-
-      const paneType =
-        sourceTab.type === "local" ? "local" : sourceTab.type || "ssh";
-      // 标记两个会话将被同键重挂载（单窗格 → 分屏窗格），
-      // 卸载清理保留 xterm/进程缓存，避免清屏重连
-      preserveTerminalSessions([targetTabId, sourceTab.id]);
-      dispatch(
-        actions.addPane(
-          targetTabId,
-          sourceTab.id,
-          direction,
-          paneType,
-          sourceTab.label,
-          true,
-        ),
-      );
-      dispatch(actions.focusPane(targetTabId, sourceTab.id));
-
-      // 从标签栏移除被拖 tab（保留其会话/配置/分组身份，作为窗格存活）
-      const currentTabs = latestTabsForActionsRef.current;
-      const sourceIndex = currentTabs.findIndex(
-        (item) => item.id === sourceTab.id,
-      );
-      if (sourceIndex >= 0) {
-        const newTabs = currentTabs.filter((item) => item.id !== sourceTab.id);
-        dispatch(actions.setTabs(newTabs));
-        // 合并后聚焦到目标标签（分屏宿主），让用户立即看到合并结果
-        const newTargetIndex = newTabs.findIndex(
-          (item) => item.id === targetTabId,
-        );
-        if (newTargetIndex >= 0 && newTargetIndex !== currentTab) {
-          dispatch(actions.setCurrentTab(newTargetIndex));
-        }
-      }
+      dispatch(actions.adoptTab(targetTabId, sourceTab.id, zone));
       notifyTerminalResize();
     },
     [currentTab, dispatch, showWarning, t],
@@ -3272,7 +3170,7 @@ function AppContent() {
       const sourceSessionKey = paneDragId;
       setPaneDragId(null);
       setPaneDragOverId(null);
-      const tabId = getParentTabId(sourceSessionKey);
+      const tabId = getParentTabId(sourceSessionKey, paneRegistryRef.current);
       dispatch(actions.swapPanes(tabId, sourceSessionKey, targetPaneId));
       notifyTerminalResize();
     },
@@ -3300,7 +3198,7 @@ function AppContent() {
   const paneActionHandlerRef = useRef(() => {});
   paneActionHandlerRef.current = (detail) => {
     if (!detail?.sessionKey) return;
-    const tabId = getParentTabId(detail.sessionKey);
+    const tabId = getParentTabId(detail.sessionKey, paneRegistryRef.current);
     switch (detail.action) {
       case "closePane":
         handleClosePane(tabId, detail.sessionKey);
@@ -3337,34 +3235,21 @@ function AppContent() {
     return () => remove();
   }, [eventManager]);
 
-  // 渲染单个窗格终端（PaneGrid 回调；根窗格 paneId === tab.id，
-  // 与单窗格路径完全同构）
+  // 终端组件在全局会话层中保持固定身份，仅更新可见性和渲染预算。
   const renderPaneTerminal = useCallback(
-    (tab, paneId, { isActive }) => {
-      if (terminalInstances[paneId] === undefined) return null;
-      const registry = paneRegistry[paneId];
-      const paneType = registry?.type || tab.type || "ssh";
-      const isLocalPane = paneType === "local";
-      const paneConfig = terminalInstances[`${paneId}-config`];
-      return (
-        <WebTerminal
-          tabId={paneId}
-          sessionKey={paneId}
-          refreshKey={terminalInstances[`${paneId}-refresh`]}
-          sshConfig={
-            !isLocalPane
-              ? paneConfig || terminalInstances[`${tab.id}-config`] || null
-              : null
-          }
-          terminalType={isLocalPane ? "local" : paneType}
-          localConfig={
-            isLocalPane ? paneConfig || tab.localConfig || null : null
-          }
-          isActive={isActive}
-        />
-      );
-    },
-    [terminalInstances, paneRegistry],
+    (session, { isActive, allowWebgl }) => (
+      <WebTerminal
+        tabId={session.sessionKey}
+        sessionKey={session.sessionKey}
+        refreshKey={terminalInstances[`${session.sessionKey}-refresh`]}
+        sshConfig={session.type === "local" ? null : session.config}
+        terminalType={session.type}
+        localConfig={session.type === "local" ? session.config : null}
+        isActive={isActive}
+        allowWebgl={allowWebgl}
+      />
+    ),
+    [terminalInstances],
   );
 
   // 窗格标题：连接名 / host / 拖入时的原标签名 / 序号兑底
@@ -3645,7 +3530,7 @@ function AppContent() {
   // 切换文件管理侧边栏
   // 状态按当前标签页独立存储：新开标签页默认关闭，不影响其他标签页已打开的侧边栏
   const toggleFileManager = () => {
-    const panelTab = getCurrentPanelTab();
+    const panelTab = activeSession;
     if (!panelTab) {
       return;
     }
@@ -3658,7 +3543,7 @@ function AppContent() {
     }
 
     const willOpen = !fileManagerOpen;
-    dispatch(actions.setFileManagerOpenForTab(panelTab.id, willOpen));
+    dispatch(actions.setFileManagerOpenForTab(panelTab.parentTabId, willOpen));
 
     if (willOpen) {
       dispatch(actions.setLastOpenedSidebar("file"));
@@ -3671,10 +3556,10 @@ function AppContent() {
 
   // 关闭文件管理侧边栏（仅影响当前标签页）
   const handleCloseFileManager = () => {
-    const panelTab = getCurrentPanelTab();
+    const panelTab = activeSession;
     runSidebarClose((open) => {
       if (panelTab) {
-        dispatch(actions.setFileManagerOpenForTab(panelTab.id, open));
+        dispatch(actions.setFileManagerOpenForTab(panelTab.parentTabId, open));
       }
     }, "file");
   };
@@ -3682,22 +3567,13 @@ function AppContent() {
   // 更新文件管理路径记忆
   const updateFileManagerPath = (tabId, path) => {
     if (tabId && path) {
-      dispatch(
-        actions.setFileManagerPaths({
-          ...fileManagerPaths,
-          [tabId]: path,
-        }),
-      );
+      if (liveSessionKeysRef.current.has(tabId))
+        dispatch(actions.updateFileManagerPath(tabId, path));
     }
   };
 
-  // 获取文件管理记忆路径
-  const getFileManagerPath = (tabId) => {
-    return fileManagerPaths[tabId] || "/";
-  };
-
   const updateFileManagerHistory = useCallback((tabId, navigationState) => {
-    if (!tabId || !navigationState) {
+    if (!tabId || !navigationState || !liveSessionKeysRef.current.has(tabId)) {
       return;
     }
 
@@ -3998,234 +3874,83 @@ function AppContent() {
   );
 
   // 获取右侧面板应该使用的当前标签页信息
-  const getCurrentPanelTab = useCallback(() => {
-    if (currentTab > 0 && tabs[currentTab]) {
-      return tabs[currentTab];
-    }
-    return null;
-  }, [tabs, currentTab]);
-
   // 添加发送快捷命令到终端的函数。
   // 类型策略（与逐键同步、粘贴/清除同步两条路径统一）：
   // 不区分终端类型（ssh/telnet/local），只要求当前标签存在活跃终端会话；
   // 同步范围完全由分组内成员构成决定。
   const handleSendCommand = useCallback(
     (command, options = {}) => {
-      const panelTab = getCurrentPanelTab();
-
-      if (!panelTab) {
-        console.warn("No panel tab found");
-        return { success: false, error: t("commandHistory.noTerminalTab") };
-      }
-
-      const processId = sessionProcessCache[panelTab.id];
-      if (!processId) {
-        console.warn("No active terminal session for tab:", panelTab.id);
-        return {
-          success: false,
-          error: t("commandHistory.noActiveSession"),
-        };
-      }
-
-      dispatchCommandToGroup(panelTab.id, command, syncGroups, options);
-      return { success: true };
+      const result = sendCommandToActiveSession(
+        sessionActionStateRef.current,
+        command,
+        options,
+      );
+      if (result.success) return result;
+      const error =
+        result.reason === "noTerminal"
+          ? t("commandHistory.noTerminalTab")
+          : result.reason === "sessionChanged"
+            ? t("commandHistory.sessionChanged")
+            : t("commandHistory.noActiveSession");
+      return { ...result, error };
     },
-    [getCurrentPanelTab, syncGroups, t],
+    [t],
   );
 
-  // 计算右侧面板的当前标签页信息
-  const currentPanelConnectionStatus = currentPanelTab
-    ? connectionStatusByTabId[activeSessionKey]
-    : null;
-  const isCurrentPanelSshTab = currentPanelTab?.type === "ssh";
+  const currentPanelConnectionStatus = activeSession?.status;
   const isCurrentPanelSshConnected =
-    isCurrentPanelSshTab &&
+    activeSession?.type === "ssh" &&
     currentPanelConnectionStatus?.isConnected === true &&
     currentPanelConnectionStatus?.isConnecting !== true;
 
   React.useEffect(() => {
-    if (!currentPanelTab || currentPanelTab.type !== "ssh") {
-      return;
-    }
+    if (!activeSessionKey || activeSession?.type === "local") return;
+    void loadTabConnectionStatus(activeSessionKey);
+    void loadReconnectStatus(activeSessionKey);
+  }, [
+    activeSessionKey,
+    activeSession?.type,
+    loadTabConnectionStatus,
+    loadReconnectStatus,
+  ]);
 
-    loadTabConnectionStatus(currentPanelTab.id);
-  }, [currentPanelTab, loadTabConnectionStatus]);
-
-  React.useEffect(() => {
-    if (!fileManagerOpen) {
-      return;
-    }
-
-    // 仅校验当前标签页（侧边栏所属的标签页）的连接状态；
-    // 未连接时仅关闭该标签页自己的侧边栏状态
-    const targetTab = currentPanelTab;
-    const targetStatus = targetTab
-      ? connectionStatusByTabId[targetTab.id]
+  const resourceMonitorTabId =
+    resourceMonitorOpen && activeSession?.type === "ssh"
+      ? activeSession.processId
       : null;
-    const targetConnected =
-      targetTab?.type === "ssh" &&
-      targetStatus?.isConnected === true &&
-      targetStatus?.isConnecting !== true;
 
-    if (!targetConnected) {
-      if (targetTab) {
-        dispatch(actions.setFileManagerOpenForTab(targetTab.id, false));
-      }
-      setFallbackSidebarAfterClose("file");
-      notifyTerminalResize();
-    }
-  }, [
-    connectionStatusByTabId,
-    currentPanelTab,
-    dispatch,
-    fileManagerOpen,
-    setFallbackSidebarAfterClose,
-  ]);
+  const fileManagerProps = useMemo(
+    () =>
+      getSessionFileManagerProps(
+        activeSession,
+        fileManagerPaths,
+        fileManagerHistoryByTabId,
+      ),
+    [activeSession, fileManagerPaths, fileManagerHistoryByTabId],
+  );
 
-  // 计算资源监控的currentTabId
-  const resourceMonitorTabId = useMemo(() => {
-    if (
-      !resourceMonitorOpen ||
-      !currentPanelTab ||
-      currentPanelTab.type !== "ssh"
-    ) {
-      return null;
-    }
-    return (
-      terminalInstances[`${activeSessionKey}-processId`] || activeSessionKey
-    );
-  }, [
-    resourceMonitorOpen,
-    activeSessionKey,
-    currentPanelTab,
-    terminalInstances,
-  ]);
-
-  // 计算文件管理器的props（跟随当前标签页，状态按标签页独立）
-  const fileManagerProps = useMemo(() => {
-    const targetTabId = currentPanelTab ? currentPanelTab.id : null;
-
-    if (!targetTabId) {
-      return {
-        tabId: null,
-        tabName: null,
-        sshConnection: null,
-        initialPath: "/",
-        navigationState: null,
-      };
-    }
-
-    // 查找对应的tab
-    const targetTab = tabs.find((tab) => tab.id === targetTabId);
-    if (!targetTab) {
-      return {
-        tabId: null,
-        tabName: null,
-        sshConnection: null,
-        initialPath: "/",
-        navigationState: null,
-      };
-    }
-
-    return {
-      tabId: targetTab.id,
-      tabName: targetTab.label,
-      sshConnection:
-        targetTab.type === "ssh"
-          ? terminalInstances[`${activeSessionKey}-config`]
-          : null,
-      initialPath: getFileManagerPath(targetTab.id),
-      navigationState: fileManagerHistoryByTabId[targetTab.id] || null,
-    };
-  }, [
-    fileManagerHistoryByTabId,
-    currentPanelTab,
-    tabs,
-    terminalInstances,
-    fileManagerPaths,
-    activeSessionKey,
-  ]);
-
-  // 计算AI聊天窗口的连接信息
-  const aiChatConnectionInfo = useMemo(() => {
-    if (
-      !currentPanelTab ||
-      (currentPanelTab.type !== "ssh" &&
-        currentPanelTab.type !== "telnet" &&
-        currentPanelTab.type !== "mosh")
-    ) {
-      return null;
-    }
-
-    const config = terminalInstances[`${activeSessionKey}-config`];
-    if (!config) {
-      return {
-        host: currentPanelTab.label,
-        type: currentPanelTab.type?.toUpperCase() || "SSH",
-      };
-    }
-
-    return {
-      host: config.host || currentPanelTab.label,
-      port: config.port,
-      username: config.username,
-      type: currentPanelTab.type?.toUpperCase() || "SSH",
-    };
-  }, [activeSessionKey, currentPanelTab, terminalInstances]);
-
-  // 侧栏标题区会话上下文（host / 协议 / 连接质量）
   const sidebarSessionContext = useMemo(() => {
-    if (!currentPanelTab || currentPanelTab.id === "welcome") {
-      return null;
-    }
-
-    if (currentPanelTab.type === "local") {
+    if (!activeSession) return null;
+    const { type, config, label, status } = activeSession;
+    if (type === "local")
       return {
         protocol: "LOCAL",
-        host: currentPanelTab.label || t("sidebar.localTerminal"),
+        host: label,
         quality: t("sidebar.sessionLocal"),
       };
-    }
-
-    if (
-      currentPanelTab.type !== "ssh" &&
-      currentPanelTab.type !== "telnet" &&
-      currentPanelTab.type !== "serial" &&
-      currentPanelTab.type !== "mosh"
-    ) {
-      return null;
-    }
-
-    const config = terminalInstances[`${activeSessionKey}-config`];
-    const protocol = (currentPanelTab.type || "ssh").toUpperCase();
-    const host = config
-      ? `${config.username ? `${config.username}@` : ""}${config.host || currentPanelTab.label}${config.port ? `:${config.port}` : ""}`
-      : currentPanelTab.label;
-
-    let quality = t("sidebar.sessionDisconnected");
-    if (currentPanelConnectionStatus?.isConnecting) {
-      quality = t("sidebar.sessionConnecting");
-    } else if (currentPanelConnectionStatus?.isConnected) {
-      quality = t("sidebar.sessionConnected");
-    }
-
     return {
-      protocol,
-      host,
-      quality,
+      protocol: type.toUpperCase(),
+      host: config?.host
+        ? `${config.username ? `${config.username}@` : ""}${config.host}${config.port ? `:${config.port}` : ""}`
+        : label,
+      quality: status?.isConnecting
+        ? t("sidebar.sessionConnecting")
+        : status?.isConnected
+          ? t("sidebar.sessionConnected")
+          : t("sidebar.sessionDisconnected"),
     };
-  }, [
-    activeSessionKey,
-    currentPanelConnectionStatus,
-    currentPanelTab,
-    t,
-    terminalInstances,
-  ]);
+  }, [activeSession, t]);
 
-  // 计算按钮禁用状态
-  const isSSHButtonDisabled = useMemo(() => {
-    return !currentPanelTab || currentPanelTab.type !== "ssh";
-  }, [currentPanelTab]);
   const isFileManagerButtonDisabled = !isCurrentPanelSshConnected;
   const hasVisibleSidebar =
     activeSidebarMargin > SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH;
@@ -4300,6 +4025,15 @@ function AppContent() {
 
     // 监听发送到AI助手事件
     const handleSendToAIEvent = (event) => {
+      const sessionKey = event.detail.sessionKey;
+      if (sessionKey) {
+        const current = sessionActionStateRef.current;
+        const parentId = getParentTabId(sessionKey, current.panes);
+        const index = current.tabs.findIndex((tab) => tab.id === parentId);
+        if (index < 0) return;
+        dispatch(actions.setCurrentTab(index));
+        dispatch(actions.focusPane(parentId, sessionKey));
+      }
       handleSendToAI(event.detail.text);
     };
 
@@ -5114,83 +4848,21 @@ function AppContent() {
                   </Box>
                 )}
 
-                {/* 终端标签页 - 保持所有标签页DOM以维持连接状态 */}
-                {tabs.slice(1).map((tab, index) => {
-                  const isActive = currentTab === index + 1;
-
-                  return (
-                    <Box
-                      key={tab.id}
-                      sx={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: "100%",
-                        zIndex: isActive ? 1 : 0,
-                        backgroundColor: "inherit",
-                        visibility: isActive ? "visible" : "hidden",
-                        opacity: isActive ? 1 : 0,
-                        pointerEvents: isActive ? "auto" : "none",
-                        transition: isActive
-                          ? "opacity 0.2s ease-in-out"
-                          : "none",
-                      }}
-                    >
-                      {splitLayouts[tab.id] ? (
-                        <PaneGrid
-                          tabId={tab.id}
-                          layout={splitLayouts[tab.id]}
-                          isActive={isActive}
-                          renderPaneTerminal={(paneId, opts) =>
-                            renderPaneTerminal(tab, paneId, opts)
-                          }
-                          getPaneLabel={(paneId) => buildPaneLabel(tab, paneId)}
-                          canClosePane={() => true}
-                          onFocusPane={(paneId) =>
-                            handleFocusPane(tab.id, paneId)
-                          }
-                          onClosePane={(paneId) =>
-                            handleClosePane(tab.id, paneId)
-                          }
-                          onSetRatios={(ratios) =>
-                            handleSetRatios(tab.id, ratios)
-                          }
-                          onPaneDragStart={handlePaneDragStart}
-                          onPaneDragOver={handlePaneDragOver}
-                          onPaneDrop={handlePaneDrop}
-                          onPaneDragEnd={handlePaneDragEnd}
-                          paneDragOverId={paneDragOverId}
-                        />
-                      ) : (
-                        terminalInstances[tab.id] && (
-                          <WebTerminal
-                            tabId={tab.id}
-                            refreshKey={terminalInstances[`${tab.id}-refresh`]}
-                            sshConfig={
-                              tab.type === "ssh" ||
-                              tab.type === "telnet" ||
-                              tab.type === "serial" ||
-                              tab.type === "mosh"
-                                ? terminalInstances[`${tab.id}-config`]
-                                : null
-                            }
-                            terminalType={
-                              tab.type === "local" ? "local" : tab.type
-                            }
-                            localConfig={
-                              tab.type === "local"
-                                ? terminalInstances[`${tab.id}-config`] ||
-                                  tab.localConfig
-                                : null
-                            }
-                            isActive={isActive}
-                          />
-                        )
-                      )}
-                    </Box>
-                  );
-                })}
+                <TerminalWorkspace
+                  tabs={tabs.slice(1)}
+                  layouts={splitLayouts}
+                  sessions={terminalSessions}
+                  activeTabId={currentPanelTab?.id}
+                  renderTerminal={renderPaneTerminal}
+                  onFocusPane={handleFocusPane}
+                  onClosePane={handleClosePane}
+                  onSetRatios={handleSetRatios}
+                  onPaneDragStart={handlePaneDragStart}
+                  onPaneDragOver={handlePaneDragOver}
+                  onPaneDrop={handlePaneDrop}
+                  onPaneDragEnd={handlePaneDragEnd}
+                  paneDragOverId={paneDragOverId}
+                />
               </Box>
             </Box>
 
@@ -5284,6 +4956,7 @@ function AppContent() {
                 >
                   {resourceMonitorPresent && (
                     <ResourceMonitor
+                      sessionKey={activeSessionKey}
                       open={resourceMonitorOpen}
                       onClose={handleCloseResourceMonitor}
                       currentTabId={resourceMonitorTabId}
@@ -5552,7 +5225,7 @@ function AppContent() {
                     sx={(theme) =>
                       sidebarRailButtonSx(theme, shortcutCommandsOpen)
                     }
-                    disabled={isSSHButtonDisabled}
+                    disabled={!activeSession}
                     aria-label={t("sidebar.shortcutCommands")}
                   >
                     <TerminalIcon />
@@ -5585,6 +5258,7 @@ function AppContent() {
                   <IconButton
                     {...intentPreloadProps("resourceMonitor")}
                     onClick={toggleResourceMonitor}
+                    disabled={!canMonitorCurrentSession}
                     sx={(theme) =>
                       sidebarRailButtonSx(theme, resourceMonitorOpen)
                     }
@@ -5776,13 +5450,14 @@ function AppContent() {
 
       {/* 全局AI聊天窗口 */}
       {aiChatStatus !== "closed" && (
-        <AIChatWindow
+        <AIChatWorkspace
+          sessions={terminalSessions}
+          activeSessionKey={activeSessionKey}
           windowState={aiChatStatus}
           onClose={handleCloseGlobalAiChatWindow}
           onMinimize={handleMinimizeGlobalAiChatWindow}
           presetInput={aiInputPreset}
           onInputPresetUsed={() => dispatch(actions.setAiInputPreset(""))}
-          connectionInfo={aiChatConnectionInfo}
           onExecuteCommand={handleSendCommand}
           zIndex={lastActiveFloatWindow === "ai" ? 1310 : 1300}
           onFocus={() => setLastActiveFloatWindow("ai")}

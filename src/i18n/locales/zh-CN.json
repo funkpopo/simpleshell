@@ -479,6 +479,7 @@
     "terminal": {
       "welcome": "欢迎",
       "pane": {
+        "splitSourceBlocked": "已分屏的标签不能并入其他标签，请先还原为独立标签。",
         "splitRight": "分屏 → 右侧",
         "splitDown": "分屏 → 下方",
         "splitGrid": "分屏 → 2×2",
@@ -784,6 +785,7 @@
       "editNote": "编辑后的命令将保存为快捷命令",
       "sendCommandHandlerMissing": "未提供发送命令处理函数",
       "noTerminalTab": "请先打开一个终端会话",
+      "sessionChanged": "激活会话已改变，请在目标会话中重新执行命令。",
       "noActiveSession": "当前标签没有活跃的终端会话",
       "loadFailed": "加载历史记录失败",
       "loadError": "加载历史记录出错",

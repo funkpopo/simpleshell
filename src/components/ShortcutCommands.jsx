@@ -539,7 +539,14 @@ function ShortcutCommands({
     // 需要tabId，假设通过props.currentTabId传递
     if (onSendCommand && typeof onSendCommand === "function") {
       try {
-        onSendCommand(command, options);
+        const result = onSendCommand(command, options);
+        if (!result?.success) {
+          showNotification(
+            result?.error || t("commandHistory.noActiveSession"),
+            "error",
+          );
+          return;
+        }
         // 显示成功通知
         showNotification(
           t("shortcutCommands.commandSent", { command }),

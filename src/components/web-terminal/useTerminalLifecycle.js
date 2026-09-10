@@ -26,7 +26,6 @@ import {
 } from "../../modules/terminal/controller/terminalDom.js";
 import {
   clearGeometryFor,
-  consumePreservedSession,
   disposeTerminalSession,
   disposablesCache,
   fitAddonCache,
@@ -192,15 +191,6 @@ export function useTerminalLifecycle({
   // terminal, while a real unmount always releases the xterm object graph.
   useEffect(
     () => () => {
-      // 分屏合并 / 拆分恢复：同一 sessionKey 的终端即将在新挂载点复用，
-      // 命中保留标记时保留 xterm/进程缓存，避免清屏重连。
-      if (consumePreservedSession(sessionKey)) {
-        termRef.current = null;
-        fitAddonRef.current = null;
-        searchAddonRef.current = null;
-        currentProcessId.current = null;
-        return;
-      }
       disposeTerminalSession(sessionKey);
       termRef.current = null;
       fitAddonRef.current = null;
@@ -438,7 +428,6 @@ export function useTerminalLifecycle({
   useEffect(() => {
     const lifecycleManager = lifecycleEventManager;
     lifecycleManager.reset();
-    let lifecycleActive = true;
 
     const styleElement = ensureSharedTerminalStyles();
     if (styleElement.textContent !== terminalStyles + searchBarStyles) {
@@ -1009,11 +998,15 @@ export function useTerminalLifecycle({
 
             connectPromise
               .then((result) => {
-                if (!lifecycleActive && terminalCache[sessionKey] !== term) {
+                const { processId, error } = normalizeConnectResult(result);
+                if (terminalCache[sessionKey] !== term) {
+                  // 连接可能在关闭窗格之后才成功；结束迟到的进程，禁止重新填充缓存。
+                  if (processId)
+                    void window.terminalAPI
+                      .killProcess(processId)
+                      .catch((closeError) => console.warn(closeError));
                   return;
                 }
-
-                const { processId, error } = normalizeConnectResult(result);
                 if (error) {
                   term.writeln(formatConnectionError(error));
                   return;
@@ -1107,7 +1100,7 @@ export function useTerminalLifecycle({
                 }
               })
               .catch((error) => {
-                if (!lifecycleActive && terminalCache[sessionKey] !== term) {
+                if (terminalCache[sessionKey] !== term) {
                   return;
                 }
                 term.writeln(formatConnectionError(error));
@@ -1601,7 +1594,6 @@ export function useTerminalLifecycle({
       }
 
       return () => {
-        lifecycleActive = false;
         cancelLayoutSync();
 
         if (performanceMonitorRef.current) {

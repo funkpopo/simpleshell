@@ -104,6 +104,7 @@ export const disposeTerminalSession = (tabId) => {
     (Array.isArray(disposables) && disposables.length > 0),
   );
 
+  delete webTerminalRefs[tabId];
   delete terminalCache[tabId];
   delete fitAddonCache[tabId];
   delete processCache[tabId];
@@ -159,67 +160,6 @@ export const clearGeometryFor = (processId, tabId) => {
   if (mailbox?.resetResizeState) {
     mailbox.resetResizeState();
   }
-};
-
-// ------------------ 分屏会话保留（merge / unsplit 不清屏） ------------------
-// 合并（标签拖入分屏）与拆分恢复（窗格还原为标签）都会经历
-// "旧挂载点卸载 → 新挂载点用同一 sessionKey 重新挂载"。
-// 卸载清理默认销毁 xterm/进程缓存，会导致新挂载点重建终端并重连。
-// 这里用带 TTL 的保留标记：卸载时若命中标记则跳过销毁，缓存直通新挂载点；
-// 若新挂载点最终未出现（异常路径），到期的会话仍会被正常回收。
-const PRESERVED_SESSION_TTL_MS = 15000;
-const preservedSessionExpiries = new Map();
-let preservedSessionSweepTimer = null;
-
-const sweepPreservedSessions = () => {
-  const now = Date.now();
-  for (const [sessionKey, expiry] of preservedSessionExpiries) {
-    if (now >= expiry) {
-      preservedSessionExpiries.delete(sessionKey);
-      disposeTerminalSession(sessionKey);
-    }
-  }
-  if (preservedSessionExpiries.size > 0) {
-    preservedSessionSweepTimer = setTimeout(sweepPreservedSessions, 1000);
-  } else {
-    preservedSessionSweepTimer = null;
-  }
-};
-
-/**
- * 标记一组 sessionKey 的会话将被同键重挂载（分屏合并 / 拆分恢复），
- * 卸载清理跳过 dispose；超过 TTL 未被消费则自动释放，避免泄漏。
- */
-export const preserveTerminalSessions = (
-  sessionKeys,
-  ttlMs = PRESERVED_SESSION_TTL_MS,
-) => {
-  const keys = Array.isArray(sessionKeys) ? sessionKeys : [sessionKeys];
-  const now = Date.now();
-  let marked = false;
-  keys.forEach((key) => {
-    if (!key) return;
-    preservedSessionExpiries.set(String(key), now + ttlMs);
-    marked = true;
-  });
-  if (marked && !preservedSessionSweepTimer) {
-    preservedSessionSweepTimer = setTimeout(sweepPreservedSessions, 1000);
-  }
-};
-
-/**
- * 消费保留标记：命中返回 true 并移除标记（后续真实卸载仍会正常清理）。
- */
-export const consumePreservedSession = (sessionKey) => {
-  if (!sessionKey) {
-    return false;
-  }
-  const key = String(sessionKey);
-  if (!preservedSessionExpiries.has(key)) {
-    return false;
-  }
-  preservedSessionExpiries.delete(key);
-  return true;
 };
 
 export const sendResizeIfNeeded = (

@@ -24,6 +24,7 @@ const CURSOR_BY_MODE = {
  *   mode: "width" | "height" | "both"
  */
 export default function useDragResize({
+  direction = -1,
   getStart,
   getBounds,
   onResize,
@@ -63,6 +64,7 @@ export default function useDragResize({
       clearListeners();
       optionsRef.current.onStateChange?.(mode);
 
+      const resizeDirection = direction;
       const startX = e.clientX;
       const startY = e.clientY;
       const start = optionsRef.current.getStart() || {};
@@ -73,7 +75,7 @@ export default function useDragResize({
       const handleMouseMove = (moveEvent) => {
         const next = {};
         if (mode === "width" || mode === "both") {
-          const deltaX = startX - moveEvent.clientX;
+          const deltaX = (moveEvent.clientX - startX) * resizeDirection;
           latestWidth = clamp(
             start.width + deltaX,
             bounds.minWidth,
@@ -82,7 +84,7 @@ export default function useDragResize({
           next.width = latestWidth;
         }
         if (mode === "height" || mode === "both") {
-          const deltaY = startY - moveEvent.clientY;
+          const deltaY = (moveEvent.clientY - startY) * resizeDirection;
           latestHeight = clamp(
             start.height + deltaY,
             bounds.minHeight,
@@ -110,7 +112,7 @@ export default function useDragResize({
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
     },
-    [clearListeners, manageBodyStyles, stopPropagation],
+    [clearListeners, direction, manageBodyStyles, stopPropagation],
   );
 
   return startResize;

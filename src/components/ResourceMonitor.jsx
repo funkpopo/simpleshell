@@ -177,7 +177,7 @@ AccordionHeader.propTypes = {
 };
 
 // 资源监控组件
-const ResourceMonitor = memo(
+const ResourceMonitorContent = memo(
   ({ open, onClose, currentTabId, sessionContext = null }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -941,10 +941,20 @@ const ResourceMonitor = memo(
   },
 );
 
+// 切换会话/进程时同步替换数据所有者。旧请求的完成回调只能更新旧实例，
+// 不会把上一主机的概要、进程或趋势数据写入当前面板。
+const ResourceMonitor = (props) => (
+  <ResourceMonitorContent
+    key={`${props.sessionKey ?? "local"}:${props.currentTabId ?? "local"}`}
+    {...props}
+  />
+);
+
 ResourceMonitor.displayName = "ResourceMonitor";
 ResourceMonitor.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
+  sessionKey: PropTypes.string,
   currentTabId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   sessionContext: PropTypes.shape({
     host: PropTypes.string,

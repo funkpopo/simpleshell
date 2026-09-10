@@ -32,7 +32,11 @@ function createHandler(initialSettings) {
       return true;
     },
   };
+  const cancellations = [];
   const workerManager = {
+    getAIWorker: () => ({}),
+    getCurrentSessionId: () => "unrelated-session-B",
+    postMessage: (message) => cancellations.push(message),
     updateAIProxy: (proxy) => appliedProxies.push(clone(proxy)),
   };
   const logger = { logToFile: () => {} };
@@ -68,6 +72,7 @@ function createHandler(initialSettings) {
       getSettings: () => clone(settings),
       savedSettings,
       appliedProxies,
+      cancellations,
     };
   } finally {
     Module._load = originalLoad;
@@ -218,6 +223,12 @@ async function run() {
   assert.equal(harness.appliedProxies.at(-1), null);
 
   assert.ok(harness.savedSettings.length >= 4);
+  await handler.abortAPIRequest(null, "session-A");
+  assert.equal(
+    harness.cancellations.at(-1).sessionId,
+    "session-A",
+    "cancelling A must not cancel the most recent request B",
+  );
   console.log("PASS check-ai-handlers");
 }
 

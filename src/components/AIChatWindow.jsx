@@ -233,8 +233,6 @@ const MIN_HEIGHT = 540;
 const MAX_WIDTH = 800;
 const MAX_HEIGHT = 900;
 
-
-
 const normalizeWindowSize = (size) => {
   if (!size || typeof size !== "object") {
     return null;
@@ -347,6 +345,8 @@ const StreamContent = ({ isStreaming, children }) => {
 
 const AIChatWindow = ({
   windowState,
+  sessionKey,
+  commandEnabled,
   onClose,
   onMinimize,
   presetInput,
@@ -369,12 +369,12 @@ const AIChatWindow = ({
   const [abortController, setAbortController] = useState(null);
   const [apiMenuAnchor, setApiMenuAnchor] = useState(null);
   const [availableApis, setAvailableApis] = useState([]);
-  const [currentSessionId, setCurrentSessionId] = useState(null);
   const [windowWidth, setWindowWidth] = useState(DEFAULT_WIDTH);
   const [windowHeight, setWindowHeight] = useState(DEFAULT_HEIGHT);
   const [isResizing, setIsResizing] = useState(null);
   const [prevWindowState, setPrevWindowState] = useState(null);
   const streamHandlersRef = useRef({});
+  const activeRequestRef = useRef(null);
 
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -518,9 +518,7 @@ const AIChatWindow = ({
           const maxWidth = getWidthLimit();
           const maxHeight = getHeightLimit();
           setWindowWidth(clamp(normalizedSize.width, MIN_WIDTH, maxWidth));
-          setWindowHeight(
-            clamp(normalizedSize.height, MIN_HEIGHT, maxHeight),
-          );
+          setWindowHeight(clamp(normalizedSize.height, MIN_HEIGHT, maxHeight));
         }
       }
     } catch (err) {
@@ -533,12 +531,11 @@ const AIChatWindow = ({
     if (windowState === "visible") {
       loadApiSettings();
       // 延迟聚焦以确保 DOM 已渲染
-      setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.focus();
-        }
-      }, 100);
+      const timer = setTimeout(() => inputRef.current?.focus(), 100);
+      return () => clearTimeout(timer);
     }
+    setApiMenuAnchor(null);
+    setSettingsOpen(false);
   }, [windowState]);
 
   // 处理预设输入
@@ -625,6 +622,27 @@ const AIChatWindow = ({
     delete streamHandlersRef.current[sessionId];
   }, []);
 
+  const cancelActiveRequest = useCallback(() => {
+    const request = activeRequestRef.current;
+    if (!request) return;
+    activeRequestRef.current = null;
+    request.controller.abort();
+    cleanupStreamHandlers(request.id);
+    if (request.sent) {
+      void window.terminalAPI
+        .cancelAPIRequest(request.id)
+        .catch((error) => console.warn("Failed to cancel AI request:", error));
+    }
+  }, [cleanupStreamHandlers]);
+
+  useEffect(
+    () => () => {
+      cancelActiveRequest();
+      Object.keys(streamHandlersRef.current).forEach(cleanupStreamHandlers);
+    },
+    [cancelActiveRequest, cleanupStreamHandlers],
+  );
+
   const markAssistantMessageComplete = (messageId) => {
     startTransition(() => {
       setMessages((prev) =>
@@ -646,7 +664,7 @@ const AIChatWindow = ({
     options = {},
   ) => {
     const trimmedContent = content.trim();
-    if (!trimmedContent || isPending || abortController) return;
+    if (!trimmedContent || isPending || activeRequestRef.current) return;
 
     // 在执行任何操作之前验证 API 配置
     if (
@@ -678,13 +696,20 @@ const AIChatWindow = ({
     setError("");
 
     const controller = new AbortController();
+    const request = {
+      id: `ai_${sessionKey}_${crypto.randomUUID()}`,
+      controller,
+      sent: false,
+    };
+    activeRequestRef.current = request;
     setAbortController(controller);
-    let activeSessionId = null;
     let activeAssistantMessageId = null;
 
     try {
       // 加载记忆文件
       const memory = await window.terminalAPI.loadMemory();
+      if (controller.signal.aborted || activeRequestRef.current !== request)
+        return;
 
       // 生成系统提示词
       let systemPrompt = generateSystemPrompt({
@@ -706,6 +731,7 @@ const AIChatWindow = ({
       ];
 
       const requestData = {
+        sessionId: request.id,
         apiConfigId: currentApi.id || undefined,
         url: currentApi.apiUrl,
         ...buildInlineApiKeyPayload(currentApi),
@@ -728,16 +754,14 @@ const AIChatWindow = ({
         setMessages((prev) => [...prev, assistantMessage]);
 
         // 生成会话ID
-        const sessionId = `session_${requestTimestamp}`;
-        activeSessionId = sessionId;
+        const sessionId = request.id;
         requestData.sessionId = sessionId;
-        setCurrentSessionId(sessionId);
 
         // 设置流式事件监听器
         const handleStreamChunk = (event, data) => {
           if (
             data.sessionId === sessionId &&
-            controller.signal &&
+            activeRequestRef.current === request &&
             !controller.signal.aborted
           ) {
             setMessages((prev) => {
@@ -752,7 +776,11 @@ const AIChatWindow = ({
         };
 
         const handleStreamEnd = (event, data) => {
-          if (data.sessionId === sessionId) {
+          if (
+            data.sessionId === sessionId &&
+            activeRequestRef.current === request &&
+            !controller.signal.aborted
+          ) {
             startTransition(() => {
               setMessages((prev) => {
                 const newMessages = [...prev];
@@ -763,30 +791,34 @@ const AIChatWindow = ({
                 return newMessages;
               });
             });
+            activeRequestRef.current = null;
             setAbortController(null);
-            setCurrentSessionId(null);
             // 清理监听器
             cleanupStreamHandlers(sessionId);
           }
         };
 
         const handleStreamError = (event, data) => {
-          if (data.sessionId === sessionId) {
+          if (
+            data.sessionId === sessionId &&
+            activeRequestRef.current === request &&
+            !controller.signal.aborted
+          ) {
             markAssistantMessageComplete(assistantMessage.id);
             setError(formatBriefApiError(data.error, t("ai.requestFailed")));
+            activeRequestRef.current = null;
             setAbortController(null);
-            setCurrentSessionId(null);
             cleanupStreamHandlers(sessionId);
           }
         };
 
         // 注册监听器
         const unsubscribeChunk =
-          window.terminalAPI.onAIStreamChunk?.(handleStreamChunk) || (() => {});
+          window.terminalAPI.onAIStreamChunk(handleStreamChunk);
         const unsubscribeEnd =
-          window.terminalAPI.onAIStreamEnd?.(handleStreamEnd) || (() => {});
+          window.terminalAPI.onAIStreamEnd(handleStreamEnd);
         const unsubscribeError =
-          window.terminalAPI.onAIStreamError?.(handleStreamError) || (() => {});
+          window.terminalAPI.onAIStreamError(handleStreamError);
 
         // 保存监听器引用
         streamHandlersRef.current[sessionId] = {
@@ -798,27 +830,31 @@ const AIChatWindow = ({
           unsubscribeError,
         };
 
-        // 注册abort事件处理
-        requestData.signal = controller.signal;
+        // 请求 ID 同时用于流事件路由和精确取消。
+        request.sent = true;
 
         const response = await window.terminalAPI.sendAPIRequest(
           requestData,
           true,
         );
 
+        if (controller.signal.aborted || activeRequestRef.current !== request)
+          return;
         if (response && response.error) {
           // 清理监听器
           cleanupStreamHandlers(sessionId);
-          setCurrentSessionId(null);
           throw createApiResponseError(response, t("ai.requestFailed"));
         }
       } else {
         // 非流式响应
+        request.sent = true;
         const response = await window.terminalAPI.sendAPIRequest(
           requestData,
           false,
         );
 
+        if (controller.signal.aborted || activeRequestRef.current !== request)
+          return;
         if (response && response.content) {
           const assistantMessage = {
             id: Date.now() + 1,
@@ -834,43 +870,23 @@ const AIChatWindow = ({
         }
       }
     } catch (err) {
+      if (controller.signal.aborted || activeRequestRef.current !== request)
+        return;
+      activeRequestRef.current = null;
+      setAbortController(null);
+      cleanupStreamHandlers(request.id);
+      if (activeAssistantMessageId) {
+        markAssistantMessageComplete(activeAssistantMessageId);
+      }
       if (err.name !== "AbortError") {
-        if (activeAssistantMessageId) {
-          markAssistantMessageComplete(activeAssistantMessageId);
-        }
-        if (activeSessionId) {
-          cleanupStreamHandlers(activeSessionId);
-          setCurrentSessionId(null);
-        }
-        setAbortController(null);
         setError(formatBriefApiError(err, t("ai.requestFailed")));
       }
-      // 如果是中断错误，确保消息状态正确
-      if (err.name === "AbortError") {
-        // 清理所有监听器
-        const sessionIdToClean = activeSessionId || currentSessionId;
-        if (sessionIdToClean && window.terminalAPI) {
-          cleanupStreamHandlers(sessionIdToClean);
-        }
-        setCurrentSessionId(null);
-
-        startTransition(() => {
-          setMessages((prev) => {
-            const newMessages = [...prev];
-            const lastMessage = newMessages[newMessages.length - 1];
-            if (
-              lastMessage &&
-              lastMessage.role === "assistant" &&
-              lastMessage.isStreaming
-            ) {
-              lastMessage.isStreaming = false;
-            }
-            return newMessages;
-          });
-        });
-      }
     } finally {
-      if (currentApi?.streamEnabled === false) {
+      if (
+        currentApi?.streamEnabled === false &&
+        activeRequestRef.current === request
+      ) {
+        activeRequestRef.current = null;
         setAbortController(null);
       }
     }
@@ -931,20 +947,8 @@ const AIChatWindow = ({
   // 中断请求
   const handleAbortRequest = () => {
     if (abortController) {
-      abortController.abort();
+      cancelActiveRequest();
       setAbortController(null);
-
-      // 如果有当前会话，立即清理监听器
-      if (currentSessionId && window.terminalAPI) {
-        const handlers = streamHandlersRef.current[currentSessionId];
-        if (handlers) {
-          handlers.unsubscribeChunk?.();
-          handlers.unsubscribeEnd?.();
-          handlers.unsubscribeError?.();
-          delete streamHandlersRef.current[currentSessionId];
-        }
-        setCurrentSessionId(null);
-      }
 
       // 标记最后一条消息为非流式状态
       startTransition(() => {
@@ -966,6 +970,8 @@ const AIChatWindow = ({
 
   // 清空对话
   const handleClearChat = async () => {
+    cancelActiveRequest();
+    setAbortController(null);
     setMessages([]);
     setError("");
     // 删除记忆文件
@@ -976,6 +982,7 @@ const AIChatWindow = ({
 
   // 处理关闭窗口（清空对话内容并删除记忆文件）
   const handleClose = async () => {
+    cancelActiveRequest();
     setMessages([]);
     setInput("");
     setError("");
@@ -1000,14 +1007,13 @@ const AIChatWindow = ({
   // 处理命令执行
   const handleExecuteCommand = useCallback(
     (command) => {
-      if (onExecuteCommand && typeof onExecuteCommand === "function") {
-        onExecuteCommand(command);
-      } else {
-        // 如果没有提供执行回调，尝试使用全局方式
-        console.warn("No command execution handler provided");
-      }
+      if (windowState !== "visible" || !commandEnabled) return;
+      const result = onExecuteCommand(command);
+      if (!result?.success)
+        setError(result?.error || t("commandHistory.noActiveSession"));
+      return result;
     },
-    [onExecuteCommand],
+    [onExecuteCommand, commandEnabled, windowState, t],
   );
 
   // 处理命令复制
@@ -1166,7 +1172,9 @@ const AIChatWindow = ({
                   risk={part.risk}
                   onExecute={handleExecuteCommand}
                   onCopy={handleCopyCommand}
-                  disabled={isStreaming || !connectionInfo}
+                  disabled={
+                    isStreaming || !commandEnabled || windowState !== "visible"
+                  }
                 />
               );
             }
@@ -1177,7 +1185,8 @@ const AIChatWindow = ({
     [
       handleExecuteCommand,
       handleCopyCommand,
-      connectionInfo,
+      commandEnabled,
+      windowState,
       markdownComponents,
       markdownUrlTransform,
     ],
@@ -1362,9 +1371,22 @@ const AIChatWindow = ({
               <AIIcon fontSize="small" />
             </IconButton>
           </Tooltip>
-          <Typography className="ai-chat-title" variant="h6" noWrap>
-            {t("ai.title")}
-          </Typography>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography className="ai-chat-title" variant="h6" noWrap>
+              {t("ai.title")}
+            </Typography>
+            {connectionInfo && (
+              <Typography
+                data-ai-session={sessionKey}
+                variant="caption"
+                color="text.secondary"
+                noWrap
+                title={`${connectionInfo.type} · ${connectionInfo.host}`}
+              >
+                {`${connectionInfo.type} · ${connectionInfo.username ? `${connectionInfo.username}@` : ""}${connectionInfo.host}${connectionInfo.port ? `:${connectionInfo.port}` : ""}`}
+              </Typography>
+            )}
+          </Box>
         </Box>
         <Box display="flex" alignItems="center" gap={0.35} flexShrink={0}>
           {showModelChip && (

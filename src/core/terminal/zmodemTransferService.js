@@ -840,6 +840,12 @@ class ZmodemTransferService {
     if (!state || state.finished) {
       return;
     }
+    // zmodem2 queues ZFIN / OO together with SessionComplete. Flush the final
+    // handshake before releasing the machine so the peer can leave transfer mode.
+    if (status === "complete" && state.machine) {
+      const outgoing = state.machine.drainOutgoing();
+      if (outgoing.length) this._writeToStream(state, outgoing);
+    }
     state.finished = true;
     state.active = false;
     state.machine = null;

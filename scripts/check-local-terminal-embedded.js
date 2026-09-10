@@ -283,8 +283,13 @@ function assertRendererLocalTabSupport() {
   );
   assert.match(
     appSource,
-    /terminalType=\{\s*tab\.type\s*===\s*["']local["']\s*\?\s*["']local["']\s*:\s*tab\.type\s*\}/,
-    "app must pass local terminalType to WebTerminal",
+    /terminalType=\{session\.type\}/,
+    "app must pass the session's own terminalType to WebTerminal, including adopted local panes",
+  );
+  assert.match(
+    appSource,
+    /localConfig=\{session\.type === "local" \? session\.config : null\}/,
+    "local configuration must belong to the rendered session",
   );
   assert.match(
     appSource,

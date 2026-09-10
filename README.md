@@ -32,8 +32,9 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 - **Multi-Protocol Support**: SSH, Telnet, and local PowerShell terminals
 - **Connection Pooling**: Intelligent connection reuse to minimize resource usage
 - **Smart Tabs**: Drag-drop tab reordering, merging, and split-screen support
-- **Split Terminal**: Drag a tab onto the middle of another tab (stack-merge) or into the terminal area to merge it into a split view (up to 2×2 panes); right-click the merged tab → "Unsplit & Restore Tabs" to restore panes back to standalone tabs — sessions and terminal content are preserved on both merge and unsplit; each pane an independent session that can connect to a different host; drag pane headers to swap, drag dividers to resize; panes compose with sync-input groups for batch ops (`Ctrl+Shift+W` closes the focused pane)
+- **Split Terminal**: Drag a tab onto the middle of another tab (stack-merge) or into the terminal area to merge it into a split view (up to 2×2 panes); right-click the merged tab → "Unsplit & Restore Tabs" to restore panes back to standalone tabs — sessions and terminal content are preserved on both merge and unsplit; each pane an independent session that can connect to a different host; drag pane headers to swap, drag dividers to resize; panes compose with sync-input groups for batch ops (`Ctrl+Shift+W` closes the focused pane) Closing a pane ends only that session, including the root pane; closing other panes retains exactly the selected session. Split tabs must be restored to standalone tabs before they can be merged into another tab.
 - **Group Synchronization**: Execute commands across multiple connections simultaneously
+- **Active Session Tools**: Resource monitoring, file management, AI, and quick commands follow the focused pane. File navigation and AI conversations/drafts stay separate for each session; switching SSH panes keeps the file sidebar open.
 - **Visual Server Map**: Geographic visualization of server locations worldwide
 
 ### 📁 **Advanced File Management**

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from "react";
+import React, { useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
@@ -167,7 +167,7 @@ Pane.propTypes = {
  * 分隔条：复用 useDragResize（像素拖拽 → 换算为百分比回调）。
  * orientation: "vertical"（左右分栏，调整列宽比例）| "horizontal"（上下分栏）
  */
-const PaneDivider = ({ orientation, getRatio, setRatio }) => {
+const PaneDivider = ({ orientation, getRatio, setRatio, sx }) => {
   const dividerRef = useRef(null);
   const containerSizeRef = useRef({ width: 0, height: 0 });
 
@@ -177,14 +177,19 @@ const PaneDivider = ({ orientation, getRatio, setRatio }) => {
       width: 0,
       height: 0,
     };
-    containerSizeRef.current = { width: rect.width, height: rect.height };
+    containerSizeRef.current = {
+      width: rect.width - DIVIDER_HIT_AREA,
+      height: rect.height - DIVIDER_HIT_AREA,
+    };
     return rect;
   }, []);
 
   const startResize = useDragResize({
     getStart: () => {
       const rect = measureContainer();
-      const size = orientation === "vertical" ? rect.width : rect.height;
+      const size =
+        (orientation === "vertical" ? rect.width : rect.height) -
+        DIVIDER_HIT_AREA;
       return orientation === "vertical"
         ? { width: (size * getRatio()) / 100 }
         : { height: (size * getRatio()) / 100 };
@@ -209,6 +214,8 @@ const PaneDivider = ({ orientation, getRatio, setRatio }) => {
       setRatio(clampRatio((px / size) * 100));
     },
     manageBodyStyles: true,
+    direction: 1,
+    stopPropagation: true,
   });
 
   const isVertical = orientation === "vertical";
@@ -217,6 +224,19 @@ const PaneDivider = ({ orientation, getRatio, setRatio }) => {
     <Box
       ref={dividerRef}
       data-pane-divider={orientation}
+      role="separator"
+      aria-orientation={orientation}
+      aria-valuenow={Math.round(getRatio())}
+      aria-valuemin={15}
+      aria-valuemax={85}
+      tabIndex={0}
+      onKeyDown={(event) => {
+        const negative = isVertical ? "ArrowLeft" : "ArrowUp";
+        const positive = isVertical ? "ArrowRight" : "ArrowDown";
+        if (event.key !== negative && event.key !== positive) return;
+        event.preventDefault();
+        setRatio(clampRatio(getRatio() + (event.key === positive ? 2 : -2)));
+      }}
       onMouseDown={startResize(isVertical ? "width" : "height")}
       sx={{
         flexShrink: 0,
@@ -228,6 +248,7 @@ const PaneDivider = ({ orientation, getRatio, setRatio }) => {
         justifyContent: "center",
         cursor: isVertical ? "col-resize" : "row-resize",
         WebkitAppRegion: "no-drag",
+        ...sx,
         "&::after": {
           content: '""',
           display: "block",
@@ -245,6 +266,7 @@ const PaneDivider = ({ orientation, getRatio, setRatio }) => {
 };
 
 PaneDivider.propTypes = {
+  sx: PropTypes.object,
   orientation: PropTypes.oneOf(["vertical", "horizontal"]).isRequired,
   getRatio: PropTypes.func.isRequired,
   setRatio: PropTypes.func.isRequired,
@@ -261,7 +283,7 @@ PaneDivider.propTypes = {
  *
  * 每个窗格渲染独立 WebTerminal（sessionKey = paneId），
  * 只有聚焦窗格收到 isActive=true（焦点 + 布局恢复走 isActive 通路）。
- * >2 窗格时通过 allowWebgl=false 降级 DOM 渲染器，避免 WebGL 上下文超限。
+ * >2 窗格或后台标签使用标准渲染器，前台最多分配两个 WebGL 上下文。
  */
 const PaneGrid = ({
   tabId,
@@ -279,37 +301,49 @@ const PaneGrid = ({
   onPaneDragEnd,
   paneDragOverId,
 }) => {
-  const {
-    direction = "row",
-    panes = [],
-    ratios = [],
-    focusedPaneId,
-  } = layout || {};
-
-  const safeRatios = useMemo(() => {
-    const values = Array.isArray(ratios) ? ratios : [];
-    return [
-      clampRatio(Number(values[0]) || 50),
-      clampRatio(Number(values[1]) || 50),
-    ];
-  }, [ratios]);
-
+  const { direction, panes, ratios, focusedPaneId } = layout;
   const paneCount = panes.length;
-  const showHeaders = paneCount > 1;
-
-  const renderPane = useCallback(
-    (paneId, sx = {}) => {
-      const focused = focusedPaneId ? focusedPaneId === paneId : false;
-      return (
+  const grid = direction === "grid";
+  const row = direction === "row";
+  const columns = grid || (row && paneCount > 1);
+  const rows = grid || (!row && paneCount > 1);
+  const columnRatio = clampRatio(ratios[0]);
+  const rowRatio = clampRatio(ratios[grid ? 1 : 0]);
+  const tracks = (ratio) => `${ratio}fr ${DIVIDER_HIT_AREA}px ${100 - ratio}fr`;
+  return (
+    <Box
+      data-pane-grid={tabId}
+      sx={{
+        width: "100%",
+        height: "100%",
+        display: "grid",
+        gridTemplateColumns: columns ? tracks(columnRatio) : "minmax(0, 1fr)",
+        gridTemplateRows: rows ? tracks(rowRatio) : "minmax(0, 1fr)",
+        overflow: "hidden",
+      }}
+    >
+      {panes.map((paneId, index) => (
         <Pane
           key={paneId}
           paneId={paneId}
-          label={getPaneLabel ? getPaneLabel(paneId) : paneId}
-          focused={focused}
-          showHeader={showHeaders}
-          showCloseButton={showHeaders && canClosePane(paneId)}
+          label={getPaneLabel(paneId)}
+          focused={focusedPaneId === paneId}
+          showHeader={paneCount > 1}
+          showCloseButton={paneCount > 1 && canClosePane(paneId)}
           isPaneDragOver={paneDragOverId === paneId}
-          sx={sx}
+          sx={{
+            gridColumn: grid
+              ? index % 2 === 0
+                ? 1
+                : 3
+              : row
+                ? index * 2 + 1
+                : 1,
+            gridRow: grid ? (index < 2 ? 1 : 3) : row ? 1 : index * 2 + 1,
+            ...(grid && paneCount === 3 && index === 2
+              ? { gridColumn: "1 / 4" }
+              : {}),
+          }}
           onFocusPane={onFocusPane}
           onClosePane={onClosePane}
           onPaneDragStart={onPaneDragStart}
@@ -318,166 +352,35 @@ const PaneGrid = ({
           onPaneDragEnd={onPaneDragEnd}
         >
           {renderPaneTerminal(paneId, {
-            isActive: Boolean(isActive) && focused,
+            isActive: Boolean(isActive) && focusedPaneId === paneId,
+            allowWebgl: Boolean(isActive) && paneCount <= 2,
           })}
         </Pane>
-      );
-    },
-    [
-      canClosePane,
-      focusedPaneId,
-      getPaneLabel,
-      isActive,
-      onClosePane,
-      onFocusPane,
-      onPaneDragEnd,
-      onPaneDragOver,
-      onPaneDragStart,
-      onPaneDrop,
-      paneCount,
-      paneDragOverId,
-      renderPaneTerminal,
-      showHeaders,
-    ],
-  );
-
-  if (paneCount === 0) {
-    return null;
-  }
-
-  if (direction === "grid" && paneCount >= 3) {
-    const [topLeft, topRight, bottomLeft, bottomRight] = panes;
-    const verticalDivider = (
-      <PaneDivider
-        orientation="vertical"
-        getRatio={() => safeRatios[0]}
-        setRatio={(value) => onSetRatios([value, safeRatios[1]])}
-      />
-    );
-    return (
-      <Box
-        data-pane-grid={tabId}
-        sx={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-      >
-        <Box sx={{ display: "flex", flex: 1, minHeight: 0, width: "100%" }}>
-          <Box
-            sx={{ width: `${safeRatios[0]}%`, minWidth: 0, display: "flex" }}
-          >
-            {renderPane(topLeft, { flex: 1 })}
-          </Box>
-          {topRight ? verticalDivider : null}
-          {topRight ? (
-            <Box sx={{ flex: 1, minWidth: 0, display: "flex" }}>
-              {renderPane(topRight, { flex: 1 })}
-            </Box>
-          ) : null}
-        </Box>
-        {bottomLeft ? (
-          <>
-            <PaneDivider
-              orientation="horizontal"
-              getRatio={() => safeRatios[1]}
-              setRatio={(value) => onSetRatios([safeRatios[0], value])}
-            />
-            <Box sx={{ display: "flex", flex: 1, minHeight: 0, width: "100%" }}>
-              <Box
-                sx={{
-                  width: `${safeRatios[0]}%`,
-                  minWidth: 0,
-                  display: "flex",
-                }}
-              >
-                {renderPane(bottomLeft, { flex: 1 })}
-              </Box>
-              {bottomRight ? verticalDivider : null}
-              {bottomRight ? (
-                <Box sx={{ flex: 1, minWidth: 0, display: "flex" }}>
-                  {renderPane(bottomRight, { flex: 1 })}
-                </Box>
-              ) : null}
-            </Box>
-          </>
-        ) : null}
-      </Box>
-    );
-  }
-
-  const isRow = direction === "row";
-  const [first, second] = panes;
-
-  // row/column 布局超过 2 窗格（如连续拖入多个标签页）：等分排布，
-  // 避免第三个及之后的窗格被隐藏
-  if (paneCount > 2) {
-    return (
-      <Box
-        data-pane-grid={tabId}
-        sx={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          flexDirection: isRow ? "row" : "column",
-          overflow: "hidden",
-        }}
-      >
-        {panes.map((paneId, index) => (
-          <Box
-            key={paneId}
-            sx={{
-              flex: 1,
-              minWidth: 0,
-              minHeight: 0,
-              display: "flex",
-              [isRow ? "borderLeft" : "borderTop"]:
-                index > 0 ? "1px solid" : "none",
-              borderColor: "divider",
-            }}
-          >
-            {renderPane(paneId, { flex: 1 })}
-          </Box>
-        ))}
-      </Box>
-    );
-  }
-
-  return (
-    <Box
-      data-pane-grid={tabId}
-      sx={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        flexDirection: isRow ? "row" : "column",
-        overflow: "hidden",
-      }}
-    >
-      <Box
-        sx={{
-          [isRow ? "width" : "height"]: `${safeRatios[0]}%`,
-          minWidth: 0,
-          minHeight: 0,
-          display: "flex",
-        }}
-      >
-        {renderPane(first, { flex: 1 })}
-      </Box>
-      {second ? (
+      ))}
+      {columns && (
         <PaneDivider
-          orientation={isRow ? "vertical" : "horizontal"}
-          getRatio={() => safeRatios[0]}
-          setRatio={(value) => onSetRatios([value, safeRatios[1]])}
+          key="columns"
+          orientation="vertical"
+          sx={{
+            gridColumn: 2,
+            gridRow: grid && paneCount === 4 ? "1 / 4" : 1,
+            zIndex: 2,
+          }}
+          getRatio={() => columnRatio}
+          setRatio={(value) => onSetRatios([value, ratios[1]])}
         />
-      ) : null}
-      {second ? (
-        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex" }}>
-          {renderPane(second, { flex: 1 })}
-        </Box>
-      ) : null}
+      )}
+      {rows && (
+        <PaneDivider
+          key="rows"
+          orientation="horizontal"
+          sx={{ gridRow: 2, gridColumn: grid ? "1 / 4" : 1, zIndex: 3 }}
+          getRatio={() => rowRatio}
+          setRatio={(value) =>
+            onSetRatios(grid ? [ratios[0], value] : [value, ratios[1]])
+          }
+        />
+      )}
     </Box>
   );
 };

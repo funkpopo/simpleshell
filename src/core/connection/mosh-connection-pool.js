@@ -17,9 +17,6 @@
 
 const BaseConnectionPool = require("./base-connection-pool");
 const pty = require("node-pty");
-const {
-  classifyConnectionFailure,
-} = require("../../shared/connectionErrorAdvice");
 
 const PREDICT_VALUES = ["adaptive", "always", "never", "experimental"];
 

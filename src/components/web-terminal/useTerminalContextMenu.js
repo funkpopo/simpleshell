@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
  * Right-click context menu state and actions for WebTerminal.
  */
 export function useTerminalContextMenu({
+  sessionKey,
   termRef,
   isActiveRef,
   markPasteIfAllowed,
@@ -71,12 +72,12 @@ export function useTerminalContextMenu({
     if (selectedText) {
       window.dispatchEvent(
         new CustomEvent("sendToAI", {
-          detail: { text: selectedText },
+          detail: { text: selectedText, sessionKey },
         }),
       );
     }
     handleClose();
-  }, [handleClose, selectedText]);
+  }, [handleClose, selectedText, sessionKey]);
 
   const handleClear = useCallback(() => {
     clearTerminal();

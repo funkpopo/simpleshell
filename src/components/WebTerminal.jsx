@@ -76,6 +76,7 @@ const WebTerminal = ({
   const [searchAddonVersion, setSearchAddonVersion] = useState(0);
 
   const allowWebglRef = useRef(allowWebgl !== false);
+  const webglPreferenceRef = useRef(true);
 
   useEffect(() => {
     allowWebglRef.current = allowWebgl !== false;
@@ -83,7 +84,8 @@ const WebTerminal = ({
 
   // 统一的 WebGL 开关写入口：设置项与窗格数量两个条件同时满足才启用
   const applyWebglRendererEnabled = useCallback((enabled) => {
-    const next = Boolean(enabled) && allowWebglRef.current;
+    webglPreferenceRef.current = Boolean(enabled);
+    const next = webglPreferenceRef.current && allowWebglRef.current;
     webglRendererEnabledRef.current = next;
     setWebglRendererEnabled(next);
   }, []);
@@ -94,10 +96,9 @@ const WebTerminal = ({
   const lifecycleEventManager = useCleanupManager();
 
   // 分屏窗格上下文：布局/同步分组订阅（选择器稳定，避免重渲染风暴）
-  const parentTabId = getParentTabId(sessionKey);
   const paneLayoutSelector = useCallback(
-    (state) => state.splitLayouts[parentTabId],
-    [parentTabId],
+    (state) => state.splitLayouts[getParentTabId(sessionKey, state.panes)],
+    [sessionKey],
   );
   const paneLayout = useAppSelector(paneLayoutSelector);
   const syncGroupsSelector = useCallback((state) => state.syncGroups, []);
@@ -156,10 +157,13 @@ const WebTerminal = ({
 
   // 窗格数量变化（allowWebgl 翻转）时立即切换渲染器
   useEffect(() => {
+    const enabled = webglPreferenceRef.current && allowWebglRef.current;
+    webglRendererEnabledRef.current = enabled;
+    setWebglRendererEnabled(enabled);
     if (!termRef.current) {
       return undefined;
     }
-    if (allowWebglRef.current) {
+    if (enabled) {
       if (webglRendererEnabledRef.current) {
         tryEnableWebglRenderer(termRef.current);
       }
@@ -446,6 +450,7 @@ const WebTerminal = ({
     handleClear,
     handleSearchFromMenu,
   } = useTerminalContextMenu({
+    sessionKey,
     termRef,
     isActiveRef,
     markPasteIfAllowed,

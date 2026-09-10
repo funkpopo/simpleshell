@@ -777,8 +777,8 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       isStream,
     ),
   // 新增: 中断API请求的方法
-  cancelAPIRequest: () =>
-    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_ABORT_API_REQUEST),
+  cancelAPIRequest: (sessionId) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_ABORT_API_REQUEST, sessionId),
   // 新增: API配置管理方法
   saveApiConfig: (config) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SAVE_API_CONFIG, config),

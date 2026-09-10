@@ -6,9 +6,7 @@ const {
   t: translateLocale,
   getUiLanguage,
 } = require("../../../shared/mainI18n");
-const {
-  normalizeCustomRiskRules,
-} = require("../../../shared/aiRiskRules");
+const { normalizeCustomRiskRules } = require("../../../shared/aiRiskRules");
 
 // Wrapper keeps call sites static for check-i18n; implementation uses a non-t name.
 const aiText = (key, params = {}) =>
@@ -591,11 +589,6 @@ class AIHandlers {
       // 生成请求ID
       const requestId = aiWorkerManager.getNextRequestId();
 
-      // 如果是流式请求，保存会话ID
-      if (isStream) {
-        aiWorkerManager.setCurrentSessionId(resolvedRequestData.sessionId);
-      }
-
       // 准备发送到Worker的数据
       const workerData = {
         ...resolvedRequestData,
@@ -649,11 +642,11 @@ class AIHandlers {
     }
   }
 
-  async abortAPIRequest() {
-    const currentSessionId = aiWorkerManager.getCurrentSessionId();
+  async abortAPIRequest(event, sessionId) {
+    void event;
     const aiWorker = aiWorkerManager.getAIWorker();
-    // 检查是否有当前会话ID
-    if (!currentSessionId || !aiWorker) {
+    // 取消调用方指定的请求，多个终端的 AI 流可同时存活。
+    if (!sessionId || !aiWorker) {
       throw new Error(aiText("mainProcess.ai.noActiveRequest"));
     }
 
@@ -664,7 +657,7 @@ class AIHandlers {
     aiWorkerManager.postMessage({
       kind: "cancel",
       requestId: cancelRequestId,
-      sessionId: currentSessionId,
+      sessionId,
     });
 
     return {

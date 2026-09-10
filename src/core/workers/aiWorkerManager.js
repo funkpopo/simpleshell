@@ -10,7 +10,7 @@ const SIDECAR_RESTART_BASE_DELAY_MS = 500;
 let aiSidecar = null;
 let stdoutBuffer = "";
 let nextRequestId = 1;
-let currentSessionId = null;
+const streamSessions = new Set();
 let restartTimer = null;
 let restartAttempts = 0;
 let isTerminating = false;
@@ -32,6 +32,14 @@ function sendToRenderer(channel, payload) {
 function rejectAll(error) {
   for (const callback of requestCallbacks.values()) callback.reject(error);
   requestCallbacks.clear();
+  for (const sessionId of streamSessions) {
+    sendToRenderer(IPC_EVENT_CHANNELS.AI_STREAM_ERROR, {
+      tabId: "ai",
+      sessionId,
+      error: { message: error.message },
+    });
+  }
+  streamSessions.clear();
 }
 
 function clearRestartTimer() {
@@ -89,8 +97,9 @@ function handleEvent(event) {
         sessionId: event.sessionId,
         aborted: Boolean(event.result?.aborted),
       });
+      callback?.resolve(event.result);
       requestCallbacks.delete(event.requestId);
-      if (currentSessionId === event.sessionId) currentSessionId = null;
+      streamSessions.delete(event.sessionId);
       return;
     case "error": {
       const error = createError(
@@ -105,7 +114,7 @@ function handleEvent(event) {
           sessionId: event.sessionId,
           error: { message: error.message, statusCode: error.statusCode },
         });
-        if (currentSessionId === event.sessionId) currentSessionId = null;
+        streamSessions.delete(event.sessionId);
       }
       if (callback) {
         callback.reject(error);
@@ -166,14 +175,6 @@ function createAIWorker() {
       `Rust AI sidecar stopped unexpectedly (${code ?? signal ?? "unknown"})`,
     );
     rejectAll(error);
-    if (currentSessionId) {
-      sendToRenderer(IPC_EVENT_CHANNELS.AI_STREAM_ERROR, {
-        tabId: "ai",
-        sessionId: currentSessionId,
-        error: { message: error.message },
-      });
-    }
-    currentSessionId = null;
     logToFile(`Rust AI sidecar exited: code=${code}, signal=${signal}`, "WARN");
     scheduleRestart();
   });
@@ -208,7 +209,6 @@ async function terminateAIWorker() {
   clearRestartTimer();
   const child = aiSidecar;
   aiSidecar = null;
-  currentSessionId = null;
   rejectAll(createError("Rust AI sidecar terminated"));
   if (child) child.kill();
 }
@@ -247,25 +247,17 @@ function deleteRequestCallback(requestId) {
 function hasRequest(requestId) {
   return requestCallbacks.has(requestId);
 }
-function setCurrentSessionId(value) {
-  currentSessionId = value;
-}
-function getCurrentSessionId() {
-  return currentSessionId;
-}
-function clearCurrentSessionId() {
-  currentSessionId = null;
-}
-function deleteStreamSession() {}
 function postMessage(message) {
   writeCommand(message);
+  if (message.kind === "request" && message.payload?.isStream) {
+    streamSessions.add(message.payload.sessionId);
+  }
 }
 function getDiagnostics() {
   return {
     hasWorker: Boolean(aiSidecar),
     pendingRequests: requestCallbacks.size,
-    streamSessions: currentSessionId ? 1 : 0,
-    hasCurrentSession: Boolean(currentSessionId),
+    streamSessions: streamSessions.size,
     transport: "rust-sidecar",
     restartAttempts,
     restartScheduled: Boolean(restartTimer),
@@ -281,10 +273,6 @@ module.exports = {
   setRequestCallback,
   deleteRequestCallback,
   hasRequest,
-  setCurrentSessionId,
-  getCurrentSessionId,
-  clearCurrentSessionId,
-  deleteStreamSession,
   postMessage,
   updateAIProxy,
   getDiagnostics,

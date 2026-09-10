@@ -287,7 +287,7 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     "AI_ABORT_API_REQUEST",
     "ai:abortAPIRequest",
     "ai",
-    NO_ARGS_SCHEMA,
+    args([stringArg()]),
   ),
   defineRequest(
     "AI_FETCH_MODELS",

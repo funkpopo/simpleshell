@@ -481,6 +481,7 @@
     "terminal": {
       "welcome": "Welcome",
       "pane": {
+        "splitSourceBlocked": "A split tab cannot be merged into another tab. Restore its panes to separate tabs first.",
         "splitRight": "Split → Right",
         "splitDown": "Split → Below",
         "splitGrid": "Split → 2×2",
@@ -789,6 +790,7 @@
       "editNote": "Edited command will be saved as shortcut command",
       "sendCommandHandlerMissing": "Send command handler not provided",
       "noTerminalTab": "Open a terminal session first",
+      "sessionChanged": "The active session changed. Execute the command again in the intended session.",
       "noActiveSession": "No active terminal session in the current tab",
       "loadFailed": "Failed to load command history",
       "loadError": "Error loading command history",
