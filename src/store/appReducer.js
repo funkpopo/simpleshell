@@ -15,6 +15,15 @@ const ActionTypes = {
   UPDATE_TAB: "UPDATE_TAB",
   SET_CURRENT_TAB: "SET_CURRENT_TAB",
 
+  // Split Terminal Panes
+  ADD_PANE: "ADD_PANE",
+  REMOVE_PANE: "REMOVE_PANE",
+  SET_LAYOUT_DIRECTION: "SET_LAYOUT_DIRECTION",
+  SET_RATIOS: "SET_RATIOS",
+  FOCUS_PANE: "FOCUS_PANE",
+  SWAP_PANES: "SWAP_PANES",
+  RESET_TAB_LAYOUT: "RESET_TAB_LAYOUT",
+
   // Sync Input Groups
   CREATE_SYNC_GROUP: "CREATE_SYNC_GROUP",
   JOIN_SYNC_GROUP: "JOIN_SYNC_GROUP",
@@ -119,6 +128,13 @@ export const initialState = {
   // Terminal State
   terminalInstances: {},
 
+  // 分屏终端：布局按 tabId 组织，窗格表全局维护。
+  // splitLayouts[tabId] = { direction: 'row'|'column'|'grid', panes: [paneId...], ratios: [50,50], focusedPaneId }
+  // panes[paneId] = { id, parentTabId, type, adoptedFromTab, createdAt }
+  // 首个窗格沿用 tabId 作为 sessionKey（根窗格），避免迁移既有进程/缓存。
+  splitLayouts: {},
+  panes: {},
+
   // Connection State
   connections: [],
   topConnections: [],
@@ -133,6 +149,9 @@ export const initialState = {
   // Menu State
   anchorEl: null,
 };
+
+// 分屏终端：单 tab 最多 4 窗格
+const MAX_TARGET_PANES = 4;
 
 // Reducer Function
 export function appReducer(state = initialState, action) {
@@ -157,6 +176,167 @@ export function appReducer(state = initialState, action) {
 
     case ActionTypes.SET_CURRENT_TAB:
       return { ...state, currentTab: action.payload };
+
+    // Split Terminal Pane Actions
+    case ActionTypes.ADD_PANE: {
+      const { tabId, paneId, direction, paneType, label } =
+        action.payload || {};
+      if (!tabId || !paneId) return state;
+      const existingLayout = state.splitLayouts[tabId] || null;
+      const panes = existingLayout ? [...existingLayout.panes] : [tabId];
+      if (panes.includes(paneId)) return state;
+      if (panes.length >= MAX_TARGET_PANES) return state;
+      panes.push(paneId);
+      const nextPanes = {
+        ...state.panes,
+        [paneId]: {
+          id: paneId,
+          parentTabId: tabId,
+          type: paneType || "ssh",
+          label: label || null,
+          adoptedFromTab: Boolean(action.payload.adoptedFromTab),
+          createdAt: Date.now(),
+        },
+      };
+      const maxIndex = panes.length - 1;
+      const nextDirection = direction || existingLayout?.direction || "row";
+      const neededRatioCount =
+        nextDirection === "grid" ? 2 : Math.max(1, maxIndex);
+      const baseRatios = Array.isArray(existingLayout?.ratios)
+        ? existingLayout.ratios
+        : [];
+      const ratios =
+        baseRatios.length >= neededRatioCount
+          ? baseRatios
+          : [
+              ...baseRatios,
+              ...Array(neededRatioCount - baseRatios.length).fill(50),
+            ];
+      return {
+        ...state,
+        panes: nextPanes,
+        splitLayouts: {
+          ...state.splitLayouts,
+          [tabId]: {
+            direction: nextDirection,
+            panes,
+            ratios,
+            focusedPaneId: paneId,
+          },
+        },
+      };
+    }
+
+    case ActionTypes.REMOVE_PANE: {
+      const { tabId, paneId } = action.payload || {};
+      if (!tabId || !paneId) return state;
+      const layout = state.splitLayouts[tabId];
+      if (!layout || !layout.panes.includes(paneId)) return state;
+      const remaining = layout.panes.filter((id) => id !== paneId);
+      const nextPanes = { ...state.panes };
+      delete nextPanes[paneId];
+      if (
+        remaining.length === 0 ||
+        (remaining.length <= 1 && remaining[0] === tabId)
+      ) {
+        // 只剩根窗格（或无窗格）：销毁布局，回到单窗格路径（根窗格会话保留）
+        const nextLayouts = { ...state.splitLayouts };
+        delete nextLayouts[tabId];
+        return { ...state, panes: nextPanes, splitLayouts: nextLayouts };
+      }
+      const paneCount = remaining.length;
+      const nextFocused =
+        layout.focusedPaneId === paneId
+          ? remaining[remaining.length - 1]
+          : layout.focusedPaneId;
+      return {
+        ...state,
+        panes: nextPanes,
+        splitLayouts: {
+          ...state.splitLayouts,
+          [tabId]: {
+            ...layout,
+            panes: remaining,
+            ratios: [...Array(Math.max(1, paneCount - 1)).fill(50)],
+            focusedPaneId: nextFocused,
+          },
+        },
+      };
+    }
+
+    case ActionTypes.SET_LAYOUT_DIRECTION: {
+      const { tabId, direction } = action.payload || {};
+      const layout = state.splitLayouts[tabId];
+      if (!layout || !direction) return state;
+      return {
+        ...state,
+        splitLayouts: {
+          ...state.splitLayouts,
+          [tabId]: { ...layout, direction },
+        },
+      };
+    }
+
+    case ActionTypes.SET_RATIOS: {
+      const { tabId, ratios } = action.payload || {};
+      const layout = state.splitLayouts[tabId];
+      if (!layout || !Array.isArray(ratios)) return state;
+      return {
+        ...state,
+        splitLayouts: {
+          ...state.splitLayouts,
+          [tabId]: { ...layout, ratios },
+        },
+      };
+    }
+
+    case ActionTypes.FOCUS_PANE: {
+      const { tabId, paneId } = action.payload || {};
+      const layout = state.splitLayouts[tabId];
+      if (!layout || !layout.panes.includes(paneId)) return state;
+      if (layout.focusedPaneId === paneId) return state;
+      return {
+        ...state,
+        splitLayouts: {
+          ...state.splitLayouts,
+          [tabId]: { ...layout, focusedPaneId: paneId },
+        },
+      };
+    }
+
+    case ActionTypes.SWAP_PANES: {
+      const { tabId, paneA, paneB } = action.payload || {};
+      const layout = state.splitLayouts[tabId];
+      if (!layout || !paneA || !paneB || paneA === paneB) return state;
+      const indexA = layout.panes.indexOf(paneA);
+      const indexB = layout.panes.indexOf(paneB);
+      if (indexA < 0 || indexB < 0) return state;
+      const panes = [...layout.panes];
+      panes[indexA] = paneB;
+      panes[indexB] = paneA;
+      return {
+        ...state,
+        splitLayouts: {
+          ...state.splitLayouts,
+          [tabId]: { ...layout, panes },
+        },
+      };
+    }
+
+    case ActionTypes.RESET_TAB_LAYOUT: {
+      const tabId = action.payload;
+      if (!state.splitLayouts[tabId]) return state;
+      const nextPanes = { ...state.panes };
+      const layout = state.splitLayouts[tabId];
+      (layout.panes || []).forEach((paneId) => {
+        if (paneId !== tabId) {
+          delete nextPanes[paneId];
+        }
+      });
+      const nextLayouts = { ...state.splitLayouts };
+      delete nextLayouts[tabId];
+      return { ...state, panes: nextPanes, splitLayouts: nextLayouts };
+    }
 
     // Sync Input Group Actions
     case ActionTypes.CREATE_SYNC_GROUP: {
@@ -359,6 +539,43 @@ export const actions = {
   setCurrentTab: (index) => ({
     type: ActionTypes.SET_CURRENT_TAB,
     payload: index,
+  }),
+
+  // Split Terminal Pane Actions
+  addPane: (
+    tabId,
+    paneId,
+    direction,
+    paneType,
+    label = null,
+    adoptedFromTab = false,
+  ) => ({
+    type: ActionTypes.ADD_PANE,
+    payload: { tabId, paneId, direction, paneType, label, adoptedFromTab },
+  }),
+  removePane: (tabId, paneId) => ({
+    type: ActionTypes.REMOVE_PANE,
+    payload: { tabId, paneId },
+  }),
+  setLayoutDirection: (tabId, direction) => ({
+    type: ActionTypes.SET_LAYOUT_DIRECTION,
+    payload: { tabId, direction },
+  }),
+  setRatios: (tabId, ratios) => ({
+    type: ActionTypes.SET_RATIOS,
+    payload: { tabId, ratios },
+  }),
+  focusPane: (tabId, paneId) => ({
+    type: ActionTypes.FOCUS_PANE,
+    payload: { tabId, paneId },
+  }),
+  swapPanes: (tabId, paneA, paneB) => ({
+    type: ActionTypes.SWAP_PANES,
+    payload: { tabId, paneA, paneB },
+  }),
+  resetTabLayout: (tabId) => ({
+    type: ActionTypes.RESET_TAB_LAYOUT,
+    payload: tabId,
   }),
 
   // Sync Input Group Actions

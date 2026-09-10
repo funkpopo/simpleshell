@@ -26,6 +26,7 @@ import LightModeIcon from "@mui/icons-material/LightMode";
 import MonitorHeartIcon from "@mui/icons-material/MonitorHeart";
 import LinkIcon from "@mui/icons-material/Link";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import SplitscreenIcon from "@mui/icons-material/Splitscreen";
 import PowerOffIcon from "@mui/icons-material/PowerOff";
 import FolderIcon from "@mui/icons-material/Folder";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -67,6 +68,8 @@ import TerminalIcon from "@mui/icons-material/Terminal";
 import FirstPageIcon from "@mui/icons-material/FirstPage";
 import LastPageIcon from "@mui/icons-material/LastPage";
 import CustomTab from "./components/CustomTab.jsx";
+import PaneGrid from "./components/terminal-pane/PaneGrid.jsx";
+import { getParentTabId, MAX_PANES } from "./modules/terminal/paneLayout.js";
 import NetworkLatencyIndicator from "./components/NetworkLatencyIndicator.jsx";
 import WindowControls from "./components/WindowControls.jsx";
 import SSHAuthDialog from "./components/SSHAuthDialog.jsx";
@@ -116,6 +119,7 @@ import {
 import {
   disposeTerminalSession,
   getTerminalSessionDiagnostics,
+  preserveTerminalSessions,
   processCache as sessionProcessCache,
 } from "./modules/terminal/controller/terminalSessionStore.js";
 
@@ -749,12 +753,19 @@ function AppContent() {
   const draggedTabIndex = state.draggedTabIndex;
   const dragOverTabIndex = state.dragOverTabIndex;
   const dragInsertPosition = state.dragInsertPosition;
+  const splitLayouts = state.splitLayouts;
+  const paneRegistry = state.panes;
   const anchorEl = state.anchorEl;
   const open = Boolean(anchorEl);
 
   // 当前面板标签页（侧边栏跟随当前标签页）
   const currentPanelTab =
     currentTab > 0 && tabs[currentTab] ? tabs[currentTab] : null;
+  // 分屏时会话键跟随聚焦窗格：侧边栏（资源监控/文件管理/AI/会话上下文）
+  // 展示聚焦窗格的连接信息；无分屏时等于 tabId
+  const activeSessionKey = currentPanelTab
+    ? splitLayouts[currentPanelTab.id]?.focusedPaneId || currentPanelTab.id
+    : null;
   // 文件管理侧边栏状态按标签页独立记忆：
   // 仅 SSH 标签页可打开，未记录过的标签页默认关闭，
   // 切换/新建标签页不会影响其他标签页各自的开关状态
@@ -2623,6 +2634,62 @@ function AppContent() {
     handleTabContextMenuClose();
   };
 
+  // 拆分恢复：把并入分屏的标签页还原为独立标签页。
+  // 窗格会话继续沿用原 tabId（sessionKey），终端实例/配置/进程缓存全部保留，
+  // 仅销毁布局，不触碰任何终端内容，因此拆分前后显示内容不变。
+  const handleUnsplitTab = useCallback(() => {
+    const tabId = tabContextMenu.tabId;
+    if (!tabId) {
+      handleTabContextMenuClose();
+      return;
+    }
+    const layout = splitLayoutsRef.current[tabId];
+    if (!layout || (layout.panes || []).length <= 1) {
+      handleTabContextMenuClose();
+      return;
+    }
+    const currentTabs = latestTabsForActionsRef.current;
+    const rootIndex = currentTabs.findIndex((item) => item.id === tabId);
+    if (rootIndex < 0) {
+      handleTabContextMenuClose();
+      return;
+    }
+
+    const adoptedPaneIds = layout.panes.filter((id) => id !== tabId);
+    const restoredTabs = adoptedPaneIds.map((paneId) => {
+      const paneInfo = paneRegistry[paneId];
+      const config = terminalInstances[`${paneId}-config`];
+      return {
+        id: paneId,
+        label:
+          paneInfo?.label ||
+          config?.name ||
+          `${config?.username ? `${config.username}@` : ""}${config?.host || ""}` ||
+          paneId,
+        type: paneInfo?.type || "ssh",
+        connectionId: config?.connectionId || config?.id,
+      };
+    });
+
+    // 按原分屏顺序紧随根标签插入，恢复原标签顺序
+    const newTabs = [...currentTabs];
+    newTabs.splice(rootIndex + 1, 0, ...restoredTabs);
+    // 标记所有窗格会话将被同键重挂载（分屏窗格 → 单窗格标签），
+    // 卸载清理保留 xterm/进程缓存，避免拆分后清屏重连
+    preserveTerminalSessions(layout.panes);
+    dispatch(actions.setTabs(newTabs));
+    dispatch(actions.resetTabLayout(tabId));
+    notifyTerminalResize();
+    handleTabContextMenuClose();
+  }, [
+    dispatch,
+    handleTabContextMenuClose,
+    notifyTerminalResize,
+    paneRegistry,
+    tabContextMenu.tabId,
+    terminalInstances,
+  ]);
+
   const handlePauseReconnect = useCallback(async () => {
     const tabId = tabContextMenu.tabId;
     if (!tabId) {
@@ -2861,6 +2928,30 @@ function AppContent() {
     delete newInstances[`${tabToRemove.id}-config`];
     delete newInstances[`${tabToRemove.id}-processId`];
     delete newInstances[`${tabToRemove.id}-refresh`];
+
+    // 分屏窗格：整组窗格随 tab 一并关闭（逐个结束会话并清理实例缓存）。
+    // 被拖入的窗格（adoptedFromTab）的 sessionKey 是原 tabId，同理清理。
+    const closingLayout = splitLayouts[tabToRemove.id];
+    if (closingLayout?.panes) {
+      closingLayout.panes.forEach((paneId) => {
+        if (paneId === tabToRemove.id) return;
+        const paneProcessId = sessionProcessCache[paneId];
+        if (paneProcessId && window.terminalAPI?.killProcess) {
+          window.terminalAPI.killProcess(paneProcessId).catch((err) => {
+            console.warn(`关闭窗格会话时出错: ${err.message}`);
+          });
+        }
+        disposeTerminalSession(paneId);
+        delete newInstances[paneId];
+        delete newInstances[`${paneId}-config`];
+        delete newInstances[`${paneId}-processId`];
+        delete newInstances[`${paneId}-refresh`];
+        // 同步分组中的窗格成员一并移除
+        dispatch(actions.removeTabFromSyncGroups(paneId));
+      });
+      dispatch(actions.resetTabLayout(tabToRemove.id));
+    }
+
     dispatch(actions.setTerminalInstances(newInstances));
 
     // 注：进程缓存（terminalSessionStore.processCache）已由上方
@@ -2930,6 +3021,370 @@ function AppContent() {
     }
   }, []);
 
+  // ------------------ 分屏终端（PaneGrid）管理 ------------------
+
+  const splitLayoutsRef = useRef(splitLayouts);
+  splitLayoutsRef.current = splitLayouts;
+  const paneRegistryRef = useRef(paneRegistry);
+  paneRegistryRef.current = paneRegistry;
+  // 拖拽投隆区（'left'|'right'|'top'|'bottom'|'center'|null）与窗格拖拽状态
+  const [paneDropZone, setPaneDropZone] = useState(null);
+  const [paneDragId, setPaneDragId] = useState(null);
+  const [paneDragOverId, setPaneDragOverId] = useState(null);
+
+  // 释放窗格会话：杀进程 / 释放渲染端缓存 / 清理 terminalInstances
+  const teardownPaneSession = useCallback(
+    (paneId) => {
+      const processId = sessionProcessCache[paneId];
+      if (processId && window.terminalAPI?.killProcess) {
+        window.terminalAPI.killProcess(processId).catch((err) => {
+          console.warn(`关闭窗格会话时出错: ${err.message}`);
+        });
+      }
+      if (paneRegistryRef.current[paneId]?.type === "local") {
+        window.terminalAPI?.closeLocalTerminal?.(paneId)?.catch?.(() => {});
+      }
+      disposeTerminalSession(paneId);
+
+      const next = { ...(terminalInstancesRef.current || {}) };
+      delete next[paneId];
+      delete next[`${paneId}-config`];
+      delete next[`${paneId}-processId`];
+      delete next[`${paneId}-refresh`];
+      dispatch(actions.setTerminalInstances(next));
+    },
+    [dispatch],
+  );
+
+  const cleanupDragStateRef = useRef(null);
+
+  // 关闭窗格：根窗格 / 无布局 → 关闭整个 tab；否则仅结束该窗格会话。
+  // 若关闭后只剩一个非根窗格（孤儿会话无法独立存活），同样关闭整个 tab。
+  const handleClosePane = useCallback(
+    (tabId, paneId) => {
+      if (!tabId || !paneId) return;
+      const layout = splitLayoutsRef.current[tabId];
+      const remaining = layout
+        ? layout.panes.filter((id) => id !== paneId)
+        : [];
+      const orphanedRoot =
+        !layout ||
+        paneId === tabId ||
+        remaining.length === 0 ||
+        (remaining.length === 1 && remaining[0] !== tabId);
+      if (orphanedRoot) {
+        // 关闭根窗格（或会导致孤儿窗格）等同于关闭标签页
+        const index = latestTabsForActionsRef.current.findIndex(
+          (item) => item.id === tabId,
+        );
+        if (index >= 0) {
+          handleCloseTabRef.current(index);
+        }
+        return;
+      }
+
+      teardownPaneSession(paneId);
+      dispatch(actions.removePane(tabId, paneId));
+      // 同步分组中该窗格成员一并移除（组内最后一个成员时分组自动回收）
+      dispatch(actions.removeTabFromSyncGroups(paneId));
+      notifyTerminalResize();
+    },
+    [dispatch, teardownPaneSession],
+  );
+
+  // 关闭其他窗格（保留指定窗格）。为保证不产生孤儿会话：
+  // - 保留的是根窗格 → 移除全部虚拟窗格，布局回收，回到单窗格路径；
+  // - 保留的是虚拟窗格 → 根窗格一并保留（结果为 根 + 聚焦 两个窗格）
+  const handleCloseOtherPanes = useCallback(
+    (tabId, paneId) => {
+      const layout = splitLayoutsRef.current[tabId];
+      if (!layout) return;
+      layout.panes
+        .filter((id) => id !== paneId && (paneId === tabId || id !== tabId))
+        .forEach((otherId) => {
+          teardownPaneSession(otherId);
+          dispatch(actions.removePane(tabId, otherId));
+          dispatch(actions.removeTabFromSyncGroups(otherId));
+        });
+      dispatch(actions.focusPane(tabId, paneId));
+      notifyTerminalResize();
+    },
+    [dispatch, teardownPaneSession],
+  );
+
+  const handleFocusPane = useCallback(
+    (tabId, paneId) => {
+      dispatch(actions.focusPane(tabId, paneId));
+    },
+    [dispatch],
+  );
+
+  const handleSetRatios = useCallback(
+    (tabId, ratios) => {
+      dispatch(actions.setRatios(tabId, ratios));
+    },
+    [dispatch],
+  );
+
+  // 将一个已有标签页会话并入目标 tab 的分屏（拖拽标签页到终端区）。
+  // 采用"标签保留会话、布局引用"方案：窗格继续使用原 tabId 作为
+  // sessionKey，无需迁移渲染端缓存与主进程连接别名；原标签从标签栏移除。
+  const adoptTabAsPane = useCallback(
+    (targetTabId, sourceTab, zone) => {
+      if (!targetTabId || !sourceTab || sourceTab.id === targetTabId) return;
+      if (sourceTab.id === "welcome") return;
+
+      const targetLayout = splitLayoutsRef.current[targetTabId] || null;
+      const currentPanes = targetLayout
+        ? [...targetLayout.panes]
+        : [targetTabId];
+      if (currentPanes.includes(sourceTab.id)) return;
+      if (currentPanes.length >= MAX_PANES) {
+        showWarning(t("terminal.pane.maxReached"));
+        return;
+      }
+
+      let direction = targetLayout?.direction || "row";
+      if (!targetLayout) {
+        direction = zone === "top" || zone === "bottom" ? "column" : "row";
+      } else if (direction !== "grid") {
+        if (zone === "left" || zone === "right") {
+          direction = "row";
+        } else if (zone === "top" || zone === "bottom") {
+          direction = "column";
+        }
+      }
+      // 合并结果达到 3 格及以上时固定 2×2 网格布局
+      if (currentPanes.length + 1 >= 3) {
+        direction = "grid";
+      }
+
+      const paneType =
+        sourceTab.type === "local" ? "local" : sourceTab.type || "ssh";
+      // 标记两个会话将被同键重挂载（单窗格 → 分屏窗格），
+      // 卸载清理保留 xterm/进程缓存，避免清屏重连
+      preserveTerminalSessions([targetTabId, sourceTab.id]);
+      dispatch(
+        actions.addPane(
+          targetTabId,
+          sourceTab.id,
+          direction,
+          paneType,
+          sourceTab.label,
+          true,
+        ),
+      );
+      dispatch(actions.focusPane(targetTabId, sourceTab.id));
+
+      // 从标签栏移除被拖 tab（保留其会话/配置/分组身份，作为窗格存活）
+      const currentTabs = latestTabsForActionsRef.current;
+      const sourceIndex = currentTabs.findIndex(
+        (item) => item.id === sourceTab.id,
+      );
+      if (sourceIndex >= 0) {
+        const newTabs = currentTabs.filter((item) => item.id !== sourceTab.id);
+        dispatch(actions.setTabs(newTabs));
+        // 合并后聚焦到目标标签（分屏宿主），让用户立即看到合并结果
+        const newTargetIndex = newTabs.findIndex(
+          (item) => item.id === targetTabId,
+        );
+        if (newTargetIndex >= 0 && newTargetIndex !== currentTab) {
+          dispatch(actions.setCurrentTab(newTargetIndex));
+        }
+      }
+      notifyTerminalResize();
+    },
+    [currentTab, dispatch, showWarning, t],
+  );
+
+  // 终端区拖拽投隆：标签页拖入边缘 / 中心 → 并入当前 tab 的分屏
+  const handleTerminalAreaDragOver = useCallback(
+    (e) => {
+      if (draggedTabIndex === null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const rect = e.currentTarget.getBoundingClientRect();
+      const relX = (e.clientX - rect.left) / rect.width;
+      const relY = (e.clientY - rect.top) / rect.height;
+      const edge = 0.25;
+      let zone = "center";
+      if (relX < edge) zone = "left";
+      else if (relX > 1 - edge) zone = "right";
+      else if (relY < edge) zone = "top";
+      else if (relY > 1 - edge) zone = "bottom";
+      if (paneDropZone !== zone) {
+        setPaneDropZone(zone);
+      }
+    },
+    [draggedTabIndex, paneDropZone],
+  );
+
+  const handleTerminalAreaDragLeave = useCallback((e) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      setPaneDropZone(null);
+    }
+  }, []);
+
+  const handleTerminalAreaDrop = useCallback(
+    (e) => {
+      e.preventDefault();
+      const zone = paneDropZone || "center";
+      setPaneDropZone(null);
+      if (draggedTabIndex === null) return;
+      const sourceTab = latestTabsForActionsRef.current[draggedTabIndex];
+      const targetTab = latestTabsForActionsRef.current[currentTab];
+      cleanupDragStateRef.current?.();
+      if (!sourceTab || !targetTab || sourceTab.id === targetTab.id) return;
+      if (sourceTab.id === "welcome" || targetTab.id === "welcome") return;
+      adoptTabAsPane(targetTab.id, sourceTab, zone);
+    },
+    [adoptTabAsPane, currentTab, draggedTabIndex, paneDropZone],
+  );
+
+  // 窗格头部拖拽（交换位置）
+  const handlePaneDragStart = useCallback((e, paneId) => {
+    setPaneDragId(paneId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({ type: "pane", paneId }),
+    );
+  }, []);
+
+  const handlePaneDragOver = useCallback(
+    (e, paneId) => {
+      if (paneDragId === null || paneDragId === paneId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      if (paneDragOverId !== paneId) {
+        setPaneDragOverId(paneId);
+      }
+    },
+    [paneDragId, paneDragOverId],
+  );
+
+  const handlePaneDrop = useCallback(
+    (e, targetPaneId) => {
+      if (paneDragId === null || paneDragId === targetPaneId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const sourceSessionKey = paneDragId;
+      setPaneDragId(null);
+      setPaneDragOverId(null);
+      const tabId = getParentTabId(sourceSessionKey);
+      dispatch(actions.swapPanes(tabId, sourceSessionKey, targetPaneId));
+      notifyTerminalResize();
+    },
+    [dispatch, paneDragId],
+  );
+
+  const handlePaneDragEnd = useCallback(() => {
+    setPaneDragId(null);
+    setPaneDragOverId(null);
+  }, []);
+
+  // 窗格右键菜单动作（WebTerminalContextMenu 经 CustomEvent 投递，
+  // 避免把 dispatch 拉进终端组件）
+  const handlePaneShortcutRef = useRef(() => {});
+  handlePaneShortcutRef.current = (action) => {
+    const tab = latestTabsForActionsRef.current[currentTab];
+    if (!tab || tab.id === "welcome") return;
+    const layout = splitLayoutsRef.current[tab.id];
+    const sessionKey = layout?.focusedPaneId || tab.id;
+    if (action === "close") {
+      handleClosePane(tab.id, sessionKey);
+    }
+  };
+
+  const paneActionHandlerRef = useRef(() => {});
+  paneActionHandlerRef.current = (detail) => {
+    if (!detail?.sessionKey) return;
+    const tabId = getParentTabId(detail.sessionKey);
+    switch (detail.action) {
+      case "closePane":
+        handleClosePane(tabId, detail.sessionKey);
+        break;
+      case "closeOtherPanes":
+        handleCloseOtherPanes(tabId, detail.sessionKey);
+        break;
+      case "createSyncGroup":
+        dispatch(actions.createSyncGroup(detail.sessionKey));
+        break;
+      case "joinSyncGroup":
+        if (detail.groupId) {
+          dispatch(actions.joinSyncGroup(detail.sessionKey, detail.groupId));
+        }
+        break;
+      case "leaveSyncGroup":
+        dispatch(actions.removeTabFromSyncGroups(detail.sessionKey));
+        break;
+      default:
+        break;
+    }
+  };
+
+  // ------------------ 分屏终端管理结束 ------------------
+
+  // 窗格右键菜单动作事件（由 WebTerminalContextMenu 发出）
+  React.useEffect(() => {
+    const handler = (event) => paneActionHandlerRef.current(event.detail);
+    const remove = eventManager.addEventListener(
+      window,
+      "terminalPaneAction",
+      handler,
+    );
+    return () => remove();
+  }, [eventManager]);
+
+  // 渲染单个窗格终端（PaneGrid 回调；根窗格 paneId === tab.id，
+  // 与单窗格路径完全同构）
+  const renderPaneTerminal = useCallback(
+    (tab, paneId, { isActive }) => {
+      if (terminalInstances[paneId] === undefined) return null;
+      const registry = paneRegistry[paneId];
+      const paneType = registry?.type || tab.type || "ssh";
+      const isLocalPane = paneType === "local";
+      const paneConfig = terminalInstances[`${paneId}-config`];
+      return (
+        <WebTerminal
+          tabId={paneId}
+          sessionKey={paneId}
+          refreshKey={terminalInstances[`${paneId}-refresh`]}
+          sshConfig={
+            !isLocalPane
+              ? paneConfig || terminalInstances[`${tab.id}-config`] || null
+              : null
+          }
+          terminalType={isLocalPane ? "local" : paneType}
+          localConfig={
+            isLocalPane ? paneConfig || tab.localConfig || null : null
+          }
+          isActive={isActive}
+        />
+      );
+    },
+    [terminalInstances, paneRegistry],
+  );
+
+  // 窗格标题：连接名 / host / 拖入时的原标签名 / 序号兑底
+  const buildPaneLabel = useCallback(
+    (tab, paneId) => {
+      if (paneId === tab.id) return tab.label;
+      const registry = paneRegistry[paneId];
+      if (registry?.label) return registry.label;
+      const config = terminalInstances[`${paneId}-config`];
+      if (config?.name) return config.name;
+      if (config?.host) {
+        return `${config.username ? `${config.username}@` : ""}${config.host}`;
+      }
+      const layout = splitLayouts[tab.id];
+      const paneIndex = layout ? layout.panes.indexOf(paneId) : -1;
+      return t("terminal.pane.default", { n: Math.max(1, paneIndex + 1) });
+    },
+    [paneRegistry, splitLayouts, t, terminalInstances],
+  );
+
   // 优化的拖动开始处理函数 - 使用useCallback减少重建
   const handleDragStart = useCallback(
     (e, index) => {
@@ -2965,9 +3420,10 @@ function AppContent() {
       const rect = e.currentTarget.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const tabWidth = rect.width;
-      // 使用45%阈值，减少位置在中线附近反复切换
-      const threshold = tabWidth * 0.45;
-      const position = mouseX <= threshold ? "before" : "after";
+      // 两侧 30% 为排序插入区（before/after），中段为「叠加合并」区：
+      // 拖拽标签页叠加到目标标签上，合并为目标标签的分屏窗格
+      const relX = tabWidth > 0 ? mouseX / tabWidth : 0.5;
+      const position = relX < 0.3 ? "before" : relX > 0.7 ? "after" : "merge";
 
       e.dataTransfer.dropEffect = "move";
 
@@ -3014,6 +3470,9 @@ function AppContent() {
     dispatch(actions.setDragOverTab(null));
     dispatch(actions.setDragInsertPosition(null));
   }, [dispatch]);
+
+  // 终端区拖拽投隆回调需要最新的 cleanupDragState（定义在其之后，用 ref 桥接）
+  cleanupDragStateRef.current = cleanupDragState;
 
   // 标签排序功能 - 核心排序逻辑
   // sourceIndex: 源标签当前索引
@@ -3121,17 +3580,43 @@ function AppContent() {
       const rect = e.currentTarget?.getBoundingClientRect();
       let position = dragInsertPosition;
       if (!position && rect) {
-        position = e.clientX - rect.left <= rect.width / 2 ? "before" : "after";
+        const relX = (e.clientX - rect.left) / rect.width;
+        position = relX < 0.3 ? "before" : relX > 0.7 ? "after" : "merge";
       }
       if (!position) {
         position = "after";
+      }
+
+      // 中段叠加合并：把拖拽标签并入目标标签的分屏（会话保留，不迁移缓存）
+      if (position === "merge") {
+        const sourceTab = tabs[sourceIndex];
+        const targetTab = tabs[targetIndex];
+        cleanupDragState();
+        if (
+          !sourceTab ||
+          !targetTab ||
+          sourceTab.id === targetTab.id ||
+          sourceTab.id === "welcome" ||
+          targetTab.id === "welcome"
+        ) {
+          return;
+        }
+        adoptTabAsPane(targetTab.id, sourceTab, "center");
+        return;
       }
 
       // 执行排序
       reorderTab(sourceIndex, targetIndex, position);
       cleanupDragState();
     },
-    [draggedTabIndex, dragInsertPosition, cleanupDragState, reorderTab],
+    [
+      draggedTabIndex,
+      dragInsertPosition,
+      cleanupDragState,
+      reorderTab,
+      tabs,
+      adoptTabAsPane,
+    ],
   );
 
   // 处理拖动结束（无论是否成功放置）
@@ -3550,7 +4035,7 @@ function AppContent() {
 
   // 计算右侧面板的当前标签页信息
   const currentPanelConnectionStatus = currentPanelTab
-    ? connectionStatusByTabId[currentPanelTab.id]
+    ? connectionStatusByTabId[activeSessionKey]
     : null;
   const isCurrentPanelSshTab = currentPanelTab?.type === "ssh";
   const isCurrentPanelSshConnected =
@@ -3607,9 +4092,14 @@ function AppContent() {
       return null;
     }
     return (
-      terminalInstances[`${currentPanelTab.id}-processId`] || currentPanelTab.id
+      terminalInstances[`${activeSessionKey}-processId`] || activeSessionKey
     );
-  }, [resourceMonitorOpen, currentPanelTab, terminalInstances]);
+  }, [
+    resourceMonitorOpen,
+    activeSessionKey,
+    currentPanelTab,
+    terminalInstances,
+  ]);
 
   // 计算文件管理器的props（跟随当前标签页，状态按标签页独立）
   const fileManagerProps = useMemo(() => {
@@ -3642,7 +4132,7 @@ function AppContent() {
       tabName: targetTab.label,
       sshConnection:
         targetTab.type === "ssh"
-          ? terminalInstances[`${targetTab.id}-config`]
+          ? terminalInstances[`${activeSessionKey}-config`]
           : null,
       initialPath: getFileManagerPath(targetTab.id),
       navigationState: fileManagerHistoryByTabId[targetTab.id] || null,
@@ -3653,6 +4143,7 @@ function AppContent() {
     tabs,
     terminalInstances,
     fileManagerPaths,
+    activeSessionKey,
   ]);
 
   // 计算AI聊天窗口的连接信息
@@ -3666,7 +4157,7 @@ function AppContent() {
       return null;
     }
 
-    const config = terminalInstances[`${currentPanelTab.id}-config`];
+    const config = terminalInstances[`${activeSessionKey}-config`];
     if (!config) {
       return {
         host: currentPanelTab.label,
@@ -3680,7 +4171,7 @@ function AppContent() {
       username: config.username,
       type: currentPanelTab.type?.toUpperCase() || "SSH",
     };
-  }, [currentPanelTab, terminalInstances]);
+  }, [activeSessionKey, currentPanelTab, terminalInstances]);
 
   // 侧栏标题区会话上下文（host / 协议 / 连接质量）
   const sidebarSessionContext = useMemo(() => {
@@ -3705,7 +4196,7 @@ function AppContent() {
       return null;
     }
 
-    const config = terminalInstances[`${currentPanelTab.id}-config`];
+    const config = terminalInstances[`${activeSessionKey}-config`];
     const protocol = (currentPanelTab.type || "ssh").toUpperCase();
     const host = config
       ? `${config.username ? `${config.username}@` : ""}${config.host || currentPanelTab.label}${config.port ? `:${config.port}` : ""}`
@@ -3723,7 +4214,13 @@ function AppContent() {
       host,
       quality,
     };
-  }, [currentPanelConnectionStatus, currentPanelTab, t, terminalInstances]);
+  }, [
+    activeSessionKey,
+    currentPanelConnectionStatus,
+    currentPanelTab,
+    t,
+    terminalInstances,
+  ]);
 
   // 计算按钮禁用状态
   const isSSHButtonDisabled = useMemo(() => {
@@ -3806,11 +4303,20 @@ function AppContent() {
       handleSendToAI(event.detail.text);
     };
 
-    // Alt+F1 全局快捷键唤醒AI助手
+    // Alt+F1 全局快捷键唤醒AI助手；Ctrl+Shift+W 关闭聚焦窗格
+    // （分屏创建统一由拖拽标签页合并触发，无快捷键分屏入口）
     const handleGlobalKeyDown = (event) => {
       if (event.altKey && event.key === "F1") {
         event.preventDefault();
         handleToggleGlobalAiChatWindow();
+        return;
+      }
+      if (event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey) {
+        const key = event.key.toLowerCase();
+        if (key === "w") {
+          event.preventDefault();
+          handlePaneShortcutRef.current("close");
+        }
       }
     };
 
@@ -4174,10 +4680,21 @@ function AppContent() {
                         typeof candidate === "string" ? candidate.trim() : "",
                       )
                       .find(Boolean);
+                    // 分屏宿主标签：加宽显示，拼接所有窗格的连接名
+                    const tabPaneLayout = splitLayouts[tab.id];
+                    const isSplitHost = Boolean(
+                      tabPaneLayout && tabPaneLayout.panes.length > 1,
+                    );
+                    const mergedPaneLabel = isSplitHost
+                      ? tabPaneLayout.panes
+                          .map((paneId) => buildPaneLabel(tab, paneId))
+                          .join(" + ")
+                      : null;
                     const label =
                       index === 0
                         ? t("terminal.welcome")
-                        : persistedLabel ||
+                        : mergedPaneLabel ||
+                          persistedLabel ||
                           (tab.type === "local"
                             ? t("common.componentNames.localTerminal")
                             : t("common.componentNames.terminal"));
@@ -4235,6 +4752,7 @@ function AppContent() {
                           draggedTabIndex !== null && draggedTabIndex === index
                         }
                         dragSessionActive={draggedTabIndex !== null}
+                        mergedLabel={isSplitHost}
                         isDraggedOver={
                           draggedTabIndex !== null &&
                           dragOverTabIndex === index &&
@@ -4298,6 +4816,15 @@ function AppContent() {
               <PowerOffIcon fontSize="small" sx={{ mr: 1 }} />
               {t("tabMenu.close")}
             </MenuItem>
+
+            {/* 叠加合并后的分屏标签：提供拆分恢复入口（分屏创建仅由拖拽叠加/拖入终端区触发） */}
+            {contextMenuTab &&
+              (splitLayouts[contextMenuTab.id]?.panes?.length || 0) > 1 && (
+                <MenuItem onClick={handleUnsplitTab}>
+                  <SplitscreenIcon fontSize="small" sx={{ mr: 1 }} />
+                  {t("tabMenu.unsplit")}
+                </MenuItem>
+              )}
 
             {isContextMenuSshTab && contextMenuReconnectStatus && <Divider />}
 
@@ -4504,6 +5031,9 @@ function AppContent() {
             >
               {/* 标签页内容 */}
               <Box
+                onDragOver={handleTerminalAreaDragOver}
+                onDragLeave={handleTerminalAreaDragLeave}
+                onDrop={handleTerminalAreaDrop}
                 sx={{
                   flex: 1,
                   minHeight: 0,
@@ -4519,6 +5049,49 @@ function AppContent() {
                   position: "relative",
                 }}
               >
+                {/* 拖拽标签页到终端区时的投隆区高亮 */}
+                {draggedTabIndex !== null && paneDropZone
+                  ? [
+                      {
+                        zone: "left",
+                        sx: { left: 0, top: 0, bottom: 0, width: "25%" },
+                      },
+                      {
+                        zone: "right",
+                        sx: { right: 0, top: 0, bottom: 0, width: "25%" },
+                      },
+                      {
+                        zone: "top",
+                        sx: { left: 0, right: 0, top: 0, height: "25%" },
+                      },
+                      {
+                        zone: "bottom",
+                        sx: { left: 0, right: 0, bottom: 0, height: "25%" },
+                      },
+                    ].map(({ zone, sx }) => (
+                      <Box
+                        key={zone}
+                        sx={{
+                          position: "absolute",
+                          zIndex: 1300,
+                          pointerEvents: "none",
+                          border: "2px dashed",
+                          borderColor:
+                            paneDropZone === zone
+                              ? "primary.main"
+                              : "transparent",
+                          bgcolor:
+                            paneDropZone === zone
+                              ? "action.focus"
+                              : "transparent",
+                          opacity: paneDropZone === zone ? 0.4 : 0,
+                          borderRadius: 1,
+                          m: 0.5,
+                          ...sx,
+                        }}
+                      />
+                    ))
+                  : null}
                 {/* 欢迎页 - 使用条件渲染优化性能 */}
                 {currentTab === 0 && (
                   <Box
@@ -4564,29 +5137,56 @@ function AppContent() {
                           : "none",
                       }}
                     >
-                      {terminalInstances[tab.id] && (
-                        <WebTerminal
+                      {splitLayouts[tab.id] ? (
+                        <PaneGrid
                           tabId={tab.id}
-                          refreshKey={terminalInstances[`${tab.id}-refresh`]}
-                          sshConfig={
-                            tab.type === "ssh" ||
-                            tab.type === "telnet" ||
-                            tab.type === "serial" ||
-                            tab.type === "mosh"
-                              ? terminalInstances[`${tab.id}-config`]
-                              : null
-                          }
-                          terminalType={
-                            tab.type === "local" ? "local" : tab.type
-                          }
-                          localConfig={
-                            tab.type === "local"
-                              ? terminalInstances[`${tab.id}-config`] ||
-                                tab.localConfig
-                              : null
-                          }
+                          layout={splitLayouts[tab.id]}
                           isActive={isActive}
+                          renderPaneTerminal={(paneId, opts) =>
+                            renderPaneTerminal(tab, paneId, opts)
+                          }
+                          getPaneLabel={(paneId) => buildPaneLabel(tab, paneId)}
+                          canClosePane={() => true}
+                          onFocusPane={(paneId) =>
+                            handleFocusPane(tab.id, paneId)
+                          }
+                          onClosePane={(paneId) =>
+                            handleClosePane(tab.id, paneId)
+                          }
+                          onSetRatios={(ratios) =>
+                            handleSetRatios(tab.id, ratios)
+                          }
+                          onPaneDragStart={handlePaneDragStart}
+                          onPaneDragOver={handlePaneDragOver}
+                          onPaneDrop={handlePaneDrop}
+                          onPaneDragEnd={handlePaneDragEnd}
+                          paneDragOverId={paneDragOverId}
                         />
+                      ) : (
+                        terminalInstances[tab.id] && (
+                          <WebTerminal
+                            tabId={tab.id}
+                            refreshKey={terminalInstances[`${tab.id}-refresh`]}
+                            sshConfig={
+                              tab.type === "ssh" ||
+                              tab.type === "telnet" ||
+                              tab.type === "serial" ||
+                              tab.type === "mosh"
+                                ? terminalInstances[`${tab.id}-config`]
+                                : null
+                            }
+                            terminalType={
+                              tab.type === "local" ? "local" : tab.type
+                            }
+                            localConfig={
+                              tab.type === "local"
+                                ? terminalInstances[`${tab.id}-config`] ||
+                                  tab.localConfig
+                                : null
+                            }
+                            isActive={isActive}
+                          />
+                        )
                       )}
                     </Box>
                   );

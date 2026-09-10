@@ -21,7 +21,7 @@ import {
  * xterm has time to update the cursor DOM before we measure it.
  */
 export function usePromptTracking({
-  tabId,
+  sessionKey,
   termRef,
   inEditorModeRef,
   isCommandExecutingRef,
@@ -445,9 +445,7 @@ export function usePromptTracking({
           return;
         }
         try {
-          const anchor = (
-            suppressionContextRef.current?.input || ""
-          ).trim();
+          const anchor = (suppressionContextRef.current?.input || "").trim();
           const nowInput = inputBuffer.trim();
           if (!anchor || nowInput.length === 0 || nowInput !== anchor) {
             setSuggestionsSuppressedUntilEnter(false);
@@ -620,7 +618,7 @@ export function usePromptTracking({
         // Suppressed channel payloads were already delivered by the
         // dispatcher; re-broadcasting them would double-send to group members.
         if (!isRemoteInput && !shouldSkipSendToProcess) {
-          broadcastInputToGroup(data, tabId);
+          broadcastInputToGroup(data, sessionKey);
         }
 
         if (
@@ -1012,7 +1010,7 @@ export function usePromptTracking({
       sendInputToProcess,
       setEditorModeState,
       syncPromptTrackingFromTerminal,
-      tabId,
+      sessionKey,
     ],
   );
 

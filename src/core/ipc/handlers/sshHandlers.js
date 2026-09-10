@@ -1046,6 +1046,25 @@ class SSHHandlers {
     return isSshStreamUsable(stream);
   }
 
+  /**
+   * 校验已存在的 shell 流是否仍归属当前连接的 client。
+   * 重连后旧 client 已被替换（replaceConnection 会 end 旧连接），
+   * 其上的 channel 流即将关闭但 close 事件可能尚未触发，
+   * 若此时仅凭 isSshStreamUsable 判断会把死流误认为可用，
+   * 导致跳过重建 shell、终端永久假死（表现为“重连无效”）。
+   */
+  _isStreamBoundToClient(stream, client) {
+    if (!stream || !client) {
+      return false;
+    }
+    // ssh2 Channel 内部持有 _client 引用，可直接比对归属
+    if (stream._client) {
+      return stream._client === client;
+    }
+    // 无法判断归属时保守起见视为不可用，触发重建 shell
+    return false;
+  }
+
   async _handleConnectionReconnected(connectionKey, connectionInfoFromPool) {
     if (!connectionKey) return;
 
@@ -1138,7 +1157,10 @@ class SSHHandlers {
     }
 
     const existingStream = procInfo?.stream || tabProcInfo?.stream;
-    if (this._isSSHStreamUsable(existingStream)) {
+    if (
+      this._isSSHStreamUsable(existingStream) &&
+      this._isStreamBoundToClient(existingStream, latestConnInfo.client)
+    ) {
       this._emitTerminalSessionRestored({
         processId,
         tabId,

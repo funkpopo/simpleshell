@@ -12,6 +12,11 @@ import PasteIcon from "@mui/icons-material/ContentPaste";
 import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SearchIcon from "@mui/icons-material/Search";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
+import CloseIcon from "@mui/icons-material/Close";
+import CloseOtherPanesIcon from "@mui/icons-material/CallToAction";
+import AddCircleOutlinedIcon from "@mui/icons-material/AddCircleOutlined";
+import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircle";
+import Box from "@mui/material/Box";
 import { useTranslation } from "react-i18next";
 import { getWebTerminalContextMenuPaperSx } from "../contextMenuStyles";
 
@@ -19,6 +24,12 @@ const WebTerminalContextMenu = ({
   contextMenu,
   isActive,
   selectedText,
+  paneMenu = null,
+  onClosePane,
+  onCloseOtherPanes,
+  onCreateSyncGroup,
+  onJoinSyncGroup,
+  onLeaveSyncGroup,
   onClose,
   onCopy,
   onPaste,
@@ -28,6 +39,12 @@ const WebTerminalContextMenu = ({
 }) => {
   const theme = useTheme();
   const { t } = useTranslation();
+
+  const runAndClose = (fn) => () => {
+    fn?.();
+    onClose();
+  };
+  const paneCount = paneMenu?.paneCount || 1;
 
   return (
     // transitionDuration=0 / disableAutoFocusItem / disableScrollLock:
@@ -95,6 +112,65 @@ const WebTerminalContextMenu = ({
           Ctrl+L
         </Typography>
       </MenuItem>
+
+      {/* 窗格管理（分屏由拖拽标签页合并触发） */}
+      {paneMenu?.isInSplit ? (
+        <>
+          <Divider />
+          <MenuItem
+            onClick={runAndClose(() => onCloseOtherPanes?.())}
+            disabled={paneCount <= 1}
+          >
+            <ListItemIcon>
+              <CloseOtherPanesIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{t("terminal.pane.closeOtherPanes")}</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={runAndClose(() => onClosePane?.())}>
+            <ListItemIcon>
+              <CloseIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{t("terminal.pane.closePane")}</ListItemText>
+          </MenuItem>
+        </>
+      ) : null}
+
+      {/* 同步输入分组：窗格可作为分组成员（paneId 透传） */}
+      <Divider />
+      {paneMenu?.currentGroupId ? (
+        <MenuItem onClick={runAndClose(() => onLeaveSyncGroup?.())}>
+          <ListItemIcon>
+            <RemoveCircleOutlineIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t("tabMenu.removeFromGroup")}</ListItemText>
+        </MenuItem>
+      ) : null}
+      {(paneMenu?.syncGroups || []).map((group) =>
+        group.groupId === paneMenu?.currentGroupId ? null : (
+          <MenuItem
+            key={group.groupId}
+            onClick={runAndClose(() => onJoinSyncGroup?.(group.groupId))}
+          >
+            <ListItemIcon>
+              <Box
+                sx={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  bgcolor: group.color,
+                }}
+              />
+            </ListItemIcon>
+            <ListItemText>{`${t("tabMenu.joinGroup")} ${group.groupId}`}</ListItemText>
+          </MenuItem>
+        ),
+      )}
+      <MenuItem onClick={runAndClose(() => onCreateSyncGroup?.())}>
+        <ListItemIcon>
+          <AddCircleOutlinedIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>{t("tabMenu.createGroup")}</ListItemText>
+      </MenuItem>
     </Menu>
   );
 };
@@ -106,6 +182,17 @@ WebTerminalContextMenu.propTypes = {
   }),
   isActive: PropTypes.bool,
   selectedText: PropTypes.string,
+  paneMenu: PropTypes.shape({
+    isInSplit: PropTypes.bool,
+    paneCount: PropTypes.number,
+    syncGroups: PropTypes.array,
+    currentGroupId: PropTypes.string,
+  }),
+  onClosePane: PropTypes.func,
+  onCloseOtherPanes: PropTypes.func,
+  onCreateSyncGroup: PropTypes.func,
+  onJoinSyncGroup: PropTypes.func,
+  onLeaveSyncGroup: PropTypes.func,
   onClose: PropTypes.func.isRequired,
   onCopy: PropTypes.func.isRequired,
   onPaste: PropTypes.func.isRequired,

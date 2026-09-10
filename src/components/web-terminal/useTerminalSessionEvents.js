@@ -10,7 +10,7 @@ import { clearPendingWrappedInputRefresh } from "./terminalHelpers.js";
  * Secondary session/tab/resize/focus event wiring for WebTerminal.
  */
 export function useTerminalSessionEvents({
-  tabId,
+  sessionKey,
   isActive,
   terminalRef,
   termRef,
@@ -46,12 +46,12 @@ export function useTerminalSessionEvents({
       }
     }, 50);
     return () => clearTimeout(timer);
-  }, [isActive, tabId, termRef]);
+  }, [isActive, sessionKey, termRef]);
 
   useEffect(() => {
     const handleTabFocus = (event) => {
       const detail = event.detail || {};
-      if (detail.tabId !== tabId || !termRef.current) return;
+      if (detail.tabId !== sessionKey || !termRef.current) return;
       setTimeout(() => {
         try {
           if (termRef.current && typeof termRef.current.focus === "function") {
@@ -64,7 +64,7 @@ export function useTerminalSessionEvents({
     };
     window.addEventListener("tabChanged", handleTabFocus);
     return () => window.removeEventListener("tabChanged", handleTabFocus);
-  }, [tabId, termRef]);
+  }, [sessionKey, termRef]);
 
   useEffect(() => {
     if (!isActive || !termRef.current) return undefined;
@@ -78,7 +78,7 @@ export function useTerminalSessionEvents({
 
   useEffect(() => {
     const handleTabFocus = (event) => {
-      if (!event.detail || event.detail.tabId !== tabId) return;
+      if (!event.detail || event.detail.tabId !== sessionKey) return;
       if (!terminalRef.current || !termRef.current) return;
       eventManager.setTimeout(() => {
         recoverTerminalAfterActivation({ resize: true, refocus: true });
@@ -91,7 +91,7 @@ export function useTerminalSessionEvents({
     );
     return () => remove();
   }, [
-    tabId,
+    sessionKey,
     eventManager,
     recoverTerminalAfterActivation,
     terminalRef,
@@ -100,9 +100,9 @@ export function useTerminalSessionEvents({
 
   useEffect(() => {
     const syncTerminalAfterSessionRestore = (processIdFromEvent = null) => {
-      const resolvedProcessId = processIdFromEvent || processCache[tabId];
+      const resolvedProcessId = processIdFromEvent || processCache[sessionKey];
       if (resolvedProcessId) {
-        clearGeometryFor(resolvedProcessId, tabId);
+        clearGeometryFor(resolvedProcessId, sessionKey);
       }
       if (terminalIOMailboxRef.current?.resetResizeState) {
         terminalIOMailboxRef.current.resetResizeState();
@@ -180,8 +180,8 @@ export function useTerminalSessionEvents({
 
     const handleTerminalSessionRestored = (event) => {
       const detail = event.detail || {};
-      if (detail.tabId && detail.tabId !== tabId) return;
-      const currentPid = processCache[tabId];
+      if (detail.tabId && detail.tabId !== sessionKey) return;
+      const currentPid = processCache[sessionKey];
       if (
         !detail.tabId &&
         detail.processId &&
@@ -215,7 +215,7 @@ export function useTerminalSessionEvents({
     suggestionSelectedRef,
     suppressionContextRef,
     syncPromptTrackingFromTerminal,
-    tabId,
+    sessionKey,
     terminalIOMailboxRef,
     terminalRef,
     termRef,
@@ -224,7 +224,7 @@ export function useTerminalSessionEvents({
 
   useEffect(() => {
     const handleTabChanged = (event) => {
-      if (event.detail && event.detail.tabId === tabId) {
+      if (event.detail && event.detail.tabId === sessionKey) {
         setContentUpdated(true);
         scheduleTerminalLayoutSyncRef.current(
           event.detail.forceRefresh ? "tab-force-refresh" : "tab-activated",
@@ -235,7 +235,7 @@ export function useTerminalSessionEvents({
     const handleTerminalResize = (event) => {
       const { tabId: eventTabId, layoutType } = event.detail || {};
       if (
-        eventTabId === tabId &&
+        eventTabId === sessionKey &&
         terminalRef.current &&
         fitAddonRef.current &&
         termRef.current
@@ -249,7 +249,7 @@ export function useTerminalSessionEvents({
     const handleTerminalForceRefresh = (event) => {
       const { tabId: eventTabId, layoutType } = event.detail || {};
       if (
-        eventTabId === tabId &&
+        eventTabId === sessionKey &&
         terminalRef.current &&
         fitAddonRef.current &&
         termRef.current
@@ -287,7 +287,7 @@ export function useTerminalSessionEvents({
     fitAddonRef,
     scheduleTerminalLayoutSyncRef,
     setContentUpdated,
-    tabId,
+    sessionKey,
     terminalRef,
     termRef,
   ]);

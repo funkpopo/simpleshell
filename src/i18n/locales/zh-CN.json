@@ -318,6 +318,7 @@
       "removeFromGroup": "从同步分组中移除",
       "refresh": "刷新连接",
       "close": "关闭连接",
+      "unsplit": "拆分恢复标签页",
       "reconnectStatus": "重连状态",
       "reconnectPending": "等待下一次自动重试",
       "reconnectWaitingRetry": "{{seconds}} 秒后自动重试",
@@ -476,7 +477,17 @@
       "systemReady": "系统 / 就绪"
     },
     "terminal": {
-      "welcome": "欢迎"
+      "welcome": "欢迎",
+      "pane": {
+        "splitRight": "分屏 → 右侧",
+        "splitDown": "分屏 → 下方",
+        "splitGrid": "分屏 → 2×2",
+        "resetLayout": "取消分屏",
+        "closePane": "关闭当前窗格",
+        "closeOtherPanes": "关闭其他窗格",
+        "maxReached": "最多支持 4 个窗格",
+        "default": "窗格 {{n}}"
+      }
     },
     "webTerminal": {
       "contextMenu": {
@@ -886,7 +897,6 @@
       "confirmExecution": "确认执行命令",
       "riskWarning": "此命令风险等级为 {{level}}，请确认是否执行",
       "executeAnyway": "确认执行",
-
       "riskLevels": {
         "safe": "安全",
         "low": "低风险",

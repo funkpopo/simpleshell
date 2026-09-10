@@ -21,7 +21,7 @@ const dispatchSyncGroupNotice = (detail) => {
 };
 
 export const useTerminalInputSync = ({
-  tabId,
+  sessionKey,
   enqueueInputToProcess,
   handlePasteText,
   termRef,
@@ -77,8 +77,10 @@ export const useTerminalInputSync = ({
       }
 
       if (input === "\b" || input === "\x7f") {
-        syncedInputBufferRef.current =
-          syncedInputBufferRef.current.slice(0, -1);
+        syncedInputBufferRef.current = syncedInputBufferRef.current.slice(
+          0,
+          -1,
+        );
       } else {
         syncedInputBufferRef.current += input;
       }
@@ -118,11 +120,11 @@ export const useTerminalInputSync = ({
       lastLocalInputAtRef.current = Date.now();
       syncedInputBufferRef.current = "";
 
-      const group = findGroupByTab(syncGroups, tabId);
+      const group = findGroupByTab(syncGroups, sessionKey);
       if (group && group.members && group.members.length > 1) {
         group.members.forEach((targetTabId) => {
           if (
-            targetTabId !== (sourceTabId || tabId) &&
+            targetTabId !== (sourceTabId || sessionKey) &&
             window.terminalAPI &&
             window.terminalAPI.sendToProcess &&
             processCache[targetTabId]
@@ -130,7 +132,7 @@ export const useTerminalInputSync = ({
             const event = new CustomEvent("syncTerminalInput", {
               detail: {
                 input,
-                sourceTabId: sourceTabId || tabId,
+                sourceTabId: sourceTabId || sessionKey,
                 targetTabId,
               },
             });
@@ -139,15 +141,15 @@ export const useTerminalInputSync = ({
         });
       }
     },
-    [tabId, syncGroups],
+    [sessionKey, syncGroups],
   );
 
   // Some input paths (native paste, middle-click paste and the context menu)
   // do not pass through xterm's onData callback. Keep them on a separate event
   // channel so they can use the receiving terminal's normal paste pipeline.
   const broadcastTerminalActionToGroup = useCallback(
-    (action, payload = {}, sourceTabId = tabId) => {
-      const group = findGroupByTab(syncGroups, tabId);
+    (action, payload = {}, sourceTabId = sessionKey) => {
+      const group = findGroupByTab(syncGroups, sessionKey);
       if (!group?.members || group.members.length <= 1) {
         return;
       }
@@ -172,32 +174,34 @@ export const useTerminalInputSync = ({
         );
       });
     },
-    [tabId, syncGroups],
+    [sessionKey, syncGroups],
   );
 
   useEffect(() => {
-    if (termRef.current && tabId) {
-      registerTerminalRef(tabId, termRef.current);
+    if (termRef.current && sessionKey) {
+      registerTerminalRef(sessionKey, termRef.current);
     }
 
     return () => {
-      unregisterTerminalRef(tabId, termRef.current);
+      unregisterTerminalRef(sessionKey, termRef.current);
     };
-  }, [tabId, termRef]);
+  }, [sessionKey, termRef]);
 
   useEffect(() => {
     // 并发输入仲裁：本端用户正在输入时丢弃远端同步按键，并给出节流警告
     const shouldDropForConcurrentInput = () => {
-      if (
-        Date.now() - lastLocalInputAtRef.current < LOCAL_ACTIVE_WINDOW_MS
-      ) {
+      if (Date.now() - lastLocalInputAtRef.current < LOCAL_ACTIVE_WINDOW_MS) {
         const now = Date.now();
         if (
           now - lastConcurrentNoticeAtRef.current >=
           CONCURRENT_INPUT_NOTICE_THROTTLE_MS
         ) {
           lastConcurrentNoticeAtRef.current = now;
-          dispatchSyncGroupNotice({ kind: "concurrent-input", tabId });
+          // detail 字段名保留 tabId（提示通道契约），值为会话键
+          dispatchSyncGroupNotice({
+            kind: "concurrent-input",
+            tabId: sessionKey,
+          });
         }
         return true;
       }
@@ -206,14 +210,14 @@ export const useTerminalInputSync = ({
 
     const handleSyncInput = (event) => {
       const { input, targetTabId } = event.detail || {};
-      if (targetTabId === tabId && processCache[tabId]) {
+      if (targetTabId === sessionKey && processCache[sessionKey]) {
         if (!termRef.current) {
           return;
         }
         if (shouldDropForConcurrentInput()) {
           return;
         }
-        enqueueInputToProcess(processCache[tabId], input, {
+        enqueueInputToProcess(processCache[sessionKey], input, {
           forceChunk: true,
         });
         applySyncedKeystrokeToUi(input);
@@ -224,16 +228,16 @@ export const useTerminalInputSync = ({
     // 离线 / 重连中时自动进入成员端离线缓冲，与源终端行为一致。
     const handleSyncTerminalCommand = (event) => {
       const { targetTabId, groupId, command, execute } = event.detail || {};
-      if (targetTabId !== tabId) {
+      if (targetTabId !== sessionKey) {
         return;
       }
 
-      const pid = processCache[tabId];
+      const pid = processCache[sessionKey];
       if (!pid || !termRef.current) {
         dispatchSyncGroupNotice({
           kind: "member-unreachable",
           groupId: groupId ?? null,
-          tabIds: [tabId],
+          tabIds: [sessionKey],
         });
         return;
       }
@@ -269,14 +273,14 @@ export const useTerminalInputSync = ({
 
     const handleSyncTerminalAction = (event) => {
       const { action, payload, targetTabId } = event.detail || {};
-      if (targetTabId !== tabId) {
+      if (targetTabId !== sessionKey) {
         return;
       }
 
       // 同步动作会重写输入行，成员端镜像缓冲一并重置
       syncedInputBufferRef.current = "";
 
-      if (action === "paste" && processCache[tabId]) {
+      if (action === "paste" && processCache[sessionKey]) {
         handlePasteText(payload?.text);
         return;
       }
@@ -313,7 +317,7 @@ export const useTerminalInputSync = ({
     eventManager,
     handlePasteText,
     suggestionUiRef,
-    tabId,
+    sessionKey,
     termRef,
   ]);
 

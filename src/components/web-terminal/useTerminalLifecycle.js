@@ -26,6 +26,7 @@ import {
 } from "../../modules/terminal/controller/terminalDom.js";
 import {
   clearGeometryFor,
+  consumePreservedSession,
   disposeTerminalSession,
   disposablesCache,
   fitAddonCache,
@@ -53,7 +54,7 @@ import { setupSimulatedTerminal } from "./simulatedTerminal.js";
  * Terminal create / cache reuse / mailbox / connection / DOM listeners / cleanup.
  */
 export function useTerminalLifecycle({
-  tabId,
+  sessionKey,
   refreshKey,
   sshConfig,
   terminalType,
@@ -156,7 +157,8 @@ export function useTerminalLifecycle({
           settings?.performance?.hardwareAcceleration !== false;
         const enabled =
           hardwareOn && settings?.performance?.webglEnabled !== false;
-        webglRendererEnabledRef.current = enabled;
+        // setWebglRendererEnabled 已被 WebTerminal 包装：同时尊重设置项与
+        // 分屏窗格数（allowWebgl）并同步 ref
         setWebglRendererEnabled(enabled);
         const rawScroll = Number(settings.terminalScrollbackLines);
         const terminalScrollbackLines = Number.isFinite(rawScroll)
@@ -175,7 +177,6 @@ export function useTerminalLifecycle({
     } catch {
       // Failed to load font settings from config
     }
-    webglRendererEnabledRef.current = true;
     setWebglRendererEnabled(true);
     return {
       fontSize: 14,
@@ -191,47 +192,56 @@ export function useTerminalLifecycle({
   // terminal, while a real unmount always releases the xterm object graph.
   useEffect(
     () => () => {
-      disposeTerminalSession(tabId);
+      // 分屏合并 / 拆分恢复：同一 sessionKey 的终端即将在新挂载点复用，
+      // 命中保留标记时保留 xterm/进程缓存，避免清屏重连。
+      if (consumePreservedSession(sessionKey)) {
+        termRef.current = null;
+        fitAddonRef.current = null;
+        searchAddonRef.current = null;
+        currentProcessId.current = null;
+        return;
+      }
+      disposeTerminalSession(sessionKey);
       termRef.current = null;
       fitAddonRef.current = null;
       searchAddonRef.current = null;
       currentProcessId.current = null;
     },
-    [currentProcessId, fitAddonRef, searchAddonRef, tabId, termRef],
+    [currentProcessId, fitAddonRef, searchAddonRef, sessionKey, termRef],
   );
 
   // 如果 refreshKey 变化，清除缓存强制重新创建终端
   useEffect(() => {
-    if (refreshKey && terminalCache[tabId]) {
-      if (processCache[tabId]) {
+    if (refreshKey && terminalCache[sessionKey]) {
+      if (processCache[sessionKey]) {
         try {
           if (window.terminalAPI && window.terminalAPI.killProcess) {
-            window.terminalAPI.killProcess(processCache[tabId]);
+            window.terminalAPI.killProcess(processCache[sessionKey]);
           }
         } catch {
           // Failed to kill process
         }
-        clearGeometryFor(processCache[tabId], tabId);
-        delete processCache[tabId];
+        clearGeometryFor(processCache[sessionKey], sessionKey);
+        delete processCache[sessionKey];
       }
 
       try {
         if (
-          terminalCache[tabId].__simpleShellOsc133Disposable &&
-          typeof terminalCache[tabId].__simpleShellOsc133Disposable.dispose ===
-            "function"
+          terminalCache[sessionKey].__simpleShellOsc133Disposable &&
+          typeof terminalCache[sessionKey].__simpleShellOsc133Disposable
+            .dispose === "function"
         ) {
-          terminalCache[tabId].__simpleShellOsc133Disposable.dispose();
-          delete terminalCache[tabId].__simpleShellOsc133Disposable;
+          terminalCache[sessionKey].__simpleShellOsc133Disposable.dispose();
+          delete terminalCache[sessionKey].__simpleShellOsc133Disposable;
         }
-        terminalCache[tabId].dispose();
+        terminalCache[sessionKey].dispose();
       } catch {
         // Failed to dispose terminal
       }
-      delete terminalCache[tabId];
-      delete fitAddonCache[tabId];
+      delete terminalCache[sessionKey];
+      delete fitAddonCache[sessionKey];
     }
-  }, [refreshKey, tabId]);
+  }, [refreshKey, sessionKey]);
 
   // 监听设置变更事件
   useEffect(() => {
@@ -252,8 +262,8 @@ export function useTerminalLifecycle({
             500000,
             Math.max(1000, Math.floor(rawScroll)),
           );
-          if (terminalCache[tabId]) {
-            terminalCache[tabId].options.scrollback = scrollLines;
+          if (terminalCache[sessionKey]) {
+            terminalCache[sessionKey].options.scrollback = scrollLines;
           }
           if (scrollbackUsageTrackerRef.current) {
             scrollbackUsageTrackerRef.current.maxLines = scrollLines;
@@ -271,7 +281,6 @@ export function useTerminalLifecycle({
       ) {
         const hardwareOn = performance.hardwareAcceleration !== false;
         const enabled = hardwareOn && performance.webglEnabled !== false;
-        webglRendererEnabledRef.current = enabled;
         setWebglRendererEnabled(enabled);
         if (termRef.current) {
           if (enabled) {
@@ -282,25 +291,29 @@ export function useTerminalLifecycle({
         }
       }
 
-      if (terminalRef.current && terminalCache[tabId] && fitAddonRef.current) {
+      if (
+        terminalRef.current &&
+        terminalCache[sessionKey] &&
+        fitAddonRef.current
+      ) {
         if (terminalFontSize !== undefined) {
-          terminalCache[tabId].options.fontSize = parseInt(
+          terminalCache[sessionKey].options.fontSize = parseInt(
             terminalFontSize,
             10,
           );
         }
         if (terminalFont !== undefined) {
-          terminalCache[tabId].options.fontFamily =
+          terminalCache[sessionKey].options.fontFamily =
             getTerminalFontFamily(terminalFont);
         }
         if (terminalFontWeight !== undefined) {
-          terminalCache[tabId].options.fontWeight = parseInt(
+          terminalCache[sessionKey].options.fontWeight = parseInt(
             terminalFontWeight,
             10,
           );
         }
         if (terminalLineHeight !== undefined) {
-          terminalCache[tabId].options.lineHeight =
+          terminalCache[sessionKey].options.lineHeight =
             normalizeTerminalLineHeight(terminalLineHeight);
         }
 
@@ -320,7 +333,7 @@ export function useTerminalLifecycle({
       removeSettingsChangedListener();
     };
   }, [
-    tabId,
+    sessionKey,
     eventManager,
     disableWebglRenderer,
     tryEnableWebglRenderer,
@@ -335,16 +348,16 @@ export function useTerminalLifecycle({
 
   const setupDataListener = useCallback(
     (processId, term) => {
-      const previousProcessId = processCache[tabId];
+      const previousProcessId = processCache[sessionKey];
       const mailbox = terminalIOMailboxRef.current;
 
       clearInputQueue();
 
       if (previousProcessId && previousProcessId !== processId) {
-        clearGeometryFor(previousProcessId, tabId);
+        clearGeometryFor(previousProcessId, sessionKey);
       }
-      processCache[tabId] = processId;
-      clearGeometryFor(processId, tabId);
+      processCache[sessionKey] = processId;
+      clearGeometryFor(processId, sessionKey);
       resetPromptTracking();
       clearPendingWrappedInputRefresh(term);
       syncPromptTrackingFromTerminal(term);
@@ -394,7 +407,7 @@ export function useTerminalLifecycle({
       scheduleTerminalLayoutSyncRef,
       setContentUpdated,
       syncPromptTrackingFromTerminal,
-      tabId,
+      sessionKey,
       terminalIOMailboxRef,
     ],
   );
@@ -432,10 +445,10 @@ export function useTerminalLifecycle({
       styleElement.textContent = terminalStyles + searchBarStyles;
     }
 
-    if (!disposablesCache[tabId]) {
-      disposablesCache[tabId] = [];
+    if (!disposablesCache[sessionKey]) {
+      disposablesCache[sessionKey] = [];
     }
-    const terminalDisposables = disposablesCache[tabId];
+    const terminalDisposables = disposablesCache[sessionKey];
 
     const ensureTerminalMailbox = (term) => {
       const queueOutputHandler = (data) => {
@@ -469,7 +482,7 @@ export function useTerminalLifecycle({
           onWriteComplete: writeCompleteHandler,
         });
       }
-      registerTerminalIOMailbox(tabId, terminalIOMailboxRef.current);
+      registerTerminalIOMailbox(sessionKey, terminalIOMailboxRef.current);
     };
 
     if (terminalRef.current) {
@@ -477,31 +490,34 @@ export function useTerminalLifecycle({
       let fitAddon;
       let searchAddon;
 
-      if (terminalCache[tabId]) {
-        if (disposablesCache[tabId] && Array.isArray(disposablesCache[tabId])) {
+      if (terminalCache[sessionKey]) {
+        if (
+          disposablesCache[sessionKey] &&
+          Array.isArray(disposablesCache[sessionKey])
+        ) {
           console.debug(
-            `[WebTerminal] Cleaning up ${disposablesCache[tabId].length} old event listeners for tabId=${tabId}`,
+            `[WebTerminal] Cleaning up ${disposablesCache[sessionKey].length} old event listeners for sessionKey=${sessionKey}`,
           );
-          disposablesCache[tabId].forEach((disposable) => {
+          disposablesCache[sessionKey].forEach((disposable) => {
             try {
               if (disposable && typeof disposable.dispose === "function") {
                 disposable.dispose();
               }
             } catch (error) {
               console.error(
-                `[WebTerminal] Failed to dispose event listener for tabId=${tabId}:`,
+                `[WebTerminal] Failed to dispose event listener for sessionKey=${sessionKey}:`,
                 error,
               );
             }
           });
-          disposablesCache[tabId].length = 0;
+          disposablesCache[sessionKey].length = 0;
         }
 
-        term = terminalCache[tabId];
-        fitAddon = fitAddonCache[tabId];
+        term = terminalCache[sessionKey];
+        fitAddon = fitAddonCache[sessionKey];
 
         console.debug(
-          `[WebTerminal] Reusing cached terminal for tabId=${tabId}, processId=${processCache[tabId]}`,
+          `[WebTerminal] Reusing cached terminal for sessionKey=${sessionKey}, processId=${processCache[sessionKey]}`,
         );
 
         term.options.theme = getTerminalTheme(themeModeRef.current);
@@ -529,11 +545,11 @@ export function useTerminalLifecycle({
         }
         ensureTerminalMailbox(term);
 
-        const existingProcessId = processCache[tabId];
+        const existingProcessId = processCache[sessionKey];
         if (existingProcessId) {
           try {
             console.debug(
-              `[WebTerminal] Rebinding listeners for tabId=${tabId}, processId=${existingProcessId}`,
+              `[WebTerminal] Rebinding listeners for sessionKey=${sessionKey}, processId=${existingProcessId}`,
             );
           } catch {
             // ignore log errors
@@ -875,7 +891,8 @@ export function useTerminalLifecycle({
           const localizedLocalConfig = localConfig
             ? {
                 ...localConfig,
-                tabId,
+                // 主进程契约字段名保持 tabId，值使用会话键（窗格即轻量会话）
+                tabId: sessionKey,
               }
             : null;
 
@@ -992,7 +1009,7 @@ export function useTerminalLifecycle({
 
             connectPromise
               .then((result) => {
-                if (!lifecycleActive && terminalCache[tabId] !== term) {
+                if (!lifecycleActive && terminalCache[sessionKey] !== term) {
                   return;
                 }
 
@@ -1004,16 +1021,16 @@ export function useTerminalLifecycle({
                 if (processId) {
                   currentProcessId.current = processId;
 
-                  const previousProcessId = processCache[tabId];
+                  const previousProcessId = processCache[sessionKey];
                   if (previousProcessId) {
-                    clearGeometryFor(previousProcessId, tabId);
+                    clearGeometryFor(previousProcessId, sessionKey);
                   }
-                  processCache[tabId] = processId;
-                  clearGeometryFor(processId, tabId);
+                  processCache[sessionKey] = processId;
+                  clearGeometryFor(processId, sessionKey);
 
                   const event = new CustomEvent("terminalProcessIdUpdated", {
                     detail: {
-                      terminalId: tabId,
+                      terminalId: sessionKey,
                       processId,
                       protocol: isLocalTerminal
                         ? "local"
@@ -1027,7 +1044,7 @@ export function useTerminalLifecycle({
                   window.dispatchEvent(event);
 
                   console.debug(
-                    `[WebTerminal] Clearing old event listeners before rebinding for tabId=${tabId}, old count=${terminalDisposables.length}`,
+                    `[WebTerminal] Clearing old event listeners before rebinding for sessionKey=${sessionKey}, old count=${terminalDisposables.length}`,
                   );
                   terminalDisposables.forEach((disposable) => {
                     try {
@@ -1050,7 +1067,7 @@ export function useTerminalLifecycle({
                   setupDataListenerRef.current(processId, term);
 
                   console.debug(
-                    `[WebTerminal] Setting up command detection for tabId=${tabId}, processId=${processId}`,
+                    `[WebTerminal] Setting up command detection for sessionKey=${sessionKey}, processId=${processId}`,
                   );
                   setupCommandDetectionRef.current(
                     term,
@@ -1090,7 +1107,7 @@ export function useTerminalLifecycle({
                 }
               })
               .catch((error) => {
-                if (!lifecycleActive && terminalCache[tabId] !== term) {
+                if (!lifecycleActive && terminalCache[sessionKey] !== term) {
                   return;
                 }
                 term.writeln(formatConnectionError(error));
@@ -1107,8 +1124,8 @@ export function useTerminalLifecycle({
           setupSimulatedTerminal(term);
         }
 
-        terminalCache[tabId] = term;
-        fitAddonCache[tabId] = fitAddon;
+        terminalCache[sessionKey] = term;
+        fitAddonCache[sessionKey] = fitAddon;
       }
 
       const previousSearchAddon = searchAddonRef.current;
@@ -1578,7 +1595,7 @@ export function useTerminalLifecycle({
 
       if (process.env.NODE_ENV === "development") {
         console.debug(
-          `[WebTerminal] lifecycle manager setup tabId=${tabId}`,
+          `[WebTerminal] lifecycle manager setup sessionKey=${sessionKey}`,
           lifecycleManager.getStats(),
         );
       }
@@ -1598,7 +1615,7 @@ export function useTerminalLifecycle({
         }
 
         if (terminalIOMailboxRef.current) {
-          unregisterTerminalIOMailbox(tabId, terminalIOMailboxRef.current);
+          unregisterTerminalIOMailbox(sessionKey, terminalIOMailboxRef.current);
           terminalIOMailboxRef.current.destroy();
           terminalIOMailboxRef.current = null;
         }
@@ -1629,7 +1646,7 @@ export function useTerminalLifecycle({
 
         if (process.env.NODE_ENV === "development") {
           console.debug(
-            `[WebTerminal] lifecycle manager cleanup tabId=${tabId}`,
+            `[WebTerminal] lifecycle manager cleanup sessionKey=${sessionKey}`,
             lifecycleManager.getStats(),
           );
         }
@@ -1643,7 +1660,7 @@ export function useTerminalLifecycle({
     // objects / i18n function identities or this effect will teardown mailbox,
     // listeners and layout state on every render (misaligned display, lag).
   }, [
-    tabId,
+    sessionKey,
     refreshKey,
     sshConfig,
     terminalType,
@@ -1660,8 +1677,10 @@ export function useTerminalLifecycle({
 
   // Theme updates
   useEffect(() => {
-    if (terminalCache[tabId]) {
-      terminalCache[tabId].options.theme = getTerminalTheme(theme.palette.mode);
+    if (terminalCache[sessionKey]) {
+      terminalCache[sessionKey].options.theme = getTerminalTheme(
+        theme.palette.mode,
+      );
     }
-  }, [theme.palette.mode, tabId]);
+  }, [theme.palette.mode, sessionKey]);
 }

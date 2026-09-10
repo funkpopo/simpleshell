@@ -13,6 +13,9 @@ import { useTerminalSearch } from "../hooks/useTerminalSearch.js";
 import { useTerminalSuggestions } from "../hooks/useTerminalSuggestions.js";
 import { useTerminalInputSync } from "../hooks/useTerminalInputSync.js";
 import { shouldDisplayCommandSuggestions } from "../modules/terminal/commandSuggestionState.js";
+import { useAppSelector } from "../store/AppContext.jsx";
+import { getParentTabId } from "../modules/terminal/paneLayout.js";
+import { findGroupByTab } from "../core/syncInputGroups";
 import CommandSuggestion from "./CommandSuggestion";
 import WebTerminalSearchOverlay from "./web-terminal/WebTerminalSearchOverlay.jsx";
 import WebTerminalContextMenu from "./web-terminal/WebTerminalContextMenu.jsx";
@@ -28,12 +31,20 @@ import useZmodemTransfer from "./web-terminal/useZmodemTransfer.js";
 
 const WebTerminal = ({
   tabId,
+  /**
+   * 会话键：进程缓存 / 事件匹配 / 同步分组等所有会话级基础设施的键。
+   * 缺省时等于 tabId（单窗格场景行为不变）；分屏窗格传入 `${tabId}::p{n}`。
+   */
+  sessionKey: sessionKeyProp,
   refreshKey,
   sshConfig = null,
   terminalType = "ssh",
   localConfig = null,
   isActive = true,
+  /** 分屏 >2 窗格时由 PaneGrid 传入 false，降级 DOM 渲染器（WebGL 上下文上限） */
+  allowWebgl = true,
 }) => {
+  const sessionKey = sessionKeyProp ?? tabId;
   const terminalRef = useRef(null);
   const termRef = useRef(null);
   const fitAddonRef = useRef(null);
@@ -42,7 +53,7 @@ const WebTerminal = ({
   const scrollbackUsageTrackerRef = useRef(null);
   const terminalIOMailboxRef = useRef(null);
   const searchAddonRef = useRef(null);
-  const webglRendererEnabledRef = useRef(true);
+  const webglRendererEnabledRef = useRef(allowWebgl !== false);
   const isActiveRef = useRef(isActive);
   const scheduleTerminalRedrawRef = useRef(() => {});
   const recoverTerminalInteractionStateRef = useRef(() => {});
@@ -59,13 +70,44 @@ const WebTerminal = ({
   const contentUpdateFrameRef = useRef(null);
   const contentUpdateFrameTypeRef = useRef(null);
   const contentUpdatedRef = useRef(false);
-  const [webglRendererEnabled, setWebglRendererEnabled] = useState(true);
+  const [webglRendererEnabled, setWebglRendererEnabled] = useState(
+    allowWebgl !== false,
+  );
   const [searchAddonVersion, setSearchAddonVersion] = useState(0);
+
+  const allowWebglRef = useRef(allowWebgl !== false);
+
+  useEffect(() => {
+    allowWebglRef.current = allowWebgl !== false;
+  }, [allowWebgl]);
+
+  // 统一的 WebGL 开关写入口：设置项与窗格数量两个条件同时满足才启用
+  const applyWebglRendererEnabled = useCallback((enabled) => {
+    const next = Boolean(enabled) && allowWebglRef.current;
+    webglRendererEnabledRef.current = next;
+    setWebglRendererEnabled(next);
+  }, []);
 
   const theme = useTheme();
   const { t } = useTranslation();
   const eventManager = useCleanupManager();
   const lifecycleEventManager = useCleanupManager();
+
+  // 分屏窗格上下文：布局/同步分组订阅（选择器稳定，避免重渲染风暴）
+  const parentTabId = getParentTabId(sessionKey);
+  const paneLayoutSelector = useCallback(
+    (state) => state.splitLayouts[parentTabId],
+    [parentTabId],
+  );
+  const paneLayout = useAppSelector(paneLayoutSelector);
+  const syncGroupsSelector = useCallback((state) => state.syncGroups, []);
+  const syncGroups = useAppSelector(syncGroupsSelector);
+  const currentSyncGroup = findGroupByTab(syncGroups, sessionKey);
+
+  // 窗格菜单动作经 CustomEvent 报递给 app.jsx（避免把 dispatch 拉进终端组件）
+  const dispatchPaneAction = useCallback((detail) => {
+    window.dispatchEvent(new CustomEvent("terminalPaneAction", { detail }));
+  }, []);
 
   useEffect(() => {
     isActiveRef.current = isActive;
@@ -86,8 +128,7 @@ const WebTerminal = ({
           const enabled =
             hardwareOn && settings?.performance?.webglEnabled !== false;
           if (active) {
-            webglRendererEnabledRef.current = enabled;
-            setWebglRendererEnabled(enabled);
+            applyWebglRendererEnabled(enabled);
           }
         }
       } catch {
@@ -109,9 +150,24 @@ const WebTerminal = ({
     termRef,
     webglRendererEnabled,
     webglRendererEnabledRef,
-    setWebglRendererEnabled,
+    setWebglRendererEnabled: applyWebglRendererEnabled,
     performanceMonitorRef,
   });
+
+  // 窗格数量变化（allowWebgl 翻转）时立即切换渲染器
+  useEffect(() => {
+    if (!termRef.current) {
+      return undefined;
+    }
+    if (allowWebglRef.current) {
+      if (webglRendererEnabledRef.current) {
+        tryEnableWebglRenderer(termRef.current);
+      }
+    } else {
+      disableWebglRenderer(termRef.current);
+    }
+    return undefined;
+  }, [allowWebgl, tryEnableWebglRenderer, disableWebglRenderer]);
 
   useEffect(() => {
     scheduleTerminalRedrawRef.current = scheduleTerminalRedraw;
@@ -125,7 +181,7 @@ const WebTerminal = ({
     hasMeaningfulLayoutGeometryChange,
     cancelLayoutSync,
   } = useTerminalLayout({
-    tabId,
+    sessionKey,
     terminalRef,
     termRef,
     fitAddonRef,
@@ -145,7 +201,7 @@ const WebTerminal = ({
     clearOfflineBuffer,
     sendOfflineBufferNow,
   } = useTerminalIO({
-    tabId,
+    sessionKey,
     terminalIOMailboxRef,
     eventManager,
     suggestionUiRef,
@@ -153,7 +209,7 @@ const WebTerminal = ({
 
   const { broadcastInputToGroup, broadcastTerminalActionToGroup } =
     useTerminalInputSync({
-      tabId,
+      sessionKey,
       enqueueInputToProcess,
       handlePasteText,
       termRef,
@@ -226,7 +282,7 @@ const WebTerminal = ({
     handleSuggestionSelect,
     closeSuggestions,
   } = useTerminalSuggestions({
-    tabId,
+    sessionKey,
     termRef,
     terminalRef,
     inEditorModeRef,
@@ -278,7 +334,7 @@ const WebTerminal = ({
     recoverTerminalInteractionState,
     setupCommandDetection,
   } = usePromptTracking({
-    tabId,
+    sessionKey,
     termRef,
     inEditorModeRef,
     isCommandExecutingRef,
@@ -401,7 +457,7 @@ const WebTerminal = ({
   });
 
   useTerminalLifecycle({
-    tabId,
+    sessionKey,
     refreshKey,
     sshConfig,
     terminalType,
@@ -416,7 +472,7 @@ const WebTerminal = ({
     terminalIOMailboxRef,
     searchAddonRef,
     webglRendererEnabledRef,
-    setWebglRendererEnabled,
+    setWebglRendererEnabled: applyWebglRendererEnabled,
     isActiveRef,
     contentUpdated,
     setContentUpdated,
@@ -468,10 +524,10 @@ const WebTerminal = ({
   });
 
   // ZMODEM（rz/sz）传输进度汇入全局传输状态（与 SFTP 传输共用 UI）
-  useZmodemTransfer({ tabId });
+  useZmodemTransfer({ sessionKey });
 
   useTerminalSessionEvents({
-    tabId,
+    sessionKey,
     isActive,
     terminalRef,
     termRef,
@@ -512,7 +568,7 @@ const WebTerminal = ({
 
   return (
     <Box
-      data-tab-id={tabId}
+      data-tab-id={sessionKey}
       sx={{
         width: "100%",
         height: "100%",
@@ -616,6 +672,27 @@ const WebTerminal = ({
         contextMenu={contextMenu}
         isActive={isActive}
         selectedText={selectedText}
+        paneMenu={{
+          isInSplit: Boolean(paneLayout),
+          paneCount: paneLayout?.panes?.length || 1,
+          syncGroups,
+          currentGroupId: currentSyncGroup?.groupId || null,
+        }}
+        onClosePane={() =>
+          dispatchPaneAction({ action: "closePane", sessionKey })
+        }
+        onCloseOtherPanes={() =>
+          dispatchPaneAction({ action: "closeOtherPanes", sessionKey })
+        }
+        onCreateSyncGroup={() =>
+          dispatchPaneAction({ action: "createSyncGroup", sessionKey })
+        }
+        onJoinSyncGroup={(groupId) =>
+          dispatchPaneAction({ action: "joinSyncGroup", sessionKey, groupId })
+        }
+        onLeaveSyncGroup={() =>
+          dispatchPaneAction({ action: "leaveSyncGroup", sessionKey })
+        }
         onClose={handleClose}
         onCopy={handleCopy}
         onPaste={handlePaste}
@@ -650,11 +727,13 @@ const WebTerminal = ({
 
 WebTerminal.propTypes = {
   tabId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  sessionKey: PropTypes.string,
   refreshKey: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   sshConfig: PropTypes.object,
   terminalType: PropTypes.oneOf(["ssh", "telnet", "serial", "mosh", "local"]),
   localConfig: PropTypes.object,
   isActive: PropTypes.bool,
+  allowWebgl: PropTypes.bool,
 };
 
 export default React.memo(WebTerminal, areWebTerminalPropsEqual);

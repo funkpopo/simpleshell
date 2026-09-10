@@ -170,9 +170,7 @@ function buildSshConnectOptions(
   options.tryKeyboard = true;
 
   // SSH Agent 认证（authType === "agent"）
-  if (
-    String(processedConfig.authType || "").toLowerCase() === "agent"
-  ) {
+  if (String(processedConfig.authType || "").toLowerCase() === "agent") {
     const agentPath = resolveSshAgentPath(processedConfig);
     if (agentPath) {
       options.agent = agentPath;
@@ -247,8 +245,18 @@ function extractTabIdFromSessionKey(key) {
   if (!key || !String(key).startsWith("tab:")) {
     return null;
   }
-  const parts = String(key).split(":");
-  return parts.length >= 2 ? parts[1] : null;
+  // 连接键格式: "tab:{tabId}:{host}:{port}:{username}"（可能追加 ":proxy:{...}" 后缀）
+  // 分屏窗格的 tabId（sessionKey）本身含 "::"（如 ssh-xxx::p2），
+  // 不能简单取 parts[1]，需去掉末尾 host:port:username 三段后重新拼接
+  const withoutProxy = String(key).split(":proxy:")[0];
+  const parts = withoutProxy.split(":");
+  if (parts.length < 2) {
+    return null;
+  }
+  if (parts.length > 5) {
+    return parts.slice(1, parts.length - 3).join(":");
+  }
+  return parts[1];
 }
 
 /**

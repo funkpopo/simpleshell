@@ -26,7 +26,7 @@ const waitForTerminalLayoutFrame = () =>
 const COMMAND_SUGGESTION_LIMIT = 10;
 
 export const useTerminalSuggestions = ({
-  tabId,
+  sessionKey,
   termRef,
   terminalRef,
   inEditorModeRef,
@@ -367,7 +367,7 @@ export const useTerminalSuggestions = ({
   const handleSuggestionSelect = useCallback(
     (suggestion) => {
       suggestionRequestIdRef.current += 1;
-      if (!suggestion || !termRef.current || !processCache[tabId]) {
+      if (!suggestion || !termRef.current || !processCache[sessionKey]) {
         setShowSuggestions(false);
         return;
       }
@@ -387,14 +387,14 @@ export const useTerminalSuggestions = ({
         const deleteCount = currentInput.length || currentInputLength;
 
         for (let i = 0; i < deleteCount; i++) {
-          sendInputToProcess(processCache[tabId], "\b");
-          broadcastInputToGroup("\b", tabId);
+          sendInputToProcess(processCache[sessionKey], "\b");
+          broadcastInputToGroup("\b", sessionKey);
         }
 
-        sendInputToProcess(processCache[tabId], suggestion.command);
+        sendInputToProcess(processCache[sessionKey], suggestion.command);
         // Choosing a floating suggestion writes directly to the process instead
         // of going through xterm's onData event, so broadcast it explicitly.
-        broadcastInputToGroup(suggestion.command, tabId);
+        broadcastInputToGroup(suggestion.command, sessionKey);
         setCurrentInput(suggestion.command);
         setShowSuggestions(false);
         setSuggestions([]);
@@ -402,7 +402,13 @@ export const useTerminalSuggestions = ({
         setShowSuggestions(false);
       }
     },
-    [broadcastInputToGroup, currentInput, sendInputToProcess, tabId, termRef],
+    [
+      broadcastInputToGroup,
+      currentInput,
+      sendInputToProcess,
+      sessionKey,
+      termRef,
+    ],
   );
 
   const closeSuggestions = useCallback(

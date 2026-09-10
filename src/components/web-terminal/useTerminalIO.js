@@ -12,12 +12,12 @@ import { processCache } from "../../modules/terminal/controller/terminalSessionS
 const OFFLINE_INPUT_MAX_CHARS = 16 * 1024;
 const LARGE_PASTE_OFFLINE_THRESHOLD = 256;
 
-const matchesTabPayload = (payload, tabId) => {
-  if (!payload || tabId === undefined || tabId === null) {
+const matchesTabPayload = (payload, sessionKey) => {
+  if (!payload || sessionKey === undefined || sessionKey === null) {
     return false;
   }
   const payloadTabId = payload.tabId ?? payload.sessionId ?? payload.id;
-  return String(payloadTabId) === String(tabId);
+  return String(payloadTabId) === String(sessionKey);
 };
 
 /**
@@ -27,7 +27,7 @@ const matchesTabPayload = (payload, tabId) => {
  * paste can clear the suggestion window without creating a circular hook dep.
  */
 export function useTerminalIO({
-  tabId,
+  sessionKey,
   terminalIOMailboxRef,
   eventManager,
   suggestionUiRef,
@@ -109,7 +109,7 @@ export function useTerminalIO({
         return false;
       }
 
-      const targetProcessId = processId ?? processCache[tabId];
+      const targetProcessId = processId ?? processCache[sessionKey];
       if (targetProcessId === undefined || targetProcessId === null) {
         return false;
       }
@@ -149,17 +149,17 @@ export function useTerminalIO({
       // schedule drain via existing mechanism — call schedule after definition through ref
       return { scheduled: true, processId: targetProcessId };
     },
-    [tabId, terminalIOMailboxRef],
+    [sessionKey, terminalIOMailboxRef],
   );
 
   useEffect(() => {
-    if (tabId === undefined || tabId === null) {
+    if (sessionKey === undefined || sessionKey === null) {
       return undefined;
     }
 
     const handleSessionRestored = (event) => {
       const detail = event?.detail || {};
-      if (detail.tabId && String(detail.tabId) !== String(tabId)) {
+      if (detail.tabId && String(detail.tabId) !== String(sessionKey)) {
         return;
       }
       setOfflineActive(false);
@@ -167,7 +167,7 @@ export function useTerminalIO({
 
     const handleSessionRestoreFailed = (event) => {
       const detail = event?.detail || {};
-      if (detail.tabId && String(detail.tabId) !== String(tabId)) {
+      if (detail.tabId && String(detail.tabId) !== String(sessionKey)) {
         return;
       }
       // 最终失败时清空缓冲，避免误发危险命令
@@ -181,7 +181,7 @@ export function useTerminalIO({
     };
 
     const handleTabConnectionStatus = (payload) => {
-      if (!matchesTabPayload(payload, tabId)) {
+      if (!matchesTabPayload(payload, sessionKey)) {
         return;
       }
       const status = payload?.connectionStatus || {};
@@ -207,7 +207,7 @@ export function useTerminalIO({
     }
     if (typeof window.terminalAPI?.onTerminalSessionRestored === "function") {
       const cleanup = window.terminalAPI.onTerminalSessionRestored((data) => {
-        if (!matchesTabPayload(data, tabId)) {
+        if (!matchesTabPayload(data, sessionKey)) {
           return;
         }
         setOfflineActive(false);
@@ -221,7 +221,7 @@ export function useTerminalIO({
     ) {
       const cleanup = window.terminalAPI.onTerminalSessionRestoreFailed(
         (data) => {
-          if (!matchesTabPayload(data, tabId)) {
+          if (!matchesTabPayload(data, sessionKey)) {
             return;
           }
           offlineBufferRef.current = "";
@@ -255,7 +255,7 @@ export function useTerminalIO({
         handleSessionRestoreFailed,
       );
     };
-  }, [setOfflineActive, tabId]);
+  }, [setOfflineActive, sessionKey]);
 
   const sendInputToProcess = useCallback(
     (processId, input) => {
@@ -409,13 +409,13 @@ export function useTerminalIO({
   );
 
   const sendOfflineBufferNow = useCallback(() => {
-    const result = flushOfflineBuffer(processCache[tabId]);
+    const result = flushOfflineBuffer(processCache[sessionKey]);
     if (result && result.scheduled) {
       scheduleInputQueueDrain();
       return true;
     }
     return Boolean(result);
-  }, [flushOfflineBuffer, scheduleInputQueueDrain, tabId]);
+  }, [flushOfflineBuffer, scheduleInputQueueDrain, sessionKey]);
 
   const sendCommentLinesToProcess = useCallback(
     (processId, lines) => {
@@ -481,7 +481,7 @@ export function useTerminalIO({
 
   const handlePasteText = useCallback(
     (text, options = {}) => {
-      const processId = processCache[tabId];
+      const processId = processCache[sessionKey];
       if (!text || !processId) {
         return { ok: false, reason: "no-process" };
       }
@@ -509,7 +509,7 @@ export function useTerminalIO({
       });
       return { ok: true, reason: null };
     },
-    [sendProcessedInputToProcess, suggestionUiRef, tabId],
+    [sendProcessedInputToProcess, suggestionUiRef, sessionKey],
   );
 
   const clearInputQueue = useCallback(() => {

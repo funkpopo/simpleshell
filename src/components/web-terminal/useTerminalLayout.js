@@ -9,7 +9,7 @@ import {
  * Terminal attach / focus / fit / layout-sync scheduling.
  */
 export function useTerminalLayout({
-  tabId,
+  sessionKey,
   terminalRef,
   termRef,
   fitAddonRef,
@@ -33,7 +33,7 @@ export function useTerminalLayout({
     (termInstance = null) => {
       const container = terminalRef.current;
       const resolvedTerm =
-        termInstance || termRef.current || terminalCache[tabId];
+        termInstance || termRef.current || terminalCache[sessionKey];
 
       if (!container || !resolvedTerm) {
         return false;
@@ -56,7 +56,7 @@ export function useTerminalLayout({
 
       return false;
     },
-    [tabId, terminalRef, termRef],
+    [sessionKey, terminalRef, termRef],
   );
 
   const focusTerminalInput = useCallback(() => {
@@ -162,7 +162,7 @@ export function useTerminalLayout({
           rows: term.rows,
         };
 
-        const processId = processCache[tabId];
+        const processId = processCache[sessionKey];
         const processChanged =
           Boolean(processId) &&
           String(processId) !== lastSyncedProcessIdRef.current;
@@ -174,7 +174,7 @@ export function useTerminalLayout({
             forceRemoteResize ||
             processChanged)
         ) {
-          sendResizeIfNeeded(processId, tabId, term.cols, term.rows, {
+          sendResizeIfNeeded(processId, sessionKey, term.cols, term.rows, {
             force: forceResizeMessage || forceRemoteResize || processChanged,
             immediate:
               forceResizeMessage || forceRemoteResize || processChanged,
@@ -203,7 +203,7 @@ export function useTerminalLayout({
       fitAddonRef,
       isTerminalContainerVisible,
       scheduleTerminalRedrawRef,
-      tabId,
+      sessionKey,
       terminalRef,
       termRef,
     ],

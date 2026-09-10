@@ -8,11 +8,11 @@ import { processCache } from "../../modules/terminal/controller/terminalSessionS
 const DONE_CLEANUP_DELAY_MS = 3000;
 const ERROR_CLEANUP_DELAY_MS = 5000;
 
-const matchesTab = (payload, tabId) => {
+const matchesTab = (payload, sessionKey) => {
   if (payload?.tabId) {
-    return String(payload.tabId) === String(tabId);
+    return String(payload.tabId) === String(sessionKey);
   }
-  const cachedProcessId = processCache[tabId];
+  const cachedProcessId = processCache[sessionKey];
   if (cachedProcessId !== undefined && cachedProcessId !== null) {
     return String(payload?.processId) === String(cachedProcessId);
   }
@@ -39,13 +39,13 @@ const createSessionState = () => ({
  * GlobalTransferBar / GlobalTransferFloat / TransferSidebar 的展示与取消入口，
  * 不引入额外的 ZMODEM 专属传输 UI。
  */
-export function useZmodemTransfer({ tabId }) {
+export function useZmodemTransfer({ sessionKey }) {
   const { t } = useTranslation();
   const {
     addTransferProgress,
     updateTransferProgress,
     scheduleTransferCleanup,
-  } = useGlobalTransfers(tabId);
+  } = useGlobalTransfers(sessionKey);
 
   const sessionRef = useRef(null);
   const helpersRef = useRef({
@@ -234,7 +234,7 @@ export function useZmodemTransfer({ tabId }) {
     let disposed = false;
 
     const cleanup = window.terminalAPI.onZmodemEvent((payload) => {
-      if (disposed || !payload || !matchesTab(payload, tabId)) {
+      if (disposed || !payload || !matchesTab(payload, sessionKey)) {
         return;
       }
       handleEvent(payload);
@@ -246,7 +246,7 @@ export function useZmodemTransfer({ tabId }) {
         cleanup();
       }
     };
-  }, [handleEvent, tabId]);
+  }, [handleEvent, sessionKey]);
 
   useEffect(() => {
     return () => {

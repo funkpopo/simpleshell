@@ -319,6 +319,7 @@
       "removeFromGroup": "Remove from Sync Group",
       "refresh": "Refresh Connection",
       "close": "Close Connection",
+      "unsplit": "Unsplit & Restore Tabs",
       "reconnectStatus": "Reconnect Status",
       "reconnectPending": "Waiting for next automatic retry",
       "reconnectWaitingRetry": "Automatic retry in {{seconds}}s",
@@ -478,7 +479,17 @@
       "systemReady": "SYS / READY"
     },
     "terminal": {
-      "welcome": "Welcome"
+      "welcome": "Welcome",
+      "pane": {
+        "splitRight": "Split → Right",
+        "splitDown": "Split → Below",
+        "splitGrid": "Split → 2×2",
+        "resetLayout": "Reset Split",
+        "closePane": "Close Pane",
+        "closeOtherPanes": "Close Other Panes",
+        "maxReached": "Up to 4 panes are supported",
+        "default": "Pane {{n}}"
+      }
     },
     "webTerminal": {
       "contextMenu": {

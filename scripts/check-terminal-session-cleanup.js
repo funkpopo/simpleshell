@@ -35,7 +35,7 @@ assert.match(
 );
 assert.match(
   lifecycle,
-  /useEffect\([\s\S]*?\(\) => \(\) => \{[\s\S]*?disposeTerminalSession\(tabId\)/,
+  /useEffect\([\s\S]*?\(\) => \(\) => \{[\s\S]*?disposeTerminalSession\((sessionKey|tabId)\)/,
   "WebTerminal unmount must dispose its cached session",
 );
 assert.match(

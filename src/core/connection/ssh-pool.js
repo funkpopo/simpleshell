@@ -18,9 +18,6 @@ const {
   resolveSshNetworkProfile,
   applySocketNetworkProfile,
 } = require("../utils/ssh-network-profile");
-const {
-  classifyConnectionFailure,
-} = require("../../shared/connectionErrorAdvice");
 const { isAuthErrorMessage } = require("../../shared/errorClassification");
 const {
   attachKeyboardInteractiveSupport,
@@ -245,6 +242,7 @@ class SSHPool extends BaseConnectionPool {
         lastUsed: Date.now(),
         refCount: 1,
         ready: false,
+        connecting: true,
         stream: null,
         listeners: new Set(),
         usingProxy: usingProxy,
@@ -268,6 +266,7 @@ class SSHPool extends BaseConnectionPool {
       // 设置连接超时
       const timeout = setTimeout(() => {
         this._logInfo(`SSH connection timed out: ${connectionKey}`);
+        connectionInfo.connecting = false;
         try {
           if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
         } catch {
@@ -298,6 +297,7 @@ class SSHPool extends BaseConnectionPool {
       ssh.on("ready", () => {
         clearTimeout(timeout);
         connectionInfo.ready = true;
+        connectionInfo.connecting = false;
         applySocketNetworkProfile(ssh._sock, networkProfile);
 
         this._logInfo(
@@ -317,6 +317,7 @@ class SSHPool extends BaseConnectionPool {
       // 监听错误事件
       ssh.on("error", (err) => {
         clearTimeout(timeout);
+        connectionInfo.connecting = false;
         try {
           if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
         } catch {
@@ -538,8 +539,15 @@ class SSHPool extends BaseConnectionPool {
    * @returns {boolean} 是否健康
    */
   isConnectionHealthy(connectionInfo) {
+    if (!connectionInfo) {
+      return false;
+    }
+    // 初始连接建立中：连接条目先入池、ready 事件后置位，
+    // 期间不得判为失联，否则健康检查会误触发重连并杀掉刚建好的连接
+    if (connectionInfo.connecting === true) {
+      return true;
+    }
     return (
-      connectionInfo &&
       connectionInfo.ready &&
       connectionInfo.client &&
       !connectionInfo.client.destroyed

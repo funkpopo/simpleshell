@@ -34,6 +34,7 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.dragInsertPosition === nextProps.dragInsertPosition &&
     prevProps.isDragSource === nextProps.isDragSource &&
     prevProps.dragSessionActive === nextProps.dragSessionActive &&
+    prevProps.mergedLabel === nextProps.mergedLabel &&
     prevProps.group === nextProps.group
   );
 };
@@ -60,6 +61,7 @@ const CustomTab = memo((props) => {
     dragInsertPosition = null, // 插入位置 ('before' | 'after')
     isDragSource = false, // 当前标签是否为被拖动的源（原位占位）
     dragSessionActive = false, // 是否有任意标签正在被拖动
+    mergedLabel = false, // 分屏宿主标签：加宽以完整显示合并的连接名
     group = null, // 所属同步输入分组 { groupId, color, members }，由父组件从全局状态传入
     ...other
   } = props;
@@ -341,7 +343,7 @@ const CustomTab = memo((props) => {
         sx={{
           textTransform: "none",
           minWidth: "auto",
-          maxWidth: 240,
+          maxWidth: mergedLabel ? 560 : 240,
           minHeight: 30,
           py: 0,
           px: 1.2,
@@ -428,6 +430,19 @@ const CustomTab = memo((props) => {
                 animation: "indicatorGlassIn 0.2s ease-out forwards",
               },
             }),
+            // 中段悬停：叠加合并（并入该标签的分屏）
+            ...(dragInsertPosition === "merge" && {
+              "&::after": {
+                content: '""',
+                position: "absolute",
+                inset: 2,
+                borderRadius: 3,
+                border: "1.5px dashed",
+                borderColor: "text.primary",
+                zIndex: 1002,
+                animation: "indicatorGlassIn 0.2s ease-out forwards",
+              },
+            }),
           }),
           "&.Mui-selected": {
             color: "var(--tab-selected-fg) !important",
@@ -480,9 +495,10 @@ CustomTab.propTypes = {
   statusColor: PropTypes.string,
   statusTooltip: PropTypes.string,
   isDraggedOver: PropTypes.bool,
-  dragInsertPosition: PropTypes.oneOf(["before", "after", null]),
+  dragInsertPosition: PropTypes.oneOf(["before", "after", "merge", null]),
   isDragSource: PropTypes.bool,
   dragSessionActive: PropTypes.bool,
+  mergedLabel: PropTypes.bool,
   group: PropTypes.shape({
     groupId: PropTypes.string.isRequired,
     color: PropTypes.string.isRequired,
