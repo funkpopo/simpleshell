@@ -325,7 +325,7 @@ class SSHPool extends BaseConnectionPool {
         }
 
         const enhancedError = this._handleSSHError(
-          err,
+          sshConfig._interactiveAuthError || err,
           sshConfig,
           connectionKey,
           usingProxy,
@@ -400,6 +400,14 @@ class SSHPool extends BaseConnectionPool {
   }
 
   _shouldAutoReconnectOnInitialFailure(error, sshConfig, usingProxy) {
+    if (
+      [
+        "SSH_CONFIG_CHANGED",
+        "SSH_INTERACTIVE_AUTH_FAILED",
+        "KEYBOARD_INTERACTIVE_TIMEOUT",
+      ].includes(error?.code)
+    )
+      return false;
     // 默认仅对“带 tabId 的交互连接”启用（避免影响非交互/后台调用）
     // 如需在非 tabId 场景启用初连自动重试，可通过以下方式显式开启：
     // - 连接配置：sshConfig.autoReconnect === true
@@ -480,8 +488,16 @@ class SSHPool extends BaseConnectionPool {
       finishResolve(connectionInfo);
       return;
     }
+    // 认证失败/取消后的 close 事件不能再启动后台重连。
+    connectionInfo.intentionalClose = true;
+    connectionInfo.closeReason = CLOSE_REASON.SYSTEM;
     this.connections.delete(connectionKey);
     finishReject(error);
+    try {
+      ssh.end();
+    } catch {
+      /* intentionally ignored */
+    }
   }
 
   /**
@@ -1023,6 +1039,7 @@ class SSHPool extends BaseConnectionPool {
    * @private
    */
   _handleSSHClose(connectionInfo, connectionKey, sourceClient = null) {
+    if (this.connections.get(connectionKey) !== connectionInfo) return;
     if (
       sourceClient &&
       connectionInfo?.client &&

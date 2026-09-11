@@ -554,6 +554,7 @@ function calculateRetryDelay({
 }
 
 async function createManagedSshConnection(sshConfig, options = {}) {
+  delete sshConfig._interactiveAuthError;
   const ClientCtor = options.ClientCtor || Client;
   const processedConfig = await processSSHPrivateKeyAsync(sshConfig);
   const networkProfile = resolveSshNetworkProfile(processedConfig);
@@ -573,7 +574,7 @@ async function createManagedSshConnection(sshConfig, options = {}) {
   return new Promise((resolve, reject) => {
     const ssh = new ClientCtor();
     // keyboard-interactive / 2FA：在 connect 前注册事件处理（需配合 tryKeyboard）
-    attachKeyboardInteractiveSupport(ssh, processedConfig);
+    attachKeyboardInteractiveSupport(ssh, sshConfig);
     let proxySocket = null;
     let settled = false;
     let cleanedUp = false;
@@ -693,7 +694,7 @@ async function createManagedSshConnection(sshConfig, options = {}) {
         return;
       }
       cleanup();
-      finishReject(error);
+      finishReject(sshConfig._interactiveAuthError || error);
     };
 
     const onClose = () => {

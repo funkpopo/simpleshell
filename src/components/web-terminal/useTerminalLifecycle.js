@@ -45,6 +45,7 @@ import {
 } from "../../utils/fonts.js";
 import {
   clearPendingWrappedInputRefresh,
+  getTerminalConfigSignature,
   shouldForceTerminalViewportRefresh,
 } from "./terminalHelpers.js";
 import { setupSimulatedTerminal } from "./simulatedTerminal.js";
@@ -232,6 +233,21 @@ export function useTerminalLifecycle({
       delete fitAddonCache[sessionKey];
     }
   }, [refreshKey, sessionKey]);
+
+  // 已失败的初次连接没有进程可供主进程更新，配置修正后重新建立该终端。
+  const previousSshConfigRef = useRef(sshConfig);
+  useEffect(() => {
+    const changed =
+      getTerminalConfigSignature(previousSshConfigRef.current) !==
+      getTerminalConfigSignature(sshConfig);
+    previousSshConfigRef.current = sshConfig;
+    const cached = terminalCache[sessionKey];
+    if (changed && cached?.__connectionFailed && !processCache[sessionKey]) {
+      cached.dispose();
+      delete terminalCache[sessionKey];
+      delete fitAddonCache[sessionKey];
+    }
+  }, [sshConfig, sessionKey]);
 
   // 监听设置变更事件
   useEffect(() => {
@@ -1008,10 +1024,12 @@ export function useTerminalLifecycle({
                   return;
                 }
                 if (error) {
+                  term.__connectionFailed = true;
                   term.writeln(formatConnectionError(error));
                   return;
                 }
                 if (processId) {
+                  term.__connectionFailed = false;
                   currentProcessId.current = processId;
 
                   const previousProcessId = processCache[sessionKey];
@@ -1097,15 +1115,18 @@ export function useTerminalLifecycle({
                           error: translate("webTerminal.runtime.noProcessId"),
                         });
                   term.writeln(errorMsg);
+                  term.__connectionFailed = true;
                 }
               })
               .catch((error) => {
                 if (terminalCache[sessionKey] !== term) {
                   return;
                 }
+                term.__connectionFailed = true;
                 term.writeln(formatConnectionError(error));
               });
           } catch (error) {
+            term.__connectionFailed = true;
             term.writeln(formatConnectionError(error));
           }
         } else {

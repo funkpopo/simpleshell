@@ -5,6 +5,11 @@ const {
   moshConnectionPool,
 } = require("../../core/connection");
 const { logToFile } = require("../../core/utils/logger");
+const {
+  indexConnections,
+  mergeSavedConnectionConfig,
+  SSH_AUTH_FIELDS,
+} = require("../../shared/connectionConfigSync");
 
 class ConnectionManager {
   constructor() {
@@ -33,6 +38,61 @@ class ConnectionManager {
   async getSftpSession(tabId) {
     void tabId;
     return { success: true, native: true };
+  }
+
+  syncConnectionConfigs(
+    previousConnections,
+    connections,
+    processes = new Map(),
+  ) {
+    const previous = indexConnections(previousConnections);
+    const saved = indexConnections(connections);
+    const updated = new Set();
+    const transportChanged = new Set();
+    const sync = (config) => {
+      if (!config || updated.has(config)) return false;
+      const id = config.connectionId || config.id;
+      const merged = mergeSavedConnectionConfig(
+        config,
+        previous.get(id),
+        saved.get(id),
+      );
+      if (merged === config) return false;
+      updated.add(config);
+      const hostChanged =
+        merged.host !== config.host || merged.port !== config.port;
+      const changed = (field) =>
+        JSON.stringify(merged[field] ?? null) !==
+        JSON.stringify(config[field] ?? null);
+      if (["host", "port", "username", "proxy"].some(changed))
+        transportChanged.add(config);
+      const authChanged = SSH_AUTH_FIELDS.some(changed);
+      Object.assign(config, merged);
+      if (authChanged)
+        config._connectionConfigRevision =
+          (config._connectionConfigRevision || 0) + 1;
+      if (hostChanged) {
+        delete config[Symbol.for("simpleshell.ssh.trustedHostFingerprint")];
+        delete config[Symbol.for("simpleshell.ssh.trustedHostScope")];
+        delete config.expectedHostFingerprint;
+      }
+      return true;
+    };
+
+    // SFTP 从进程配置取凭据；原地更新也让 hostVerifier 等闭包使用新值。
+    for (const process of processes.values()) sync(process?.config);
+    const pool = this.sshConnectionPool;
+    for (const session of pool.reconnectionManager.sessions.values())
+      sync(session.config);
+    for (const connection of pool.connections.values()) {
+      sync(connection.config);
+      if (!updated.has(connection.config)) continue;
+      // 认证信息立即用于后续 SSH/SFTP 请求；目标或网络路径改变需要重建传输。
+      if (connection.ready && transportChanged.has(connection.config)) {
+        connection.client.end();
+      }
+    }
+    pool.emit("savedConnectionsChanged", { previousConnections, connections });
   }
 
   async closeSftpSession(tabId) {

@@ -542,6 +542,7 @@
       "loadFailed": "Failed to load connection configuration",
       "reloadFailed": "Failed to reload connection configuration",
       "saveFailed": "Failed to save connection configuration",
+      "autoSaveHint": "Changes are saved and applied automatically",
       "deleteSuccess": "Successfully deleted",
       "nameRequired": "Name is required",
       "hostRequired": "Host address is required",

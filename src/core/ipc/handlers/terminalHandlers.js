@@ -540,10 +540,18 @@ class TerminalHandlers {
    * 保存连接配置
    */
   async saveConnections(event, connections) {
+    const previous = configService.loadConnections();
     const result = configService.saveConnections(connections);
 
     // 保存成功后,通知所有渲染进程连接配置已更新
     if (result) {
+      const saved = configService.loadConnections();
+      if (JSON.stringify(previous) === JSON.stringify(saved)) return result;
+      this.connectionManager.syncConnectionConfigs(
+        previous,
+        saved,
+        this.processManager.getProcessMap(),
+      );
       broadcastToAllWindows(IPC_EVENT_CHANNELS.CONNECTIONS_CHANGED);
     }
 

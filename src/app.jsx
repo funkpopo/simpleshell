@@ -46,6 +46,7 @@ import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import SettingsEthernetIcon from "@mui/icons-material/SettingsEthernet";
 import ComputerIcon from "@mui/icons-material/Computer";
 import WelcomePage from "./components/WelcomePage.jsx";
+import { mergeSavedConnectionConfig } from "./shared/connectionConfigSync";
 import {
   AboutDialogWithSuspense as AboutDialog,
   ConnectionManagerWithSuspense as ConnectionManager,
@@ -309,6 +310,9 @@ const getConnectionSyncSignature = (connection) =>
     password: connection?.password || "",
     authType: connection?.authType || "",
     privateKeyPath: connection?.privateKeyPath || "",
+    passphrase: connection?.passphrase || "",
+    agentPath: connection?.agentPath || "",
+    agentForward: connection?.agentForward === true,
     os: connection?.os || "",
     connectionType: connection?.connectionType || "",
     protocol: connection?.protocol || "",
@@ -338,12 +342,29 @@ const areFileManagerHistoryStatesEqual = (left, right) => {
   return (left?.historyIndex ?? -1) === (right?.historyIndex ?? -1);
 };
 
-const syncTerminalInstanceConfigs = (terminalInstances, tabs, connections) => {
+const syncTerminalInstanceConfigs = (
+  terminalInstances,
+  tabs,
+  connections,
+  previousConnections,
+) => {
   if (!terminalInstances || typeof terminalInstances !== "object") {
     return terminalInstances;
   }
 
-  const tabList = Array.isArray(tabs) ? tabs : [];
+  const tabList = Array.isArray(tabs) ? tabs.filter(Boolean) : [];
+  const tabIds = new Set(tabList.map((tab) => tab.id));
+  for (const [key, config] of Object.entries(terminalInstances)) {
+    if (!key.endsWith("-config") || !config?.host) continue;
+    const id = key.slice(0, -"-config".length);
+    if (!tabIds.has(id)) {
+      tabList.push({
+        id,
+        type: config.protocol || "ssh",
+        connectionId: config.connectionId || config.id,
+      });
+    }
+  }
   let nextInstances = terminalInstances;
 
   for (const tab of tabList) {
@@ -380,11 +401,11 @@ const syncTerminalInstanceConfigs = (terminalInstances, tabs, connections) => {
       continue;
     }
 
-    const mergedConfig = {
-      ...currentConfig,
-      ...latestConnection,
-      tabId: currentConfig.tabId || tab.id,
-    };
+    const mergedConfig = mergeSavedConnectionConfig(
+      currentConfig,
+      findConnectionById(previousConnections, latestConnection.id),
+      latestConnection,
+    );
 
     if (
       getConnectionSyncSignature(mergedConfig) ===
@@ -404,9 +425,30 @@ const syncTerminalInstanceConfigs = (terminalInstances, tabs, connections) => {
 
 const normalizeRecentConnections = (recentConnections, connections) => {
   if (!Array.isArray(recentConnections)) return [];
+  const seenIds = new Set();
+  const seenServers = new Set();
+
   return recentConnections
     .map((candidate) => resolveRecentConnection(candidate, connections))
-    .filter(Boolean);
+    .filter((connection) => {
+      if (!connection) return false;
+
+      const id = connection.connectionId || connection.id;
+      const serverKey = JSON.stringify([
+        String(connection.protocol || "ssh").toLowerCase(),
+        connection.host,
+        resolveConnectionPort(connection),
+        connection.username || "",
+      ]);
+      if ((id && seenIds.has(id)) || seenServers.has(serverKey)) {
+        return false;
+      }
+
+      // 最近连接已按新到旧排列，只保留同一连接第一次出现的位置。
+      if (id) seenIds.add(id);
+      seenServers.add(serverKey);
+      return true;
+    });
 };
 
 const buildRecentConnectionsSignature = (items) => {
@@ -1298,23 +1340,36 @@ function AppContent() {
     if (!window.terminalAPI?.onSSHAuthRequest) return;
 
     const handleSSHAuthRequest = (data) => {
-      console.log("SSH Auth request received:", data);
+      if (!data?.requestId) return;
+      if (data.cancelled) {
+        if (sshAuthRequestIdRef.current === data.requestId) {
+          sshAuthRequestIdRef.current = null;
+          setSshAuthDialogOpen(false);
+          setSshAuthData(null);
+          setSshAuthConnectionConfig(null);
+        }
+        return;
+      }
+      if (sshAuthRequestIdRef.current === data.requestId) return;
       sshAuthRequestIdRef.current = data.requestId;
 
       // 查找对应的连接配置
       let connectionConfig = null;
       if (data.connectionId) {
         // 递归查找连接配置（复用模块级 findConnectionById）
-        connectionConfig = findConnectionById(connections, data.connectionId);
+        connectionConfig = findConnectionById(
+          connectionsRef.current,
+          data.connectionId,
+        );
       }
 
       // 也可以从 tabId 获取配置
       if (
         !connectionConfig &&
         data.tabId &&
-        terminalInstances[`${data.tabId}-config`]
+        terminalInstancesRef.current[`${data.tabId}-config`]
       ) {
-        connectionConfig = terminalInstances[`${data.tabId}-config`];
+        connectionConfig = terminalInstancesRef.current[`${data.tabId}-config`];
       }
 
       setSshAuthConnectionConfig(connectionConfig);
@@ -1326,25 +1381,20 @@ function AppContent() {
 
     return () => {
       if (cleanup) cleanup();
-      if (window.terminalAPI?.offSSHAuthRequest) {
-        window.terminalAPI.offSSHAuthRequest();
-      }
     };
-  }, [connections, terminalInstances]);
+  }, []);
 
   // 处理 SSH 认证对话框确认
   const handleSSHAuthConfirm = React.useCallback(
     async (authResult) => {
-      if (!sshAuthRequestIdRef.current) return;
+      const requestId = sshAuthRequestIdRef.current;
+      if (!requestId) return;
 
-      try {
-        await window.terminalAPI.respondSSHAuth({
-          requestId: sshAuthRequestIdRef.current,
-          ...authResult,
-        });
-      } catch (error) {
-        console.error("Failed to respond SSH auth:", error);
-      }
+      // 先消费当前请求，避免 IPC 返回前到达的下一步认证被旧回调清除。
+      sshAuthRequestIdRef.current = null;
+      setSshAuthDialogOpen(false);
+      setSshAuthData(null);
+      setSshAuthConnectionConfig(null);
 
       const targetTabId =
         sshAuthData?.tabId || sshAuthConnectionConfig?.tabId || null;
@@ -1353,7 +1403,12 @@ function AppContent() {
         const currentConfig =
           terminalInstancesRef.current?.[configKey] || sshAuthConnectionConfig;
 
-        if (currentConfig) {
+        if (
+          currentConfig &&
+          ["username", "password", "privateKeyPath", "authType"].some(
+            (field) => authResult?.[field] !== undefined,
+          )
+        ) {
           dispatch(
             actions.setTerminalInstances({
               ...terminalInstancesRef.current,
@@ -1379,32 +1434,42 @@ function AppContent() {
         }
       }
 
-      setSshAuthDialogOpen(false);
-      setSshAuthData(null);
-      setSshAuthConnectionConfig(null);
-      sshAuthRequestIdRef.current = null;
+      try {
+        await window.terminalAPI.respondSSHAuth({ requestId, ...authResult });
+      } catch (error) {
+        console.error("Failed to respond SSH auth:", error);
+      }
     },
     [dispatch, sshAuthConnectionConfig, sshAuthData],
   );
 
   // 处理 SSH 认证对话框关闭/取消
   const handleSSHAuthClose = React.useCallback(async () => {
-    if (sshAuthRequestIdRef.current) {
+    const requestId = sshAuthRequestIdRef.current;
+    sshAuthRequestIdRef.current = null;
+    setSshAuthDialogOpen(false);
+    setSshAuthData(null);
+    setSshAuthConnectionConfig(null);
+    if (requestId) {
       try {
         await window.terminalAPI.respondSSHAuth({
-          requestId: sshAuthRequestIdRef.current,
+          requestId,
           cancelled: true,
         });
       } catch (error) {
         console.error("Failed to cancel SSH auth:", error);
       }
     }
-
-    setSshAuthDialogOpen(false);
-    setSshAuthData(null);
-    setSshAuthConnectionConfig(null);
-    sshAuthRequestIdRef.current = null;
   }, []);
+
+  React.useEffect(() => {
+    if (
+      sshAuthData?.tabId &&
+      !liveSessionKeysRef.current.has(sshAuthData.tabId)
+    ) {
+      void handleSSHAuthClose();
+    }
+  }, [liveSessionKeys, sshAuthData, handleSSHAuthClose]);
 
   // 根据主题模式更新 body 类名
   // data-mui-color-scheme 供 AIChatWindow.css / CodeHighlight.css 等属性选择器使用
@@ -2027,12 +2092,16 @@ function AppContent() {
     refreshConnectionState,
   ]);
 
+  const previousSyncedConnectionsRef = React.useRef(connections);
   React.useEffect(() => {
+    if (previousSyncedConnectionsRef.current === connections) return;
     const syncedInstances = syncTerminalInstanceConfigs(
       terminalInstances,
       tabs,
       connections,
+      previousSyncedConnectionsRef.current,
     );
+    previousSyncedConnectionsRef.current = connections;
 
     if (syncedInstances !== terminalInstances) {
       dispatch(actions.setTerminalInstances(syncedInstances));
@@ -2126,8 +2195,12 @@ function AppContent() {
   const handleConnectionsUpdate = useCallback(
     (updatedConnections) => {
       dispatch(actions.setConnections(updatedConnections));
-      if (window.terminalAPI && window.terminalAPI.saveConnections) {
-        window.terminalAPI.saveConnections(updatedConnections);
+      if (window.terminalAPI?.saveConnections) {
+        window.terminalAPI
+          .saveConnections(updatedConnections)
+          .catch((error) => {
+            console.error("Failed to save connections:", error);
+          });
       }
     },
     [dispatch],

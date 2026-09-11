@@ -3,6 +3,10 @@ const { logToFile } = require("../../utils/logger");
 const outputProcessor = require("../../../modules/terminal/output-processor");
 const crypto = require("crypto");
 const configService = require("../../../services/configService");
+const {
+  indexConnections,
+  SSH_AUTH_FIELDS,
+} = require("../../../shared/connectionConfigSync");
 const filemanagementService = require("../../../modules/filemanagement/filemanagementService");
 const {
   DEFAULT_SSH_RETRY_CONFIG,
@@ -143,6 +147,8 @@ class SSHHandlers {
 
     // 待处理的认证请求
     this.pendingAuthRequests = new Map();
+    this.activeAuthRequestId = null;
+    this.pendingSSHStarts = new Map();
 
     // 已知主机指纹缓存 (host:port -> fingerprint)
     this.knownHostsCache = new Map();
@@ -220,7 +226,6 @@ class SSHHandlers {
     }
 
     const pendingRequest = this.pendingAuthRequests.get(requestId);
-    this.pendingAuthRequests.delete(requestId);
 
     if (authData.cancelled) {
       pendingRequest.reject(new Error("Authentication cancelled by user"));
@@ -345,6 +350,7 @@ class SSHHandlers {
 
     // 加载现有连接配置
     const connections = configService.loadConnections();
+    const previousConnections = structuredClone(connections);
 
     // 递归查找并更新连接
     const updateConnection = (items) => {
@@ -381,7 +387,14 @@ class SSHHandlers {
       throw new Error("Connection not found");
     }
 
-    configService.saveConnections(connections);
+    if (!configService.saveConnections(connections)) {
+      throw new Error("Failed to save connection credentials");
+    }
+    this.connectionManager.syncConnectionConfigs(
+      previousConnections,
+      configService.loadConnections(),
+      this.childProcesses,
+    );
     logToFile(`Updated credentials for connection: ${connectionId}`, "INFO");
 
     // 通知前端连接配置已更改
@@ -563,7 +576,9 @@ class SSHHandlers {
   /**
    * 请求用户认证（发送请求到渲染进程并等待响应）
    */
-  async _requestUserAuth(tabId, authData) {
+  async _requestUserAuth(tabId, authData, signal) {
+    if (signal?.aborted)
+      throw new Error("SSH authentication connection closed");
     const mainWindow = this._getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed()) {
       throw new Error("No main window available for authentication");
@@ -572,13 +587,16 @@ class SSHHandlers {
     const requestId = generateId("auth");
 
     return new Promise((resolve, reject) => {
+      const onAbort = () =>
+        this.pendingAuthRequests
+          .get(requestId)
+          ?.reject(new Error("SSH authentication connection closed"));
       // 设置超时（5分钟）
       const timeout = setTimeout(
         () => {
-          if (this.pendingAuthRequests.has(requestId)) {
-            this.pendingAuthRequests.delete(requestId);
-            reject(new Error("Authentication timeout"));
-          }
+          this.pendingAuthRequests
+            .get(requestId)
+            ?.reject(new Error("Authentication timeout"));
         },
         5 * 60 * 1000,
       );
@@ -587,24 +605,50 @@ class SSHHandlers {
       this.pendingAuthRequests.set(requestId, {
         resolve: (data) => {
           clearTimeout(timeout);
+          signal?.removeEventListener("abort", onAbort);
+          this.pendingAuthRequests.delete(requestId);
+          if (this.activeAuthRequestId === requestId) {
+            this.activeAuthRequestId = null;
+          }
           resolve(data);
+          this._showNextAuthRequest();
         },
         reject: (error) => {
           clearTimeout(timeout);
+          signal?.removeEventListener("abort", onAbort);
+          this.pendingAuthRequests.delete(requestId);
+          if (this.activeAuthRequestId === requestId) {
+            this.activeAuthRequestId = null;
+            if (!mainWindow.isDestroyed())
+              mainWindow.webContents.send(IPC_EVENT_CHANNELS.SSH_AUTH_REQUEST, {
+                requestId,
+                cancelled: true,
+              });
+          }
           reject(error);
+          this._showNextAuthRequest();
         },
         tabId,
         authData,
       });
 
-      // 发送认证请求到渲染进程
-      mainWindow.webContents.send(IPC_EVENT_CHANNELS.SSH_AUTH_REQUEST, {
-        requestId,
-        tabId,
-        ...authData,
-      });
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this._showNextAuthRequest();
+    });
+  }
 
-      logToFile(`Sent auth request: ${requestId} for tab ${tabId}`, "INFO");
+  _showNextAuthRequest() {
+    if (this.activeAuthRequestId) return;
+    const next = this.pendingAuthRequests.entries().next().value;
+    if (!next) return;
+    const [requestId, { tabId, authData }] = next;
+    const mainWindow = this._getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    this.activeAuthRequestId = requestId;
+    mainWindow.webContents.send(IPC_EVENT_CHANNELS.SSH_AUTH_REQUEST, {
+      ...authData,
+      requestId,
+      tabId,
     });
   }
 
@@ -657,25 +701,32 @@ class SSHHandlers {
 
     const pendingKey = `${host}:${port}:${normalizedFingerprint}`;
     if (this.pendingHostVerifications.has(pendingKey)) {
-      return this.pendingHostVerifications.get(pendingKey);
+      const approved = await this.pendingHostVerifications.get(pendingKey);
+      if (approved)
+        setTrustedHostFingerprint(sshConfig, normalizedFingerprint, "session");
+      return approved;
     }
 
     const verificationPromise = (async () => {
-      const authResult = await this._requestUserAuth(sshConfig.tabId, {
-        step: "hostVerify",
-        host,
-        port,
-        serverVersion: null,
-        fingerprint: normalizedFingerprint,
-        previousFingerprint: hostKeyStatus.previousFingerprint || null,
-        fingerprintChanged: hostKeyStatus.changed,
-        isFirstConnection,
-        requireCredentials: false,
-        connectionId: sshConfig.id,
-        username: sshConfig.username || "",
-        existingUsername: sshConfig.username || "",
-        isRetry: false,
-      });
+      const authResult = await this._requestUserAuth(
+        sshConfig.tabId,
+        {
+          step: "hostVerify",
+          host,
+          port,
+          serverVersion: null,
+          fingerprint: normalizedFingerprint,
+          previousFingerprint: hostKeyStatus.previousFingerprint || null,
+          fingerprintChanged: hostKeyStatus.changed,
+          isFirstConnection,
+          requireCredentials: false,
+          connectionId: sshConfig.id,
+          username: sshConfig.username || "",
+          existingUsername: sshConfig.username || "",
+          isRetry: false,
+        },
+        sshConfig._authSignal,
+      );
 
       if (!authResult || authResult.cancelled || !authResult.acceptHostKey) {
         return false;
@@ -717,6 +768,7 @@ class SSHHandlers {
           callback(Boolean(approved));
         })
         .catch((error) => {
+          sshConfig._interactiveAuthError = error;
           logToFile(
             `Host fingerprint verification failed: ${error.message}`,
             "WARN",
@@ -732,7 +784,7 @@ class SSHHandlers {
    * 将服务器提示转发到渲染层对话框，等待用户输入后返回答案数组
    */
   _createKeyboardInteractiveResponder(sshConfig) {
-    return async ({ name, instructions, prompts, prefill }) => {
+    return async ({ name, instructions, prompts, prefill, signal }) => {
       const authData = {
         step: "keyboardInteractive",
         host: sshConfig.host,
@@ -753,7 +805,11 @@ class SSHHandlers {
         isRetry: false,
       };
 
-      const result = await this._requestUserAuth(sshConfig.tabId, authData);
+      const result = await this._requestUserAuth(
+        sshConfig.tabId,
+        authData,
+        signal,
+      );
       if (!result || result.cancelled) {
         throw new Error("Authentication cancelled by user");
       }
@@ -784,6 +840,7 @@ class SSHHandlers {
       ...sshConfig,
       hostHash: "sha256",
     };
+    delete connectionConfig._interactiveAuthError;
     connectionConfig.hostVerifier = this._createHostVerifier(connectionConfig);
     // keyboard-interactive / 2FA：注入用户应答器（连接建立与断线重连共用）
     connectionConfig.keyboardInteractiveResponder =
@@ -991,6 +1048,10 @@ class SSHHandlers {
         "connectionReconnected",
         this.onConnectionReconnected,
       );
+      this.boundReconnectPool.removeListener(
+        "savedConnectionsChanged",
+        this.onSavedConnectionsChanged,
+      );
     }
 
     this.boundReconnectPool = sshPool;
@@ -998,6 +1059,28 @@ class SSHHandlers {
       void this._handleConnectionReconnected(key, connection);
     };
     sshPool.on("connectionReconnected", this.onConnectionReconnected);
+    this.onSavedConnectionsChanged = ({ previousConnections, connections }) => {
+      const previous = indexConnections(previousConnections);
+      const saved = indexConnections(connections);
+      for (const pending of [...this.pendingAuthRequests.values()]) {
+        const id = pending.authData.connectionId;
+        const before = previous.get(id);
+        const after = saved.get(id);
+        if (!before || !after) continue;
+        if (
+          SSH_AUTH_FIELDS.some(
+            (field) =>
+              JSON.stringify(before[field] ?? null) !==
+              JSON.stringify(after[field] ?? null),
+          )
+        ) {
+          const error = new Error("SSH configuration changed");
+          error.code = "SSH_CONFIG_CHANGED";
+          pending.reject(error);
+        }
+      }
+    };
+    sshPool.on("savedConnectionsChanged", this.onSavedConnectionsChanged);
   }
 
   _bindConnectionProcess(connectionKey, processId, tabId = null) {
@@ -2036,6 +2119,20 @@ class SSHHandlers {
   }
 
   async startSSH(event, sshConfig) {
+    const key = sshConfig?.tabId;
+    if (key && this.pendingSSHStarts.has(key))
+      return this.pendingSSHStarts.get(key);
+    const pending = this._startSSH(event, sshConfig);
+    if (key) this.pendingSSHStarts.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      if (key && this.pendingSSHStarts.get(key) === pending)
+        this.pendingSSHStarts.delete(key);
+    }
+  }
+
+  async _startSSH(event, sshConfig) {
     const processId = this.getNextProcessId();
     const mainWindow = this._getMainWindow();
 
@@ -2050,16 +2147,16 @@ class SSHHandlers {
     let finalConfig = { ...sshConfig };
     let lastAuthResult = null;
 
-    // 检查是否需要预先认证（没有用户名或密码/密钥/Agent）
-    const needsPreAuth =
-      !sshConfig.username ||
-      (!sshConfig.password &&
-        !sshConfig.privateKeyPath &&
-        sshConfig.authType !== "privateKey" &&
-        sshConfig.authType !== "agent");
-
     while (authRetryCount <= maxAuthRetries) {
+      let connectionConfig = null;
+      let configRevision = 0;
       try {
+        const needsPreAuth =
+          !finalConfig.username ||
+          (!finalConfig.password &&
+            !finalConfig.privateKeyPath &&
+            finalConfig.authType !== "privateKey" &&
+            finalConfig.authType !== "agent");
         // 如果需要预先认证（第一次）或者上次认证失败需要重试
         if (needsPreAuth && authRetryCount === 0) {
           logToFile(
@@ -2067,10 +2164,10 @@ class SSHHandlers {
             "INFO",
           );
 
-          await this._assertSSHReachableBeforeAuth(sshConfig);
+          await this._assertSSHReachableBeforeAuth(finalConfig);
 
-          const authResult = await this._requestCredentialsAuth(sshConfig, {
-            existingUsername: sshConfig.username || "",
+          const authResult = await this._requestCredentialsAuth(finalConfig, {
+            existingUsername: finalConfig.username || "",
             isRetry: false,
           });
 
@@ -2080,18 +2177,21 @@ class SSHHandlers {
 
           lastAuthResult = authResult;
           finalConfig = {
-            ...sshConfig,
-            username: authResult.username || sshConfig.username,
-            password: authResult.password || sshConfig.password,
+            ...finalConfig,
+            username: authResult.username || finalConfig.username,
+            password:
+              authResult.authType === "password" ? authResult.password : "",
             privateKeyPath:
-              authResult.privateKeyPath || sshConfig.privateKeyPath,
-            authType: authResult.authType || sshConfig.authType || "password",
+              authResult.authType === "privateKey"
+                ? authResult.privateKeyPath
+                : "",
+            authType: authResult.authType || finalConfig.authType || "password",
           };
         }
 
         // 尝试建立SSH连接（附加主机指纹校验）
-        const connectionConfig =
-          this._attachHostVerificationConfig(finalConfig);
+        connectionConfig = this._attachHostVerificationConfig(finalConfig);
+        configRevision = connectionConfig._connectionConfigRevision || 0;
         const connectionInfo =
           await this.connectionManager.getSSHConnection(connectionConfig);
         this._broadcastTopConnections();
@@ -2150,15 +2250,29 @@ class SSHHandlers {
         // 连接成功，如果用户选择了"下次自动登录"，保存凭据
         if (lastAuthResult?.autoLogin && sshConfig.id) {
           await this.updateConnectionCredentials(event, sshConfig.id, {
-            username: finalConfig.username,
-            password: finalConfig.password,
-            privateKeyPath: finalConfig.privateKeyPath,
-            authType: finalConfig.authType,
+            username: connectionConfig.username,
+            password: connectionConfig.password,
+            privateKeyPath: connectionConfig.privateKeyPath,
+            authType: connectionConfig.authType,
           });
         }
 
         return result;
       } catch (error) {
+        if (
+          error?.code === "SSH_CONFIG_CHANGED" ||
+          (connectionConfig &&
+            configRevision !==
+              (connectionConfig._connectionConfigRevision || 0))
+        ) {
+          const saved = indexConnections(configService.loadConnections()).get(
+            sshConfig.id,
+          );
+          if (!saved) throw error;
+          finalConfig = { ...finalConfig, ...saved };
+          authRetryCount = 0;
+          continue;
+        }
         logToFile(
           `SSH connection attempt ${authRetryCount + 1} failed: ${error.message}`,
           "ERROR",
@@ -2183,7 +2297,7 @@ class SSHHandlers {
 
           // 显示认证对话框让用户重新输入凭据
           try {
-            const authResult = await this._requestCredentialsAuth(sshConfig, {
+            const authResult = await this._requestCredentialsAuth(finalConfig, {
               existingUsername:
                 finalConfig.username || sshConfig.username || "",
               isRetry: true,
@@ -2196,11 +2310,13 @@ class SSHHandlers {
 
             lastAuthResult = authResult;
             finalConfig = {
-              ...sshConfig,
+              ...finalConfig,
               username: authResult.username || finalConfig.username,
               password: authResult.password, // 使用新密码
               privateKeyPath:
-                authResult.privateKeyPath || finalConfig.privateKeyPath,
+                authResult.authType === "privateKey"
+                  ? authResult.privateKeyPath
+                  : "",
               authType:
                 authResult.authType || finalConfig.authType || "password",
             };
@@ -2208,6 +2324,15 @@ class SSHHandlers {
             // 继续循环重试
             continue;
           } catch (authError) {
+            if (authError?.code === "SSH_CONFIG_CHANGED") {
+              const saved = indexConnections(
+                configService.loadConnections(),
+              ).get(sshConfig.id);
+              if (!saved) throw authError;
+              finalConfig = { ...finalConfig, ...saved };
+              authRetryCount = 0;
+              continue;
+            }
             logToFile(
               `User cancelled authentication: ${authError.message}`,
               "INFO",

@@ -5,7 +5,9 @@
 
 const EventEmitter = require("events");
 const { logToFile } = require("../utils/logger");
-const { classifyConnectionFailure } = require("../../shared/errorClassification");
+const {
+  classifyConnectionFailure,
+} = require("../../shared/connectionErrorAdvice");
 
 const CLOSE_REASON = Object.freeze({
   USER: "user",
@@ -711,19 +713,10 @@ class BaseConnectionPool extends EventEmitter {
   recordLastConnection(connectionId) {
     if (!connectionId) return;
 
-    // 如果已存在，先删除
-    const index = this.lastConnections.indexOf(connectionId);
-    if (index > -1) {
-      this.lastConnections.splice(index, 1);
-    }
-
-    // 添加到开头
-    this.lastConnections.unshift(connectionId);
-
-    // 保持列表长度不超过10
-    if (this.lastConnections.length > 10) {
-      this.lastConnections = this.lastConnections.slice(0, 10);
-    }
+    // 最新连接置顶，同时清理历史重复项，再限制列表长度。
+    this.lastConnections = [
+      ...new Set([connectionId, ...this.lastConnections]),
+    ].slice(0, 10);
   }
 
   /**
@@ -801,6 +794,8 @@ class BaseConnectionPool extends EventEmitter {
     for (const conn of connections) {
       if (conn.host && conn.username) {
         const key = this.generateServerKey(conn);
+        // 保留最近的一条配置，避免旧记录覆盖名称、代理等信息。
+        if (this.lastConnections.includes(key)) continue;
         this.lastConnections.push(key);
 
         const connectionId =
@@ -844,7 +839,7 @@ class BaseConnectionPool extends EventEmitter {
    */
   setLastConnections(connections) {
     if (Array.isArray(connections)) {
-      this.lastConnections = connections.slice(0, 10);
+      this.lastConnections = [...new Set(connections)].slice(0, 10);
     }
   }
 

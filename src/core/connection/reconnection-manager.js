@@ -895,6 +895,7 @@ class ReconnectionManager extends EventEmitter {
 
     let newConnection = null;
     let newConnectionAdopted = false;
+    const configRevision = session.config?._connectionConfigRevision || 0;
 
     try {
       const attemptNumber = session.retryCount;
@@ -948,6 +949,11 @@ class ReconnectionManager extends EventEmitter {
       }
 
       // 替换旧连接
+      if (configRevision !== (session.config?._connectionConfigRevision || 0)) {
+        const error = new Error("SSH configuration changed");
+        error.code = "SSH_CONFIG_CHANGED";
+        throw error;
+      }
       await this.replaceConnection(session, newConnection);
       newConnectionAdopted = true;
       session.pendingReconnectConnection = null;
@@ -1011,6 +1017,28 @@ class ReconnectionManager extends EventEmitter {
 
       if (this._shouldAbortReconnect(session)) {
         session.isReconnecting = false;
+        return;
+      }
+
+      if (
+        error?.code === "SSH_CONFIG_CHANGED" ||
+        configRevision !== (session.config?._connectionConfigRevision || 0)
+      ) {
+        session.isReconnecting = false;
+        session.retryCount = 0;
+        session.reconnectWindowStartedAt = Date.now();
+        await this.scheduleReconnect(session, FAILURE_REASON.NETWORK);
+        return;
+      }
+
+      if (
+        /cancelled|canceled|取消/i.test(String(error?.message || "")) ||
+        [
+          "SSH_INTERACTIVE_AUTH_FAILED",
+          "KEYBOARD_INTERACTIVE_TIMEOUT",
+        ].includes(error?.code)
+      ) {
+        this.abandonReconnection(session, error.message);
         return;
       }
 

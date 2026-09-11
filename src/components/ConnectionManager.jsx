@@ -148,6 +148,8 @@ const getConnectionVersion = (connection) => {
     connection.connectionType || "",
     connection.authType || "",
     connection.privateKeyPath || "",
+    connection.agentPath || "",
+    connection.agentForward ? "1" : "0",
     connection.os || "",
     connection.password || "",
     proxySignature,
@@ -482,12 +484,19 @@ const buildConnectionPayloadFromForm = ({
     host: String(formData.host || "").trim(),
     port: parsePortValue(formData.port, fallbackPort),
     username: String(formData.username || "").trim(),
-    password: shouldPreservePassword
-      ? selectedItem?.password || ""
-      : formData.password || "",
-    _preservePassword: shouldPreservePassword,
+    password:
+      formData.authType === "password"
+        ? shouldPreservePassword
+          ? selectedItem?.password || ""
+          : formData.password || ""
+        : "",
+    _preservePassword:
+      formData.authType === "password" && shouldPreservePassword,
     authType: formData.authType || "password",
-    privateKeyPath: String(formData.privateKeyPath || "").trim(),
+    privateKeyPath:
+      formData.authType === "privateKey"
+        ? String(formData.privateKeyPath || "").trim()
+        : "",
     agentPath: String(formData.agentPath || "").trim(),
     agentForward: formData.agentForward === true,
     os: formData.os,
@@ -1262,6 +1271,8 @@ const ConnectionManager = memo(
     });
     const [connectionTestResult, setConnectionTestResult] = useState(null);
     const [testingConnection, setTestingConnection] = useState(false);
+    const lastSavedDraftRef = useRef(null);
+    const flushEditSaveRef = useRef(null);
 
     // 串口检测状态
     const [serialPorts, setSerialPorts] = useState([]);
@@ -1668,7 +1679,9 @@ const ConnectionManager = memo(
       },
     });
 
-    const handleDialogClose = useCallback(() => {
+    const handleDialogClose = useCallback(async () => {
+      if (flushEditSaveRef.current && !(await flushEditSaveRef.current()))
+        return;
       setDialogOpen(false);
       setConnectionTestResult(null);
       setShowPassword(false);
@@ -2037,206 +2050,246 @@ const ConnectionManager = memo(
       validationSteps,
     ]);
 
-    const handleSave = useCallback(() => {
-      // 验证必填字段
-      if (!formData.name || !formData.name.trim()) {
-        showError(t("connectionManager.nameRequired"));
-        return;
-      }
-
-      // 只有在创建连接时才检查主机地址（串口协议下为端口路径）
-      if (
-        dialogType === "connection" &&
-        (!formData.host || !formData.host.trim())
-      ) {
-        if (formData.protocol === "serial") {
-          showError(t("connectionManager.serialPortRequired"));
-        } else {
-          showError(t("connectionManager.hostRequired"));
+    const handleSave = useCallback(
+      async (options = {}) => {
+        const autoSave = options.autoSave === true;
+        // 验证必填字段
+        if (!formData.name || !formData.name.trim()) {
+          showError(t("connectionManager.nameRequired"));
+          return;
         }
-        return;
-      }
 
-      if (dialogType === "group") {
-        const groupData = {
-          id: selectedItem?.id || `group_${Date.now()}`,
-          type: "group",
-          name: formData.name,
-          items: selectedItem?.items || [],
-        };
+        // 只有在创建连接时才检查主机地址（串口协议下为端口路径）
+        if (
+          dialogType === "connection" &&
+          (!formData.host || !formData.host.trim())
+        ) {
+          if (formData.protocol === "serial") {
+            showError(t("connectionManager.serialPortRequired"));
+          } else {
+            showError(t("connectionManager.hostRequired"));
+          }
+          return;
+        }
 
+        if (dialogType === "group") {
+          const groupData = {
+            id: selectedItem?.id || `group_${Date.now()}`,
+            type: "group",
+            name: formData.name,
+            items: selectedItem?.items || [],
+          };
+
+          let newConnections;
+          if (dialogMode === "add") {
+            newConnections = [...connections, groupData];
+          } else {
+            newConnections = connections.map((item) =>
+              item.id === selectedItem.id
+                ? { ...item, name: formData.name }
+                : item,
+            );
+          }
+
+          setConnections(newConnections);
+
+          // 保存到配置文件
+          if (window.terminalAPI && window.terminalAPI.saveConnections) {
+            isSavingRef.current = true;
+            window.terminalAPI
+              .saveConnections(newConnections)
+              .catch(() => {
+                showError(t("connectionManager.saveFailed"));
+              })
+              .finally(() => {
+                setTimeout(() => {
+                  isSavingRef.current = false;
+                }, 100);
+              });
+          }
+
+          setDialogOpen(false);
+          showSuccess(
+            dialogMode === "add"
+              ? t("connectionManager.createSuccess")
+              : t("connectionManager.updateSuccess"),
+          );
+          return;
+        }
+
+        const invalidStep = validationSteps.find((step) => !step.ok);
+        if (invalidStep) {
+          showError(invalidStep.message);
+          return;
+        }
+
+        // 处理连接保存
+        const connectionData = buildConnectionPayloadFromForm({
+          formData,
+          selectedItem,
+          dialogMode,
+        });
+
+        // 保存到本地状态
         let newConnections;
         if (dialogMode === "add") {
-          newConnections = [...connections, groupData];
+          if (formData.parentGroup) {
+            // 添加到组内
+            newConnections = connections.map((item) =>
+              item.id === formData.parentGroup
+                ? { ...item, items: [...(item.items || []), connectionData] }
+                : item,
+            );
+          } else {
+            // 添加到顶级
+            newConnections = [...connections, connectionData];
+          }
         } else {
-          newConnections = connections.map((item) =>
-            item.id === selectedItem.id
-              ? { ...item, name: formData.name }
-              : item,
-          );
+          // 编辑连接
+          const oldParentId = selectedItem.parentGroupId;
+          const newParentId = formData.parentGroup;
+
+          if (oldParentId === newParentId) {
+            // 分组未改变，原地更新
+            if (oldParentId) {
+              // 在组内编辑
+              newConnections = connections.map((group) =>
+                group.id === oldParentId
+                  ? {
+                      ...group,
+                      items: group.items.map((item) =>
+                        item.id === selectedItem.id ? connectionData : item,
+                      ),
+                    }
+                  : group,
+              );
+            } else {
+              // 在顶级编辑
+              newConnections = connections.map((item) =>
+                item.id === selectedItem.id ? connectionData : item,
+              );
+            }
+          } else {
+            // 分组已改变，先删除后添加
+            let tempConnections = [...connections];
+
+            // 1. 从旧位置移除
+            if (oldParentId) {
+              const oldGroupIndex = tempConnections.findIndex(
+                (g) => g.id === oldParentId,
+              );
+              if (oldGroupIndex > -1) {
+                tempConnections[oldGroupIndex] = {
+                  ...tempConnections[oldGroupIndex],
+                  items: tempConnections[oldGroupIndex].items.filter(
+                    (i) => i.id !== selectedItem.id,
+                  ),
+                };
+              }
+            } else {
+              tempConnections = tempConnections.filter(
+                (i) => i.id !== selectedItem.id,
+              );
+            }
+
+            // 2. 添加到新位置
+            if (newParentId) {
+              const newGroupIndex = tempConnections.findIndex(
+                (g) => g.id === newParentId,
+              );
+              if (newGroupIndex > -1) {
+                tempConnections[newGroupIndex] = {
+                  ...tempConnections[newGroupIndex],
+                  items: [
+                    ...(tempConnections[newGroupIndex].items || []),
+                    connectionData,
+                  ],
+                };
+              }
+            } else {
+              tempConnections.push(connectionData);
+            }
+
+            newConnections = tempConnections;
+          }
+        }
+
+        isSavingRef.current = true;
+        try {
+          if (window.terminalAPI?.saveConnections) {
+            const result =
+              await window.terminalAPI.saveConnections(newConnections);
+            if (result === false || result?.success === false)
+              throw new Error(t("connectionManager.saveFailed"));
+          }
+        } catch {
+          showError(t("connectionManager.saveFailed"));
+          return false;
+        } finally {
+          isSavingRef.current = false;
         }
 
         setConnections(newConnections);
-
-        // 保存到配置文件
-        if (window.terminalAPI && window.terminalAPI.saveConnections) {
-          isSavingRef.current = true;
-          window.terminalAPI
-            .saveConnections(newConnections)
-            .catch(() => {
-              showError(t("connectionManager.saveFailed"));
-            })
-            .finally(() => {
-              setTimeout(() => {
-                isSavingRef.current = false;
-              }, 100);
-            });
+        if (dialogMode === "edit") {
+          setSelectedItem({
+            ...connectionData,
+            parentGroupId: formData.parentGroup,
+          });
         }
-
-        setDialogOpen(false);
-        showSuccess(
-          dialogMode === "add"
-            ? t("connectionManager.createSuccess")
-            : t("connectionManager.updateSuccess"),
-        );
-        return;
-      }
-
-      const invalidStep = validationSteps.find((step) => !step.ok);
-      if (invalidStep) {
-        showError(invalidStep.message);
-        return;
-      }
-
-      // 处理连接保存
-      const connectionData = buildConnectionPayloadFromForm({
+        if (!autoSave) {
+          setDialogOpen(false);
+          showSuccess(
+            dialogMode === "add"
+              ? t("connectionManager.createSuccess")
+              : t("connectionManager.updateSuccess"),
+          );
+        }
+        setConnectionTestResult(null);
+        return true;
+      },
+      [
+        dialogType,
+        dialogMode,
         formData,
         selectedItem,
-        dialogMode,
-      });
+        connections,
+        t,
+        showError,
+        showSuccess,
+        validationSteps,
+      ],
+    );
 
-      // 保存到本地状态
-      let newConnections;
-      if (dialogMode === "add") {
-        if (formData.parentGroup) {
-          // 添加到组内
-          newConnections = connections.map((item) =>
-            item.id === formData.parentGroup
-              ? { ...item, items: [...(item.items || []), connectionData] }
-              : item,
-          );
-        } else {
-          // 添加到顶级
-          newConnections = [...connections, connectionData];
-        }
-      } else {
-        // 编辑连接
-        const oldParentId = selectedItem.parentGroupId;
-        const newParentId = formData.parentGroup;
+    const autoSaveEnabled =
+      dialogOpen &&
+      dialogMode === "edit" &&
+      dialogType === "connection" &&
+      formData.protocol === "ssh";
+    const editDraftSignature = JSON.stringify(formData);
 
-        if (oldParentId === newParentId) {
-          // 分组未改变，原地更新
-          if (oldParentId) {
-            // 在组内编辑
-            newConnections = connections.map((group) =>
-              group.id === oldParentId
-                ? {
-                    ...group,
-                    items: group.items.map((item) =>
-                      item.id === selectedItem.id ? connectionData : item,
-                    ),
-                  }
-                : group,
-            );
-          } else {
-            // 在顶级编辑
-            newConnections = connections.map((item) =>
-              item.id === selectedItem.id ? connectionData : item,
-            );
-          }
-        } else {
-          // 分组已改变，先删除后添加
-          let tempConnections = [...connections];
+    useEffect(() => {
+      lastSavedDraftRef.current = editDraftSignature;
+    }, [dialogOpen, dialogMode, selectedItem?.id]);
 
-          // 1. 从旧位置移除
-          if (oldParentId) {
-            const oldGroupIndex = tempConnections.findIndex(
-              (g) => g.id === oldParentId,
-            );
-            if (oldGroupIndex > -1) {
-              tempConnections[oldGroupIndex] = {
-                ...tempConnections[oldGroupIndex],
-                items: tempConnections[oldGroupIndex].items.filter(
-                  (i) => i.id !== selectedItem.id,
-                ),
-              };
-            }
-          } else {
-            tempConnections = tempConnections.filter(
-              (i) => i.id !== selectedItem.id,
-            );
-          }
-
-          // 2. 添加到新位置
-          if (newParentId) {
-            const newGroupIndex = tempConnections.findIndex(
-              (g) => g.id === newParentId,
-            );
-            if (newGroupIndex > -1) {
-              tempConnections[newGroupIndex] = {
-                ...tempConnections[newGroupIndex],
-                items: [
-                  ...(tempConnections[newGroupIndex].items || []),
-                  connectionData,
-                ],
-              };
-            }
-          } else {
-            tempConnections.push(connectionData);
-          }
-
-          newConnections = tempConnections;
-        }
+    useEffect(() => {
+      if (!autoSaveEnabled) {
+        flushEditSaveRef.current = null;
+        return;
       }
-
-      // 更新本地状态
-      setConnections(newConnections);
-
-      // 保存到配置文件
-      if (window.terminalAPI && window.terminalAPI.saveConnections) {
-        // 设置标志，避免自己触发的变更事件导致重复加载
-        isSavingRef.current = true;
-        window.terminalAPI
-          .saveConnections(newConnections)
-          .catch(() => {
-            showError(t("connectionManager.saveFailed"));
-          })
-          .finally(() => {
-            // 延迟重置标志，确保变更事件已被处理
-            setTimeout(() => {
-              isSavingRef.current = false;
-            }, 100);
-          });
-      }
-
-      setDialogOpen(false);
-      showSuccess(
-        dialogMode === "add"
-          ? t("connectionManager.createSuccess")
-          : t("connectionManager.updateSuccess"),
-      );
-      setConnectionTestResult(null);
-    }, [
-      dialogType,
-      dialogMode,
-      formData,
-      selectedItem,
-      connections,
-      t,
-      showError,
-      showSuccess,
-      validationSteps,
-    ]);
+      const saveDraft = async () => {
+        if (lastSavedDraftRef.current === editDraftSignature) return true;
+        const saved = await handleSave({ autoSave: true });
+        if (saved) lastSavedDraftRef.current = editDraftSignature;
+        return saved;
+      };
+      flushEditSaveRef.current = saveDraft;
+      if (firstInvalidStep || lastSavedDraftRef.current === editDraftSignature)
+        return;
+      const timer = setTimeout(() => {
+        void saveDraft();
+      }, 700);
+      return () => clearTimeout(timer);
+    }, [autoSaveEnabled, editDraftSignature, firstInvalidStep, handleSave]);
 
     const handleOpenConnection = useCallback(
       (connection) => {
@@ -3672,6 +3725,15 @@ const ConnectionManager = memo(
             </Box>
           </DialogContent>
           <DialogActions>
+            {autoSaveEnabled && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ mr: "auto", pl: 2 }}
+              >
+                {t("connectionManager.autoSaveHint")}
+              </Typography>
+            )}
             {dialogType === "connection" && formData.protocol === "ssh" && (
               <Button
                 onClick={handleTestConnection}
@@ -3685,7 +3747,9 @@ const ConnectionManager = memo(
                   : t("connectionManager.testConnection")}
               </Button>
             )}
-            <Button onClick={handleDialogClose}>{t("common.cancel")}</Button>
+            <Button onClick={handleDialogClose}>
+              {autoSaveEnabled ? t("common.close") : t("common.cancel")}
+            </Button>
             <Button onClick={handleSave} variant="contained">
               {t("common.save")}
             </Button>

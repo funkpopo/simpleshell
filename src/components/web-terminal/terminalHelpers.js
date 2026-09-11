@@ -82,7 +82,7 @@ export const shouldForceTerminalViewportRefresh = (
   return term.__pendingWrappedInputRefresh === true;
 };
 
-const getTerminalConfigSignature = (config) => {
+export const getTerminalConfigSignature = (config) => {
   if (!config) return "__NO_CONFIG__";
 
   return [
@@ -94,6 +94,11 @@ const getTerminalConfigSignature = (config) => {
     config.protocol || "ssh",
     config.authType || "",
     config.privateKeyPath || "",
+    config.password || "",
+    config.passphrase || "",
+    config.agentPath || "",
+    config.agentForward ? "1" : "0",
+    JSON.stringify(config.proxy || null),
     config.splitReconnect ? "1" : "0",
     config.language || "",
   ].join("|");

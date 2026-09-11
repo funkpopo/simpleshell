@@ -11,11 +11,14 @@
 const { logToFile } = require("../utils/logger");
 const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
 
-const PASSWORD_PROMPT_PATTERN = /password|密码|passcode/i;
+const PASSWORD_PROMPT_PATTERN = /password|密码/i;
+const ONE_TIME_PROMPT_PATTERN =
+  /one[ -]?time|otp|token|verification|验证码|动态|一次性/i;
 
 // responder 超时：渲染层对话框若长时间不响应，避免 SSH 认证无限挂起。
 // 给足用户输入验证码的时间（5 分钟）。
 const RESPONDER_TIMEOUT_MS = 5 * 60 * 1000;
+const attachedClients = new WeakSet();
 
 /**
  * 判断单个 keyboard-interactive 提示是否可用已存储的密码自动代答
@@ -31,10 +34,17 @@ function autoAnswerPrompt(promptInfo, sshConfig) {
   if (promptInfo.echo === true) {
     return null;
   }
-  if (!sshConfig || typeof sshConfig.password !== "string" || !sshConfig.password) {
+  if (
+    !sshConfig ||
+    typeof sshConfig.password !== "string" ||
+    !sshConfig.password
+  ) {
     return null;
   }
-  if (PASSWORD_PROMPT_PATTERN.test(promptInfo.prompt)) {
+  if (
+    PASSWORD_PROMPT_PATTERN.test(promptInfo.prompt) &&
+    !ONE_TIME_PROMPT_PATTERN.test(promptInfo.prompt)
+  ) {
     return sshConfig.password;
   }
   return null;
@@ -54,6 +64,7 @@ async function resolveKeyboardInteractiveAnswers({
   instructions,
   prompts,
   sshConfig,
+  signal,
 }) {
   const promptList = Array.isArray(prompts) ? prompts : [];
   const answers = [];
@@ -101,6 +112,7 @@ async function resolveKeyboardInteractiveAnswers({
           echo: p?.echo === true,
         })),
         prefill: answers,
+        signal,
       });
     } catch (error) {
       clearTimeout(timer);
@@ -123,10 +135,18 @@ async function resolveKeyboardInteractiveAnswers({
   }
 
   // 按提示顺序归位答案；用户未填写的用预填值兜底，最后兜空串
-  return promptList.map((_, index) => {
-    const userAnswer =
-      Array.isArray(result.answers) ? result.answers[index] : undefined;
+  return promptList.map((promptInfo, index) => {
+    const userAnswer = Array.isArray(result.answers)
+      ? result.answers[index]
+      : undefined;
     if (typeof userAnswer === "string") {
+      if (
+        promptInfo?.echo !== true &&
+        PASSWORD_PROMPT_PATTERN.test(promptInfo?.prompt || "") &&
+        !ONE_TIME_PROMPT_PATTERN.test(promptInfo?.prompt || "")
+      ) {
+        sshConfig.password = userAnswer;
+      }
       return userAnswer;
     }
     if (typeof answers[index] === "string") {
@@ -143,9 +163,17 @@ async function resolveKeyboardInteractiveAnswers({
  * @param {Object} sshConfig - SSH 配置
  */
 function attachKeyboardInteractiveSupport(client, sshConfig) {
-  if (!client || typeof client.on !== "function") {
+  if (
+    !client ||
+    typeof client.on !== "function" ||
+    attachedClients.has(client)
+  ) {
     return;
   }
+  attachedClients.add(client);
+  const controller = new AbortController();
+  sshConfig._authSignal = controller.signal;
+  client.once("close", () => controller.abort());
 
   client.on(
     "keyboard-interactive",
@@ -161,15 +189,27 @@ function attachKeyboardInteractiveSupport(client, sshConfig) {
         "INFO",
       );
 
-      resolveKeyboardInteractiveAnswers({ name, instructions, prompts, sshConfig })
+      resolveKeyboardInteractiveAnswers({
+        name,
+        instructions,
+        prompts,
+        sshConfig,
+        signal: controller.signal,
+      })
         .then((answers) => {
           finish(answers);
         })
         .catch((error) => {
+          if (controller.signal.aborted) return;
           logToFile(
             `SSH keyboard-interactive answering failed: ${error?.message || error}`,
             "WARN",
           );
+          // 先传递原始认证错误；只 end() 会被上层误判为网络断线并再次弹窗。
+          error.code = error.code || "SSH_INTERACTIVE_AUTH_FAILED";
+          if (client.listenerCount("error") > 0) {
+            client.emit("error", error);
+          }
           // 结束连接以向上层传递失败/取消（终止中的认证流程）
           try {
             if (typeof client.end === "function") {

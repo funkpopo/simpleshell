@@ -540,6 +540,7 @@
       "loadFailed": "加载连接配置失败",
       "reloadFailed": "重新加载连接配置失败",
       "saveFailed": "保存连接配置失败",
+      "autoSaveHint": "修改会自动保存并应用",
       "deleteSuccess": "删除成功",
       "nameRequired": "名称不能为空",
       "hostRequired": "主机地址不能为空",
