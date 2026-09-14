@@ -1,6 +1,7 @@
 import * as React from "react";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { useSftpFollowSetting } from "./hooks/useSftpFollowSetting.js";
 import { ThemeProvider } from "@mui/material/styles";
 import { createUnifiedTheme } from "./theme";
 import CssBaseline from "@mui/material/CssBaseline";
@@ -1548,6 +1549,7 @@ function AppContent() {
   const [dndEnabled, setDndEnabled] = React.useState(true);
   // 传输栏显示模式: "bottom" | "sidebar"
   const [transferBarMode, setTransferBarMode] = React.useState("bottom");
+  const sftpFollowTerminalDirectory = useSftpFollowSetting();
   // 侧边栏位置: "left" | "right"
   const [sidebarPosition, setSidebarPosition] = React.useState("right");
   const [sidebarWidth, setSidebarWidth] = React.useState(DEFAULT_SIDEBAR_WIDTH);
@@ -5095,6 +5097,7 @@ function AppContent() {
                       onPathChange={updateFileManagerPath}
                       onNavigationStateChange={updateFileManagerHistory}
                       sessionContext={sidebarSessionContext}
+                      followTerminalDirectory={sftpFollowTerminalDirectory}
                     />
                   )}
                 </Box>

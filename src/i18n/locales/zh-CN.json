@@ -4,6 +4,7 @@
       "title": "设置",
       "general": "通用",
       "appearance": "外观",
+      "fileManagement": "文件管理",
       "language": "界面语言",
       "fontSize": "界面字号",
       "theme": "主题模式",
@@ -256,6 +257,8 @@
         "saveFailed": "保存错误报告设置失败"
       },
       "transferIntegrity": "传输完成后校验（SHA-256）",
+      "sftpFollowTerminalDirectory": "SFTP 跟随终端目录",
+      "sftpFollowTerminalDirectoryHelp": "所有 SSH 会话共用此设置，保存后立即生效。识别到终端目录变化时自动跳转；自定义提示符可能需要配置 Shell 上报路径。",
       "transferIntegrityHelp": "通过 SFTP 读取远端文件进行完整性校验。大文件需要额外读取时间；校验不一致时整文件重传一次。"
     },
     "masterPassword": {
@@ -1178,6 +1181,7 @@
       "loading": "正在加载文件预览..."
     },
     "fileManager": {
+      "followDirectoryFailed": "无法跟随终端目录 {{path}}：{{error}}",
       "title": "文件管理",
       "loading": "加载中...",
       "refresh": "刷新",

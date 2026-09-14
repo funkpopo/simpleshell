@@ -89,6 +89,61 @@ const subSectionLabelSx = {
   "&:first-of-type": { mt: 0 },
 };
 
+const SettingsToggleRow = ({ id, label, description, checked, onChange }) => (
+  <Box
+    sx={{
+      minWidth: 0,
+      pt: 1.25,
+      borderTop: "1px solid",
+      borderColor: "divider",
+      display: "flex",
+      flexDirection: "column",
+      gap: 0.5,
+    }}
+  >
+    <FormControlLabel
+      labelPlacement="start"
+      control={
+        <Switch
+          checked={checked}
+          onChange={onChange}
+          size="small"
+          slotProps={{ input: { "aria-describedby": `${id}-description` } }}
+          sx={{ flexShrink: 0 }}
+        />
+      }
+      label={
+        <Typography
+          variant="body2"
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            fontWeight: 500,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {label}
+        </Typography>
+      }
+      sx={{
+        m: 0,
+        width: "100%",
+        gap: 1.5,
+        justifyContent: "space-between",
+      }}
+    />
+    <Typography
+      id={`${id}-description`}
+      component="p"
+      variant="caption"
+      color="text.secondary"
+      sx={{ m: 0, display: "block", lineHeight: 1.6, overflowWrap: "anywhere" }}
+    >
+      {description}
+    </Typography>
+  </Box>
+);
+
 // Custom styled dialog title
 const BootstrapDialogTitle = memo((props) => {
   const { t } = useTranslation();
@@ -221,6 +276,8 @@ const Settings = memo(({ open, onClose }) => {
   // 传输栏显示模式: "bottom" | "sidebar"
   const [transferBarMode, setTransferBarMode] = React.useState("bottom");
   const [transferIntegrity, setTransferIntegrity] = React.useState(false);
+  const [sftpFollowTerminalDirectory, setSftpFollowTerminalDirectory] =
+    React.useState(true);
 
   // 需要重启的设置变更标志
   const [needsRestart, setNeedsRestart] = React.useState(false);
@@ -344,6 +401,9 @@ const Settings = memo(({ open, onClose }) => {
             // 传输栏显示模式
             setTransferBarMode(settings.transferBarMode || "bottom");
             setTransferIntegrity(settings.transferIntegrity === true);
+            setSftpFollowTerminalDirectory(
+              settings.sftpFollowTerminalDirectory !== false,
+            );
 
             // 备份保留天数
             if (settings.backupRetentionDays !== undefined) {
@@ -1146,6 +1206,7 @@ const Settings = memo(({ open, onClose }) => {
     },
     transferBarMode,
     transferIntegrity,
+    sftpFollowTerminalDirectory,
     backupRetentionDays,
     externalEditor: {
       enabled: externalEditorEnabled,
@@ -1334,7 +1395,7 @@ const Settings = memo(({ open, onClose }) => {
             {/* Sidebar */}
             <Box
               sx={{
-                width: 160,
+                width: { xs: 128, sm: 160 },
                 flexShrink: 0,
                 borderRight: 1,
                 borderColor: "divider",
@@ -1347,13 +1408,19 @@ const Settings = memo(({ open, onClose }) => {
                     key={item.id}
                     selected={activeTab === item.id}
                     onClick={() => setActiveTab(item.id)}
+                    sx={{ px: { xs: 1, sm: 2 } }}
                   >
-                    <ListItemIcon sx={{ minWidth: 36 }}>
+                    <ListItemIcon sx={{ minWidth: { xs: 28, sm: 36 } }}>
                       {item.icon}
                     </ListItemIcon>
                     <ListItemText
                       primary={item.label}
-                      primaryTypographyProps={{ variant: "body2" }}
+                      slotProps={{
+                        primary: {
+                          variant: "body2",
+                          sx: { overflowWrap: "anywhere" },
+                        },
+                      }}
                     />
                   </ListItemButton>
                 ))}
@@ -1364,14 +1431,15 @@ const Settings = memo(({ open, onClose }) => {
             <Box
               sx={{
                 flex: 1,
+                minWidth: 0,
                 overflowY: "auto",
-                p: 2,
+                p: { xs: 1.5, sm: 2 },
               }}
             >
               {/* Tab 0: General */}
               {activeTab === 0 && (
                 <Grid container spacing={2}>
-                  {/* Left: Appearance */}
+                  {/* Left: Appearance + file management */}
                   <Grid size={{ xs: 12, md: 6 }}>
                     <Typography sx={subSectionLabelSx}>
                       {t("settings.appearance")}
@@ -1433,7 +1501,19 @@ const Settings = memo(({ open, onClose }) => {
                           />
                         </Box>
                       </Box>
+                    </Box>
 
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.fileManagement")}
+                    </Typography>
+                    <Box
+                      sx={{
+                        ...sectionCardSx,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 1.5,
+                      }}
+                    >
                       <Box>
                         <Typography variant="subtitle2" gutterBottom>
                           {t("settings.transferDisplay")}
@@ -1451,26 +1531,27 @@ const Settings = memo(({ open, onClose }) => {
                             </MenuItem>
                           </Select>
                         </FormControl>
-                        <FormControlLabel
-                          control={
-                            <Switch
-                              checked={transferIntegrity}
-                              onChange={(event) =>
-                                setTransferIntegrity(event.target.checked)
-                              }
-                              size="small"
-                            />
-                          }
-                          label={t("settings.transferIntegrity")}
-                        />
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          display="block"
-                        >
-                          {t("settings.transferIntegrityHelp")}
-                        </Typography>
                       </Box>
+                      <SettingsToggleRow
+                        id="settings-transfer-integrity"
+                        label={t("settings.transferIntegrity")}
+                        description={t("settings.transferIntegrityHelp")}
+                        checked={transferIntegrity}
+                        onChange={(event) =>
+                          setTransferIntegrity(event.target.checked)
+                        }
+                      />
+                      <SettingsToggleRow
+                        id="settings-follow-terminal"
+                        label={t("settings.sftpFollowTerminalDirectory")}
+                        description={t(
+                          "settings.sftpFollowTerminalDirectoryHelp",
+                        )}
+                        checked={sftpFollowTerminalDirectory}
+                        onChange={(event) =>
+                          setSftpFollowTerminalDirectory(event.target.checked)
+                        }
+                      />
                     </Box>
                   </Grid>
 

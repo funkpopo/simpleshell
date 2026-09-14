@@ -40,6 +40,7 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 ### 📁 **Advanced File Management**
 
 - **Full SFTP Browser**: Intuitive file browsing with drag-drop operations
+- **Follow Terminal Directory**: A persistent global option in Settings → General lets SFTP follow the focused SSH terminal, with directory state isolated per tab or split session. Enabled by default. [Path detection and shell setup](SFTP_TERMINAL_DIRECTORY.md)
 - **Bulk Transfers**: Upload/download entire folders with progress tracking
 - **Resumable SFTP Transfers**: Pause, reconnect, or restart the app and resume retained files from the transfer panel; files of 128 MiB or larger resume by completed segments
 - **Integrity Verification**: Optional SHA-256 by default or MD5 per task, streamed over SFTP without shell access; a mismatch triggers exactly one full-file retransmission and reports both hashes if it fails again

@@ -28,6 +28,7 @@ import {
 import { dispatchCommandToGroup } from "../../src/core/syncGroupCommandDispatcher.js";
 import { useAllGlobalTransfers } from "../../src/store/globalTransferStore.js";
 import useDragResize from "../../src/hooks/useDragResize.js";
+import { getWorkingDirectoryState } from "../../src/modules/terminal/workingDirectoryStore.js";
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
@@ -230,6 +231,16 @@ async function run() {
     () => contents("B").includes("B:initial-B"),
     "actual SSH output did not reach xterm",
   );
+  for (const id of ["A", "B", "C", "D"]) {
+    await window.terminalAPI.sendToProcess(processCache[id], "fixture-cwd\r");
+  }
+  await until(
+    () =>
+      ["A", "B", "C", "D"].every(
+        (id) => getWorkingDirectoryState(id).path === `/sessions/${id}`,
+      ),
+    "WebTerminal did not track real SSH directory reports per session",
+  );
   apply(actions.adoptTab("A", "B", "right"));
   await delay(100);
   const initialWidth = bounds("A").width;
@@ -314,6 +325,19 @@ async function run() {
   window.dispatchEvent(
     new CustomEvent("terminalSessionRestored", { detail: restored }),
   );
+  assert(
+    getWorkingDirectoryState("B").path === null,
+    "reconnect retained the old cwd",
+  );
+  assert(
+    getWorkingDirectoryState("A").path === "/sessions/A",
+    "reconnect reset another pane's cwd",
+  );
+  await window.terminalAPI.sendToProcess(processCache.B, "fixture-cwd\r");
+  await until(
+    () => getWorkingDirectoryState("B").path === "/sessions/B",
+    "cwd tracking did not resume after reconnect",
+  );
   apply(actions.focusPane("A", "B"));
   dispatchCommandToGroup("B", "after-reconnect", [], {});
   await until(
@@ -394,6 +418,12 @@ async function run() {
     "late SSH connection leaked after its pane closed",
   );
   const diagnostics = getTerminalSessionDiagnostics();
+  assert(
+    ["A", "B", "C", "D"].every(
+      (id) => getWorkingDirectoryState(id).path === null,
+    ),
+    "closed terminals retained cwd state",
+  );
   assert(
     diagnostics.terminalCount === 0 &&
       diagnostics.processCount === 0 &&

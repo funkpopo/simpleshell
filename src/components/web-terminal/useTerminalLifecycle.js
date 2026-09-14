@@ -49,6 +49,8 @@ import {
   shouldForceTerminalViewportRefresh,
 } from "./terminalHelpers.js";
 import { setupSimulatedTerminal } from "./simulatedTerminal.js";
+import { attachWorkingDirectoryTracking } from "../../modules/terminal/workingDirectoryTracking.js";
+import { setTerminalWorkingDirectory } from "../../modules/terminal/workingDirectoryStore.js";
 
 /**
  * Terminal create / cache reuse / mailbox / connection / DOM listeners / cleanup.
@@ -225,6 +227,7 @@ export function useTerminalLifecycle({
           terminalCache[sessionKey].__simpleShellOsc133Disposable.dispose();
           delete terminalCache[sessionKey].__simpleShellOsc133Disposable;
         }
+        terminalCache[sessionKey].__workingDirectoryTracker?.dispose();
         terminalCache[sessionKey].dispose();
       } catch {
         // Failed to dispose terminal
@@ -243,6 +246,7 @@ export function useTerminalLifecycle({
     previousSshConfigRef.current = sshConfig;
     const cached = terminalCache[sessionKey];
     if (changed && cached?.__connectionFailed && !processCache[sessionKey]) {
+      cached.__workingDirectoryTracker?.dispose();
       cached.dispose();
       delete terminalCache[sessionKey];
       delete fitAddonCache[sessionKey];
@@ -456,6 +460,21 @@ export function useTerminalLifecycle({
     const terminalDisposables = disposablesCache[sessionKey];
 
     const ensureTerminalMailbox = (term) => {
+      if (
+        terminalType === "ssh" &&
+        sshConfig &&
+        (!sshConfig.protocol || sshConfig.protocol === "ssh")
+      ) {
+        // The tracker belongs to xterm, not a mailbox binding. Retain OSC
+        // precedence and learned host identity when listeners are rebound.
+        if (!term.__workingDirectoryTracker) {
+          term.__workingDirectoryTracker = attachWorkingDirectoryTracking(
+            term,
+            sessionKey,
+            sshConfig,
+          );
+        }
+      }
       const queueOutputHandler = (data) => {
         if (scrollbackUsageTrackerRef.current) {
           scrollbackUsageTrackerRef.current.addData(data);
@@ -573,6 +592,7 @@ export function useTerminalLifecycle({
           );
         }
       } else {
+        setTerminalWorkingDirectory(sessionKey, null);
         term = new Terminal({
           cursorBlink: true,
           cursorStyle: "block",

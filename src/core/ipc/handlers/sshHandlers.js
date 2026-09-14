@@ -1,6 +1,9 @@
 const { StringDecoder } = require("string_decoder");
 const { logToFile } = require("../../utils/logger");
 const outputProcessor = require("../../../modules/terminal/output-processor");
+const {
+  createOscSafeOutputTransform,
+} = require("../../../modules/terminal/oscSafeOutput");
 const crypto = require("crypto");
 const configService = require("../../../services/configService");
 const {
@@ -1361,6 +1364,9 @@ class SSHHandlers {
     let flushTimer = null;
     let droppedBytes = 0;
     const stdoutDecoder = new StringDecoder("utf8");
+    const transformOutput = createOscSafeOutputTransform((output) =>
+      outputProcessor.processTerminalOutput(processId, output),
+    );
     const stderrDecoder = new StringDecoder("utf8");
     const processMailbox = this._configureProcessMailbox(processId, sshConfig);
 
@@ -1430,15 +1436,12 @@ class SSHHandlers {
 
         emitDroppedBytesWarning();
 
-        if (!output) {
+        if (!output && !flushDecoderRemainder) {
           this._setProcessBufferedBytes(processId, buffer.length);
           return;
         }
 
-        const processedOutput = outputProcessor.processTerminalOutput(
-          processId,
-          output,
-        );
+        const processedOutput = transformOutput(output, flushDecoderRemainder);
         if (processedOutput) {
           emitOutput(processedOutput);
         }

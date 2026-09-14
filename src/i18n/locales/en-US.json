@@ -4,6 +4,7 @@
       "title": "Settings",
       "general": "General",
       "appearance": "Appearance",
+      "fileManagement": "File Management",
       "language": "Language",
       "fontSize": "Font Size",
       "theme": "Theme Mode",
@@ -256,6 +257,8 @@
         "saveFailed": "Failed to save error reporting settings"
       },
       "transferIntegrity": "Verify transfers after completion (SHA-256)",
+      "sftpFollowTerminalDirectory": "SFTP follows terminal directory",
+      "sftpFollowTerminalDirectoryHelp": "Applies to all SSH sessions as soon as settings are saved. Navigate when the terminal directory changes; custom prompts may need shell path reporting.",
       "transferIntegrityHelp": "Read remote files over SFTP to verify integrity. Large files require additional reading time; a mismatch triggers one full file retransmission."
     },
     "masterPassword": {
@@ -1183,6 +1186,7 @@
       "loading": "Loading file preview..."
     },
     "fileManager": {
+      "followDirectoryFailed": "Could not follow terminal directory {{path}}: {{error}}",
       "title": "File Manager",
       "loading": "Loading...",
       "refresh": "Refresh",

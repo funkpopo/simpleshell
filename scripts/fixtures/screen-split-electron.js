@@ -153,6 +153,8 @@ const server = new Server(
               received = [];
               peer = new Receiver();
               pump();
+            } else if (command === "fixture-cwd") {
+              stream.write(`\x1b]7;file://loopback/sessions/${name}\x07`);
             } else stream.write(`\r\n${name}:${command}\r\n`);
           });
         });

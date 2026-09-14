@@ -8,7 +8,7 @@ const output = path.join(root, ".cache", "screen-split-check");
 fs.mkdirSync(output, { recursive: true });
 fs.writeFileSync(
   path.join(output, "index.html"),
-  '<!doctype html><html><body style="margin:0;background:#121212;color:#eee;overflow:hidden"><div id="root"></div><script src="fixture.js"></script></body></html>',
+  '<!doctype html><html><head><meta charset="UTF-8"></head><body style="margin:0;background:#121212;color:#eee;overflow:hidden"><div id="root"></div><script src="fixture.js"></script></body></html>',
 );
 const compiler = webpack({
   mode: "development",

@@ -100,6 +100,7 @@ export function useTerminalSessionEvents({
 
   useEffect(() => {
     const syncTerminalAfterSessionRestore = (processIdFromEvent = null) => {
+      termRef.current?.__workingDirectoryTracker?.reset();
       const resolvedProcessId = processIdFromEvent || processCache[sessionKey];
       if (resolvedProcessId) {
         clearGeometryFor(resolvedProcessId, sessionKey);

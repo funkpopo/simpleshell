@@ -37,6 +37,15 @@ const MODE_TYPE_FILE: u32 = 0o100000;
 mod transfer_tests {
     use super::*;
 
+    #[test]
+    fn directory_paths_preserve_whitespace() {
+        assert_eq!(resolve_directory_path(None), ".");
+        assert_eq!(resolve_directory_path(Some("")), ".");
+        assert_eq!(resolve_directory_path(Some("/srv/folder ")), "/srv/folder ");
+        assert_eq!(resolve_directory_path(Some(" folder ")), " folder ");
+        assert_eq!(resolve_directory_path(Some(" ")), " ");
+    }
+
     #[tokio::test]
     async fn streaming_hash_vectors() {
         assert_eq!(
@@ -1499,7 +1508,9 @@ fn required_path<'a>(value: Option<&'a str>, field_name: &str) -> Result<&'a str
 }
 
 fn resolve_directory_path(value: Option<&str>) -> String {
-    let normalized = value.unwrap_or("").trim();
+    // Directory names may start or end with spaces. Only an absent/empty path
+    // means the SFTP session's initial directory.
+    let normalized = value.unwrap_or("");
     if normalized.is_empty() {
         ".".to_string()
     } else {

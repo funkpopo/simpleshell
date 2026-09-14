@@ -164,6 +164,7 @@ class ConfigService {
       type: "object",
       properties: {
         transferIntegrity: { type: "boolean", default: false },
+        sftpFollowTerminalDirectory: { type: "boolean", default: true },
         language: { type: "string", default: "zh-CN" },
         fontSize: { type: "number", minimum: 10, maximum: 30, default: 14 },
         editorFont: { type: "string", default: "system" },
@@ -1624,6 +1625,7 @@ class ConfigService {
   _getDefaultUISettings() {
     return {
       transferIntegrity: false,
+      sftpFollowTerminalDirectory: true,
       language: "zh-CN",
       fontSize: 14,
       editorFont: "system",

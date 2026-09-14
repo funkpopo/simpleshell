@@ -87,6 +87,7 @@ import {
   getTopLevelTransferItemName,
 } from "../shared/transferNameUtils";
 import { sleep } from "../shared/common";
+import { useFollowTerminalDirectory } from "../hooks/useFollowTerminalDirectory.js";
 
 const FILE_LIST_ROW_HEIGHT = 36;
 
@@ -415,6 +416,7 @@ const FileManager = memo(
     onPathChange,
     onNavigationStateChange,
     sessionContext = null,
+    followTerminalDirectory = false,
   }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -2025,13 +2027,16 @@ const FileManager = memo(
       forceRefresh = false,
       isHistoryNavigation = false,
       requestId = undefined,
+      followRequest = null,
     ) => {
       const loadRequestId =
         typeof requestId === "number"
           ? requestId
           : (activeForegroundLoadRequestIdRef.current += 1);
+      if (followRequest) followRequest.id = loadRequestId;
       const isCurrentLoadRequest = () =>
-        activeForegroundLoadRequestIdRef.current === loadRequestId;
+        activeForegroundLoadRequestIdRef.current === loadRequestId &&
+        !followRequest?.signal.aborted;
 
       if (!isCurrentLoadRequest()) {
         return;
@@ -2086,7 +2091,27 @@ const FileManager = memo(
       }
 
       foregroundLoadCountRef.current += 1;
-      setLoading(true);
+      let foregroundLoadReleased = false;
+      const releaseForegroundLoad = () => {
+        if (foregroundLoadReleased) return;
+        foregroundLoadReleased = true;
+        foregroundLoadCountRef.current = Math.max(
+          0,
+          foregroundLoadCountRef.current - 1,
+        );
+      };
+      const cancelFollowRequest = () => {
+        releaseForegroundLoad();
+        if (activeForegroundLoadRequestIdRef.current !== loadRequestId) return;
+        activeForegroundLoadRequestIdRef.current += 1;
+        setLoading(false);
+        setConnectionLoading(false);
+        setConnectionLoadingMessage("");
+      };
+      followRequest?.signal.addEventListener("abort", cancelFollowRequest, {
+        once: true,
+      });
+      setLoading(!followRequest);
       setError(null);
       let isRetrying = false; // 标记是否正在重试
 
@@ -2095,7 +2120,7 @@ const FileManager = memo(
           return;
         }
 
-        if (isPathChanged) {
+        if (isPathChanged && !followRequest) {
           // 进入新目录前同步清空 ref/state，避免旧列表在分片到达前残留
           filesRef.current = [];
           setFiles([]);
@@ -2112,7 +2137,9 @@ const FileManager = memo(
             path: apiPath,
             canMerge: true,
             priority: forceRefresh ? "high" : "normal",
-            nonBlocking: true,
+            // Automatic navigation commits only after a successful read.
+            // Keep the current directory intact on errors and cancellation.
+            nonBlocking: !followRequest,
             chunkSize: 300,
           };
 
@@ -2161,6 +2188,10 @@ const FileManager = memo(
             }
           } else {
             // 处理错误，检查是否需要重试
+            if (followRequest)
+              throw new Error(
+                response?.error || t("fileManager.errors.loadDirectoryFailed"),
+              );
             if (
               response?.error?.includes("SFTP错误") ||
               /sftp\s*error/i.test(response?.error || "") ||
@@ -2225,6 +2256,7 @@ const FileManager = memo(
         if (!isCurrentLoadRequest()) {
           return;
         }
+        if (followRequest) throw error;
 
         // 加载目录失败
 
@@ -2269,10 +2301,8 @@ const FileManager = memo(
           );
         }
       } finally {
-        foregroundLoadCountRef.current = Math.max(
-          0,
-          foregroundLoadCountRef.current - 1,
-        );
+        followRequest?.signal.removeEventListener("abort", cancelFollowRequest);
+        releaseForegroundLoad();
         // 只有在不重试的情况下才关闭loading
         if (!isRetrying && isCurrentLoadRequest()) {
           setLoading(false);
@@ -2282,6 +2312,25 @@ const FileManager = memo(
 
     const loadDirectoryRef = useRef(loadDirectory);
     loadDirectoryRef.current = loadDirectory;
+
+    useFollowTerminalDirectory({
+      enabled: followTerminalDirectory,
+      sessionKey: tabId,
+      open,
+      connected: Boolean(sshConnection),
+      currentPathRef,
+      loadDirectoryRef,
+      navigationRequestIdRef: activeForegroundLoadRequestIdRef,
+      onError: (error, path) =>
+        showNotification(
+          t("fileManager.followDirectoryFailed", {
+            path,
+            error: error.message || t("fileManager.errors.loadDirectoryFailed"),
+          }),
+          "warning",
+          6000,
+        ),
+    });
 
     // 刷新目录（强制从服务器重新加载）
 

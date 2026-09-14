@@ -10,6 +10,7 @@ import FileManager from "../../src/components/FileManager.jsx";
 import ShortcutCommands from "../../src/components/ShortcutCommands.jsx";
 import AIChatWorkspace from "../../src/components/AIChatWorkspace.jsx";
 import AIChatWindow from "../../src/components/AIChatWindow.jsx";
+import { runDirectoryFollowChecks } from "./directory-follow-renderer.jsx";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const assert = (condition, message) => {
@@ -151,6 +152,14 @@ export async function runSessionPanelChecks() {
       fileTargets.some((entry) => entry.id === "B" && entry.path === "/B"),
       "B used the wrong directory cache",
     );
+
+    const directoryFollow = await runDirectoryFollowChecks({
+      render,
+      container,
+      until,
+      delay,
+      assert,
+    });
 
     window.terminalAPI = {
       getShortcutCommands: async () => ({
@@ -379,6 +388,7 @@ export async function runSessionPanelChecks() {
       "AI stream subscriptions leaked",
     );
     return {
+      directoryFollow,
       monitorTargets,
       fileTargets,
       commandTargets,

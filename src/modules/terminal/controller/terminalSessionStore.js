@@ -1,3 +1,5 @@
+import { clearWorkingDirectorySession } from "../workingDirectoryStore.js";
+
 export const terminalCache = {};
 export const fitAddonCache = {};
 export const processCache = {};
@@ -110,6 +112,7 @@ export const disposeTerminalSession = (tabId) => {
   delete processCache[tabId];
   delete disposablesCache[tabId];
   delete terminalIOMailboxCache[tabId];
+  clearWorkingDirectorySession(tabId);
 
   if (mailbox && typeof mailbox.destroy === "function") {
     try {
@@ -125,6 +128,8 @@ export const disposeTerminalSession = (tabId) => {
   }
 
   if (terminal) {
+    disposeResource(terminal.__workingDirectoryTracker);
+    delete terminal.__workingDirectoryTracker;
     detachWebglHandlers(terminal);
     disposeResource(terminal.__webglAddon);
     terminal.__webglAddon = null;
