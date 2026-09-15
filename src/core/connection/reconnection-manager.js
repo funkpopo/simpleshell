@@ -271,7 +271,10 @@ class ReconnectionManager extends EventEmitter {
     if (
       session.state === RECONNECT_STATE.RECONNECTING ||
       session.state === RECONNECT_STATE.ABANDONED ||
-      session.state === RECONNECT_STATE.PAUSED
+      session.state === RECONNECT_STATE.PAUSED ||
+      (session.state === RECONNECT_STATE.PENDING &&
+        this.reconnectTimers.has(session.id) &&
+        !error)
     ) {
       logToFile(
         `Ignore ${eventLabel} (state: ${session.state}): ${session.id}${error ? ` - ${error.message}` : ""}`,

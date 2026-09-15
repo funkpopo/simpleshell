@@ -528,10 +528,10 @@
         "welcome": "欢迎使用 WebTerminal!",
         "helpHint": "输入 \"help\" 查看可用命令。"
       },
-      "offlineBuffer": {
-        "buffering": "断线缓冲中 · {{chars}} 字符",
-        "send": "发送缓冲",
-        "clear": "清空"
+      "connection": {
+        "disconnected": "连接已断开",
+        "inputPaused": "输入已暂停；恢复后请重新输入。",
+        "retry": "重新连接"
       }
     },
     "connectionManager": {

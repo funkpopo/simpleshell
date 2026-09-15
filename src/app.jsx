@@ -1249,12 +1249,14 @@ function AppContent() {
       }
     };
 
-    window.terminalAPI.onConnectionLost?.(handleConnectionLost);
-    window.terminalAPI.onReconnectStart?.(handleReconnectStarted);
-    window.terminalAPI.onReconnectProgress?.(handleReconnectProgress);
-    window.terminalAPI.onReconnectSuccess?.(handleReconnectSuccess);
-    window.terminalAPI.onReconnectFailed?.(handleReconnectFailed);
-    window.terminalAPI.onReconnectAbandoned?.(handleReconnectAbandoned);
+    const reconnectCleanups = [
+      window.terminalAPI.onConnectionLost?.(handleConnectionLost),
+      window.terminalAPI.onReconnectStart?.(handleReconnectStarted),
+      window.terminalAPI.onReconnectProgress?.(handleReconnectProgress),
+      window.terminalAPI.onReconnectSuccess?.(handleReconnectSuccess),
+      window.terminalAPI.onReconnectFailed?.(handleReconnectFailed),
+      window.terminalAPI.onReconnectAbandoned?.(handleReconnectAbandoned),
+    ];
     const cleanupTabConnectionStatus =
       window.terminalAPI.onTabConnectionStatus?.(handleTabConnectionStatus);
     const cleanupTerminalSessionRestored =
@@ -1276,7 +1278,9 @@ function AppContent() {
       if (typeof cleanupTerminalSessionRestoreFailed === "function") {
         cleanupTerminalSessionRestoreFailed();
       }
-      window.terminalAPI?.removeReconnectListeners?.();
+      reconnectCleanups.forEach((cleanup) => {
+        if (typeof cleanup === "function") cleanup();
+      });
     };
   }, [clearReconnectStatus, t, updateReconnectStatus]);
 
@@ -2636,53 +2640,48 @@ function AppContent() {
     );
   }, [dispatch]);
 
-  // 刷新终端连接
-  const handleRefreshTerminal = async () => {
-    const tabIndex = tabContextMenu.tabIndex;
-    if (tabIndex !== null && tabIndex < tabs.length) {
-      const currentTabInfo = tabs[tabIndex];
-      const tabId = currentTabInfo.id;
-
-      if (currentTabInfo.type === "ssh") {
-        clearReconnectStatus(tabId);
-        setReconnectActionTabId((current) =>
-          current === tabId ? null : current,
-        );
-      }
-
-      // 先关闭所有侧边栏以避免连接错误
+  // 刷新指定会话，同时支持独立标签和分屏窗格。
+  const refreshingTerminalSessionsRef = useRef(new Set());
+  const refreshTerminalSession = async (sessionKey) => {
+    if (
+      !liveSessionKeysRef.current.has(sessionKey) ||
+      refreshingTerminalSessionsRef.current.has(sessionKey)
+    )
+      return;
+    refreshingTerminalSessionsRef.current.add(sessionKey);
+    try {
+      clearReconnectStatus(sessionKey);
+      setReconnectActionTabId((current) =>
+        current === sessionKey ? null : current,
+      );
+      const parentTabId = getParentTabId(sessionKey, paneRegistryRef.current);
       dispatch(actions.setResourceMonitorOpen(false));
-      dispatch(actions.setFileManagerOpenForTab(tabId, false));
+      dispatch(actions.setFileManagerOpenForTab(parentTabId, false));
       dispatch(actions.setIpAddressQueryOpen(false));
-
-      // 获取当前连接的processId并清理连接
       try {
-        // 从终端会话存储的 processCache 获取processId（WebTerminal组件设置的）
-        const processId = sessionProcessCache[tabId];
-        if (
-          processId &&
-          window.terminalAPI &&
-          window.terminalAPI.cleanupConnection
-        ) {
+        const processId = sessionProcessCache[sessionKey];
+        if (processId && window.terminalAPI?.cleanupConnection) {
           await window.terminalAPI.cleanupConnection(processId);
         }
       } catch (cleanupError) {
         console.warn("Connection cleanup failed:", cleanupError);
       }
-
-      // 从缓存中先移除旧实例，保留 config 等关联数据
-      dispatch(actions.updateTerminalInstance(tabId, undefined));
-
-      // 添加新实例标记，触发WebTerminal重新创建
-      // 使用 functional 风格的增量更新，避免闭包中的 terminalInstances 过期
-      setTimeout(() => {
-        dispatch(actions.updateTerminalInstance(tabId, true));
-        dispatch(
-          actions.updateTerminalInstance(`${tabId}-refresh`, Date.now()),
-        );
-      }, 100);
+      if (!liveSessionKeysRef.current.has(sessionKey)) return;
+      dispatch(actions.updateTerminalInstance(sessionKey, undefined));
+      dispatch(actions.updateTerminalInstance(sessionKey, true));
+      dispatch(
+        actions.updateTerminalInstance(`${sessionKey}-refresh`, Date.now()),
+      );
+    } finally {
+      refreshingTerminalSessionsRef.current.delete(sessionKey);
     }
+  };
 
+  const handleRefreshTerminal = async () => {
+    const tabIndex = tabContextMenu.tabIndex;
+    if (tabIndex !== null && tabIndex < tabs.length) {
+      await refreshTerminalSession(tabs[tabIndex].id);
+    }
     handleTabContextMenuClose();
   };
 
@@ -3287,6 +3286,9 @@ function AppContent() {
       case "closeOtherPanes":
         handleCloseOtherPanes(tabId, detail.sessionKey);
         break;
+      case "reconnect":
+        void refreshTerminalSession(detail.sessionKey);
+        break;
       case "createSyncGroup":
         dispatch(actions.createSyncGroup(detail.sessionKey));
         break;
@@ -3323,6 +3325,7 @@ function AppContent() {
         tabId={session.sessionKey}
         sessionKey={session.sessionKey}
         refreshKey={terminalInstances[`${session.sessionKey}-refresh`]}
+        reconnectStatus={reconnectStateByTabId[session.sessionKey] || null}
         sshConfig={session.type === "local" ? null : session.config}
         terminalType={session.type}
         localConfig={session.type === "local" ? session.config : null}
@@ -3330,7 +3333,7 @@ function AppContent() {
         allowWebgl={allowWebgl}
       />
     ),
-    [terminalInstances],
+    [terminalInstances, reconnectStateByTabId],
   );
 
   // 窗格标题：连接名 / host / 拖入时的原标签名 / 序号兑底

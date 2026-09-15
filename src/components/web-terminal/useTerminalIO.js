@@ -9,9 +9,6 @@ import {
 } from "../../modules/terminal/controller/terminalInput.js";
 import { processCache } from "../../modules/terminal/controller/terminalSessionStore.js";
 
-const OFFLINE_INPUT_MAX_CHARS = 16 * 1024;
-const LARGE_PASTE_OFFLINE_THRESHOLD = 256;
-
 const matchesTabPayload = (payload, sessionKey) => {
   if (!payload || sessionKey === undefined || sessionKey === null) {
     return false;
@@ -28,6 +25,8 @@ const matchesTabPayload = (payload, sessionKey) => {
  */
 export function useTerminalIO({
   sessionKey,
+  refreshKey,
+  reconnectStatus,
   terminalIOMailboxRef,
   eventManager,
   suggestionUiRef,
@@ -39,205 +38,82 @@ export function useTerminalIO({
   const inputQueueDrainHandleTypeRef = useRef(null);
 
   const isOfflineRef = useRef(false);
-  const offlineBufferRef = useRef("");
-  const [offlineBufferState, setOfflineBufferState] = useState({
-    active: false,
-    chars: 0,
-    pendingSend: false,
-  });
+  const [inputBlocked, setInputBlocked] = useState(false);
+  const inputGenerationRef = useRef(0);
 
-  const setOfflineActive = useCallback((active) => {
-    isOfflineRef.current = active === true;
-    setOfflineBufferState((prev) => ({
-      ...prev,
-      active: active === true,
-      chars: offlineBufferRef.current.length,
-      pendingSend:
-        active === true
-          ? false
-          : offlineBufferRef.current.length > 0
-            ? true
-            : false,
-    }));
+  const cancelInputQueueDrain = useCallback(() => {
+    if (inputQueueDrainHandleRef.current === null) return;
+    if (
+      inputQueueDrainHandleTypeRef.current === "raf" &&
+      typeof cancelAnimationFrame === "function"
+    ) {
+      cancelAnimationFrame(inputQueueDrainHandleRef.current);
+    } else {
+      clearTimeout(inputQueueDrainHandleRef.current);
+    }
+    inputQueueDrainHandleRef.current = null;
+    inputQueueDrainHandleTypeRef.current = null;
   }, []);
 
-  const appendOfflineBuffer = useCallback((text) => {
-    const incoming = typeof text === "string" ? text : String(text || "");
-    if (!incoming) {
-      return { accepted: true, reason: null };
-    }
+  const clearInputQueue = useCallback(() => {
+    inputGenerationRef.current += 1;
+    cancelInputQueueDrain();
+    inputQueueRef.current = [];
+    inputQueueBytesRef.current = 0;
+  }, [cancelInputQueueDrain]);
 
-    const remaining = Math.max(
-      0,
-      OFFLINE_INPUT_MAX_CHARS - offlineBufferRef.current.length,
-    );
-    if (remaining <= 0) {
-      return { accepted: false, reason: "full" };
-    }
-
-    offlineBufferRef.current += incoming.slice(0, remaining);
-    setOfflineBufferState({
-      active: true,
-      chars: offlineBufferRef.current.length,
-      pendingSend: false,
-    });
-
-    if (incoming.length > remaining) {
-      return { accepted: false, reason: "full" };
-    }
-    return { accepted: true, reason: null };
-  }, []);
-
-  const clearOfflineBuffer = useCallback(() => {
-    offlineBufferRef.current = "";
-    setOfflineBufferState((prev) => ({
-      ...prev,
-      chars: 0,
-      pendingSend: false,
-    }));
-  }, []);
-
-  const flushOfflineBuffer = useCallback(
-    (processId) => {
-      const buffered = offlineBufferRef.current;
-      if (!buffered) {
-        setOfflineBufferState((prev) => ({
-          ...prev,
-          chars: 0,
-          pendingSend: false,
-        }));
-        return false;
-      }
-
-      const targetProcessId = processId ?? processCache[sessionKey];
-      if (targetProcessId === undefined || targetProcessId === null) {
-        return false;
-      }
-
-      offlineBufferRef.current = "";
-      setOfflineBufferState((prev) => ({
-        ...prev,
-        chars: 0,
-        pendingSend: false,
-      }));
-
-      // Reuse normal enqueue path after clearing offline flag
-      isOfflineRef.current = false;
-      const forceChunk = shouldChunkInputPayload(buffered);
-      if (!forceChunk) {
-        const mailbox = terminalIOMailboxRef.current;
-        if (
-          mailbox &&
-          String(mailbox.getProcessId()) === String(targetProcessId)
-        ) {
-          mailbox.sendInput(buffered);
-        } else if (window.terminalAPI?.sendToProcess) {
-          window.terminalAPI.sendToProcess(targetProcessId, buffered);
-        }
-        return true;
-      }
-
-      const chunkSize = INPUT_SEND_CHUNK_SIZE;
-      for (let offset = 0; offset < buffered.length; offset += chunkSize) {
-        const chunk = buffered.slice(offset, offset + chunkSize);
-        inputQueueRef.current.push({
-          processId: targetProcessId,
-          input: chunk,
-        });
-        inputQueueBytesRef.current += chunk.length;
-      }
-      // schedule drain via existing mechanism — call schedule after definition through ref
-      return { scheduled: true, processId: targetProcessId };
+  const setOfflineActive = useCallback(
+    (active) => {
+      if (isOfflineRef.current !== active) clearInputQueue();
+      isOfflineRef.current = active;
+      setInputBlocked(active);
     },
-    [sessionKey, terminalIOMailboxRef],
+    [clearInputQueue],
   );
 
   useEffect(() => {
-    if (sessionKey === undefined || sessionKey === null) {
-      return undefined;
-    }
+    setOfflineActive(false);
+    clearInputQueue();
+    if (sessionKey === undefined || sessionKey === null) return undefined;
 
-    const handleSessionRestored = (event) => {
-      const detail = event?.detail || {};
-      if (detail.tabId && String(detail.tabId) !== String(sessionKey)) {
-        return;
-      }
-      setOfflineActive(false);
+    const setForSession = (data, active) => {
+      if (matchesTabPayload(data, sessionKey)) setOfflineActive(active);
     };
-
-    const handleSessionRestoreFailed = (event) => {
-      const detail = event?.detail || {};
-      if (detail.tabId && String(detail.tabId) !== String(sessionKey)) {
-        return;
-      }
-      // 最终失败时清空缓冲，避免误发危险命令
-      offlineBufferRef.current = "";
-      isOfflineRef.current = false;
-      setOfflineBufferState({
-        active: false,
-        chars: 0,
-        pendingSend: false,
-      });
-    };
-
-    const handleTabConnectionStatus = (payload) => {
-      if (!matchesTabPayload(payload, sessionKey)) {
-        return;
-      }
-      const status = payload?.connectionStatus || {};
-      if (status.isConnected === false) {
-        setOfflineActive(true);
-        return;
-      }
-      if (status.isConnected === true && status.isConnecting !== true) {
-        setOfflineActive(false);
-      }
-    };
-
+    const handleSessionRestored = (event) =>
+      setForSession(event?.detail, false);
+    const handleSessionRestoreFailed = (event) =>
+      setForSession(event?.detail, true);
     const cleanups = [];
+    const subscribe = (name, callback) => {
+      const cleanup = window.terminalAPI?.[name]?.(callback);
+      if (typeof cleanup === "function") cleanups.push(cleanup);
+    };
 
-    // 可安全卸载的订阅（返回 cleanup）
-    if (typeof window.terminalAPI?.onTabConnectionStatus === "function") {
-      const cleanup = window.terminalAPI.onTabConnectionStatus(
-        handleTabConnectionStatus,
-      );
-      if (typeof cleanup === "function") {
-        cleanups.push(cleanup);
-      }
+    // Stop input as soon as the transport is lost, even if the old shell has
+    // not emitted close. Transport recovery alone does not make a shell ready.
+    for (const name of [
+      "onConnectionLost",
+      "onReconnectStart",
+      "onReconnectProgress",
+      "onReconnectFailed",
+      "onReconnectAbandoned",
+    ]) {
+      subscribe(name, (_event, data) => setForSession(data, true));
     }
-    if (typeof window.terminalAPI?.onTerminalSessionRestored === "function") {
-      const cleanup = window.terminalAPI.onTerminalSessionRestored((data) => {
-        if (!matchesTabPayload(data, sessionKey)) {
-          return;
-        }
+    subscribe("onTabConnectionStatus", (data) => {
+      if (!matchesTabPayload(data, sessionKey)) return;
+      const status = data?.connectionStatus || {};
+      if (status.isConnected === false) setOfflineActive(true);
+      else if (status.isConnected === true && status.isConnecting !== true) {
         setOfflineActive(false);
-      });
-      if (typeof cleanup === "function") {
-        cleanups.push(cleanup);
       }
-    }
-    if (
-      typeof window.terminalAPI?.onTerminalSessionRestoreFailed === "function"
-    ) {
-      const cleanup = window.terminalAPI.onTerminalSessionRestoreFailed(
-        (data) => {
-          if (!matchesTabPayload(data, sessionKey)) {
-            return;
-          }
-          offlineBufferRef.current = "";
-          isOfflineRef.current = false;
-          setOfflineBufferState({
-            active: false,
-            chars: 0,
-            pendingSend: false,
-          });
-        },
-      );
-      if (typeof cleanup === "function") {
-        cleanups.push(cleanup);
-      }
-    }
-
+    });
+    subscribe("onTerminalSessionRestored", (data) =>
+      setForSession(data, false),
+    );
+    subscribe("onTerminalSessionRestoreFailed", (data) =>
+      setForSession(data, true),
+    );
     window.addEventListener("terminalSessionRestored", handleSessionRestored);
     window.addEventListener(
       "terminalSessionRestoreFailed",
@@ -246,6 +122,7 @@ export function useTerminalIO({
 
     return () => {
       cleanups.forEach((cleanup) => cleanup());
+      clearInputQueue();
       window.removeEventListener(
         "terminalSessionRestored",
         handleSessionRestored,
@@ -255,7 +132,12 @@ export function useTerminalIO({
         handleSessionRestoreFailed,
       );
     };
-  }, [setOfflineActive, sessionKey]);
+  }, [clearInputQueue, setOfflineActive, sessionKey, refreshKey]);
+
+  // A cached/remounted pane can already be reconnecting before it subscribes.
+  useEffect(() => {
+    if (reconnectStatus?.state) setOfflineActive(true);
+  }, [reconnectStatus, setOfflineActive, refreshKey]);
 
   const sendInputToProcess = useCallback(
     (processId, input) => {
@@ -274,7 +156,6 @@ export function useTerminalIO({
       }
 
       if (isOfflineRef.current) {
-        appendOfflineBuffer(inputStr);
         return;
       }
 
@@ -288,26 +169,8 @@ export function useTerminalIO({
         window.terminalAPI.sendToProcess(processId, inputStr);
       }
     },
-    [appendOfflineBuffer, terminalIOMailboxRef],
+    [terminalIOMailboxRef],
   );
-
-  const cancelInputQueueDrain = useCallback(() => {
-    if (inputQueueDrainHandleRef.current === null) {
-      return;
-    }
-
-    if (
-      inputQueueDrainHandleTypeRef.current === "raf" &&
-      typeof cancelAnimationFrame === "function"
-    ) {
-      cancelAnimationFrame(inputQueueDrainHandleRef.current);
-    } else {
-      clearTimeout(inputQueueDrainHandleRef.current);
-    }
-
-    inputQueueDrainHandleRef.current = null;
-    inputQueueDrainHandleTypeRef.current = null;
-  }, []);
 
   const scheduleInputQueueDrain = useCallback(() => {
     if (inputQueueDrainHandleRef.current !== null) {
@@ -379,7 +242,6 @@ export function useTerminalIO({
       }
 
       if (isOfflineRef.current) {
-        appendOfflineBuffer(inputStr);
         return;
       }
 
@@ -405,17 +267,8 @@ export function useTerminalIO({
 
       scheduleInputQueueDrain();
     },
-    [appendOfflineBuffer, scheduleInputQueueDrain, sendInputToProcess],
+    [scheduleInputQueueDrain, sendInputToProcess],
   );
-
-  const sendOfflineBufferNow = useCallback(() => {
-    const result = flushOfflineBuffer(processCache[sessionKey]);
-    if (result && result.scheduled) {
-      scheduleInputQueueDrain();
-      return true;
-    }
-    return Boolean(result);
-  }, [flushOfflineBuffer, scheduleInputQueueDrain, sessionKey]);
 
   const sendCommentLinesToProcess = useCallback(
     (processId, lines) => {
@@ -423,9 +276,14 @@ export function useTerminalIO({
         return;
       }
 
+      const generation = inputGenerationRef.current;
       let currentIndex = 0;
       const sendNextLine = () => {
-        if (currentIndex >= lines.length) {
+        if (
+          generation !== inputGenerationRef.current ||
+          isOfflineRef.current ||
+          currentIndex >= lines.length
+        ) {
           return;
         }
 
@@ -486,10 +344,7 @@ export function useTerminalIO({
         return { ok: false, reason: "no-process" };
       }
 
-      if (
-        isOfflineRef.current &&
-        String(text).length > LARGE_PASTE_OFFLINE_THRESHOLD
-      ) {
+      if (isOfflineRef.current) {
         return { ok: false, reason: "offline-paste-blocked" };
       }
 
@@ -512,12 +367,6 @@ export function useTerminalIO({
     [sendProcessedInputToProcess, suggestionUiRef, sessionKey],
   );
 
-  const clearInputQueue = useCallback(() => {
-    cancelInputQueueDrain();
-    inputQueueRef.current = [];
-    inputQueueBytesRef.current = 0;
-  }, [cancelInputQueueDrain]);
-
   return {
     lastPasteTimeRef,
     inputQueueRef,
@@ -529,9 +378,7 @@ export function useTerminalIO({
     clearInputQueue,
     markPasteIfAllowed,
     handlePasteText,
-    offlineBufferState,
-    clearOfflineBuffer,
-    sendOfflineBufferNow,
+    inputBlocked,
     isTerminalOffline: () => isOfflineRef.current,
   };
 }

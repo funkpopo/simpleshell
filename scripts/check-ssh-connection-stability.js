@@ -17,9 +17,6 @@ assert.ok(performHealthCheckMatch, "SSHPool.performHealthCheck must exist");
 const performHealthCheckBody = performHealthCheckMatch[1];
 
 const forbiddenIntrusiveProbePatterns = [
-  [/_probeActiveConnection/, "active connection probe helper"],
-  [/activeHealthProbe/, "active health probe state"],
-  [/主动健康探测/, "active probe log path"],
   [/client\.exec\(\s*["']true["']/, "remote exec health probe"],
 ];
 
@@ -33,8 +30,8 @@ for (const [pattern, label] of forbiddenIntrusiveProbePatterns) {
 
 assert.match(
   performHealthCheckBody,
-  /^\s*return\s+super\.performHealthCheck\(\);\s*$/m,
-  "SSHPool.performHealthCheck should only delegate to BaseConnectionPool",
+  /super\.performHealthCheck\(\);/,
+  "SSHPool.performHealthCheck must retain base pool cleanup",
 );
 
 console.log("SSH connection stability checks passed.");

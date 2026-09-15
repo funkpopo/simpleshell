@@ -4,7 +4,7 @@ const vm = require("node:vm");
 const babel = require("@babel/core");
 
 // Execute the actual renderer modules under Node, with a shared module cache.
-module.exports = function createLoader(globals = {}) {
+module.exports = function createLoader(globals = {}, mocks = {}) {
   const cache = new Map();
   function load(filename) {
     filename = require.resolve(path.resolve(filename));
@@ -69,9 +69,11 @@ module.exports = function createLoader(globals = {}) {
       ],
     });
     const localRequire = (name) =>
-      name.startsWith(".")
-        ? load(path.resolve(path.dirname(filename), name))
-        : require(name);
+      Object.prototype.hasOwnProperty.call(mocks, name)
+        ? mocks[name]
+        : name.startsWith(".")
+          ? load(path.resolve(path.dirname(filename), name))
+          : require(name);
     vm.runInNewContext(
       code,
       {

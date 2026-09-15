@@ -25,6 +25,7 @@ const {
 } = require("./ssh-interactive-auth");
 const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
 const ReconnectionManager = require("./reconnection-manager");
+const SshTransportHealth = require("./ssh-transport-health");
 
 // 代理类型常量
 const PROXY_TYPES = {
@@ -62,6 +63,7 @@ class SSHPool extends BaseConnectionPool {
 
     // 重连策略固定为弱网默认（DEFAULT_SSH_RETRY_CONFIG），无多模式切换
     this.reconnectionManager = new ReconnectionManager();
+    this.transportHealth = new SshTransportHealth();
   }
 
   /**
@@ -97,8 +99,10 @@ class SSHPool extends BaseConnectionPool {
         this._logInfo(`Reconnect succeeded, updating connection: ${sessionId}`);
         const conn = this.connections.get(sessionId);
         if (conn) {
+          this.transportHealth.cancel(conn.client);
           conn.client = newConnection;
           conn.ready = true;
+          conn.connecting = false;
           conn.intentionalClose = false;
           conn.closeReason = CLOSE_REASON.NETWORK;
           conn.lastUsed = Date.now();
@@ -137,6 +141,7 @@ class SSHPool extends BaseConnectionPool {
    * 清理SSH连接池资源
    */
   cleanup() {
+    this.transportHealth.dispose();
     // 拒绝所有等待中的请求
     this._drainRequestQueue("Connection pool is shutting down");
 
@@ -295,6 +300,7 @@ class SSHPool extends BaseConnectionPool {
 
       // 监听就绪事件
       ssh.on("ready", () => {
+        if (connectionInfo.client !== ssh || settled) return;
         clearTimeout(timeout);
         connectionInfo.ready = true;
         connectionInfo.connecting = false;
@@ -316,6 +322,7 @@ class SSHPool extends BaseConnectionPool {
 
       // 监听错误事件
       ssh.on("error", (err) => {
+        if (connectionInfo.client !== ssh) return;
         clearTimeout(timeout);
         connectionInfo.connecting = false;
         try {
@@ -450,11 +457,16 @@ class SSHPool extends BaseConnectionPool {
       code === "EPIPE" ||
       code === "ETIMEDOUT" ||
       code === "ENETUNREACH" ||
+      code === "EHOSTUNREACH" ||
+      code === "ENETDOWN" ||
+      code === "ENOTFOUND" ||
+      code === "EAI_AGAIN" ||
       code === "ECONNREFUSED" ||
       msg.includes("ECONNRESET") ||
       msg.includes("EPIPE") ||
       msg.includes("ETIMEDOUT") ||
       msg.includes("ENETUNREACH") ||
+      /EHOSTUNREACH|ENETDOWN|ENOTFOUND|EAI_AGAIN/.test(msg) ||
       msg.includes("ECONNREFUSED") ||
       msg.toLowerCase().includes("timeout")
     );
@@ -475,6 +487,7 @@ class SSHPool extends BaseConnectionPool {
     finishResolve,
     finishReject,
   ) {
+    connectionInfo.connecting = false;
     if (
       this._shouldAutoReconnectOnInitialFailure(error, sshConfig, usingProxy)
     ) {
@@ -566,12 +579,49 @@ class SSHPool extends BaseConnectionPool {
     return (
       connectionInfo.ready &&
       connectionInfo.client &&
-      !connectionInfo.client.destroyed
+      !connectionInfo.client.destroyed &&
+      !connectionInfo.client._sock?.destroyed
     );
   }
 
   async performHealthCheck() {
-    return super.performHealthCheck();
+    super.performHealthCheck();
+    const checks = [];
+    for (const [key, conn] of this.connections) {
+      if (
+        conn.connecting ||
+        !conn.ready ||
+        conn.intentionalClose ||
+        !(conn.refCount > 0 || this.isConnectionReferencedByTabs(key))
+      )
+        continue;
+
+      const client = conn.client;
+      checks.push(
+        this.transportHealth.check(client).then((healthy) => {
+          // A probe of the old transport must never take down its replacement.
+          if (
+            healthy !== false ||
+            this.connections.get(key) !== conn ||
+            conn.client !== client ||
+            !conn.ready ||
+            conn.intentionalClose ||
+            !(conn.refCount > 0 || this.isConnectionReferencedByTabs(key))
+          )
+            return;
+          this._logInfo(`SSH transport stopped responding: ${key}`);
+          if (
+            this.handleActiveUnhealthyConnection(key, conn, {
+              reason: "network",
+            })
+          ) {
+            // Drop the old TCP send queue as well; it belongs to the lost shell.
+            client.destroy?.();
+          }
+        }),
+      );
+    }
+    await Promise.all(checks);
   }
 
   /**
@@ -582,7 +632,12 @@ class SSHPool extends BaseConnectionPool {
    * @returns {boolean} 是否成功交由重连状态机接管
    */
   handleActiveUnhealthyConnection(key, connectionInfo, metadata = {}) {
-    if (!key || !connectionInfo || !this.reconnectionManager) {
+    if (
+      !key ||
+      !connectionInfo ||
+      connectionInfo.intentionalClose ||
+      !this.reconnectionManager
+    ) {
       return false;
     }
 
@@ -601,7 +656,8 @@ class SSHPool extends BaseConnectionPool {
     if (sessionStatus) {
       if (
         sessionStatus.state === "pending" ||
-        sessionStatus.state === "reconnecting"
+        sessionStatus.state === "reconnecting" ||
+        sessionStatus.state === "paused"
       ) {
         this._logInfo(
           `Health check hit: ${key}, already reconnecting (${sessionStatus.state})`,
@@ -652,6 +708,7 @@ class SSHPool extends BaseConnectionPool {
    * @param {string} key - 连接键
    */
   closeConnection(key, options = {}) {
+    this.transportHealth.cancel(this.connections.get(key)?.client);
     const closeOptions = this._normalizeCloseOptions(
       options,
       CLOSE_REASON.SYSTEM,

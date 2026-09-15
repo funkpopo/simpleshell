@@ -318,6 +318,13 @@ const normalizeExternalOpenRequest = (url, options = {}) => {
 };
 
 // 暴露安全的API给渲染进程
+function subscribeReconnectEvent(channel, callback) {
+  if (typeof callback !== "function") return () => {};
+  const listener = (_event, data) => callback(null, data);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+
 contextBridge.exposeInMainWorld("terminalAPI", {
   postTerminalMailboxMessage: (processId, message) => {
     const channel = getTerminalIOMailboxOutputChannel(processId);
@@ -532,17 +539,17 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 重连事件监听器
   onReconnectStart: (callback) =>
-    ipcRenderer.on(IPC_EVENT_CHANNELS.RECONNECT_STARTED, callback),
+    subscribeReconnectEvent(IPC_EVENT_CHANNELS.RECONNECT_STARTED, callback),
   onReconnectProgress: (callback) =>
-    ipcRenderer.on(IPC_EVENT_CHANNELS.RECONNECT_PROGRESS, callback),
+    subscribeReconnectEvent(IPC_EVENT_CHANNELS.RECONNECT_PROGRESS, callback),
   onReconnectSuccess: (callback) =>
-    ipcRenderer.on(IPC_EVENT_CHANNELS.RECONNECT_SUCCESS, callback),
+    subscribeReconnectEvent(IPC_EVENT_CHANNELS.RECONNECT_SUCCESS, callback),
   onReconnectFailed: (callback) =>
-    ipcRenderer.on(IPC_EVENT_CHANNELS.RECONNECT_FAILED, callback),
+    subscribeReconnectEvent(IPC_EVENT_CHANNELS.RECONNECT_FAILED, callback),
   onReconnectAbandoned: (callback) =>
-    ipcRenderer.on(IPC_EVENT_CHANNELS.RECONNECT_ABANDONED, callback),
+    subscribeReconnectEvent(IPC_EVENT_CHANNELS.RECONNECT_ABANDONED, callback),
   onConnectionLost: (callback) =>
-    ipcRenderer.on(IPC_EVENT_CHANNELS.CONNECTION_LOST, callback),
+    subscribeReconnectEvent(IPC_EVENT_CHANNELS.CONNECTION_LOST, callback),
   onTabConnectionStatus: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = (_event, data) => callback(data);

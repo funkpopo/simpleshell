@@ -530,10 +530,10 @@
         "welcome": "Welcome to WebTerminal!",
         "helpHint": "Type \"help\" for available commands."
       },
-      "offlineBuffer": {
-        "buffering": "Buffering offline · {{chars}} chars",
-        "send": "Send buffer",
-        "clear": "Clear"
+      "connection": {
+        "disconnected": "Disconnected",
+        "inputPaused": "Input is paused. Enter commands again after recovery.",
+        "retry": "Reconnect"
       }
     },
     "connectionManager": {

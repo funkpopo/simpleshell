@@ -127,6 +127,7 @@ export const areWebTerminalPropsEqual = (prevProps, nextProps) => {
   if (prevProps.sessionKey !== nextProps.sessionKey) return false;
   if (prevProps.allowWebgl !== nextProps.allowWebgl) return false;
   if (prevProps.refreshKey !== nextProps.refreshKey) return false;
+  if (prevProps.reconnectStatus !== nextProps.reconnectStatus) return false;
   if (prevProps.isActive !== nextProps.isActive) return false;
   if (prevProps.terminalType !== nextProps.terminalType) return false;
 
