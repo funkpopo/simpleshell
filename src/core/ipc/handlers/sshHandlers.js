@@ -2425,6 +2425,10 @@ class SSHHandlers {
 
           if (isReconnectRecovery) {
             this._resetProcessResizeState(processId);
+            // The old shell may have disconnected inside vim/less. Return to
+            // the normal buffer before any output from the replacement shell.
+            // Save first so an already-normal buffer keeps its current cursor.
+            this._emitProcessOutput(processId, "\x1b7\x1b[?1049l");
           }
 
           this._setupStreamEventListeners(

@@ -40,6 +40,7 @@ export function usePromptTracking({
   const [, setIsCommandExecuting] = useState(false);
   const editorLayoutSyncTimersRef = useRef([]);
   const promptTrackingStateRef = useRef(createPromptTrackingState());
+  const resetCommandDetectionRef = useRef(null);
   const pendingCommandBoundaryRef = useRef({
     command: "",
     capturedAt: 0,
@@ -219,6 +220,7 @@ export function usePromptTracking({
   }, []);
 
   const resetPromptTracking = useCallback(() => {
+    cancelInputUiRefresh();
     promptTrackingStateRef.current = createPromptTrackingState();
     pendingCommandBoundaryRef.current = {
       command: "",
@@ -228,7 +230,8 @@ export function usePromptTracking({
 
     isCommandExecutingRef.current = false;
     setIsCommandExecuting(false);
-  }, [termRef]);
+    resetCommandDetectionRef.current?.();
+  }, [cancelInputUiRefresh, termRef]);
 
   const resumePromptTrackingForSuggestionInput = useCallback(
     (term) => {
@@ -438,6 +441,26 @@ export function usePromptTracking({
         tabCompletionUsed = false;
         currentLineBeforeTab = null;
       };
+
+      // Reconnect reuses these listeners. Reset their local state along with
+      // the hook state so input from the old shell cannot suppress new hints.
+      const resetCommandDetection = () => {
+        currentInputBuffer = "";
+        isEscapeSequence = false;
+        resetTabCompletionTracking();
+        inEditorMode = term.buffer?.active?.type === "alternate";
+        setEditorModeState(inEditorMode);
+      };
+      resetCommandDetectionRef.current = resetCommandDetection;
+      resetCommandDetection();
+      disposables.push({
+        dispose: () => {
+          if (resetCommandDetectionRef.current === resetCommandDetection) {
+            resetCommandDetectionRef.current = null;
+            cancelInputUiRefresh();
+          }
+        },
+      });
 
       // 抑制状态下继续输入：当输入偏离锚点（或被清空）时解除抑制
       const maybeReleaseSuggestionSuppression = (inputBuffer) => {
@@ -1000,6 +1023,7 @@ export function usePromptTracking({
     [
       applyPromptTrackingState,
       broadcastInputToGroup,
+      cancelInputUiRefresh,
       commitExecutedCommand,
       enqueueInputToProcess,
       resumePromptTrackingForSuggestionInput,
