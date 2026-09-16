@@ -5,6 +5,25 @@ const tracking = load("src/modules/terminal/workingDirectoryTracking.js");
 const store = load("src/modules/terminal/workingDirectoryStore.js");
 const { parseWorkingDirectoryOsc: osc, parseWorkingDirectoryPrompt: prompt } =
   tracking;
+const title = tracking.parseWorkingDirectoryTitle;
+
+assert.equal(title("alice@server:/srv/a b", "alice").path, "/srv/a b");
+assert.equal(title("alice@server:~/project", "alice").path, "~/project");
+assert.equal(
+  title("alice@server:/srv/100%/$data#1", "alice").path,
+  "/srv/100%/$data#1",
+);
+for (const value of [
+  "vim /etc/hosts",
+  "/srv/project",
+  "alice@server:project",
+  "alice@server:/srv/.../src",
+  "alice@server:/srv/…/src",
+  "alice@server:/srv/\x00",
+  "root@server:~",
+]) {
+  assert.equal(title(value, "alice"), null, value);
+}
 
 assert.equal(
   osc(7, "file://server/home/a%20b/%E4%B8%AD%E6%96%87").path,
@@ -110,6 +129,53 @@ term.buffer.active.type = "normal";
 line = "alice@server:/reconnected$ ";
 parsed.forEach((callback) => callback());
 assert.equal(store.getWorkingDirectoryState("A").path, "/reconnected");
+tracker.reset();
+line = "[alice@server ~]$ ";
+parsed.forEach((callback) => callback());
+assert.equal(store.getWorkingDirectoryState("A").path, "~");
+// RHEL-style prompts show only a basename; their OSC title contains the cwd.
+assert.equal(
+  handlers.get(0)("alice@server:/srv/project"),
+  false,
+  "directory tracking must preserve xterm's title handling",
+);
+line = "[alice@server project]$ ";
+parsed.forEach((callback) => callback());
+assert.equal(store.getWorkingDirectoryState("A").path, "/srv/project");
+handlers.get(2)("alice@server:/var/log");
+line = "[alice@server log]$ ";
+parsed.forEach((callback) => callback());
+assert.equal(store.getWorkingDirectoryState("A").path, "/var/log");
+handlers.get(2)("alice@other:/wrong");
+line = "[alice@other wrong]$ ";
+parsed.forEach((callback) => callback());
+assert.equal(store.getWorkingDirectoryState("A").path, null);
+handlers.get(0)("alice@server:/returned");
+line = "[alice@server returned]$ ";
+parsed.forEach((callback) => callback());
+assert.equal(store.getWorkingDirectoryState("A").path, "/returned");
+term.buffer.active.type = "alternate";
+handlers.get(2)("alice@server:/editor");
+term.buffer.active.type = "normal";
+parsed.forEach((callback) => callback());
+assert.equal(store.getWorkingDirectoryState("A").path, "/returned");
+handlers.get(7)("file://server/explicit");
+handlers.get(0)("alice@server:/title");
+line = "[alice@server title]$ ";
+parsed.forEach((callback) => callback());
+assert.equal(
+  store.getWorkingDirectoryState("A").path,
+  "/explicit",
+  "an explicit directory report must take precedence over a title",
+);
+tracker.reset();
+line = "[alice@server title]$ ";
+parsed.forEach((callback) => callback());
+assert.equal(
+  store.getWorkingDirectoryState("A").path,
+  null,
+  "reconnect must discard old titles",
+);
 tracker.dispose();
 tracker.dispose();
 assert.equal(handlers.size + parsed.size, 0);

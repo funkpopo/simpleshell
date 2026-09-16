@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import FileManager from "../../src/components/FileManager.jsx";
 import Settings from "../../src/components/Settings.jsx";
@@ -25,6 +25,7 @@ export async function runDirectoryFollowChecks({
   const write = (data) => new Promise((resolve) => term.write(data, resolve));
   const requests = [];
   const connections = { follow: { host: "server" }, other: { host: "other" } };
+  const savedPaths = { follow: "/root", other: "/" };
   let finishOldRequest;
   let finishHomeRequest;
   const pendingLists = new Map();
@@ -48,6 +49,8 @@ export async function runDirectoryFollowChecks({
       return { success: true };
     },
     getAbsolutePath: (id, path) => {
+      if (id === "follow" && path === ".")
+        return Promise.resolve({ success: true, path: "/root" });
       assert(
         id === "follow" && path === "./project",
         "home path was resolved for the wrong session",
@@ -57,12 +60,12 @@ export async function runDirectoryFollowChecks({
       });
     },
     listFiles: (id, path, options) => {
-      requests.push({ id, path });
+      requests.push({ id, path, options });
       if (path.startsWith("/pending-"))
         return new Promise((resolve) => pendingLists.set(path, resolve));
       if (path === "/denied")
         return Promise.resolve({ success: false, error: "Permission denied" });
-      if (path !== "/")
+      if (options.priority === "high")
         assert(
           options.nonBlocking === false,
           "automatic navigation committed before read completion",
@@ -79,13 +82,19 @@ export async function runDirectoryFollowChecks({
   };
   const Fixture = ({ id, open }) => {
     const enabled = useSftpFollowSetting();
+    const [, refreshPath] = useState(0);
     return (
       <FileManager
         key={id}
         open={open}
         tabId={id}
         sshConnection={connections[id]}
-        initialPath="/"
+        initialPath={savedPaths[id]}
+        onPathChange={(sessionKey, path) => {
+          if (savedPaths[sessionKey] === path) return;
+          savedPaths[sessionKey] = path;
+          refreshPath((revision) => revision + 1);
+        }}
         onClose={() => {}}
         followTerminalDirectory={enabled}
       />
@@ -263,6 +272,39 @@ export async function runDirectoryFollowChecks({
     assert(
       !container.textContent.includes("STALE-CLOSED"),
       "closed panel committed a late response",
+    );
+
+    // Bash with PS1='[\\u@\\h \\W]\\$ ' reports the full path in its title.
+    // Remembering /root must not win over a cwd change while the panel is shut.
+    tracker.reset();
+    show("follow", false);
+    await write("\r\x1b[2K[alice@server ~]$ ");
+    show();
+    await until(
+      () => container.textContent.includes("file:/root"),
+      "home prompt did not resolve to the remembered home directory",
+    );
+    await write("\r\n\x1b]0;alice@server:/var/log\x07[alice@server log]$ ");
+    await until(
+      () => container.textContent.includes("file:/var/log"),
+      "basename prompt with a full title did not follow cd",
+    );
+    show("follow", false);
+    const hiddenTitlePath = "/srv/中文 project";
+    await write(`\r\n\x1b]2;alice@server:${hiddenTitlePath.slice(0, 5)}`);
+    await write(
+      `${hiddenTitlePath.slice(5)}\x1b\\[alice@server 中文 project]$ `,
+    );
+    await until(
+      () => getWorkingDirectoryState("follow").path === hiddenTitlePath,
+      "hidden terminal did not retain the title directory",
+    );
+    await delay(160);
+    assert(!loaded(hiddenTitlePath), "hidden title change fetched directories");
+    show();
+    await until(
+      () => container.textContent.includes(`file:${hiddenTitlePath}`),
+      "reopened sidebar kept the saved path instead of following the terminal",
     );
 
     // Exercise the actual global Settings form and persisted reload.

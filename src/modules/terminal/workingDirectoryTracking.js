@@ -29,27 +29,47 @@ export const parseWorkingDirectoryOsc = (code, data) => {
   return isAbsoluteRemotePath(path) ? { path, host } : null;
 };
 
-// Only complete, idle prompts with a full path are usable. In particular,
-// `[user@host src]$` cannot tell us which "src" directory is current.
-export const parseWorkingDirectoryPrompt = (line, username) => {
+const isUsableShellPath = (path, user, username) => {
+  // SFTP's home is the login user's home, not the home of a su/sudo user.
+  if (path === "~" || path.startsWith("~/")) {
+    if (!username || user !== username) return false;
+  } else if (!isAbsoluteRemotePath(path)) {
+    return false;
+  }
+  if (/[\x00-\x1f\x7f-\x9f]/.test(path)) return false;
+  // Bash PROMPT_DIRTRIM and themes may show an abbreviated absolute path.
+  return !path.includes("…") && !/(?:^|\/)\.\.\.(?:\/|$)/.test(path);
+};
+
+const parseShellPrompt = (line) => {
   if (typeof line !== "string") return null;
   const plain = line.replace(/^(?:\([^()\r\n]*\)\s*)+/, "");
   const match =
-    /^([\w.-]+)@([\w.-]+):((?:\/|~(?:\/|(?=[#$%])))[^\r\n#$%]*?)[#$%]\s*$/.exec(
-      plain,
-    ) ||
-    /^\[([\w.-]+)@([\w.-]+) ((?:\/|~(?:\/|(?=\])))[^\r\n#$%]*?)\][#$%]\s*$/.exec(
-      plain,
-    );
+    /^([\w.-]+)@([\w.-]+):([^\r\n#$%]+?)[#$%]\s*$/.exec(plain) ||
+    /^\[([\w.-]+)@([\w.-]+) ([^\r\n#$%]+?)\][#$%]\s*$/.exec(plain);
   if (!match) return null;
   const [, user, host, path] = match;
-  // SFTP's home is the login user's home, not the home of a su/sudo user.
-  if (path.startsWith("~") && (!username || user !== username)) return null;
-  if (!path.startsWith("~") && !isAbsoluteRemotePath(path)) return null;
-  if (/[\x00-\x1f\x7f-\x9f]/.test(path)) return null;
-  // Bash PROMPT_DIRTRIM and themes may show an abbreviated absolute path.
-  if (path.includes("…") || /(?:^|\/)\.\.\.(?:\/|$)/.test(path)) return null;
+  return { user, host, path };
+};
+
+// Only complete, idle prompts with a full path are usable on their own.
+// `[user@host src]$` needs a matching title that supplies the full directory.
+export const parseWorkingDirectoryPrompt = (line, username) => {
+  const prompt = parseShellPrompt(line);
+  if (!prompt || !isUsableShellPath(prompt.path, prompt.user, username))
+    return null;
+  const { path, host } = prompt;
   return { path, host };
+};
+
+// Common Bash /etc/bashrc configurations report the full cwd in OSC 0/2,
+// even when PS1 uses \\W and only displays the last directory component.
+export const parseWorkingDirectoryTitle = (title, username) => {
+  if (typeof title !== "string") return null;
+  const match = /^([\w.-]+)@([\w.-]+):(.*)$/.exec(title);
+  if (!match) return null;
+  const [, user, host, path] = match;
+  return isUsableShellPath(path, user, username) ? { user, host, path } : null;
 };
 
 const readPromptAtCursor = (term) => {
@@ -89,6 +109,7 @@ export const attachWorkingDirectoryTracking = (
   let foreignHost = false;
   let promptHost = null;
   let oscHost = null;
+  let pendingTitleDirectory = null;
 
   const acceptHost = (previous, next) =>
     !previous ||
@@ -125,6 +146,22 @@ export const attachWorkingDirectoryTracking = (
     );
   }
 
+  for (const code of [0, 2]) {
+    if (!term.parser?.registerOscHandler) continue;
+    disposables.push(
+      term.parser.registerOscHandler(code, (data) => {
+        if (term.buffer?.active?.type !== "alternate") {
+          pendingTitleDirectory = parseWorkingDirectoryTitle(
+            data,
+            config.username,
+          );
+        }
+        // Observe without consuming xterm's normal title update.
+        return false;
+      }),
+    );
+  }
+
   const readPrompt = () => {
     const line = readPromptAtCursor(term);
     const contextHost = line.match(
@@ -134,6 +171,7 @@ export const attachWorkingDirectoryTracking = (
       foreignHost = true;
       hasExplicitDirectory = false;
       reportedSinceWrite = false;
+      pendingTitleDirectory = null;
       setTerminalWorkingDirectory(sessionKey, null);
       return;
     }
@@ -144,14 +182,32 @@ export const attachWorkingDirectoryTracking = (
     if (reportedSinceWrite) {
       reportedSinceWrite = false;
       explicitPromptLine = line;
+      pendingTitleDirectory = null;
       return;
     }
     if (hasExplicitDirectory && line === explicitPromptLine) return;
     const directory = parseWorkingDirectoryPrompt(line, config.username);
-    if (!directory || !acceptHost(promptHost, directory.host)) return;
-    hasExplicitDirectory = false;
-    promptHost = directory.host;
-    setTerminalWorkingDirectory(sessionKey, directory.path);
+    if (directory && acceptHost(promptHost, directory.host)) {
+      hasExplicitDirectory = false;
+      pendingTitleDirectory = null;
+      promptHost = directory.host;
+      setTerminalWorkingDirectory(sessionKey, directory.path);
+      return;
+    }
+    const prompt = parseShellPrompt(line);
+    const title = pendingTitleDirectory;
+    if (
+      !hasExplicitDirectory &&
+      prompt &&
+      title &&
+      prompt.user === title.user &&
+      acceptHost(prompt.host, title.host) &&
+      acceptHost(oscHost || promptHost, title.host) &&
+      prompt.path === title.path.slice(title.path.lastIndexOf("/") + 1)
+    ) {
+      pendingTitleDirectory = null;
+      setTerminalWorkingDirectory(sessionKey, title.path);
+    }
   };
   if (term.onWriteParsed) disposables.push(term.onWriteParsed(readPrompt));
 
@@ -163,6 +219,7 @@ export const attachWorkingDirectoryTracking = (
       foreignHost = false;
       promptHost = null;
       oscHost = null;
+      pendingTitleDirectory = null;
       setTerminalWorkingDirectory(sessionKey, null);
     },
     dispose() {
