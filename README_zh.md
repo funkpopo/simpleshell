@@ -29,8 +29,10 @@ SimpleShell 是一款现代化、功能丰富的 SSH 终端应用，结合了 El
 
 ### 🔌 **连接管理**
 
-- **多协议支持**：SSH、Telnet 和本地 PowerShell 终端
+- **多协议支持**：SSH、Telnet、串口（COM）、Mosh 和本地 PowerShell 终端
 - **连接池化**：智能连接复用，最小化资源占用
+- **串口控制台**：直连串口/COM 设备，可配置波特率、数据位、停止位、校验位与流控；同一端口每个标签页持有独占会话
+- **Mosh 支持**：弱网/漫游场景下经本地 mosh 客户端建立会话（SSH 引导启动，认证在终端内交互完成）。Windows 可勾选「经 WSL 运行」，或填写 MSYS2/Cygwin 中 mosh 的完整路径；支持预测模式（adaptive/always/never/experimental）与自定义 mosh-server 端口。
 - **智能标签页**：拖放标签页重排、合并和分屏支持
 - **会话工具联动**：资源监控、文件管理、AI 助手与快捷命令跟随激活窗格；每个会话独立保存文件导航与 AI 对话/草稿，切换 SSH 窗格时文件侧栏保持展开。
 - **分屏终端**：将标签页拖到另一标签页中段叠加，或拖入终端区投隆区，即可合并为分屏（最多 2×2 四窗格）；右键合并后的标签 →「拆分恢复标签页」可将窗格还原为独立标签页，合并与拆分均保留会话与终端显示内容；每窗格独立会话、可连接不同主机；拖动窗格头部交换位置，拖拽分隔条调整比例；窗格可与同步输入分组组合实现批量运维（`Ctrl+Shift+W` 关闭当前窗格） 关闭窗格只结束该会话（包括根窗格），关闭其他窗格只保留指定会话；已有分屏的标签需要先还原为独立标签，才能并入其他标签。
@@ -40,7 +42,7 @@ SimpleShell 是一款现代化、功能丰富的 SSH 终端应用，结合了 El
 ### 📁 **高级文件管理**
 
 - **完整 SFTP 浏览器**：直观的文件浏览和拖放操作
-- **终端目录跟随**：在「设置 → 常规」统一控制 SFTP 是否跟随当前 SSH 终端，默认开启并持久保存；各标签页、分屏会话的目录信息相互隔离。[路径识别与 Shell 配置说明](SFTP_TERMINAL_DIRECTORY.md)
+- **终端目录跟随**：在「设置 → 常规」统一控制 SFTP 是否跟随当前 SSH 终端，默认开启并持久保存；各标签页、分屏会话的目录信息相互隔离。
 - **批量传输**：支持进度跟踪的文件夹上传/下载
 - **SFTP 断点续传**：暂停、断线或应用重启后，可从传输面板继续保留的任务；128 MiB 及以上文件按已完成段续传
 - **完整性校验**：可选 SHA-256 全局开关与 MD5 单任务校验，通过 SFTP 流式计算，无需 shell 权限；不一致时整文件重传一次，再失败展示两端哈希
@@ -199,18 +201,21 @@ simpleshell/
 │   │   └── terminal/      # 终端功能
 │   ├── services/           # 应用服务（例如 config）
 │   ├── store/              # 状态管理
+│   ├── shared/             # 跨进程共用、零依赖工具
 │   ├── workers/            # Worker 入口
 │   ├── hooks/              # React hooks
 │   ├── contexts/           # React contexts
 │   ├── i18n/               # 国际化
 │   ├── styles/             # 全局样式
 │   ├── theme/              # 主题样式/Token
-│   └── utils/              # 公共工具
+│   └── utils/              # 仅渲染进程使用的工具（见 DIRECTORY_CONVENTIONS.md）
 ├── native-services/        # 原生产品服务 Rust host
 ├── forge.config.js         # Electron Forge 配置
 ├── webpack.main.config.js  # Electron main 的 Webpack 配置
 └── webpack.renderer.config.js # Electron renderer 的 Webpack 配置
 ```
+
+> `src/shared/`（跨进程零依赖）、`src/core/utils/`（主进程）与 `src/utils/`（仅渲染进程）的目录归属规则见 [DIRECTORY_CONVENTIONS.md](DIRECTORY_CONVENTIONS.md)，新代码必须遵循。
 
 ## **技术栈**
 
@@ -254,7 +259,7 @@ simpleshell/
 ## **连接架构**
 
 - Core 与 Modules
-  - `src/core/connection`：规范的底层连接原语和连接池。文件沿用 `*-connection-pool.js` 命名，例如 `ssh-connection-pool.js`、`telnet-connection-pool.js`，并共享 `base-connection-pool.js`。
+  - `src/core/connection`：规范的底层连接原语和连接池。文件沿用 `*-connection-pool.js` 命名，例如 `ssh-pool.js`、`telnet-connection-pool.js`、`serial-connection-pool.js`、`mosh-connection-pool.js`，并共享 `base-connection-pool.js`。
   - `src/modules/connection`：应用层编排模块，将核心连接池和 SFTP 管理器组合成应用使用的统一服务，通过 `require("./modules/connection")` 暴露。
 
 - 命名一致性
@@ -268,7 +273,7 @@ simpleshell/
     - 网络延迟服务（`networkLatencyService.js`）
 
 - 导入建议
-  - 连接池：`const { sshConnectionPool, telnetConnectionPool } = require("../../core/connection");`
+  - 连接池：`const { sshConnectionPool, telnetConnectionPool, serialConnectionPool, moshConnectionPool } = require("../../core/connection");`
   - 应用层连接能力（包含 SFTP）：`const connectionManager = require("./modules/connection");`
 
 ## **贡献**

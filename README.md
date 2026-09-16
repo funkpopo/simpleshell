@@ -29,8 +29,10 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 
 ### 🔌 **Connection Management**
 
-- **Multi-Protocol Support**: SSH, Telnet, and local PowerShell terminals
+- **Multi-Protocol Support**: SSH, Telnet, Serial (COM), Mosh, and local PowerShell terminals
 - **Connection Pooling**: Intelligent connection reuse to minimize resource usage
+- **Serial Console**: Direct serial/COM connections with configurable baud rate, data bits, stop bits, parity, and flow control; each tab holds an exclusive session per port
+- **Mosh Support**: Weak-network/roaming-friendly sessions via a locally hosted mosh client (SSH bootstrap; interactive authentication happens in the terminal). On Windows, run through WSL or point to an MSYS2/Cygwin mosh binary; prediction mode (adaptive/always/never/experimental) and a custom mosh-server port are configurable.
 - **Smart Tabs**: Drag-drop tab reordering, merging, and split-screen support
 - **Split Terminal**: Drag a tab onto the middle of another tab (stack-merge) or into the terminal area to merge it into a split view (up to 2×2 panes); right-click the merged tab → "Unsplit & Restore Tabs" to restore panes back to standalone tabs — sessions and terminal content are preserved on both merge and unsplit; each pane an independent session that can connect to a different host; drag pane headers to swap, drag dividers to resize; panes compose with sync-input groups for batch ops (`Ctrl+Shift+W` closes the focused pane) Closing a pane ends only that session, including the root pane; closing other panes retains exactly the selected session. Split tabs must be restored to standalone tabs before they can be merged into another tab.
 - **Group Synchronization**: Execute commands across multiple connections simultaneously
@@ -40,7 +42,7 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 ### 📁 **Advanced File Management**
 
 - **Full SFTP Browser**: Intuitive file browsing with drag-drop operations
-- **Follow Terminal Directory**: A persistent global option in Settings → General lets SFTP follow the focused SSH terminal, with directory state isolated per tab or split session. Enabled by default. [Path detection and shell setup](SFTP_TERMINAL_DIRECTORY.md)
+- **Follow Terminal Directory**: A persistent global option in Settings → General lets SFTP follow the focused SSH terminal, with directory state isolated per tab or split session. Enabled by default.
 - **Bulk Transfers**: Upload/download entire folders with progress tracking
 - **Resumable SFTP Transfers**: Pause, reconnect, or restart the app and resume retained files from the transfer panel; files of 128 MiB or larger resume by completed segments
 - **Integrity Verification**: Optional SHA-256 by default or MD5 per task, streamed over SFTP without shell access; a mismatch triggers exactly one full-file retransmission and reports both hashes if it fails again
@@ -199,18 +201,21 @@ simpleshell/
 │   │   └── terminal/      # Terminal feature
 │   ├── services/           # App services (e.g. config)
 │   ├── store/              # State management
+│   ├── shared/             # Cross-process, zero-dependency helpers
 │   ├── workers/            # Worker entry points
 │   ├── hooks/              # React hooks
 │   ├── contexts/           # React contexts
 │   ├── i18n/               # Internationalization
 │   ├── styles/             # Global styles
 │   ├── theme/              # Theme tokens/styles
-│   └── utils/              # Shared utilities
+│   └── utils/              # Renderer-only utilities (see DIRECTORY_CONVENTIONS.md)
 ├── native-services/        # Rust host for native product services
 ├── forge.config.js         # Electron Forge configuration
 ├── webpack.main.config.js  # Webpack config for Electron main
 └── webpack.renderer.config.js # Webpack config for Electron renderer
 ```
+
+> Directory ownership rules for `src/shared/` (cross-process, zero-dependency), `src/core/utils/` (main process) and `src/utils/` (renderer-only) are defined in [DIRECTORY_CONVENTIONS.md](DIRECTORY_CONVENTIONS.md). New code must follow them.
 
 ## **Tech Stack**
 
@@ -254,7 +259,7 @@ simpleshell/
 ## **Connection Architecture**
 
 - Core vs Modules
-  - `src/core/connection`: Canonical, low-level connection primitives and pools. Files follow `*-connection-pool.js` naming (e.g., `ssh-connection-pool.js`, `telnet-connection-pool.js`) and a shared `base-connection-pool.js`.
+  - `src/core/connection`: Canonical, low-level connection primitives and pools. Files follow `*-connection-pool.js` naming (e.g., `ssh-pool.js`, `telnet-connection-pool.js`, `serial-connection-pool.js`, `mosh-connection-pool.js`) and a shared `base-connection-pool.js`.
   - `src/modules/connection`: App-level orchestration that composes the core pools and SFTP manager into a single service used by the app (exposed via `require("./modules/connection")`).
 
 - Naming consistency
@@ -268,7 +273,7 @@ simpleshell/
     - Network latency service (`networkLatencyService.js`)
 
 - Import guidance
-  - For pools: `const { sshConnectionPool, telnetConnectionPool } = require("../../core/connection");`
+  - For pools: `const { sshConnectionPool, telnetConnectionPool, serialConnectionPool, moshConnectionPool } = require("../../core/connection");`
   - For app-level connection features (incl. SFTP): `const connectionManager = require("./modules/connection");`
 
 ## **Contributing**
