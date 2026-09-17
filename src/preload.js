@@ -1,5 +1,12 @@
+// @ts-check
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
+
+/**
+ * Preload 运行于隔离上下文；类型检查由 scripts/check-preload-typings.js 执行。
+ * 主进程尚未细化的响应使用 unknown，调用方应先缩窄类型。
+ * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "./types/preload"
+ */
 
 const {
   contextBridge,
@@ -55,6 +62,14 @@ contextBridge.exposeInMainWorld("simpleshellBoot", {
 /**
  * 进度监听样板封装：注册临时监听器 → 发起 invoke → finally 移除。
  * upload 类接口在收到 operationComplete/cancelled 信号时会提前移除监听器。
+ * @param {object} options
+ * @param {string} options.channel
+ * @param {((...args: unknown[]) => void)} [options.callback]
+ * @param {(data: Record<string, unknown>) => unknown} [options.shouldHandle] 按返回值的真值过滤事件。
+ * @param {(data: Record<string, unknown>) => unknown[]} [options.toArgs]
+ * @param {boolean} [options.removeOnSignal]
+ * @param {(channel: string) => Promise<unknown>} options.invoke
+ * @returns {Promise<unknown>}
  */
 const withProgressListener = ({
   channel,
@@ -327,10 +342,10 @@ function subscribeReconnectEvent(channel, callback) {
 
 contextBridge.exposeInMainWorld("terminalAPI", {
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @param {*} message - message。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过终端 IPC 邮箱发送消息；返回是否接受发送。
+   * @param {ProcessId} processId
+   * @param {TerminalMailboxMessage} message
+   * @returns {boolean}
    */
   postTerminalMailboxMessage: (processId, message) => {
     const channel = getTerminalIOMailboxOutputChannel(processId);
@@ -344,11 +359,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     });
     return true;
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {string} processId - processId。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {ProcessId} processId
+   * @param {PayloadCallback<TerminalMailboxMessage>} callback
+   * @returns {Unsubscribe}
    */
   onTerminalMailboxMessage: (processId, callback) => {
     const channel = getTerminalIOMailboxOutputChannel(processId);
@@ -374,17 +390,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       wrappers.delete(callback);
     };
   },
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
+
   // ZMODEM（rz/sz）传输事件
+  /**
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
+   */
   onZmodemEvent: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = (_event, data) => callback(data);
@@ -396,10 +408,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       );
     };
   },
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC 请求取消 ZMODEM 传输；返回是否接受发送。
+   * @param {ProcessId} processId
+   * @returns {boolean}
    */
   cancelZmodemTransfer: (processId) => {
     if (processId === undefined || processId === null) {
@@ -410,10 +423,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
 
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {string} processId - processId。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 管理主进程事件监听，无返回值。
+   * @param {ProcessId} processId
+   * @param {PayloadCallback<TerminalMailboxMessage>} [callback]
+   * @returns {void}
    */
   removeTerminalMailboxListener: (processId, callback) => {
     const channel = getTerminalIOMailboxOutputChannel(processId);
@@ -437,33 +450,22 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     removeAllManagedTerminalMailboxListeners(channel);
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_COMMAND 请求主进程并返回结果。
-   * @param {*} command - command。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_COMMAND 请求主进程并返回结果。
-   * @param {*} command - command。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 发送命令到主进程处理 (用于模拟终端)
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_COMMAND 请求主进程。
+   * @param {string} command
+   * @returns {Promise<unknown>}
+   */
   sendCommand: (command) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_COMMAND, command),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @param {*} data - data。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @param {*} data - data。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 终端进程管理
+  /**
+   * 通过终端 IPC 邮箱发送输入；同步返回是否接受发送。
+   * @param {ProcessId} processId
+   * @param {string|Uint8Array} data
+   * @returns {boolean}
+   */
   sendToProcess: (processId, data) => {
     if (processId === undefined || processId === null) {
       return false;
@@ -481,11 +483,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     });
     return true;
   },
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @param {*} data - data。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_SEND_TO_PROCESS 请求主进程。
+   * @param {ProcessId} processId
+   * @param {string|Uint8Array} data
+   * @returns {Promise<unknown>}
    */
   sendToProcessWithAck: (processId, data) =>
     ipcRenderer.invoke(
@@ -493,11 +496,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       processId,
       data,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @param {number} bytes - bytes。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过终端 IPC 邮箱确认已消费的输出字节，无返回值。
+   * @param {ProcessId} processId
+   * @param {number} bytes
+   * @returns {void}
    */
   notifyOutputConsumed: (processId, bytes) => {
     if (processId === undefined || processId === null) {
@@ -515,69 +519,66 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       },
     });
   },
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_KILL_PROCESS 请求主进程并返回结果。
-   * @param {string} processId - processId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_KILL_PROCESS 请求主进程。
+   * @param {ProcessId} processId
+   * @returns {Promise<unknown>}
    */
   killProcess: (processId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_KILL_PROCESS, processId),
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 新增：获取进程信息
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_INFO 请求主进程。
+   * @param {ProcessId} processId
+   * @returns {Promise<unknown>}
+   */
   getProcessInfo: (processId) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_INFO,
       processId,
     ),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINALS_DETECT 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINALS_DETECT 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 本地终端API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINALS_DETECT 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   detectLocalTerminals: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINALS_DETECT),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} localConfig - localConfig。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_START_EMBEDDED 请求主进程。
+   * @param {Record<string, unknown>} localConfig
+   * @returns {Promise<unknown>}
    */
   startLocalTerminal: (localConfig) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_START_EMBEDDED,
       localConfig,
     ),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_CLOSE 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_CLOSE 请求主进程。
+   * @param {string} tabId
+   * @returns {Promise<unknown>}
    */
   closeLocalTerminal: (tabId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_CLOSE, tabId),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_INFO 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_INFO 请求主进程。
+   * @param {string} tabId
+   * @returns {Promise<unknown>}
    */
   getLocalTerminalInfo: (tabId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_INFO, tabId),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onLocalTerminalStatus: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -592,10 +593,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       localTerminalStatusWrappers.delete(callback);
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 管理主进程事件监听，无返回值。
+   * @param {PayloadCallback} [callback]
+   * @returns {void}
    */
   offLocalTerminalStatus: (callback) => {
     if (!callback) {
@@ -612,96 +614,97 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.RECONNECT_GET_STATUS 请求主进程并返回结果。
-   * @param {*} args - args。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.RECONNECT_GET_STATUS 请求主进程并返回结果。
-   * @param {*} args - args。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 重连管理API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.RECONNECT_GET_STATUS 请求主进程。
+   * @param {unknown} args
+   * @returns {Promise<unknown>}
+   */
   getReconnectStatus: (args) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_GET_STATUS, args),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.RECONNECT_PAUSE 请求主进程并返回结果。
-   * @param {*} args - args。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.RECONNECT_PAUSE 请求主进程。
+   * @param {unknown} args
+   * @returns {Promise<unknown>}
    */
   pauseReconnect: (args) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_PAUSE, args),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.RECONNECT_RESUME 请求主进程并返回结果。
-   * @param {*} args - args。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.RECONNECT_RESUME 请求主进程。
+   * @param {unknown} args
+   * @returns {Promise<unknown>}
    */
   resumeReconnect: (args) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_RESUME, args),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.RECONNECT_GET_STATISTICS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.RECONNECT_GET_STATISTICS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getReconnectStatistics: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.RECONNECT_GET_STATISTICS),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.PF_GET_RULES 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.PF_GET_RULES 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 端口转发（SSH隧道）管理API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.PF_GET_RULES 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   getPortForwardRules: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_GET_RULES),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.PF_SAVE_RULE 请求主进程并返回结果。
-   * @param {*} rule - rule。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.PF_SAVE_RULE 请求主进程。
+   * @param {Record<string, unknown>} rule
+   * @returns {Promise<unknown>}
    */
   savePortForwardRule: (rule) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_SAVE_RULE, rule),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.PF_DELETE_RULE 请求主进程并返回结果。
-   * @param {*} ruleId - ruleId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.PF_DELETE_RULE 请求主进程。
+   * @param {string} ruleId
+   * @returns {Promise<unknown>}
    */
   deletePortForwardRule: (ruleId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_DELETE_RULE, ruleId),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.PF_START_RULE 请求主进程并返回结果。
-   * @param {*} ruleId - ruleId。
-   * @param {string} tabId - tabId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.PF_START_RULE 请求主进程。
+   * @param {string} ruleId
+   * @param {string} tabId
+   * @returns {Promise<unknown>}
    */
   startPortForwardRule: (ruleId, tabId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_START_RULE, { ruleId, tabId }),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.PF_STOP_RULE 请求主进程并返回结果。
-   * @param {*} ruleId - ruleId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.PF_STOP_RULE 请求主进程。
+   * @param {string} ruleId
+   * @returns {Promise<unknown>}
    */
   stopPortForwardRule: (ruleId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_STOP_RULE, ruleId),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.PF_GET_ACTIVE_SESSIONS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.PF_GET_ACTIVE_SESSIONS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getPortForwardActiveSessions: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_GET_ACTIVE_SESSIONS),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.PF_GET_STATUS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.PF_GET_STATUS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getPortForwardStatus: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.PF_GET_STATUS),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onPortForwardStatusUpdated: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -714,66 +717,68 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       );
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 管理主进程事件监听，无返回值。
+   * @returns {void}
    */
   removePortForwardListeners: () => {
     ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.PF_STATUS_UPDATED);
   },
 
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
   // 重连事件监听器
+  /**
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {ReconnectCallback} callback
+   * @returns {Unsubscribe}
+   */
   onReconnectStart: (callback) =>
     subscribeReconnectEvent(IPC_EVENT_CHANNELS.RECONNECT_STARTED, callback),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {ReconnectCallback} callback
+   * @returns {Unsubscribe}
    */
   onReconnectProgress: (callback) =>
     subscribeReconnectEvent(IPC_EVENT_CHANNELS.RECONNECT_PROGRESS, callback),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {ReconnectCallback} callback
+   * @returns {Unsubscribe}
    */
   onReconnectSuccess: (callback) =>
     subscribeReconnectEvent(IPC_EVENT_CHANNELS.RECONNECT_SUCCESS, callback),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {ReconnectCallback} callback
+   * @returns {Unsubscribe}
    */
   onReconnectFailed: (callback) =>
     subscribeReconnectEvent(IPC_EVENT_CHANNELS.RECONNECT_FAILED, callback),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {ReconnectCallback} callback
+   * @returns {Unsubscribe}
    */
   onReconnectAbandoned: (callback) =>
     subscribeReconnectEvent(IPC_EVENT_CHANNELS.RECONNECT_ABANDONED, callback),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {ReconnectCallback} callback
+   * @returns {Unsubscribe}
    */
   onConnectionLost: (callback) =>
     subscribeReconnectEvent(IPC_EVENT_CHANNELS.CONNECTION_LOST, callback),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onTabConnectionStatus: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -786,16 +791,18 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       );
     };
   },
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.CONNECTION_GET_TAB_STATUS 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.CONNECTION_GET_TAB_STATUS 请求主进程。
+   * @param {string} tabId
+   * @returns {Promise<unknown>}
    */
   getTabConnectionStatus: (tabId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONNECTION_GET_TAB_STATUS, tabId),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 管理主进程事件监听，无返回值。
+   * @returns {void}
    */
   removeReconnectListeners: () => {
     ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.RECONNECT_STARTED);
@@ -806,27 +813,23 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.CONNECTION_LOST);
   },
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} terminalConfig - terminalConfig。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} terminalConfig - terminalConfig。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 自定义终端管理API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_ADD_CUSTOM 请求主进程。
+   * @param {Record<string, unknown>} terminalConfig
+   * @returns {Promise<unknown>}
+   */
   addCustomTerminal: (terminalConfig) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_ADD_CUSTOM,
       terminalConfig,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} id - id。
-   * @param {*} updates - updates。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_UPDATE_CUSTOM 请求主进程。
+   * @param {string} id
+   * @param {Record<string, unknown>} updates
+   * @returns {Promise<unknown>}
    */
   updateCustomTerminal: (id, updates) =>
     ipcRenderer.invoke(
@@ -834,57 +837,56 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       id,
       updates,
     ),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_DELETE_CUSTOM 请求主进程并返回结果。
-   * @param {*} id - id。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_DELETE_CUSTOM 请求主进程。
+   * @param {string} id
+   * @returns {Promise<unknown>}
    */
   deleteCustomTerminal: (id) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_DELETE_CUSTOM, id),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_CUSTOM 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_CUSTOM 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getCustomTerminals: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_CUSTOM),
 
   /**
-   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_ALL_ACTIVE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_ALL_ACTIVE 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getAllActiveLocalTerminals: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_ALL_ACTIVE),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 资源监控API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_GET_SYSTEM_INFO 请求主进程。
+   * @param {ProcessId} processId
+   * @returns {Promise<unknown>}
+   */
   getSystemInfo: (processId) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.TERMINAL_GET_SYSTEM_INFO,
       processId,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_GET_METRICS_SAMPLE 请求主进程。
+   * @param {ProcessId} processId
+   * @returns {Promise<unknown>}
    */
   getMetricsSample: (processId) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.TERMINAL_GET_METRICS_SAMPLE,
       processId,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_LIST 请求主进程。
+   * @param {ProcessId} processId
+   * @returns {Promise<unknown>}
    */
   getProcessList: (processId) =>
     ipcRenderer.invoke(
@@ -892,55 +894,41 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       processId,
     ),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 连接管理API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_CLEANUP_CONNECTION 请求主进程。
+   * @param {ProcessId} processId
+   * @returns {Promise<unknown>}
+   */
   cleanupConnection: (processId) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.TERMINAL_CLEANUP_CONNECTION,
       processId,
     ),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SHORTCUT_COMMANDS_GET 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SHORTCUT_COMMANDS_GET 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 快捷命令API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.SHORTCUT_COMMANDS_GET 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   getShortcutCommands: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SHORTCUT_COMMANDS_GET),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.SHORTCUT_COMMANDS_SAVE 请求主进程并返回结果。
-   * @param {*} data - data。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SHORTCUT_COMMANDS_SAVE 请求主进程。
+   * @param {unknown} data
+   * @returns {Promise<unknown>}
    */
   saveShortcutCommands: (data) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SHORTCUT_COMMANDS_SAVE, data),
 
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {string} processId - processId。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {string} processId - processId。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
   // 事件监听
+  /**
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {ProcessId} processId
+   * @param {PayloadCallback<string|Uint8Array>} callback
+   * @returns {Unsubscribe}
+   */
   onProcessOutput: (processId, callback) => {
     if (typeof callback !== "function") {
       return () => {};
@@ -973,10 +961,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
 
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {string} processId - processId。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 管理主进程事件监听，无返回值。
+   * @param {ProcessId} processId
+   * @param {PayloadCallback<string|Uint8Array>} [callback]
+   * @returns {void}
    */
   removeOutputListener: (processId, callback) => {
     if (!processId) {
@@ -1003,55 +991,49 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     removeAllManagedProcessOutputListeners(channel);
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_LOAD_CONNECTIONS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_LOAD_CONNECTIONS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 连接配置存储API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_LOAD_CONNECTIONS 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   loadConnections: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_LOAD_CONNECTIONS),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} connectionId - connectionId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_GET_CONNECTION_PASSWORD 请求主进程。
+   * @param {string} connectionId
+   * @returns {Promise<unknown>}
    */
   getConnectionPassword: (connectionId) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.TERMINAL_GET_CONNECTION_PASSWORD,
       connectionId,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} connections - connections。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_SAVE_CONNECTIONS 请求主进程。
+   * @param {unknown[]} connections
+   * @returns {Promise<unknown>}
    */
   saveConnections: (connections) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.TERMINAL_SAVE_CONNECTIONS,
       connections,
     ),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_LOAD_TOP_CONNECTIONS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_LOAD_TOP_CONNECTIONS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   loadTopConnections: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_LOAD_TOP_CONNECTIONS),
 
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
   // 热门连接实时更新事件
+  /**
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
+   */
   onTopConnectionsChanged: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrapped = (_e, ids) => callback(ids);
@@ -1065,10 +1047,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       topConnectionsChangedWrappers.delete(callback);
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 管理主进程事件监听，无返回值。
+   * @param {PayloadCallback} [callback]
+   * @returns {void}
    */
   offTopConnectionsChanged: (callback) => {
     if (!callback) return;
@@ -1082,17 +1065,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }
   },
 
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
   // 连接配置变化事件监听
+  /**
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {Unsubscribe} callback
+   * @returns {Unsubscribe}
+   */
   onConnectionsChanged: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = () => callback();
@@ -1106,10 +1084,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       connectionsChangedWrappers.delete(callback);
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 管理主进程事件监听，无返回值。
+   * @param {Unsubscribe} [callback]
+   * @returns {void}
    */
   offConnectionsChanged: (callback) => {
     if (!callback) return;
@@ -1123,47 +1102,31 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_SELECT_KEY_FILE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_SELECT_KEY_FILE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 选择密钥文件
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_SELECT_KEY_FILE 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   selectKeyFile: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_SELECT_KEY_FILE),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_COMMAND 请求主进程并返回结果。
-   * @param {*} command - command。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_COMMAND 请求主进程并返回结果。
-   * @param {*} command - command。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 简单命令执行
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_COMMAND 请求主进程。
+   * @param {string} command
+   * @returns {Promise<unknown>}
+   */
   executeCommand: (command) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_COMMAND, command),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @param {*} cols - cols。
-   * @param {*} rows - rows。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @param {*} cols - cols。
-   * @param {*} rows - rows。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 终端大小调整
+  /**
+   * 通过终端 IPC 邮箱发送尺寸更新，返回已完成的 Promise。
+   * @param {ProcessId} processId
+   * @param {number} cols
+   * @param {number} rows
+   * @returns {Promise<boolean>}
+   */
   resizeTerminal: (processId, cols, rows) => {
     ipcRenderer.send(TERMINAL_IO_MAILBOX_CHANNEL, {
       processId,
@@ -1177,183 +1140,151 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     return Promise.resolve(true);
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_SAVE_SETTINGS 请求主进程并返回结果。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_SAVE_SETTINGS 请求主进程并返回结果。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // AI助手API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.AI_SAVE_SETTINGS 请求主进程。
+   * @param {Record<string, unknown>} settings
+   * @returns {Promise<unknown>}
+   */
   saveAISettings: (settings) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SAVE_SETTINGS, settings),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_LOAD_SETTINGS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.AI_LOAD_SETTINGS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   loadAISettings: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_LOAD_SETTINGS),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_SEND_PROMPT 请求主进程并返回结果。
-   * @param {*} prompt - prompt。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.AI_SEND_PROMPT 请求主进程。
+   * @param {string} prompt
+   * @param {Record<string, unknown>} settings
+   * @returns {Promise<unknown>}
    */
   sendAIPrompt: (prompt, settings) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SEND_PROMPT, prompt, settings),
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} requestData - requestData。
-   * @param {*} isStream - isStream。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} requestData - requestData。
-   * @param {*} isStream - isStream。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 新增: 直接发送API请求的方法
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.AI_SEND_API_REQUEST 请求主进程。
+   * @param {Record<string, unknown>} requestData
+   * @param {boolean} isStream
+   * @returns {Promise<unknown>}
+   */
   sendAPIRequest: (requestData, isStream) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.AI_SEND_API_REQUEST,
       requestData,
       isStream,
     ),
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_ABORT_API_REQUEST 请求主进程并返回结果。
-   * @param {*} sessionId - sessionId。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_ABORT_API_REQUEST 请求主进程并返回结果。
-   * @param {*} sessionId - sessionId。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 新增: 中断API请求的方法
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.AI_ABORT_API_REQUEST 请求主进程。
+   * @param {string} sessionId
+   * @returns {Promise<unknown>}
+   */
   cancelAPIRequest: (sessionId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_ABORT_API_REQUEST, sessionId),
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_SAVE_API_CONFIG 请求主进程并返回结果。
-   * @param {object} config - config。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_SAVE_API_CONFIG 请求主进程并返回结果。
-   * @param {object} config - config。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 新增: API配置管理方法
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.AI_SAVE_API_CONFIG 请求主进程。
+   * @param {Record<string, unknown>} config
+   * @returns {Promise<unknown>}
+   */
   saveApiConfig: (config) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SAVE_API_CONFIG, config),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_DELETE_API_CONFIG 请求主进程并返回结果。
-   * @param {*} configId - configId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.AI_DELETE_API_CONFIG 请求主进程。
+   * @param {string} configId
+   * @returns {Promise<unknown>}
    */
   deleteApiConfig: (configId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_DELETE_API_CONFIG, configId),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} configId - configId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.AI_SET_CURRENT_API_CONFIG 请求主进程。
+   * @param {string} configId
+   * @returns {Promise<unknown>}
    */
   setCurrentApiConfig: (configId) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.AI_SET_CURRENT_API_CONFIG,
       configId,
     ),
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_FETCH_MODELS 请求主进程并返回结果。
-   * @param {*} requestData - requestData。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_FETCH_MODELS 请求主进程并返回结果。
-   * @param {*} requestData - requestData。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 新增: 获取模型列表方法
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.AI_FETCH_MODELS 请求主进程。
+   * @param {Record<string, unknown>} requestData
+   * @returns {Promise<unknown>}
+   */
   fetchModels: (requestData) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_FETCH_MODELS, requestData),
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_SAVE_CUSTOM_RISK_RULES 请求主进程并返回结果。
-   * @param {*} rules - rules。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_SAVE_CUSTOM_RISK_RULES 请求主进程并返回结果。
-   * @param {*} rules - rules。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 新增: 保存自定义风险规则
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.AI_SAVE_CUSTOM_RISK_RULES 请求主进程。
+   * @param {unknown[]} rules
+   * @returns {Promise<unknown>}
+   */
   saveCustomRiskRules: (rules) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SAVE_CUSTOM_RISK_RULES, rules),
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_GET_PROXY_CONFIG 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_GET_PROXY_CONFIG 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 新增: AI 代理配置读取/保存
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.AI_GET_PROXY_CONFIG 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   getAISettingsProxy: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_GET_PROXY_CONFIG),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.AI_SAVE_PROXY_CONFIG 请求主进程并返回结果。
-   * @param {*} proxyConfig - proxyConfig。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.AI_SAVE_PROXY_CONFIG 请求主进程。
+   * @param {Record<string, unknown>} proxyConfig
+   * @returns {Promise<unknown>}
    */
   saveAISettingsProxy: (proxyConfig) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_SAVE_PROXY_CONFIG, proxyConfig),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.MEMORY_SAVE 请求主进程并返回结果。
-   * @param {*} memory - memory。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.MEMORY_SAVE 请求主进程并返回结果。
-   * @param {*} memory - memory。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 记忆文件管理API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.MEMORY_SAVE 请求主进程。
+   * @param {unknown} memory
+   * @returns {Promise<unknown>}
+   */
   saveMemory: (memory) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.MEMORY_SAVE, memory),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.MEMORY_LOAD 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.MEMORY_LOAD 请求主进程。
+   * @returns {Promise<unknown>}
    */
   loadMemory: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.MEMORY_LOAD),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.MEMORY_DELETE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.MEMORY_DELETE 请求主进程。
+   * @returns {Promise<unknown>}
    */
   deleteMemory: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.MEMORY_DELETE),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.MEMORY_GET_DIAGNOSTICS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.MEMORY_GET_DIAGNOSTICS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getMemoryDiagnostics: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.MEMORY_GET_DIAGNOSTICS),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} channel - channel。
-   * @param {Function} callback - callback。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {*} channel - channel。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
   // 添加事件监听器注册方法
+  /**
+   * 管理主进程事件监听，无返回值。
+   * @param {string} channel
+   * @param {IpcCallback} callback
+   * @returns {void}
+   */
   on: (channel, callback) => {
     if (AI_STREAM_CHANNELS.includes(channel)) {
       // 包装回调函数，确保正确传递数据
@@ -1365,19 +1296,14 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       streamWrappersByChannel[channel].set(callback, wrappedCallback);
     }
   },
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} channel - channel。
-   * @param {Function} callback - callback。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {*} channel - channel。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
+
   // 添加off方法作为removeListener的别名
+  /**
+   * 管理主进程事件监听，无返回值。
+   * @param {string} channel
+   * @param {IpcCallback} [callback]
+   * @returns {void}
+   */
   off: (channel, callback) => {
     if (AI_STREAM_CHANNELS.includes(channel)) {
       // 使用包装的回调函数进行移除
@@ -1389,19 +1315,14 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       }
     }
   },
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {*} channel - channel。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {*} channel - channel。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
+
   // 添加事件监听器移除方法
+  /**
+   * 管理主进程事件监听，无返回值。
+   * @param {string} channel
+   * @param {IpcCallback} [callback]
+   * @returns {void}
+   */
   removeListener: (channel, callback) => {
     if (AI_STREAM_CHANNELS.includes(channel)) {
       // 使用包装的回调函数进行移除
@@ -1413,10 +1334,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       }
     }
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {IpcCallback} callback
+   * @returns {Unsubscribe}
    */
   onAIStreamChunk: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -1429,10 +1351,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       streamWrappersByChannel[channel].delete(callback);
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {IpcCallback} callback
+   * @returns {Unsubscribe}
    */
   onAIStreamEnd: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -1445,10 +1368,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       streamWrappersByChannel[channel].delete(callback);
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {IpcCallback} callback
+   * @returns {Unsubscribe}
    */
   onAIStreamError: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -1462,21 +1386,17 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     };
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_GET_VERSION 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_GET_VERSION 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 获取应用版本
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.APP_GET_VERSION 请求主进程。
+   * @returns {Promise<IpcResult<string>>}
+   */
   getAppVersion: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_GET_VERSION),
 
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onMenuAction: (callback) => {
     if (typeof callback !== "function") {
@@ -1488,10 +1408,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       ipcRenderer.removeListener(IPC_EVENT_CHANNELS.APP_MENU_ACTION, wrapped);
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onOpenFiles: (callback) => {
     if (typeof callback !== "function") {
@@ -1505,10 +1426,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       openFilesWrappers.delete(callback);
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 管理主进程事件监听，无返回值。
+   * @param {PayloadCallback} [callback]
+   * @returns {void}
    */
   offOpenFiles: (callback) => {
     const wrapped = callback && openFilesWrappers.get(callback);
@@ -1519,77 +1441,73 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     openFilesWrappers.delete(callback);
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_CLOSE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_CLOSE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 关闭应用
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.APP_CLOSE 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   closeApp: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_CLOSE),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_CHECK_FOR_UPDATE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_CHECK_FOR_UPDATE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 检查更新
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.APP_CHECK_FOR_UPDATE 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   checkForUpdate: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_CHECK_FOR_UPDATE),
 
   /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_OPEN_LOG_DIRECTORY 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.APP_OPEN_LOG_DIRECTORY 请求主进程。
+   * @returns {Promise<unknown>}
    */
   openLogDirectory: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_OPEN_LOG_DIRECTORY),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_EXPORT_DIAGNOSTICS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.APP_EXPORT_DIAGNOSTICS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   exportDiagnostics: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_EXPORT_DIAGNOSTICS),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} context - context。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.APP_COPY_DIAGNOSTIC_SUMMARY 请求主进程。
+   * @param {unknown} context
+   * @returns {Promise<unknown>}
    */
   copyDiagnosticSummary: (context) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.APP_COPY_DIAGNOSTIC_SUMMARY,
       context,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} context - context。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.APP_COPY_DIAGNOSTIC_PACKAGE 请求主进程。
+   * @param {unknown} context
+   * @returns {Promise<unknown>}
    */
   copyDiagnosticPackage: (context) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.APP_COPY_DIAGNOSTIC_PACKAGE,
       context,
     ),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_OPEN_FEEDBACK_ISSUE 请求主进程并返回结果。
-   * @param {*} context - context。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.APP_OPEN_FEEDBACK_ISSUE 请求主进程。
+   * @param {unknown} context
+   * @returns {Promise<unknown>}
    */
   openFeedbackIssue: (context) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_OPEN_FEEDBACK_ISSUE, context),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} path - path。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 文件管理相关API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.FILE_LIST 请求主进程。
+   * @param {string} tabId
+   * @param {string} path
+   * @param {ListFilesOptions} [options]
+   * @returns {Promise<unknown>}
+   */
   listFiles: async (tabId, path, options) => {
     const response = await ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.FILE_LIST,
@@ -1602,11 +1520,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }
     return response;
   },
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} token - token。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_CANCEL_LIST 请求主进程。
+   * @param {string} tabId
+   * @param {string} [token]
+   * @returns {Promise<unknown>}
    */
   cancelListFiles: (tabId, token) => {
     if (token) {
@@ -1620,10 +1539,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       token,
     );
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onListFilesChunk: (callback) => {
     if (typeof callback !== "function") {
@@ -1647,10 +1567,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       maybeAutoCancelTrackedListFiles();
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 管理主进程事件监听，无返回值。
+   * @param {PayloadCallback} [callback]
+   * @returns {void}
    */
   offListFilesChunk: (callback) => {
     if (typeof callback !== "function") {
@@ -1667,12 +1588,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     listFilesChunkWrappers.delete(callback);
     maybeAutoCancelTrackedListFiles();
   },
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} path - path。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_START_DIRECTORY_WATCH 请求主进程。
+   * @param {string} tabId
+   * @param {string} path
+   * @param {Record<string, unknown>} options
+   * @returns {Promise<unknown>}
    */
   startDirectoryWatch: (tabId, path, options) =>
     ipcRenderer.invoke(
@@ -1681,11 +1603,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       path,
       options,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} watchId - watchId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_STOP_DIRECTORY_WATCH 请求主进程。
+   * @param {string} tabId
+   * @param {string|null} [watchId]
+   * @returns {Promise<unknown>}
    */
   stopDirectoryWatch: (tabId, watchId = null) =>
     ipcRenderer.invoke(
@@ -1693,10 +1616,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       tabId,
       watchId,
     ),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onDirectoryWatchEvent: (callback) => {
     if (typeof callback !== "function") {
@@ -1717,10 +1641,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       directoryWatchEventWrappers.delete(callback);
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 管理主进程事件监听，无返回值。
+   * @param {PayloadCallback} [callback]
+   * @returns {void}
    */
   offDirectoryWatchEvent: (callback) => {
     if (typeof callback !== "function") {
@@ -1739,12 +1664,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     directoryWatchEventListeners.delete(wrapped);
     directoryWatchEventWrappers.delete(callback);
   },
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} sourcePath - sourcePath。
-   * @param {*} targetPath - targetPath。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_COPY 请求主进程。
+   * @param {string} tabId
+   * @param {string} sourcePath
+   * @param {string} targetPath
+   * @returns {Promise<unknown>}
    */
   copyFile: (tabId, sourcePath, targetPath) =>
     ipcRenderer.invoke(
@@ -1753,12 +1679,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       sourcePath,
       targetPath,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} sourcePath - sourcePath。
-   * @param {*} targetPath - targetPath。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_MOVE 请求主进程。
+   * @param {string} tabId
+   * @param {string} sourcePath
+   * @param {string} targetPath
+   * @returns {Promise<unknown>}
    */
   moveFile: (tabId, sourcePath, targetPath) =>
     ipcRenderer.invoke(
@@ -1767,12 +1694,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       sourcePath,
       targetPath,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @param {*} isDirectory - isDirectory。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_DELETE 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @param {boolean} isDirectory
+   * @returns {Promise<unknown>}
    */
   deleteFile: (tabId, filePath, isDirectory) =>
     ipcRenderer.invoke(
@@ -1781,11 +1709,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       filePath,
       isDirectory,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} folderPath - folderPath。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_CREATE_FOLDER 请求主进程。
+   * @param {string} tabId
+   * @param {string} folderPath
+   * @returns {Promise<unknown>}
    */
   createFolder: (tabId, folderPath) =>
     ipcRenderer.invoke(
@@ -1793,21 +1722,23 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       tabId,
       folderPath,
     ),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.FILE_CREATE 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_CREATE 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @returns {Promise<unknown>}
    */
   createFile: (tabId, filePath) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CREATE, tabId, filePath),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} remotePath - remotePath。
-   * @param {*} progressCallback - progressCallback。
-   * @param {*} knownSize - knownSize。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_DOWNLOAD 请求主进程。
+   * @param {string} tabId
+   * @param {string} remotePath
+   * @param {DownloadProgressCallback} [progressCallback]
+   * @param {number} [knownSize]
+   * @returns {Promise<unknown>}
    */
   downloadFile: (tabId, remotePath, progressCallback, knownSize = 0) =>
     withProgressListener({
@@ -1833,21 +1764,15 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           Number.isFinite(knownSize) && knownSize >= 0 ? knownSize : 0,
         ),
     }),
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} files - files。
-   * @param {*} progressCallback - progressCallback。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} files - files。
-   * @param {*} progressCallback - progressCallback。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 批量下载多个文件
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.FILE_DOWNLOAD_FILES 请求主进程。
+   * @param {string} tabId
+   * @param {unknown} files
+   * @param {DownloadProgressCallback} [progressCallback]
+   * @returns {Promise<unknown>}
+   */
   downloadFiles: (tabId, files, progressCallback) =>
     withProgressListener({
       channel: IPC_EVENT_CHANNELS.DOWNLOAD_PROGRESS,
@@ -1871,19 +1796,14 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           files,
         ),
     }),
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} remotePath - remotePath。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} remotePath - remotePath。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 新增API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.EXTERNAL_EDITOR_OPEN 请求主进程。
+   * @param {string} tabId
+   * @param {string} remotePath
+   * @returns {Promise<unknown>}
+   */
   openFileInExternalEditor: (tabId, remotePath) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.EXTERNAL_EDITOR_OPEN,
@@ -1892,9 +1812,9 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ),
 
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {ExternalEditorCallback} callback
+   * @returns {Unsubscribe}
    */
   onExternalEditorEvent: (callback) => {
     if (typeof callback !== "function") {
@@ -1910,10 +1830,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       );
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 管理主进程事件监听，无返回值。
+   * @param {ExternalEditorCallback} [callback]
+   * @returns {void}
    */
   offExternalEditorEvent: (callback) => {
     if (!callback) {
@@ -1927,11 +1848,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
   },
 
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} oldPath - oldPath。
-   * @param {*} newName - newName。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_RENAME 请求主进程。
+   * @param {string} tabId
+   * @param {string} oldPath
+   * @param {string} newName
+   * @returns {Promise<unknown>}
    */
   renameFile: (tabId, oldPath, newName) =>
     ipcRenderer.invoke(
@@ -1941,21 +1862,14 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       newName,
     ),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @param {*} permissions - permissions。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @param {*} permissions - permissions。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 权限设置API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.FILE_SET_PERMISSIONS 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @param {unknown} permissions
+   * @returns {Promise<unknown>}
+   */
   setFilePermissions: (tabId, filePath, permissions) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.FILE_SET_PERMISSIONS,
@@ -1963,23 +1877,16 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       filePath,
       permissions,
     ),
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @param {*} owner - owner。
-   * @param {*} group - group。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @param {*} owner - owner。
-   * @param {*} group - group。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 所有者/组设置API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.FILE_SET_OWNERSHIP 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @param {unknown} owner
+   * @param {unknown} group
+   * @returns {Promise<unknown>}
+   */
   setFileOwnership: (tabId, filePath, owner, group) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.FILE_SET_OWNERSHIP,
@@ -1988,11 +1895,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       owner,
       group,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_GET_PERMISSIONS 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @returns {Promise<unknown>}
    */
   getFilePermissions: (tabId, filePath) =>
     ipcRenderer.invoke(
@@ -2001,19 +1909,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       filePath,
     ),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePaths - filePaths。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePaths - filePaths。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 批量获取文件权限 - 减少 IPC 调用开销
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.FILE_GET_PERMISSIONS_BATCH 请求主进程。
+   * @param {string} tabId
+   * @param {string[]} filePaths
+   * @returns {Promise<unknown>}
+   */
   getFilePermissionsBatch: (tabId, filePaths) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.FILE_GET_PERMISSIONS_BATCH,
@@ -2023,31 +1925,29 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
   // 通用批量 IPC 调用 API
   // 用法: batchInvoke([['channel1', arg1, arg2], ['channel2', arg1]])
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.IPC_BATCH_INVOKE 请求主进程并返回结果。
-   * @param {*} calls - calls。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.IPC_BATCH_INVOKE 请求主进程并返回结果。
-   * @param {*} calls - calls。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 返回: [{ success: true, data: result1 }, { success: false, error: 'message' }, ...]
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.IPC_BATCH_INVOKE 请求主进程。
+   * @param {[channel: string, ...args: unknown[]][]} calls
+   * @returns {Promise<unknown>}
+   */
   batchInvoke: (calls) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.IPC_BATCH_INVOKE, calls),
 
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} targetFolder - targetFolder。
-   * @param {*} progressCallback - progressCallback。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_UPLOAD 请求主进程。
+   * @param {string} tabId
+   * @param {string} targetFolder
+   * @param {UploadProgressCallback} [progressCallback]
+   * @returns {Promise<unknown>}
    */
   uploadFile: (tabId, targetFolder, progressCallback) =>
     withProgressListener({
       // Unique channel for this specific upload
-      channel: getUploadProgressChannel(`${tabId}-${Date.now()}`),
+      channel: /** @type {string} */ (
+        getUploadProgressChannel(`${tabId}-${Date.now()}`)
+      ),
       callback: progressCallback,
       toArgs: (progressData) => [
         // 确保传递标准化的进度数据格式
@@ -2072,44 +1972,35 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressChannel,
         ),
     }),
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} folderPath - folderPath。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} folderPath - folderPath。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 创建远程文件夹结构
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.FILE_CREATE_REMOTE_FOLDERS 请求主进程。
+   * @param {string} tabId
+   * @param {string} folderPath
+   * @returns {Promise<unknown>}
+   */
   createRemoteFolders: (tabId, folderPath) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.FILE_CREATE_REMOTE_FOLDERS,
       tabId,
       folderPath,
     ),
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} targetFolder - targetFolder。
-   * @param {*} progressCallback - progressCallback。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} targetFolder - targetFolder。
-   * @param {*} progressCallback - progressCallback。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 新增: 上传文件夹API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.FILE_UPLOAD_FOLDER 请求主进程。
+   * @param {string} tabId
+   * @param {string} targetFolder
+   * @param {UploadFolderProgressCallback} [progressCallback]
+   * @returns {Promise<unknown>}
+   */
   uploadFolder: (tabId, targetFolder, progressCallback) =>
     withProgressListener({
       // Unique channel for this specific upload
-      channel: getUploadFolderProgressChannel(`${tabId}-${Date.now()}`),
+      channel: /** @type {string} */ (
+        getUploadFolderProgressChannel(`${tabId}-${Date.now()}`)
+      ),
       callback: progressCallback,
       toArgs: (progressData) => [
         // 确保传递标准化的进度数据格式
@@ -2134,27 +2025,22 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressChannel,
         ),
     }),
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} targetFolder - targetFolder。
-   * @param {*} uploadData - uploadData。
-   * @param {*} progressCallback - progressCallback。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} targetFolder - targetFolder。
-   * @param {*} uploadData - uploadData。
-   * @param {*} progressCallback - progressCallback。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 新增: 上传拖拽文件API (用于文件管理器拖放功能)
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.FILE_UPLOAD_DROPPED 请求主进程。
+   * @param {string} tabId
+   * @param {string} targetFolder
+   * @param {unknown} uploadData
+   * @param {UploadDroppedProgressCallback} [progressCallback]
+   * @returns {Promise<unknown>}
+   */
   uploadDroppedFiles: (tabId, targetFolder, uploadData, progressCallback) =>
     withProgressListener({
       // Unique channel for this specific upload
-      channel: getUploadDroppedProgressChannel(`${tabId}-${Date.now()}`),
+      channel: /** @type {string} */ (
+        getUploadDroppedProgressChannel(`${tabId}-${Date.now()}`)
+      ),
       callback: progressCallback,
       toArgs: (progressData) => [
         // 确保传递标准化的进度数据格式
@@ -2181,21 +2067,15 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           progressChannel,
         ),
     }),
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} remoteFolderPath - remoteFolderPath。
-   * @param {*} progressCallback - progressCallback。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} remoteFolderPath - remoteFolderPath。
-   * @param {*} progressCallback - progressCallback。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 新增: 下载文件夹API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.FILE_DOWNLOAD_FOLDER 请求主进程。
+   * @param {string} tabId
+   * @param {string} remoteFolderPath
+   * @param {DownloadProgressCallback} [progressCallback]
+   * @returns {Promise<unknown>}
+   */
   downloadFolder: (tabId, remoteFolderPath, progressCallback) =>
     withProgressListener({
       channel: IPC_EVENT_CHANNELS.DOWNLOAD_FOLDER_PROGRESS,
@@ -2219,26 +2099,29 @@ contextBridge.exposeInMainWorld("terminalAPI", {
           remoteFolderPath,
         ),
     }),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.FILE_CANCEL_TRANSFER 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @param {*} type - type。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_CANCEL_TRANSFER 请求主进程。
+   * @param {string} tabId
+   * @param {string} type
+   * @returns {Promise<unknown>}
    */
   cancelTransfer: (tabId, type) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CANCEL_TRANSFER, tabId, type),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.FILE_LIST_RESUMABLE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_LIST_RESUMABLE 请求主进程。
+   * @returns {Promise<unknown>}
    */
   listResumableTransfers: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_LIST_RESUMABLE),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} id - id。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_RESUME_TRANSFER 请求主进程。
+   * @param {string} tabId
+   * @param {string} id
+   * @param {Record<string, unknown>} [options]
+   * @returns {Promise<unknown>}
    */
   resumeTransfer: (tabId, id, options = {}) =>
     ipcRenderer.invoke(
@@ -2247,20 +2130,22 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       id,
       options,
     ),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.FILE_DISCARD_RESUMABLE 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @param {*} id - id。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_DISCARD_RESUMABLE 请求主进程。
+   * @param {string} tabId
+   * @param {string} id
+   * @returns {Promise<unknown>}
    */
   discardResumableTransfer: (tabId, id) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_DISCARD_RESUMABLE, tabId, id),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} key - key。
-   * @param {*} algorithm - algorithm。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_TRANSFER_INTEGRITY 请求主进程。
+   * @param {string} tabId
+   * @param {string} key
+   * @param {"md5"|"sha256"} algorithm
+   * @returns {Promise<unknown>}
    */
   setTransferIntegrity: (tabId, key, algorithm) =>
     ipcRenderer.invoke(
@@ -2269,10 +2154,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       key,
       algorithm,
     ),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onSftpTransferState: (callback) => {
     const listener = (_event, payload) => callback(payload);
@@ -2283,11 +2169,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
         listener,
       );
   },
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} relativePath - relativePath。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_GET_ABSOLUTE_PATH 请求主进程。
+   * @param {string} tabId
+   * @param {string} relativePath
+   * @returns {Promise<unknown>}
    */
   getAbsolutePath: (tabId, relativePath) =>
     ipcRenderer.invoke(
@@ -2295,19 +2182,14 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       tabId,
       relativePath,
     ),
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
+
   // 添加文件内容读取API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.SFTP_READ_FILE_CONTENT 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @returns {Promise<unknown>}
+   */
   readFileContent: (tabId, filePath) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.SFTP_READ_FILE_CONTENT,
@@ -2315,21 +2197,14 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       filePath,
     ),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @param {*} content - content。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @param {*} content - content。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 新增：保存文件内容API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.SFTP_SAVE_FILE_CONTENT 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @param {string} content
+   * @returns {Promise<unknown>}
+   */
   saveFileContent: (tabId, filePath, content) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.SFTP_SAVE_FILE_CONTENT,
@@ -2338,19 +2213,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       content,
     ),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 从base64解码读取文件内容
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.SFTP_READ_FILE_BASE64 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @returns {Promise<unknown>}
+   */
   readFileAsBase64: (tabId, filePath) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.SFTP_READ_FILE_BASE64,
@@ -2359,10 +2228,10 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ),
 
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SFTP_LIST_FILE_SNAPSHOTS 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @returns {Promise<unknown>}
    */
   listFileSnapshots: (tabId, filePath) =>
     ipcRenderer.invoke(
@@ -2372,12 +2241,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ),
 
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @param {*} content - content。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SFTP_CREATE_FILE_SNAPSHOT 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @param {string} content
+   * @param {Record<string, unknown>} [options]
+   * @returns {Promise<unknown>}
    */
   createFileSnapshot: (tabId, filePath, content, options = {}) =>
     ipcRenderer.invoke(
@@ -2389,11 +2258,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ),
 
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @param {*} snapshotId - snapshotId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SFTP_GET_FILE_SNAPSHOT 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @param {string} snapshotId
+   * @returns {Promise<unknown>}
    */
   getFileSnapshot: (tabId, filePath, snapshotId) =>
     ipcRenderer.invoke(
@@ -2404,12 +2273,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ),
 
   /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_OPEN_EXTERNAL 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @param {*} filePath - filePath。
-   * @param {*} snapshotId - snapshotId。
-   * @param {*} currentContent - currentContent。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SFTP_RESTORE_FILE_SNAPSHOT 请求主进程。
+   * @param {string} tabId
+   * @param {string} filePath
+   * @param {string} snapshotId
+   * @param {string|null} [currentContent]
+   * @returns {Promise<unknown>}
    */
   restoreFileSnapshot: (tabId, filePath, snapshotId, currentContent = null) =>
     ipcRenderer.invoke(
@@ -2420,13 +2289,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       currentContent,
     ),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_OPEN_EXTERNAL 请求主进程并返回结果。
-   * @param {*} url - url。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 在外部浏览器打开链接
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.APP_OPEN_EXTERNAL 请求主进程。
+   * @param {string} url
+   * @param {ExternalOpenOptions} [options]
+   * @returns {Promise<ExternalOpenResult>}
+   */
   openExternal: async (url, options = {}) => {
     const payload = normalizeExternalOpenRequest(url, options);
     const result = await Promise.race([
@@ -2447,39 +2316,37 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     return { success: true };
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.FILE_CHECK_PATH_EXISTS 请求主进程并返回结果。
-   * @param {*} path - path。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.FILE_CHECK_PATH_EXISTS 请求主进程并返回结果。
-   * @param {*} path - path。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 文件系统辅助API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.FILE_CHECK_PATH_EXISTS 请求主进程。
+   * @param {string} path
+   * @returns {Promise<unknown>}
+   */
   checkPathExists: (path) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_CHECK_PATH_EXISTS, path),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.FILE_SHOW_ITEM_IN_FOLDER 请求主进程并返回结果。
-   * @param {*} path - path。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_SHOW_ITEM_IN_FOLDER 请求主进程。
+   * @param {string} path
+   * @returns {Promise<unknown>}
    */
   showItemInFolder: (path) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_SHOW_ITEM_IN_FOLDER, path),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.FILE_VALIDATE_DROPPED_ITEMS 请求主进程并返回结果。
-   * @param {*} items - items。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_VALIDATE_DROPPED_ITEMS 请求主进程。
+   * @param {unknown[]} items
+   * @returns {Promise<unknown>}
    */
   validateDroppedItems: (items) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.FILE_VALIDATE_DROPPED_ITEMS, items),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} tabId - tabId。
-   * @param {*} targetFolder - targetFolder。
-   * @param {*} uploadData - uploadData。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.FILE_CHECK_DROPPED_UPLOAD_CONFLICTS 请求主进程。
+   * @param {string} tabId
+   * @param {string} targetFolder
+   * @param {unknown} uploadData
+   * @returns {Promise<unknown>}
    */
   checkDroppedUploadConflicts: (tabId, targetFolder, uploadData) =>
     ipcRenderer.invoke(
@@ -2488,10 +2355,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       targetFolder,
       uploadData,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} file - file。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 Electron webUtils 获取拖放文件路径，失败时返回空串。
+   * @param {File} file
+   * @returns {string}
    */
   getPathForFile: (file) => {
     try {
@@ -2501,145 +2369,152 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_LOAD_UI 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_LOAD_UI 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // UI设置相关API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_LOAD_UI 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   loadUISettings: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_LOAD_UI),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_SAVE_UI 请求主进程并返回结果。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_SAVE_UI 请求主进程。
+   * @param {Record<string, unknown>} settings
+   * @returns {Promise<unknown>}
    */
   saveUISettings: (settings) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_SAVE_UI, settings),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_GET_CREDENTIAL_SECURITY_STATUS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getCredentialSecurityStatus: () =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.SETTINGS_GET_CREDENTIAL_SECURITY_STATUS,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_CREDENTIAL_SECURITY 请求主进程。
+   * @param {Record<string, unknown>} settings
+   * @returns {Promise<unknown>}
    */
   updateCredentialSecurity: (settings) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_CREDENTIAL_SECURITY,
       settings,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} masterPassword - masterPassword。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_UNLOCK_CREDENTIAL_STORE 请求主进程。
+   * @param {string} masterPassword
+   * @returns {Promise<unknown>}
    */
   unlockCredentialStore: (masterPassword) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.SETTINGS_UNLOCK_CREDENTIAL_STORE,
       masterPassword,
     ),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_LOCK_CREDENTIAL_STORE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_LOCK_CREDENTIAL_STORE 请求主进程。
+   * @returns {Promise<unknown>}
    */
   lockCredentialStore: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_LOCK_CREDENTIAL_STORE),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_CLEAR_LOCAL_DATA 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_CLEAR_LOCAL_DATA 请求主进程。
+   * @param {Record<string, unknown>} options
+   * @returns {Promise<unknown>}
    */
   clearLocalData: (options) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_CLEAR_LOCAL_DATA, options),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_EXPORT 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_EXPORT 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 配置导入/导出/同步相关API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_EXPORT 请求主进程。
+   * @param {Record<string, unknown>} options
+   * @returns {Promise<unknown>}
+   */
   configTransferExport: (options) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_EXPORT, options),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_IMPORT 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_IMPORT 请求主进程。
+   * @param {Record<string, unknown>} options
+   * @returns {Promise<unknown>}
    */
   configTransferImport: (options) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_IMPORT, options),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_LIST_SECTIONS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_LIST_SECTIONS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   configTransferListSections: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_TRANSFER_LIST_SECTIONS),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_LOAD_SETTINGS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_LOAD_SETTINGS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   configSyncLoadSettings: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_LOAD_SETTINGS),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_SAVE_SETTINGS 请求主进程。
+   * @param {Record<string, unknown>} settings
+   * @returns {Promise<unknown>}
    */
   configSyncSaveSettings: (settings) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.CONFIG_SYNC_SAVE_SETTINGS,
       settings,
     ),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_TEST 请求主进程并返回结果。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_TEST 请求主进程。
+   * @param {Record<string, unknown>} settings
+   * @returns {Promise<unknown>}
    */
   configSyncTest: (settings) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_TEST, settings),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_UPLOAD 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_UPLOAD 请求主进程。
+   * @param {Record<string, unknown>} options
+   * @returns {Promise<unknown>}
    */
   configSyncUpload: (options) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_UPLOAD, options),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_DOWNLOAD 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_DOWNLOAD 请求主进程。
+   * @param {Record<string, unknown>} options
+   * @returns {Promise<unknown>}
    */
   configSyncDownload: (options) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_DOWNLOAD, options),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_GET_STATUS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_GET_STATUS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   configSyncGetStatus: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_GET_STATUS),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_PULL_NOW 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.CONFIG_SYNC_PULL_NOW 请求主进程。
+   * @returns {Promise<unknown>}
    */
   configSyncPullNow: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.CONFIG_SYNC_PULL_NOW),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onConfigSyncAutoEvent: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -2652,10 +2527,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       );
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onDiskAlertEvent: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -2668,10 +2544,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       );
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onConfigTransferImported: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -2687,10 +2564,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       );
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onLocalDataCleared: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -2708,10 +2586,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       localDataClearedWrappers.delete(callback);
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 管理主进程事件监听，无返回值。
+   * @param {PayloadCallback} [callback]
+   * @returns {void}
    */
   offLocalDataCleared: (callback) => {
     if (!callback) return;
@@ -2725,34 +2604,33 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_LOAD_LOG 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_LOAD_LOG 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 日志设置相关API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_LOAD_LOG 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   loadLogSettings: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_LOAD_LOG),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_SAVE_LOG 请求主进程并返回结果。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_SAVE_LOG 请求主进程。
+   * @param {Record<string, unknown>} settings
+   * @returns {Promise<unknown>}
    */
   saveLogSettings: (settings) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_SAVE_LOG, settings),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_GET_ERROR_REPORTING 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_GET_ERROR_REPORTING 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getErrorReportingSettings: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_GET_ERROR_REPORTING),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_SAVE_ERROR_REPORTING 请求主进程。
+   * @param {Record<string, unknown>} settings
+   * @returns {Promise<unknown>}
    */
   saveErrorReportingSettings: (settings) =>
     ipcRenderer.invoke(
@@ -2760,31 +2638,26 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       settings,
     ),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} resourceName - resourceName。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} resourceName - resourceName。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 性能设置实时更新API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.RUNTIME_FILES_CONFIGURE 请求主进程。
+   * @param {string} resourceName
+   * @param {Record<string, unknown>} [settings]
+   * @returns {Promise<unknown>}
+   */
   configureRuntimeFileResource: (resourceName, settings = {}) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.RUNTIME_FILES_CONFIGURE,
       resourceName,
       settings,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} resourceName - resourceName。
-   * @param {*} targetPath - targetPath。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.RUNTIME_FILES_RELEASE_PATH 请求主进程。
+   * @param {string} resourceName
+   * @param {string} targetPath
+   * @param {Record<string, unknown>} [options]
+   * @returns {Promise<unknown>}
    */
   releaseRuntimeFilePath: (resourceName, targetPath, options = {}) =>
     ipcRenderer.invoke(
@@ -2793,11 +2666,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       targetPath,
       options,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} resourceName - resourceName。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.RUNTIME_FILES_CLEAR 请求主进程。
+   * @param {string} resourceName
+   * @param {Record<string, unknown>} [options]
+   * @returns {Promise<unknown>}
    */
   clearRuntimeFileResource: (resourceName, options = {}) =>
     ipcRenderer.invoke(
@@ -2805,11 +2679,12 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       resourceName,
       options,
     ),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} resourceName - resourceName。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.RUNTIME_FILES_SWEEP 请求主进程。
+   * @param {string} resourceName
+   * @param {Record<string, unknown>} [options]
+   * @returns {Promise<unknown>}
    */
   sweepRuntimeFileResource: (resourceName, options = {}) =>
     ipcRenderer.invoke(
@@ -2817,76 +2692,70 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       resourceName,
       options,
     ),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_PREFETCH 请求主进程并返回结果。
-   * @param {object} settings - settings。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_PREFETCH 请求主进程。
+   * @param {Record<string, unknown>} settings
+   * @returns {Promise<unknown>}
    */
   updatePrefetchSettings: (settings) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_PREFETCH, settings),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_RELOAD_WINDOW 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_RELOAD_WINDOW 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 窗口重新加载
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.APP_RELOAD_WINDOW 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   reloadWindow: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_RELOAD_WINDOW),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_REBUILD_SYSTEM_MENU 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_REBUILD_SYSTEM_MENU 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 重建系统菜单（语言切换后由渲染层触发）
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.APP_REBUILD_SYSTEM_MENU 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   rebuildSystemMenu: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_REBUILD_SYSTEM_MENU),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.WINDOW_MINIMIZE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.WINDOW_MINIMIZE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 窗口控制API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.WINDOW_MINIMIZE 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   minimizeWindow: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_MINIMIZE),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.WINDOW_TOGGLE_MAXIMIZE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.WINDOW_TOGGLE_MAXIMIZE 请求主进程。
+   * @returns {Promise<unknown>}
    */
   toggleMaximizeWindow: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_TOGGLE_MAXIMIZE),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.WINDOW_CLOSE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.WINDOW_CLOSE 请求主进程。
+   * @returns {Promise<unknown>}
    */
   closeWindow: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_CLOSE),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.WINDOW_GET_STATE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.WINDOW_GET_STATE 请求主进程。
+   * @returns {Promise<IpcResult<WindowState>>}
    */
   getWindowState: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_GET_STATE),
+
   /**
-   * 主题与首屏 UI 就绪后通知主进程显示窗口（防启动闪屏）。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.WINDOW_NOTIFY_READY 请求主进程。
+   * @returns {Promise<unknown>}
    */
   notifyWindowReady: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.WINDOW_NOTIFY_READY),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback<WindowState>} callback
+   * @returns {Unsubscribe}
    */
   onWindowStateChange: (callback) => {
     if (typeof callback !== "function") {
@@ -2902,60 +2771,55 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       );
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_DOWNLOAD_UPDATE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_DOWNLOAD_UPDATE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 更新相关API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.APP_DOWNLOAD_UPDATE 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   downloadUpdate: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_DOWNLOAD_UPDATE),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_INSTALL_UPDATE 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.APP_INSTALL_UPDATE 请求主进程。
+   * @returns {Promise<unknown>}
    */
   installUpdate: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_INSTALL_UPDATE),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_GET_DOWNLOAD_PROGRESS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.APP_GET_DOWNLOAD_PROGRESS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getDownloadProgress: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_GET_DOWNLOAD_PROGRESS),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_CANCEL_DOWNLOAD 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.APP_CANCEL_DOWNLOAD 请求主进程。
+   * @returns {Promise<unknown>}
    */
   cancelDownload: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_CANCEL_DOWNLOAD),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_HAS_DOWNLOADED_INSTALLER 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.APP_HAS_DOWNLOADED_INSTALLER 请求主进程。
+   * @returns {Promise<unknown>}
    */
   hasDownloadedInstaller: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_HAS_DOWNLOADED_INSTALLER),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.APP_GET_GPU_INFO 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.APP_GET_GPU_INFO 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getGpuInfo: () => ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_GET_GPU_INFO),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @param {*} isEditorMode - isEditorMode。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {string} processId - processId。
-   * @param {*} isEditorMode - isEditorMode。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 新增: 通知主进程编辑器模式变化的API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_NOTIFY_EDITOR_MODE_CHANGE 请求主进程。
+   * @param {ProcessId} processId
+   * @param {boolean} isEditorMode
+   * @returns {Promise<unknown>}
+   */
   notifyEditorModeChange: (processId, isEditorMode) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.TERMINAL_NOTIFY_EDITOR_MODE_CHANGE,
@@ -2963,24 +2827,20 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       isEditorMode,
     ),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_ADD 请求主进程并返回结果。
-   * @param {*} command - command。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_ADD 请求主进程并返回结果。
-   * @param {*} command - command。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 命令历史相关API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_ADD 请求主进程。
+   * @param {string} command
+   * @returns {Promise<unknown>}
+   */
   addToCommandHistory: (command) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_ADD, command),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} input - input。
-   * @param {*} maxResults - maxResults。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_SUGGESTIONS 请求主进程。
+   * @param {string} input
+   * @param {number} [maxResults]
+   * @returns {Promise<unknown>}
    */
   getCommandSuggestions: (input, maxResults) => {
     if (maxResults === undefined) {
@@ -2996,61 +2856,63 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       maxResults,
     );
   },
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} command - command。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_INCREMENT_USAGE 请求主进程。
+   * @param {string} command
+   * @returns {Promise<unknown>}
    */
   incrementCommandUsage: (command) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.COMMAND_HISTORY_INCREMENT_USAGE,
       command,
     ),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_CLEAR 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_CLEAR 请求主进程。
+   * @returns {Promise<unknown>}
    */
   clearCommandHistory: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_CLEAR),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_STATISTICS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_STATISTICS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getCommandHistoryStatistics: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_STATISTICS),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_ALL 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_ALL 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 新增：历史命令管理API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_ALL 请求主进程。
+   * @returns {Promise<unknown>}
+   */
   getAllCommandHistory: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_GET_ALL),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_DELETE 请求主进程并返回结果。
-   * @param {*} command - command。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_DELETE 请求主进程。
+   * @param {string} command
+   * @returns {Promise<unknown>}
    */
   deleteCommandHistory: (command) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.COMMAND_HISTORY_DELETE, command),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} commands - commands。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.COMMAND_HISTORY_DELETE_BATCH 请求主进程。
+   * @param {string[]} commands
+   * @returns {Promise<unknown>}
    */
   deleteCommandHistoryBatch: (commands) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.COMMAND_HISTORY_DELETE_BATCH,
       commands,
     ),
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onCommandHistoryChanged: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -3065,10 +2927,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       commandHistoryChangedWrappers.delete(callback);
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 管理主进程事件监听，无返回值。
+   * @param {PayloadCallback} [callback]
+   * @returns {void}
    */
   offCommandHistoryChanged: (callback) => {
     if (!callback) return;
@@ -3082,85 +2945,74 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.UTILITY_IP_QUERY 请求主进程并返回结果。
-   * @param {*} ip - ip。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.UTILITY_IP_QUERY 请求主进程并返回结果。
-   * @param {*} ip - ip。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // IP地址查询API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.UTILITY_IP_QUERY 请求主进程。
+   * @param {string} [ip]
+   * @returns {Promise<unknown>}
+   */
   queryIpAddress: (ip = "") =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.UTILITY_IP_QUERY, ip),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.LATENCY_REGISTER 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @param {*} host - host。
-   * @param {*} port - port。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.LATENCY_REGISTER 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @param {*} host - host。
-   * @param {*} port - port。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 网络延迟检测API
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.LATENCY_REGISTER 请求主进程。
+   * @param {string} tabId
+   * @param {string} host
+   * @param {number} port
+   * @returns {Promise<unknown>}
+   */
   registerLatencyDetection: (tabId, host, port) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_REGISTER, {
       tabId,
       host,
       port,
     }),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.LATENCY_UNREGISTER 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LATENCY_UNREGISTER 请求主进程。
+   * @param {string} tabId
+   * @returns {Promise<unknown>}
    */
   unregisterLatencyDetection: (tabId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_UNREGISTER, { tabId }),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.LATENCY_GET_INFO 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LATENCY_GET_INFO 请求主进程。
+   * @param {string} tabId
+   * @returns {Promise<unknown>}
    */
   getLatencyInfo: (tabId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_GET_INFO, { tabId }),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.LATENCY_GET_ALL_INFO 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LATENCY_GET_ALL_INFO 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getAllLatencyInfo: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_GET_ALL_INFO),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.LATENCY_GET_SERVICE_STATUS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LATENCY_GET_SERVICE_STATUS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   getLatencyServiceStatus: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_GET_SERVICE_STATUS),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.LATENCY_TEST_NOW 请求主进程并返回结果。
-   * @param {string} tabId - tabId。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.LATENCY_TEST_NOW 请求主进程。
+   * @param {string} tabId
+   * @returns {Promise<unknown>}
    */
   testLatencyNow: (tabId) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_TEST_NOW, { tabId }),
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
+
   // 延迟事件监听
+  /**
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {IpcCallback} callback
+   * @returns {Unsubscribe}
+   */
   onLatencyUpdate: (callback) => {
     const wrappedCallback = (event, data) => callback(event, data);
     ipcRenderer.on(IPC_EVENT_CHANNELS.LATENCY_UPDATED, wrappedCallback);
@@ -3170,10 +3022,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
         wrappedCallback,
       );
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {IpcCallback} callback
+   * @returns {Unsubscribe}
    */
   onLatencyError: (callback) => {
     const wrappedCallback = (event, data) => callback(event, data);
@@ -3184,10 +3037,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
         wrappedCallback,
       );
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {IpcCallback} callback
+   * @returns {Unsubscribe}
    */
   onLatencyDisconnected: (callback) => {
     const wrappedCallback = (event, data) => callback(event, data);
@@ -3199,23 +3053,19 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       );
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_START_SSH 请求主进程并返回结果。
-   * @param {*} sshConfig - sshConfig。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_START_SSH 请求主进程并返回结果。
-   * @param {*} sshConfig - sshConfig。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // SSH连接相关
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_START_SSH 请求主进程。
+   * @param {Record<string, unknown>} sshConfig
+   * @returns {Promise<unknown>}
+   */
   startSSH: (sshConfig) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_START_SSH, sshConfig),
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} sshConfig - sshConfig。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_TEST_SSH_CONNECTION 请求主进程。
+   * @param {Record<string, unknown>} sshConfig
+   * @returns {Promise<unknown>}
    */
   testSSHConnection: (sshConfig) =>
     ipcRenderer.invoke(
@@ -3223,72 +3073,54 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       sshConfig,
     ),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} telnetConfig - telnetConfig。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} telnetConfig - telnetConfig。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // Telnet连接相关
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_START_TELNET 请求主进程。
+   * @param {Record<string, unknown>} telnetConfig
+   * @returns {Promise<unknown>}
+   */
   startTelnet: (telnetConfig) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.TERMINAL_START_TELNET,
       telnetConfig,
     ),
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} serialConfig - serialConfig。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} serialConfig - serialConfig。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 串口（Serial/COM）连接相关
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_START_SERIAL 请求主进程。
+   * @param {Record<string, unknown>} serialConfig
+   * @returns {Promise<unknown>}
+   */
   startSerial: (serialConfig) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.TERMINAL_START_SERIAL,
       serialConfig,
     ),
+
   /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_LIST_SERIAL_PORTS 请求主进程并返回结果。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_LIST_SERIAL_PORTS 请求主进程。
+   * @returns {Promise<unknown>}
    */
   listSerialPorts: () =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_LIST_SERIAL_PORTS),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_START_MOSH 请求主进程并返回结果。
-   * @param {*} moshConfig - moshConfig。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_START_MOSH 请求主进程并返回结果。
-   * @param {*} moshConfig - moshConfig。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // Mosh 连接相关（弱网/漫游场景，经本地 mosh 客户端托管）
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_START_MOSH 请求主进程。
+   * @param {Record<string, unknown>} moshConfig
+   * @returns {Promise<unknown>}
+   */
   startMosh: (moshConfig) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_START_MOSH, moshConfig),
 
   // SSH 认证相关 IPC
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
+
   // 监听 SSH 认证请求（主机密钥验证、凭证请求等）
+  /**
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
+   */
   onSSHAuthRequest: (callback) => {
     if (typeof callback !== "function") return () => {};
     const wrappedCallback = (_, data) => callback(data);
@@ -3300,32 +3132,28 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       );
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 管理主进程事件监听，无返回值。
+   * @returns {void}
    */
   offSSHAuthRequest: () => {
     ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.SSH_AUTH_REQUEST);
   },
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SSH_AUTH_RESPONSE 请求主进程并返回结果。
-   * @param {*} response - response。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SSH_AUTH_RESPONSE 请求主进程并返回结果。
-   * @param {*} response - response。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 响应 SSH 认证请求
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.SSH_AUTH_RESPONSE 请求主进程。
+   * @param {unknown} response
+   * @returns {Promise<unknown>}
+   */
   respondSSHAuth: (response) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SSH_AUTH_RESPONSE, response),
 
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onTerminalSessionRestored: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -3341,10 +3169,11 @@ contextBridge.exposeInMainWorld("terminalAPI", {
       );
     };
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 注册主进程事件监听，返回取消订阅函数。
+   * @param {PayloadCallback} callback
+   * @returns {Unsubscribe}
    */
   onTerminalSessionRestoreFailed: (callback) => {
     if (typeof callback !== "function") return () => {};
@@ -3361,19 +3190,13 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     };
   },
 
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} connectionId - connectionId。
-   * @param {*} credentials - credentials。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} connectionId - connectionId。
-   * @param {*} credentials - credentials。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 更新连接配置（用于保存自动登录凭据）
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.TERMINAL_UPDATE_CONNECTION_CREDENTIALS 请求主进程。
+   * @param {string} connectionId
+   * @param {Record<string, unknown>} credentials
+   * @returns {Promise<unknown>}
+   */
   updateConnectionCredentials: (connectionId, credentials) =>
     ipcRenderer.invoke(
       IPC_REQUEST_CHANNELS.TERMINAL_UPDATE_CONNECTION_CREDENTIALS,
@@ -3384,104 +3207,70 @@ contextBridge.exposeInMainWorld("terminalAPI", {
 
 // SSH密钥生成器API
 contextBridge.exposeInMainWorld("electronAPI", {
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SSH_KEY_GENERATE 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SSH_KEY_GENERATE 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // SSH密钥对生成
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.SSH_KEY_GENERATE 请求主进程。
+   * @param {Record<string, unknown>} options
+   * @returns {Promise<unknown>}
+   */
   generateSSHKeyPair: (options) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SSH_KEY_GENERATE, options),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SSH_KEY_SAVE 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.SSH_KEY_SAVE 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 保存SSH密钥到文件
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.SSH_KEY_SAVE 请求主进程。
+   * @param {Record<string, unknown>} options
+   * @returns {Promise<unknown>}
+   */
   saveSSHKey: (options) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SSH_KEY_SAVE, options),
 });
 
 // 文件对话框API
 contextBridge.exposeInMainWorld("dialogAPI", {
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.DIALOG_SHOW_OPEN 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.DIALOG_SHOW_OPEN 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 显示打开文件/目录对话框
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.DIALOG_SHOW_OPEN 请求主进程。
+   * @param {import("electron").OpenDialogOptions} options
+   * @returns {Promise<IpcResult<import("electron").OpenDialogReturnValue>>}
+   */
   showOpenDialog: (options) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.DIALOG_SHOW_OPEN, options),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.DIALOG_SHOW_SAVE 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.DIALOG_SHOW_SAVE 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 显示保存文件对话框
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.DIALOG_SHOW_SAVE 请求主进程。
+   * @param {import("electron").SaveDialogOptions} options
+   * @returns {Promise<IpcResult<import("electron").SaveDialogReturnValue>>}
+   */
   showSaveDialog: (options) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.DIALOG_SHOW_SAVE, options),
 
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.DIALOG_SHOW_MESSAGE 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 通过 IPC_REQUEST_CHANNELS.DIALOG_SHOW_MESSAGE 请求主进程并返回结果。
-   * @param {object} options - options。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 显示消息框
+  /**
+   * 通过 IPC_REQUEST_CHANNELS.DIALOG_SHOW_MESSAGE 请求主进程。
+   * @param {import("electron").MessageBoxOptions} options
+   * @returns {Promise<IpcResult<import("electron").MessageBoxReturnValue>>}
+   */
   showMessageBox: (options) =>
     ipcRenderer.invoke(IPC_REQUEST_CHANNELS.DIALOG_SHOW_MESSAGE, options),
 });
 
 // 应用错误处理API
 contextBridge.exposeInMainWorld("appErrorAPI", {
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
-   */
   // 监听应用错误
+  /**
+   * 注册应用错误 IPC 监听；返回 Electron 的 IpcRenderer，不是取消订阅函数。
+   * @param {IpcCallback} callback
+   * @returns {import("electron").IpcRenderer}
+   */
   onError: (callback) => ipcRenderer.on(IPC_EVENT_CHANNELS.APP_ERROR, callback),
 
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
-  /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @returns {Promise<*>} 主进程处理结果。
-   */
   // 移除错误监听
+  /**
+   * 管理主进程事件监听，无返回值。
+   * @returns {void}
+   */
   removeErrorListener: () => {
     ipcRenderer.removeAllListeners(IPC_EVENT_CHANNELS.APP_ERROR);
   },
@@ -3490,8 +3279,8 @@ contextBridge.exposeInMainWorld("appErrorAPI", {
 // Clipboard API (Electron 40+ safe access pattern)
 contextBridge.exposeInMainWorld("clipboardAPI", {
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC 读取剪贴板文本，失败时拒绝 Promise。
+   * @returns {Promise<string>}
    */
   readText: async () => {
     const result = await ipcRenderer.invoke(
@@ -3502,10 +3291,11 @@ contextBridge.exposeInMainWorld("clipboardAPI", {
     }
     return typeof result?.text === "string" ? result.text : "";
   },
+
   /**
-   * 渲染进程本地辅助方法（不经过 IPC）。
-   * @param {*} text - text。
-   * @returns {Promise<*>} 主进程处理结果。
+   * 通过 IPC 写入剪贴板并通知成功监听器，失败时拒绝 Promise。
+   * @param {unknown} text
+   * @returns {Promise<boolean>}
    */
   writeText: async (text) => {
     const result = await ipcRenderer.invoke(
@@ -3533,10 +3323,11 @@ contextBridge.exposeInMainWorld("clipboardAPI", {
     }
     return true;
   },
+
   /**
-   * 监听/移除主进程事件，回调在渲染进程执行。
-   * @param {Function} callback - callback。
-   * @returns {Function|void} 返回取消监听函数或无返回值。
+   * 监听本地剪贴板写入成功通知，返回取消订阅函数。
+   * @param {PayloadCallback<{timestamp: number}>} callback
+   * @returns {Unsubscribe}
    */
   onWriteSuccess: (callback) => {
     if (typeof callback !== "function") {

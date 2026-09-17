@@ -148,8 +148,14 @@ This will:
 # Format code with Prettier
 npm run format
 
-# Run ESLint (configure via eslint.config.js)
-npx eslint src/
+# Run all check scripts and unit tests
+npm test
+
+# Run only Node unit tests
+npm run test:unit
+
+# Lint application code, scripts and unit tests
+npm run lint
 
 # Package application for current platform
 npm run package
@@ -160,6 +166,12 @@ npm run make
 # Publish application (requires configuration)
 npm run publish
 ```
+
+Preload contracts use JSDoc and shared declarations in `src/types/preload.d.ts`.
+`npm run check` parses exposed methods and IPC calls with TypeScript, then checks
+`src/preload.js` against its annotations using `tsconfig.preload.json`. Raw IPC
+responses that have no detailed contract remain `unknown` and must be narrowed
+by callers; this check does not type-check the renderer or main-process handlers.
 
 ### **Build for Production**
 

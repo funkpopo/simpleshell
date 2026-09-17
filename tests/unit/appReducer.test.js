@@ -29,8 +29,10 @@ describe("tab 管理", () => {
   });
 
   it("setCurrentTab 更新当前索引", () => {
-    const state = appReducer(initialState, actions.setCurrentTab(0));
-    expect(state.currentTab).toBe(0);
+    const before = stateWithTabs("tab-1", "tab-2");
+    const state = appReducer(before, actions.setCurrentTab(1));
+    expect(state.currentTab).toBe(1);
+    expect(before.currentTab).toBe(0);
   });
 
   it("updateTab 按索引整体替换标签", () => {
@@ -75,9 +77,12 @@ describe("分屏窗格布局", () => {
     expect(appReducer(initialState, actions.addPane(null, "p"))).toBe(
       initialState,
     );
+    expect(appReducer(initialState, actions.addPane("tab-1", null))).toBe(
+      initialState,
+    );
   });
 
-  it("removePane 移除非根窗格后布局保留", () => {
+  it("removePane 移除最后一个非根窗格后恢复单标签", () => {
     let state = appReducer(initialState, actions.addTab(sshTab("tab-1")));
     state = appReducer(state, actions.addPane("tab-1", "tab-1::p2", "row"));
     state = appReducer(state, actions.removePane("tab-1", "tab-1::p2"));
@@ -134,7 +139,7 @@ describe("分屏窗格布局", () => {
     let state = appReducer(initialState, actions.addTab(sshTab("tab-1")));
     state = appReducer(state, actions.addPane("tab-1", "tab-1::p2"));
     state = appReducer(state, actions.setRatios("tab-1", [70, 30]));
-    expect(state.splitLayouts["tab-1"].ratios).toEqual([70, 70 - 70 + 30]);
+    expect(state.splitLayouts["tab-1"].ratios).toEqual([70, 30]);
     state = appReducer(state, actions.setLayoutDirection("tab-1", "column"));
     expect(state.splitLayouts["tab-1"].direction).toBe("column");
     expect(appReducer(state, actions.setRatios("tab-1", "bad"))).toBe(state);
@@ -156,9 +161,17 @@ describe("同步输入分组", () => {
     let state = appReducer(initialState, actions.createSyncGroup("tab-1"));
     state = appReducer(state, actions.joinSyncGroup("tab-1", "G1"));
     expect(state.syncGroups[0].members).toEqual(["tab-1"]);
-    // 把 tab-2 加入 G1，再把 tab-1 加入 G1 的其它组场景由 addTabToSyncGroup 保证
     state = appReducer(state, actions.joinSyncGroup("tab-2", "G1"));
     expect(state.syncGroups[0].members).toEqual(["tab-1", "tab-2"]);
+    state = appReducer(state, actions.createSyncGroup("tab-3"));
+    state = appReducer(state, actions.joinSyncGroup("tab-1", "G2"));
+    expect(state.syncGroups.find((g) => g.groupId === "G1").members).toEqual([
+      "tab-2",
+    ]);
+    expect(state.syncGroups.find((g) => g.groupId === "G2").members).toEqual([
+      "tab-3",
+      "tab-1",
+    ]);
   });
 
   it("removeTabFromSyncGroups 清理空分组", () => {
@@ -294,7 +307,7 @@ describe("adoptTab 跨标签页吸纳", () => {
   });
 
   it("拒绝自我采纳、welcome 参与及已分屏源", () => {
-    let state = stateWithTabs("tab-1", "tab-2");
+    let state = stateWithTabs("welcome", "tab-1", "tab-2");
     const snapshot = state;
     expect(appReducer(state, actions.adoptTab("tab-1", "tab-1"))).toBe(
       snapshot,
@@ -308,6 +321,9 @@ describe("adoptTab 跨标签页吸纳", () => {
     expect(appReducer(state, actions.adoptTab("missing", "tab-2"))).toBe(
       snapshot,
     );
+    state = appReducer(state, actions.addPane("tab-2", "tab-2::p2", "row"));
+    expect(state.splitLayouts["tab-2"].panes).toHaveLength(2);
+    expect(appReducer(state, actions.adoptTab("tab-1", "tab-2"))).toBe(state);
   });
 });
 

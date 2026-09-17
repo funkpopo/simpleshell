@@ -1,195 +1,17 @@
-// preload 类型契约检查（todo 项 2「给 preload API 建类型契约」）：
-// 1. preload.js 每个暴露到渲染进程的 API 块（terminalAPI/electronAPI/dialogAPI/...）
-//    的方法都必须带 JSDoc 注释（/** ... */），且 @param 个数与函数形参个数一致；
-// 2. 直接 invoke 的方法，其 IPC 通道的 requestSchema（channels.js）声明的参数
-//    个数上下界必须容纳 preload 处的实际实参个数，让 invoke 参数错误在 CI 就被抓住。
+// Node-only check: parse JavaScript/JSDoc with TypeScript, validate IPC arity,
+// then type-check preload implementations against their documented signatures.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const ts = require("typescript");
+const {
+  IPC_REQUEST_CHANNELS,
+  getChannelDefinition,
+} = require("../src/core/ipc/schema/channels.js");
 
 const repoRoot = path.resolve(__dirname, "..");
-const preloadSource = fs.readFileSync(
-  path.join(repoRoot, "src/preload.js"),
-  "utf8",
-);
-const { IPC_REQUEST_CHANNELS, getChannelDefinition } = require(
-  path.join(repoRoot, "src/core/ipc/schema/channels.js"),
-);
-
-function extractExposeBlocks(source) {
-  const blocks = [];
-  const exposeRe = /exposeInMainWorld\(\s*["']([\w$]+)["']\s*,\s*\{/g;
-  let match;
-  while ((match = exposeRe.exec(source))) {
-    const bodyStart = match.index + match[0].length;
-    let depth = 1;
-    let inString = null;
-    let cursor = bodyStart;
-    for (; cursor < source.length && depth > 0; cursor += 1) {
-      const character = source[cursor];
-      const previous = source[cursor - 1];
-      if (inString) {
-        if (character === inString && previous !== "\\") inString = null;
-        continue;
-      }
-      if (character === '"' || character === "'" || character === "`") {
-        inString = character;
-      } else if (character === "{") {
-        depth += 1;
-      } else if (character === "}") {
-        depth -= 1;
-      }
-    }
-    blocks.push({
-      name: match[1],
-      body: source.slice(bodyStart, cursor - 1),
-    });
-  }
-  return blocks;
-}
-
-// 解析 exposeInMainWorld 块内的顶层方法：方法名、形参列表、前置 JSDoc 文本。
-// JSDoc 与方法行之间允许夹杂 `// ...` 行注释（preload.js 的既有风格）。
-function parseExposedMethods(blockBody) {
-  const methods = [];
-  const methodRe =
-    /((?:\/\*\*[\s\S]*?\*\/\s*)?(?:^ {2}\/\/[^\n]*\n)*?)^ {2}([A-Za-z_$][\w$]*)\s*[:(]/gm;
-  let match;
-  while ((match = methodRe.exec(blockBody))) {
-    const parameterList = extractParameterList(
-      blockBody,
-      match.index + match[0].length,
-    );
-    const docText = match[1] || "";
-    const docMatch = /\/\*\*([\s\S]*?)\*\//.exec(docText);
-    methods.push({
-      name: match[2],
-      params: parameterList ? splitTopLevel(parameterList) : [],
-      doc: docMatch ? docMatch[1] : "",
-    });
-  }
-  return methods;
-}
-
-function extractParameterList(source, startIndex) {
-  const remainder = source.slice(startIndex);
-  const openMatch = /^\s*(?:async\s*)?\(/.exec(remainder);
-  if (!openMatch) return null;
-  let depth = 1;
-  let inString = null;
-  let cursor = openMatch[0].length;
-  for (; cursor < remainder.length && depth > 0; cursor += 1) {
-    const character = remainder[cursor];
-    const previous = remainder[cursor - 1];
-    if (inString) {
-      if (character === inString && previous !== "\\") inString = null;
-      continue;
-    }
-    if (character === '"' || character === "'" || character === "`") {
-      inString = character;
-    } else if ("([{".includes(character)) {
-      depth += 1;
-    } else if (")]}".includes(character)) {
-      depth -= 1;
-    }
-  }
-  return remainder.slice(openMatch[0].length, cursor - 1);
-}
-
-function splitTopLevel(inner) {
-  const parts = [];
-  let depth = 0;
-  let inString = null;
-  let current = "";
-  for (let index = 0; index < inner.length; index += 1) {
-    const character = inner[index];
-    const previous = inner[index - 1];
-    if (inString) {
-      current += character;
-      if (character === inString && previous !== "\\") inString = null;
-      continue;
-    }
-    if (character === '"' || character === "'" || character === "`") {
-      inString = character;
-      current += character;
-    } else if ("([{".includes(character)) {
-      depth += 1;
-      current += character;
-    } else if (")]}".includes(character)) {
-      depth -= 1;
-      current += character;
-    } else if (character === "," && depth === 0) {
-      parts.push(current.trim());
-      current = "";
-    } else {
-      current += character;
-    }
-  }
-  if (current.trim()) parts.push(current.trim());
-  return parts;
-}
-
-function collectInvokeCalls(source) {
-  const calls = [];
-  const invokeRe = /ipcRenderer\.invoke\(/g;
-  let match;
-  while ((match = invokeRe.exec(source))) {
-    const inner = extractBalanced(source, match.index + match[0].length);
-    calls.push({ parts: splitTopLevel(inner) });
-  }
-  return calls;
-}
-
-function extractBalanced(source, startIndex) {
-  let depth = 1;
-  let inString = null;
-  let cursor = startIndex;
-  for (; cursor < source.length && depth > 0; cursor += 1) {
-    const character = source[cursor];
-    const previous = source[cursor - 1];
-    if (inString) {
-      if (character === inString && previous !== "\\") inString = null;
-      continue;
-    }
-    if (character === '"' || character === "'" || character === "`") {
-      inString = character;
-    } else if ("([".includes(character)) {
-      depth += 1;
-    } else if (character === ")") {
-      depth -= 1;
-    }
-  }
-  return source.slice(startIndex, cursor - 1);
-}
-
-// 由 requestSchema 推导参数个数上下界；无个数约束（ANY_ARGS）返回 null。
-function schemaArgumentBounds(schema) {
-  if (!schema || schema.type !== "array") return null;
-  if (Array.isArray(schema.items)) {
-    if (
-      schema.items.length === 1 &&
-      Object.keys(schema.items[0]).length === 0 &&
-      schema.minItems === undefined &&
-      schema.maxItems === undefined
-    ) {
-      return null;
-    }
-    return {
-      min: schema.minItems ?? schema.items.length,
-      max: schema.maxItems ?? schema.items.length,
-    };
-  }
-  return {
-    min: schema.minItems ?? 0,
-    max: schema.maxItems ?? Number.POSITIVE_INFINITY,
-  };
-}
-
-const exposes = extractExposeBlocks(preloadSource);
-assert.ok(exposes.length > 0, "preload.js must expose contextBridge APIs");
-
-// simpleshellBoot 是启动主题数据（非方法集合），不参与方法注释检查。
-const DOCUMENTED_APIS = [
+const preloadPath = path.join(repoRoot, "src/preload.js");
+const requiredApis = [
   "terminalAPI",
   "electronAPI",
   "dialogAPI",
@@ -197,70 +19,240 @@ const DOCUMENTED_APIS = [
   "clipboardAPI",
 ];
 
-const apiBodies = [];
-for (const apiName of DOCUMENTED_APIS) {
-  const block = exposes.find((entry) => entry.name === apiName);
-  assert.ok(block, `preload.js must expose ${apiName}`);
-  apiBodies.push({ name: apiName, body: block.body });
+function isMember(node, owner, member) {
+  return (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === owner &&
+    node.name.text === member
+  );
+}
 
-  const methods = parseExposedMethods(block.body);
-  assert.ok(methods.length > 0, `${apiName} must expose at least one method`);
+function inspectPreload(source, filename = preloadPath) {
+  const file = ts.createSourceFile(
+    filename,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const problems = file.parseDiagnostics.map((d) =>
+    ts.flattenDiagnosticMessageText(d.messageText, "\n"),
+  );
+  const apis = new Set();
+  let methodCount = 0;
+  let invokeCount = 0;
+  let dynamicInvokeCount = 0;
+  const report = (node, message) => {
+    const { line } = file.getLineAndCharacterOfPosition(node.getStart(file));
+    problems.push(`${path.basename(filename)}:${line + 1}: ${message}`);
+  };
 
-  const problems = [];
-  for (const method of methods) {
-    if (!method.doc.trim()) {
-      problems.push(`${method.name}: missing JSDoc comment`);
-      continue;
+  function checkApi(call) {
+    const [name, object] = call.arguments;
+    if (!name || !ts.isStringLiteral(name)) {
+      report(call, "API name must be a string literal");
+      return;
     }
-    const documentedParams = (method.doc.match(/@param\b/g) || []).length;
-    if (documentedParams !== method.params.length) {
-      problems.push(
-        `${method.name}: @param count (${documentedParams}) != function arity (${method.params.length})`,
+    // This bridge exposes startup data, not methods.
+    if (name.text === "simpleshellBoot") return;
+    apis.add(name.text);
+    if (!object || !ts.isObjectLiteralExpression(object)) {
+      report(
+        call,
+        `${name.text}: expected an object literal of documented methods`,
+      );
+      return;
+    }
+    if (object.properties.length === 0)
+      report(object, `${name.text}: API must expose at least one method`);
+    for (const property of object.properties) {
+      const method = ts.isMethodDeclaration(property)
+        ? property
+        : ts.isPropertyAssignment(property) &&
+            (ts.isArrowFunction(property.initializer) ||
+              ts.isFunctionExpression(property.initializer))
+          ? property.initializer
+          : null;
+      if (!method) {
+        report(
+          property,
+          `${name.text}: unsupported API property; use an inline method`,
+        );
+        continue;
+      }
+      methodCount += 1;
+      const label = `${name.text}.${property.name.getText(file)}`;
+      const docs = property.jsDoc || [];
+      if (docs.length !== 1) {
+        report(
+          property,
+          `${label}: expected exactly one JSDoc block, got ${docs.length}`,
+        );
+        continue;
+      }
+      const tags = Array.from(docs[0].tags || []);
+      const params = tags.filter(ts.isJSDocParameterTag);
+      const names = method.parameters.map((p) => p.name.getText(file));
+      const documentedNames = params
+        .filter((p) => !p.name.getText(file).includes("."))
+        .map((p) => p.name.getText(file));
+      if (JSON.stringify(names) !== JSON.stringify(documentedNames)) {
+        report(
+          property,
+          `${label}: @param names/order must match (${names.join(", ")})`,
+        );
+      }
+      const returns = tags.filter(ts.isJSDocReturnTag);
+      if (returns.length !== 1 || !returns[0].typeExpression) {
+        report(property, `${label}: expected one typed @returns`);
+      }
+      for (const tag of [...params, ...returns]) {
+        if (!tag.typeExpression) {
+          report(
+            property,
+            `${label}: @${tag.tagName.text} needs an explicit type`,
+          );
+          continue;
+        }
+        const inspectType = (node) => {
+          if (
+            node.kind === ts.SyntaxKind.AnyKeyword ||
+            node.kind === ts.SyntaxKind.JSDocAllType ||
+            (ts.isTypeReferenceNode(node) &&
+              node.typeName.getText(file) === "Function")
+          ) {
+            report(
+              property,
+              `${label}: use a concrete type or unknown instead of ${node.getText(file)}`,
+            );
+          }
+          ts.forEachChild(node, inspectType);
+        };
+        inspectType(tag.typeExpression.type);
+      }
+    }
+  }
+
+  function checkInvoke(call) {
+    const [channel, ...args] = call.arguments;
+    let definition;
+    if (
+      channel &&
+      ts.isPropertyAccessExpression(channel) &&
+      ts.isIdentifier(channel.expression) &&
+      channel.expression.text === "IPC_REQUEST_CHANNELS"
+    ) {
+      definition = getChannelDefinition(
+        IPC_REQUEST_CHANNELS[channel.name.text],
+      );
+    } else if (channel && ts.isStringLiteral(channel)) {
+      definition = getChannelDefinition(channel.text);
+    } else {
+      dynamicInvokeCount += 1;
+      return;
+    }
+    if (!definition || definition.type !== "request") {
+      report(call, `unknown request channel: ${channel.getText(file)}`);
+      return;
+    }
+    if (args.some(ts.isSpreadElement)) {
+      report(
+        call,
+        `${definition.key}: spread arguments have unknown arity; pass explicit arguments`,
+      );
+      return;
+    }
+    const schema = definition.requestSchema;
+    const min = schema?.minItems ?? 0;
+    const max =
+      schema?.maxItems ??
+      (schema?.additionalItems === false && Array.isArray(schema.items)
+        ? schema.items.length
+        : Infinity);
+    if (args.length < min || args.length > max) {
+      report(
+        call,
+        `${definition.key}: ${args.length} argument(s) outside schema bounds [${min}, ${max}]`,
       );
     }
-    if (!/@returns\b/.test(method.doc)) {
-      problems.push(`${method.name}: missing @returns`);
+    invokeCount += 1;
+  }
+
+  function visit(node) {
+    if (ts.isCallExpression(node)) {
+      if (isMember(node.expression, "contextBridge", "exposeInMainWorld"))
+        checkApi(node);
+      if (isMember(node.expression, "ipcRenderer", "invoke")) checkInvoke(node);
     }
+    ts.forEachChild(node, visit);
   }
-  assert.deepEqual(
+  visit(file);
+  return {
     problems,
-    [],
-    `${apiName} JSDoc contract violations:\n  ${problems.join("\n  ")}`,
-  );
+    apis: [...apis],
+    methodCount,
+    invokeCount,
+    dynamicInvokeCount,
+  };
 }
 
-// invoke 实参个数必须落在通道 requestSchema 的上下界内
-const invokeCalls = collectInvokeCalls(preloadSource);
-assert.ok(
-  invokeCalls.length > 0,
-  "preload.js must contain ipcRenderer.invoke calls",
-);
-
-const schemaProblems = [];
-for (const call of invokeCalls) {
-  const channelReference = call.parts[0] || "";
-  const namedChannel = /^IPC_REQUEST_CHANNELS\.(\w+)$/.exec(channelReference);
-  if (!namedChannel) continue; // 动态通道由 schema 自身的 key 校验兜底
-
-  const definition = getChannelDefinition(
-    IPC_REQUEST_CHANNELS[namedChannel[1]],
-  );
-  const bounds = schemaArgumentBounds(definition?.requestSchema);
-  if (!bounds) continue; // 通道未声明参数个数约束
-
-  const actualArguments = call.parts.length - 1;
-  if (actualArguments < bounds.min || actualArguments > bounds.max) {
-    schemaProblems.push(
-      `${namedChannel[1]}: ${actualArguments} argument(s) outside schema bounds [${bounds.min}, ${bounds.max}]`,
-    );
+// An optional in-memory source is used by regression tests without editing preload.js.
+function getPreloadTypeDiagnostics(source) {
+  const configPath = path.join(repoRoot, "tsconfig.preload.json");
+  const config = ts.readConfigFile(configPath, ts.sys.readFile);
+  if (config.error) return [config.error];
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, repoRoot);
+  if (parsed.errors.length) return parsed.errors;
+  const host = ts.createCompilerHost(parsed.options);
+  if (source !== undefined) {
+    const getSourceFile = host.getSourceFile.bind(host);
+    host.getSourceFile = (filename, languageVersion, ...args) =>
+      path.resolve(filename) === preloadPath
+        ? ts.createSourceFile(
+            filename,
+            source,
+            languageVersion,
+            true,
+            ts.ScriptKind.JS,
+          )
+        : getSourceFile(filename, languageVersion, ...args);
   }
+  const program = ts.createProgram(parsed.fileNames, parsed.options, host);
+  return ts.getPreEmitDiagnostics(program);
 }
-assert.deepEqual(
-  schemaProblems,
-  [],
-  `preload invoke argument count violations:\n  ${schemaProblems.join("\n  ")}`,
-);
 
-console.log(
-  `Preload typings checks passed: ${apiBodies.length} APIs, ${invokeCalls.length} invoke calls verified.`,
-);
+function main() {
+  const source = fs.readFileSync(preloadPath, "utf8");
+  assert.match(
+    source,
+    /^\/\/ @ts-check\r?$/m,
+    "preload.js must enable JSDoc type checking",
+  );
+  const result = inspectPreload(source);
+  for (const name of requiredApis)
+    assert.ok(result.apis.includes(name), `preload.js must expose ${name}`);
+  assert.ok(
+    result.methodCount > 0 && result.invokeCount > 0,
+    "No preload methods/invokes found",
+  );
+  assert.deepEqual(result.problems, [], result.problems.join("\n"));
+  const diagnostics = getPreloadTypeDiagnostics();
+  if (diagnostics.length) {
+    process.stderr.write(
+      ts.formatDiagnosticsWithColorAndContext(diagnostics, {
+        getCurrentDirectory: () => repoRoot,
+        getCanonicalFileName: (name) => name,
+        getNewLine: () => "\n",
+      }),
+    );
+    process.exitCode = 1;
+    return;
+  }
+  console.log(
+    `Preload checks passed: ${result.apis.length} APIs, ${result.methodCount} typed methods, ${result.invokeCount} static invokes; ${result.dynamicInvokeCount} dynamic invokes skipped.`,
+  );
+}
+
+if (require.main === module) main();
+module.exports = { inspectPreload, getPreloadTypeDiagnostics };

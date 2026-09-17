@@ -184,7 +184,7 @@ describe("encryptText/decryptText 往返（AES-256-GCM 回退路径）", () => {
 });
 
 describe("主密码解锁与锁定", () => {
-  it("正确密码解锁后可加密往返，锁定后不可用", () => {
+  it("尚未解锁时拒绝加密，重复锁定保持锁定态", () => {
     const config = createSecurityConfig({
       masterPasswordEnabled: true,
       masterPassword: "correct-horse",
@@ -197,7 +197,6 @@ describe("主密码解锁与锁定", () => {
     });
     expect(getSecurityStatus().requiresUnlock).toBe(true);
 
-    // 未导出的解锁路径不可达时，正确密码不应改变"已锁定"事实 —— 这里仅验证锁定态
     expect(encryptText("probe")).toBeNull();
     expect(lockCredentialStore().requiresUnlock).toBe(true);
   });

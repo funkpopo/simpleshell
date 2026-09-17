@@ -17,9 +17,9 @@
     "check:i18n": "node scripts/check-i18n.js",
     "check:a11y": "node scripts/check-accessibility.js",
     "test:unit": "vitest run",
-    "lint": "eslint src scripts webpack.main.config.js webpack.renderer.config.js webpack.preload.config.js webpack.rules.js forge.config.js eslint.config.js",
+    "lint": "eslint src scripts tests/unit vitest.config.mjs webpack.main.config.js webpack.renderer.config.js webpack.preload.config.js webpack.rules.js forge.config.js eslint.config.js",
     "format:check": "prettier --check .",
-    "test": "npm run check",
+    "test": "npm run check && npm run test:unit",
     "release:check": "node scripts/release-check.js",
     "release:checksums": "node scripts/generate-checksums.js out"
   },
@@ -59,6 +59,7 @@
     "node-loader": "2.1.0",
     "prettier": "3.9.6",
     "style-loader": "4.0.0",
+    "typescript": "5.9.3",
     "vite": "^8.3.0",
     "vitest": "^5.0.1"
   },

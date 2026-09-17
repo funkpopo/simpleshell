@@ -81,7 +81,7 @@ describe("TransferResumeStore.describe", () => {
     const store = new TransferResumeStore(root);
     const input = {
       direction: "upload",
-      localPath: "D:\\tmp\\a.txt",
+      localPath: path.join(root, "a.txt"),
       remotePath: "/root/a.txt",
       connection: makeConnection(),
     };
@@ -97,14 +97,15 @@ describe("TransferResumeStore.describe", () => {
 
   it("download 的 manifest 与 part 路径跟随本地文件", () => {
     const store = new TransferResumeStore(root);
+    const localPath = path.join(root, "b.txt");
     const described = store.describe({
       direction: "download",
-      localPath: "D:\\tmp\\b.txt",
+      localPath,
       remotePath: "/var/b.txt",
       connection: makeConnection(),
     });
-    expect(described.manifestPath).toBe("D:\\tmp\\b.txt.ssx-progress.json");
-    expect(described.partPath).toBe("D:\\tmp\\b.txt.part");
+    expect(described.manifestPath).toBe(`${localPath}.ssx-progress.json`);
+    expect(described.partPath).toBe(`${localPath}.part`);
   });
 
   it("localPath 被解析为绝对路径", () => {
@@ -129,20 +130,23 @@ describe("TransferResumeStore 租约", () => {
     );
     release();
     const release2 = store.acquire(record);
-    release();
+    expect(() => store.acquire(record)).toThrowError(
+      expect.objectContaining({ errorKind: "transfer-busy" }),
+    );
+    release2();
   });
 
-  it("download 按本地路径持锁，upload 按 连接+远端路径 持锁", () => {
+  it("download 按本地路径持锁", () => {
     const store = new TransferResumeStore(root);
     const download = store.describe({
       direction: "download",
-      localPath: "D:\\x\\c.txt",
+      localPath: path.join(root, "c.txt"),
       remotePath: "/other/c.txt",
       connection: makeConnection(),
     });
     const download2 = store.describe({
       direction: "download",
-      localPath: "D:\\x\\c.txt",
+      localPath: path.join(root, "c.txt"),
       remotePath: "/different.txt",
       connection: makeConnection(),
     });
@@ -152,6 +156,24 @@ describe("TransferResumeStore 租约", () => {
     expect(() =>
       store.acquire({ ...download2, id: download2.id }),
     ).toThrowError(expect.objectContaining({ errorKind: "transfer-busy" }));
+    release();
+  });
+
+  it("upload 按连接和远端路径持锁", () => {
+    const store = new TransferResumeStore(root);
+    const first = buildRecord(store);
+    const sameTarget = buildRecord(store, {
+      localPath: path.join(root, "other.txt"),
+    });
+    const otherConnection = buildRecord(store, {
+      connection: connectionIdentity({ host: "h2", username: "u" }),
+    });
+    const release = store.acquire(first);
+    expect(() => store.acquire(sameTarget)).toThrowError(
+      expect.objectContaining({ errorKind: "transfer-busy" }),
+    );
+    const releaseOther = store.acquire(otherConnection);
+    releaseOther();
     release();
   });
 });
@@ -194,7 +216,7 @@ describe("TransferResumeStore 持久化往返", () => {
     const first = buildManifest(record, { phase: "transferring" });
     const second = buildManifest(record, { phase: "validating" });
 
-    // 故意让第一次写挂起更久，第二个 write 排队
+    // 同时提交两个版本，验证最后提交的状态最终落盘。
     const writes = Promise.all([
       store.write(record, first),
       store.write(record, second),

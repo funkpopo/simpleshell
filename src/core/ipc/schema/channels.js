@@ -1677,6 +1677,7 @@ function getEventChannelDefinition(channelOrKey) {
   return definition && definition.type === "event" ? definition : null;
 }
 
+/** @returns {Readonly<Record<string, string>>} */
 function toChannelMap(type) {
   const entries = {};
   for (const definition of IPC_CHANNEL_DEFINITIONS) {

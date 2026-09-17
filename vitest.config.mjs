@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    // 单测只覆盖纯逻辑模块，渲染层组件不在本套件范围内。
+    // Node 环境的逻辑、文件持久化和检查工具测试；渲染层集成测试由 check 执行。
     include: ["tests/unit/**/*.test.js"],
     environment: "node",
     reporters: ["default"],

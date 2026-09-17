@@ -148,8 +148,14 @@ npm run start
 # 使用 Prettier 格式化代码
 npm run format
 
-# 运行 ESLint（通过 eslint.config.js 配置）
-npx eslint src/
+# 运行全部检查脚本和单元测试
+npm test
+
+# 仅运行 Node 单元测试
+npm run test:unit
+
+# 检查应用代码、脚本和单元测试的代码规范
+npm run lint
 
 # 为当前平台打包应用
 npm run package
@@ -160,6 +166,12 @@ npm run make
 # 发布应用（需要配置）
 npm run publish
 ```
+
+Preload 契约使用 JSDoc 和 `src/types/preload.d.ts` 中的共享类型声明。
+`npm run check` 通过 TypeScript 解析暴露的方法和 IPC 调用，再根据
+`tsconfig.preload.json` 检查 `src/preload.js` 的实现与注释是否一致。
+尚未细化契约的原始 IPC 响应保留为 `unknown`，调用方需要先缩窄类型；
+此检查不包含渲染进程或主进程处理器的类型检查。
 
 ### **生产构建**
 

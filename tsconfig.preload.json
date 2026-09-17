@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strictNullChecks": true,
+    "skipLibCheck": true,
+    "target": "ES2022",
+    "module": "commonjs",
+    "types": ["node"],
+    "lib": ["ES2022", "DOM"]
+  },
+  "files": ["src/preload.js"]
+}
