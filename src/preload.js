@@ -1022,6 +1022,16 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     ),
 
   /**
+   * 解析 OpenSSH 客户端配置文件（默认 ~/.ssh/config，可通过 configPath 指定其他路径），
+   * 返回可导入的主机列表与解析告警，供连接管理器“从 OpenSSH 配置导入”使用。
+   * 通过 IPC_REQUEST_CHANNELS.SSH_CONFIG_IMPORT 请求主进程。
+   * @param {{ configPath?: string }} [options] 导入选项；configPath 为自定义配置文件绝对路径
+   * @returns {Promise<unknown>} { success, exists, path, hosts, warnings }
+   */
+  parseOpenSSHConfig: (options = {}) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SSH_CONFIG_IMPORT, options),
+
+  /**
    * 通过 IPC_REQUEST_CHANNELS.TERMINAL_LOAD_TOP_CONNECTIONS 请求主进程。
    * @returns {Promise<unknown>}
    */

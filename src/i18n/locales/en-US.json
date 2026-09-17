@@ -659,7 +659,21 @@
         "privateKeyOk": "Private key file is readable and permissions look valid."
       },
       "editConnection": "Edit Connection",
-      "editGroup": "Edit Group"
+      "editGroup": "Edit Group",
+      "sshImport": "Import OpenSSH Config",
+      "sshImportTitle": "Import from OpenSSH Config",
+      "sshImportParsing": "Parsing OpenSSH config...",
+      "sshImportSourcePath": "Source: {{path}}",
+      "sshConfigNotFound": "OpenSSH config file not found: {{path}}",
+      "sshConfigReadFailed": "Failed to read OpenSSH config file",
+      "sshImportEmpty": "No importable hosts found in the config file",
+      "sshImportNoImportable": "No importable hosts selected",
+      "sshImportAuthKey": "private key {{path}}",
+      "sshImportAuthPassword": "password",
+      "sshImportProxyHint": "Uses ProxyJump/ProxyCommand; jump configuration must be set up manually",
+      "sshImportConfirm": "Import {{count}} host(s)",
+      "sshImportSuccess": "Imported {{count}} connection(s)",
+      "sshImportSuccessWithSkipped": "Imported {{count}} connection(s), skipped {{skipped}} duplicate(s)"
     },
     "common": {
       "cancel": "Cancel",

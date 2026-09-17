@@ -20,6 +20,7 @@
  * - utilityHandlers.js - 实用工具处理器
  * - connectionHandlers.js - 连接状态处理器
  * - sshKeyHandlers.js - SSH密钥处理器
+ * - sshConfigHandlers.js - OpenSSH配置导入处理器
  * - memoryHandlers.js - 记忆文件处理器
  * - externalEditorHandlers.js - 外部编辑器处理器
  * - portForwardingHandlers.js - 端口转发（SSH隧道）处理器

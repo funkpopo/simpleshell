@@ -37,6 +37,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import { compactContextMenuPaperSx } from "./contextMenuStyles";
 import ComputerIcon from "@mui/icons-material/Computer";
+import DownloadIcon from "@mui/icons-material/Download";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import UsbIcon from "@mui/icons-material/Usb";
 import NetworkPingIcon from "@mui/icons-material/NetworkPing";
@@ -79,6 +80,7 @@ import SidebarSearchField from "./SidebarSearchField.jsx";
 import useSidebarPanel from "../hooks/useSidebarPanel";
 import useContextMenuRetarget from "../hooks/useContextMenuRetarget";
 import { generateId } from "../shared/common";
+import { mapHostsToConnections } from "../core/connection/openssh-config-parser";
 
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
@@ -1233,6 +1235,12 @@ const ConnectionManager = memo(
     // 确认删除对话框状态
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteItem, setDeleteItem] = useState(null);
+
+    // OpenSSH 配置导入对话框状态
+    const [sshImportOpen, setSshImportOpen] = useState(false);
+    const [sshImportLoading, setSshImportLoading] = useState(false);
+    const [sshImportResult, setSshImportResult] = useState(null);
+    const [sshImportSelected, setSshImportSelected] = useState(() => new Set());
     const [formData, setFormData] = useState({
       name: "",
       host: "",
@@ -1561,6 +1569,125 @@ const ConnectionManager = memo(
       setDeleteConfirmOpen(false);
       setDeleteItem(null);
     }, []);
+
+    // 判断 OpenSSH 配置主机是否可直接导入（通配符已在解析阶段过滤，此处排除跳板主机）
+    const isSshHostImportable = useCallback(
+      (entry) =>
+        Boolean(entry) && !entry.proxyJump && !entry.proxyCommand,
+      [],
+    );
+
+    // 打开 OpenSSH 配置导入对话框并解析 ~/.ssh/config
+    const handleOpenSshImport = useCallback(async () => {
+      setSshImportOpen(true);
+      setSshImportLoading(true);
+      setSshImportResult(null);
+      setSshImportSelected(new Set());
+      try {
+        if (!window.terminalAPI?.parseOpenSSHConfig) {
+          throw new Error("parseOpenSSHConfig unavailable");
+        }
+        const result = await window.terminalAPI.parseOpenSSHConfig();
+        if (!result || result.success !== true) {
+          throw new Error(result?.error || "parse failed");
+        }
+        setSshImportResult(result);
+        const importableIndexes = new Set();
+        (result.hosts || []).forEach((entry, index) => {
+          if (isSshHostImportable(entry)) {
+            importableIndexes.add(index);
+          }
+        });
+        setSshImportSelected(importableIndexes);
+      } catch {
+        setSshImportOpen(false);
+        showError(t("connectionManager.sshConfigReadFailed"));
+      } finally {
+        setSshImportLoading(false);
+      }
+    }, [isSshHostImportable, showError, t]);
+
+    // 切换 OpenSSH 导入对话框中主机的选中态
+    const handleToggleSshImportHost = useCallback((index) => {
+      setSshImportSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(index)) {
+          next.delete(index);
+        } else {
+          next.add(index);
+        }
+        return next;
+      });
+    }, []);
+
+    // 递归收集连接树中的全部连接名（含组内），用于导入去重
+    const collectConnectionNames = useCallback((items, acc) => {
+      (items || []).forEach((item) => {
+        if (item.type === "connection" && item.name) {
+          acc.add(String(item.name).toLowerCase());
+        } else if (item.type === "group") {
+          collectConnectionNames(item.items, acc);
+        }
+      });
+      return acc;
+    }, []);
+
+    // 确认导入：把选中的 OpenSSH 主机映射为连接并保存
+    const handleConfirmSshImport = useCallback(() => {
+      const hosts = (sshImportResult?.hosts || []).filter((entry, index) =>
+        sshImportSelected.has(index),
+      );
+      const existingNames = collectConnectionNames(connections, new Set());
+      const { connections: importedConnections, skipped } =
+        mapHostsToConnections(hosts, { generateId, existingNames });
+
+      if (importedConnections.length === 0) {
+        showError(t("connectionManager.sshImportNoImportable"));
+        return;
+      }
+
+      const newConnections = [...connections, ...importedConnections];
+      setConnections(newConnections);
+
+      if (window.terminalAPI?.saveConnections) {
+        isSavingRef.current = true;
+        window.terminalAPI
+          .saveConnections(newConnections)
+          .catch(() => {
+            showError(t("connectionManager.saveFailed"));
+          })
+          .finally(() => {
+            setTimeout(() => {
+              isSavingRef.current = false;
+            }, 100);
+          });
+      }
+
+      const duplicateCount = skipped.filter(
+        (item) => item.reason === "duplicate",
+      ).length;
+      showSuccess(
+        duplicateCount > 0
+          ? t("connectionManager.sshImportSuccessWithSkipped", {
+              count: importedConnections.length,
+              skipped: duplicateCount,
+            })
+          : t("connectionManager.sshImportSuccess", {
+              count: importedConnections.length,
+            }),
+      );
+      setSshImportOpen(false);
+      setSshImportResult(null);
+      setSshImportSelected(new Set());
+    }, [
+      collectConnectionNames,
+      connections,
+      showError,
+      showSuccess,
+      sshImportResult,
+      sshImportSelected,
+      t,
+    ]);
 
     const handleConnectionListContextMenuClose = useCallback(() => {
       setConnectionListContextMenu(null);
@@ -2702,6 +2829,14 @@ const ConnectionManager = memo(
           >
             {t("connectionManager.newGroup")}
           </Button>
+          <Button
+            size="small"
+            startIcon={<DownloadIcon />}
+            onClick={handleOpenSshImport}
+            sx={{ fontSize: "0.75rem" }}
+          >
+            {t("connectionManager.sshImport")}
+          </Button>
         </Box>
 
         {/* 搜索框 */}
@@ -3785,6 +3920,157 @@ const ConnectionManager = memo(
               color="error"
             >
               {t("common.delete")}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* OpenSSH 配置导入对话框 */}
+        <Dialog
+          open={sshImportOpen}
+          onClose={() => setSshImportOpen(false)}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle>{t("connectionManager.sshImportTitle")}</DialogTitle>
+          <DialogContent>
+            {sshImportLoading ? (
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  py: 4,
+                  gap: 1,
+                }}
+              >
+                <CircularProgress size={20} />
+                <Typography variant="body2" color="text.secondary">
+                  {t("connectionManager.sshImportParsing")}
+                </Typography>
+              </Box>
+            ) : sshImportResult && !sshImportResult.exists ? (
+              <Alert severity="info" sx={{ mt: 1 }}>
+                {t("connectionManager.sshConfigNotFound", {
+                  path: sshImportResult.path,
+                })}
+              </Alert>
+            ) : (
+              <>
+                {sshImportResult?.path && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 0.5, wordBreak: "break-all" }}
+                  >
+                    {t("connectionManager.sshImportSourcePath", {
+                      path: sshImportResult.path,
+                    })}
+                  </Typography>
+                )}
+                {(sshImportResult?.hosts || []).length === 0 ? (
+                  <Alert severity="info" sx={{ mt: 1 }}>
+                    {t("connectionManager.sshImportEmpty")}
+                  </Alert>
+                ) : (
+                  <>
+                    {(sshImportResult?.warnings || []).length > 0 && (
+                      <Alert severity="warning" sx={{ mt: 1 }}>
+                        {sshImportResult.warnings.map((warning, index) => (
+                          <Typography
+                            key={index}
+                            variant="caption"
+                            sx={{ display: "block" }}
+                          >
+                            {warning}
+                          </Typography>
+                        ))}
+                      </Alert>
+                    )}
+                    <List dense sx={{ mt: 1 }}>
+                      {sshImportResult.hosts.map((entry, index) => {
+                        const importable = isSshHostImportable(entry);
+                        const authHint = entry.privateKeyPath
+                          ? t("connectionManager.sshImportAuthKey", {
+                              path: entry.privateKeyPath,
+                            })
+                          : t("connectionManager.sshImportAuthPassword");
+                        return (
+                          <ListItem
+                            key={`${entry.alias}-${index}`}
+                            dense
+                            disablePadding
+                          >
+                            <ListItemButton
+                              role={undefined}
+                              onClick={() => {
+                                if (importable) {
+                                  handleToggleSshImportHost(index);
+                                }
+                              }}
+                              dense
+                            >
+                              <ListItemIcon sx={{ minWidth: 36 }}>
+                                <Checkbox
+                                  edge="start"
+                                  checked={sshImportSelected.has(index)}
+                                  disabled={!importable}
+                                  tabIndex={-1}
+                                  disableRipple
+                                />
+                              </ListItemIcon>
+                              <ListItemText
+                                primary={entry.alias}
+                                secondary={
+                                  importable
+                                    ? `${
+                                        entry.username
+                                          ? `${entry.username}@`
+                                          : ""
+                                      }${entry.host}:${entry.port || 22} · ${authHint}${
+                                        entry.agentForward
+                                          ? ` · ${t("connectionManager.agentForward")}`
+                                          : ""
+                                      }`
+                                    : t("connectionManager.sshImportProxyHint")
+                                }
+                                primaryTypographyProps={{
+                                  variant: "body2",
+                                  sx: { fontWeight: 600 },
+                                }}
+                                secondaryTypographyProps={{
+                                  variant: "caption",
+                                  sx: {
+                                    wordBreak: "break-all",
+                                    fontStyle: importable
+                                      ? "normal"
+                                      : "italic",
+                                  },
+                                }}
+                              />
+                            </ListItemButton>
+                          </ListItem>
+                        );
+                      })}
+                    </List>
+                  </>
+                )}
+              </>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSshImportOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onClick={handleConfirmSshImport}
+              variant="contained"
+              disabled={
+                sshImportLoading || sshImportSelected.size === 0
+              }
+            >
+              {t("connectionManager.sshImportConfirm", {
+                count: sshImportSelected.size,
+              })}
             </Button>
           </DialogActions>
         </Dialog>

@@ -657,7 +657,21 @@
         "privateKeyOk": "私钥文件可读，权限检查通过。"
       },
       "editConnection": "编辑连接",
-      "editGroup": "编辑分组"
+      "editGroup": "编辑分组",
+      "sshImport": "导入 OpenSSH 配置",
+      "sshImportTitle": "从 OpenSSH 配置导入",
+      "sshImportParsing": "正在解析 OpenSSH 配置...",
+      "sshImportSourcePath": "来源：{{path}}",
+      "sshConfigNotFound": "未找到 OpenSSH 配置文件：{{path}}",
+      "sshConfigReadFailed": "读取 OpenSSH 配置文件失败",
+      "sshImportEmpty": "配置文件中没有可导入的主机",
+      "sshImportNoImportable": "没有选中可导入的主机",
+      "sshImportAuthKey": "私钥 {{path}}",
+      "sshImportAuthPassword": "密码认证",
+      "sshImportProxyHint": "该主机使用 ProxyJump/ProxyCommand，跳板配置需手动设置",
+      "sshImportConfirm": "导入 {{count}} 个主机",
+      "sshImportSuccess": "成功导入 {{count}} 个连接",
+      "sshImportSuccessWithSkipped": "成功导入 {{count}} 个连接，跳过 {{skipped}} 个重名连接"
     },
     "common": {
       "cancel": "取消",

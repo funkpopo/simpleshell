@@ -31,6 +31,7 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 
 - **Multi-Protocol Support**: SSH, Telnet, Serial (COM), Mosh, and local PowerShell terminals
 - **Connection Pooling**: Intelligent connection reuse to minimize resource usage
+- **OpenSSH Config Import**: Parse `~/.ssh/config` and batch-import hosts in one click (supports HostName/Port/User/IdentityFile/ForwardAgent, Host wildcard & negation patterns, and global defaults; hosts using ProxyJump/ProxyCommand are flagged for manual jump configuration)
 - **Serial Console**: Direct serial/COM connections with configurable baud rate, data bits, stop bits, parity, and flow control; each tab holds an exclusive session per port
 - **Mosh Support**: Weak-network/roaming-friendly sessions via a locally hosted mosh client (SSH bootstrap; interactive authentication happens in the terminal). On Windows, run through WSL or point to an MSYS2/Cygwin mosh binary; prediction mode (adaptive/always/never/experimental) and a custom mosh-server port are configurable.
 - **Smart Tabs**: Drag-drop tab reordering, merging, and split-screen support

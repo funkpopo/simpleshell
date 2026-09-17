@@ -1209,6 +1209,13 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     { permission: "filesystem" },
   ),
   defineRequest(
+    "SSH_CONFIG_IMPORT",
+    "ssh-config:import",
+    "ssh-key",
+    args([optionalObjectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+  ),
+  defineRequest(
     "UTILITY_IP_QUERY",
     "ip:query",
     "utility",

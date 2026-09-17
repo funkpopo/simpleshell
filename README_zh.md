@@ -31,6 +31,7 @@ SimpleShell 是一款现代化、功能丰富的 SSH 终端应用，结合了 El
 
 - **多协议支持**：SSH、Telnet、串口（COM）、Mosh 和本地 PowerShell 终端
 - **连接池化**：智能连接复用，最小化资源占用
+- **OpenSSH 配置导入**：一键解析 `~/.ssh/config` 并批量导入主机（支持 HostName/Port/User/IdentityFile/ForwardAgent、Host 通配与取反模式、全局默认项；ProxyJump/ProxyCommand 主机提示需手动配置跳板）
 - **串口控制台**：直连串口/COM 设备，可配置波特率、数据位、停止位、校验位与流控；同一端口每个标签页持有独占会话
 - **Mosh 支持**：弱网/漫游场景下经本地 mosh 客户端建立会话（SSH 引导启动，认证在终端内交互完成）。Windows 可勾选「经 WSL 运行」，或填写 MSYS2/Cygwin 中 mosh 的完整路径；支持预测模式（adaptive/always/never/experimental）与自定义 mosh-server 端口。
 - **智能标签页**：拖放标签页重排、合并和分屏支持

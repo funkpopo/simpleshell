@@ -28,6 +28,7 @@ const SftpHandlers = require("../ipc/handlers/sftpHandlers");
 const UtilityHandlers = require("../ipc/handlers/utilityHandlers");
 const ConnectionHandlers = require("../ipc/handlers/connectionHandlers");
 const SshKeyHandlers = require("../ipc/handlers/sshKeyHandlers");
+const SshConfigHandlers = require("../ipc/handlers/sshConfigHandlers");
 const MemoryHandlers = require("../ipc/handlers/memoryHandlers");
 const ExternalEditorHandlers = require("../ipc/handlers/externalEditorHandlers");
 const RuntimeFileHandlers = require("../ipc/handlers/runtimeFileHandlers");
@@ -84,6 +85,11 @@ const BOILERPLATE_HANDLER_MODULES = [
     HandlersClass: SshKeyHandlers,
     successLog: "SSH key handlers registered",
     errorLabel: "Failed to initialize SSH key handlers",
+  },
+  {
+    HandlersClass: SshConfigHandlers,
+    successLog: "SSH config import handlers registered",
+    errorLabel: "Failed to initialize SSH config import handlers",
   },
   {
     HandlersClass: MemoryHandlers,
