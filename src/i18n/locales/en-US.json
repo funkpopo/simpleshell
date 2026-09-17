@@ -1972,13 +1972,11 @@
           "invalidTabId": "Invalid tabId",
           "poolShutdown": "Transfer process pool shutdown",
           "transferFinalized": "Transfer finalized",
-          "listDirectoryFailed": "Failed to list directory",
           "scannerHostMissing": "Native services host is required for folder scanning but was not found",
           "scannerEmptyOutput": "Native scanner returned empty output",
           "scannerInvalidJson": "Native scanner returned invalid JSON: {{error}}",
           "scanRemoteFolderFailed": "scan remote folder tree failed",
           "uploadEntryMissingLocalPath": "Upload entry requires a validated localPath",
-          "remotePathNotDirectory": "Path exists and is not a directory: {{path}}",
           "applicationCleanup": "Application cleanup"
         }
       },

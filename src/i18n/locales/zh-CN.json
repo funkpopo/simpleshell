@@ -1948,13 +1948,11 @@
           "invalidTabId": "无效的标签页 ID",
           "poolShutdown": "传输进程池已关闭",
           "transferFinalized": "传输已结束",
-          "listDirectoryFailed": "列出目录失败",
           "scannerHostMissing": "本机服务宿主缺失，无法扫描文件夹",
           "scannerEmptyOutput": "目录扫描器无输出",
           "scannerInvalidJson": "目录扫描器返回无效 JSON: {{error}}",
           "scanRemoteFolderFailed": "扫描远端目录树失败",
           "uploadEntryMissingLocalPath": "上传项缺少有效的本地路径",
-          "remotePathNotDirectory": "远端路径已存在且不是目录: {{path}}",
           "applicationCleanup": "应用退出清理"
         }
       },
