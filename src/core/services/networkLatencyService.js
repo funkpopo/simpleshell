@@ -27,7 +27,7 @@ function elapsedMs(startTime) {
 
 /**
  * 网络延迟检测服务
- * 负责检测SSH连接的网络延迟，每分钟更新一次
+ * 主进程：检测 SSH 延迟，并分发 Mosh 客户端的被动漫游状态。
  */
 class NetworkLatencyService extends EventEmitter {
   constructor() {
@@ -168,15 +168,57 @@ class NetworkLatencyService extends EventEmitter {
     );
   }
 
+  /** 主进程：Mosh 使用 UDP/SSP，自行恢复；不以 SSH 探测判断其健康状态。 */
+  registerMoshConnection(tabId, connectionInfo) {
+    if (!this.isRunning || !tabId) return;
+    const existing = this.latencyData.get(tabId);
+    if (existing?.moshConnection === connectionInfo) return;
+    this.latencyData.set(tabId, {
+      tabId,
+      protocol: "mosh",
+      host: connectionInfo.config.host,
+      port: connectionInfo.config.port,
+      moshConnection: connectionInfo,
+      status: connectionInfo.exited ? "exited" : "running",
+      lastCheck: nowMs(),
+    });
+    this.emit("latency:updated", this.getLatencyInfo(tabId));
+  }
+
+  /** 主进程：仅接收当前客户端的状态变化，迟到的旧进程消息不会覆盖新会话。 */
+  updateMoshStatus(tabId, connectionInfo, status) {
+    const data = this.latencyData.get(tabId);
+    if (
+      !data ||
+      data.moshConnection !== connectionInfo ||
+      !["running", "roaming", "exited"].includes(status) ||
+      (connectionInfo.exited && status !== "exited")
+    ) {
+      return false;
+    }
+    if (data.status !== status) {
+      data.status = status;
+      data.lastCheck = nowMs();
+      this.emit("latency:updated", this.getLatencyInfo(tabId));
+    }
+    return true;
+  }
+
   /**
    * 注销连接的延迟检测
    * @param {string} tabId 标签页ID
    */
-  unregisterConnection(tabId) {
+  unregisterConnection(tabId, moshConnection = null) {
+    if (
+      moshConnection &&
+      this.latencyData.get(tabId)?.moshConnection !== moshConnection
+    ) {
+      return;
+    }
     const hadConnection = this.latencyData.delete(tabId);
 
     if (hadConnection) {
-      logToFile(`Unregistered SSH latency probe: ${tabId}`, "INFO");
+      logToFile(`Unregistered connection status: ${tabId}`, "INFO");
     }
     this.emit("latency:disconnected", { tabId });
   }
@@ -214,6 +256,11 @@ class NetworkLatencyService extends EventEmitter {
       throw new Error(
         latencyText("mainProcess.latency.connectionNotRegistered", { tabId }),
       );
+    }
+
+    if (data.protocol === "mosh") {
+      this.emit("latency:updated", this.getLatencyInfo(tabId));
+      return;
     }
 
     if (!data.sshConnection) {
@@ -262,7 +309,7 @@ class NetworkLatencyService extends EventEmitter {
   }
 
   _startLatencyCheck(tabId, data, { force = false } = {}) {
-    if (!this.isRunning) {
+    if (!this.isRunning || data.protocol === "mosh") {
       return Promise.resolve(null);
     }
 
@@ -665,7 +712,7 @@ class NetworkLatencyService extends EventEmitter {
    */
   setReconnectSuccessRate(tabId, successRate) {
     const data = this.latencyData.get(tabId);
-    if (!data) {
+    if (!data || data.protocol === "mosh") {
       return false;
     }
     const rate = Number(successRate);
@@ -686,6 +733,20 @@ class NetworkLatencyService extends EventEmitter {
     const data = this.latencyData.get(tabId);
     if (!data) {
       return null;
+    }
+
+    if (data.protocol === "mosh") {
+      return {
+        tabId,
+        protocol: "mosh",
+        host: data.host,
+        port: data.port,
+        status: data.status,
+        lastCheck: data.lastCheck,
+        latency: null,
+        quality: null,
+        qualityLevel: null,
+      };
     }
 
     const quality =
@@ -733,7 +794,7 @@ class NetworkLatencyService extends EventEmitter {
    */
   getAverageLatency(tabId) {
     const data = this.latencyData.get(tabId);
-    if (!data || data.history.length === 0) {
+    if (!data?.history?.length) {
       return null;
     }
 

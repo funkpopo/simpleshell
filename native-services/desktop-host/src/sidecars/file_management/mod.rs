@@ -32,6 +32,7 @@ const SIDECAR_PROCESS_TYPE: &str = "native-sidecar";
 const MODE_TYPE_MASK: u32 = 0o170000;
 const MODE_TYPE_DIRECTORY: u32 = 0o040000;
 const MODE_TYPE_FILE: u32 = 0o100000;
+const PERMISSION_BATCH_CONCURRENCY: usize = 8;
 
 #[cfg(test)]
 mod transfer_tests {
@@ -190,6 +191,7 @@ struct SftpRequest {
     operation: String,
     algorithm: Option<String>,
     path: Option<String>,
+    paths: Option<Vec<String>>,
     local_path: Option<String>,
     source_path: Option<String>,
     target_path: Option<String>,
@@ -236,6 +238,8 @@ enum SftpOperation {
     CreateFile,
     #[serde(rename = "getFilePermissions")]
     GetFilePermissions,
+    #[serde(rename = "getFilePermissionsBatch")]
+    GetFilePermissionsBatch,
     #[serde(rename = "getAbsolutePath")]
     GetAbsolutePath,
     #[serde(rename = "readFileContent")]
@@ -1358,15 +1362,37 @@ async fn execute_request(
         }
         SftpOperation::GetFilePermissions => {
             let path = required_path(request.path.as_deref(), "path")?;
-            let stat = stat_path(sftp, path).await?;
-            Ok(json!({
-                "success": true,
-                "permissions": stat.permissions,
-                "mode": stat.mode,
-                "uid": stat.uid,
-                "gid": stat.gid,
-                "stats": stat,
-            }))
+            get_file_permissions(sftp, path).await
+        }
+        SftpOperation::GetFilePermissionsBatch => {
+            let paths = request.paths.as_deref().ok_or("paths is required")?;
+            // 同一 SFTP 通道内有界并发，buffered 保留输入顺序和逐项错误。
+            let results: Vec<Value> =
+                futures_util::stream::iter(paths.iter().map(|path| async move {
+                    let result = match required_path(Some(path.as_str()), "path") {
+                        Ok(path) => get_file_permissions(sftp, path).await,
+                        Err(error) => Err(error),
+                    };
+                    let mut value = match result {
+                        Ok(value) => value,
+                        Err(error) => {
+                            let classification = classify_error(&error);
+                            json!({
+                                "success": false,
+                                "error": error,
+                                "errorCode": classification.error_code,
+                                "errorKind": classification.error_kind,
+                                "retryable": classification.retryable,
+                            })
+                        }
+                    };
+                    value["path"] = json!(path);
+                    value
+                }))
+                .buffered(PERMISSION_BATCH_CONCURRENCY)
+                .collect()
+                .await;
+            Ok(json!({ "success": true, "results": results }))
         }
         SftpOperation::GetAbsolutePath => {
             let path = required_path(request.path.as_deref(), "path")?;
@@ -2243,6 +2269,18 @@ async fn create_file(sftp: &Sftp, remote_path: &str) -> Result<(), String> {
         .await
         .map_err(|error| format!("close created file failed: {error}"))?;
     Ok(())
+}
+
+async fn get_file_permissions(sftp: &Sftp, remote_path: &str) -> Result<Value, String> {
+    let stat = stat_path(sftp, remote_path).await?;
+    Ok(json!({
+        "success": true,
+        "permissions": stat.permissions,
+        "mode": stat.mode,
+        "uid": stat.uid,
+        "gid": stat.gid,
+        "stats": stat,
+    }))
 }
 
 async fn stat_metadata(sftp: &Sftp, remote_path: &str) -> Result<MetaData, String> {

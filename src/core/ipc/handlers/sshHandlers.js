@@ -1848,6 +1848,7 @@ class SSHHandlers {
   _setupMoshEventListeners(ptyProcess, processId, moshConfig, connectionInfo) {
     const mainWindow = this._getMainWindow();
     const processMailbox = this._configureProcessMailbox(processId, moshConfig);
+    const latencyService = this.getLatencyHandlers?.()?.latencyService;
 
     // 启动失败探测状态：仅在最初几秒/前几 KB 输出内生效，避免误伤正常会话。
     // 特征命中只是候选，需进程在窗口内非零退出才确认（消除 MOTD 误报）
@@ -1896,6 +1897,8 @@ class SSHHandlers {
       }
     }
 
+    latencyService?.registerMoshConnection(moshConfig.tabId, connectionInfo);
+
     const dataListener = ptyProcess.onData((data) => {
       try {
         const text = Buffer.isBuffer(data) ? data.toString() : String(data);
@@ -1931,6 +1934,13 @@ class SSHHandlers {
     });
 
     const exitListener = ptyProcess.onExit(({ exitCode, signal }) => {
+      connectionInfo.exited = true;
+      connectionInfo.ready = false;
+      latencyService?.updateMoshStatus(
+        moshConfig.tabId,
+        connectionInfo,
+        "exited",
+      );
       // 进程已退出，停止失败探测并清空监听引用，避免持有 dispose 句柄
       settleMoshProbe();
       // 探测窗口内特征命中 + 非零退出 → 确认启动失败，先于关闭消息提示
@@ -1940,19 +1950,15 @@ class SSHHandlers {
         clearPendingFailure();
       }
       if (connectionInfo && Array.isArray(connectionInfo.ptyListeners)) {
-        connectionInfo.ptyListeners.length = 0;
+        for (const listener of connectionInfo.ptyListeners.splice(0)) {
+          listener.dispose();
+        }
       }
 
       logToFile(
         `Mosh session exited for processId ${processId} (code=${exitCode})`,
         "INFO",
       );
-
-      // 标记连接已退出，避免连接池健康检查/关闭时重复 kill
-      if (connectionInfo) {
-        connectionInfo.exited = true;
-        connectionInfo.ready = false;
-      }
 
       if (mainWindow && !mainWindow.isDestroyed()) {
         this._emitProcessOutput(
@@ -1982,7 +1988,18 @@ class SSHHandlers {
       if (!Array.isArray(connectionInfo.ptyListeners)) {
         connectionInfo.ptyListeners = [];
       }
-      connectionInfo.ptyListeners.push(dataListener, exitListener);
+      connectionInfo.ptyListeners.push(dataListener, exitListener, {
+        dispose() {
+          clearTimeout(moshProbeTimer);
+          clearTimeout(pendingFailureTimer);
+          if (!connectionInfo.exited) {
+            latencyService?.unregisterConnection(
+              moshConfig.tabId,
+              connectionInfo,
+            );
+          }
+        },
+      });
     }
   }
 

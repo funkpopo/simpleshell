@@ -670,6 +670,16 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     objectPayloadArgs(["tabId", "host", "port"]),
   ),
   defineRequest(
+    "LATENCY_REPORT_MOSH_STATUS",
+    "latency:reportMoshStatus",
+    "latency",
+    objectPayloadArgs(["tabId", "processId", "status"], {
+      tabId: stringArg(),
+      processId: { anyOf: [stringArg(), numberArg()] },
+      status: { enum: ["running", "roaming"] },
+    }),
+  ),
+  defineRequest(
     "LATENCY_UNREGISTER",
     "latency:unregister",
     "latency",

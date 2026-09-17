@@ -4602,6 +4602,7 @@ function AppContent() {
                 <NetworkLatencyIndicator
                   currentTab={currentTab}
                   tabs={tabs}
+                  activeSession={activeSession}
                   placement="inline"
                 />
               </Box>

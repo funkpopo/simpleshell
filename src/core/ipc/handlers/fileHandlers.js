@@ -51,26 +51,6 @@ const normalizeDroppedFolderRelativePath = (folderData) => {
   return normalizeDroppedRelativePath(folderData?.relativePath);
 };
 
-const isDroppedRemoteNotFound = (errorLike = {}) => {
-  const errorCode = String(
-    errorLike.errorCode || errorLike.code || errorLike.raw?.errorCode || "",
-  ).toUpperCase();
-  const errorKind = String(
-    errorLike.errorKind || errorLike.kind || errorLike.raw?.errorKind || "",
-  ).toLowerCase();
-  const message = String(
-    errorLike.error || errorLike.message || errorLike.raw?.error || "",
-  ).toLowerCase();
-
-  return (
-    errorCode === "NATIVE_SFTP_NOT_FOUND" ||
-    errorKind === "notfound" ||
-    message.includes("no such file") ||
-    message.includes("not found") ||
-    message.includes("does not exist")
-  );
-};
-
 const isUserCancelledError = (error) => {
   const message = String(error?.message || "");
   return (
@@ -836,36 +816,20 @@ class FileHandlers {
       ).values(),
     );
     const conflicts = [];
-
-    for (const candidate of dedupedCandidates) {
-      try {
-        const result = await nativeSftpClient.getFilePermissions(
-          tabId,
-          candidate.remotePath,
-          {
-            expectedFailure: isDroppedRemoteNotFound,
-            expectedFailureLevel: "DEBUG",
-          },
-        );
-        if (result?.success) {
-          conflicts.push({
-            ...candidate,
-            mode: result.mode,
-            permissions: result.permissions,
-            isDirectory: result.stats?.isDirectory === true,
-          });
-        } else if (!isDroppedRemoteNotFound(result || {})) {
-          throw new Error(
-            result?.error ||
-              result?.message ||
-              "Failed to check remote path conflicts",
-          );
-        }
-      } catch (error) {
-        if (isDroppedRemoteNotFound(error)) {
-          continue;
-        }
-        throw error;
+    const { results } = await nativeSftpClient.getFilePermissionsBatch(
+      tabId,
+      dedupedCandidates.map((candidate) => candidate.remotePath),
+    );
+    for (const [index, result] of results.entries()) {
+      if (result.success) {
+        conflicts.push({
+          ...dedupedCandidates[index],
+          mode: result.mode,
+          permissions: result.permissions,
+          isDirectory: result.stats?.isDirectory === true,
+        });
+      } else if (result.errorCode !== "NATIVE_SFTP_NOT_FOUND") {
+        nativeSftpClient.requireNativeSuccess(result);
       }
     }
 

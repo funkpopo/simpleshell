@@ -1,6 +1,7 @@
 const fs = require("fs");
 const { logToFile } = require("./logger");
 const { sanitizePathForLog } = require("./log-sanitizer");
+const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
 
 /**
  * 读取SSH私钥文件内容
@@ -134,7 +135,7 @@ async function processSSHPrivateKeyAsync(sshConfig) {
 }
 
 /**
- * 由处理后的SSH配置构建 ssh2 connect options 的公共字段
+ * 主进程：由处理后的SSH配置构建 ssh2 connect options 的公共字段
  * 各调用方特有字段（如 sock、compress、hostHash 处理方式等）由调用方自行补充
  * @param {Object} processedConfig - 已处理私钥的SSH配置对象
  * @param {Object} extras - 附加参数
@@ -169,13 +170,33 @@ function buildSshConnectOptions(
   // keyboard-interactive（2FA/OTP）：始终启用，配合 `keyboard-interactive` 事件处理
   options.tryKeyboard = true;
 
-  // SSH Agent 认证（authType === "agent"）
-  if (String(processedConfig.authType || "").toLowerCase() === "agent") {
+  const agentAuth =
+    String(processedConfig.authType || "").toLowerCase() === "agent";
+  const agentForward = processedConfig.agentForward === true;
+  if (agentAuth || agentForward) {
     const agentPath = resolveSshAgentPath(processedConfig);
-    if (agentPath) {
-      options.agent = agentPath;
+    if (!agentPath) {
+      const error = new Error(
+        mainT("mainProcess.ssh.agentUnavailable", {
+          lng: normalizeLanguage(processedConfig.language),
+        }),
+      );
+      error.code = "SSH_AGENT_UNAVAILABLE";
+      throw error;
     }
-    options.agentForward = processedConfig.agentForward === true;
+    options.agent = agentPath;
+    options.agentForward = agentForward;
+
+    // ssh2 默认会把 options.agent 加入登录认证序列。仅开启转发时，
+    // 保留原有密码/私钥和交互式认证，不额外尝试 Agent 中的身份。
+    if (!agentAuth) {
+      options.authHandler = [
+        "none",
+        ...(options.password ? ["password"] : []),
+        ...(options.privateKey ? ["publickey"] : []),
+        "keyboard-interactive",
+      ];
+    }
   }
 
   return options;

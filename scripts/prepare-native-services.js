@@ -120,7 +120,7 @@ function getNewestMtimeMs(targetPath) {
   return newest;
 }
 
-function isStagedBinaryOutdated() {
+function isStagedBinaryOutdated(sourceMtime) {
   if (!hasStagedBinary()) {
     return true;
   }
@@ -129,8 +129,6 @@ function isStagedBinaryOutdated() {
   const buildMtime = fs.existsSync(buildOutputPath)
     ? fs.statSync(buildOutputPath).mtimeMs
     : 0;
-  const sourceMtime = getNewestMtimeMs(sourceRoot);
-
   return buildMtime > stagedMtime || sourceMtime > stagedMtime;
 }
 
@@ -167,10 +165,7 @@ function tryBuildWithCargo() {
   );
 
   if (result.error) {
-    log(
-      `cargo unavailable, skipping native-services build: ${result.error.message}`,
-    );
-    return false;
+    throw new Error(`unable to run cargo: ${result.error.message}`);
   }
 
   if (result.status !== 0) {
@@ -189,15 +184,22 @@ function main() {
   }
 
   syncSidecarManifestVersion(appVersion);
+  const sourceMtime = getNewestMtimeMs(sourceRoot);
 
-  if (hasStagedBinary() && !isStagedBinaryOutdated()) {
+  if (hasStagedBinary() && !isStagedBinaryOutdated(sourceMtime)) {
     log(
       `using staged native sidecar at ${path.relative(projectRoot, stagedPath)}`,
     );
     return;
   }
 
-  if (copyIfPresent() && !isStagedBinaryOutdated()) {
+  // Check the build artifact before copying: the copy's timestamp alone
+  // cannot establish whether the binary contains the latest source changes.
+  if (
+    fs.existsSync(buildOutputPath) &&
+    fs.statSync(buildOutputPath).mtimeMs >= sourceMtime &&
+    copyIfPresent()
+  ) {
     return;
   }
 

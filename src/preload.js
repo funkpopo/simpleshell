@@ -2980,6 +2980,20 @@ contextBridge.exposeInMainWorld("terminalAPI", {
     }),
 
   /**
+   * 上报 Mosh 客户端提示栏状态；主进程校验当前会话身份。
+   * @param {string} tabId
+   * @param {import("./types/preload").ProcessId} processId
+   * @param {import("./types/preload").MoshTransportStatus} status
+   * @returns {Promise<{success: boolean}>}
+   */
+  reportMoshStatus: (tabId, processId, status) =>
+    ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LATENCY_REPORT_MOSH_STATUS, {
+      tabId,
+      processId,
+      status,
+    }),
+
+  /**
    * 通过 IPC_REQUEST_CHANNELS.LATENCY_UNREGISTER 请求主进程。
    * @param {string} tabId
    * @returns {Promise<unknown>}

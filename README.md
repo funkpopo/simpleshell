@@ -32,8 +32,10 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 - **Multi-Protocol Support**: SSH, Telnet, Serial (COM), Mosh, and local PowerShell terminals
 - **Connection Pooling**: Intelligent connection reuse to minimize resource usage
 - **OpenSSH Config Import**: Parse `~/.ssh/config` and batch-import hosts in one click (supports HostName/Port/User/IdentityFile/ForwardAgent, Host wildcard & negation patterns, and global defaults; hosts using ProxyJump/ProxyCommand are flagged for manual jump configuration)
+- **SSH Agent Forwarding**: Enable forwarding with password, private-key, or agent login. Password/private-key connections keep their login methods when forwarding is enabled; imported `ForwardAgent yes` applies to those connections too. The local agent path is configurable; reconnect after changing this setting.
 - **Serial Console**: Direct serial/COM connections with configurable baud rate, data bits, stop bits, parity, and flow control; each tab holds an exclusive session per port
 - **Mosh Support**: Weak-network/roaming-friendly sessions via a locally hosted mosh client (SSH bootstrap; interactive authentication happens in the terminal). On Windows, run through WSL or point to an MSYS2/Cygwin mosh binary; prediction mode (adaptive/always/never/experimental) and a custom mosh-server port are configurable.
+- **Mosh Roaming Status**: The connection indicator follows the focused pane and displays running, waiting for recovery, or exited. Waiting follows the stock Mosh client's network notice; keep the tab open during an outage or network change so the client can recover the existing session. This is a display hint, not a UDP latency measurement; SSH probes do not restart Mosh sessions.
 - **Smart Tabs**: Drag-drop tab reordering, merging, and split-screen support
 - **Split Terminal**: Drag a tab onto the middle of another tab (stack-merge) or into the terminal area to merge it into a split view (up to 2×2 panes); right-click the merged tab → "Unsplit & Restore Tabs" to restore panes back to standalone tabs — sessions and terminal content are preserved on both merge and unsplit; each pane an independent session that can connect to a different host; drag pane headers to swap, drag dividers to resize; panes compose with sync-input groups for batch ops (`Ctrl+Shift+W` closes the focused pane) Closing a pane ends only that session, including the root pane; closing other panes retains exactly the selected session. Split tabs must be restored to standalone tabs before they can be merged into another tab.
 - **Group Synchronization**: Execute commands across multiple connections simultaneously
@@ -43,6 +45,7 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 ### 📁 **Advanced File Management**
 
 - **Full SFTP Browser**: Intuitive file browsing with drag-drop operations
+- **Native SFTP Operations**: Directory browsing, file reads/writes, and transfers run in the Rust service. Uploads have no file-count cap. Dragged upload conflict checks submit the complete path list and use eight concurrent metadata reads on one session; JavaScript owns task scheduling, retries, and resume manifests.
 - **Follow Terminal Directory**: A persistent global option in Settings → General lets SFTP follow the focused SSH terminal, with directory state isolated per tab or split session. Enabled by default.
 - **Bulk Transfers**: Upload/download entire folders with progress tracking
 - **Resumable SFTP Transfers**: Pause, reconnect, or restart the app and resume retained files from the transfer panel; files of 128 MiB or larger resume by completed segments
@@ -108,6 +111,8 @@ Download the latest release for your platform from the [Releases page](https://g
 If you prefer to build from source, follow the development instructions below.
 
 ## **Development**
+
+For Serial/Mosh, SSH agent forwarding, and native SFTP manual verification, see [Manual checks](MANUAL_TESTING.md). The guide covers network roaming, split-pane status, client cleanup, forwarding with password/private-key login, and upload conflicts.
 
 ### **Prerequisites**
 

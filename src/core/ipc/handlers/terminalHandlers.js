@@ -467,6 +467,10 @@ class TerminalHandlers {
         if (proc.type === "mosh" && proc.connectionInfo) {
           proc.connectionInfo.closeReason = "user";
           proc.connectionInfo.intentionalClose = true;
+          this.getLatencyHandlers?.()?.latencyService.unregisterConnection(
+            proc.config?.tabId,
+            proc.connectionInfo,
+          );
           this.connectionManager.releaseMoshConnection(
             proc.connectionInfo.key,
             proc.config?.tabId,
@@ -494,8 +498,9 @@ class TerminalHandlers {
               "ERROR",
             );
           }
-        } else {
-          // 终止其他类型的进程
+        } else if (proc.type !== "mosh") {
+          // Mosh 由连接池负责退出宽限期，直接 kill 会打断 WSL 内部清理。
+          // 其他类型的进程直接终止。
           try {
             if (typeof proc.process.kill === "function") {
               // 正常终止进程

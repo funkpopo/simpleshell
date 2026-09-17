@@ -2,6 +2,7 @@
 import type { IpcRendererEvent } from "electron";
 
 export type ProcessId = string | number;
+export type MoshTransportStatus = "running" | "roaming";
 export type Unsubscribe = () => void;
 export type PayloadCallback<T = unknown> = (payload: T) => void;
 export type IpcCallback<T = unknown> = (

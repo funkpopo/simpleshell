@@ -1839,20 +1839,11 @@ const ConnectionManager = memo(
       if (
         dialogOpen &&
         dialogType === "connection" &&
-        formData.protocol === "serial" &&
-        serialPorts.length === 0 &&
-        !serialPortsLoading
+        formData.protocol === "serial"
       ) {
         handleRefreshSerialPorts();
       }
-    }, [
-      dialogOpen,
-      dialogType,
-      formData.protocol,
-      handleRefreshSerialPorts,
-      serialPorts.length,
-      serialPortsLoading,
-    ]);
+    }, [dialogOpen, dialogType, formData.protocol, handleRefreshSerialPorts]);
 
     const handleFormChange = useCallback((e) => {
       const { name, value } = e.target;
@@ -3426,6 +3417,9 @@ const ConnectionManager = memo(
                             <MenuItem value="never">
                               {t("connectionManager.moshPredictNever")}
                             </MenuItem>
+                            <MenuItem value="experimental">
+                              {t("connectionManager.moshPredictExperimental")}
+                            </MenuItem>
                           </Select>
                         </FormControl>
                         <TextField
@@ -3600,9 +3594,10 @@ const ConnectionManager = memo(
                           </Box>
                         )}
 
-                      {formData.protocol === "ssh" &&
-                        formData.authType === "agent" && (
-                          <Box sx={{ mt: 1 }}>
+                      {formData.protocol === "ssh" && (
+                        <Box sx={{ mt: 1 }}>
+                          {(formData.authType === "agent" ||
+                            formData.agentForward === true) && (
                             <TextField
                               label={t("connectionManager.agentPath")}
                               name="agentPath"
@@ -3615,28 +3610,36 @@ const ConnectionManager = memo(
                               )}
                               helperText={t("connectionManager.agentPathHint")}
                             />
-                            <FormControlLabel
-                              sx={{ mt: 1 }}
-                              control={
-                                <Checkbox
-                                  checked={formData.agentForward === true}
-                                  onChange={(e) =>
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      agentForward: e.target.checked,
-                                    }))
-                                  }
-                                  size="small"
-                                />
-                              }
-                              label={
-                                <Typography variant="body2">
-                                  {t("connectionManager.agentForward")}
-                                </Typography>
-                              }
-                            />
-                          </Box>
-                        )}
+                          )}
+                          <FormControlLabel
+                            sx={{ mt: 1 }}
+                            control={
+                              <Checkbox
+                                checked={formData.agentForward === true}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    agentForward: e.target.checked,
+                                  }))
+                                }
+                                size="small"
+                              />
+                            }
+                            label={
+                              <Typography variant="body2">
+                                {t("connectionManager.agentForward")}
+                              </Typography>
+                            }
+                          />
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: "block" }}
+                          >
+                            {t("connectionManager.agentForwardHint")}
+                          </Typography>
+                        </Box>
+                      )}
                     </>
                   )}
 

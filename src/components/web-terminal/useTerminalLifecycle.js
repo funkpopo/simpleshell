@@ -51,6 +51,7 @@ import {
 import { setupSimulatedTerminal } from "./simulatedTerminal.js";
 import { attachWorkingDirectoryTracking } from "../../modules/terminal/workingDirectoryTracking.js";
 import { setTerminalWorkingDirectory } from "../../modules/terminal/workingDirectoryStore.js";
+import { attachMoshTransportStatus } from "../../modules/terminal/moshTransportStatus.js";
 
 /**
  * Terminal create / cache reuse / mailbox / connection / DOM listeners / cleanup.
@@ -458,6 +459,13 @@ export function useTerminalLifecycle({
       disposablesCache[sessionKey] = [];
     }
     const terminalDisposables = disposablesCache[sessionKey];
+    const observeMoshStatus = (term, processId) => {
+      if (sshConfig?.protocol === "mosh") {
+        terminalDisposables.push(
+          attachMoshTransportStatus(term, sessionKey, processId),
+        );
+      }
+    };
 
     const ensureTerminalMailbox = (term) => {
       if (
@@ -580,6 +588,7 @@ export function useTerminalLifecycle({
           }
 
           setupDataListenerRef.current(existingProcessId, term);
+          observeMoshStatus(term, existingProcessId);
           setupCommandDetectionRef.current(
             term,
             existingProcessId,
@@ -1096,6 +1105,7 @@ export function useTerminalLifecycle({
 
                   ensureTerminalMailbox(term);
                   setupDataListenerRef.current(processId, term);
+                  observeMoshStatus(term, processId);
 
                   console.debug(
                     `[WebTerminal] Setting up command detection for sessionKey=${sessionKey}, processId=${processId}`,

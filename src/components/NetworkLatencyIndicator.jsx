@@ -10,11 +10,12 @@ import { useTranslation } from "react-i18next";
 
 /**
  * 网络延迟显示组件
- * 显示当前活跃标签页的SSH连接延迟
+ * 显示聚焦会话的 SSH 延迟或 Mosh 漫游提示。
  */
 const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   currentTab,
   tabs,
+  activeSession,
   placement = "overlay",
 }) {
   const { t } = useTranslation();
@@ -24,16 +25,18 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   const [latencyData, setLatencyData] = useState(null);
   const [isVisible, setIsVisible] = useState(false);
   const latencyRequestIdRef = useRef(0);
+  const currentSession = activeSession ?? tabs?.[currentTab];
+  const currentSessionId = currentSession?.sessionKey ?? currentSession?.id;
+  const currentSessionType = currentSession?.type;
 
   /**
    * 获取当前应该显示延迟的标签页
    */
   const getCurrentTabForLatency = useCallback(() => {
-    if (currentTab > 0 && tabs[currentTab] && tabs[currentTab].type === "ssh") {
-      return tabs[currentTab];
-    }
-    return null;
-  }, [currentTab, tabs]);
+    return currentSessionId && ["ssh", "mosh"].includes(currentSessionType)
+      ? { id: currentSessionId, type: currentSessionType }
+      : null;
+  }, [currentSessionId, currentSessionType]);
 
   /**
    * 处理延迟数据更新
@@ -42,6 +45,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
     (event, data) => {
       const currentTabForLatency = getCurrentTabForLatency();
       if (currentTabForLatency && data.tabId === currentTabForLatency.id) {
+        latencyRequestIdRef.current += 1;
         setLatencyData(data);
         setIsVisible(true);
       }
@@ -56,6 +60,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
     (event, data) => {
       const currentTabForLatency = getCurrentTabForLatency();
       if (currentTabForLatency && data.tabId === currentTabForLatency.id) {
+        latencyRequestIdRef.current += 1;
         setLatencyData({
           ...data,
           latency: null,
@@ -74,6 +79,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
     (event, data) => {
       const currentTabForLatency = getCurrentTabForLatency();
       if (currentTabForLatency && data.tabId === currentTabForLatency.id) {
+        latencyRequestIdRef.current += 1;
         setLatencyData(null);
         setIsVisible(false);
       }
@@ -88,7 +94,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
     const requestId = ++latencyRequestIdRef.current;
     const currentTabForLatency = getCurrentTabForLatency();
 
-    if (!currentTabForLatency || currentTabForLatency.type !== "ssh") {
+    if (!currentTabForLatency) {
       setLatencyData(null);
       setIsVisible(false);
       return;
@@ -129,6 +135,10 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
     if (!currentTabForLatency || currentTabForLatency.type !== "ssh") {
       return;
     }
+    const requestId = latencyRequestIdRef.current;
+    const restoreCurrentDisplay = () => {
+      if (requestId === latencyRequestIdRef.current) updateLatencyDisplay();
+    };
 
     try {
       // 临时显示检测状态，保留所有现有数据
@@ -149,17 +159,17 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
         if (!result.success) {
           console.error("延迟测试失败:", result.error);
           // 如果测试失败，恢复原状态
-          updateLatencyDisplay();
+          restoreCurrentDisplay();
         }
         // 测试成功后会通过latency:updated事件自动更新数据
       } else {
         // API不可用，恢复原状态
-        updateLatencyDisplay();
+        restoreCurrentDisplay();
       }
     } catch (error) {
       console.error("立即测试延迟失败:", error);
       // 恢复原状态
-      updateLatencyDisplay();
+      restoreCurrentDisplay();
     }
   }, [getCurrentTabForLatency, updateLatencyDisplay]);
 
@@ -249,7 +259,12 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
 
   // 监听标签页变化，更新延迟显示
   useEffect(() => {
+    setLatencyData(null);
+    setIsVisible(false);
     updateLatencyDisplay();
+    return () => {
+      latencyRequestIdRef.current += 1;
+    };
   }, [updateLatencyDisplay]);
 
   // 监听IPC事件
@@ -271,17 +286,29 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   }, [handleLatencyUpdate, handleLatencyError, handleLatencyDisconnected]);
 
   // 如果不显示延迟信息，返回null
-  if (!isVisible || !latencyData) {
+  if (!isVisible || !latencyData || latencyData.tabId !== currentSessionId) {
     return null;
   }
 
   const qualityLevel =
     latencyData.qualityLevel || latencyData.quality?.level || null;
-  const signalInfo = getSignalInfo(
-    latencyData.latency,
-    latencyData.status,
-    qualityLevel,
-  );
+  const isMosh = latencyData.protocol === "mosh";
+  const signalInfo = isMosh
+    ? {
+        icon:
+          latencyData.status === "running"
+            ? SignalWifi4BarIcon
+            : SignalWifiOffIcon,
+        color:
+          latencyData.status === "roaming"
+            ? theme.palette.warning.main
+            : latencyData.status === "exited"
+              ? theme.palette.text.disabled
+              : theme.palette.info.main,
+        text: t(`latency.mosh.${latencyData.status}`),
+        level: latencyData.status,
+      }
+    : getSignalInfo(latencyData.latency, latencyData.status, qualityLevel);
   const SignalIcon = signalInfo.icon;
 
   // 构建工具提示内容
@@ -295,15 +322,18 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
       <Typography variant="caption" sx={{ display: "block" }}>
         {t("latency.host")}: {latencyData.host}:{latencyData.port}
       </Typography>
+      {!isMosh && (
+        <Typography variant="caption" sx={{ display: "block" }}>
+          {t("latency.current")}:{" "}
+          {hasLatencyNumber ? `${latencyData.latency}ms` : t("latency.unknown")}
+        </Typography>
+      )}
       <Typography variant="caption" sx={{ display: "block" }}>
-        {t("latency.current")}:{" "}
-        {hasLatencyNumber ? `${latencyData.latency}ms` : t("latency.unknown")}
+        {t(isMosh ? "latency.mosh.status" : "latency.quality")}:{" "}
+        {signalInfo.text}
       </Typography>
       <Typography variant="caption" sx={{ display: "block" }}>
-        {t("latency.quality")}: {signalInfo.text}
-      </Typography>
-      <Typography variant="caption" sx={{ display: "block" }}>
-        {t("latency.lastCheck")}:{" "}
+        {t(isMosh ? "latency.mosh.lastChanged" : "latency.lastCheck")}:{" "}
         {lastCheckValue
           ? new Date(lastCheckValue).toLocaleTimeString()
           : t("latency.never")}
@@ -312,19 +342,21 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
         variant="caption"
         sx={{ display: "block", mt: 1, fontStyle: "italic" }}
       >
-        {t("latency.updateInterval")}
+        {t(isMosh ? "latency.mosh.hint" : "latency.updateInterval")}
       </Typography>
-      <Typography
-        variant="caption"
-        sx={{
-          display: "block",
-          mt: 1,
-          fontWeight: "bold",
-          color: "primary.main",
-        }}
-      >
-        💡 {t("latency.clickToRetest")}
-      </Typography>
+      {!isMosh && (
+        <Typography
+          variant="caption"
+          sx={{
+            display: "block",
+            mt: 1,
+            fontWeight: "bold",
+            color: "primary.main",
+          }}
+        >
+          💡 {t("latency.clickToRetest")}
+        </Typography>
+      )}
     </Box>
   );
 
@@ -373,10 +405,16 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
         >
           <Chip
             icon={<SignalIcon />}
-            label={hasLatencyNumber ? `${latencyData.latency}ms` : "--"}
+            label={
+              isMosh
+                ? signalInfo.text
+                : hasLatencyNumber
+                  ? `${latencyData.latency}ms`
+                  : "--"
+            }
             size="small"
             variant="outlined"
-            onClick={handleLatencyClick}
+            onClick={isMosh ? undefined : handleLatencyClick}
             sx={{
               backgroundColor:
                 theme.palette.mode === "dark"
@@ -388,7 +426,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
               fontWeight: "bold",
               fontSize: "0.75rem",
               minWidth: "80px",
-              cursor: "pointer",
+              cursor: isMosh ? "default" : "pointer",
               ml: placement === "inline" ? 1 : 0,
               transition: "all 0.3s ease",
               "&:hover": {

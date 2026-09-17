@@ -1265,29 +1265,18 @@ async function createRemoteFolders(tabId, folderPath) {
   });
 }
 
+/** 主进程：提交完整路径列表，不限制数量；逐文件 stat 与并发控制由 Rust 执行。 */
 async function getFilePermissionsBatch(tabId, filePaths, options = {}) {
-  const results = await Promise.all(
-    (Array.isArray(filePaths) ? filePaths : []).map(async (filePath) => {
-      const result = await getFilePermissions(tabId, filePath, options);
-      return result?.success
-        ? {
-            path: filePath,
-            success: true,
-            permissions: result.permissions,
-            mode: result.mode,
-            uid: result.uid,
-            gid: result.gid,
-            stats: result.stats,
-          }
-        : {
-            path: filePath,
-            success: false,
-            error: result?.error || "Failed to read permissions",
-          };
-    }),
-  );
+  const paths = Array.isArray(filePaths) ? filePaths : [];
+  if (paths.length === 0) return { success: true, results: [] };
 
-  return { success: true, results };
+  return requireNativeSuccess(
+    await invokeNativeRequest(
+      tabId,
+      { operation: "getFilePermissionsBatch", paths },
+      options,
+    ),
+  );
 }
 
 async function uploadFile(tabId, localPath, remotePath, options = {}) {

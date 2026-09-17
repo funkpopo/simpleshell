@@ -209,6 +209,11 @@ class SSHPool extends BaseConnectionPool {
 
     // 处理私钥（读取privateKeyPath对应的文件内容）
     const processedConfig = await processSSHPrivateKeyAsync(sshConfig);
+    // 配置校验在分配客户端和超时定时器之前完成。
+    const connectionOptions = this._buildSSHOptions(
+      processedConfig,
+      networkProfile,
+    );
 
     // 解析代理配置
     const resolvedProxyConfig =
@@ -357,12 +362,6 @@ class SSHPool extends BaseConnectionPool {
       ssh.on("close", () => {
         this._handleSSHClose(connectionInfo, connectionKey, ssh);
       });
-
-      // 建立连接
-      const connectionOptions = this._buildSSHOptions(
-        processedConfig,
-        networkProfile,
-      );
 
       // 关键：ssh2 不支持 options.proxy，必须传入已建立好的代理隧道 socket（sock）
       if (usingProxy) {

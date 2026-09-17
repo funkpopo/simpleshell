@@ -445,7 +445,15 @@
       "bad": "很差",
       "offline": "离线",
       "updateInterval": "按连接质量自适应刷新（约 15–60 秒）",
-      "clickToRetest": "点击立即测试延迟"
+      "clickToRetest": "点击立即测试延迟",
+      "mosh": {
+        "running": "Mosh 运行中",
+        "roaming": "Mosh 等待恢复",
+        "exited": "Mosh 已退出",
+        "status": "客户端状态",
+        "lastChanged": "上次状态变化",
+        "hint": "根据 Mosh 终端提示显示状态，不提供 UDP 延迟。断网或切换网络时请保留标签页，Mosh 将尝试自动恢复；认证和详细网络提示请查看终端。"
+      }
     },
     "ipAddressQuery": {
       "title": "IP 地址查询",
@@ -590,6 +598,7 @@
       "moshPredictAdaptive": "自适应（推荐）",
       "moshPredictAlways": "始终预测",
       "moshPredictNever": "从不预测",
+      "moshPredictExperimental": "实验模式",
       "moshServerPort": "服务端 UDP 端口",
       "moshServerPortHint": "mosh-server 监听端口或范围，如 60000 或 60000:61000；留空自动分配",
       "hostAddress": "主机地址",
@@ -604,6 +613,7 @@
       "agentPathPlaceholder": "默认使用 SSH_AUTH_SOCK / Windows OpenSSH 代理管道",
       "agentPathHint": "留空则自动探测；Windows 可填 pageant 使用 PuTTY Pageant。",
       "agentForward": "启用 Agent 转发（在服务器上复用本机密钥）",
+      "agentForwardHint": "允许远端使用本机 Agent，支持密码、私钥和 Agent 登录。更改后需重新连接生效。",
       "privateKeyPath": "私钥路径",
       "browse": "浏览...",
       "group": "分组",
@@ -2012,7 +2022,8 @@
         "hostNotFound": "主机不存在: 无法解析主机名 {{host}}",
         "connectionTimeout": "连接超时: {{host}}:{{port}}",
         "throughProxy": " (通过代理)",
-        "keyboardInteractiveUnsupported": "服务器要求交互式验证（keyboard-interactive），当前上下文无法弹出输入框"
+        "keyboardInteractiveUnsupported": "服务器要求交互式验证（keyboard-interactive），当前上下文无法弹出输入框",
+        "agentUnavailable": "未找到 SSH Agent。请启动 Agent 并设置 SSH_AUTH_SOCK，或填写 Agent 路径；不需要转发时可关闭 Agent 转发。"
       }
     },
     "connectionAdvice": {

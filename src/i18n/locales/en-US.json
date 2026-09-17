@@ -447,7 +447,15 @@
       "bad": "Bad",
       "offline": "Offline",
       "updateInterval": "Adaptive refresh by link quality (about 15–60s)",
-      "clickToRetest": "Click to retest latency now"
+      "clickToRetest": "Click to retest latency now",
+      "mosh": {
+        "running": "Mosh running",
+        "roaming": "Mosh waiting",
+        "exited": "Mosh exited",
+        "status": "Client status",
+        "lastChanged": "Last status change",
+        "hint": "Status follows Mosh terminal notices; UDP latency is not measured. Keep this tab open during network outages or changes while Mosh tries to recover. Check the terminal for authentication and detailed network notices."
+      }
     },
     "ipAddressQuery": {
       "title": "IP Address Query",
@@ -592,6 +600,7 @@
       "moshPredictAdaptive": "Adaptive (recommended)",
       "moshPredictAlways": "Always predict",
       "moshPredictNever": "Never predict",
+      "moshPredictExperimental": "Experimental",
       "moshServerPort": "Server UDP port",
       "moshServerPortHint": "Port or range for mosh-server, e.g. 60000 or 60000:61000; empty = auto",
       "hostAddress": "Host Address",
@@ -606,6 +615,7 @@
       "agentPathPlaceholder": "Defaults to SSH_AUTH_SOCK / Windows OpenSSH agent pipe",
       "agentPathHint": "Leave empty to auto-detect; on Windows you can enter 'pageant' to use PuTTY Pageant.",
       "agentForward": "Enable agent forwarding (reuse local keys on the server)",
+      "agentForwardHint": "Allow the remote host to use your local agent with password, private-key, or agent login. Reconnect to apply changes.",
       "privateKeyPath": "Private Key Path",
       "browse": "Browse...",
       "group": "Group",
@@ -2036,7 +2046,8 @@
         "hostNotFound": "Host not found: cannot resolve hostname {{host}}",
         "connectionTimeout": "Connection timed out: {{host}}:{{port}}",
         "throughProxy": " (through proxy)",
-        "keyboardInteractiveUnsupported": "The server requires interactive verification (keyboard-interactive), which cannot prompt for input in this context"
+        "keyboardInteractiveUnsupported": "The server requires interactive verification (keyboard-interactive), which cannot prompt for input in this context",
+        "agentUnavailable": "No SSH agent was found. Start an agent and set SSH_AUTH_SOCK, or enter an agent path. Disable agent forwarding if it is not needed."
       }
     },
     "connectionAdvice": {

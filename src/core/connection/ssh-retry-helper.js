@@ -95,6 +95,10 @@ function analyzeSshFailureReason(error) {
     error?.code || error?.originalError?.code || "",
   ).toUpperCase();
 
+  if (errorCode === "SSH_AGENT_UNAVAILABLE") {
+    return FAILURE_REASON.AUTHENTICATION;
+  }
+
   if (
     errorCode === "EPROXYUNAVAILABLE" ||
     error?.failureReason === FAILURE_REASON.PROXY_UNAVAILABLE
@@ -558,6 +562,10 @@ async function createManagedSshConnection(sshConfig, options = {}) {
   const ClientCtor = options.ClientCtor || Client;
   const processedConfig = await processSSHPrivateKeyAsync(sshConfig);
   const networkProfile = resolveSshNetworkProfile(processedConfig);
+  const connectionOptions = buildSshConnectOptions(processedConfig, {
+    networkProfile,
+    algorithms: getBasicSSHAlgorithms(),
+  });
   const baseTimeout = Math.max(15000, networkProfile.readyTimeout + 5000);
   // 交互式认证（hostVerifier / keyboard-interactive）需要用户输入，放宽到 5 分钟
   const interactiveMinTimeout = hasInteractiveAuthCapability(processedConfig)
@@ -714,11 +722,6 @@ async function createManagedSshConnection(sshConfig, options = {}) {
     ssh.on("ready", onReady);
     ssh.on("error", onError);
     ssh.on("close", onClose);
-
-    const connectionOptions = buildSshConnectOptions(processedConfig, {
-      networkProfile,
-      algorithms: getBasicSSHAlgorithms(),
-    });
 
     if (processedConfig.passphrase) {
       connectionOptions.passphrase = processedConfig.passphrase;

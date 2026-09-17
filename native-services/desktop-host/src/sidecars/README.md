@@ -10,7 +10,7 @@ src/
 ├── main.rs                 # stable CLI routing only
 └── sidecars/
     ├── ai/                 # `ai-serve` NDJSON service
-    └── file_management/   # scan-folder, sftp-request, sftp-watch
+    └── file_management/   # scan-folder, sftp-request, sftp-session, sftp-watch
 ```
 
 Each sidecar directory owns a `mod.rs` implementation and a README describing

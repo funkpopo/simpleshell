@@ -41,6 +41,11 @@ class LatencyHandlers {
         handler: this.registerConnection.bind(this),
       },
       {
+        channel: IPC_REQUEST_CHANNELS.LATENCY_REPORT_MOSH_STATUS,
+        category: "latency",
+        handler: this.reportMoshStatus.bind(this),
+      },
+      {
         channel: IPC_REQUEST_CHANNELS.LATENCY_UNREGISTER,
         category: "latency",
         handler: this.unregisterConnection.bind(this),
@@ -66,6 +71,26 @@ class LatencyHandlers {
         handler: this.testLatencyNow.bind(this),
       },
     ];
+  }
+
+  /** 渲染层只上报展示状态；不会触发 SSH 重连或关闭 Mosh 进程。 */
+  reportMoshStatus(_event, { tabId, processId, status }) {
+    const processManager = require("../../process/processManager");
+    const proc = processManager.getProcess(processId);
+    const current = processManager.getProcess(tabId);
+    return {
+      success: Boolean(
+        proc?.type === "mosh" &&
+        proc.connectionInfo &&
+        current?.connectionInfo === proc.connectionInfo &&
+        !proc.connectionInfo.exited &&
+        this.latencyService.updateMoshStatus(
+          tabId,
+          proc.connectionInfo,
+          status,
+        ),
+      ),
+    };
   }
 
   /**
