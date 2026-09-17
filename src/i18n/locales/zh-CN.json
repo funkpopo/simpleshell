@@ -126,6 +126,8 @@
       },
       "dataSync": {
         "title": "数据与同步",
+        "sshImportTitle": "OpenSSH 配置",
+        "sshImportDescription": "读取本机 ~/.ssh/config，选择主机并添加到连接列表，自动跳过同名连接。",
         "working": "处理中…",
         "export": {
           "title": "导出配置包",

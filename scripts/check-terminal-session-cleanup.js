@@ -8,7 +8,7 @@ const read = (relativePath) =>
 
 const store = read("src/modules/terminal/controller/terminalSessionStore.js");
 const lifecycle = read("src/components/web-terminal/useTerminalLifecycle.js");
-const app = read("src/app.jsx");
+const app = require("./lib/renderer-sources.js").collectAppSources();
 
 assert.match(
   store,

@@ -78,18 +78,6 @@ function isCancelledError(error) {
   );
 }
 
-function isPathExistsError(error) {
-  const code = String(error?.code || "").toUpperCase();
-  const message = normalizeErrorMessage(error).toLowerCase();
-  return (
-    code === "EEXIST" ||
-    message.includes("already exists") ||
-    message.includes("file exists") ||
-    message.includes("已存在") ||
-    message.includes("failure code is 4")
-  );
-}
-
 function buildTransferDisplayName(names, itemLabel) {
   const resolvedItemLabel =
     itemLabel || transferText("mainProcess.transfer.itemLabel");

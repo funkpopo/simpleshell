@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const babel = require("@babel/core");
 
 const repoRoot = path.resolve(__dirname, "..");
 
@@ -26,18 +27,21 @@ function assertBefore(source, earlierPattern, laterPattern, message) {
   assert.ok(earlier.index < later.index, message);
 }
 
-function sliceBetween(source, startMarker, endMarker, label) {
-  const start = source.indexOf(startMarker);
-  assert.notEqual(start, -1, `${label}: missing start marker`);
-
-  const end = source.indexOf(endMarker, start + startMarker.length);
-  assert.notEqual(end, -1, `${label}: missing end marker`);
-
-  return source.slice(start, end);
+function getFunctionSource(source, name) {
+  const ast = babel.parseSync(source, { configFile: false, babelrc: false });
+  let functionSource;
+  const visit = ({ node }) => {
+    if ((node.id?.name || node.key?.name) === name) {
+      functionSource = source.slice(node.start, node.end);
+    }
+  };
+  babel.traverse(ast, { ClassMethod: visit, FunctionDeclaration: visit });
+  assert.ok(functionSource, `Missing function: ${name}`);
+  return functionSource;
 }
 
 const windowManagerSource = readSource("src/core/window/windowManager.js");
-const appSource = readSource("src/app.jsx");
+const appSource = require("./lib/renderer-sources.js").collectAppSources();
 const mainSource = readSource("src/main.js");
 const desktopIntegrationSource = readSource(
   "src/core/app/desktopIntegration.js",
@@ -50,7 +54,8 @@ const settingsHandlersSource = readSource(
 const configServiceSource = readSource("src/services/configService.js");
 const settingsSource = readSource("src/components/Settings.jsx");
 const globalCssSource = readSource("src/styles/global.css");
-const fileManagerSource = readSource("src/components/FileManager.jsx");
+const fileManagerSource =
+  require("./lib/renderer-sources.js").collectFileManagerSources();
 const fileHandlersSource = readSource("src/core/ipc/handlers/fileHandlers.js");
 const filemanagementServiceSource = readSource(
   "src/modules/filemanagement/filemanagementService.js",
@@ -418,36 +423,31 @@ function testReducedMotionIsGlobal() {
 }
 
 function testDragAndDropUsesNativeValidatedLocalPaths() {
-  const dragDropSource = sliceBetween(
-    fileManagerSource,
-    "const handleDrop = useCallback",
-    "useEffect(() =>",
-    "FileManager handleDrop",
-  );
-  const dragUploadSource = sliceBetween(
-    fileManagerSource,
-    "const handleDroppedItems = useCallback",
-    "const handleDrop = useCallback",
-    "FileManager handleDroppedItems",
-  );
-  const uploadTransferSource = sliceBetween(
-    fileManagerSource,
-    "const runUploadTransfer = async",
-    "const handleCopyAbsolutePath = async",
-    "FileManager runUploadTransfer",
-  );
-  const downloadSource = sliceBetween(
-    fileManagerSource,
-    "const handleDownload = async",
-    "// 修改 setError 的使用，使用通知系统",
-    "FileManager handleDownload",
-  );
-  const downloadFolderSource = sliceBetween(
-    fileManagerSource,
-    "const handleDownloadFolder = async",
-    "const handleDownloadSelection = useCallback",
-    "FileManager handleDownloadFolder",
-  );
+  const dragDropSource =
+    require("./lib/renderer-sources.js").readRendererCallback(
+      "src/components/filemanager/hooks/useDragDrop.js",
+      "handleDrop",
+    );
+  const dragUploadSource =
+    require("./lib/renderer-sources.js").readRendererCallback(
+      "src/components/filemanager/hooks/useTransferTasks.js",
+      "handleDroppedItems",
+    );
+  const uploadTransferSource =
+    require("./lib/renderer-sources.js").readRendererCallback(
+      "src/components/filemanager/hooks/useTransferTasks.js",
+      "runUploadTransfer",
+    );
+  const downloadSource =
+    require("./lib/renderer-sources.js").readRendererCallback(
+      "src/components/filemanager/hooks/useTransferTasks.js",
+      "handleDownload",
+    );
+  const downloadFolderSource =
+    require("./lib/renderer-sources.js").readRendererCallback(
+      "src/components/filemanager/hooks/useTransferTasks.js",
+      "handleDownloadFolder",
+    );
 
   assertContains(
     preloadSource,
@@ -513,18 +513,6 @@ function testDragAndDropUsesNativeValidatedLocalPaths() {
     fileHandlersSource,
     /"permission-denied"/,
     "Drop validation must identify unreadable permission failures.",
-  );
-
-  assertContains(
-    fileHandlersSource,
-    /nativeSftpClient\.getFilePermissions\([\s\S]*candidate\.remotePath/,
-    "Remote overwrite preflight must check remote candidate paths before upload.",
-  );
-
-  assertContains(
-    fileHandlersSource,
-    /isDroppedRemoteNotFound\(result \|\| \{\}\)/,
-    "Remote overwrite preflight must treat only explicit not-found responses as no conflict.",
   );
 
   assertContains(
@@ -780,6 +768,57 @@ function testDragAndDropUsesNativeValidatedLocalPaths() {
   );
 }
 
+function testDroppedUploadBatchPreflight() {
+  const preflightSource = getFunctionSource(
+    fileHandlersSource,
+    "checkDroppedUploadConflicts",
+  );
+  const batchSource = getFunctionSource(
+    nativeSftpClientSource,
+    "getFilePermissionsBatch",
+  );
+  assertContains(
+    preflightSource,
+    /await nativeSftpClient\.getFilePermissionsBatch\(\s*tabId,\s*dedupedCandidates\.map\(\(candidate\) => candidate\.remotePath\)/,
+    "Remote overwrite preflight must batch the deduplicated remote candidate paths.",
+  );
+  assertContains(
+    preflightSource,
+    /else if \(result\.errorCode !== "NATIVE_SFTP_NOT_FOUND"\)\s*\{\s*nativeSftpClient\.requireNativeSuccess\(result\)/,
+    "Remote overwrite preflight must propagate every failure except explicit not-found results.",
+  );
+  assertContains(
+    batchSource,
+    /return requireNativeSuccess\(\s*await invokeNativeRequest\(\s*tabId,\s*\{ operation: "getFilePermissionsBatch", paths \}/,
+    "The native batch client must propagate request-level failures before inspecting individual paths.",
+  );
+
+  // Missing paths are per-item results inside a successful batch response;
+  // they no longer need the old per-request expectedFailure logging override.
+  const nativeSource = readSource(
+    "native-services/desktop-host/src/sidecars/file_management/mod.rs",
+  );
+  const batchStart = nativeSource.indexOf(
+    "SftpOperation::GetFilePermissionsBatch => {",
+  );
+  const batchEnd = nativeSource.indexOf("SftpOperation::", batchStart + 1);
+  assert.ok(
+    batchStart >= 0 && batchEnd > batchStart,
+    "Missing native batch branch",
+  );
+  const nativeBatchSource = nativeSource.slice(batchStart, batchEnd);
+  assertContains(
+    nativeBatchSource,
+    /"success": false,[\s\S]*"errorCode": classification\.error_code/,
+    "Native permission batches must preserve structured errors for each failed path.",
+  );
+  assertContains(
+    nativeBatchSource,
+    /Ok\(json!\(\{ "success": true, "results": results \}\)\)/,
+    "Completed permission batches must return per-path results without logging missing paths as request failures.",
+  );
+}
+
 function testNativeSftpExpectedFailureLogging() {
   assertContains(
     nativeSftpClientSource,
@@ -803,18 +842,6 @@ function testNativeSftpExpectedFailureLogging() {
     nativeSftpClientSource,
     /const status = expectedFailure \? "expected error" : "error"/,
     "Native SFTP logs must distinguish expected probing results from real errors.",
-  );
-
-  assertContains(
-    fileHandlersSource,
-    /expectedFailure:\s*isDroppedRemoteNotFound/,
-    "Dropped upload conflict probing must declare remote not-found as an expected result.",
-  );
-
-  assertContains(
-    fileHandlersSource,
-    /expectedFailureLevel:\s*"DEBUG"/,
-    "Dropped upload conflict probing must log remote not-found probes at DEBUG.",
   );
 }
 
@@ -924,7 +951,7 @@ function testNativeListAndScrollConventions() {
   );
 
   assertNotContains(
-    fileManagerSource,
+    readSource("src/components/filemanager/panels/FileList.jsx"),
     /cursor:\s*"pointer"/,
     "File list rows must keep the native list-row cursor.",
   );
@@ -958,6 +985,7 @@ function run() {
       "drag and drop uses native validated local paths",
       testDragAndDropUsesNativeValidatedLocalPaths,
     ],
+    ["dropped upload batch preflight", testDroppedUploadBatchPreflight],
     [
       "native sftp expected failure logging",
       testNativeSftpExpectedFailureLogging,

@@ -50,6 +50,7 @@ import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../i18n/i18n";
 import { SettingsSkeleton } from "./SkeletonLoader.jsx";
 import { useNotification } from "../contexts/NotificationContext";
+import OpenSSHImportDialog from "./settings/OpenSSHImportDialog.jsx";
 import {
   openLogDirectory,
   exportDiagnostics,
@@ -282,6 +283,14 @@ const Settings = memo(({ open, onClose }) => {
   // 需要重启的设置变更标志
   const [needsRestart, setNeedsRestart] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState(0);
+  const [sshImportOpen, setSshImportOpen] = React.useState(false);
+  const handleCloseSshImport = React.useCallback(
+    () => setSshImportOpen(false),
+    [],
+  );
+  React.useEffect(() => {
+    if (!open) setSshImportOpen(false);
+  }, [open]);
   const [originalPerformanceSettings, setOriginalPerformanceSettings] =
     React.useState({});
 
@@ -2472,6 +2481,35 @@ const Settings = memo(({ open, onClose }) => {
               {/* Tab 4: Data & Sync */}
               {activeTab === 4 && (
                 <Box sx={{ maxWidth: 560 }}>
+                  <Box sx={{ ...sectionCardSx, mb: 1.5 }}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Box
+                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                      >
+                        <TerminalIcon sx={{ color: "primary.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.dataSync.sshImportTitle")}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {t("settings.dataSync.sshImportDescription")}
+                    </Typography>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<RestoreIcon />}
+                      disabled={configTransferBusy !== ""}
+                      onClick={() => setSshImportOpen(true)}
+                    >
+                      {t("connectionManager.sshImport")}
+                    </Button>
+                  </Box>
+
                   {/* 导出加密包 */}
                   <Box sx={sectionCardSx}>
                     <Box sx={sectionTitleRowSx}>
@@ -3077,6 +3115,9 @@ const Settings = memo(({ open, onClose }) => {
           {t("settings.save")}
         </Button>
       </DialogActions>
+      {open && sshImportOpen && (
+        <OpenSSHImportDialog onClose={handleCloseSshImport} />
+      )}
     </GlassDialog>
   );
 });

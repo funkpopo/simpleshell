@@ -435,6 +435,11 @@ export const useGlobalTransfers = (tabId) => {
     getCurrentSnapshot,
   );
 
+  return { transferList, ...useTransferActions(tabId) };
+};
+
+/** Stable task commands without a progress subscription. */
+export const useTransferActions = (tabId) => {
   const helpers = useMemo(() => {
     return {
       addTransferProgress: (transferData) => addTransfer(tabId, transferData),
@@ -448,10 +453,8 @@ export const useGlobalTransfers = (tabId) => {
     };
   }, [tabId]);
 
-  return {
-    transferList,
-    ...helpers,
-  };
+  const getTransferList = useCallback(() => getSnapshot(tabId), [tabId]);
+  return { ...helpers, getTransferList };
 };
 
 /**

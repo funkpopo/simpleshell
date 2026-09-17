@@ -19,12 +19,6 @@ function readSource(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
-function assertContains(source, pattern, message) {
-  if (!pattern.test(source)) {
-    throw new Error(`check-sftp-native-boundary: ${message}`);
-  }
-}
-
 function assertNotContains(source, pattern, message) {
   if (pattern.test(source)) {
     throw new Error(`check-sftp-native-boundary: ${message}`);
@@ -33,30 +27,42 @@ function assertNotContains(source, pattern, message) {
 
 function rustSftpOperations() {
   const modRs = fs.readFileSync(
-    path.join(repoRoot, "native-services/desktop-host/src/sidecars/file_management/mod.rs"),
+    path.join(
+      repoRoot,
+      "native-services/desktop-host/src/sidecars/file_management/mod.rs",
+    ),
     "utf8",
   );
   const enumStart = modRs.indexOf("enum SftpOperation");
   if (enumStart === -1) {
-    throw new Error("check-sftp-native-boundary: SftpOperation enum missing from sidecar");
+    throw new Error(
+      "check-sftp-native-boundary: SftpOperation enum missing from sidecar",
+    );
   }
-  const enumBody = modRs.slice(enumStart, modRs.indexOf("impl SftpOperation", enumStart));
-  const operations = [...enumBody.matchAll(/#\[serde\(rename = "([a-zA-Z]+)"\)\]/g)].map(
-    (match) => match[1],
+  const enumBody = modRs.slice(
+    enumStart,
+    modRs.indexOf("impl SftpOperation", enumStart),
   );
+  const operations = [
+    ...enumBody.matchAll(/#\[serde\(rename = "([a-zA-Z]+)"\)\]/g),
+  ].map((match) => match[1]);
   if (operations.length === 0) {
-    throw new Error("check-sftp-native-boundary: no SftpOperation variants parsed from mod.rs");
+    throw new Error(
+      "check-sftp-native-boundary: no SftpOperation variants parsed from mod.rs",
+    );
   }
   return new Set(operations);
 }
 
 function jsNativeOperations() {
   const clientSource = readSource("src/core/utils/nativeSftpClient.js");
-  const operations = [...clientSource.matchAll(/operation:\s*"([a-zA-Z]+)"/g)].map(
-    (match) => match[1],
-  );
+  const operations = [
+    ...clientSource.matchAll(/operation:\s*"([a-zA-Z]+)"/g),
+  ].map((match) => match[1]);
   if (operations.length === 0) {
-    throw new Error("check-sftp-native-boundary: no native operations found in nativeSftpClient.js");
+    throw new Error(
+      "check-sftp-native-boundary: no native operations found in nativeSftpClient.js",
+    );
   }
   return new Set(operations);
 }

@@ -553,7 +553,10 @@ async function checkSavedConfigReplacesPendingAuth() {
 
 async function checkRendererAuthHandoff() {
   const source = fs.readFileSync(
-    require("node:path").join(__dirname, "../src/app.jsx"),
+    require("node:path").join(
+      __dirname,
+      "../src/components/app/hooks/useSSHAuthentication.js",
+    ),
     "utf8",
   );
   const ast = babel.parseSync(source, {

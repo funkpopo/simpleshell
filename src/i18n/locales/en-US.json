@@ -126,6 +126,8 @@
       },
       "dataSync": {
         "title": "Data & Sync",
+        "sshImportTitle": "OpenSSH Configuration",
+        "sshImportDescription": "Read the local ~/.ssh/config, select hosts to add to your connections, and automatically skip duplicate names.",
         "working": "Working…",
         "export": {
           "title": "Export Config Package",

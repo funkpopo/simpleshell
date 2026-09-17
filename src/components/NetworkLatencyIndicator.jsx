@@ -305,7 +305,14 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
             : latencyData.status === "exited"
               ? theme.palette.text.disabled
               : theme.palette.info.main,
-        text: t(`latency.mosh.${latencyData.status}`),
+        text:
+          latencyData.status === "running"
+            ? t("latency.mosh.running")
+            : latencyData.status === "roaming"
+              ? t("latency.mosh.roaming")
+              : latencyData.status === "exited"
+                ? t("latency.mosh.exited")
+                : t("latency.unknown"),
         level: latencyData.status,
       }
     : getSignalInfo(latencyData.latency, latencyData.status, qualityLevel);
@@ -329,11 +336,11 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
         </Typography>
       )}
       <Typography variant="caption" sx={{ display: "block" }}>
-        {t(isMosh ? "latency.mosh.status" : "latency.quality")}:{" "}
+        {isMosh ? t("latency.mosh.status") : t("latency.quality")}:{" "}
         {signalInfo.text}
       </Typography>
       <Typography variant="caption" sx={{ display: "block" }}>
-        {t(isMosh ? "latency.mosh.lastChanged" : "latency.lastCheck")}:{" "}
+        {isMosh ? t("latency.mosh.lastChanged") : t("latency.lastCheck")}:{" "}
         {lastCheckValue
           ? new Date(lastCheckValue).toLocaleTimeString()
           : t("latency.never")}
@@ -342,7 +349,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
         variant="caption"
         sx={{ display: "block", mt: 1, fontStyle: "italic" }}
       >
-        {t(isMosh ? "latency.mosh.hint" : "latency.updateInterval")}
+        {isMosh ? t("latency.mosh.hint") : t("latency.updateInterval")}
       </Typography>
       {!isMosh && (
         <Typography
