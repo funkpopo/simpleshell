@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo, useEffect } from "react";
+import React, { useCallback, memo } from "react";
 import {
   Box,
   Paper,
@@ -14,6 +14,7 @@ import {
   clearCompletedTransfersForAllTabs,
 } from "../../../store/globalTransferStore.js";
 import { useTranslation } from "react-i18next";
+import useTransferHosts from "../hooks/useTransferHosts.js";
 import { sumTransferFileCount } from "../../../utils/transferCounts.js";
 import {
   getTransferIcon,
@@ -158,31 +159,7 @@ const TransferProgress = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { allTransfers, removeTransferProgress } = useAllGlobalTransfers();
-  const [sshHostMap, setSshHostMap] = useState({});
-
-  // 获取SSH主机信息
-  useEffect(() => {
-    const fetchSshHosts = async () => {
-      const hostMap = {};
-      const uniqueTabIds = [...new Set(allTransfers.map((t) => t.tabId))];
-      for (const tabId of uniqueTabIds) {
-        if (tabId && window.terminalAPI?.getSSHConfig) {
-          try {
-            const config = await window.terminalAPI.getSSHConfig(tabId);
-            if (config && config.host) {
-              hostMap[tabId] = config.host;
-            }
-          } catch (error) {
-            console.warn(`Failed to get SSH config for tab ${tabId}:`, error);
-          }
-        }
-      }
-      setSshHostMap(hostMap);
-    };
-    if (allTransfers.length > 0) {
-      fetchSshHosts();
-    }
-  }, [allTransfers]);
+  const sshHostMap = useTransferHosts(allTransfers);
   const handleClickTag = useCallback(
     (transfer) => {
       // 点击标签时打开浮动窗口并定位到对应的传输任务

@@ -23,9 +23,11 @@ export default function useCredentialSecurity() {
     React.useState(false);
 
   const securityRevisionRef = React.useRef(0);
+  const unlockRequestRef = React.useRef(0);
   React.useEffect(
     () => () => {
       securityRevisionRef.current += 1;
+      unlockRequestRef.current += 1;
     },
     [],
   );
@@ -101,13 +103,15 @@ export default function useCredentialSecurity() {
         return;
       }
 
-      securityRevisionRef.current += 1;
+      const revision = ++securityRevisionRef.current;
+      const request = ++unlockRequestRef.current;
       setUnlockingCredentialStore(true);
       setMasterPasswordError("");
 
       try {
         const response =
           await window.terminalAPI.unlockCredentialStore(masterPassword);
+        if (revision !== securityRevisionRef.current) return;
         if (response?.success === false) {
           setMasterPasswordError(
             response.error === "Invalid master password"
@@ -130,9 +134,12 @@ export default function useCredentialSecurity() {
           requiresUnlock: nextStatus?.requiresUnlock === true,
         });
       } catch {
-        setMasterPasswordError(t("masterPassword.unlockFailed"));
+        if (revision === securityRevisionRef.current) {
+          setMasterPasswordError(t("masterPassword.unlockFailed"));
+        }
       } finally {
-        setUnlockingCredentialStore(false);
+        if (request === unlockRequestRef.current)
+          setUnlockingCredentialStore(false);
       }
     },
     [t],
@@ -142,8 +149,10 @@ export default function useCredentialSecurity() {
     if (!window.terminalAPI?.lockCredentialStore) {
       return;
     }
+    const revision = ++securityRevisionRef.current;
     try {
       const response = await window.terminalAPI.lockCredentialStore();
+      if (revision !== securityRevisionRef.current) return;
       if (response?.success === false) {
         showError(response.error || t("masterPassword.unlockFailed"));
         return;
@@ -162,7 +171,8 @@ export default function useCredentialSecurity() {
       });
       showInfo(t("menu.lockAppSuccess"));
     } catch {
-      showError(t("masterPassword.unlockFailed"));
+      if (revision === securityRevisionRef.current)
+        showError(t("masterPassword.unlockFailed"));
     }
   }, [showError, showInfo, t]);
   return {

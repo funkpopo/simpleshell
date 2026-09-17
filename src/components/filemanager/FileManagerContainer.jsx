@@ -25,12 +25,7 @@ import CreateMenu from "./panels/CreateMenu.jsx";
 import UploadMenu from "./panels/UploadMenu.jsx";
 import SortMenu from "./panels/SortMenu.jsx";
 import ConfirmDialog from "./dialogs/ConfirmDialog.jsx";
-import RenameDialog from "./dialogs/RenameDialog.jsx";
-import PermissionDialog from "./dialogs/PermissionDialog.jsx";
-import PropertiesDialog from "./dialogs/PropertiesDialog.jsx";
-import CreateFolderDialog from "./dialogs/CreateFolderDialog.jsx";
-import CreateFileDialog from "./dialogs/CreateFileDialog.jsx";
-import PreviewDialog from "./dialogs/PreviewDialog.jsx";
+import FileManagerDialogs from "./dialogs/FileManagerDialogs.jsx";
 import DragOverlay from "./panels/DragOverlay.jsx";
 import FileList from "./panels/FileList.jsx";
 const FileManagerContainer = memo(
@@ -76,7 +71,7 @@ const FileManagerContainer = memo(
       historyIndex,
       isChunking,
       listToken,
-      loadDirectory,
+      refreshDirectory,
       handleHistoryBack,
       handleGoToNextPath,
       handleEnterDirectory,
@@ -127,58 +122,22 @@ const FileManagerContainer = memo(
     });
     const {
       isDeleting,
-      showRenameDialog,
-      newName,
-      setNewName,
-      renameDialogError,
-      renameSubmitting,
-      showCreateFolderDialog,
-      newFolderName,
-      setNewFolderName,
-      createFolderDialogError,
-      createFolderSubmitting,
-      showCreateFileDialog,
-      newFileName,
-      setNewFileName,
-      createFileDialogError,
-      createFileSubmitting,
-      filePreview,
       showPreview,
-      showPropertiesDialog,
-      propertiesLoading,
-      propertiesData,
-      showPermissionDialog,
-      permDialogPermissions,
-      setPermDialogPermissions,
-      permDialogOwner,
-      setPermDialogOwner,
-      permDialogGroup,
-      setPermDialogGroup,
-      formatAbsoluteTime,
+      dialogs,
       handleOpenProperties,
-      handleClosePropertiesDialog,
       handleOpenPermissions,
-      handlePermissionDialogClose,
-      handlePermissionDialogSubmit,
       handleDelete,
       handleCopyAbsolutePath,
       handleCreateFolder,
-      handleCloseCreateFolderDialog,
-      handleCreateFolderSubmit,
       handleCreateFile,
-      handleCloseCreateFileDialog,
-      handleCreateFileSubmit,
       handleFileActivate,
-      handleClosePreview,
       handleRename,
-      handleCloseRenameDialog,
-      handleRenameSubmit,
     } = useFileOps({
       showNotification,
       confirmAction,
       currentPath,
       tabId,
-      loadDirectory,
+      refreshDirectory,
       replaceSelection,
       clearSelection,
       selectedFile,
@@ -201,8 +160,7 @@ const FileManagerContainer = memo(
       sshConnection,
       currentPath,
       selectedFile,
-      loadDirectory,
-      refreshAfterUserActivity,
+      refreshDirectory,
       showConfirmDialog,
       setNotification,
       getSelectedFiles,
@@ -246,6 +204,7 @@ const FileManagerContainer = memo(
       busy: loading || isDeleting,
     });
     useFileKeyboard({
+      rootRef: fileManagerRootRef,
       open,
       showPreview,
       getSelectedFiles,
@@ -261,8 +220,6 @@ const FileManagerContainer = memo(
       handleCreateFolder,
       handleUploadFile,
       handleUploadFolder,
-      handleDownloadFolder,
-      handleDownload,
       selectAll,
       clearSelection,
     });
@@ -280,6 +237,7 @@ const FileManagerContainer = memo(
       handleDragOver,
       handleDrop,
     } = useDragDrop({
+      open,
       sshConnection,
       setNotification,
       handleDroppedItems,
@@ -492,75 +450,7 @@ const FileManagerContainer = memo(
           closeMenus={closeMenus}
         />
 
-        {
-          <RenameDialog
-            showRenameDialog={showRenameDialog}
-            handleCloseRenameDialog={handleCloseRenameDialog}
-            handleRenameSubmit={handleRenameSubmit}
-            newName={newName}
-            setNewName={setNewName}
-            renameDialogError={renameDialogError}
-            renameSubmitting={renameSubmitting}
-          />
-        }
-
-        {
-          <PermissionDialog
-            showPermissionDialog={showPermissionDialog}
-            handlePermissionDialogClose={handlePermissionDialogClose}
-            handlePermissionDialogSubmit={handlePermissionDialogSubmit}
-            permDialogPermissions={permDialogPermissions}
-            setPermDialogPermissions={setPermDialogPermissions}
-            permDialogOwner={permDialogOwner}
-            setPermDialogOwner={setPermDialogOwner}
-            permDialogGroup={permDialogGroup}
-            setPermDialogGroup={setPermDialogGroup}
-          />
-        }
-
-        {
-          <PropertiesDialog
-            showPropertiesDialog={showPropertiesDialog}
-            handleClosePropertiesDialog={handleClosePropertiesDialog}
-            propertiesLoading={propertiesLoading}
-            propertiesData={propertiesData}
-            formatAbsoluteTime={formatAbsoluteTime}
-          />
-        }
-
-        {
-          <CreateFolderDialog
-            showCreateFolderDialog={showCreateFolderDialog}
-            handleCloseCreateFolderDialog={handleCloseCreateFolderDialog}
-            handleCreateFolderSubmit={handleCreateFolderSubmit}
-            newFolderName={newFolderName}
-            setNewFolderName={setNewFolderName}
-            createFolderDialogError={createFolderDialogError}
-            createFolderSubmitting={createFolderSubmitting}
-          />
-        }
-
-        {
-          <CreateFileDialog
-            showCreateFileDialog={showCreateFileDialog}
-            handleCloseCreateFileDialog={handleCloseCreateFileDialog}
-            handleCreateFileSubmit={handleCreateFileSubmit}
-            newFileName={newFileName}
-            setNewFileName={setNewFileName}
-            createFileDialogError={createFileDialogError}
-            createFileSubmitting={createFileSubmitting}
-          />
-        }
-
-        {
-          <PreviewDialog
-            showPreview={showPreview}
-            handleClosePreview={handleClosePreview}
-            filePreview={filePreview}
-            currentPath={currentPath}
-            tabId={tabId}
-          />
-        }
+        <FileManagerDialogs {...dialogs} />
 
         {/* TransferProgressFloat已移至全局底部栏,不再在侧边栏内显示 */}
 

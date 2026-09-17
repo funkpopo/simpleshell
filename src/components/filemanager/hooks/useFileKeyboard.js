@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 /** Routes keyboard actions to the focused file manager commands. */
 export default function useFileKeyboard({
+  rootRef,
   selectAll,
   clearSelection,
   open,
@@ -21,8 +22,6 @@ export default function useFileKeyboard({
   handleCreateFolder,
   handleUploadFile,
   handleUploadFolder,
-  handleDownloadFolder,
-  handleDownload,
 }) {
   const { t } = useTranslation();
   const handleKeyDown = useCallback(
@@ -31,6 +30,8 @@ export default function useFileKeyboard({
       if (!open || showPreview) return;
 
       const targetElement = event.target || document.activeElement;
+      if (event.defaultPrevented || !rootRef.current?.contains(targetElement))
+        return;
       if (
         targetElement &&
         typeof targetElement.closest === "function" &&
@@ -41,8 +42,9 @@ export default function useFileKeyboard({
 
       // 防止在输入框中触发快捷键
       if (
-        event.target.tagName === "INPUT" ||
-        event.target.tagName === "TEXTAREA"
+        targetElement.closest(
+          'input, textarea, select, [contenteditable="true"]',
+        )
       ) {
         return;
       }
@@ -172,13 +174,12 @@ export default function useFileKeyboard({
     },
     [
       selectAll,
+      rootRef,
       clearSelection,
       open,
       showPreview,
       getSelectedFiles,
       handleDownloadSelection,
-      handleDownloadFolder,
-      handleDownload,
       handleDelete,
       handleRename,
       handleOpenPermissions,
@@ -191,6 +192,7 @@ export default function useFileKeyboard({
       handleUploadFile,
       handleUploadFolder,
       showNotification,
+      t,
     ],
   );
 

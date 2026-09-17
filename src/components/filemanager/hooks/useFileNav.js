@@ -1321,6 +1321,37 @@ export default function useFileNav({
 
   loadDirectoryRef.current = loadDirectory;
 
+  // Operations can invalidate their target, but cannot navigate or supersede a
+  // directory request started by the user. Old session commands become inert.
+  const refreshSession = useMemo(
+    () => ({ active: false }),
+    [tabId, sshConnection],
+  );
+  useEffect(() => {
+    refreshSession.active = true;
+    return () => {
+      refreshSession.active = false;
+    };
+  }, [refreshSession]);
+  const refreshDirectory = useCallback(
+    async (path, { background = false } = {}) => {
+      if (!refreshSession.active) return;
+      directoryCacheRef.current.delete(path);
+      if (
+        !openRef.current ||
+        path !== currentPathRef.current ||
+        foregroundLoadCountRef.current > 0
+      )
+        return;
+      if (background) {
+        silentRefreshCurrentDirectory();
+        return;
+      }
+      await loadDirectoryRef.current(path, 0, true, true);
+    },
+    [refreshSession, silentRefreshCurrentDirectory],
+  );
+
   useFollowTerminalDirectory({
     enabled: followTerminalDirectory,
     sessionKey: tabId,
@@ -1532,6 +1563,7 @@ export default function useFileNav({
     isChunking,
     listToken,
     loadDirectory,
+    refreshDirectory,
     handleHistoryBack,
     handleGoToNextPath,
     handleEnterDirectory,

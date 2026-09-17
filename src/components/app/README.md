@@ -7,7 +7,9 @@ menus. Focused hooks own their state, subscriptions and cleanup:
 - `useReconnect`: per-session connection/reconnect status, live-session filtering,
   pause/resume commands and the visible menu's countdown timer.
 - `useCredentialSecurity`: credential store status, master password submission and
-  locking. An older status read cannot overwrite a newer security event.
+  locking. Status reads and lock/unlock commands share a revision boundary, so an
+  older IPC response cannot overwrite a newer command or security event. Unlock
+  submission state also has request identity and is invalidated on unmount.
 - `useSSHAuthentication`: authentication request identity, challenge dialogs and
   IPC responses. The current challenge is consumed before sending its response,
   preserving a subsequent challenge received while IPC is pending.

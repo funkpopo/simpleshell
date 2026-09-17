@@ -20,6 +20,7 @@ export default function PermissionDialog({
   setPermDialogOwner,
   permDialogGroup,
   setPermDialogGroup,
+  permissionSubmitting = false,
 }) {
   const { t } = useTranslation();
   if (!showPermissionDialog) return null;
@@ -78,6 +79,7 @@ export default function PermissionDialog({
         >
           <Button
             onClick={handlePermissionDialogClose}
+            disabled={permissionSubmitting}
             color="inherit"
             size="small"
           >
@@ -85,6 +87,7 @@ export default function PermissionDialog({
           </Button>
           <Button
             type="submit"
+            disabled={permissionSubmitting}
             variant="contained"
             color="primary"
             size="small"

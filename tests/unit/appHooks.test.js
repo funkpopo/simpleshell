@@ -185,3 +185,61 @@ it("ignores closed sessions and releases reconnect listeners and countdown timer
   );
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("keeps a newer lock event when an earlier unlock command completes", async () => {
+  const unlock = deferred();
+  window.terminalAPI.unlockCredentialStore = () => unlock.promise;
+  const hook = await mount(useCredentialSecurity);
+  let request;
+  await act(() => {
+    request = hook.current.handleUnlockCredentialStore("password");
+  });
+  await act(() =>
+    window.dispatchEvent(
+      new CustomEvent("credentialSecurityChanged", {
+        detail: {
+          status: {
+            masterPasswordEnabled: true,
+            unlocked: false,
+            requiresUnlock: true,
+          },
+        },
+      }),
+    ),
+  );
+  await act(async () => {
+    unlock.resolve({
+      success: true,
+      status: {
+        masterPasswordEnabled: true,
+        unlocked: true,
+        requiresUnlock: false,
+      },
+    });
+    await request;
+  });
+  expect(hook.current.credentialSecurityStatus.requiresUnlock).toBe(true);
+  expect(hook.current.unlockingCredentialStore).toBe(false);
+});
+
+it("invalidates an older status read as soon as a lock command starts", async () => {
+  const status = deferred();
+  const lock = deferred();
+  window.terminalAPI.getCredentialSecurityStatus = () => status.promise;
+  window.terminalAPI.lockCredentialStore = () => lock.promise;
+  const hook = await mount(useCredentialSecurity);
+  let request;
+  await act(() => {
+    request = hook.current.handleLockApp();
+  });
+  await act(async () => {
+    lock.resolve({ success: true });
+    await request;
+    status.resolve({
+      success: true,
+      status: { unlocked: true, requiresUnlock: false },
+    });
+    await status.promise;
+  });
+  expect(hook.current.credentialSecurityStatus.requiresUnlock).toBe(true);
+});

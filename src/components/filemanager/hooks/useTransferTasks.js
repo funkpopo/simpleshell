@@ -23,8 +23,7 @@ export default function useTransferTasks({
   sshConnection,
   currentPath,
   selectedFile,
-  loadDirectory,
-  refreshAfterUserActivity,
+  refreshDirectory,
   showConfirmDialog,
   setNotification,
   getSelectedFiles,
@@ -247,8 +246,16 @@ export default function useTransferTasks({
     // 保存当前路径状态
     const savedCurrentPath = currentPath;
     const savedSelectedFile = selectedFile;
+    const targetPath = savedSelectedFile?.isDirectory
+      ? joinPath(savedCurrentPath, savedSelectedFile.name)
+      : savedCurrentPath;
+    const refreshUploadDirectories = async (options) => {
+      await refreshDirectory(targetPath, options);
+      if (targetPath !== savedCurrentPath)
+        await refreshDirectory(savedCurrentPath, options);
+    };
     const transferType = isFolder ? "upload-folder" : "upload-multifile";
-    let didForegroundRefresh = false;
+    let didRefresh = false;
     let activeUploadTransferId = null;
     const markUploadCancelled = () => {
       transferCancelled = true;
@@ -258,11 +265,6 @@ export default function useTransferTasks({
       });
     };
     try {
-      // 使用保存的状态而非实时状态
-      const targetPath =
-        savedSelectedFile && savedSelectedFile.isDirectory
-          ? joinPath(savedCurrentPath, savedSelectedFile.name)
-          : savedCurrentPath;
       if (api) {
         // 触发应用内状态提示（与拖拽上传保持一致）
         showNotification(
@@ -361,10 +363,9 @@ export default function useTransferTasks({
                 }),
           });
 
-          // 如果是上传到选中的文件夹，刷新当前目录即可
-          // 不需要切换到目标文件夹
-          await loadDirectory(savedCurrentPath, 0, true); // 强制刷新当前目录
-          didForegroundRefresh = true;
+          // Invalidate the upload target and its visible parent without navigating.
+          await refreshUploadDirectories();
+          didRefresh = true;
 
           // 如果有警告信息（部分文件上传失败），显示给用户
           if (result.partialSuccess && result.warning) {
@@ -398,8 +399,8 @@ export default function useTransferTasks({
         }
 
         // 上传没有前台刷新结果时，提交一次静默刷新同步列表
-        if (!didForegroundRefresh) {
-          refreshAfterUserActivity();
+        if (!didRefresh) {
+          await refreshUploadDirectories({ background: true });
         }
       }
     } catch (error) {
@@ -433,8 +434,8 @@ export default function useTransferTasks({
       }
 
       // 异常分支如果尚未前台刷新，提交静默刷新同步列表
-      if (!didForegroundRefresh) {
-        refreshAfterUserActivity();
+      if (!didRefresh) {
+        await refreshUploadDirectories({ background: true });
       }
     }
   };
@@ -497,16 +498,14 @@ export default function useTransferTasks({
   const handleDroppedItems = useCallback(
     async (entries) => {
       let transferCancelled = false;
-      let targetPath = currentPath;
-      if (selectedFile && selectedFile.isDirectory) {
-        if (currentPath === "/") {
-          targetPath = "/" + selectedFile.name;
-        } else if (currentPath === "~") {
-          targetPath = "~/" + selectedFile.name;
-        } else {
-          targetPath = currentPath + "/" + selectedFile.name;
-        }
-      }
+      const targetPath = selectedFile?.isDirectory
+        ? joinPath(currentPath, selectedFile.name)
+        : currentPath;
+      const refreshUploadDirectories = async (options) => {
+        await refreshDirectory(targetPath, options);
+        if (targetPath !== currentPath)
+          await refreshDirectory(currentPath, options);
+      };
       if (
         !window.terminalAPI?.uploadDroppedFiles ||
         !window.terminalAPI?.validateDroppedItems ||
@@ -534,7 +533,7 @@ export default function useTransferTasks({
         transferKey: "",
         fileList: null,
       });
-      let didForegroundRefresh = false;
+      let didRefresh = false;
       const droppedItems = [];
       const readEntry = async (entry, pathPrefix = "", localPath = "") => {
         if (!entry) return;
@@ -803,8 +802,8 @@ export default function useTransferTasks({
             currentFileIndex: Math.max(0, result.totalFiles || 0),
             totalFiles: Math.max(0, result.totalFiles || 0),
           });
-          await loadDirectory(targetPath, 0, true);
-          didForegroundRefresh = true;
+          await refreshUploadDirectories();
+          didRefresh = true;
           if (result.partialSuccess && result.warning) {
             setNotification({
               message: result.warning,
@@ -815,9 +814,6 @@ export default function useTransferTasks({
               message: t("fileManager.messages.uploadSuccess"),
               severity: "success",
             });
-          }
-          if (!didForegroundRefresh) {
-            refreshAfterUserActivity();
           }
         } else {
           throw new Error(
@@ -845,8 +841,8 @@ export default function useTransferTasks({
           });
         }
         storeScheduleTransferCleanup(transferId, isCancellation ? 3000 : 5000);
-        if (!didForegroundRefresh) {
-          refreshAfterUserActivity();
+        if (!didRefresh) {
+          await refreshUploadDirectories({ background: true });
         }
       }
     },
@@ -858,9 +854,8 @@ export default function useTransferTasks({
       addTransferProgress,
       updateTransferProgress,
       isUserCancellationError,
-      refreshAfterUserActivity,
       setNotification,
-      loadDirectory,
+      refreshDirectory,
       storeScheduleTransferCleanup,
       markTransferCancelled,
       markTransferFailed,

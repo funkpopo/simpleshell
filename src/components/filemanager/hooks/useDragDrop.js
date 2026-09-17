@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getLocalPathBaseName,
@@ -6,6 +6,7 @@ import {
 } from "../fileManagerUtils.js";
 /** Matches native drop entries to local paths before handing them to transfer tasks. */
 export default function useDragDrop({
+  open = true,
   sshConnection,
   setNotification,
   handleDroppedItems,
@@ -14,6 +15,12 @@ export default function useDragDrop({
   const [isDragging, setIsDragging] = useState(false);
 
   const dragCounterRef = useRef(0);
+  useEffect(() => {
+    if (!open) {
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+    }
+  }, [open]);
 
   const handleDragEnter = useCallback((e) => {
     e.preventDefault();
@@ -22,8 +29,12 @@ export default function useDragDrop({
     // 增加计数器
     dragCounterRef.current += 1;
 
-    // 检查是否包含文件
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+    // Only native file gestures should show an upload overlay.
+    if (
+      Array.from(e.dataTransfer?.items || []).some(
+        (item) => item.kind === "file",
+      )
+    ) {
       setIsDragging(true);
     }
   }, []);
