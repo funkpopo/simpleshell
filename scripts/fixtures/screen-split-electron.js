@@ -212,6 +212,9 @@ ipcMain.handle("fixture-start", async (_event, config) => {
     await new Promise((resolve) => setTimeout(resolve, 300));
   return connect(config.tabId);
 });
+ipcMain.handle("fixture-mouse", (_event, event) => {
+  win.webContents.sendInputEvent(event);
+});
 ipcMain.handle("fixture-capture", async (_event, name) => {
   if (!/^[a-z0-9-]+$/.test(name)) throw new Error("Invalid capture name");
   // A hidden window paints on capture; wait for that frame before saving it.

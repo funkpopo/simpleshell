@@ -24,6 +24,9 @@ export function useTerminalContextMenu({
   const handleContextMenu = useCallback(
     (event) => {
       event.preventDefault();
+      // Our menu reads xterm's selection directly; bypass xterm's native-menu
+      // textarea relocation and selection changes before opening it.
+      event.stopPropagation();
 
       setShowSuggestions(false);
       setSuggestions([]);

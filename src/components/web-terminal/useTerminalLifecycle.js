@@ -52,6 +52,7 @@ import { setupSimulatedTerminal } from "./simulatedTerminal.js";
 import { attachWorkingDirectoryTracking } from "../../modules/terminal/workingDirectoryTracking.js";
 import { setTerminalWorkingDirectory } from "../../modules/terminal/workingDirectoryStore.js";
 import { attachMoshTransportStatus } from "../../modules/terminal/moshTransportStatus.js";
+import { attachTerminalSelection } from "../../modules/terminal/controller/terminalSelection.js";
 
 /**
  * Terminal create / cache reuse / mailbox / connection / DOM listeners / cleanup.
@@ -1510,10 +1511,14 @@ export function useTerminalLifecycle({
       }
 
       if (terminalRef.current) {
+        lifecycleManager.addCleanup(
+          attachTerminalSelection(term, terminalRef.current),
+        );
         lifecycleManager.addEventListener(
           terminalRef.current,
           "contextmenu",
           (event) => handleContextMenuRef.current(event),
+          { capture: true },
         );
       }
 

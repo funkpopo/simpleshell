@@ -1,4 +1,5 @@
 import { runSessionPanelChecks } from "./session-panels-renderer.jsx";
+import { runTerminalSelectionChecks } from "./terminal-selection-renderer.js";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
@@ -241,6 +242,7 @@ async function run() {
       ),
     "WebTerminal did not track real SSH directory reports per session",
   );
+  await runTerminalSelectionChecks(terminalCache.A);
   apply(actions.adoptTab("A", "B", "right"));
   await delay(100);
   const initialWidth = bounds("A").width;
