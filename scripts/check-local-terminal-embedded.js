@@ -288,8 +288,13 @@ function assertRendererLocalTabSupport() {
   );
   assert.match(
     appSource,
-    /localConfig=\{session\.type === "local" \? session\.config : null\}/,
+    /localConfig=\{session\.type === "local" \? config : null\}/,
     "local configuration must belong to the rendered session",
+  );
+  assert.match(
+    appSource,
+    /config:\s*instances\[`\$\{session\.sessionKey\}-config`\]/,
+    "the terminal selector must read configuration by session key",
   );
   assert.match(
     appSource,

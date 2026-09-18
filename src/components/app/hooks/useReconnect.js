@@ -14,12 +14,17 @@ import {
   shouldMarkPendingOnTabConnectionStatus,
 } from "../../../modules/terminal/reconnectTabStatus.js";
 
-export default function useReconnect({ tabs, splitLayouts, tabContextMenu }) {
+import { useReconnectStore } from "../../../store/AppContext.jsx";
+
+// Own IPC listeners and commands without subscribing AppShell to status maps.
+export default function useReconnect({ tabs, splitLayouts }) {
   const { showError, showInfo } = useNotification();
   const { t } = useTranslation();
-  const [connectionStatusByTabId, setConnectionStatusByTabId] = React.useState(
-    {},
-  );
+  const {
+    setConnectionStatusByTabId,
+    setReconnectStateByTabId,
+    setReconnectActionTabId,
+  } = useReconnectStore();
 
   const liveSessionKeys = useMemo(
     () => getLiveSessionKeys(tabs, splitLayouts),
@@ -29,12 +34,6 @@ export default function useReconnect({ tabs, splitLayouts, tabContextMenu }) {
   const liveSessionKeysRef = useRef(new Set());
 
   liveSessionKeysRef.current = new Set(liveSessionKeys);
-
-  const [reconnectStateByTabId, setReconnectStateByTabId] = React.useState({});
-
-  const [reconnectActionTabId, setReconnectActionTabId] = React.useState(null);
-
-  const [reconnectNow, setReconnectNow] = React.useState(Date.now());
 
   const updateReconnectStatus = useCallback((tabId, updater, options = {}) => {
     if (!tabId || !liveSessionKeysRef.current.has(tabId)) {
@@ -451,28 +450,6 @@ export default function useReconnect({ tabs, splitLayouts, tabContextMenu }) {
     },
     [showError, showInfo, t, updateReconnectStatus],
   );
-  const countdownStatus = reconnectStateByTabId[tabContextMenu.tabId];
-  React.useEffect(() => {
-    if (
-      tabContextMenu.mouseY === null ||
-      (!countdownStatus?.nextRetryAt && !countdownStatus?.windowExpiresAt) ||
-      !["pending", "reconnecting"].includes(countdownStatus.state)
-    ) {
-      return undefined;
-    }
-    setReconnectNow(Date.now());
-    const timerId = setInterval(() => {
-      setReconnectNow(Date.now());
-    }, 1000);
-    return () => {
-      clearInterval(timerId);
-    };
-  }, [
-    countdownStatus?.nextRetryAt,
-    countdownStatus?.windowExpiresAt,
-    countdownStatus?.state,
-    tabContextMenu.mouseY,
-  ]);
   const clearReconnectAction = useCallback((tabId) => {
     setReconnectActionTabId((current) => (current === tabId ? null : current));
   }, []);
@@ -492,14 +469,10 @@ export default function useReconnect({ tabs, splitLayouts, tabContextMenu }) {
     }));
   }, []);
   return {
-    connectionStatusByTabId,
     markSessionConnecting,
     liveSessionKeys,
     liveSessionKeysRef,
-    reconnectStateByTabId,
-    reconnectActionTabId,
     clearReconnectAction,
-    reconnectNow,
     clearReconnectStatus,
     loadTabConnectionStatus,
     loadReconnectStatus,

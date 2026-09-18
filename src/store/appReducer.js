@@ -41,6 +41,9 @@ const ActionTypes = {
   SET_DRAGGED_TAB: "SET_DRAGGED_TAB",
   SET_DRAG_OVER_TAB: "SET_DRAG_OVER_TAB",
   SET_DRAG_INSERT_POSITION: "SET_DRAG_INSERT_POSITION",
+  SET_PANE_DROP_ZONE: "SET_PANE_DROP_ZONE",
+  SET_PANE_DRAG_ID: "SET_PANE_DRAG_ID",
+  SET_PANE_DRAG_OVER_ID: "SET_PANE_DRAG_OVER_ID",
   RESET_DRAG_STATE: "RESET_DRAG_STATE",
   PUSH_TAB_ORDER_SNAPSHOT: "PUSH_TAB_ORDER_SNAPSHOT",
   UNDO_LAST_TAB_CHANGE: "UNDO_LAST_TAB_CHANGE",
@@ -105,6 +108,9 @@ export const initialState = {
   draggedTabIndex: null,
   dragOverTabIndex: null,
   dragInsertPosition: null,
+  paneDropZone: null,
+  paneDragId: null,
+  paneDragOverId: null,
   tabHistoryStack: [],
 
   // Sidebar State
@@ -491,12 +497,24 @@ export function appReducer(state = initialState, action) {
     case ActionTypes.SET_DRAG_INSERT_POSITION:
       return { ...state, dragInsertPosition: action.payload };
 
+    case ActionTypes.SET_PANE_DROP_ZONE:
+      return { ...state, paneDropZone: action.payload };
+
+    case ActionTypes.SET_PANE_DRAG_ID:
+      return { ...state, paneDragId: action.payload };
+
+    case ActionTypes.SET_PANE_DRAG_OVER_ID:
+      return { ...state, paneDragOverId: action.payload };
+
     case ActionTypes.RESET_DRAG_STATE:
       return {
         ...state,
         draggedTabIndex: null,
         dragOverTabIndex: null,
         dragInsertPosition: null,
+        paneDropZone: null,
+        paneDragId: null,
+        paneDragOverId: null,
       };
 
     case ActionTypes.PUSH_TAB_ORDER_SNAPSHOT: {
@@ -733,6 +751,15 @@ export const actions = {
     payload: position,
   }),
   resetDragState: () => ({ type: ActionTypes.RESET_DRAG_STATE }),
+  setPaneDragId: (id) => ({ type: ActionTypes.SET_PANE_DRAG_ID, payload: id }),
+  setPaneDragOverId: (id) => ({
+    type: ActionTypes.SET_PANE_DRAG_OVER_ID,
+    payload: id,
+  }),
+  setPaneDropZone: (zone) => ({
+    type: ActionTypes.SET_PANE_DROP_ZONE,
+    payload: zone,
+  }),
   pushTabOrderSnapshot: (snapshot) => ({
     type: ActionTypes.PUSH_TAB_ORDER_SNAPSHOT,
     payload: snapshot,

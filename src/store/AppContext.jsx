@@ -1,76 +1,82 @@
-import { createContext, useContext, useReducer, useMemo } from "react";
-import { appReducer, initialState } from "./appReducer.js";
+import { createContext, useContext, useState } from "react";
+import { initialState } from "./appReducer.js";
+import { createAppStore } from "./appStore.js";
+import { createReconnectStore } from "./reconnectStore.js";
+import { shallowEqual } from "./subscriptionStore.js";
+import useStoreSelector from "./useStoreSelector.js";
 
-// 创建 Context
-const AppStateContext = createContext(undefined);
-const AppDispatchContext = createContext(undefined);
+const AppStoreContext = createContext(undefined);
+const ReconnectStoreContext = createContext(undefined);
+const identity = (value) => value;
+const selectTheme = ({ darkMode, themeLoading }) => ({
+  darkMode,
+  themeLoading,
+});
 
-/**
- * 用 preload 注入的启动主题初始化 darkMode，避免 React 默认深色与用户浅色配置
- * 在首帧之间来回切换造成闪屏。
- */
-function createBootstrappedInitialState() {
-  const bootDarkMode = window.simpleshellBoot?.darkMode;
-  if (typeof bootDarkMode === "boolean") {
-    return {
-      ...initialState,
-      darkMode: bootDarkMode,
-    };
-  }
-  return initialState;
-}
-
-// Provider 组件
 export function AppProvider({ children }) {
-  const [state, dispatch] = useReducer(
-    appReducer,
-    undefined,
-    createBootstrappedInitialState,
-  );
-
-  // 使用 useMemo 避免不必要的重渲染
-  const stateValue = useMemo(() => state, [state]);
-  const dispatchValue = useMemo(() => dispatch, [dispatch]);
-
+  const [store] = useState(() => {
+    // Preserve the preload theme so the first frame matches the saved setting.
+    const bootDarkMode = globalThis.window?.simpleshellBoot?.darkMode;
+    return createAppStore(
+      typeof bootDarkMode === "boolean"
+        ? { ...initialState, darkMode: bootDarkMode }
+        : initialState,
+    );
+  });
+  const [reconnectStore] = useState(createReconnectStore);
   return (
-    <AppStateContext.Provider value={stateValue}>
-      <AppDispatchContext.Provider value={dispatchValue}>
+    <AppStoreContext.Provider value={store}>
+      <ReconnectStoreContext.Provider value={reconnectStore}>
         {children}
-      </AppDispatchContext.Provider>
-    </AppStateContext.Provider>
+      </ReconnectStoreContext.Provider>
+    </AppStoreContext.Provider>
   );
 }
 
-// 自定义 Hook：获取全局状态
-export function useAppState() {
-  const context = useContext(AppStateContext);
-  if (context === undefined) {
-    throw new Error("useAppState must be used within AppProvider");
-  }
-  return context;
+export function useAppStore() {
+  const store = useContext(AppStoreContext);
+  if (!store)
+    throw new Error("App store hooks must be used within AppProvider");
+  return store;
 }
 
-// 自定义 Hook：获取 dispatch 函数
 export function useAppDispatch() {
-  const context = useContext(AppDispatchContext);
-  if (context === undefined) {
-    throw new Error("useAppDispatch must be used within AppProvider");
-  }
-  return context;
+  return useAppStore().dispatch;
 }
 
-// 便捷的 Selector Hook，用于只订阅特定状态
-// （细粒度选择器由调用方以模块级 selector 函数传入）
-export function useAppSelector(selector) {
-  const state = useAppState();
-  return useMemo(() => selector(state), [state, selector]);
+// Compatibility for consumers that deliberately need the complete snapshot.
+// Prefer selectors or a domain hook for renderer subscriptions.
+export function useAppState() {
+  return useAppSelector(identity);
 }
 
-// 特定状态的 Hook
+export function useAppSelector(selector, isEqual = Object.is) {
+  return useStoreSelector(useAppStore(), selector, isEqual);
+}
+
+export function useShellState() {
+  return useStoreSelector(useAppStore().shell, identity);
+}
+
+export function useDragSelector(selector, isEqual = Object.is) {
+  return useStoreSelector(useAppStore().drag, selector, isEqual);
+}
+
+export function useTerminalSelector(selector, isEqual = Object.is) {
+  return useStoreSelector(useAppStore().terminal, selector, isEqual);
+}
+
+export function useReconnectStore() {
+  const store = useContext(ReconnectStoreContext);
+  if (!store)
+    throw new Error("Reconnect hooks must be used within AppProvider");
+  return store;
+}
+
+export function useReconnectSelector(selector, isEqual = Object.is) {
+  return useStoreSelector(useReconnectStore(), selector, isEqual);
+}
+
 export function useTheme() {
-  return useAppSelector((state) => ({
-    darkMode: state.darkMode,
-    themeLoading: state.themeLoading,
-  }));
+  return useAppSelector(selectTheme, shallowEqual);
 }
-

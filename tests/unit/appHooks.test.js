@@ -2,10 +2,14 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act } from "react";
 import { deferred, renderHook } from "../helpers/reactHarness.js";
-import { AppProvider } from "../../src/store/AppContext.jsx";
+import {
+  AppProvider,
+  useReconnectSelector,
+} from "../../src/store/AppContext.jsx";
 import useAppTheme from "../../src/components/app/hooks/useAppTheme.js";
 import useCredentialSecurity from "../../src/components/app/hooks/useCredentialSecurity.js";
 import useReconnect from "../../src/components/app/hooks/useReconnect.js";
+import useReconnectCountdown from "../../src/components/app/hooks/useReconnectCountdown.js";
 
 const { translate, notify, changeLanguage } = vi.hoisted(() => ({
   translate: (key) => key,
@@ -148,7 +152,19 @@ it("ignores closed sessions and releases reconnect listeners and countdown timer
     splitLayouts: {},
     tabContextMenu: { tabId: "ssh-a", mouseY: 12 },
   };
-  const hook = await mount(useReconnect, props);
+  const hook = await mount(
+    (props) => {
+      const controller = useReconnect(props);
+      const state = useReconnectSelector((state) => state);
+      const reconnectNow = useReconnectCountdown(
+        state.reconnectStateByTabId[props.tabContextMenu.tabId],
+        props.tabContextMenu.mouseY !== null,
+      );
+      return { ...controller, ...state, reconnectNow };
+    },
+    props,
+    AppProvider,
+  );
   await act(() =>
     listeners.onReconnectStart(null, {
       tabId: "ssh-a",

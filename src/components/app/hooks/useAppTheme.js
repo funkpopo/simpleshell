@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useCallback } from "react";
 import { createUnifiedTheme } from "../../../theme";
-import { useAppState, useAppDispatch } from "../../../store/AppContext.jsx";
+import { useTheme, useAppDispatch } from "../../../store/AppContext.jsx";
 import { actions } from "../../../store/appReducer.js";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
@@ -13,7 +13,7 @@ import {
   normalizeSidebarWidth,
 } from "../appShellUtils.js";
 export default function useAppTheme() {
-  const state = useAppState();
+  const state = useTheme();
   const dispatch = useAppDispatch();
   const { showError } = useNotification();
   const { t } = useTranslation();

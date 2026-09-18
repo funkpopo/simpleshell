@@ -3,7 +3,13 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useSftpFollowSetting } from "../../hooks/useSftpFollowSetting.js";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
-import { useAppState, useAppDispatch } from "../../store/AppContext.jsx";
+import {
+  useShellState,
+  useAppStore,
+  useAppDispatch,
+  useTerminalSelector,
+  useReconnectSelector,
+} from "../../store/AppContext.jsx";
 import { actions } from "../../store/appReducer.js";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
@@ -12,7 +18,6 @@ import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Tabs from "@mui/material/Tabs";
-import Typography from "@mui/material/Typography";
 import AppsIcon from "@mui/icons-material/Apps";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
@@ -52,16 +57,20 @@ import {
   CommandHistoryWithSuspense as CommandHistory,
   ShortcutCommandsWithSuspense as ShortcutCommands,
   LocalTerminalSidebarWithSuspense as LocalTerminalSidebar,
-  WebTerminalWithSuspense as WebTerminal,
   smartPreload,
 } from "../LazyComponents.jsx";
 import TerminalIcon from "@mui/icons-material/Terminal";
 import FirstPageIcon from "@mui/icons-material/FirstPage";
 import LastPageIcon from "@mui/icons-material/LastPage";
-import CustomTab from "../CustomTab.jsx";
-import AIChatWorkspace from "../AIChatWorkspace.jsx";
 import { sendCommandToActiveSession } from "../../modules/terminal/activeSessionActions.js";
-import TerminalWorkspace from "../terminal-pane/TerminalWorkspace.jsx";
+import {
+  SessionWorkspace,
+  SessionAIChatWorkspace,
+} from "./SessionWorkspace.jsx";
+import SessionTab from "./SessionTab.jsx";
+import ReconnectMenuSection from "./ReconnectMenuSection.jsx";
+import PaneDropOverlay from "./PaneDropOverlay.jsx";
+import { shallowEqual } from "../../store/subscriptionStore.js";
 import {
   getParentTabId,
   getFocusedSessionKey,
@@ -87,8 +96,6 @@ import ListItemText from "@mui/material/ListItemText";
 import Divider from "@mui/material/Divider";
 import AddCircleOutlinedIcon from "@mui/icons-material/AddCircleOutlined";
 import AddIcon from "@mui/icons-material/Add";
-import PauseCircleOutlinedIcon from "@mui/icons-material/PauseCircleOutlined";
-import PlayCircleOutlinedIcon from "@mui/icons-material/PlayCircleOutlined";
 import DriveFileMoveOutlinedIcon from "@mui/icons-material/DriveFileMoveOutlined";
 import { useCleanupManager } from "../../hooks/useAutoCleanup.js";
 import {
@@ -104,12 +111,6 @@ import { applySftpTransferState } from "../../store/globalTransferStore.js";
 import TransferSidebarButton from "../TransferSidebarButton.jsx";
 import { useNotification } from "../../contexts/NotificationContext.jsx";
 import {
-  buildReconnectBadgeTooltip,
-  buildReconnectStatusTitle,
-  canPauseReconnectStatus,
-  getReconnectStatusColor,
-} from "../../modules/terminal/reconnectTabStatus.js";
-import {
   disposeTerminalSession,
   getTerminalSessionDiagnostics,
   processCache as sessionProcessCache,
@@ -119,7 +120,6 @@ import useSSHAuthentication from "./hooks/useSSHAuthentication.js";
 import useReconnect from "./hooks/useReconnect.js";
 import useAppTheme from "./hooks/useAppTheme.js";
 import {
-  DISK_ALERT_TAB_COLOR,
   UPDATE_REMINDER_STORAGE_KEY,
   UPDATE_REMINDER_DELAY_MS,
   DEFAULT_SIDEBAR_WIDTH,
@@ -132,7 +132,6 @@ import {
   normalizeRecentConnections,
   buildRecentConnectionsSignature,
   normalizeSidebarWidth,
-  getReconnectFailureReasonLabel,
 } from "./appShellUtils.js";
 export default function AppShell() {
   const LATENCY_INFO_MIN_WIDTH = 150;
@@ -141,7 +140,8 @@ export default function AppShell() {
   const { showError, showInfo, showSuccess, showWarning } = useNotification();
 
   // 使用全局状态和 dispatch
-  const state = useAppState();
+  const state = useShellState();
+  const appStore = useAppStore();
   const dispatch = useAppDispatch();
 
   // 错误处理状态（保持本地，因为不需要全局共享）
@@ -287,15 +287,11 @@ export default function AppShell() {
   const aboutDialogOpen = state.aboutDialogOpen;
   const settingsDialogOpen = state.settingsDialogOpen;
   const tabContextMenu = state.tabContextMenu;
-  const terminalInstances = state.terminalInstances;
   const connections = state.connections;
   const topConnections = state.topConnections;
   const fileManagerPaths = state.fileManagerPaths;
   const aiChatStatus = state.aiChatStatus;
   const aiInputPreset = state.aiInputPreset;
-  const draggedTabIndex = state.draggedTabIndex;
-  const dragOverTabIndex = state.dragOverTabIndex;
-  const dragInsertPosition = state.dragInsertPosition;
   const splitLayouts = state.splitLayouts;
   const paneRegistry = state.panes;
   const anchorEl = state.anchorEl;
@@ -307,20 +303,29 @@ export default function AppShell() {
   // 分屏时会话键跟随聚焦窗格：侧边栏（资源监控/文件管理/AI/会话上下文）
   // 展示聚焦窗格的连接信息；无分屏时等于 tabId
   const activeSessionKey = getFocusedSessionKey(state);
-  const sessionActionStateRef = useRef(state);
-  sessionActionStateRef.current = state;
+  const sessionActionStateRef = useMemo(
+    () => ({
+      get current() {
+        return appStore.getState();
+      },
+    }),
+    [appStore],
+  );
   const connectionsRef = React.useRef(connections);
   const topConnectionsRef = React.useRef(topConnections);
-  const terminalInstancesRef = React.useRef(terminalInstances);
+  const terminalInstancesRef = useMemo(
+    () => ({
+      get current() {
+        return appStore.getState().terminalInstances;
+      },
+    }),
+    [appStore],
+  );
   const {
-    connectionStatusByTabId,
     markSessionConnecting,
     liveSessionKeys,
     liveSessionKeysRef,
-    reconnectStateByTabId,
-    reconnectActionTabId,
     clearReconnectAction,
-    reconnectNow,
     clearReconnectStatus,
     loadTabConnectionStatus,
     loadReconnectStatus,
@@ -329,22 +334,37 @@ export default function AppShell() {
   } = useReconnect({
     tabs,
     splitLayouts,
-    tabContextMenu,
   });
+  const activeTerminal = useTerminalSelector(
+    (instances) => ({
+      config: instances[`${activeSessionKey}-config`],
+      processId: instances[`${activeSessionKey}-processId`],
+    }),
+    shallowEqual,
+  );
+  const activeConnectionStatus = useReconnectSelector(
+    (status) => status.connectionStatusByTabId[activeSessionKey],
+  );
   const activeSession = useMemo(
     () =>
       getSessionDescriptor(
-        state,
+        {
+          ...state,
+          terminalInstances: {
+            [`${activeSessionKey}-config`]: activeTerminal.config,
+            [`${activeSessionKey}-processId`]: activeTerminal.processId,
+          },
+        },
         activeSessionKey,
-        connectionStatusByTabId,
+        { [activeSessionKey]: activeConnectionStatus },
         sessionProcessCache,
       ),
     [
       tabs,
       paneRegistry,
-      terminalInstances,
       activeSessionKey,
-      connectionStatusByTabId,
+      activeTerminal,
+      activeConnectionStatus,
     ],
   );
   const canMonitorCurrentSession =
@@ -353,13 +373,6 @@ export default function AppShell() {
     (activeSession.type === "ssh" && Boolean(activeSession.processId));
   const resourceMonitorOpen =
     resourceMonitorRequested && canMonitorCurrentSession;
-  const terminalSessions = useMemo(
-    () =>
-      liveSessionKeys
-        .map((id) => getSessionDescriptor(state, id))
-        .filter((session) => session && terminalInstances[session.sessionKey]),
-    [liveSessionKeys, tabs, paneRegistry, terminalInstances],
-  );
   const fileManagerOpen = isSessionFileManagerOpen(state, activeSession);
   const {
     sshAuthDialogOpen,
@@ -380,9 +393,6 @@ export default function AppShell() {
   React.useEffect(() => {
     topConnectionsRef.current = topConnections;
   }, [topConnections]);
-  React.useEffect(() => {
-    terminalInstancesRef.current = terminalInstances;
-  }, [terminalInstances]);
   React.useEffect(() => {
     if (!uiSettingsLoaded || !connectionsLoaded) {
       return;
@@ -615,24 +625,6 @@ export default function AppShell() {
     tabContextMenu.tabIndex < tabs.length
       ? tabs[tabContextMenu.tabIndex]
       : null;
-  const contextMenuReconnectStatus = contextMenuTab
-    ? reconnectStateByTabId[contextMenuTab.id] || null
-    : null;
-  const isContextMenuSshTab = contextMenuTab?.type === "ssh";
-  const reconnectStatusTitle = buildReconnectStatusTitle(
-    t,
-    contextMenuReconnectStatus,
-    reconnectNow,
-  );
-  const reconnectStatusColor = getReconnectStatusColor(
-    contextMenuReconnectStatus?.state,
-  );
-  const reconnectFailureReasonLabel = getReconnectFailureReasonLabel(
-    t,
-    contextMenuReconnectStatus?.failureReason,
-  );
-  const isReconnectActionPending =
-    Boolean(contextMenuTab?.id) && reconnectActionTabId === contextMenuTab.id;
   React.useEffect(() => {
     sidebarWidthRef.current = sidebarWidth;
   }, [sidebarWidth]);
@@ -972,6 +964,7 @@ export default function AppShell() {
   const previousSyncedConnectionsRef = React.useRef(connections);
   React.useEffect(() => {
     if (previousSyncedConnectionsRef.current === connections) return;
+    const terminalInstances = appStore.getState().terminalInstances;
     const syncedInstances = syncTerminalInstanceConfigs(
       terminalInstances,
       tabs,
@@ -982,7 +975,7 @@ export default function AppShell() {
     if (syncedInstances !== terminalInstances) {
       dispatch(actions.setTerminalInstances(syncedInstances));
     }
-  }, [connections, dispatch, tabs, terminalInstances]);
+  }, [connections, dispatch, tabs, appStore]);
 
   // 应用启动时注册事件监听
   React.useEffect(() => {
@@ -1492,7 +1485,6 @@ export default function AppShell() {
     notifyTerminalResize,
     paneRegistry,
     tabContextMenu.tabId,
-    terminalInstances,
   ]);
   // 创建远程连接（SSH或Telnet）
   const handleCreateSSHConnection = useCallback(
@@ -1528,7 +1520,7 @@ export default function AppShell() {
       // 为新标签页创建终端实例缓存，并包含连接配置
       dispatch(
         actions.setTerminalInstances({
-          ...terminalInstances,
+          ...appStore.getState().terminalInstances,
           [terminalId]: true,
           [`${terminalId}-config`]: connectionConfigWithTabId,
           // 将完整的连接配置存储在缓存中
@@ -1544,7 +1536,7 @@ export default function AppShell() {
         markSessionConnecting(terminalId, connection);
       }
     },
-    [tabs, terminalInstances, dispatch],
+    [tabs, appStore, dispatch],
   );
 
   // 处理从连接管理器或欢迎页打开连接
@@ -1714,9 +1706,18 @@ export default function AppShell() {
   const paneRegistryRef = useRef(paneRegistry);
   paneRegistryRef.current = paneRegistry;
   // 拖拽投隆区（'left'|'right'|'top'|'bottom'|'center'|null）与窗格拖拽状态
-  const [paneDropZone, setPaneDropZone] = useState(null);
-  const [paneDragId, setPaneDragId] = useState(null);
-  const [paneDragOverId, setPaneDragOverId] = useState(null);
+  const setPaneDropZone = useCallback(
+    (zone) => dispatch(actions.setPaneDropZone(zone)),
+    [dispatch],
+  );
+  const setPaneDragId = useCallback(
+    (id) => dispatch(actions.setPaneDragId(id)),
+    [dispatch],
+  );
+  const setPaneDragOverId = useCallback(
+    (id) => dispatch(actions.setPaneDragOverId(id)),
+    [dispatch],
+  );
 
   // 会话清理按键执行；状态删除交给 reducer，批量关闭不会复活前一项缓存。
   const teardownPaneSession = useCallback(
@@ -1810,6 +1811,7 @@ export default function AppShell() {
   // 终端区拖拽投隆：标签页拖入边缘 / 中心 → 并入当前 tab 的分屏
   const handleTerminalAreaDragOver = useCallback(
     (e) => {
+      const { draggedTabIndex, paneDropZone } = appStore.getState();
       if (draggedTabIndex === null) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
@@ -1826,7 +1828,7 @@ export default function AppShell() {
         setPaneDropZone(zone);
       }
     },
-    [draggedTabIndex, paneDropZone],
+    [appStore, setPaneDropZone],
   );
   const handleTerminalAreaDragLeave = useCallback((e) => {
     if (!e.currentTarget.contains(e.relatedTarget)) {
@@ -1836,6 +1838,7 @@ export default function AppShell() {
   const handleTerminalAreaDrop = useCallback(
     (e) => {
       e.preventDefault();
+      const { draggedTabIndex, paneDropZone } = appStore.getState();
       const zone = paneDropZone || "center";
       setPaneDropZone(null);
       if (draggedTabIndex === null) return;
@@ -1846,7 +1849,7 @@ export default function AppShell() {
       if (sourceTab.id === "welcome" || targetTab.id === "welcome") return;
       adoptTabAsPane(targetTab.id, sourceTab, zone);
     },
-    [adoptTabAsPane, currentTab, draggedTabIndex, paneDropZone],
+    [adoptTabAsPane, currentTab, appStore, setPaneDropZone],
   );
 
   // 窗格头部拖拽（交换位置）
@@ -1863,6 +1866,7 @@ export default function AppShell() {
   }, []);
   const handlePaneDragOver = useCallback(
     (e, paneId) => {
+      const { paneDragId, paneDragOverId } = appStore.getState();
       if (paneDragId === null || paneDragId === paneId) return;
       e.preventDefault();
       e.stopPropagation();
@@ -1871,10 +1875,11 @@ export default function AppShell() {
         setPaneDragOverId(paneId);
       }
     },
-    [paneDragId, paneDragOverId],
+    [appStore, setPaneDragOverId],
   );
   const handlePaneDrop = useCallback(
     (e, targetPaneId) => {
+      const { paneDragId } = appStore.getState();
       if (paneDragId === null || paneDragId === targetPaneId) return;
       e.preventDefault();
       e.stopPropagation();
@@ -1885,7 +1890,7 @@ export default function AppShell() {
       dispatch(actions.swapPanes(tabId, sourceSessionKey, targetPaneId));
       notifyTerminalResize();
     },
-    [dispatch, paneDragId],
+    [dispatch, appStore, setPaneDragId, setPaneDragOverId],
   );
   const handlePaneDragEnd = useCallback(() => {
     setPaneDragId(null);
@@ -1947,44 +1952,6 @@ export default function AppShell() {
     return () => remove();
   }, [eventManager]);
 
-  // 终端组件在全局会话层中保持固定身份，仅更新可见性和渲染预算。
-  const renderPaneTerminal = useCallback(
-    (session, { isActive, allowWebgl }) => (
-      <WebTerminal
-        tabId={session.sessionKey}
-        sessionKey={session.sessionKey}
-        refreshKey={terminalInstances[`${session.sessionKey}-refresh`]}
-        reconnectStatus={reconnectStateByTabId[session.sessionKey] || null}
-        sshConfig={session.type === "local" ? null : session.config}
-        terminalType={session.type}
-        localConfig={session.type === "local" ? session.config : null}
-        isActive={isActive}
-        allowWebgl={allowWebgl}
-      />
-    ),
-    [terminalInstances, reconnectStateByTabId],
-  );
-
-  // 窗格标题：连接名 / host / 拖入时的原标签名 / 序号兑底
-  const buildPaneLabel = useCallback(
-    (tab, paneId) => {
-      if (paneId === tab.id) return tab.label;
-      const registry = paneRegistry[paneId];
-      if (registry?.label) return registry.label;
-      const config = terminalInstances[`${paneId}-config`];
-      if (config?.name) return config.name;
-      if (config?.host) {
-        return `${config.username ? `${config.username}@` : ""}${config.host}`;
-      }
-      const layout = splitLayouts[tab.id];
-      const paneIndex = layout ? layout.panes.indexOf(paneId) : -1;
-      return t("terminal.pane.default", {
-        n: Math.max(1, paneIndex + 1),
-      });
-    },
-    [paneRegistry, splitLayouts, t, terminalInstances],
-  );
-
   // 优化的拖动开始处理函数 - 使用useCallback减少重建
   const handleDragStart = useCallback(
     (e, index) => {
@@ -2007,6 +1974,7 @@ export default function AppShell() {
       // 不允许放置到欢迎页
       if (index === 0) return;
       // 忽略无效拖拽或拖拽到自身
+      const { draggedTabIndex, dragOverTabIndex } = appStore.getState();
       if (draggedTabIndex === null || draggedTabIndex === index) {
         // 清除悬停状态
         if (dragOverTabIndex !== null) {
@@ -2034,6 +2002,9 @@ export default function AppShell() {
           const pending = pendingDragStateRef.current;
           dragRafRef.current = null;
           if (!pending) return;
+          const { dragOverTabIndex, dragInsertPosition, draggedTabIndex } =
+            appStore.getState();
+          if (draggedTabIndex === null) return;
           if (
             pending.index !== dragOverTabIndex ||
             pending.position !== dragInsertPosition
@@ -2044,7 +2015,7 @@ export default function AppShell() {
         });
       }
     },
-    [draggedTabIndex, dragOverTabIndex, dragInsertPosition, dispatch],
+    [appStore, dispatch],
   );
 
   // 处理拖动离开
@@ -2065,9 +2036,7 @@ export default function AppShell() {
       dragRafRef.current = null;
     }
     pendingDragStateRef.current = null;
-    dispatch(actions.setDraggedTab(null));
-    dispatch(actions.setDragOverTab(null));
-    dispatch(actions.setDragInsertPosition(null));
+    dispatch(actions.resetDragState());
   }, [dispatch]);
 
   // 终端区拖拽投隆回调需要最新的 cleanupDragState（定义在其之后，用 ref 桥接）
@@ -2146,6 +2115,7 @@ export default function AppShell() {
         cleanupDragState();
         return;
       }
+      const { draggedTabIndex, dragInsertPosition } = appStore.getState();
       let sourceIndex = draggedTabIndex;
 
       // 如果状态中没有源索引，尝试从 dataTransfer 获取
@@ -2205,14 +2175,7 @@ export default function AppShell() {
       reorderTab(sourceIndex, targetIndex, position);
       cleanupDragState();
     },
-    [
-      draggedTabIndex,
-      dragInsertPosition,
-      cleanupDragState,
-      reorderTab,
-      tabs,
-      adoptTabAsPane,
-    ],
+    [appStore, cleanupDragState, reorderTab, tabs, adoptTabAsPane],
   );
 
   // 处理拖动结束（无论是否成功放置）
@@ -2550,7 +2513,7 @@ export default function AppShell() {
       };
       dispatch(
         actions.setTerminalInstances({
-          ...terminalInstances,
+          ...appStore.getState().terminalInstances,
           [terminalId]: true,
           [`${terminalId}-config`]: completeConfig,
           [`${terminalId}-processId`]: null,
@@ -2567,7 +2530,7 @@ export default function AppShell() {
         data: newTab,
       };
     },
-    [dispatch, setFallbackSidebarAfterClose, tabs, terminalInstances],
+    [dispatch, setFallbackSidebarAfterClose, tabs, appStore],
   );
 
   // 获取右侧面板应该使用的当前标签页信息
@@ -3038,104 +3001,29 @@ export default function AppShell() {
                     },
                   }}
                 >
-                  {tabs.map((tab, index) => {
-                    const tabConfig =
-                      terminalInstances[`${tab.id}-config`] || {};
-                    const persistedLabel = [
-                      tab.label,
-                      tab.title,
-                      tabConfig.name,
-                      tabConfig.host,
-                    ]
-                      .map((candidate) =>
-                        typeof candidate === "string" ? candidate.trim() : "",
-                      )
-                      .find(Boolean);
-                    // 分屏宿主标签：加宽显示，拼接所有窗格的连接名
-                    const tabPaneLayout = splitLayouts[tab.id];
-                    const isSplitHost = Boolean(
-                      tabPaneLayout && tabPaneLayout.panes.length > 1,
-                    );
-                    const mergedPaneLabel = isSplitHost
-                      ? tabPaneLayout.panes
-                          .map((paneId) => buildPaneLabel(tab, paneId))
-                          .join(" + ")
-                      : null;
-                    const label =
-                      index === 0
-                        ? t("terminal.welcome")
-                        : mergedPaneLabel ||
-                          persistedLabel ||
-                          (tab.type === "local"
-                            ? t("common.componentNames.localTerminal")
-                            : t("common.componentNames.terminal"));
-                    const tabReconnectStatus = reconnectStateByTabId[tab.id];
-                    const tabReconnectColor = getReconnectStatusColor(
-                      tabReconnectStatus?.state,
-                    );
-                    const tabReconnectTooltip = buildReconnectBadgeTooltip(
-                      t,
-                      tabReconnectStatus,
-                    );
-                    // 磁盘空间告警：标签变黄（重连状态优先展示）
-                    const tabDiskAlert =
-                      diskAlertsByTabId[String(tab.id)] || null;
-                    const tabDiskAlertColor = tabDiskAlert
-                      ? DISK_ALERT_TAB_COLOR
-                      : null;
-                    const tabDiskAlertSummary = tabDiskAlert
-                      ? (tabDiskAlert.mounts || [])
-                          .map((m) => `${m.mount} ${m.usedPercent}%`)
-                          .join(", ")
-                      : "";
-                    return (
-                      <CustomTab
-                        key={tab.id}
-                        label={label}
-                        statusColor={
-                          tabReconnectColor || tabDiskAlertColor || null
-                        }
-                        statusTooltip={
-                          tabReconnectTooltip ||
-                          (tabDiskAlert
-                            ? t("diskAlert.tabTooltip", {
-                                summary: tabDiskAlertSummary,
-                              })
-                            : null)
-                        }
-                        onClose={
-                          tab.id !== "welcome" ? handleTabCloseRequest : null
-                        }
-                        onContextMenu={handleTabContextMenuFromTab}
-                        draggable={dndEnabled && tab.id !== "welcome"}
-                        onDragStart={handleDragStart}
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                        onDragEnd={handleDragEnd}
-                        value={index}
-                        selected={currentTab === index}
-                        index={index}
-                        tabId={tab.id}
-                        group={findGroupByTab(syncGroups, tab.id)}
-                        isDragSource={
-                          draggedTabIndex !== null && draggedTabIndex === index
-                        }
-                        dragSessionActive={draggedTabIndex !== null}
-                        mergedLabel={isSplitHost}
-                        isDraggedOver={
-                          draggedTabIndex !== null &&
-                          dragOverTabIndex === index &&
-                          draggedTabIndex !== index
-                        }
-                        dragInsertPosition={
-                          draggedTabIndex !== null && dragOverTabIndex === index
-                            ? dragInsertPosition
-                            : null
-                        }
-                      />
-                    );
-                  })}
+                  {tabs.map((tab, index) => (
+                    <SessionTab
+                      key={tab.id}
+                      tab={tab}
+                      index={index}
+                      value={index}
+                      splitLayouts={splitLayouts}
+                      paneRegistry={paneRegistry}
+                      diskAlert={diskAlertsByTabId[String(tab.id)] || null}
+                      onClose={
+                        tab.id !== "welcome" ? handleTabCloseRequest : null
+                      }
+                      onContextMenu={handleTabContextMenuFromTab}
+                      draggable={dndEnabled && tab.id !== "welcome"}
+                      onDragStart={handleDragStart}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onDragEnd={handleDragEnd}
+                      selected={currentTab === index}
+                      group={findGroupByTab(syncGroups, tab.id)}
+                    />
+                  ))}
                 </Tabs>
               </Box>
 
@@ -3217,132 +3105,15 @@ export default function AppShell() {
                 </MenuItem>
               )}
 
-            {isContextMenuSshTab && contextMenuReconnectStatus && <Divider />}
-
-            {isContextMenuSshTab && contextMenuReconnectStatus && (
-              <Box
-                sx={{
-                  px: 2,
-                  py: 1.25,
-                  maxWidth: 320,
-                  WebkitAppRegion: "no-drag",
-                }}
-              >
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: "text.secondary",
-                    display: "block",
-                    mb: 0.75,
-                  }}
-                >
-                  {t("tabMenu.reconnectStatus")}
-                </Typography>
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1,
-                    mb: 0.75,
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      bgcolor: reconnectStatusColor || "text.disabled",
-                      flexShrink: 0,
-                    }}
-                  />
-                  <Typography variant="body2">
-                    {reconnectStatusTitle}
-                  </Typography>
-                </Box>
-                {Number.isFinite(
-                  Number(contextMenuReconnectStatus?.attempts),
-                ) &&
-                  Number.isFinite(
-                    Number(contextMenuReconnectStatus?.maxAttempts),
-                  ) &&
-                  Number(contextMenuReconnectStatus?.maxAttempts) > 0 && (
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: "text.secondary",
-                        display: "block",
-                      }}
-                    >
-                      {t("tabMenu.retryAttempts", {
-                        attempts: Number(contextMenuReconnectStatus.attempts),
-                        maxAttempts: Number(
-                          contextMenuReconnectStatus.maxAttempts,
-                        ),
-                      })}
-                    </Typography>
-                  )}
-                {reconnectFailureReasonLabel && (
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: "text.secondary",
-                      display: "block",
-                    }}
-                  >
-                    {t("tabMenu.failureReasonLabel", {
-                      reason: reconnectFailureReasonLabel,
-                    })}
-                  </Typography>
-                )}
-                {contextMenuReconnectStatus?.error && (
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: "error.main",
-                      display: "block",
-                      mt: 0.75,
-                      wordBreak: "break-word",
-                    }}
-                  >
-                    {t("tabMenu.lastError", {
-                      error: contextMenuReconnectStatus.error,
-                    })}
-                  </Typography>
-                )}
-              </Box>
+            {contextMenuTab?.type === "ssh" && (
+              <ReconnectMenuSection
+                tabId={contextMenuTab.id}
+                open={tabContextMenu.mouseY !== null}
+                onPause={handlePauseReconnect}
+                onResume={handleResumeReconnect}
+              />
             )}
 
-            {isContextMenuSshTab &&
-              canPauseReconnectStatus(contextMenuReconnectStatus) && (
-                <MenuItem
-                  onClick={handlePauseReconnect}
-                  disabled={isReconnectActionPending}
-                >
-                  <PauseCircleOutlinedIcon
-                    fontSize="small"
-                    sx={{
-                      mr: 1,
-                    }}
-                  />
-                  {t("tabMenu.pauseReconnect")}
-                </MenuItem>
-              )}
-
-            {isContextMenuSshTab &&
-              contextMenuReconnectStatus?.state === "paused" && (
-                <MenuItem
-                  onClick={handleResumeReconnect}
-                  disabled={isReconnectActionPending}
-                >
-                  <PlayCircleOutlinedIcon
-                    fontSize="small"
-                    sx={{
-                      mr: 1,
-                    }}
-                  />
-                  {t("tabMenu.resumeReconnect")}
-                </MenuItem>
-              )}
             {/* 分组相关菜单项 */}
             {(() => {
               const tabId = tabContextMenu.tabId;
@@ -3477,68 +3248,7 @@ export default function AppShell() {
                 }}
               >
                 {/* 拖拽标签页到终端区时的投隆区高亮 */}
-                {draggedTabIndex !== null && paneDropZone
-                  ? [
-                      {
-                        zone: "left",
-                        sx: {
-                          left: 0,
-                          top: 0,
-                          bottom: 0,
-                          width: "25%",
-                        },
-                      },
-                      {
-                        zone: "right",
-                        sx: {
-                          right: 0,
-                          top: 0,
-                          bottom: 0,
-                          width: "25%",
-                        },
-                      },
-                      {
-                        zone: "top",
-                        sx: {
-                          left: 0,
-                          right: 0,
-                          top: 0,
-                          height: "25%",
-                        },
-                      },
-                      {
-                        zone: "bottom",
-                        sx: {
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          height: "25%",
-                        },
-                      },
-                    ].map(({ zone, sx }) => (
-                      <Box
-                        key={zone}
-                        sx={{
-                          position: "absolute",
-                          zIndex: 1300,
-                          pointerEvents: "none",
-                          border: "2px dashed",
-                          borderColor:
-                            paneDropZone === zone
-                              ? "primary.main"
-                              : "transparent",
-                          bgcolor:
-                            paneDropZone === zone
-                              ? "action.focus"
-                              : "transparent",
-                          opacity: paneDropZone === zone ? 0.4 : 0,
-                          borderRadius: 1,
-                          m: 0.5,
-                          ...sx,
-                        }}
-                      />
-                    ))
-                  : null}
+                <PaneDropOverlay />
                 {/* 欢迎页 - 使用条件渲染优化性能 */}
                 {currentTab === 0 && (
                   <Box
@@ -3561,12 +3271,10 @@ export default function AppShell() {
                   </Box>
                 )}
 
-                <TerminalWorkspace
+                <SessionWorkspace
                   tabs={tabs.slice(1)}
                   layouts={splitLayouts}
-                  sessions={terminalSessions}
                   activeTabId={currentPanelTab?.id}
-                  renderTerminal={renderPaneTerminal}
                   onFocusPane={handleFocusPane}
                   onClosePane={handleClosePane}
                   onSetRatios={handleSetRatios}
@@ -3574,7 +3282,6 @@ export default function AppShell() {
                   onPaneDragOver={handlePaneDragOver}
                   onPaneDrop={handlePaneDrop}
                   onPaneDragEnd={handlePaneDragEnd}
-                  paneDragOverId={paneDragOverId}
                 />
               </Box>
             </Box>
@@ -4169,8 +3876,7 @@ export default function AppShell() {
 
       {/* 全局AI聊天窗口 */}
       {aiChatStatus !== "closed" && (
-        <AIChatWorkspace
-          sessions={terminalSessions}
+        <SessionAIChatWorkspace
           activeSessionKey={activeSessionKey}
           windowState={aiChatStatus}
           onClose={handleCloseGlobalAiChatWindow}
