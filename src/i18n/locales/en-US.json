@@ -243,6 +243,8 @@
         "enableHelper": "Allow SimpleShell to collect local crash markers and prepare diagnostic summaries for feedback.",
         "includeDiagnostics": "Include diagnostic summary in feedback",
         "includeDiagnosticsHelper": "Includes version, platform, GPU, update status, sidecar version, recent error logs, and crash record summaries.",
+        "enableCrashCapture": "Enable local crash capture",
+        "crashCaptureHelper": "When enabled, crash markers and crash dumps are recorded locally; when disabled, no new crash records are collected. Existing records remain viewable and exportable.",
         "crashDirectory": "Crash record directory",
         "copyPackage": "Copy Diagnostic Package",
         "copyPackageFailed": "Failed to copy diagnostic package",

@@ -243,6 +243,8 @@
         "enableHelper": "允许 SimpleShell 收集本机崩溃标记，并在反馈时自动整理诊断摘要。",
         "includeDiagnostics": "反馈时附带诊断摘要",
         "includeDiagnosticsHelper": "包含版本、平台、GPU、更新状态、sidecar 版本、最近错误日志和崩溃记录摘要。",
+        "enableCrashCapture": "启用本地崩溃采集",
+        "crashCaptureHelper": "开启后，应用在本机记录崩溃标记与崩溃转储；关闭后不再采集新的崩溃记录，已有记录仍可查看与导出。",
         "crashDirectory": "崩溃记录目录",
         "copyPackage": "复制诊断包",
         "copyPackageFailed": "复制诊断包失败",

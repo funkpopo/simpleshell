@@ -19,8 +19,6 @@ import TextField from "@mui/material/TextField";
 import InputAdornment from "@mui/material/InputAdornment";
 import Switch from "@mui/material/Switch";
 import FormControlLabel from "@mui/material/FormControlLabel";
-import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
@@ -249,6 +247,8 @@ const Settings = memo(({ open, onClose }) => {
     React.useState(false);
   const [includeDiagnosticsInFeedback, setIncludeDiagnosticsInFeedback] =
     React.useState(false);
+  const [crashCaptureEnabled, setCrashCaptureEnabled] =
+    React.useState(true);
   const [crashReporterStatus, setCrashReporterStatus] = React.useState(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [masterPasswordEnabled, setMasterPasswordEnabled] =
@@ -467,6 +467,7 @@ const Settings = memo(({ open, onClose }) => {
             setIncludeDiagnosticsInFeedback(
               settings.includeDiagnosticsInFeedback === true,
             );
+            setCrashCaptureEnabled(settings.crashCaptureEnabled !== false);
             setCrashReporterStatus(response?.crashReporter || null);
           }
         }
@@ -1320,6 +1321,7 @@ const Settings = memo(({ open, onClose }) => {
           prompted: true,
           includeDiagnosticsInFeedback:
             errorReportingEnabled && includeDiagnosticsInFeedback,
+          crashCaptureEnabled,
         });
         if (response?.success === false) {
           throw new Error(response.error || t("settings.feedback.saveFailed"));
@@ -2058,344 +2060,328 @@ const Settings = memo(({ open, onClose }) => {
                   )}
                   <Grid container spacing={1.5}>
                     {/* 硬件加速 (全局 GPU 开关) */}
-                    <Grid size={{ xs: 12, md: 6 }}>
-                      <Card variant="outlined" sx={{ height: "100%" }}>
-                        <CardContent
-                          sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}
+                    <Grid size={{ xs: 12 }}>
+                      <Box sx={{ ...sectionCardSx, height: "100%" }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.75,
+                            mb: 0.75,
+                          }}
                         >
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 0.75,
-                              mb: 0.75,
-                            }}
-                          >
-                            <DisplaySettingsIcon
-                              sx={{ color: "info.main", fontSize: 20 }}
-                            />
-                            <Typography variant="subtitle2" component="div">
-                              {t("settings.hardwareAcceleration")}
-                            </Typography>
-                            {hardwareAccelerationEnabled !==
-                              (originalPerformanceSettings.hardwareAcceleration !==
-                                false) && (
-                              <Chip
-                                label={t("settings.needsRestart")}
-                                size="small"
-                                color="warning"
-                              />
-                            )}
-                          </Box>
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                checked={hardwareAccelerationEnabled}
-                                onChange={(e) =>
-                                  handlePerformanceChange(
-                                    "hardwareAcceleration",
-                                    e.target.checked,
-                                  )
-                                }
-                                color="primary"
-                              />
-                            }
-                            label={t("settings.enableHardwareAcceleration")}
+                          <DisplaySettingsIcon
+                            sx={{ color: "info.main", fontSize: 20 }}
                           />
+                          <Typography variant="subtitle2" component="div">
+                            {t("settings.hardwareAcceleration")}
+                          </Typography>
+                          {hardwareAccelerationEnabled !==
+                            (originalPerformanceSettings.hardwareAcceleration !==
+                              false) && (
+                            <Chip
+                              label={t("settings.needsRestart")}
+                              size="small"
+                              color="warning"
+                            />
+                          )}
+                        </Box>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={hardwareAccelerationEnabled}
+                              onChange={(e) =>
+                                handlePerformanceChange(
+                                  "hardwareAcceleration",
+                                  e.target.checked,
+                                )
+                              }
+                              color="primary"
+                            />
+                          }
+                          label={t("settings.enableHardwareAcceleration")}
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.5 }}
+                        >
+                          {t("settings.hardwareAccelerationDescription")}
+                        </Typography>
+
+                        {/* GPU 信息 */}
+                        <Box
+                          sx={{
+                            mt: 1,
+                            p: 1,
+                            borderRadius: 1,
+                            bgcolor: (theme) =>
+                              theme.palette.mode === "dark"
+                                ? "rgba(255,255,255,0.04)"
+                                : "rgba(0,0,0,0.03)",
+                            fontFamily: "monospace",
+                            fontSize: 12,
+                          }}
+                        >
                           <Typography
                             variant="caption"
                             color="text.secondary"
-                            sx={{ display: "block", mt: 0.5 }}
+                            sx={{ display: "block", mb: 0.25 }}
                           >
-                            {t("settings.hardwareAccelerationDescription")}
+                            {t("settings.gpuInfo")}
                           </Typography>
-
-                          {/* GPU 信息 */}
-                          <Box
-                            sx={{
-                              mt: 1,
-                              p: 1,
-                              borderRadius: 1,
-                              bgcolor: (theme) =>
-                                theme.palette.mode === "dark"
-                                  ? "rgba(255,255,255,0.04)"
-                                  : "rgba(0,0,0,0.03)",
-                              fontFamily: "monospace",
-                              fontSize: 12,
-                            }}
-                          >
+                          {gpuInfoLoading && (
                             <Typography
                               variant="caption"
                               color="text.secondary"
-                              sx={{ display: "block", mb: 0.25 }}
                             >
-                              {t("settings.gpuInfo")}
+                              {t("settings.gpuInfoLoading")}
                             </Typography>
-                            {gpuInfoLoading && (
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {t("settings.gpuInfoLoading")}
-                              </Typography>
-                            )}
-                            {!gpuInfoLoading && !gpuInfo && (
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {t("settings.gpuInfoUnavailable")}
-                              </Typography>
-                            )}
-                            {!gpuInfoLoading && gpuInfo && (
+                          )}
+                          {!gpuInfoLoading && !gpuInfo && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {t("settings.gpuInfoUnavailable")}
+                            </Typography>
+                          )}
+                          {!gpuInfoLoading && gpuInfo && (
+                            <Box>
                               <Box>
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  component="span"
+                                >
+                                  {t("settings.gpuRenderer")}:{" "}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  component="span"
+                                  sx={{ wordBreak: "break-all" }}
+                                >
+                                  {gpuInfo.displayRenderer ||
+                                    gpuInfo.activeGpu?.deviceString ||
+                                    t("settings.gpuUnknown")}
+                                </Typography>
+                              </Box>
+                              {gpuInfo.displayVendor && (
                                 <Box>
                                   <Typography
                                     variant="caption"
                                     color="text.secondary"
                                     component="span"
                                   >
-                                    {t("settings.gpuRenderer")}:{" "}
+                                    {t("settings.gpuVendor")}:{" "}
                                   </Typography>
                                   <Typography
                                     variant="caption"
                                     component="span"
-                                    sx={{ wordBreak: "break-all" }}
                                   >
-                                    {gpuInfo.displayRenderer ||
-                                      gpuInfo.activeGpu?.deviceString ||
-                                      t("settings.gpuUnknown")}
+                                    {gpuInfo.displayVendor}
                                   </Typography>
                                 </Box>
-                                {gpuInfo.displayVendor && (
+                              )}
+                              {gpuInfo.activeGpu &&
+                                (gpuInfo.activeGpu.vendorId ||
+                                  gpuInfo.activeGpu.deviceId) && (
                                   <Box>
                                     <Typography
                                       variant="caption"
                                       color="text.secondary"
                                       component="span"
                                     >
-                                      {t("settings.gpuVendor")}:{" "}
+                                      {t("settings.gpuDeviceId")}:{" "}
                                     </Typography>
                                     <Typography
                                       variant="caption"
                                       component="span"
                                     >
-                                      {gpuInfo.displayVendor}
+                                      {gpuInfo.activeGpu.vendorId || "?"}/
+                                      {gpuInfo.activeGpu.deviceId || "?"}
                                     </Typography>
                                   </Box>
                                 )}
-                                {gpuInfo.activeGpu &&
-                                  (gpuInfo.activeGpu.vendorId ||
-                                    gpuInfo.activeGpu.deviceId) && (
-                                    <Box>
-                                      <Typography
-                                        variant="caption"
-                                        color="text.secondary"
-                                        component="span"
-                                      >
-                                        {t("settings.gpuDeviceId")}:{" "}
-                                      </Typography>
-                                      <Typography
-                                        variant="caption"
-                                        component="span"
-                                      >
-                                        {gpuInfo.activeGpu.vendorId || "?"}/
-                                        {gpuInfo.activeGpu.deviceId || "?"}
-                                      </Typography>
-                                    </Box>
-                                  )}
-                                <Box sx={{ mt: 0.25 }}>
-                                  {gpuInfo.softwareRendering ? (
-                                    <Chip
-                                      size="small"
-                                      color="warning"
-                                      label={t("settings.gpuSoftwareFallback")}
-                                    />
-                                  ) : (
-                                    <Chip
-                                      size="small"
-                                      color="success"
-                                      label={t("settings.gpuHardwareActive")}
-                                    />
-                                  )}
-                                </Box>
+                              <Box sx={{ mt: 0.25 }}>
+                                {gpuInfo.softwareRendering ? (
+                                  <Chip
+                                    size="small"
+                                    color="warning"
+                                    label={t("settings.gpuSoftwareFallback")}
+                                  />
+                                ) : (
+                                  <Chip
+                                    size="small"
+                                    color="success"
+                                    label={t("settings.gpuHardwareActive")}
+                                  />
+                                )}
                               </Box>
-                            )}
-                          </Box>
-                        </CardContent>
-                      </Card>
+                            </Box>
+                          )}
+                        </Box>
+                      </Box>
                     </Grid>
 
                     {/* 图像支持 */}
-                    <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                      <Card variant="outlined" sx={{ height: "100%" }}>
-                        <CardContent
-                          sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}
+                    <Grid size={{ xs: 12 }}>
+                      <Box sx={{ ...sectionCardSx, height: "100%" }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            mb: 0.75,
+                          }}
                         >
-                          <Box
+                          <ImageIcon
                             sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              mb: 0.75,
+                              mr: 0.75,
+                              color: "primary.main",
+                              fontSize: 20,
                             }}
-                          >
-                            <ImageIcon
-                              sx={{
-                                mr: 0.75,
-                                color: "primary.main",
-                                fontSize: 20,
-                              }}
-                            />
-                            <Typography variant="subtitle2" component="div">
-                              {t("settings.imageSupport")}
-                            </Typography>
-                            {needsRestart &&
-                              imageSupported !==
-                                originalPerformanceSettings.imageSupported && (
-                                <Chip
-                                  label={t("settings.needsRestart")}
-                                  size="small"
-                                  color="warning"
-                                  sx={{ ml: 0.5 }}
-                                />
-                              )}
-                          </Box>
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                checked={imageSupported}
-                                onChange={(e) =>
-                                  handlePerformanceChange(
-                                    "imageSupported",
-                                    e.target.checked,
-                                  )
-                                }
-                                color="primary"
-                              />
-                            }
-                            label={t("settings.enableImageSupport")}
                           />
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ display: "block", mt: 0.5 }}
-                          >
-                            {t("settings.imageDescription")}
+                          <Typography variant="subtitle2" component="div">
+                            {t("settings.imageSupport")}
                           </Typography>
-                        </CardContent>
-                      </Card>
+                          {needsRestart &&
+                            imageSupported !==
+                              originalPerformanceSettings.imageSupported && (
+                              <Chip
+                                label={t("settings.needsRestart")}
+                                size="small"
+                                color="warning"
+                                sx={{ ml: 0.5 }}
+                              />
+                            )}
+                        </Box>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={imageSupported}
+                              onChange={(e) =>
+                                handlePerformanceChange(
+                                  "imageSupported",
+                                  e.target.checked,
+                                )
+                              }
+                              color="primary"
+                            />
+                          }
+                          label={t("settings.enableImageSupport")}
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.5 }}
+                        >
+                          {t("settings.imageDescription")}
+                        </Typography>
+                      </Box>
                     </Grid>
 
                     {/* 智能缓存 */}
-                    <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                      <Card variant="outlined" sx={{ height: "100%" }}>
-                        <CardContent
-                          sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}
+                    <Grid size={{ xs: 12 }}>
+                      <Box sx={{ ...sectionCardSx, height: "100%" }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            mb: 0.75,
+                          }}
                         >
-                          <Box
+                          <MemoryIcon
                             sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              mb: 0.75,
+                              mr: 0.75,
+                              color: "success.main",
+                              fontSize: 20,
                             }}
-                          >
-                            <MemoryIcon
-                              sx={{
-                                mr: 0.75,
-                                color: "success.main",
-                                fontSize: 20,
-                              }}
-                            />
-                            <Typography variant="subtitle2" component="div">
-                              {t("settings.smartCache")}
-                            </Typography>
-                            <Chip
-                              label={t("settings.realTime")}
-                              size="small"
-                              color="success"
-                              sx={{ ml: 0.5 }}
-                            />
-                          </Box>
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                checked={cacheEnabled}
-                                onChange={(e) =>
-                                  handlePerformanceChange(
-                                    "cacheEnabled",
-                                    e.target.checked,
-                                  )
-                                }
-                                color="primary"
-                              />
-                            }
-                            label={t("settings.enableCache")}
                           />
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ display: "block", mt: 0.5 }}
-                          >
-                            {t("settings.cacheDescription")}
+                          <Typography variant="subtitle2" component="div">
+                            {t("settings.smartCache")}
                           </Typography>
-                        </CardContent>
-                      </Card>
+                          <Chip
+                            label={t("settings.realTime")}
+                            size="small"
+                            color="success"
+                            sx={{ ml: 0.5 }}
+                          />
+                        </Box>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={cacheEnabled}
+                              onChange={(e) =>
+                                handlePerformanceChange(
+                                  "cacheEnabled",
+                                  e.target.checked,
+                                )
+                              }
+                              color="primary"
+                            />
+                          }
+                          label={t("settings.enableCache")}
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.5 }}
+                        >
+                          {t("settings.cacheDescription")}
+                        </Typography>
+                      </Box>
                     </Grid>
 
                     {/* 智能预取 */}
-                    <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                      <Card variant="outlined" sx={{ height: "100%" }}>
-                        <CardContent
-                          sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}
+                    <Grid size={{ xs: 12 }}>
+                      <Box sx={{ ...sectionCardSx, height: "100%" }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            mb: 0.75,
+                          }}
                         >
-                          <Box
+                          <CachedIcon
                             sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              mb: 0.75,
+                              mr: 0.75,
+                              color: "success.main",
+                              fontSize: 20,
                             }}
-                          >
-                            <CachedIcon
-                              sx={{
-                                mr: 0.75,
-                                color: "success.main",
-                                fontSize: 20,
-                              }}
-                            />
-                            <Typography variant="subtitle2" component="div">
-                              {t("settings.smartPrefetch")}
-                            </Typography>
-                            <Chip
-                              label={t("settings.realTime")}
-                              size="small"
-                              color="success"
-                              sx={{ ml: 0.5 }}
-                            />
-                          </Box>
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                checked={prefetchEnabled}
-                                onChange={(e) =>
-                                  handlePerformanceChange(
-                                    "prefetchEnabled",
-                                    e.target.checked,
-                                  )
-                                }
-                                color="primary"
-                              />
-                            }
-                            label={t("settings.enablePrefetch")}
                           />
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ display: "block", mt: 0.5 }}
-                          >
-                            {t("settings.prefetchDescription")}
+                          <Typography variant="subtitle2" component="div">
+                            {t("settings.smartPrefetch")}
                           </Typography>
-                        </CardContent>
-                      </Card>
+                          <Chip
+                            label={t("settings.realTime")}
+                            size="small"
+                            color="success"
+                            sx={{ ml: 0.5 }}
+                          />
+                        </Box>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={prefetchEnabled}
+                              onChange={(e) =>
+                                handlePerformanceChange(
+                                  "prefetchEnabled",
+                                  e.target.checked,
+                                )
+                              }
+                              color="primary"
+                            />
+                          }
+                          label={t("settings.enablePrefetch")}
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.5 }}
+                        >
+                          {t("settings.prefetchDescription")}
+                        </Typography>
+                      </Box>
                     </Grid>
                   </Grid>
                 </Box>
@@ -2403,7 +2389,7 @@ const Settings = memo(({ open, onClose }) => {
 
               {/* Tab 3: Security */}
               {activeTab === 3 && (
-                <Box sx={{ maxWidth: 520 }}>
+                <Box>
                   <Box sx={sectionCardSx}>
                     <Box sx={sectionTitleRowSx}>
                       <Typography variant="subtitle1">
@@ -2480,7 +2466,7 @@ const Settings = memo(({ open, onClose }) => {
 
               {/* Tab 4: Data & Sync */}
               {activeTab === 4 && (
-                <Box sx={{ maxWidth: 560 }}>
+                <Box>
                   <Box sx={{ ...sectionCardSx, mb: 1.5 }}>
                     <Box sx={sectionTitleRowSx}>
                       <Box
@@ -2953,7 +2939,7 @@ const Settings = memo(({ open, onClose }) => {
 
               {/* Tab 5: Feedback */}
               {activeTab === 5 && (
-                <Box sx={{ maxWidth: 600 }}>
+                <Box>
                   <Box sx={sectionCardSx}>
                     <Box sx={sectionTitleRowSx}>
                       <Box
@@ -3049,6 +3035,31 @@ const Settings = memo(({ open, onClose }) => {
                           sx={{ display: "block", mt: 0.25 }}
                         >
                           {t("settings.feedback.includeDiagnosticsHelper")}
+                        </Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={crashCaptureEnabled}
+                              onChange={(e) =>
+                                setCrashCaptureEnabled(e.target.checked)
+                              }
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.feedback.enableCrashCapture")}
+                            </Typography>
+                          }
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.25 }}
+                        >
+                          {t("settings.feedback.crashCaptureHelper")}
                         </Typography>
                       </Grid>
                     </Grid>

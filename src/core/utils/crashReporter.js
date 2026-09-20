@@ -16,6 +16,7 @@ const DEFAULT_ERROR_REPORTING_SETTINGS = Object.freeze({
   enabled: false,
   prompted: false,
   includeDiagnosticsInFeedback: false,
+  crashCaptureEnabled: true,
 });
 
 let crashReporterStarted = false;
@@ -29,6 +30,7 @@ function normalizeErrorReportingSettings(settings = {}) {
     prompted: source.prompted === true,
     includeDiagnosticsInFeedback:
       source.includeDiagnosticsInFeedback === true || source.enabled === true,
+    crashCaptureEnabled: source.crashCaptureEnabled !== false,
   };
 }
 
@@ -72,6 +74,8 @@ function saveErrorReportingSettings(settings) {
     throw new Error("Failed to save error reporting settings");
   }
 
+  applyCrashCaptureEnabled(normalized.crashCaptureEnabled);
+
   return getErrorReportingStatus(crashReporterApp);
 }
 
@@ -94,6 +98,67 @@ function getRuntimeExtra(app) {
   };
 }
 
+function buildCrashReporterOptions(app) {
+  return {
+    productName: app.getName(),
+    uploadToServer: false,
+    ignoreSystemCrashHandler: false,
+    rateLimit: true,
+    compress: true,
+    globalExtra: {
+      ...getRuntimeExtra(app),
+      module: "electron",
+    },
+    extra: {
+      processType: "main",
+      module: "main",
+    },
+  };
+}
+
+function startCrashReporter(app) {
+  const target = app || crashReporterApp;
+  if (!target || crashReporterStarted) {
+    return;
+  }
+
+  try {
+    crashReporter.start(buildCrashReporterOptions(target));
+    crashReporterStarted = true;
+  } catch {
+    // Crash reporter may be unavailable in unusual startup modes.
+  }
+}
+
+function stopCrashReporter() {
+  if (!crashReporterStarted) {
+    return;
+  }
+
+  try {
+    crashReporter.stop();
+  } finally {
+    crashReporterStarted = false;
+  }
+}
+
+function applyCrashCaptureEnabled(enabled) {
+  const shouldRun = enabled !== false;
+  if (shouldRun === crashReporterStarted) {
+    return;
+  }
+
+  try {
+    if (shouldRun) {
+      startCrashReporter(crashReporterApp);
+    } else {
+      stopCrashReporter();
+    }
+  } catch {
+    // Some platforms cannot toggle the crash reporter at runtime; keep going.
+  }
+}
+
 function initializeCrashReporter(app) {
   crashReporterApp = app;
   const crashDir = ensureCrashReportDirectory(app);
@@ -105,24 +170,9 @@ function initializeCrashReporter(app) {
       // Keep going; Electron will fall back to its default crash dump path.
     }
 
-    const options = {
-      productName: app.getName(),
-      uploadToServer: false,
-      ignoreSystemCrashHandler: false,
-      rateLimit: true,
-      compress: true,
-      globalExtra: {
-        ...getRuntimeExtra(app),
-        module: "electron",
-      },
-      extra: {
-        processType: "main",
-        module: "main",
-      },
-    };
-
-    crashReporter.start(options);
-    crashReporterStarted = true;
+    if (loadErrorReportingSettings(app).crashCaptureEnabled) {
+      startCrashReporter(app);
+    }
   }
 
   return getErrorReportingStatus(app);
@@ -158,6 +208,10 @@ function normalizeSerializableError(error) {
 }
 
 function recordCrashMarker(app, details = {}) {
+  if (!loadErrorReportingSettings(app || crashReporterApp).crashCaptureEnabled) {
+    return null;
+  }
+
   try {
     const crashDir = ensureCrashReportDirectory(app || crashReporterApp);
     const now = new Date();
