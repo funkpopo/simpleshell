@@ -14,16 +14,16 @@ const nativeSftpClient = {
 // Load the real CommonJS handler with isolated boundary doubles. Avoid global
 // require/cache patches and Electron services starting during a unit test.
 const filename = fileURLToPath(
-  new URL("../../src/core/ipc/handlers/fileHandlers.js", import.meta.url),
+  new URL("../../src/main/ipc/handlers/fileHandlers.js", import.meta.url),
 );
 const requireFromHandler = createRequire(filename);
 const doubles = new Map([
-  ["../../../modules/filemanagement/filemanagementService", {}],
-  ["../../utils/nativeSftpClient", nativeSftpClient],
+  ["../../file-transfer/filemanagementService", {}],
+  ["../../native/nativeSftpClient", nativeSftpClient],
   ["../../utils/logger", { logToFile() {} }],
   ["../../process/processManager", processManager],
   ["electron", { shell: {} }],
-  ["../../../services/configService", {}],
+  ["../../settings/configService", {}],
   ["../../terminal/zmodemTransferService", { zmodemTransferService: {} }],
 ]);
 const handlerModule = { exports: {} };

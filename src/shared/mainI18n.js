@@ -16,8 +16,8 @@ function loadLocaleResources() {
     return resourcesByLanguage;
   }
 
-  const zhCN = require("../i18n/locales/zh-CN.json");
-  const enUS = require("../i18n/locales/en-US.json");
+  const zhCN = require("./locales/zh-CN.json");
+  const enUS = require("./locales/en-US.json");
 
   resourcesByLanguage = {
     "zh-CN": zhCN.translation || zhCN,

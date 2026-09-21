@@ -5,14 +5,8 @@ const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
 const ELECTRON_PATH = require.resolve("electron");
-const IPC_RESPONSE_PATH = path.join(ROOT, "src", "core", "ipc", "ipcResponse");
-const UPDATE_SERVICE_PATH = path.join(
-  ROOT,
-  "src",
-  "core",
-  "update",
-  "updateService.js",
-);
+const IPC_RESPONSE_PATH = path.join(ROOT, "src/main/ipc/ipcResponse");
+const UPDATE_SERVICE_PATH = path.join(ROOT, "src/main/update/updateService.js");
 
 function clearRequire(modulePath) {
   delete require.cache[require.resolve(modulePath)];
@@ -170,7 +164,7 @@ function testClassificationPolicy() {
 
 function testErrorResponseContract() {
   const { buildErrorEvent, buildErrorResponse } = require(
-    path.join(ROOT, "src", "core", "utils", "errorResponse"),
+    path.join(ROOT, "src/main/utils/errorResponse"),
   );
 
   const response = buildErrorResponse(new Error("connect ETIMEDOUT"), {
@@ -339,7 +333,7 @@ async function testUpdateErrorClassification(tempRoot) {
 
 function testDiagnosticSummaryIncludesClassification() {
   const { buildDiagnosticSummary } = require(
-    path.join(ROOT, "src", "core", "utils", "diagnostics"),
+    path.join(ROOT, "src/main/utils/diagnostics"),
   );
   const summary = buildDiagnosticSummary({
     generatedAt: "2026-05-27T00:00:00.000Z",

@@ -7,10 +7,10 @@ const {
 } = require("./lib/webterminal-sources.js");
 
 const { IPC_REQUEST_CHANNELS, getChannelDefinition } = require(
-  path.join(ROOT, "src/core/ipc/schema/channels.js"),
+  path.join(ROOT, "src/shared/contracts/ipc/channels.js"),
 );
 const { validateSchema } = require(
-  path.join(ROOT, "src/core/ipc/schema/validator.js"),
+  path.join(ROOT, "src/main/ipc/schema/validator.js"),
 );
 const {
   isSuggestionTrackingContext,
@@ -18,22 +18,24 @@ const {
   shouldIgnoreCommandSuggestionKeyEvent,
   shouldRequestCommandSuggestions,
   shouldResumePromptTrackingOnInput,
-} = require(path.join(ROOT, "src/modules/terminal/commandSuggestionState.js"));
+} = require(
+  path.join(ROOT, "src/renderer/modules/terminal/commandSuggestionState.js"),
+);
 const { buildCommandSuggestionCursorPosition } = require(
-  path.join(ROOT, "src/modules/terminal/commandSuggestionCursor.js"),
+  path.join(ROOT, "src/renderer/modules/terminal/commandSuggestionCursor.js"),
 );
 
 const webTerminalSource = collectWebTerminalSources();
 const commandSuggestionSource = readSource(
-  "src/components/CommandSuggestion.jsx",
+  "src/renderer/components/CommandSuggestion.jsx",
 );
 const commandSuggestionHookSource = readSource(
-  "src/hooks/useTerminalSuggestions.js",
+  "src/renderer/hooks/useTerminalSuggestions.js",
 );
 const promptTrackingSource = readSource(
-  "src/components/web-terminal/usePromptTracking.js",
+  "src/renderer/components/web-terminal/usePromptTracking.js",
 );
-const preloadSource = readSource("src/preload.js");
+const preloadSource = readSource("src/preload/index.js");
 
 function createMockTerm({ type = "normal" } = {}) {
   return {

@@ -6,8 +6,12 @@ const repoRoot = path.resolve(__dirname, "..");
 const read = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
-const store = read("src/modules/terminal/controller/terminalSessionStore.js");
-const lifecycle = read("src/components/web-terminal/useTerminalLifecycle.js");
+const store = read(
+  "src/renderer/modules/terminal/controller/terminalSessionStore.js",
+);
+const lifecycle = read(
+  "src/renderer/components/web-terminal/useTerminalLifecycle.js",
+);
 const app = require("./lib/renderer-sources.js").collectAppSources();
 
 assert.match(

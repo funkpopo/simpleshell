@@ -14,7 +14,7 @@ import {
   createPaneId,
   getTargetPaneCount,
   clampRatio,
-} from "../../src/modules/terminal/paneLayout.js";
+} from "../../src/renderer/modules/terminal/paneLayout.js";
 
 const makeState = (overrides = {}) => ({
   tabs: [

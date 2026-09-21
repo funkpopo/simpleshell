@@ -13,7 +13,9 @@ const load = createLoader({
     }
   },
 });
-const { appReducer, actions, initialState } = load("src/store/appReducer.js");
+const { appReducer, actions, initialState } = load(
+  "src/renderer/store/appReducer.js",
+);
 const {
   getParentTabId,
   getSessionDescriptor,
@@ -22,13 +24,15 @@ const {
   retainLiveSessionEntries,
   getFocusedSessionKey,
   isSessionFileManagerOpen,
-} = load("src/modules/terminal/paneLayout.js");
-const store = load("src/modules/terminal/controller/terminalSessionStore.js");
+} = load("src/renderer/modules/terminal/paneLayout.js");
+const store = load(
+  "src/renderer/modules/terminal/controller/terminalSessionStore.js",
+);
 const { dispatchCommandToGroup } = load(
-  "src/core/syncGroupCommandDispatcher.js",
+  "src/renderer/modules/terminal/syncGroupCommandDispatcher.js",
 );
 const { sendCommandToActiveSession } = load(
-  "src/modules/terminal/activeSessionActions.js",
+  "src/renderer/modules/terminal/activeSessionActions.js",
 );
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const makeState = () => {

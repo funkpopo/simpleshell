@@ -6,9 +6,9 @@ import {
   AppProvider,
   useAppStore,
   useReconnectStore,
-} from "../../src/store/AppContext.jsx";
-import { actions } from "../../src/store/appReducer.js";
-import AppShell from "../../src/components/app/AppShell.jsx";
+} from "../../src/renderer/store/AppContext.jsx";
+import { actions } from "../../src/renderer/store/appReducer.js";
+import AppShell from "../../src/renderer/components/app/AppShell.jsx";
 
 const { translate, notifications, language, welcomeRender } = vi.hoisted(
   () => ({
@@ -26,11 +26,11 @@ const { translate, notifications, language, welcomeRender } = vi.hoisted(
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: translate, i18n: language }),
 }));
-vi.mock("../../src/i18n/i18n", () => ({ changeLanguage: vi.fn() }));
-vi.mock("../../src/contexts/NotificationContext.jsx", () => ({
+vi.mock("../../src/renderer/i18n/i18n", () => ({ changeLanguage: vi.fn() }));
+vi.mock("../../src/renderer/contexts/NotificationContext.jsx", () => ({
   useNotification: () => notifications,
 }));
-vi.mock("../../src/components/LazyComponents.jsx", () => ({
+vi.mock("../../src/renderer/components/LazyComponents.jsx", () => ({
   AboutDialogWithSuspense: () => null,
   ConnectionManagerWithSuspense: () => null,
   FileManagerWithSuspense: () => null,
@@ -50,25 +50,28 @@ vi.mock("../../src/components/LazyComponents.jsx", () => ({
     cancelScheduledComponent() {},
   },
 }));
-vi.mock("../../src/components/WelcomePage.jsx", () => ({
+vi.mock("../../src/renderer/components/WelcomePage.jsx", () => ({
   default: () => {
     welcomeRender();
     return createElement("div", { "data-testid": "welcome" });
   },
 }));
-vi.mock("../../src/components/AIChatWorkspace.jsx", () => ({
+vi.mock("../../src/renderer/components/AIChatWorkspace.jsx", () => ({
   default: () => null,
 }));
-vi.mock("../../src/components/terminal-pane/TerminalWorkspace.jsx", () => ({
+vi.mock(
+  "../../src/renderer/components/terminal-pane/TerminalWorkspace.jsx",
+  () => ({
+    default: () => null,
+  }),
+);
+vi.mock("../../src/renderer/components/GlobalTransferFloat.jsx", () => ({
   default: () => null,
 }));
-vi.mock("../../src/components/GlobalTransferFloat.jsx", () => ({
+vi.mock("../../src/renderer/components/GlobalTransferBar.jsx", () => ({
   default: () => null,
 }));
-vi.mock("../../src/components/GlobalTransferBar.jsx", () => ({
-  default: () => null,
-}));
-vi.mock("../../src/components/TransferSidebar.jsx", () => ({
+vi.mock("../../src/renderer/components/TransferSidebar.jsx", () => ({
   default: () => null,
 }));
 

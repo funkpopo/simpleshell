@@ -5,11 +5,11 @@ import { deferred, renderHook } from "../helpers/reactHarness.js";
 import {
   AppProvider,
   useReconnectSelector,
-} from "../../src/store/AppContext.jsx";
-import useAppTheme from "../../src/components/app/hooks/useAppTheme.js";
-import useCredentialSecurity from "../../src/components/app/hooks/useCredentialSecurity.js";
-import useReconnect from "../../src/components/app/hooks/useReconnect.js";
-import useReconnectCountdown from "../../src/components/app/hooks/useReconnectCountdown.js";
+} from "../../src/renderer/store/AppContext.jsx";
+import useAppTheme from "../../src/renderer/components/app/hooks/useAppTheme.js";
+import useCredentialSecurity from "../../src/renderer/components/app/hooks/useCredentialSecurity.js";
+import useReconnect from "../../src/renderer/components/app/hooks/useReconnect.js";
+import useReconnectCountdown from "../../src/renderer/components/app/hooks/useReconnectCountdown.js";
 
 const { translate, notify, changeLanguage } = vi.hoisted(() => ({
   translate: (key) => key,
@@ -17,8 +17,8 @@ const { translate, notify, changeLanguage } = vi.hoisted(() => ({
   changeLanguage: vi.fn(),
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: translate }) }));
-vi.mock("../../src/i18n/i18n", () => ({ changeLanguage }));
-vi.mock("../../src/contexts/NotificationContext.jsx", () => ({
+vi.mock("../../src/renderer/i18n/i18n", () => ({ changeLanguage }));
+vi.mock("../../src/renderer/contexts/NotificationContext.jsx", () => ({
   useNotification: () => ({ showError: notify, showInfo: notify }),
 }));
 

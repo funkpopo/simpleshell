@@ -8,9 +8,9 @@ const {
   getCheckIntervalForQuality,
   getNetworkProfileOverridesForQuality,
   levelFromLatencyMs,
-} = require(path.join(ROOT, "src/core/services/networkQuality.js"));
+} = require(path.join(ROOT, "src/main/services/networkQuality.js"));
 const { resolveSshNetworkProfile } = require(
-  path.join(ROOT, "src/core/utils/ssh-network-profile.js"),
+  path.join(ROOT, "src/main/utils/ssh-network-profile.js"),
 );
 
 function testLatencyBuckets() {

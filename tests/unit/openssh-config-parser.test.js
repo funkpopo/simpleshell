@@ -5,7 +5,7 @@ import {
   parseOpenSSHConfig,
   mapHostsToConnections,
   expandPathTokens,
-} from "../../src/core/connection/openssh-config-parser";
+} from "../../src/shared/domain/openssh-config-parser";
 
 describe("hostMatchesPattern", () => {
   it("精确匹配（大小写不敏感）", () => {
@@ -67,9 +67,12 @@ describe("parseOpenSSHConfig", () => {
 
   it("支持 Key=Value 写法与注释", () => {
     const { hosts } = parseOpenSSHConfig(
-      ["# 注释行", "Host=web1", "HostName=example.com # 行内注释", "Port=2200"].join(
-        "\n",
-      ),
+      [
+        "# 注释行",
+        "Host=web1",
+        "HostName=example.com # 行内注释",
+        "Port=2200",
+      ].join("\n"),
     );
     expect(hosts[0].host).toBe("example.com");
     expect(hosts[0].port).toBe(2200);
@@ -77,7 +80,7 @@ describe("parseOpenSSHConfig", () => {
 
   it("引号包裹的参数被还原为单个值", () => {
     const { hosts } = parseOpenSSHConfig(
-      ['Host web1', 'HostName "my server.example.com"'].join("\n"),
+      ["Host web1", 'HostName "my server.example.com"'].join("\n"),
     );
     expect(hosts[0].host).toBe("my server.example.com");
   });
@@ -115,7 +118,9 @@ describe("parseOpenSSHConfig", () => {
   });
 
   it("通配模式不生成主机条目并记录 warning", () => {
-    const { hosts, warnings } = parseOpenSSHConfig("Host *.corp.local\n  User dev");
+    const { hosts, warnings } = parseOpenSSHConfig(
+      "Host *.corp.local\n  User dev",
+    );
     expect(hosts).toHaveLength(0);
     expect(warnings.length).toBeGreaterThan(0);
   });
@@ -130,9 +135,7 @@ describe("parseOpenSSHConfig", () => {
   });
 
   it("取反模式不生成条目", () => {
-    const { hosts } = parseOpenSSHConfig(
-      "Host web* !web3\n  Port 22",
-    );
+    const { hosts } = parseOpenSSHConfig("Host web* !web3\n  Port 22");
     // 通配模式与取反模式均不生成具体条目
     expect(hosts).toHaveLength(0);
   });
@@ -200,16 +203,12 @@ describe("parseOpenSSHConfig", () => {
   });
 
   it("ForwardAgent yes 映射为 agentForward", () => {
-    const { hosts } = parseOpenSSHConfig(
-      "Host web1\n  ForwardAgent yes",
-    );
+    const { hosts } = parseOpenSSHConfig("Host web1\n  ForwardAgent yes");
     expect(hosts[0].agentForward).toBe(true);
   });
 
   it("非法端口被忽略", () => {
-    const { hosts } = parseOpenSSHConfig(
-      "Host web1\n  Port abc\n  Port 70000",
-    );
+    const { hosts } = parseOpenSSHConfig("Host web1\n  Port abc\n  Port 70000");
     expect(hosts[0].port).toBeNull();
   });
 
@@ -266,9 +265,12 @@ describe("mapHostsToConnections", () => {
 
   it("按 existingNames 去重", () => {
     const { hosts } = parseOpenSSHConfig(
-      ["Host web1", "  HostName 1.2.3.4", "Host web2", "  HostName 1.2.3.5"].join(
-        "\n",
-      ),
+      [
+        "Host web1",
+        "  HostName 1.2.3.4",
+        "Host web2",
+        "  HostName 1.2.3.5",
+      ].join("\n"),
     );
     const { connections, skipped } = mapHostsToConnections(hosts, {
       generateId,

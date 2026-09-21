@@ -25,15 +25,16 @@ module.exports = {
       ? "eval-cheap-module-source-map"
       : false,
   entry: {
-    index: "./src/main.js",
-    "workers/sftp-transfer-worker": "./src/workers/sftp-transfer-worker.js",
+    index: "./src/main/index.js",
+    "workers/sftp-transfer-worker":
+      "./src/main/workers/sftp-transfer-worker.js",
   },
   resolve: {
     // Make optional native deps safe for bundling/package.
     alias: {
       // `ssh2` optionally loads this native module for cipher ordering.
       // We skip rebuilding it for Electron 40 (Node 24) on Windows, so bundle a shim.
-      "cpu-features$": path.join(__dirname, "src", "shims", "cpu-features.js"),
+      "cpu-features$": path.join(__dirname, "src/main/shims/cpu-features.js"),
     },
   },
   module: {
@@ -55,7 +56,7 @@ module.exports = {
       apply: (compiler) => {
         compiler.hooks.afterEmit.tap("CopyAssets", () => {
           // 复制资源文件夹
-          const assetsSrcDir = path.join(__dirname, "src", "assets");
+          const assetsSrcDir = path.join(__dirname, "src/renderer/assets");
           const assetsDestDir = path.join(
             __dirname,
             ".webpack",

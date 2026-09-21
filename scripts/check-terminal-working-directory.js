@@ -1,8 +1,10 @@
 const assert = require("node:assert/strict");
 const createLoader = require("./lib/load-renderer-module.js");
 const load = createLoader();
-const tracking = load("src/modules/terminal/workingDirectoryTracking.js");
-const store = load("src/modules/terminal/workingDirectoryStore.js");
+const tracking = load(
+  "src/renderer/modules/terminal/workingDirectoryTracking.js",
+);
+const store = load("src/renderer/modules/terminal/workingDirectoryStore.js");
 const { parseWorkingDirectoryOsc: osc, parseWorkingDirectoryPrompt: prompt } =
   tracking;
 const title = tracking.parseWorkingDirectoryTitle;
@@ -189,7 +191,7 @@ store.clearWorkingDirectorySession("A::p1");
 
 const {
   createOscSafeOutputTransform,
-} = require("../src/modules/terminal/oscSafeOutput");
+} = require("../src/main/terminal/oscSafeOutput");
 for (const terminator of ["\x07", "\x1b\\"]) {
   const report = `\x1b]1337;CurrentDir=/srv/@host-abcdef:中文 ERROR${terminator}`;
   const input = `before ${report} after`;
@@ -212,7 +214,7 @@ for (const terminator of ["\x07", "\x1b\\"]) {
 const transform = createOscSafeOutputTransform((text) => text);
 assert.equal(transform("trailing\x1b") + transform("", true), "trailing\x1b");
 
-const configService = require("../src/services/configService");
+const configService = require("../src/main/settings/configService");
 configService._initializeValidator();
 configService._log = () => {};
 const config = {};

@@ -40,36 +40,38 @@ function getFunctionSource(source, name) {
   return functionSource;
 }
 
-const windowManagerSource = readSource("src/core/window/windowManager.js");
+const windowManagerSource = readSource("src/main/window/windowManager.js");
 const appSource = require("./lib/renderer-sources.js").collectAppSources();
-const mainSource = readSource("src/main.js");
+const mainSource = readSource("src/main/index.js");
 const desktopIntegrationSource = readSource(
-  "src/core/app/desktopIntegration.js",
+  "src/main/bootstrap/desktopIntegration.js",
 );
-const appIndexSource = readSource("src/core/app/index.js");
-const appCleanupSource = readSource("src/core/app/appCleanup.js");
+const appIndexSource = readSource("src/main/bootstrap/index.js");
+const appCleanupSource = readSource("src/main/bootstrap/appCleanup.js");
 const settingsHandlersSource = readSource(
-  "src/core/ipc/handlers/settingsHandlers.js",
+  "src/main/ipc/handlers/settingsHandlers.js",
 );
-const configServiceSource = readSource("src/services/configService.js");
-const settingsSource = readSource("src/components/Settings.jsx");
-const globalCssSource = readSource("src/styles/global.css");
+const configServiceSource = readSource("src/main/settings/configService.js");
+const settingsSource = readSource("src/renderer/components/Settings.jsx");
+const globalCssSource = readSource("src/renderer/styles/global.css");
 const fileManagerSource =
   require("./lib/renderer-sources.js").collectFileManagerSources();
-const fileHandlersSource = readSource("src/core/ipc/handlers/fileHandlers.js");
+const fileHandlersSource = readSource("src/main/ipc/handlers/fileHandlers.js");
 const filemanagementServiceSource = readSource(
-  "src/modules/filemanagement/filemanagementService.js",
+  "src/main/file-transfer/filemanagementService.js",
 );
-const nativeSftpClientSource = readSource("src/core/utils/nativeSftpClient.js");
-const ipcTraceSource = readSource("src/core/ipc/ipcTrace.js");
-const preloadSource = readSource("src/preload.js");
+const nativeSftpClientSource = readSource(
+  "src/main/native/nativeSftpClient.js",
+);
+const ipcTraceSource = readSource("src/main/ipc/ipcTrace.js");
+const preloadSource = readSource("src/preload/index.js");
 const commandSuggestionSource = readSource(
-  "src/components/CommandSuggestion.jsx",
+  "src/renderer/components/CommandSuggestion.jsx",
 );
 const connectionManagerSource = readSource(
-  "src/components/ConnectionManager.jsx",
+  "src/renderer/components/ConnectionManager.jsx",
 );
-const customTabSource = readSource("src/components/CustomTab.jsx");
+const customTabSource = readSource("src/renderer/components/CustomTab.jsx");
 
 function testStartupAndWindowLifecycle() {
   assertContains(
@@ -120,14 +122,14 @@ function testStartupAndWindowLifecycle() {
     "Startup theme must use the light MUI background.default color.",
   );
 
-  const indexHtmlSource = readSource("src/index.html");
+  const indexHtmlSource = readSource("src/renderer/index.html");
   assertContains(
     indexHtmlSource,
     /ss-startup-boot|#121212/,
     "index.html must inline a boot background to avoid white flash before CSS loads.",
   );
 
-  const preloadSourceForBoot = readSource("src/preload.js");
+  const preloadSourceForBoot = readSource("src/preload/index.js");
   assertContains(
     preloadSourceForBoot,
     /applyStartupThemeToDocument|simpleshellBoot/,
@@ -425,27 +427,27 @@ function testReducedMotionIsGlobal() {
 function testDragAndDropUsesNativeValidatedLocalPaths() {
   const dragDropSource =
     require("./lib/renderer-sources.js").readRendererCallback(
-      "src/components/filemanager/hooks/useDragDrop.js",
+      "src/renderer/components/filemanager/hooks/useDragDrop.js",
       "handleDrop",
     );
   const dragUploadSource =
     require("./lib/renderer-sources.js").readRendererCallback(
-      "src/components/filemanager/hooks/useTransferTasks.js",
+      "src/renderer/components/filemanager/hooks/useTransferTasks.js",
       "handleDroppedItems",
     );
   const uploadTransferSource =
     require("./lib/renderer-sources.js").readRendererCallback(
-      "src/components/filemanager/hooks/useTransferTasks.js",
+      "src/renderer/components/filemanager/hooks/useTransferTasks.js",
       "runUploadTransfer",
     );
   const downloadSource =
     require("./lib/renderer-sources.js").readRendererCallback(
-      "src/components/filemanager/hooks/useTransferTasks.js",
+      "src/renderer/components/filemanager/hooks/useTransferTasks.js",
       "handleDownload",
     );
   const downloadFolderSource =
     require("./lib/renderer-sources.js").readRendererCallback(
-      "src/components/filemanager/hooks/useTransferTasks.js",
+      "src/renderer/components/filemanager/hooks/useTransferTasks.js",
       "handleDownloadFolder",
     );
 
@@ -733,7 +735,7 @@ function testDragAndDropUsesNativeValidatedLocalPaths() {
 
   assertContains(
     filemanagementServiceSource,
-    /const\s*\{\s*SESSION_CONFIG,\s*TRANSFER_CONFIG\s*\}\s*=\s*require\("\.\.\/sftp\/sftpConfig"\)/,
+    /const\s*\{\s*SESSION_CONFIG,\s*TRANSFER_CONFIG\s*\}\s*=\s*require\("\.\/sftpConfig"\)/,
     "Upload service concurrency must use the centralized SFTP transfer limits.",
   );
 
@@ -951,7 +953,7 @@ function testNativeListAndScrollConventions() {
   );
 
   assertNotContains(
-    readSource("src/components/filemanager/panels/FileList.jsx"),
+    readSource("src/renderer/components/filemanager/panels/FileList.jsx"),
     /cursor:\s*"pointer"/,
     "File list rows must keep the native list-row cursor.",
   );

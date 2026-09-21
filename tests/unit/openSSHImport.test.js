@@ -2,9 +2,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import Settings from "../../src/components/Settings.jsx";
-import ConnectionManager from "../../src/components/ConnectionManager.jsx";
-import OpenSSHImportDialog from "../../src/components/settings/OpenSSHImportDialog.jsx";
+import Settings from "../../src/renderer/components/Settings.jsx";
+import ConnectionManager from "../../src/renderer/components/ConnectionManager.jsx";
+import OpenSSHImportDialog from "../../src/renderer/components/settings/OpenSSHImportDialog.jsx";
 import { deferred } from "../helpers/reactHarness.js";
 
 const { translate, notifications } = vi.hoisted(() => ({
@@ -15,8 +15,8 @@ const { translate, notifications } = vi.hoisted(() => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: translate, i18n: { language: "en-US" } }),
 }));
-vi.mock("../../src/i18n/i18n", () => ({ changeLanguage: vi.fn() }));
-vi.mock("../../src/contexts/NotificationContext", () => ({
+vi.mock("../../src/renderer/i18n/i18n", () => ({ changeLanguage: vi.fn() }));
+vi.mock("../../src/renderer/contexts/NotificationContext", () => ({
   useNotification: () => notifications,
 }));
 

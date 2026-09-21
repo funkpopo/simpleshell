@@ -9,10 +9,10 @@ function loadTransferRuntime() {
     ["logger", { logToFile: (message) => logs.push(message) }],
     ["crashReporter", { recordCrashMarker: () => {} }],
   ]) {
-    const filename = require.resolve(`../../src/core/utils/${name}`);
+    const filename = require.resolve(`../../src/main/utils/${name}`);
     require.cache[filename] = { id: filename, filename, loaded: true, exports };
   }
-  const native = require("../../src/core/utils/nativeSftpClient");
+  const native = require("../../src/main/native/nativeSftpClient");
   const invoke = native.invokeNativeRequestWithConfig;
   native.invokeNativeRequestWithConfig = (config, request, options = {}) =>
     invoke(config, request, {
@@ -22,10 +22,10 @@ function loadTransferRuntime() {
         options.onSpawn?.(child);
       },
     });
-  const Pool = require("../../src/modules/filemanagement/transferProcessPool");
-  const Runner = require("../../src/modules/filemanagement/resumableTransfer");
-  const resume = require("../../src/modules/filemanagement/transferResume");
-  const integrity = require("../../src/modules/filemanagement/transferIntegrity");
+  const Pool = require("../../src/main/file-transfer/transferProcessPool");
+  const Runner = require("../../src/main/file-transfer/resumableTransfer");
+  const resume = require("../../src/main/file-transfer/transferResume");
+  const integrity = require("../../src/main/file-transfer/transferIntegrity");
   const createRunner = ({
     root,
     config,

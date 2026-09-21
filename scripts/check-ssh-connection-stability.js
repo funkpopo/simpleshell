@@ -4,7 +4,7 @@ const path = require("node:path");
 
 const repoRoot = path.resolve(__dirname, "..");
 const sshPoolSource = fs.readFileSync(
-  path.join(repoRoot, "src/core/connection/ssh-pool.js"),
+  path.join(repoRoot, "src/main/connection/ssh-pool.js"),
   "utf8",
 );
 

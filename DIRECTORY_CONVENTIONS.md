@@ -6,9 +6,10 @@ consumable API or release lifecycle.
 
 ## Runtime ownership
 
-The migration target is `src/main`, `src/preload`, `src/renderer`, and
-`src/shared`. During migration, classify files by their actual imports and
-runtime responsibilities rather than renaming `core` or `modules` wholesale.
+Source lives in `src/main`, `src/preload`, `src/renderer`, and `src/shared`.
+Classify new files by actual imports and runtime responsibilities.
+`npm run check` enforces local import resolution and runtime dependency direction
+with `scripts/check-runtime-boundaries.js`.
 
 | Runtime  | Responsibility                                                                   | Allowed dependencies                                 |
 | -------- | -------------------------------------------------------------------------------- | ---------------------------------------------------- |

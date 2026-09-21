@@ -128,8 +128,23 @@ async function main() {
       await check(
         `${direction}: pause retains manifest, fresh store resumes with verification disabled`,
         async () => {
+          // Pause with persisted bytes, rather than depending on stdout timing.
+          // Upload progress can describe queued writes before the server writes.
+          server.control.readDelay = 5;
+          server.control.writeDelay = 5;
           let paused = false;
           let context;
+          const pause = () => {
+            if (paused) return;
+            paused = true;
+            context.controller.abort(new Error("paused"));
+            context.pool.cancelTransfer(context.transferKey);
+          };
+          if (direction === "upload") {
+            server.control.afterWrite = ({ offset, length }) => {
+              if (offset + length >= 256 * 1024) pause();
+            };
+          }
           const options = {
             direction,
             localPath:
@@ -142,11 +157,7 @@ async function main() {
           context = run({
             ...options,
             onProgress: (bytes) => {
-              if (!paused && bytes >= 256 * 1024) {
-                paused = true;
-                context.controller.abort(new Error("paused"));
-                context.pool.cancelTransfer(context.transferKey);
-              }
+              if (direction === "download" && bytes >= 256 * 1024) pause();
             },
           });
           await assert.rejects(context.runner.run());
@@ -155,6 +166,9 @@ async function main() {
           assert.ok(manifest.dirty);
           assert.ok(!JSON.stringify(manifest).includes("password"));
           await context.pool.shutdown();
+          server.control.afterWrite = null;
+          server.control.readDelay = 0;
+          server.control.writeDelay = 0;
           const resumed = run(options);
           assert.equal(
             (await resumed.store.list()).filter(
@@ -168,6 +182,7 @@ async function main() {
             runtime.logs
               .slice(logStart)
               .some((line) => /attempt=1 offset=[1-9]/.test(line)),
+            runtime.logs.slice(logStart).join("\n"),
           );
           assert.deepEqual(
             await fsp.readFile(

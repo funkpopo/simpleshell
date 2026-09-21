@@ -8,9 +8,11 @@ const read = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
 const webTerminal = collectWebTerminalSources();
-const webTerminalCss = read("src/components/WebTerminal.css");
-const terminalSurfaceCss = read("src/styles/terminal.css");
-const terminalDom = read("src/modules/terminal/controller/terminalDom.js");
+const webTerminalCss = read("src/renderer/components/WebTerminal.css");
+const terminalSurfaceCss = read("src/renderer/styles/terminal.css");
+const terminalDom = read(
+  "src/renderer/modules/terminal/controller/terminalDom.js",
+);
 
 const forbiddenWebTerminalPatterns = [
   [/querySelector(All)?\(\s*["']\.xterm-selection/, "selection DOM queries"],

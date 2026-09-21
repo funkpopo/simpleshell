@@ -6,13 +6,7 @@ const path = require("node:path");
 const { EventEmitter } = require("node:events");
 
 const ROOT = path.resolve(__dirname, "..");
-const UPDATE_SERVICE_PATH = path.join(
-  ROOT,
-  "src",
-  "core",
-  "update",
-  "updateService.js",
-);
+const UPDATE_SERVICE_PATH = path.join(ROOT, "src/main/update/updateService.js");
 
 function sha256(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");

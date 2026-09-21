@@ -5,7 +5,7 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..");
 
 const ReconnectionManager = require(
-  path.join(ROOT, "src/core/connection/reconnection-manager.js"),
+  path.join(ROOT, "src/main/connection/reconnection-manager.js"),
 );
 const {
   DEFAULT_SSH_RETRY_CONFIG,
@@ -13,7 +13,7 @@ const {
   buildReconnectWaitMessage,
   calculateRetryDelay,
   buildSshRetryConfig,
-} = require(path.join(ROOT, "src/core/connection/ssh-retry-helper.js"));
+} = require(path.join(ROOT, "src/main/connection/ssh-retry-helper.js"));
 
 function createFakeConnection() {
   const connection = new EventEmitter();
@@ -156,7 +156,7 @@ function testOnlyWeakDefaultPolicyExists() {
   let presetsMissing = false;
   try {
     require(
-      path.join(ROOT, "src/core/connection/network-resilience-presets.js"),
+      path.join(ROOT, "src/main/connection/network-resilience-presets.js"),
     );
   } catch {
     presetsMissing = true;

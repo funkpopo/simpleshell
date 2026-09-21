@@ -6,9 +6,11 @@ const ROOT = path.resolve(__dirname, "..");
 const {
   createSuggestionSuppressionContext,
   resetSessionRestoreInteractionState,
-} = require(path.join(ROOT, "src/modules/terminal/sessionRestoreUI.js"));
+} = require(
+  path.join(ROOT, "src/renderer/modules/terminal/sessionRestoreUI.js"),
+);
 const { resolveCommandSuggestionWindowPosition } = require(
-  path.join(ROOT, "src/modules/terminal/commandSuggestionPosition.js"),
+  path.join(ROOT, "src/renderer/modules/terminal/commandSuggestionPosition.js"),
 );
 
 function testSessionRestoreInteractionReset() {

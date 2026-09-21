@@ -20,10 +20,10 @@ function delay(ms = 0) {
 function loadNetworkLatencyService() {
   const servicePath = path.join(
     ROOT,
-    "src/core/services/networkLatencyService.js",
+    "src/main/services/networkLatencyService.js",
   );
-  const proxyManagerPath = path.join(ROOT, "src/core/proxy/proxy-manager.js");
-  const loggerPath = path.join(ROOT, "src/core/utils/logger.js");
+  const proxyManagerPath = path.join(ROOT, "src/main/proxy/proxy-manager.js");
+  const loggerPath = path.join(ROOT, "src/main/utils/logger.js");
 
   const mockedModules = [];
   const injectMock = (modulePath, exportsValue) => {

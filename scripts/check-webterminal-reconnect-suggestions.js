@@ -7,7 +7,7 @@ const createLoader = require("./lib/load-renderer-module.js");
 
 const root = path.resolve(__dirname, "..");
 const load = createLoader();
-const suggestionState = require("../src/modules/terminal/commandSuggestionState.js");
+const suggestionState = require("../src/renderer/modules/terminal/commandSuggestionState.js");
 
 function createHarness() {
   const slots = [];
@@ -51,10 +51,15 @@ function createHarness() {
   const noop = () => {};
   const context = {
     ...suggestionState,
-    ...require("../src/modules/terminal/commandSuggestionCursor.js"),
-    ...require("../src/modules/terminal/promptDetection.js"),
-    ...require("../src/modules/terminal/sessionRestoreUI.js"),
-    ...load(path.join(root, "src/components/web-terminal/terminalHelpers.js")),
+    ...require("../src/renderer/modules/terminal/commandSuggestionCursor.js"),
+    ...require("../src/renderer/modules/terminal/promptDetection.js"),
+    ...require("../src/renderer/modules/terminal/sessionRestoreUI.js"),
+    ...load(
+      path.join(
+        root,
+        "src/renderer/components/web-terminal/terminalHelpers.js",
+      ),
+    ),
     shouldChunkInputPayload: () => false,
     getCharacterMetricsCss: () => null,
     clearGeometryFor: noop,
@@ -121,10 +126,13 @@ function createHarness() {
   context.window.clearTimeout = context.clearTimeout;
   vm.createContext(context);
   for (const [filename, name] of [
-    ["src/hooks/useTerminalSuggestions.js", "useTerminalSuggestions"],
-    ["src/components/web-terminal/usePromptTracking.js", "usePromptTracking"],
+    ["src/renderer/hooks/useTerminalSuggestions.js", "useTerminalSuggestions"],
     [
-      "src/components/web-terminal/useTerminalSessionEvents.js",
+      "src/renderer/components/web-terminal/usePromptTracking.js",
+      "usePromptTracking",
+    ],
+    [
+      "src/renderer/components/web-terminal/useTerminalSessionEvents.js",
       "useTerminalSessionEvents",
     ],
   ]) {
@@ -242,7 +250,7 @@ async function expectSuggestions(harness, input = "g") {
 
 async function testReplacementShellBufferReset() {
   const source = fs.readFileSync(
-    path.join(root, "src/core/ipc/handlers/sshHandlers.js"),
+    path.join(root, "src/main/ipc/handlers/sshHandlers.js"),
     "utf8",
   );
   const method = source.match(/^ {2}_createSSHShell\([\s\S]*?^ {2}}/m);

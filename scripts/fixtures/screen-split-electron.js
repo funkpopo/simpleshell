@@ -6,7 +6,7 @@ const path = require("node:path");
 const { Sender, Receiver } = require("zmodem2");
 const {
   ZmodemTransferService,
-} = require("../../src/core/terminal/zmodemTransferService");
+} = require("../../src/main/terminal/zmodemTransferService");
 process.on("uncaughtException", (error) => {
   console.error("SCREEN_SPLIT FAIL", error.stack);
   app.exit(1);

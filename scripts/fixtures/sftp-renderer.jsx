@@ -3,14 +3,14 @@ import { createRoot } from "react-dom/client";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { I18nextProvider } from "react-i18next";
 import i18next from "i18next";
-import en from "../../src/i18n/locales/en-US.json";
-import TransferSidebar from "../../src/components/TransferSidebar.jsx";
-import GlobalTransferBar from "../../src/components/GlobalTransferBar.jsx";
+import en from "../../src/shared/locales/en-US.json";
+import TransferSidebar from "../../src/renderer/components/TransferSidebar.jsx";
+import GlobalTransferBar from "../../src/renderer/components/GlobalTransferBar.jsx";
 import {
   useAllGlobalTransfers,
   applySftpTransferState,
   clearCompletedTransfersForAllTabs,
-} from "../../src/store/globalTransferStore";
+} from "../../src/renderer/store/globalTransferStore";
 
 const calls = [];
 let recovery = [

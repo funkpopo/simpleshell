@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/assets/SimpleShell.png" style="width:100px"/>
+  <img src="src/renderer/assets/SimpleShell.png" style="width:100px"/>
 </p>
 
 <h1 align="center">SimpleShell</h1>
@@ -171,9 +171,9 @@ npm run make
 npm run publish
 ```
 
-Preload 契约使用 JSDoc 和 `src/types/preload.d.ts` 中的共享类型声明。
+Preload 契约使用 JSDoc 和 `src/shared/contracts/preload.d.ts` 中的共享类型声明。
 `npm run check` 通过 TypeScript 解析暴露的方法和 IPC 调用，再根据
-`tsconfig.preload.json` 检查 `src/preload.js` 的实现与注释是否一致。
+`tsconfig.preload.json` 检查 `src/preload/index.js` 的实现与注释是否一致。
 尚未细化契约的原始 IPC 响应保留为 `unknown`，调用方需要先缩窄类型；
 此检查不包含渲染进程或主进程处理器的类型检查。
 
@@ -191,47 +191,22 @@ npm run make -- --platform=linux
 
 ## **项目结构**
 
-```
+```text
 simpleshell/
 ├── src/
-│   ├── main.js              # 主进程入口（Electron main）
-│   ├── app.jsx              # 渲染进程入口（React 应用）
-│   ├── preload.js           # 预加载脚本（contextBridge/expose）
-│   ├── components/         # React UI 组件
-│   ├── core/                # 核心模块 / 底层能力
-│   │   ├── app/            # App 启动与接线
-│   │   ├── connection/     # 协议连接原语/连接池
-│   │   ├── ipc/            # IPC 帮助方法/服务
-│   │   ├── terminal/       # 终端运行时（本地/远程）
-│   │   ├── local-terminal/ # 本地终端集成
-│   │   ├── process/        # 进程/pty 辅助
-│   │   ├── proxy/          # 代理管理
-│   │   ├── services/       # 共享核心服务
-│   │   ├── window/         # 窗口与生命周期辅助
-│   │   └── workers/        # Worker 线程逻辑
-│   ├── modules/            # 功能模块（供 UI 调用）
-│   │   ├── connection/     # 连接处理（应用层编排）
-│   │   ├── filemanagement/ # 文件管理/传输编排
-│   │   ├── sftp/           # SFTP 操作
-│   │   ├── system-info/   # 系统监控（本地/远程）
-│   │   └── terminal/      # 终端功能
-│   ├── services/           # 应用服务（例如 config）
-│   ├── store/              # 状态管理
-│   ├── shared/             # 跨进程共用、零依赖工具
-│   ├── workers/            # Worker 入口
-│   ├── hooks/              # React hooks
-│   ├── contexts/           # React contexts
-│   ├── i18n/               # 国际化
-│   ├── styles/             # 全局样式
-│   ├── theme/              # 主题样式/Token
-│   └── utils/              # 仅渲染进程使用的工具（见 DIRECTORY_CONVENTIONS.md）
-├── native-services/        # 原生产品服务 Rust host
-├── forge.config.js         # Electron Forge 配置
-├── webpack.main.config.js  # Electron main 的 Webpack 配置
-└── webpack.renderer.config.js # Electron renderer 的 Webpack 配置
+│   ├── main/                # Electron lifecycle, IPC, sessions, storage, native clients
+│   ├── preload/             # contextBridge API and subscriptions
+│   ├── renderer/            # React UI, terminal views and browser helpers
+│   └── shared/              # Contracts, pure cross-runtime logic and locales
+├── native-services/         # Rust native-services crate
+├── tests/                   # Unit and composition tests
+├── scripts/                 # Build, release and integration checks
+├── docs/                    # Release and architecture documentation
+├── forge.config.js
+└── webpack.*.config.js
 ```
 
-> `src/shared/`（跨进程零依赖）、`src/core/utils/`（主进程）与 `src/utils/`（仅渲染进程）的目录归属规则见 [DIRECTORY_CONVENTIONS.md](DIRECTORY_CONVENTIONS.md)，新代码必须遵循。
+源码按运行环境划分。目录规则见 [DIRECTORY_CONVENTIONS.md](DIRECTORY_CONVENTIONS.md)，验证流程见 [MANUAL_TESTING.md](MANUAL_TESTING.md)，发布步骤见 [docs/RELEASING.md](docs/RELEASING.md)。
 
 ## **技术栈**
 
@@ -273,23 +248,9 @@ simpleshell/
 
 ## **连接架构**
 
-- Core 与 Modules
-  - `src/core/connection`：规范的底层连接原语和连接池。文件沿用 `*-connection-pool.js` 命名，例如 `ssh-pool.js`、`telnet-connection-pool.js`、`serial-connection-pool.js`、`mosh-connection-pool.js`，并共享 `base-connection-pool.js`。
-  - `src/modules/connection`：应用层编排模块，将核心连接池和 SFTP 管理器组合成应用使用的统一服务，通过 `require("./modules/connection")` 暴露。
+`src/main/connection/` 管理连接池、重连与连接编排；`connectionManager.js` 组合各协议连接池。终端会话运行于 `src/main/terminal/`，SFTP 任务编排运行于 `src/main/file-transfer/`，Rust 客户端位于 `src/main/native/`。
 
-- 命名一致性
-  - 协议专用连接池统一使用 `*-connection-pool`。
-  - 旧的高级连接池/管理器已经移除。
-    - `ssh-advanced-pool.js` 已合并到 `src/core/connection/ssh-pool.js`。
-    - 已删除弃用的 `src/core/connection/connection-manager.js`，避免控制路径分裂。
-  - 已删除弃用的 `src/core/connection/connection-monitor.js`。连接健康和可观测性现在依赖：
-    - 连接池健康检查（`base-connection-pool.js`）
-    - 重连状态机（`reconnection-manager.js`）
-    - 网络延迟服务（`networkLatencyService.js`）
-
-- 导入建议
-  - 连接池：`const { sshConnectionPool, telnetConnectionPool, serialConnectionPool, moshConnectionPool } = require("../../core/connection");`
-  - 应用层连接能力（包含 SFTP）：`const connectionManager = require("./modules/connection");`
+渲染进程通过 preload API 访问这些能力；IPC 定义和终端通信协议位于 `src/shared/contracts/`，两端均不导入对方的实现。
 
 ## **贡献**
 

@@ -7,29 +7,29 @@ import { ipcRenderer } from "electron";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import i18next from "i18next";
 import { I18nextProvider } from "react-i18next";
-import en from "../../src/i18n/locales/en-US.json";
+import en from "../../src/shared/locales/en-US.json";
 import {
   AppProvider,
   useAppState,
   useAppDispatch,
-} from "../../src/store/AppContext.jsx";
-import { actions } from "../../src/store/appReducer.js";
+} from "../../src/renderer/store/AppContext.jsx";
+import { actions } from "../../src/renderer/store/appReducer.js";
 import {
   getLiveSessionKeys,
   getSessionDescriptor,
-} from "../../src/modules/terminal/paneLayout.js";
-import TerminalWorkspace from "../../src/components/terminal-pane/TerminalWorkspace.jsx";
-import WebTerminal from "../../src/components/WebTerminal.jsx";
+} from "../../src/renderer/modules/terminal/paneLayout.js";
+import TerminalWorkspace from "../../src/renderer/components/terminal-pane/TerminalWorkspace.jsx";
+import WebTerminal from "../../src/renderer/components/WebTerminal.jsx";
 import {
   terminalCache,
   processCache,
   disposeTerminalSession,
   getTerminalSessionDiagnostics,
-} from "../../src/modules/terminal/controller/terminalSessionStore.js";
-import { dispatchCommandToGroup } from "../../src/core/syncGroupCommandDispatcher.js";
-import { useAllGlobalTransfers } from "../../src/store/globalTransferStore.js";
-import useDragResize from "../../src/hooks/useDragResize.js";
-import { getWorkingDirectoryState } from "../../src/modules/terminal/workingDirectoryStore.js";
+} from "../../src/renderer/modules/terminal/controller/terminalSessionStore.js";
+import { dispatchCommandToGroup } from "../../src/renderer/modules/terminal/syncGroupCommandDispatcher.js";
+import { useAllGlobalTransfers } from "../../src/renderer/store/globalTransferStore.js";
+import useDragResize from "../../src/renderer/hooks/useDragResize.js";
+import { getWorkingDirectoryState } from "../../src/renderer/modules/terminal/workingDirectoryStore.js";
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);

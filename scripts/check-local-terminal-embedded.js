@@ -6,24 +6,24 @@ const ROOT = path.resolve(__dirname, "..");
 const read = (relativePath) =>
   fs.readFileSync(path.join(ROOT, relativePath), "utf8");
 
-const managerSource = read("src/core/local-terminal/local-terminal-manager.js");
-const handlerSource = read("src/core/ipc/handlers/localTerminalHandlers.js");
-const channelSource = read("src/core/ipc/schema/channels.js");
-const preloadSource = read("src/preload.js");
+const managerSource = read("src/main/local-terminal/local-terminal-manager.js");
+const handlerSource = read("src/main/ipc/handlers/localTerminalHandlers.js");
+const channelSource = read("src/shared/contracts/ipc/channels.js");
+const preloadSource = read("src/preload/index.js");
 const appSource = require("./lib/renderer-sources.js").collectAppSources();
 const { collectWebTerminalSources } = require("./lib/webterminal-sources.js");
 const webTerminalSource = collectWebTerminalSources();
-const sidebarSource = read("src/components/LocalTerminalSidebar.jsx");
+const sidebarSource = read("src/renderer/components/LocalTerminalSidebar.jsx");
 const webpackMainSource = read("webpack.main.config.js");
 const forgeConfigSource = read("forge.config.js");
 const localTerminalConfigSource = read(
-  "src/core/local-terminal/local-terminal-config.js",
+  "src/main/local-terminal/local-terminal-config.js",
 );
 const {
   SUPPORTED_LOCAL_TERMINAL_TYPES,
   normalizeLocalTerminalConfig,
 } = require(
-  path.join(ROOT, "src/core/local-terminal/local-terminal-config.js"),
+  path.join(ROOT, "src/main/local-terminal/local-terminal-config.js"),
 );
 
 function assertEmbeddedPtyManager() {

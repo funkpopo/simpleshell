@@ -8,7 +8,7 @@ import {
   isRetryWindowExpired,
   getRetryWindowExpiresAt,
   calculateRetryDelay,
-} from "../../src/core/connection/ssh-retry-helper.js";
+} from "../../src/main/connection/ssh-retry-helper.js";
 
 describe("buildSshRetryConfig", () => {
   it("无参调用返回默认弱网友好策略", () => {

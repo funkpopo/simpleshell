@@ -36,19 +36,17 @@ const WORKER_UNPACK_DIRS = [
   ".webpack\\main\\conpty_console_list_agent.js",
   ".webpack/main/utils.js",
   ".webpack\\main\\utils.js",
-  "src/workers",
-  "src\\workers",
+  "src/main/workers",
+  "src\\main\\workers",
 ];
 const NATIVE_SERVICES_BASENAME =
   process.platform === "win32"
     ? "simpleshell-native-services.exe"
     : "simpleshell-native-services";
-const WINDOWS_ICON_PATH = path.join(__dirname, "src", "assets", "logo.ico");
+const WINDOWS_ICON_PATH = path.join(__dirname, "src/renderer/assets/logo.ico");
 const LINUX_ICON_PATH = path.join(
   __dirname,
-  "src",
-  "assets",
-  "SimpleShell.png",
+  "src/renderer/assets/SimpleShell.png",
 );
 const WEBPACK_DIR = path.resolve(__dirname, ".webpack");
 const WINDOWS_MOVE_RETRY_DELAY_MS = 250;
@@ -611,7 +609,7 @@ module.exports = async () => {
       asar: {
         unpackDir: `{${WORKER_UNPACK_DIRS.join(",")}}`,
       },
-      icon: "./src/assets/logo",
+      icon: "./src/renderer/assets/logo",
       ...(macSignConfig ? { osxSign: macSignConfig } : {}),
       ...(macNotarizeConfig ? { osxNotarize: macNotarizeConfig } : {}),
       extraResource: [
@@ -700,11 +698,11 @@ module.exports = async () => {
           config: "./webpack.renderer.config.js",
           entryPoints: [
             {
-              html: "./src/index.html",
-              js: "./src/app.jsx",
+              html: "./src/renderer/index.html",
+              js: "./src/renderer/main.jsx",
               name: "main_window",
               preload: {
-                js: "./src/preload.js",
+                js: "./src/preload/index.js",
                 config: "./webpack.preload.config.js",
               },
             },

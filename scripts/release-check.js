@@ -12,18 +12,18 @@ const cargoPath = path.join(
 const readmePath = path.join(projectRoot, "README.md");
 const readmeZhPath = path.join(projectRoot, "README_zh.md");
 const forgeConfigPath = path.join(projectRoot, "forge.config.js");
-const mainPath = path.join(projectRoot, "src", "main.js");
+const mainPath = path.join(projectRoot, "src/main/index.js");
 const windowManagerPath = path.join(
   projectRoot,
-  "src",
-  "core",
-  "window",
-  "windowManager.js",
+  "src/main/window/windowManager.js",
 );
-const indexHtmlPath = path.join(projectRoot, "src", "index.html");
+const indexHtmlPath = path.join(projectRoot, "src/renderer/index.html");
 const releaseGuidePath = path.join(projectRoot, "docs", "RELEASING.md");
-const logoIcoPath = path.join(projectRoot, "src", "assets", "logo.ico");
-const logoPngPath = path.join(projectRoot, "src", "assets", "SimpleShell.png");
+const logoIcoPath = path.join(projectRoot, "src/renderer/assets/logo.ico");
+const logoPngPath = path.join(
+  projectRoot,
+  "src/renderer/assets/SimpleShell.png",
+);
 
 const sidecarName =
   process.platform === "win32"

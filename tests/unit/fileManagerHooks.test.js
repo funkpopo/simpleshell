@@ -4,25 +4,25 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { deferred, renderHook } from "../helpers/reactHarness.js";
-import useFileNav from "../../src/components/filemanager/hooks/useFileNav.js";
-import useFileSelection from "../../src/components/filemanager/hooks/useFileSelection.js";
-import useConfirmDialog from "../../src/components/filemanager/hooks/useConfirmDialog.js";
-import useDragDrop from "../../src/components/filemanager/hooks/useDragDrop.js";
-import useTransferTasks from "../../src/components/filemanager/hooks/useTransferTasks.js";
-import useFileOps from "../../src/components/filemanager/hooks/useFileOps.js";
-import useTransferHosts from "../../src/components/filemanager/hooks/useTransferHosts.js";
-import useFileKeyboard from "../../src/components/filemanager/hooks/useFileKeyboard.js";
-import FileManager from "../../src/components/FileManager.jsx";
-import CreateFileDialog from "../../src/components/filemanager/dialogs/CreateFileDialog.jsx";
-import CreateFolderDialog from "../../src/components/filemanager/dialogs/CreateFolderDialog.jsx";
-import RenameDialog from "../../src/components/filemanager/dialogs/RenameDialog.jsx";
-import PermissionDialog from "../../src/components/filemanager/dialogs/PermissionDialog.jsx";
-import PropertiesDialog from "../../src/components/filemanager/dialogs/PropertiesDialog.jsx";
-import PreviewDialog from "../../src/components/filemanager/dialogs/PreviewDialog.jsx";
+import useFileNav from "../../src/renderer/components/filemanager/hooks/useFileNav.js";
+import useFileSelection from "../../src/renderer/components/filemanager/hooks/useFileSelection.js";
+import useConfirmDialog from "../../src/renderer/components/filemanager/hooks/useConfirmDialog.js";
+import useDragDrop from "../../src/renderer/components/filemanager/hooks/useDragDrop.js";
+import useTransferTasks from "../../src/renderer/components/filemanager/hooks/useTransferTasks.js";
+import useFileOps from "../../src/renderer/components/filemanager/hooks/useFileOps.js";
+import useTransferHosts from "../../src/renderer/components/filemanager/hooks/useTransferHosts.js";
+import useFileKeyboard from "../../src/renderer/components/filemanager/hooks/useFileKeyboard.js";
+import FileManager from "../../src/renderer/components/FileManager.jsx";
+import CreateFileDialog from "../../src/renderer/components/filemanager/dialogs/CreateFileDialog.jsx";
+import CreateFolderDialog from "../../src/renderer/components/filemanager/dialogs/CreateFolderDialog.jsx";
+import RenameDialog from "../../src/renderer/components/filemanager/dialogs/RenameDialog.jsx";
+import PermissionDialog from "../../src/renderer/components/filemanager/dialogs/PermissionDialog.jsx";
+import PropertiesDialog from "../../src/renderer/components/filemanager/dialogs/PropertiesDialog.jsx";
+import PreviewDialog from "../../src/renderer/components/filemanager/dialogs/PreviewDialog.jsx";
 import {
   useGlobalTransfers,
   useTransferActions,
-} from "../../src/store/globalTransferStore.js";
+} from "../../src/renderer/store/globalTransferStore.js";
 
 const { translate, notify } = vi.hoisted(() => ({
   translate: (key) => key,
@@ -31,7 +31,7 @@ const { translate, notify } = vi.hoisted(() => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: translate, i18n: { language: "en" } }),
 }));
-vi.mock("../../src/contexts/NotificationContext", () => ({
+vi.mock("../../src/renderer/contexts/NotificationContext", () => ({
   useNotification: () => ({ showNotification: notify }),
 }));
 

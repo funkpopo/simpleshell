@@ -3,19 +3,10 @@ const Module = require("node:module");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
-const HANDLER_PATH = path.join(
-  ROOT,
-  "src",
-  "core",
-  "ipc",
-  "handlers",
-  "aiHandlers.js",
-);
+const HANDLER_PATH = path.join(ROOT, "src/main/ipc/handlers/aiHandlers.js");
 const CONFIG_SERVICE_PATH = path.join(
   ROOT,
-  "src",
-  "services",
-  "configService.js",
+  "src/main/settings/configService.js",
 );
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -49,13 +40,13 @@ function createHandler(initialSettings) {
 
   Module._load = function load(request, parent, isMain) {
     const normalizedRequest = normalizeRequest(request);
-    if (normalizedRequest.endsWith("services/configService")) {
+    if (normalizedRequest.endsWith("settings/configService")) {
       return configService;
     }
     if (normalizedRequest.endsWith("utils/logger")) {
       return logger;
     }
-    if (normalizedRequest.endsWith("workers/aiWorkerManager")) {
+    if (normalizedRequest.endsWith("native/aiWorkerManager")) {
       return workerManager;
     }
     if (normalizedRequest.endsWith("shared/mainI18n")) {

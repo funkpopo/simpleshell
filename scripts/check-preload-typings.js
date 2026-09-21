@@ -7,10 +7,10 @@ const ts = require("typescript");
 const {
   IPC_REQUEST_CHANNELS,
   getChannelDefinition,
-} = require("../src/core/ipc/schema/channels.js");
+} = require("../src/shared/contracts/ipc/channels.js");
 
 const repoRoot = path.resolve(__dirname, "..");
-const preloadPath = path.join(repoRoot, "src/preload.js");
+const preloadPath = path.join(repoRoot, "src/preload/index.js");
 const requiredApis = [
   "terminalAPI",
   "electronAPI",

@@ -2,8 +2,8 @@ const assert = require("node:assert/strict");
 const { EventEmitter, once } = require("node:events");
 const { generateKeyPairSync } = require("node:crypto");
 const { Client, Server } = require("ssh2");
-const SSHPool = require("../src/core/connection/ssh-pool");
-const SshTransportHealth = require("../src/core/connection/ssh-transport-health");
+const SSHPool = require("../src/main/connection/ssh-pool");
+const SshTransportHealth = require("../src/main/connection/ssh-transport-health");
 
 function fakeClient() {
   const client = new EventEmitter();

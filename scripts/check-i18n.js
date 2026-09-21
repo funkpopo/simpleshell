@@ -5,7 +5,7 @@ const traverse = require("@babel/traverse").default;
 
 const ROOT = path.resolve(__dirname, "..");
 const SRC_DIR = path.join(ROOT, "src");
-const LOCALE_DIR = path.join(SRC_DIR, "i18n", "locales");
+const LOCALE_DIR = path.join(SRC_DIR, "shared", "locales");
 const LOCALES = ["zh-CN", "en-US"];
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx"]);
 
@@ -337,7 +337,7 @@ const HARDCODED_SKIP_FILES = new Set([
   path.normalize("shared/errorClassification.js"),
   path.normalize("shared/mainI18n.js"),
   // Bilingual retryable/session error matcher lists (matching logic, not UI text).
-  path.normalize(path.join("modules", "sftp", "sftpConfig.js")),
+  path.normalize(path.join("main", "file-transfer", "sftpConfig.js")),
 ]);
 
 // Renderer UI surfaces scanned for hardcoded strings (both Chinese and English).
@@ -346,19 +346,27 @@ const HARDCODED_CORE_SURFACE_DIRS = new Set([
   "hooks",
   "contexts",
   "store",
+  "app",
+  "features",
+  "shared",
 ]);
 // Service-layer modules: Chinese + UI-property English literals are flagged;
 // generic English sentences here are mostly internal error strings (tracked
 // separately as error-message i18n work), so a blanket scan would be too noisy.
-const HARDCODED_MODULE_SURFACE_DIRS = new Set(["modules"]);
+const HARDCODED_MODULE_SURFACE_DIRS = new Set([
+  "file-transfer",
+  "system-info",
+  "terminal",
+]);
 
 const isCoreUiSurface = (parts, rel) =>
-  HARDCODED_CORE_SURFACE_DIRS.has(parts[0]) ||
-  rel === "app.jsx" ||
-  rel === path.join("core", "utils", "formatters.js");
+  (parts[0] === "renderer" && HARDCODED_CORE_SURFACE_DIRS.has(parts[1])) ||
+  rel === path.join("renderer", "main.jsx") ||
+  rel === path.join("renderer", "utils", "formatters.js");
 
 const isModuleUiSurface = (parts) =>
-  HARDCODED_MODULE_SURFACE_DIRS.has(parts[0]);
+  (parts[0] === "main" && HARDCODED_MODULE_SURFACE_DIRS.has(parts[1])) ||
+  (parts[0] === "renderer" && parts[1] === "modules");
 
 const UI_PROP_ASSIGN =
   /\b(title|label|placeholder|helperText|aria-label|message|description|tooltip|text|header|subtitle|hint|button|caption)\s*[:=]\s*['"`]/i;
@@ -623,7 +631,7 @@ const main = () => {
   }
 
   const i18nConfig = fs.readFileSync(
-    path.join(SRC_DIR, "i18n", "i18n.js"),
+    path.join(SRC_DIR, "renderer", "i18n", "i18n.js"),
     "utf8",
   );
   if (!/fallbackLng\s*:\s*false\b/.test(i18nConfig)) {

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/assets/SimpleShell.png" style="width:100px"/>
+  <img src="src/renderer/assets/SimpleShell.png" style="width:100px"/>
 </p>
 
 <h1 align="center">SimpleShell</h1>
@@ -173,9 +173,9 @@ npm run make
 npm run publish
 ```
 
-Preload contracts use JSDoc and shared declarations in `src/types/preload.d.ts`.
+Preload contracts use JSDoc and shared declarations in `src/shared/contracts/preload.d.ts`.
 `npm run check` parses exposed methods and IPC calls with TypeScript, then checks
-`src/preload.js` against its annotations using `tsconfig.preload.json`. Raw IPC
+`src/preload/index.js` against its annotations using `tsconfig.preload.json`. Raw IPC
 responses that have no detailed contract remain `unknown` and must be narrowed
 by callers; this check does not type-check the renderer or main-process handlers.
 
@@ -193,47 +193,22 @@ npm run make -- --platform=linux
 
 ## **Project Structure**
 
-```
+```text
 simpleshell/
 ├── src/
-│   ├── main.js              # Main process entry (Electron main)
-│   ├── app.jsx              # Renderer entry (React app)
-│   ├── preload.js           # Preload script (contextBridge/expose)
-│   ├── components/         # React UI components
-│   ├── core/                # Core modules / low-level primitives
-│   │   ├── app/            # App bootstrap wiring
-│   │   ├── connection/     # Protocol connection primitives/pools
-│   │   ├── ipc/            # IPC helpers/services
-│   │   ├── terminal/       # Terminal runtime (local/remote)
-│   │   ├── local-terminal/ # Local terminal integration
-│   │   ├── process/        # Process/pty helpers
-│   │   ├── proxy/          # Proxy management
-│   │   ├── services/       # Shared core services
-│   │   ├── window/         # Window + lifecycle helpers
-│   │   └── workers/        # Worker-thread logic
-│   ├── modules/            # Feature modules (used by the UI)
-│   │   ├── connection/     # Connection handling (app-level orchestration)
-│   │   ├── filemanagement/ # File manager / transfer orchestration
-│   │   ├── sftp/           # SFTP operations
-│   │   ├── system-info/   # System monitoring (local/remote)
-│   │   └── terminal/      # Terminal feature
-│   ├── services/           # App services (e.g. config)
-│   ├── store/              # State management
-│   ├── shared/             # Cross-process, zero-dependency helpers
-│   ├── workers/            # Worker entry points
-│   ├── hooks/              # React hooks
-│   ├── contexts/           # React contexts
-│   ├── i18n/               # Internationalization
-│   ├── styles/             # Global styles
-│   ├── theme/              # Theme tokens/styles
-│   └── utils/              # Renderer-only utilities (see DIRECTORY_CONVENTIONS.md)
-├── native-services/        # Rust host for native product services
-├── forge.config.js         # Electron Forge configuration
-├── webpack.main.config.js  # Webpack config for Electron main
-└── webpack.renderer.config.js # Webpack config for Electron renderer
+│   ├── main/                # Electron lifecycle, IPC, sessions, storage, native clients
+│   ├── preload/             # contextBridge API and subscriptions
+│   ├── renderer/            # React UI, terminal views and browser helpers
+│   └── shared/              # Contracts, pure cross-runtime logic and locales
+├── native-services/         # Rust native-services crate
+├── tests/                   # Unit and composition tests
+├── scripts/                 # Build, release and integration checks
+├── docs/                    # Release and architecture documentation
+├── forge.config.js
+└── webpack.*.config.js
 ```
 
-> Directory ownership rules for `src/shared/` (cross-process, zero-dependency), `src/core/utils/` (main process) and `src/utils/` (renderer-only) are defined in [DIRECTORY_CONVENTIONS.md](DIRECTORY_CONVENTIONS.md). New code must follow them.
+Source is organized by runtime. See [DIRECTORY_CONVENTIONS.md](DIRECTORY_CONVENTIONS.md), [MANUAL_TESTING.md](MANUAL_TESTING.md) and [docs/RELEASING.md](docs/RELEASING.md).
 
 ## **Tech Stack**
 
@@ -275,23 +250,9 @@ simpleshell/
 
 ## **Connection Architecture**
 
-- Core vs Modules
-  - `src/core/connection`: Canonical, low-level connection primitives and pools. Files follow `*-connection-pool.js` naming (e.g., `ssh-pool.js`, `telnet-connection-pool.js`, `serial-connection-pool.js`, `mosh-connection-pool.js`) and a shared `base-connection-pool.js`.
-  - `src/modules/connection`: App-level orchestration that composes the core pools and SFTP manager into a single service used by the app (exposed via `require("./modules/connection")`).
+`src/main/connection/` owns protocol pools, reconnection and connection orchestration; `connectionManager.js` composes the pools. Terminal sessions live in `src/main/terminal/`, SFTP task orchestration in `src/main/file-transfer/`, and Rust clients in `src/main/native/`.
 
-- Naming consistency
-  - Use `*-connection-pool` for protocol-specific pools.
-  - Legacy advanced pool/manager have been removed.
-    - `ssh-advanced-pool.js` was consolidated into `src/core/connection/ssh-pool.js`.
-    - Deprecated `src/core/connection/connection-manager.js` has been deleted to avoid split control paths.
-  - Deprecated `src/core/connection/connection-monitor.js` has been removed. Connection health and observability now rely on:
-    - Pool health checks (`base-connection-pool.js`)
-    - Reconnection state machine (`reconnection-manager.js`)
-    - Network latency service (`networkLatencyService.js`)
-
-- Import guidance
-  - For pools: `const { sshConnectionPool, telnetConnectionPool, serialConnectionPool, moshConnectionPool } = require("../../core/connection");`
-  - For app-level connection features (incl. SFTP): `const connectionManager = require("./modules/connection");`
+Renderer accesses these capabilities through preload. IPC definitions and terminal protocols live in `src/shared/contracts/`; neither runtime imports the other runtime implementation.
 
 ## **Contributing**
 

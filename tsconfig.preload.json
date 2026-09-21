@@ -10,5 +10,5 @@
     "types": ["node"],
     "lib": ["ES2022", "DOM"]
   },
-  "files": ["src/preload.js"]
+  "files": ["src/preload/index.js"]
 }

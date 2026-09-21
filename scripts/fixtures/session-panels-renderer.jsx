@@ -4,12 +4,12 @@ import { flushSync } from "react-dom";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { I18nextProvider } from "react-i18next";
 import i18next from "i18next";
-import { NotificationProvider } from "../../src/contexts/NotificationContext.jsx";
-import ResourceMonitor from "../../src/components/ResourceMonitor.jsx";
-import FileManager from "../../src/components/FileManager.jsx";
-import ShortcutCommands from "../../src/components/ShortcutCommands.jsx";
-import AIChatWorkspace from "../../src/components/AIChatWorkspace.jsx";
-import AIChatWindow from "../../src/components/AIChatWindow.jsx";
+import { NotificationProvider } from "../../src/renderer/contexts/NotificationContext.jsx";
+import ResourceMonitor from "../../src/renderer/components/ResourceMonitor.jsx";
+import FileManager from "../../src/renderer/components/FileManager.jsx";
+import ShortcutCommands from "../../src/renderer/components/ShortcutCommands.jsx";
+import AIChatWorkspace from "../../src/renderer/components/AIChatWorkspace.jsx";
+import AIChatWindow from "../../src/renderer/components/AIChatWindow.jsx";
 import { runDirectoryFollowChecks } from "./directory-follow-renderer.jsx";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

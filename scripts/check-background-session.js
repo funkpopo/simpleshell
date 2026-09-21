@@ -4,7 +4,7 @@ const path = require("node:path");
 
 const repoRoot = path.resolve(__dirname, "..");
 const windowManagerSource = fs.readFileSync(
-  path.join(repoRoot, "src/core/window/windowManager.js"),
+  path.join(repoRoot, "src/main/window/windowManager.js"),
   "utf8",
 );
 

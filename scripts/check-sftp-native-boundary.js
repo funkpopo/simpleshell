@@ -55,7 +55,7 @@ function rustSftpOperations() {
 }
 
 function jsNativeOperations() {
-  const clientSource = readSource("src/core/utils/nativeSftpClient.js");
+  const clientSource = readSource("src/main/native/nativeSftpClient.js");
   const operations = [
     ...clientSource.matchAll(/operation:\s*"([a-zA-Z]+)"/g),
   ].map((match) => match[1]);
@@ -69,13 +69,13 @@ function jsNativeOperations() {
 
 function main() {
   const guardedModules = [
-    "src/core/utils/nativeSftpClient.js",
-    "src/workers/sftp-transfer-worker.js",
-    "src/modules/filemanagement/filemanagementService.js",
-    "src/modules/filemanagement/transferProcessPool.js",
-    "src/modules/filemanagement/resumableTransfer.js",
-    "src/core/ipc/handlers/fileHandlers.js",
-    "src/core/ipc/handlers/sftpHandlers.js",
+    "src/main/native/nativeSftpClient.js",
+    "src/main/workers/sftp-transfer-worker.js",
+    "src/main/file-transfer/filemanagementService.js",
+    "src/main/file-transfer/transferProcessPool.js",
+    "src/main/file-transfer/resumableTransfer.js",
+    "src/main/ipc/handlers/fileHandlers.js",
+    "src/main/ipc/handlers/sftpHandlers.js",
   ];
 
   for (const relativePath of guardedModules) {

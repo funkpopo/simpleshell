@@ -13,10 +13,10 @@ import {
   useTheme,
   useReconnectStore,
   useReconnectSelector,
-} from "../../src/store/AppContext.jsx";
-import { actions } from "../../src/store/appReducer.js";
-import { createAppStore } from "../../src/store/appStore.js";
-import { shallowEqual } from "../../src/store/subscriptionStore.js";
+} from "../../src/renderer/store/AppContext.jsx";
+import { actions } from "../../src/renderer/store/appReducer.js";
+import { createAppStore } from "../../src/renderer/store/appStore.js";
+import { shallowEqual } from "../../src/renderer/store/subscriptionStore.js";
 
 let root;
 let host;

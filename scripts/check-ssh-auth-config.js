@@ -11,12 +11,12 @@ const {
   attachKeyboardInteractiveSupport,
   resolveKeyboardInteractiveAnswers,
   autoAnswerPrompt,
-} = require("../src/core/connection/ssh-interactive-auth");
-const SSHPool = require("../src/core/connection/ssh-pool");
+} = require("../src/main/connection/ssh-interactive-auth");
+const SSHPool = require("../src/main/connection/ssh-pool");
 const {
   setTrustedHostFingerprint,
   getTrustedHostFingerprint,
-} = require("../src/core/utils/sshHostKeyTrust");
+} = require("../src/main/utils/sshHostKeyTrust");
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const processes = new Map();
@@ -39,17 +39,17 @@ const configService = {
 const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   const normalized = request.replaceAll("\\", "/");
-  if (normalized.endsWith("services/configService")) return configService;
+  if (normalized.endsWith("settings/configService")) return configService;
   if (normalized.endsWith("utils/logger")) return { logToFile() {} };
   if (normalized.endsWith("window/windowManager"))
     return {
       getPrimaryWindow: () => mainWindow,
       broadcastToAllWindows() {},
     };
-  if (normalized.endsWith("filemanagement/filemanagementService")) return {};
+  if (normalized.endsWith("file-transfer/filemanagementService")) return {};
   if (normalized.endsWith("terminal/zmodemTransferService"))
     return { zmodemTransferService: {} };
-  if (normalized === "../../core/connection")
+  if (normalized === "./" && parent?.filename.endsWith("connectionManager.js"))
     return { sshConnectionPool: pool };
   if (normalized.endsWith("process/processManager"))
     return { getProcess: (id) => processes.get(id) };
@@ -57,10 +57,10 @@ Module._load = function (request, parent, isMain) {
 };
 let SSHHandlers, connectionManager, nativeSftpClient, TerminalHandlers;
 try {
-  SSHHandlers = require("../src/core/ipc/handlers/sshHandlers");
-  connectionManager = require("../src/modules/connection");
-  nativeSftpClient = require("../src/core/utils/nativeSftpClient");
-  TerminalHandlers = require("../src/core/ipc/handlers/terminalHandlers");
+  SSHHandlers = require("../src/main/ipc/handlers/sshHandlers");
+  connectionManager = require("../src/main/connection/connectionManager");
+  nativeSftpClient = require("../src/main/native/nativeSftpClient");
+  TerminalHandlers = require("../src/main/ipc/handlers/terminalHandlers");
 } finally {
   Module._load = originalLoad;
 }
@@ -337,7 +337,7 @@ async function checkMinifiedConnectionError() {
     devtool: false,
     entry: path.resolve(
       __dirname,
-      "../src/core/connection/base-connection-pool.js",
+      "../src/main/connection/base-connection-pool.js",
     ),
     output: {
       path: outputDirectory,
@@ -555,7 +555,7 @@ async function checkRendererAuthHandoff() {
   const source = fs.readFileSync(
     require("node:path").join(
       __dirname,
-      "../src/components/app/hooks/useSSHAuthentication.js",
+      "../src/renderer/components/app/hooks/useSSHAuthentication.js",
     ),
     "utf8",
   );
@@ -628,7 +628,7 @@ async function run() {
   await checkRendererAuthHandoff();
   const load = require("./lib/load-renderer-module")();
   const { areWebTerminalPropsEqual } = load(
-    "src/components/web-terminal/terminalHelpers.js",
+    "src/renderer/components/web-terminal/terminalHelpers.js",
   );
   const props = {
     tabId: "tab-a",

@@ -37,7 +37,6 @@ module.exports = [
         },
       },
       globals: {
-        ...globals.browser,
         ...globals.node,
         MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: "readonly",
         MAIN_WINDOW_WEBPACK_ENTRY: "readonly",
@@ -77,5 +76,27 @@ module.exports = [
       "react/prop-types": "off",
       "react/react-in-jsx-scope": "off",
     },
+  },
+  {
+    files: ["src/renderer/**/*.{js,jsx}"],
+    languageOptions: {
+      globals: {
+        ...Object.fromEntries(
+          Object.keys(globals.node).map((name) => [name, "off"]),
+        ),
+        ...globals.browser,
+        ...globals.commonjs,
+        process: "readonly", // Webpack's compile-time NODE_ENV replacement.
+      },
+    },
+  },
+  {
+    files: [
+      "src/preload/**/*.js",
+      "src/shared/startupTheme.js",
+      "scripts/fixtures/*renderer*.{js,jsx}",
+      "tests/**/*.{js,jsx}",
+    ],
+    languageOptions: { globals: { ...globals.browser } },
   },
 ];

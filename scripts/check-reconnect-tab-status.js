@@ -4,7 +4,7 @@ const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
 const ReconnectionManager = require(
-  path.join(ROOT, "src/core/connection/reconnection-manager.js"),
+  path.join(ROOT, "src/main/connection/reconnection-manager.js"),
 );
 
 const {
@@ -17,7 +17,9 @@ const {
   normalizeReconnectUiState,
   shouldClearOnTabConnectionStatus,
   shouldMarkPendingOnTabConnectionStatus,
-} = require(path.join(ROOT, "src/modules/terminal/reconnectTabStatus.js"));
+} = require(
+  path.join(ROOT, "src/renderer/modules/terminal/reconnectTabStatus.js"),
+);
 
 const t = (key, params = {}) => {
   const messages = {

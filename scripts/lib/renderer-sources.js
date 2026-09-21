@@ -20,11 +20,11 @@ function collectDirectorySources(relativeDirectory) {
 }
 
 function collectAppSources() {
-  return collectDirectorySources("src/components/app");
+  return collectDirectorySources("src/renderer/components/app");
 }
 
 function collectFileManagerSources() {
-  return collectDirectorySources("src/components/filemanager");
+  return collectDirectorySources("src/renderer/components/filemanager");
 }
 
 // Extract the actual callback instead of depending on its former neighbouring

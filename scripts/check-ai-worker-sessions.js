@@ -3,11 +3,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { EventEmitter } = require("node:events");
-const { IPC_EVENT_CHANNELS } = require("../src/core/ipc/schema/channels");
+const { IPC_EVENT_CHANNELS } = require("../src/shared/contracts/ipc/channels");
 
 const filename = path.resolve(
   __dirname,
-  "../src/core/workers/aiWorkerManager.js",
+  "../src/main/native/aiWorkerManager.js",
 );
 const children = [];
 const events = [];
@@ -51,10 +51,11 @@ vm.runInNewContext(
             ],
           },
         };
-      if (name.endsWith("utils/nativeServices"))
+      if (name.endsWith("nativeServices"))
         return { getNativeServicesHostPath: () => "fixture-sidecar" };
       if (name.endsWith("utils/logger")) return { logToFile: () => {} };
-      if (name.endsWith("ipc/schema/channels")) return { IPC_EVENT_CHANNELS };
+      if (name.endsWith("contracts/ipc/channels"))
+        return { IPC_EVENT_CHANNELS };
       if (name.endsWith("proxy/proxy-manager"))
         return {
           getDefaultProxyConfig: () => null,

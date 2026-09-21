@@ -14,7 +14,12 @@ async function createSftpLoopback(root) {
   const clients = new Set();
   const operations = [];
   const handles = new Set();
-  const control = { before: null, readDelay: 0, writeDelay: 0 };
+  const control = {
+    before: null,
+    afterWrite: null,
+    readDelay: 0,
+    writeDelay: 0,
+  };
   const resolve = (remotePath) => {
     const target = path.resolve(
       root,
@@ -161,7 +166,12 @@ async function createSftpLoopback(root) {
               );
             if (sftp.destroyed) return;
             await entry.file.write(data, 0, data.length, offset);
-            sftp.status(id, 0);
+            await control.afterWrite?.({
+              path: entry.remote,
+              offset,
+              length: data.length,
+            });
+            if (!sftp.destroyed) sftp.status(id, 0);
           });
           register("CLOSE", async (id, handle) => {
             const entry = get(handle);

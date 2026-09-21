@@ -5,10 +5,10 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..");
 const SRC_DIR = path.join(ROOT, "src");
 const { IPC_CHANNEL_DEFINITIONS, getChannelDefinition } = require(
-  path.join(ROOT, "src/core/ipc/schema/channels"),
+  path.join(ROOT, "src/shared/contracts/ipc/channels"),
 );
 const { validateSchema } = require(
-  path.join(ROOT, "src/core/ipc/schema/validator"),
+  path.join(ROOT, "src/main/ipc/schema/validator"),
 );
 
 const IPC_STRING_PATTERNS = [
@@ -234,7 +234,7 @@ function assertNoStaticIpcStringUsage() {
   assert.deepEqual(
     found,
     [],
-    `Static IPC channel strings are not allowed outside src/core/ipc/schema/channels.js:\n${found
+    `Static IPC channel strings are not allowed outside src/shared/contracts/ipc/channels.js:\n${found
       .map(({ file, kind, channel }) => `- ${file} ${kind}: ${channel}`)
       .join("\n")}`,
   );

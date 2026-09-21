@@ -1,0 +1,1218 @@
+/**
+ * SSH连接池 - 简化版
+ * 合并了 ssh-connection-pool.js 和旧 ssh-pool.js 的优点
+ * 基于 BaseConnectionPool，提供简洁高效的SSH连接管理
+ */
+
+const BaseConnectionPool = require("./base-connection-pool");
+const CLOSE_REASON = BaseConnectionPool.CLOSE_REASON;
+const Client = require("ssh2").Client;
+const { getBasicSSHAlgorithms } = require("../../shared/domain/sshAlgorithms");
+const proxyManager = require("../proxy/proxy-manager");
+const {
+  createChannelPoolManager,
+  processSSHPrivateKeyAsync,
+  buildSshConnectOptions,
+} = require("../utils/ssh-utils");
+const {
+  resolveSshNetworkProfile,
+  applySocketNetworkProfile,
+} = require("../utils/ssh-network-profile");
+const { isAuthErrorMessage } = require("../../shared/errorClassification");
+const {
+  attachKeyboardInteractiveSupport,
+  hasInteractiveAuthCapability,
+} = require("./ssh-interactive-auth");
+const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
+const ReconnectionManager = require("./reconnection-manager");
+const SshTransportHealth = require("./ssh-transport-health");
+
+// 代理类型常量
+const PROXY_TYPES = {
+  HTTP: "http",
+  HTTPS: "https",
+  SOCKS4: "socks4",
+  SOCKS5: "socks5",
+  NONE: "none",
+};
+
+/**
+ * SSH连接池类
+ */
+class SSHPool extends BaseConnectionPool {
+  /**
+   * 构造函数
+   * @param {Object} config - 连接池配置
+   */
+  constructor(config = {}) {
+    super({
+      ...config,
+      protocolType: "SSH",
+      healthCheckInterval: config.healthCheckInterval || 15 * 1000, // 15秒，及时发现VPN/路由切换后的半开连接
+    });
+
+    // SSH特有的属性
+    this.proxyManager = null;
+
+    // 简化的请求队列（移除了复杂的路由和负载均衡）
+    this.requestQueue = [];
+    this.isProcessingQueue = false;
+
+    // 为每个连接初始化通道管理器
+    this.channelManagers = new Map();
+
+    // 重连策略固定为弱网默认（DEFAULT_SSH_RETRY_CONFIG），无多模式切换
+    this.reconnectionManager = new ReconnectionManager();
+    this.transportHealth = new SshTransportHealth();
+  }
+
+  /**
+   * 初始化SSH连接池
+   */
+  initialize() {
+    if (this.isInitialized) {
+      this._logInfo("SSH connection pool already initialized");
+      return;
+    }
+
+    // 初始化代理管理器
+    proxyManager.initialize();
+    this.proxyManager = proxyManager;
+
+    // 初始化重连管理器（唯一弱网策略）
+    this.reconnectionManager.initialize();
+    this._setupReconnectionEvents();
+
+    // 调用父类初始化
+    super.initialize();
+  }
+
+  /**
+   * 设置重连管理器事件监听
+   * @private
+   */
+  _setupReconnectionEvents() {
+    // transport 接管成功时先更新连接池；终端会话恢复由后续显式事件触发
+    this.reconnectionManager.on(
+      "connectionReplaced",
+      ({ sessionId, newConnection }) => {
+        this._logInfo(`Reconnect succeeded, updating connection: ${sessionId}`);
+        const conn = this.connections.get(sessionId);
+        if (conn) {
+          this.transportHealth.cancel(conn.client);
+          conn.client = newConnection;
+          conn.ready = true;
+          conn.connecting = false;
+          conn.intentionalClose = false;
+          conn.closeReason = CLOSE_REASON.NETWORK;
+          conn.lastUsed = Date.now();
+        }
+      },
+    );
+
+    this.reconnectionManager.on(
+      "reconnectSessionRestoreReady",
+      ({ sessionId }) => {
+        const conn = this.connections.get(sessionId);
+        if (conn) {
+          this.emit("connectionReconnected", {
+            key: sessionId,
+            connection: conn,
+          });
+        }
+      },
+    );
+
+    // 监听重连放弃事件
+    this.reconnectionManager.on(
+      "reconnectAbandoned",
+      ({ sessionId, reason }) => {
+        this._logInfo(`Reconnect abandoned: ${sessionId} - ${reason}`);
+        // 从连接池中移除
+        this.connections.delete(sessionId);
+        // 清理可能残留的tab引用，避免后续查到已失效连接
+        this._removeTabReferencesForConnection(sessionId);
+        this.emit("connectionAbandoned", { key: sessionId, reason });
+      },
+    );
+  }
+
+  /**
+   * 清理SSH连接池资源
+   */
+  cleanup() {
+    this.transportHealth.dispose();
+    // 拒绝所有等待中的请求
+    this._drainRequestQueue("Connection pool is shutting down");
+
+    // 关闭重连管理器
+    if (this.reconnectionManager) {
+      this.reconnectionManager.shutdown();
+    }
+
+    // 调用父类清理
+    super.cleanup();
+  }
+
+  /**
+   * 生成SSH连接键
+   * @param {Object} config - SSH连接配置
+   * @returns {string} 连接键
+   */
+  generateConnectionKey(config) {
+    // 优先使用 tabId 来确保每个标签页都有独立的连接
+    if (config.tabId) {
+      const proxyString = config.proxy
+        ? `proxy:${config.proxy.host}:${config.proxy.port}:${config.proxy.type}`
+        : "";
+
+      // 使用唯一的连接键格式，确保每个标签页有独立连接
+      return `tab:${config.tabId}:${config.host}:${config.port || 22}:${config.username}${proxyString ? ":" + proxyString : ""}`;
+    }
+
+    // 回退到旧的逻辑，以支持可能没有tabId的场景
+    return `${config.host}:${config.port || 22}:${config.username}`;
+  }
+
+  /**
+   * 获取或创建SSH连接（增强版，支持队列）
+   * @param {Object} sshConfig - SSH连接配置
+   * @param {Object} options - 可选参数
+   * @returns {Promise<Object>} 连接信息对象
+   */
+  async getConnection(sshConfig, options = {}) {
+    try {
+      // 先尝试使用父类方法获取连接
+      return await super.getConnection(sshConfig);
+    } catch (error) {
+      // 如果连接池已满，加入队列等待
+      if (
+        error.message.includes("连接池已满") ||
+        /connection pool (is )?full/i.test(error.message)
+      ) {
+        this._logInfo(`Connection pool full, enqueueing request`);
+        return await this.queueConnectionRequest(sshConfig, options);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * 创建新的SSH连接
+   * @param {Object} sshConfig - SSH连接配置
+   * @param {string} connectionKey - 连接键
+   * @returns {Promise<Object>} 连接信息对象
+   */
+  async createConnection(sshConfig, connectionKey) {
+    this._logInfo(`Creating new SSH connection: ${connectionKey}`);
+    const networkProfile = resolveSshNetworkProfile(sshConfig);
+
+    // 处理私钥（读取privateKeyPath对应的文件内容）
+    const processedConfig = await processSSHPrivateKeyAsync(sshConfig);
+    // 配置校验在分配客户端和超时定时器之前完成。
+    const connectionOptions = this._buildSSHOptions(
+      processedConfig,
+      networkProfile,
+    );
+
+    // 解析代理配置
+    const resolvedProxyConfig =
+      await this.proxyManager.resolveProxyConfigAsync(sshConfig);
+    const usingProxy =
+      this._isProxyConfigValid(resolvedProxyConfig) &&
+      String(resolvedProxyConfig.type || "").toLowerCase() !== PROXY_TYPES.NONE;
+
+    if (usingProxy) {
+      this._logInfo(
+        `Using proxy: ${resolvedProxyConfig.type} ${resolvedProxyConfig.host}:${resolvedProxyConfig.port}`,
+      );
+    }
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finishResolve = (val) => {
+        if (settled) return;
+        settled = true;
+        resolve(val);
+      };
+      const finishReject = (err) => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      };
+
+      const ssh = new Client();
+      // keyboard-interactive / 2FA：在 connect 前注册事件处理（需配合 tryKeyboard）
+      attachKeyboardInteractiveSupport(ssh, sshConfig);
+      const connectionInfo = {
+        client: ssh,
+        config: sshConfig,
+        key: connectionKey,
+        createdAt: Date.now(),
+        lastUsed: Date.now(),
+        refCount: 1,
+        ready: false,
+        connecting: true,
+        stream: null,
+        listeners: new Set(),
+        usingProxy: usingProxy,
+        proxySocket: null,
+        closeReason: CLOSE_REASON.NETWORK,
+        channelManager: createChannelPoolManager(30), // 最多30个并发通道
+      };
+
+      // 先放入连接池：即使初次连接失败，也允许后续自动重连替换 connectionInfo.client
+      this.connections.set(connectionKey, connectionInfo);
+
+      // hostVerifier / keyboard-interactive 可能需要用户交互确认，超时窗口适当放宽
+      const baseConnectionTimeout = Math.max(
+        this.config.connectionTimeout,
+        networkProfile.readyTimeout + 5000,
+      );
+      const connectionTimeoutMs = hasInteractiveAuthCapability(sshConfig)
+        ? Math.max(baseConnectionTimeout, 5 * 60 * 1000)
+        : baseConnectionTimeout;
+
+      // 设置连接超时
+      const timeout = setTimeout(() => {
+        this._logInfo(`SSH connection timed out: ${connectionKey}`);
+        connectionInfo.connecting = false;
+        try {
+          if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
+        } catch {
+          /* intentionally ignored */
+        }
+        try {
+          ssh.end();
+        } catch {
+          /* intentionally ignored */
+        }
+        const err = new Error(
+          `Connection timed out: ${sshConfig.host}:${sshConfig.port || 22}`,
+        );
+        // 初次连接超时：若可重试，则进入统一的自动重连状态机（1分钟封顶）
+        this._failOrReconnectInitial(
+          err,
+          sshConfig,
+          usingProxy,
+          connectionKey,
+          ssh,
+          connectionInfo,
+          finishResolve,
+          finishReject,
+        );
+      }, connectionTimeoutMs);
+
+      // 监听就绪事件
+      ssh.on("ready", () => {
+        if (connectionInfo.client !== ssh || settled) return;
+        clearTimeout(timeout);
+        connectionInfo.ready = true;
+        connectionInfo.connecting = false;
+        applySocketNetworkProfile(ssh._sock, networkProfile);
+
+        this._logInfo(
+          `SSH connection established: ${connectionKey}${usingProxy ? " (via proxy)" : ""}`,
+        );
+
+        this.emit("connectionCreated", {
+          key: connectionKey,
+          connection: connectionInfo,
+        });
+        finishResolve(connectionInfo);
+
+        // 处理等待队列
+        this.processRequestQueue();
+      });
+
+      // 监听错误事件
+      ssh.on("error", (err) => {
+        if (connectionInfo.client !== ssh) return;
+        clearTimeout(timeout);
+        connectionInfo.connecting = false;
+        try {
+          if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
+        } catch {
+          /* intentionally ignored */
+        }
+
+        const enhancedError = this._handleSSHError(
+          sshConfig._interactiveAuthError || err,
+          sshConfig,
+          connectionKey,
+          usingProxy,
+          resolvedProxyConfig,
+          processedConfig,
+        );
+
+        // 初次连接失败：若可重试，则进入统一的自动重连状态机（1分钟封顶）
+        this._failOrReconnectInitial(
+          enhancedError,
+          sshConfig,
+          usingProxy,
+          connectionKey,
+          ssh,
+          connectionInfo,
+          finishResolve,
+          finishReject,
+        );
+      });
+
+      // 监听关闭事件
+      ssh.on("close", () => {
+        this._handleSSHClose(connectionInfo, connectionKey, ssh);
+      });
+
+      // 关键：ssh2 不支持 options.proxy，必须传入已建立好的代理隧道 socket（sock）
+      if (usingProxy) {
+        (async () => {
+          try {
+            const targetPort = sshConfig.port || 22;
+            const sock = await this.proxyManager.createTunnelSocket(
+              resolvedProxyConfig,
+              sshConfig.host,
+              targetPort,
+              { timeoutMs: connectionTimeoutMs },
+            );
+            applySocketNetworkProfile(sock, networkProfile);
+            connectionInfo.proxySocket = sock;
+            connectionOptions.sock = sock;
+            ssh.connect(connectionOptions);
+          } catch (e) {
+            clearTimeout(timeout);
+            try {
+              if (connectionInfo.proxySocket)
+                connectionInfo.proxySocket.destroy();
+            } catch {
+              /* intentionally ignored */
+            }
+            // 代理隧道创建失败：多为本地代理/VPN未就绪，按可重试处理
+            this._failOrReconnectInitial(
+              e,
+              sshConfig,
+              usingProxy,
+              connectionKey,
+              ssh,
+              connectionInfo,
+              finishResolve,
+              finishReject,
+            );
+          }
+        })();
+      } else {
+        ssh.connect(connectionOptions);
+      }
+    });
+  }
+
+  _shouldAutoReconnectOnInitialFailure(error, sshConfig, usingProxy) {
+    if (
+      [
+        "SSH_CONFIG_CHANGED",
+        "SSH_INTERACTIVE_AUTH_FAILED",
+        "KEYBOARD_INTERACTIVE_TIMEOUT",
+      ].includes(error?.code)
+    )
+      return false;
+    // 默认仅对“带 tabId 的交互连接”启用（避免影响非交互/后台调用）
+    // 如需在非 tabId 场景启用初连自动重试，可通过以下方式显式开启：
+    // - 连接配置：sshConfig.autoReconnect === true
+    // - 连接池配置：this.config.enableInitialAutoReconnectWithoutTabId === true
+    const allowWithoutTabId =
+      sshConfig?.autoReconnect === true ||
+      this.config?.enableInitialAutoReconnectWithoutTabId === true;
+    if (!sshConfig?.tabId && !allowWithoutTabId) return false;
+
+    const msg = String(error?.message || "");
+    const code = String(error?.code || error?.originalError?.code || "");
+
+    // 认证失败不做自动重试
+    // 若确有需要（例如外部凭据/私钥稍后才就绪），可显式开启：
+    // - 连接配置：sshConfig.retryOnAuthFailure === true
+    // - 连接池配置：this.config.enableAuthFailureAutoReconnect === true
+    if (isAuthErrorMessage(msg)) {
+      const allowAuthRetry =
+        sshConfig?.retryOnAuthFailure === true ||
+        this.config?.enableAuthFailureAutoReconnect === true;
+      return allowAuthRetry;
+    }
+
+    // 代理/VPN 场景优先重试（本地代理端口拒绝/超时很常见）
+    if (usingProxy) {
+      if (
+        code === "ECONNREFUSED" ||
+        code === "ETIMEDOUT" ||
+        msg.includes("ECONNREFUSED") ||
+        msg.toLowerCase().includes("proxy") ||
+        msg.includes("127.0.0.1")
+      ) {
+        return true;
+      }
+    }
+
+    // 常见网络瞬断/不可达：允许重试
+    return (
+      code === "ECONNRESET" ||
+      code === "EPIPE" ||
+      code === "ETIMEDOUT" ||
+      code === "ENETUNREACH" ||
+      code === "EHOSTUNREACH" ||
+      code === "ENETDOWN" ||
+      code === "ENOTFOUND" ||
+      code === "EAI_AGAIN" ||
+      code === "ECONNREFUSED" ||
+      msg.includes("ECONNRESET") ||
+      msg.includes("EPIPE") ||
+      msg.includes("ETIMEDOUT") ||
+      msg.includes("ENETUNREACH") ||
+      /EHOSTUNREACH|ENETDOWN|ENOTFOUND|EAI_AGAIN/.test(msg) ||
+      msg.includes("ECONNREFUSED") ||
+      msg.toLowerCase().includes("timeout")
+    );
+  }
+
+  /**
+   * 初次连接失败的统一处置：可重试则转入自动重连状态机，否则删除连接并拒绝
+   * settled 防重入语义由 finishResolve/finishReject 保证
+   * @private
+   */
+  _failOrReconnectInitial(
+    error,
+    sshConfig,
+    usingProxy,
+    connectionKey,
+    ssh,
+    connectionInfo,
+    finishResolve,
+    finishReject,
+  ) {
+    connectionInfo.connecting = false;
+    if (
+      this._shouldAutoReconnectOnInitialFailure(error, sshConfig, usingProxy)
+    ) {
+      void this._startInitialAutoReconnect(
+        connectionKey,
+        ssh,
+        sshConfig,
+        connectionInfo,
+        error,
+      );
+      finishResolve(connectionInfo);
+      return;
+    }
+    // 认证失败/取消后的 close 事件不能再启动后台重连。
+    connectionInfo.intentionalClose = true;
+    connectionInfo.closeReason = CLOSE_REASON.SYSTEM;
+    this.connections.delete(connectionKey);
+    finishReject(error);
+    try {
+      ssh.end();
+    } catch {
+      /* intentionally ignored */
+    }
+  }
+
+  /**
+   * 注册自动重连会话（统一的 registerSession options）
+   * @private
+   */
+  _ensureReconnectSession(key, client, config, failureReason) {
+    this.reconnectionManager.registerSession(key, client, config, {
+      autoStart: true,
+      state: "pending",
+      failureReason,
+      intentionalClose: false,
+      replaceConnection: true,
+    });
+  }
+
+  async _startInitialAutoReconnect(
+    connectionKey,
+    ssh,
+    sshConfig,
+    connectionInfo,
+    error,
+  ) {
+    try {
+      // 保留连接信息，交由重连状态机接管
+      connectionInfo.ready = false;
+      connectionInfo.lastError = error;
+
+      const existing = this.reconnectionManager.getSessionStatus(connectionKey);
+      if (!existing) {
+        this._ensureReconnectSession(connectionKey, ssh, sshConfig, "network");
+      } else {
+        await this.reconnectionManager.requestAutoReconnect(
+          connectionKey,
+          "network",
+        );
+      }
+
+      // 通知前端：连接丢失/进入重连（避免静默卡住）
+      this.emit("connectionLost", {
+        key: connectionKey,
+        connection: connectionInfo,
+      });
+    } catch (e) {
+      // 如果重连状态机启动失败，保持原错误路径（由上层超时/报错兜底）
+      this._logInfo(
+        `Auto-reconnect after initial failure error (ignored): ${connectionKey} - ${e?.message || e}`,
+      );
+    }
+  }
+
+  /**
+   * 检查SSH连接是否健康
+   * @param {Object} connectionInfo - 连接信息对象
+   * @returns {boolean} 是否健康
+   */
+  isConnectionHealthy(connectionInfo) {
+    if (!connectionInfo) {
+      return false;
+    }
+    // 初始连接建立中：连接条目先入池、ready 事件后置位，
+    // 期间不得判为失联，否则健康检查会误触发重连并杀掉刚建好的连接
+    if (connectionInfo.connecting === true) {
+      return true;
+    }
+    return (
+      connectionInfo.ready &&
+      connectionInfo.client &&
+      !connectionInfo.client.destroyed &&
+      !connectionInfo.client._sock?.destroyed
+    );
+  }
+
+  async performHealthCheck() {
+    super.performHealthCheck();
+    const checks = [];
+    for (const [key, conn] of this.connections) {
+      if (
+        conn.connecting ||
+        !conn.ready ||
+        conn.intentionalClose ||
+        !(conn.refCount > 0 || this.isConnectionReferencedByTabs(key))
+      )
+        continue;
+
+      const client = conn.client;
+      checks.push(
+        this.transportHealth.check(client).then((healthy) => {
+          // A probe of the old transport must never take down its replacement.
+          if (
+            healthy !== false ||
+            this.connections.get(key) !== conn ||
+            conn.client !== client ||
+            !conn.ready ||
+            conn.intentionalClose ||
+            !(conn.refCount > 0 || this.isConnectionReferencedByTabs(key))
+          )
+            return;
+          this._logInfo(`SSH transport stopped responding: ${key}`);
+          if (
+            this.handleActiveUnhealthyConnection(key, conn, {
+              reason: "network",
+            })
+          ) {
+            // Drop the old TCP send queue as well; it belongs to the lost shell.
+            client.destroy?.();
+          }
+        }),
+      );
+    }
+    await Promise.all(checks);
+  }
+
+  /**
+   * 健康检查发现“活跃但不健康”连接时，转入自动重连而不是直接关闭
+   * @param {string} key - 连接键
+   * @param {Object} connectionInfo - 连接信息对象
+   * @param {Object} metadata - 附加上下文
+   * @returns {boolean} 是否成功交由重连状态机接管
+   */
+  handleActiveUnhealthyConnection(key, connectionInfo, metadata = {}) {
+    if (
+      !key ||
+      !connectionInfo ||
+      connectionInfo.intentionalClose ||
+      !this.reconnectionManager
+    ) {
+      return false;
+    }
+
+    if (!connectionInfo.client || !connectionInfo.config) {
+      this._logInfo(
+        `Health check hit but cannot take over reconnect (missing context): ${key}`,
+      );
+      return false;
+    }
+
+    connectionInfo.ready = false;
+
+    const sessionStatus = this.reconnectionManager.getSessionStatus(key);
+    const reconnectReason = metadata.reason || "health";
+
+    if (sessionStatus) {
+      if (
+        sessionStatus.state === "pending" ||
+        sessionStatus.state === "reconnecting" ||
+        sessionStatus.state === "paused"
+      ) {
+        this._logInfo(
+          `Health check hit: ${key}, already reconnecting (${sessionStatus.state})`,
+        );
+        return true;
+      }
+
+      void this.reconnectionManager
+        .requestAutoReconnect(key, reconnectReason)
+        .catch((error) => {
+          this._logInfo(
+            `Health check auto-reconnect failed: ${key} - ${error?.message || error}`,
+          );
+        });
+
+      this.emit("connectionLost", {
+        key,
+        connection: connectionInfo,
+        reason: reconnectReason,
+      });
+      return true;
+    }
+
+    try {
+      this._ensureReconnectSession(
+        key,
+        connectionInfo.client,
+        connectionInfo.config,
+        reconnectReason,
+      );
+
+      this.emit("connectionLost", {
+        key,
+        connection: connectionInfo,
+        reason: reconnectReason,
+      });
+      return true;
+    } catch (error) {
+      this._logInfo(
+        `Health check register reconnect session failed: ${key} - ${error?.message || error}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * 关闭SSH连接（覆盖父类方法以支持关闭原因）
+   * @param {string} key - 连接键
+   */
+  closeConnection(key, options = {}) {
+    this.transportHealth.cancel(this.connections.get(key)?.client);
+    const closeOptions = this._normalizeCloseOptions(
+      options,
+      CLOSE_REASON.SYSTEM,
+    );
+    const isActiveClose =
+      closeOptions.intentional ||
+      closeOptions.reason === CLOSE_REASON.USER ||
+      closeOptions.reason === CLOSE_REASON.SYSTEM;
+
+    if (isActiveClose && this.reconnectionManager?.cancelSession) {
+      this.reconnectionManager.cancelSession(
+        key,
+        `close-connection:${closeOptions.reason}`,
+      );
+    }
+
+    super.closeConnection(key, closeOptions);
+  }
+
+  /**
+   * 获取连接池状态（扩展父类方法）
+   * @returns {Object} 状态信息
+   */
+  getStatus() {
+    const status = super.getStatus();
+
+    // 添加SSH特有的统计
+    const proxyConns = Array.from(this.connections.values()).filter(
+      (c) => c.usingProxy,
+    ).length;
+
+    return {
+      ...status,
+      proxyConnections: proxyConns,
+      queueLength: this.requestQueue.length,
+    };
+  }
+
+  /**
+   * 根据标签页ID获取连接（扩展父类方法以支持前缀匹配）
+   * @param {string} tabId - 标签页ID
+   * @returns {Object|null} 连接信息对象
+   */
+  getConnectionByTabId(tabId) {
+    if (!tabId) return null;
+
+    // 先调用父类方法查找标签页引用
+    const conn = super.getConnectionByTabId(tabId);
+    if (conn) return conn;
+
+    // 直接通过连接键前缀查找（向后兼容）
+    const tabPrefix = `tab:${tabId}:`;
+    for (const [key, connection] of this.connections.entries()) {
+      if (key.startsWith(tabPrefix)) {
+        return connection;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 根据标签页ID获取连接键
+   * @param {string} tabId - 标签页ID
+   * @returns {string|null} 连接键
+   */
+  getConnectionKeyByTabId(tabId) {
+    if (!tabId) return null;
+
+    // 先从标签页引用中查找
+    const key = this.tabReferences.get(tabId);
+    if (key) return key;
+
+    // 直接通过连接键前缀查找（向后兼容）
+    const tabPrefix = `tab:${tabId}:`;
+    for (const [connectionKey] of this.connections.entries()) {
+      if (connectionKey.startsWith(tabPrefix)) {
+        return connectionKey;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 获取连接状态
+   * @param {string} connectionKey - 连接键
+   * @returns {Object|null} 连接状态
+   */
+  getConnectionStatus(connectionKey) {
+    const conn = this.connections.get(connectionKey);
+    if (!conn) return null;
+
+    // 获取重连状态
+    const reconnectStatus =
+      this.reconnectionManager.getSessionStatus(connectionKey);
+
+    return {
+      key: connectionKey,
+      ready: conn.ready,
+      refCount: conn.refCount,
+      createdAt: conn.createdAt,
+      lastUsed: conn.lastUsed,
+      reconnectStatus,
+    };
+  }
+
+  /**
+   * 将连接请求加入队列
+   * @param {Object} sshConfig - SSH连接配置
+   * @param {Object} options - 可选参数
+   * @returns {Promise<Object>} 连接信息对象
+   */
+  async queueConnectionRequest(sshConfig, options = {}) {
+    return new Promise((resolve, reject) => {
+      const request = {
+        sshConfig,
+        options,
+        resolve,
+        reject,
+        timestamp: Date.now(),
+      };
+
+      this.requestQueue.push(request);
+      this.processRequestQueue();
+    });
+  }
+
+  /**
+   * 处理请求队列
+   */
+  async processRequestQueue() {
+    if (this.isProcessingQueue || this.requestQueue.length === 0) {
+      return;
+    }
+
+    // 检查是否有可用的连接槽位
+    if (this.connections.size >= this.config.maxConnections) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    try {
+      while (
+        this.requestQueue.length > 0 &&
+        this.connections.size < this.config.maxConnections
+      ) {
+        const request = this.requestQueue.shift();
+
+        try {
+          const connection = await super.getConnection(request.sshConfig);
+          request.resolve(connection);
+        } catch (error) {
+          request.reject(error);
+        }
+
+        // 避免阻塞事件循环
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    } finally {
+      this.isProcessingQueue = false;
+    }
+  }
+
+  /**
+   * 检查代理配置是否有效
+   * @param {Object|null} proxyConfig - 代理配置对象
+   * @returns {boolean} 配置是否有效
+   * @private
+   */
+  _isProxyConfigValid(proxyConfig) {
+    return (
+      proxyConfig &&
+      typeof proxyConfig === "object" &&
+      proxyConfig.host &&
+      proxyConfig.port &&
+      proxyConfig.type &&
+      Object.values(PROXY_TYPES).includes(proxyConfig.type.toLowerCase())
+    );
+  }
+
+  /**
+   * 获取适合ssh2库的代理协议字符串
+   * @param {string} proxyType - 代理类型
+   * @returns {string} ssh2库支持的代理协议字符串
+   * @private
+   */
+  _getProxyProtocol(proxyType) {
+    const type = proxyType.toLowerCase();
+
+    switch (type) {
+      case PROXY_TYPES.HTTP:
+      case PROXY_TYPES.HTTPS:
+        return "http";
+      case PROXY_TYPES.SOCKS4:
+        return "socks4";
+      case PROXY_TYPES.SOCKS5:
+        return "socks5";
+      default:
+        return "http";
+    }
+  }
+
+  /**
+   * 构建SSH连接选项
+   * @param {Object} processedConfig - 已处理私钥的SSH配置（processSSHPrivateKeyAsync 的结果）
+   * @param {Object|null} networkProfile - 网络参数（可选）
+   * @returns {Object} SSH连接选项
+   * @private
+   */
+  _buildSSHOptions(processedConfig, networkProfile = null) {
+    const resolvedNetworkProfile =
+      networkProfile || resolveSshNetworkProfile(processedConfig);
+
+    const options = buildSshConnectOptions(processedConfig, {
+      networkProfile: resolvedNetworkProfile,
+      algorithms: getBasicSSHAlgorithms(),
+    });
+
+    if (
+      typeof processedConfig.hostHash === "string" &&
+      processedConfig.hostHash.trim()
+    ) {
+      options.hostHash = processedConfig.hostHash.trim();
+    }
+
+    // 启用压缩（如果配置）
+    if (processedConfig && processedConfig.enableCompression === true) {
+      options.compress = true;
+      this._logInfo("SSH connection compression enabled (compress=true)");
+    }
+
+    if (processedConfig.privateKey && processedConfig.passphrase) {
+      options.passphrase = processedConfig.passphrase;
+    }
+
+    return options;
+  }
+
+  /**
+   * 处理SSH错误
+   * @param {Error} err - 原始错误
+   * @param {Object} sshConfig - SSH配置
+   * @param {string} connectionKey - 连接键
+   * @param {boolean} usingProxy - 是否使用代理
+   * @param {Object} resolvedProxyConfig - 解析后的代理配置
+   * @param {Object} processedConfig - 已处理私钥的SSH配置
+   * @returns {Error} 增强的错误对象
+   * @private
+   */
+  _handleSSHError(
+    err,
+    sshConfig,
+    connectionKey,
+    usingProxy,
+    resolvedProxyConfig,
+    processedConfig,
+  ) {
+    const lng = normalizeLanguage(sshConfig?.language);
+    const host = sshConfig.host;
+    const port = sshConfig.port || 22;
+    const proxySuffix = usingProxy
+      ? mainT("mainProcess.ssh.throughProxy", { lng })
+      : "";
+
+    let errorMessage = err.message;
+    let isProxyError = false;
+
+    // 提取简洁的错误信息（去除嵌套的错误前缀）
+    const extractCleanError = (msg) => {
+      // 移除嵌套的 "Unhandled error" 包装
+      if (msg.includes("Unhandled error. ({")) {
+        const match = msg.match(/message: '([^']+)'/);
+        if (match) return match[1];
+      }
+      // 移除重复的错误前缀（中英）
+      const patterns = [
+        /^SSH连接错误:\s*/,
+        /^SSH认证失败:\s*/,
+        /^代理连接失败:\s*/,
+        /^SSH connection error:\s*/i,
+        /^SSH authentication failed:\s*/i,
+        /^Proxy connection failed:\s*/i,
+      ];
+      let cleaned = msg;
+      for (const pattern of patterns) {
+        cleaned = cleaned.replace(pattern, "");
+      }
+      return cleaned;
+    };
+
+    errorMessage = extractCleanError(errorMessage);
+
+    // 检测代理相关错误
+    if (usingProxy) {
+      if (
+        errorMessage.includes("proxy") ||
+        errorMessage.includes("socket") ||
+        errorMessage.includes("ECONNREFUSED") ||
+        errorMessage.includes("timeout")
+      ) {
+        errorMessage = mainT("mainProcess.ssh.proxyFailed", { lng });
+        isProxyError = true;
+      }
+    }
+
+    // 检测常见SSH错误
+    if (!isProxyError) {
+      const lowerError = errorMessage.toLowerCase();
+      if (
+        errorMessage.includes("All configured authentication methods failed")
+      ) {
+        errorMessage = mainT("mainProcess.ssh.authFailed", { lng });
+
+        // 如果配置了私钥路径但没有私钥内容，提供具体提示
+        if (sshConfig.privateKeyPath && !processedConfig.privateKey) {
+          errorMessage = mainT("mainProcess.ssh.privateKeyUnreadable", { lng });
+        }
+      } else if (
+        lowerError.includes("host denied") ||
+        lowerError.includes("host verification failed") ||
+        lowerError.includes("host key verification") ||
+        lowerError.includes("fingerprint")
+      ) {
+        errorMessage = mainT("mainProcess.ssh.hostKeyFailed", { lng });
+      } else if (errorMessage.includes("connect ECONNREFUSED")) {
+        errorMessage = mainT("mainProcess.ssh.connectionRefused", {
+          lng,
+          host,
+          port,
+          proxy: proxySuffix,
+        });
+      } else if (errorMessage.includes("getaddrinfo ENOTFOUND")) {
+        errorMessage = mainT("mainProcess.ssh.hostNotFound", { lng, host });
+      } else if (
+        errorMessage.includes("ETIMEDOUT") ||
+        errorMessage.includes("timeout")
+      ) {
+        errorMessage = mainT("mainProcess.ssh.connectionTimeout", {
+          lng,
+          host,
+          port,
+        });
+      }
+    }
+
+    // 日志中记录详细信息（包含connectionKey），但不影响用户看到的错误
+    this._logInfo(
+      `SSH connection error detail: ${connectionKey} - ${errorMessage}`,
+    );
+
+    // 创建增强的错误对象（使用简洁的错误消息，不包含技术细节）
+    return this._buildEnhancedConnectionError({
+      message: errorMessage,
+      err,
+      connectionKey,
+      configKey: "sshConfig",
+      protocol: "ssh",
+      code:
+        err?.code ||
+        err?.originalError?.code ||
+        (isProxyError ? "EPROXYUNAVAILABLE" : null),
+      config: {
+        host: sshConfig.host,
+        port: sshConfig.port || 22,
+        username: sshConfig.username,
+        hasPassword: !!sshConfig.password,
+        hasPrivateKey: !!processedConfig.privateKey,
+        hasPrivateKeyPath: !!sshConfig.privateKeyPath,
+        usingProxy: usingProxy,
+        proxyType: usingProxy ? resolvedProxyConfig.type : null,
+        isProxyError: isProxyError,
+        authType: sshConfig.authType || null,
+        language: sshConfig.language || null,
+      },
+    });
+  }
+
+  /**
+   * 处理SSH连接关闭事件
+   * @param {Object} connectionInfo - 连接信息对象
+   * @param {string} connectionKey - 连接键
+   * @param {Object|null} sourceClient - 触发 close 的连接对象
+   * @private
+   */
+  _handleSSHClose(connectionInfo, connectionKey, sourceClient = null) {
+    if (this.connections.get(connectionKey) !== connectionInfo) return;
+    if (
+      sourceClient &&
+      connectionInfo?.client &&
+      sourceClient !== connectionInfo.client
+    ) {
+      this._logInfo(`Ignore stale SSH close event: ${connectionKey}`);
+      return;
+    }
+
+    this._logInfo(`SSH connection closed: ${connectionKey}`);
+    if (connectionInfo) {
+      connectionInfo.ready = false;
+    }
+
+    const closeReason =
+      connectionInfo?.closeReason ||
+      (connectionInfo?.intentionalClose
+        ? CLOSE_REASON.USER
+        : CLOSE_REASON.NETWORK);
+    const isActiveClose =
+      closeReason === CLOSE_REASON.USER || closeReason === CLOSE_REASON.SYSTEM;
+
+    // 用户/系统主动关闭：直接清理，不触发自动重连
+    if (isActiveClose) {
+      this._logInfo(
+        `Intentionally closing connection: ${connectionKey}, reason=${closeReason}`,
+      );
+      try {
+        if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
+      } catch {
+        /* intentionally ignored */
+      }
+      this.connections.delete(connectionKey);
+      this.processRequestQueue();
+      return;
+    }
+
+    // 如果连接意外关闭且还有引用，尝试重连
+    if (
+      connectionInfo.refCount > 0 ||
+      this.isConnectionReferencedByTabs(connectionKey)
+    ) {
+      this._logInfo(
+        `Unexpected disconnect detected, attempting reconnect: ${connectionKey}`,
+      );
+
+      const existingStatus =
+        this.reconnectionManager.getSessionStatus(connectionKey);
+      const reconnectReason =
+        closeReason === CLOSE_REASON.HEALTH
+          ? CLOSE_REASON.HEALTH
+          : CLOSE_REASON.NETWORK;
+      if (
+        existingStatus &&
+        (existingStatus.state === "pending" ||
+          existingStatus.state === "reconnecting")
+      ) {
+        this._logInfo(
+          `Skip duplicate reconnect registration: ${connectionKey}, state=${existingStatus.state}`,
+        );
+      } else if (existingStatus) {
+        void this.reconnectionManager
+          .requestAutoReconnect(connectionKey, reconnectReason)
+          .catch((error) => {
+            this._logInfo(
+              `Trigger auto-reconnect failed: ${connectionKey} - ${error?.message || error}`,
+            );
+          });
+      } else {
+        this._ensureReconnectSession(
+          connectionKey,
+          connectionInfo.client,
+          connectionInfo.config,
+          reconnectReason,
+        );
+      }
+
+      // 发出连接丢失事件
+      this.emit("connectionLost", {
+        key: connectionKey,
+        connection: connectionInfo,
+        reason: reconnectReason,
+      });
+    } else {
+      // 没有引用的连接直接清理
+      this.connections.delete(connectionKey);
+    }
+
+    // 处理等待队列
+    this.processRequestQueue();
+  }
+
+  /**
+   * 关闭连接池
+   */
+  async shutdown() {
+    this._logInfo("Shutting down SSH connection pool...");
+
+    // cleanup() 内会统一排空等待队列
+    this.cleanup();
+
+    this._logInfo("SSH connection pool closed");
+  }
+
+  /**
+   * 排空等待队列，拒绝所有等待中的请求
+   * @param {string} reason - 拒绝原因
+   * @private
+   */
+  _drainRequestQueue(reason) {
+    while (this.requestQueue.length > 0) {
+      const request = this.requestQueue.shift();
+      if (request && request.reject) {
+        request.reject(new Error(reason));
+      }
+    }
+  }
+}
+
+module.exports = SSHPool;

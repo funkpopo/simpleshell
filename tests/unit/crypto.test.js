@@ -12,7 +12,7 @@ import {
   SCRYPT_PARAMS,
   SECURITY_MODE_MASTER_PASSWORD,
   SECURITY_MODE_LEGACY_RANDOM_KEY,
-} from "../../src/core/utils/crypto.js";
+} from "../../src/main/utils/crypto.js";
 
 // 测试环境无 Electron safeStorage，走 AES-256-GCM 密钥派生回退路径。
 const LEGACY_KEY = "abcdef1234567890abcdef1234567890";

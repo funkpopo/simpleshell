@@ -7,8 +7,9 @@ function loadFileService(root, config) {
     save: path.join(root, "service-download.bin"),
     open: [root],
   };
-  const configPath = require.resolve("../../src/services/configService");
-  const connectionPath = require.resolve("../../src/modules/connection");
+  const configPath = require.resolve("../../src/main/settings/configService");
+  const connectionPath =
+    require.resolve("../../src/main/connection/connectionManager");
   require.cache[configPath] = {
     id: configPath,
     filename: configPath,
@@ -45,17 +46,17 @@ function loadFileService(root, config) {
   };
   let service;
   delete require.cache[
-    require.resolve("../../src/modules/filemanagement/filemanagementService")
+    require.resolve("../../src/main/file-transfer/filemanagementService")
   ];
   try {
-    service = require("../../src/modules/filemanagement/filemanagementService");
+    service = require("../../src/main/file-transfer/filemanagementService");
   } finally {
     Module._load = originalLoad;
   }
-  const processManager = require("../../src/core/process/processManager");
+  const processManager = require("../../src/main/process/processManager");
   const {
     setTrustedHostFingerprint,
-  } = require("../../src/core/utils/sshHostKeyTrust");
+  } = require("../../src/main/utils/sshHostKeyTrust");
   setTrustedHostFingerprint(config, config.expectedHostFingerprint);
   processManager.setProcess("fixture-service", {
     config,

@@ -9,7 +9,7 @@ import {
   sameFingerprint,
   probeResumeState,
   resumeError,
-} from "../../src/modules/filemanagement/transferResume.js";
+} from "../../src/main/file-transfer/transferResume.js";
 
 // 真实文件系统上的临时目录，每个用例独立
 let root;

@@ -7,11 +7,11 @@ import {
   AppProvider,
   useAppStore,
   useReconnectStore,
-} from "../../src/store/AppContext.jsx";
-import { actions } from "../../src/store/appReducer.js";
-import { SessionWorkspace } from "../../src/components/app/SessionWorkspace.jsx";
-import SessionTab from "../../src/components/app/SessionTab.jsx";
-import ReconnectMenuSection from "../../src/components/app/ReconnectMenuSection.jsx";
+} from "../../src/renderer/store/AppContext.jsx";
+import { actions } from "../../src/renderer/store/appReducer.js";
+import { SessionWorkspace } from "../../src/renderer/components/app/SessionWorkspace.jsx";
+import SessionTab from "../../src/renderer/components/app/SessionTab.jsx";
+import ReconnectMenuSection from "../../src/renderer/components/app/ReconnectMenuSection.jsx";
 
 const { terminalRender, tabRender, workspaceRender, translate } = vi.hoisted(
   () => ({
@@ -23,33 +23,36 @@ const { terminalRender, tabRender, workspaceRender, translate } = vi.hoisted(
   }),
 );
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: translate }) }));
-vi.mock("../../src/components/CustomTab.jsx", () => ({
+vi.mock("../../src/renderer/components/CustomTab.jsx", () => ({
   default: (props) => {
     tabRender(props);
     return null;
   },
 }));
-vi.mock("../../src/components/AIChatWorkspace.jsx", () => ({
+vi.mock("../../src/renderer/components/AIChatWorkspace.jsx", () => ({
   default: () => null,
 }));
-vi.mock("../../src/components/LazyComponents.jsx", () => ({
+vi.mock("../../src/renderer/components/LazyComponents.jsx", () => ({
   WebTerminalWithSuspense: (props) => {
     terminalRender(props);
     return null;
   },
 }));
-vi.mock("../../src/components/terminal-pane/TerminalWorkspace.jsx", () => ({
-  default: ({ sessions, renderTerminal }) => {
-    workspaceRender();
-    return sessions.map((session) =>
-      createElement(
-        "div",
-        { key: session.sessionKey },
-        renderTerminal(session, { isActive: true, allowWebgl: true }),
-      ),
-    );
-  },
-}));
+vi.mock(
+  "../../src/renderer/components/terminal-pane/TerminalWorkspace.jsx",
+  () => ({
+    default: ({ sessions, renderTerminal }) => {
+      workspaceRender();
+      return sessions.map((session) =>
+        createElement(
+          "div",
+          { key: session.sessionKey },
+          renderTerminal(session, { isActive: true, allowWebgl: true }),
+        ),
+      );
+    },
+  }),
+);
 
 let root;
 let host;

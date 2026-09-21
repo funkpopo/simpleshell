@@ -6,7 +6,7 @@ import {
 } from "../../scripts/check-preload-typings.js";
 
 const source = fs.readFileSync(
-  new URL("../../src/preload.js", import.meta.url),
+  new URL("../../src/preload/index.js", import.meta.url),
   "utf8",
 );
 
