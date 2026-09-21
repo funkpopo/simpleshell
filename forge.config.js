@@ -527,7 +527,8 @@ module.exports = async () => {
       appCopyright: `Copyright © ${new Date().getFullYear()} funkpopo`,
       win32metadata: {
         CompanyName: "funkpopo",
-        FileDescription: APP_DESCRIPTION,
+        // Windows Task Manager uses FileDescription as the process display name.
+        FileDescription: PRODUCT_NAME,
         OriginalFilename: `${PRODUCT_NAME}.exe`,
         ProductName: PRODUCT_NAME,
         InternalName: PRODUCT_NAME,
