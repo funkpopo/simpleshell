@@ -130,6 +130,39 @@ describe("preload JSDoc implementation type checking", () => {
     expect(getPreloadTypeDiagnostics()).toEqual([]);
   }, 15000);
 
+  it("严格检查会拒绝用任意参数回调接收固定参数的进度回调", () => {
+    const contextPath = fileURLToPath(
+      new URL("../../src/preload/bridgeContext.js", import.meta.url),
+    );
+    const original = fs.readFileSync(contextPath, "utf8");
+    const changed = original.replace(
+      "@param {((...args: TArgs) => void)} [options.callback]",
+      "@param {((...args: unknown[]) => void)} [options.callback]",
+    );
+    expect(changed).not.toBe(original);
+    const diagnostics = getPreloadTypeDiagnostics(changed, contextPath);
+    expect(
+      diagnostics.some(
+        (d) =>
+          d.code === 2322 && String(d.file?.fileName).endsWith("api/files.js"),
+      ),
+    ).toBe(true);
+  }, 15000);
+
+  it("进度参数转换必须符合回调的参数类型", () => {
+    const apiPath = fileURLToPath(
+      new URL("../../src/preload/api/files.js", import.meta.url),
+    );
+    const original = fs.readFileSync(apiPath, "utf8");
+    const changed = original.replace(
+      "data.progress || 0,",
+      '"invalid progress",',
+    );
+    expect(changed).not.toBe(original);
+    const diagnostics = getPreloadTypeDiagnostics(changed, apiPath);
+    expect(diagnostics.some((d) => d.code === 2322)).toBe(true);
+  }, 15000);
+
   it("遗漏 IPC 回调类型时会报告隐式 any", () => {
     const apiPath = fileURLToPath(
       new URL("../../src/preload/api/ai.js", import.meta.url),

@@ -54,6 +54,26 @@ export interface ListFilesOptions {
   [option: string]: unknown;
 }
 
+/** Progress IPC events may omit fields, especially completion/cancellation signals. */
+export interface TransferProgressPayload {
+  tabId?: string;
+  isBatch?: boolean;
+  progress?: number;
+  fileName?: string;
+  currentFile?: string;
+  transferredBytes?: number;
+  totalBytes?: number;
+  transferSpeed?: number;
+  remainingTime?: number;
+  currentFileIndex?: number;
+  processedFiles?: number;
+  totalFiles?: number;
+  transferKey?: string;
+  fileList?: unknown[] | null;
+  operationComplete?: boolean;
+  cancelled?: boolean;
+}
+
 export type DownloadProgressCallback = (
   progress: number,
   fileName: string,

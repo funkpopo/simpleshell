@@ -2,7 +2,7 @@
 /**
  * Preload 运行于隔离上下文；类型检查由 scripts/check-preload-typings.js 执行。
  * 主进程尚未细化的响应使用 unknown，调用方应先缩窄类型。
- * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, TerminalMailboxPayload, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../shared/contracts/preload"
+ * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, TerminalMailboxPayload, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, TransferProgressPayload, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../shared/contracts/preload"
  */
 
 const {
@@ -63,11 +63,12 @@ function createBridgeContext() {
   /**
    * 进度监听样板封装：注册临时监听器 → 发起 invoke → finally 移除。
    * upload 类接口在收到 operationComplete/cancelled 信号时会提前移除监听器。
+   * @template {unknown[]} TArgs
    * @param {object} options
    * @param {string} options.channel
-   * @param {((...args: unknown[]) => void)} [options.callback]
-   * @param {(data: Record<string, unknown>) => unknown} [options.shouldHandle] 按返回值的真值过滤事件。
-   * @param {(data: Record<string, unknown>) => unknown[]} [options.toArgs]
+   * @param {((...args: TArgs) => void)} [options.callback]
+   * @param {(data: TransferProgressPayload) => unknown} [options.shouldHandle] 按返回值的真值过滤事件。
+   * @param {(data: TransferProgressPayload) => [...TArgs]} options.toArgs 与回调保持相同的参数类型和顺序。
    * @param {boolean} [options.removeOnSignal]
    * @param {(channel: string) => Promise<unknown>} options.invoke
    * @returns {Promise<unknown>}
@@ -76,14 +77,14 @@ function createBridgeContext() {
     channel,
     callback,
     shouldHandle = () => true,
-    toArgs = () => [],
+    toArgs,
     removeOnSignal = false,
     invoke,
   }) => {
     const removeListener = () => {
       ipcRenderer.removeListener(channel, listener);
     };
-    /** @type {IpcCallback<Record<string, unknown>>} */
+    /** @type {IpcCallback<TransferProgressPayload>} */
     const listener = (_event, data) => {
       if (!shouldHandle(data)) {
         return;
