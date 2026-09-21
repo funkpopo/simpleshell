@@ -217,7 +217,10 @@ const transform = createOscSafeOutputTransform((text) => text);
 assert.equal(transform("trailing\x1b") + transform("", true), "trailing\x1b");
 
 const configService = require("../src/main/settings/configService");
-configService._initializeValidator();
+const {
+  createConfigValidators,
+} = require("../src/main/settings/configSchemas");
+Object.assign(configService, createConfigValidators());
 configService._log = () => {};
 const config = {};
 configService._saveSection = (_section, { write }) => write(config) !== false;

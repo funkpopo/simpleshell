@@ -41,7 +41,7 @@ const commandSuggestionHookSource = readSource(
 const promptTrackingSource = readSource(
   "src/renderer/features/terminal/hooks/usePromptTracking.js",
 );
-const preloadSource = readSource("src/preload/index.js");
+const preloadSource = require("./lib/preload-sources").collectPreloadSources();
 
 function createMockTerm({ type = "normal" } = {}) {
   return {

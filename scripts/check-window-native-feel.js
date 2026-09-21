@@ -51,7 +51,10 @@ const appCleanupSource = readSource("src/main/bootstrap/appCleanup.js");
 const settingsHandlersSource = readSource(
   "src/main/ipc/handlers/settingsHandlers.js",
 );
-const configServiceSource = readSource("src/main/settings/configService.js");
+const configServiceSource =
+  readSource("src/main/settings/configService.js") +
+  "\n" +
+  readSource("src/main/settings/configSchemas.js");
 const settingsSource = readSource(
   "src/renderer/features/settings/Settings.jsx",
 );
@@ -59,14 +62,15 @@ const globalCssSource = readSource("src/renderer/styles/global.css");
 const fileManagerSource =
   require("./lib/renderer-sources.js").collectFileManagerSources();
 const fileHandlersSource = readSource("src/main/ipc/handlers/fileHandlers.js");
-const filemanagementServiceSource = readSource(
-  "src/main/file-transfer/filemanagementService.js",
-);
+const filemanagementServiceSource =
+  readSource("src/main/file-transfer/filemanagementService.js") +
+  "\n" +
+  readSource("src/main/file-transfer/transferPolicy.js");
 const nativeSftpClientSource = readSource(
   "src/main/native/nativeSftpClient.js",
 );
 const ipcTraceSource = readSource("src/main/ipc/ipcTrace.js");
-const preloadSource = readSource("src/preload/index.js");
+const preloadSource = require("./lib/preload-sources").collectPreloadSources();
 const commandSuggestionSource = readSource(
   "src/renderer/features/terminal/CommandSuggestion.jsx",
 );
@@ -131,7 +135,8 @@ function testStartupAndWindowLifecycle() {
     "index.html must inline a boot background to avoid white flash before CSS loads.",
   );
 
-  const preloadSourceForBoot = readSource("src/preload/index.js");
+  const preloadSourceForBoot =
+    require("./lib/preload-sources").collectPreloadSources();
   assertContains(
     preloadSourceForBoot,
     /applyStartupThemeToDocument|simpleshellBoot/,
@@ -455,7 +460,7 @@ function testDragAndDropUsesNativeValidatedLocalPaths() {
 
   assertContains(
     preloadSource,
-    /validateDroppedItems:\s*\(items\)\s*=>\s*ipcRenderer\.invoke\(IPC_REQUEST_CHANNELS\.FILE_VALIDATE_DROPPED_ITEMS,\s*items\)/,
+    /validateDroppedItems:\s*\(items\)\s*=>\s*ipcRenderer\.invoke\(\s*IPC_REQUEST_CHANNELS\.FILE_VALIDATE_DROPPED_ITEMS,\s*items,?\s*\)/,
     "Preload must expose local drop validation through IPC.",
   );
 

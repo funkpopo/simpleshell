@@ -1,8 +1,10 @@
 const fs = require("fs");
 const path = require("path");
-const zlib = require("zlib");
-const Ajv = require("ajv");
-const addFormats = require("ajv-formats");
+const {
+  compressCommandHistory,
+  decompressCommandHistory,
+} = require("./commandHistoryCodec");
+const { createConfigValidators } = require("./configSchemas");
 const {
   getConfigBackupDirectory,
   getConfigPath,
@@ -61,7 +63,7 @@ class ConfigService {
     }
 
     // 初始化 JSON Schema 验证器
-    this._initializeValidator();
+    Object.assign(this, createConfigValidators());
 
     // 设置配置文件路径
     try {
@@ -81,181 +83,6 @@ class ConfigService {
       );
       return false;
     }
-  }
-
-  /**
-   * 初始化 Ajv 验证器并定义配置的 JSON Schema
-   */
-  _initializeValidator() {
-    this.ajv = new Ajv({ allErrors: true, useDefaults: true, strict: false });
-    addFormats(this.ajv);
-
-    // 连接配置验证 Schema
-    this.validators.connection = this.ajv.compile({
-      type: "object",
-      properties: {
-        id: { type: "string" },
-        name: { type: "string" },
-        type: { type: "string", enum: ["connection", "group"] },
-        protocol: { type: "string", enum: ["ssh", "telnet"] },
-        host: { type: "string" },
-        port: { type: "number", minimum: 1, maximum: 65535 },
-        username: { type: "string" },
-        password: { type: "string" },
-        privateKeyPath: { type: "string" },
-        items: { type: "array" },
-      },
-    });
-
-    // AI 设置验证 Schema
-    this.validators.aiSettings = this.ajv.compile({
-      type: "object",
-      properties: {
-        configs: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              id: { type: "string" },
-              name: { type: "string" },
-              apiUrl: { type: "string", format: "uri" },
-              apiKey: { type: "string" },
-              model: { type: "string" },
-              streamEnabled: { type: "boolean", default: true },
-            },
-            required: ["id", "name", "apiUrl"],
-          },
-        },
-        current: {
-          type: ["object", "null"],
-          properties: {
-            apiUrl: { type: "string" },
-            apiKey: { type: "string" },
-            model: { type: "string" },
-            streamEnabled: { type: "boolean", default: true },
-          },
-        },
-        windowSize: {
-          type: "object",
-          properties: {
-            width: { type: "number", minimum: 300, maximum: 1000 },
-            height: { type: "number", minimum: 500, maximum: 1000 },
-          },
-          required: ["width", "height"],
-        },
-        proxyConfig: {
-          type: "object",
-          properties: {
-            enabled: { type: "boolean" },
-            type: { type: "string", enum: ["http", "https"] },
-            host: { type: "string", maxLength: 255 },
-            port: { type: "integer", minimum: 0, maximum: 65535 },
-            username: { type: "string" },
-            password: { type: "string" },
-          },
-        },
-      },
-      required: ["configs"],
-      default: { configs: [], current: null },
-    });
-
-    // UI 设置验证 Schema
-    this.validators.uiSettings = this.ajv.compile({
-      type: "object",
-      properties: {
-        transferIntegrity: { type: "boolean", default: false },
-        sftpFollowTerminalDirectory: { type: "boolean", default: true },
-        language: { type: "string", default: "zh-CN" },
-        fontSize: { type: "number", minimum: 10, maximum: 30, default: 14 },
-        editorFont: { type: "string", default: "system" },
-        darkMode: { type: "boolean", default: true },
-        sidebarPosition: {
-          type: "string",
-          enum: ["left", "right"],
-          default: "right",
-        },
-        sidebarWidth: {
-          type: "number",
-          minimum: 240,
-          maximum: 560,
-        },
-        backupRetentionDays: { type: "number", minimum: 1, default: 30 },
-        terminalFont: { type: "string", default: "Fira Code" },
-        terminalFontSize: {
-          type: "number",
-          minimum: 10,
-          maximum: 30,
-          default: 14,
-        },
-        terminalLineHeight: {
-          type: "number",
-          minimum: 1.0,
-          maximum: 1.4,
-          default: 1.0,
-        },
-        performance: { type: "object", default: {} },
-        externalEditor: { type: "object", default: {} },
-        desktopIntegration: {
-          type: "object",
-          default: {},
-          properties: {
-            trayEnabled: { type: "boolean", default: false },
-            closeToTray: { type: "boolean", default: false },
-          },
-        },
-        ipQueryHistory: {
-          type: "array",
-          default: [],
-          items: {
-            type: "object",
-            properties: {
-              id: { type: ["number", "string"] },
-              ip: { type: "string" },
-              locationText: { type: "string" },
-              latitude: { type: ["number", "string", "null"] },
-              longitude: { type: ["number", "string", "null"] },
-              time: { type: "number" },
-            },
-          },
-        },
-        windowBounds: {
-          type: "object",
-          default: {},
-          properties: {
-            bounds: {
-              type: "object",
-              properties: {
-                x: { type: "number" },
-                y: { type: "number" },
-                width: { type: "number", minimum: 400 },
-                height: { type: "number", minimum: 300 },
-              },
-            },
-            maximized: { type: "boolean", default: false },
-            fullScreen: { type: "boolean", default: false },
-            updatedAt: { type: "number" },
-          },
-        },
-      },
-      default: {},
-    });
-
-    // 日志设置验证 Schema
-    this.validators.logSettings = this.ajv.compile({
-      type: "object",
-      properties: {
-        level: {
-          type: "string",
-          enum: ["DEBUG", "INFO", "WARN", "ERROR"],
-          default: "INFO",
-        },
-        maxFileSize: { type: "number", minimum: 1024, default: 5242880 },
-        maxFiles: { type: "number", minimum: 1, default: 5 },
-        compressOldLogs: { type: "boolean", default: true },
-        cleanupInterval: { type: "number", minimum: 1, default: 24 },
-      },
-      default: {},
-    });
   }
 
   /**
@@ -1763,68 +1590,6 @@ class ConfigService {
     });
   }
 
-  /**
-   * 压缩命令历史
-   * @param {Array} history - 命令历史数组
-   * @returns {Object} 压缩后的数据对象
-   */
-  _compressCommandHistory(history) {
-    try {
-      const jsonStr = JSON.stringify(history);
-      const compressed = zlib.gzipSync(jsonStr);
-      const base64Data = compressed.toString("base64");
-
-      const result = {
-        compressed: true,
-        data: base64Data,
-        originalSize: Buffer.byteLength(jsonStr, "utf8"),
-        compressedSize: compressed.length,
-        timestamp: Date.now(),
-      };
-
-      this._log(
-        `ConfigService: Command history compressed from ${result.originalSize} to ${result.compressedSize} bytes (${((result.compressedSize / result.originalSize) * 100).toFixed(2)}%)`,
-        "INFO",
-      );
-
-      return result;
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to compress command history - ${error.message}`,
-        "ERROR",
-      );
-      return {
-        compressed: false,
-        data: history,
-        timestamp: Date.now(),
-      };
-    }
-  }
-
-  /**
-   * 解压命令历史
-   * @param {Object} data - 压缩后的数据对象
-   * @returns {Array} 命令历史数组
-   */
-  _decompressCommandHistory(data) {
-    try {
-      if (!data.compressed) {
-        return Array.isArray(data.data) ? data.data : [];
-      }
-
-      const compressed = Buffer.from(data.data, "base64");
-      const decompressed = zlib.gunzipSync(compressed);
-      const jsonStr = decompressed.toString("utf8");
-      return JSON.parse(jsonStr);
-    } catch (error) {
-      this._log(
-        `ConfigService: Failed to decompress command history - ${error.message}`,
-        "ERROR",
-      );
-      return [];
-    }
-  }
-
   _stripSensitiveConnectionFields(items) {
     if (!Array.isArray(items)) {
       return [];
@@ -1907,7 +1672,10 @@ class ConfigService {
     }
 
     if (sectionSet.has("commandHistory")) {
-      nextConfig.commandHistory = this._compressCommandHistory([]);
+      nextConfig.commandHistory = compressCommandHistory(
+        [],
+        this._log.bind(this),
+      );
     }
 
     if (sectionSet.has("shortcutCommands")) {
@@ -1953,7 +1721,10 @@ class ConfigService {
             return config.commandHistory;
           }
           // 新格式（压缩对象）
-          return this._decompressCommandHistory(config.commandHistory);
+          return decompressCommandHistory(
+            config.commandHistory,
+            this._log.bind(this),
+          );
         }
         return undefined;
       },
@@ -1968,7 +1739,10 @@ class ConfigService {
   saveCommandHistory(history) {
     return this._saveSection("command history", {
       write: (config) => {
-        config.commandHistory = this._compressCommandHistory(history);
+        config.commandHistory = compressCommandHistory(
+          history,
+          this._log.bind(this),
+        );
       },
     });
   }

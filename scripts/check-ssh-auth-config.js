@@ -70,10 +70,10 @@ async function checkAuthQueue() {
     childProcesses: processes,
     connectionManager,
   });
-  const first = handler._requestUserAuth("tab-a", {
+  const first = handler.authentication._requestUserAuth("tab-a", {
     step: "keyboardInteractive",
   });
-  const second = handler._requestUserAuth("tab-b", {
+  const second = handler.authentication._requestUserAuth("tab-b", {
     step: "keyboardInteractive",
   });
   assert.equal(sent.length, 1, "Only one authentication dialog may be active");
@@ -87,8 +87,8 @@ async function checkAuthQueue() {
     cancelled: true,
   });
   await cancelled;
-  assert.equal(handler.pendingAuthRequests.size, 0);
-  assert.equal(handler.activeAuthRequestId, null);
+  assert.equal(handler.authentication.pendingAuthRequests.size, 0);
+  assert.equal(handler.authentication.activeAuthRequestId, null);
   await assert.rejects(
     handler.handleAuthResponse(null, { requestId }),
     /Invalid request ID/,
@@ -96,7 +96,7 @@ async function checkAuthQueue() {
 
   const controller = new AbortController();
   const closed = assert.rejects(
-    handler._requestUserAuth("tab-a", {}, controller.signal),
+    handler.authentication._requestUserAuth("tab-a", {}, controller.signal),
     /connection closed/,
   );
   controller.abort();
@@ -109,7 +109,7 @@ async function checkAuthQueue() {
 
   savedConnections = [{ id: "saved", type: "connection", password: "old" }];
   const stale = assert.rejects(
-    handler._requestUserAuth("tab-a", { connectionId: "saved" }),
+    handler.authentication._requestUserAuth("tab-a", { connectionId: "saved" }),
     { code: "SSH_CONFIG_CHANGED" },
   );
   pool.emit("savedConnectionsChanged", {
@@ -117,7 +117,7 @@ async function checkAuthQueue() {
     connections: [{ ...savedConnections[0], password: "new" }],
   });
   await stale;
-  assert.equal(handler.pendingAuthRequests.size, 0);
+  assert.equal(handler.authentication.pendingAuthRequests.size, 0);
 
   let finishStart;
   let starts = 0;
@@ -533,7 +533,7 @@ async function checkSavedConfigReplacesPendingAuth() {
   try {
     const start = handler.startSSH(null, { ...before, tabId: "editing-tab" });
     await tick();
-    assert.equal(handler.pendingAuthRequests.size, 1);
+    assert.equal(handler.authentication.pendingAuthRequests.size, 1);
     savedConnections = [{ ...before, password: "corrected" }];
     pool.emit("savedConnectionsChanged", {
       previousConnections: [before],
@@ -542,7 +542,7 @@ async function checkSavedConfigReplacesPendingAuth() {
     assert.equal(await start, 123);
     assert.equal(receivedConfig.password, "corrected");
     assert.equal(
-      handler.pendingAuthRequests.size,
+      handler.authentication.pendingAuthRequests.size,
       0,
       "Saving the missing credentials resolves the old authentication flow",
     );

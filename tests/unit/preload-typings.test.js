@@ -1,16 +1,29 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+import { collectPreloadSources } from "../../scripts/lib/preload-sources.js";
 import {
   inspectPreload,
   getPreloadTypeDiagnostics,
 } from "../../scripts/check-preload-typings.js";
 
-const source = fs.readFileSync(
-  new URL("../../src/preload/index.js", import.meta.url),
-  "utf8",
-);
+const source = collectPreloadSources();
 
 describe("preload AST contract checks", () => {
+  it("resolves factory methods and rejects missing factories or duplicate API keys", () => {
+    const result = inspectPreload(`
+      function createCommands() { return {
+        /** @returns {boolean} */ ready: () => true,
+      }; }
+      contextBridge.exposeInMainWorld("exampleAPI", {
+        ...createCommands(), ...createCommands(), ...missingFactory(),
+      });
+    `);
+    expect(result.methodCount).toBe(2);
+    expect(result.problems).toHaveLength(2);
+    expect(result.problems.join(" ")).toContain("duplicate API method ready");
+    expect(result.problems.join(" ")).toContain("non-recursive object factory");
+  });
   it("检查实际 API，并包含换行后的 invoke 调用", () => {
     const result = inspectPreload(source);
     expect(result.problems).toEqual([]);
@@ -118,12 +131,16 @@ describe("preload JSDoc implementation type checking", () => {
   }, 15000);
 
   it("把同步 boolean 注释改成 Promise 会失败", () => {
-    const changed = source.replace(
+    const apiPath = fileURLToPath(
+      new URL("../../src/preload/api/terminal.js", import.meta.url),
+    );
+    const original = fs.readFileSync(apiPath, "utf8");
+    const changed = original.replace(
       /@returns \{boolean\}(\s*\*\/\s*sendToProcess:)/,
       "@returns {Promise<boolean>}$1",
     );
-    expect(changed).not.toBe(source);
-    const diagnostics = getPreloadTypeDiagnostics(changed);
+    expect(changed).not.toBe(original);
+    const diagnostics = getPreloadTypeDiagnostics(changed, apiPath);
     expect(
       diagnostics.some(
         (d) =>

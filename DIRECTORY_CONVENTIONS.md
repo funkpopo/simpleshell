@@ -42,6 +42,22 @@ Keep lazy feature imports lazy. Preload implementation modules may be split
 without changing the public window API. Protocols shared with Rust retain their
 existing command names, schema versions and response shapes.
 
+The current responsibility boundaries are:
+
+- `main/connection/sshAuthenticationService.js` owns authentication queues and
+  host trust; `ipc/handlers/sshHandlers.js` adapts IPC and orchestrates sessions.
+- `main/settings/configSchemas.js` owns validators and `commandHistoryCodec.js`
+  owns history compression/compatibility; `configService.js` owns storage.
+- `main/file-transfer/transferPolicy.js` owns concurrency/chunk decisions and
+  `localFolderScanner.js` owns native folder scanning; the transfer service
+  coordinates jobs and their lifetime.
+- `preload/index.js` assembles API factories in `preload/api`. Create one
+  `bridgeContext` per preload initialization so subscriptions and request tokens
+  have a single owner. Keep method signatures in `shared/contracts/preload.d.ts`.
+- `renderer/app/AppShell.jsx` composes the shell; app hooks own notification and
+  sidebar drag lifetimes, while app components own menu presentation. Feature
+  implementations continue to enter through `LazyComponents.jsx`.
+
 ## Repository rules
 
 - Components use PascalCase; hooks use `useSomething`. Keep existing names during

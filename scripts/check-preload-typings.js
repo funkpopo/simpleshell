@@ -1,9 +1,9 @@
 // Node-only check: parse JavaScript/JSDoc with TypeScript, validate IPC arity,
 // then type-check preload implementations against their documented signatures.
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
+const { collectPreloadSources } = require("./lib/preload-sources");
 const {
   IPC_REQUEST_CHANNELS,
   getChannelDefinition,
@@ -48,6 +48,44 @@ function inspectPreload(source, filename = preloadPath) {
     problems.push(`${path.basename(filename)}:${line + 1}: ${message}`);
   };
 
+  // Factory spreads are resolved to their actual object methods, never skipped.
+  const factories = new Map();
+  for (const statement of file.statements) {
+    if (
+      !ts.isFunctionDeclaration(statement) ||
+      !statement.name ||
+      !statement.body
+    )
+      continue;
+    const returned = statement.body.statements.find(
+      ts.isReturnStatement,
+    )?.expression;
+    if (returned && ts.isObjectLiteralExpression(returned)) {
+      factories.set(statement.name.text, returned);
+    }
+  }
+  function flattenProperties(object, visiting = new Set()) {
+    return object.properties.flatMap((property) => {
+      if (!ts.isSpreadAssignment(property)) return [property];
+      const call = property.expression;
+      const name =
+        ts.isCallExpression(call) && ts.isIdentifier(call.expression)
+          ? call.expression.text
+          : null;
+      if (!name || !factories.has(name) || visiting.has(name)) {
+        report(
+          property,
+          "API spread must resolve to a non-recursive object factory",
+        );
+        return [];
+      }
+      return flattenProperties(
+        factories.get(name),
+        new Set([...visiting, name]),
+      );
+    });
+  }
+
   function checkApi(call) {
     const [name, object] = call.arguments;
     if (!name || !ts.isStringLiteral(name)) {
@@ -66,7 +104,12 @@ function inspectPreload(source, filename = preloadPath) {
     }
     if (object.properties.length === 0)
       report(object, `${name.text}: API must expose at least one method`);
-    for (const property of object.properties) {
+    const exposedNames = new Set();
+    for (const property of flattenProperties(object)) {
+      const propertyName = property.name?.getText(file);
+      if (exposedNames.has(propertyName))
+        report(property, `${name.text}: duplicate API method ${propertyName}`);
+      exposedNames.add(propertyName);
       const method = ts.isMethodDeclaration(property)
         ? property
         : ts.isPropertyAssignment(property) &&
@@ -198,7 +241,7 @@ function inspectPreload(source, filename = preloadPath) {
 }
 
 // An optional in-memory source is used by regression tests without editing preload.js.
-function getPreloadTypeDiagnostics(source) {
+function getPreloadTypeDiagnostics(source, sourcePath = preloadPath) {
   const configPath = path.join(repoRoot, "tsconfig.preload.json");
   const config = ts.readConfigFile(configPath, ts.sys.readFile);
   if (config.error) return [config.error];
@@ -208,7 +251,7 @@ function getPreloadTypeDiagnostics(source) {
   if (source !== undefined) {
     const getSourceFile = host.getSourceFile.bind(host);
     host.getSourceFile = (filename, languageVersion, ...args) =>
-      path.resolve(filename) === preloadPath
+      path.resolve(filename) === path.resolve(sourcePath)
         ? ts.createSourceFile(
             filename,
             source,
@@ -223,7 +266,7 @@ function getPreloadTypeDiagnostics(source) {
 }
 
 function main() {
-  const source = fs.readFileSync(preloadPath, "utf8");
+  const source = collectPreloadSources();
   assert.match(
     source,
     /^\/\/ @ts-check\r?$/m,

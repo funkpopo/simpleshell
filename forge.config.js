@@ -4,7 +4,9 @@ const path = require("node:path");
 const { FusesPlugin } = require("@electron-forge/plugin-fuses");
 const { WebpackPlugin } = require("@electron-forge/plugin-webpack");
 const { FuseV1Options, FuseVersion } = require("@electron/fuses");
-const fsExtra = require("fs-extra");
+const {
+  installWindowsWebpackMoveFallback,
+} = require("./scripts/lib/windows-webpack-move");
 const webpack = require("webpack");
 
 const MIN_PORT = 1024;
@@ -49,8 +51,6 @@ const LINUX_ICON_PATH = path.join(
   "src/renderer/assets/SimpleShell.png",
 );
 const WEBPACK_DIR = path.resolve(__dirname, ".webpack");
-const WINDOWS_MOVE_RETRY_DELAY_MS = 250;
-const WINDOWS_MOVE_RETRIES = 8;
 const PACKAGED_SCRIPT_NAMES_TO_REMOVE = new Set([
   "run-checks.js",
   "release-check.js",
@@ -67,81 +67,7 @@ const NODE_PTY_PREBUILD_DIRS_BY_TARGET = {
   "win32-x64": new Set(["win32-x64"]),
 };
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const isRetryableWindowsMoveError = (error) =>
-  process.platform === "win32" &&
-  ["EPERM", "EBUSY", "ENOTEMPTY"].includes(error?.code);
-
-const isWebpackPath = (value) => {
-  const relativePath = path.relative(WEBPACK_DIR, path.resolve(value));
-
-  return relativePath === "" || !relativePath.startsWith("..");
-};
-
-const isWebpackMove = (src, dest) => isWebpackPath(src) && isWebpackPath(dest);
-
-const installWindowsWebpackMoveFallback = () => {
-  if (process.platform !== "win32" || fsExtra.__simpleShellWebpackMovePatch) {
-    return;
-  }
-
-  const originalMove = fsExtra.move.bind(fsExtra);
-
-  const moveWithFallback = async (src, dest, options) => {
-    try {
-      return await originalMove(src, dest, options);
-    } catch (error) {
-      if (!isWebpackMove(src, dest) || !isRetryableWindowsMoveError(error)) {
-        throw error;
-      }
-
-      for (let attempt = 0; attempt < WINDOWS_MOVE_RETRIES; attempt += 1) {
-        await sleep(WINDOWS_MOVE_RETRY_DELAY_MS);
-
-        try {
-          return await originalMove(src, dest, options);
-        } catch (retryError) {
-          if (!isRetryableWindowsMoveError(retryError)) {
-            throw retryError;
-          }
-        }
-      }
-
-      await fsExtra.copy(src, dest, {
-        errorOnExist: true,
-        overwrite: false,
-      });
-      await fsExtra.remove(src);
-
-      return undefined;
-    }
-  };
-
-  fsExtra.move = (src, dest, options, callback) => {
-    if (typeof options === "function") {
-      return moveWithFallback(src, dest).then(
-        () => options(),
-        (error) => options(error),
-      );
-    }
-
-    if (typeof callback === "function") {
-      return moveWithFallback(src, dest, options).then(
-        () => callback(),
-        (error) => callback(error),
-      );
-    }
-
-    return moveWithFallback(src, dest, options);
-  };
-
-  Object.defineProperty(fsExtra, "__simpleShellWebpackMovePatch", {
-    value: true,
-  });
-};
-
-installWindowsWebpackMoveFallback();
+installWindowsWebpackMoveFallback(WEBPACK_DIR);
 
 const closeWebpackCompiler = (compiler) =>
   new Promise((resolve, reject) => {

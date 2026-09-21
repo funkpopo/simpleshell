@@ -10,6 +10,7 @@ import useAppTheme from "../../src/renderer/app/hooks/useAppTheme.js";
 import useCredentialSecurity from "../../src/renderer/app/hooks/useCredentialSecurity.js";
 import useReconnect from "../../src/renderer/app/hooks/useReconnect.js";
 import useReconnectCountdown from "../../src/renderer/app/hooks/useReconnectCountdown.js";
+import useSidebarResize from "../../src/renderer/app/hooks/useSidebarResize.js";
 
 const { translate, notify, changeLanguage } = vi.hoisted(() => ({
   translate: (key) => key,
@@ -39,6 +40,85 @@ afterEach(async () => {
   for (const hook of hooks.reverse()) await hook.unmount();
   hooks = [];
   vi.useRealTimers();
+});
+
+it.each(["left", "right"])(
+  "persists the final %s sidebar width and releases pointer listeners",
+  async (sidebarPosition) => {
+    const setSidebarWidth = vi.fn();
+    const setUiSettingsSnapshot = vi.fn();
+    window.terminalAPI.loadUISettings = vi
+      .fn()
+      .mockResolvedValue({ language: "en" });
+    window.terminalAPI.saveUISettings = vi
+      .fn()
+      .mockResolvedValue({ success: true });
+    const hook = await mount(useSidebarResize, {
+      sidebarWidth: 300,
+      sidebarPosition,
+      setSidebarWidth,
+      setUiSettingsSnapshot,
+    });
+    await act(() =>
+      hook.current.handleSidebarResizeStart({
+        button: 0,
+        clientX: 500,
+        currentTarget: {},
+        preventDefault() {},
+      }),
+    );
+    expect(hook.current.sidebarResizing).toBe(true);
+    await act(() =>
+      document.dispatchEvent(
+        new MouseEvent("pointermove", {
+          clientX: sidebarPosition === "left" ? 540 : 460,
+        }),
+      ),
+    );
+    expect(setSidebarWidth).toHaveBeenLastCalledWith(340);
+    await act(async () => document.dispatchEvent(new Event("pointerup")));
+    expect(hook.current.sidebarResizing).toBe(false);
+    expect(window.terminalAPI.saveUISettings).toHaveBeenCalledWith({
+      language: "en",
+      sidebarWidth: 340,
+    });
+    expect(setUiSettingsSnapshot).toHaveBeenCalledWith({
+      language: "en",
+      sidebarWidth: 340,
+    });
+    expect(document.body.style.cursor).toBe("");
+    document.dispatchEvent(new MouseEvent("pointermove", { clientX: 800 }));
+    expect(setSidebarWidth).toHaveBeenCalledOnce();
+  },
+);
+
+it("restores document styles and removes drag listeners on unmount during resizing", async () => {
+  const setSidebarWidth = vi.fn();
+  document.body.style.cursor = "crosshair";
+  document.body.style.userSelect = "text";
+  const hook = await mount(useSidebarResize, {
+    sidebarWidth: 300,
+    sidebarPosition: "left",
+    setSidebarWidth,
+    setUiSettingsSnapshot: vi.fn(),
+  });
+  await act(() =>
+    hook.current.handleSidebarResizeStart({
+      button: 0,
+      clientX: 500,
+      currentTarget: {},
+      preventDefault() {},
+    }),
+  );
+  expect(document.body.style.cursor).toBe("col-resize");
+  await hook.unmount();
+  hooks.pop();
+  expect(document.body.style.cursor).toBe("crosshair");
+  expect(document.body.style.userSelect).toBe("text");
+  document.dispatchEvent(new MouseEvent("pointermove", { clientX: 800 }));
+  expect(setSidebarWidth).not.toHaveBeenCalled();
+  document.body.style.cursor = "";
+  document.body.style.userSelect = "";
 });
 
 it("loads appearance once and applies settings events without reading stale settings again", async () => {

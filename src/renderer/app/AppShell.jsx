@@ -1,3 +1,7 @@
+import AppMenu from "./components/AppMenu.jsx";
+import SessionContextMenu from "./components/SessionContextMenu.jsx";
+import useSidebarResize from "./hooks/useSidebarResize.js";
+import useAppNotifications from "./hooks/useAppNotifications.js";
 import * as React from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useSftpFollowSetting } from "../features/file-manager/hooks/useSftpFollowSetting.js";
@@ -15,30 +19,19 @@ import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
-import Menu from "@mui/material/Menu";
-import MenuItem from "@mui/material/MenuItem";
 import Tabs from "@mui/material/Tabs";
 import AppsIcon from "@mui/icons-material/Apps";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import MonitorHeartIcon from "@mui/icons-material/MonitorHeart";
 import LinkIcon from "@mui/icons-material/Link";
-import RefreshIcon from "@mui/icons-material/Refresh";
-import SplitscreenIcon from "@mui/icons-material/Splitscreen";
-import PowerOffIcon from "@mui/icons-material/PowerOff";
 import FolderIcon from "@mui/icons-material/Folder";
-import SettingsIcon from "@mui/icons-material/Settings";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import AIIcon from "../features/ai/AIIcon.jsx";
 import Tooltip from "@mui/material/Tooltip";
 import SidebarTooltip from "../shared/ui/SidebarTooltip.jsx";
 import Paper from "@mui/material/Paper";
 import HistoryIcon from "@mui/icons-material/History";
-import InfoIcon from "@mui/icons-material/Info";
-import ExitToAppIcon from "@mui/icons-material/ExitToApp";
-import BugReportIcon from "@mui/icons-material/BugReport";
-import FeedbackIcon from "@mui/icons-material/Feedback";
-import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import PublicIcon from "@mui/icons-material/Public";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import SettingsEthernetIcon from "@mui/icons-material/SettingsEthernet";
@@ -68,7 +61,6 @@ import {
   SessionAIChatWorkspace,
 } from "./SessionWorkspace.jsx";
 import SessionTab from "./SessionTab.jsx";
-import ReconnectMenuSection from "./ReconnectMenuSection.jsx";
 import PaneDropOverlay from "./PaneDropOverlay.jsx";
 import { shallowEqual } from "./state/subscriptionStore.js";
 import {
@@ -92,11 +84,6 @@ import {
   sidebarRailDividerSx,
 } from "../shared/ui/sidebarItemStyles";
 import { findGroupByTab } from "../features/terminal/model/syncInputGroups";
-import ListItemText from "@mui/material/ListItemText";
-import Divider from "@mui/material/Divider";
-import AddCircleOutlinedIcon from "@mui/icons-material/AddCircleOutlined";
-import AddIcon from "@mui/icons-material/Add";
-import DriveFileMoveOutlinedIcon from "@mui/icons-material/DriveFileMoveOutlined";
 import { useCleanupManager } from "../shared/hooks/useAutoCleanup.js";
 import {
   openLogDirectory,
@@ -122,7 +109,6 @@ import useAppTheme from "./hooks/useAppTheme.js";
 import {
   UPDATE_REMINDER_STORAGE_KEY,
   UPDATE_REMINDER_DELAY_MS,
-  DEFAULT_SIDEBAR_WIDTH,
   intentPreloadProps,
   notifyTerminalResize,
   useDelayedPresence,
@@ -167,13 +153,11 @@ export default function AppShell() {
     theme,
     toggleTheme,
   } = useAppTheme();
-  const [appError, setAppError] = React.useState(null);
-  const [errorNotificationOpen, setErrorNotificationOpen] =
-    React.useState(false);
+  const { appError, errorNotificationOpen, handleCloseErrorNotification } =
+    useAppNotifications({ showSuccess, t });
   const [connectionsLoaded, setConnectionsLoaded] = React.useState(false);
   const [firstRunDialogOpen, setFirstRunDialogOpen] = React.useState(false);
   const [createConnectionSignal, setCreateConnectionSignal] = React.useState(0);
-  const copySuccessNotificationAtRef = React.useRef(0);
 
   // SSH 认证对话框状态
 
@@ -189,63 +173,6 @@ export default function AppShell() {
     }
   });
 
-  // 监听主进程的错误事件
-  React.useEffect(() => {
-    const handleAppError = (event, error) => {
-      console.error("Application error:", error);
-      setAppError(error);
-      setErrorNotificationOpen(true);
-    };
-    if (window.appErrorAPI) {
-      window.appErrorAPI.onError(handleAppError);
-    }
-    return () => {
-      if (window.appErrorAPI) {
-        window.appErrorAPI.removeErrorListener();
-      }
-    };
-  }, []);
-  React.useEffect(() => {
-    const showCopySuccess = () => {
-      copySuccessNotificationAtRef.current = Date.now();
-      showSuccess(t("common.copiedToClipboard"), {
-        autoHideDuration: 1800,
-      });
-    };
-    const handleClipboardWriteSuccess = () => {
-      showCopySuccess();
-    };
-    const handleNativeCopy = () => {
-      if (Date.now() - copySuccessNotificationAtRef.current < 500) {
-        return;
-      }
-      showCopySuccess();
-    };
-    const unsubscribe = window.clipboardAPI?.onWriteSuccess?.(
-      handleClipboardWriteSuccess,
-    );
-    document.addEventListener("copy", handleNativeCopy);
-    if (typeof unsubscribe !== "function") {
-      window.addEventListener(
-        "simpleshell:clipboard-write-success",
-        handleClipboardWriteSuccess,
-      );
-    }
-    return () => {
-      if (typeof unsubscribe === "function") {
-        unsubscribe();
-      } else {
-        window.removeEventListener(
-          "simpleshell:clipboard-write-success",
-          handleClipboardWriteSuccess,
-        );
-      }
-      document.removeEventListener("copy", handleNativeCopy);
-    };
-  }, [showSuccess, t]);
-  const handleCloseErrorNotification = () => {
-    setErrorNotificationOpen(false);
-  };
   // Update the tabs when language changes
   React.useEffect(() => {
     // Update welcome tab label when language changes
@@ -523,7 +450,6 @@ export default function AppShell() {
   const sftpFollowTerminalDirectory = useSftpFollowSetting();
   // 侧边栏位置: "left" | "right"
 
-  const [sidebarResizing, setSidebarResizing] = React.useState(false);
   // 传输侧边栏状态
   const [transferSidebarOpen, setTransferSidebarOpen] = React.useState(false);
   const [resumableTransferCount, setResumableTransferCount] = React.useState(0);
@@ -543,9 +469,6 @@ export default function AppShell() {
   const [hasTabOverflow, setHasTabOverflow] = React.useState(false);
   const dragRafRef = React.useRef(null);
   const pendingDragStateRef = React.useRef(null);
-  const sidebarResizeStateRef = React.useRef(null);
-  const sidebarWidthRef = React.useRef(DEFAULT_SIDEBAR_WIDTH);
-  const sidebarPositionRef = React.useRef(sidebarPosition);
   const sidebarTooltipPlacement = "top";
   const transferSidebarButtonRef = useRef(null);
   const aiChatButtonRef = useRef(null);
@@ -625,107 +548,12 @@ export default function AppShell() {
     tabContextMenu.tabIndex < tabs.length
       ? tabs[tabContextMenu.tabIndex]
       : null;
-  React.useEffect(() => {
-    sidebarWidthRef.current = sidebarWidth;
-  }, [sidebarWidth]);
-  React.useEffect(() => {
-    sidebarPositionRef.current = sidebarPosition;
-  }, [sidebarPosition]);
-  const saveSidebarWidthSetting = useCallback(async (width) => {
-    if (!window.terminalAPI?.saveUISettings) {
-      return;
-    }
-    const nextWidth = normalizeSidebarWidth(width);
-    try {
-      let currentSettings = {};
-      if (window.terminalAPI?.loadUISettings) {
-        const loadedSettings = await window.terminalAPI.loadUISettings();
-        if (loadedSettings) {
-          currentSettings = loadedSettings;
-        }
-      }
-      const nextSettings = {
-        ...currentSettings,
-        sidebarWidth: nextWidth,
-      };
-      await window.terminalAPI.saveUISettings(nextSettings);
-      setUiSettingsSnapshot(nextSettings);
-    } catch (error) {
-      console.error("Failed to save sidebar width:", error);
-    }
-  }, []);
-  const finishSidebarResize = useCallback(() => {
-    const resizeState = sidebarResizeStateRef.current;
-    if (!resizeState) {
-      return;
-    }
-    sidebarResizeStateRef.current = null;
-    setSidebarResizing(false);
-    document.body.style.cursor = resizeState.bodyCursor || "";
-    document.body.style.userSelect = resizeState.bodyUserSelect || "";
-    const nextWidth = sidebarWidthRef.current;
-    void saveSidebarWidthSetting(nextWidth);
-    window.dispatchEvent(new Event("resize"));
-    window.dispatchEvent(
-      new CustomEvent("sidebarChanged", {
-        detail: {
-          margin:
-            nextWidth +
-            SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH +
-            SIDEBAR_WIDTHS.SAFETY_MARGIN,
-          sidebarWidth: nextWidth,
-          timestamp: Date.now(),
-        },
-      }),
-    );
-  }, [saveSidebarWidthSetting]);
-  const handleSidebarResizeMove = useCallback((event) => {
-    const resizeState = sidebarResizeStateRef.current;
-    if (!resizeState) {
-      return;
-    }
-    const delta =
-      resizeState.position === "left"
-        ? event.clientX - resizeState.startX
-        : resizeState.startX - event.clientX;
-    const nextWidth = normalizeSidebarWidth(resizeState.startWidth + delta);
-    if (nextWidth !== sidebarWidthRef.current) {
-      sidebarWidthRef.current = nextWidth;
-      setSidebarWidth(nextWidth);
-    }
-    event.preventDefault();
-  }, []);
-  const handleSidebarResizeStart = useCallback((event) => {
-    if (event.button !== 0) {
-      return;
-    }
-    const startWidth = normalizeSidebarWidth(sidebarWidthRef.current);
-    sidebarResizeStateRef.current = {
-      startX: event.clientX,
-      startWidth,
-      position: sidebarPositionRef.current,
-      bodyCursor: document.body.style.cursor,
-      bodyUserSelect: document.body.style.userSelect,
-    };
-    setSidebarResizing(true);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    event.preventDefault();
-  }, []);
-  React.useEffect(() => {
-    if (!sidebarResizing) {
-      return undefined;
-    }
-    document.addEventListener("pointermove", handleSidebarResizeMove);
-    document.addEventListener("pointerup", finishSidebarResize);
-    document.addEventListener("pointercancel", finishSidebarResize);
-    return () => {
-      document.removeEventListener("pointermove", handleSidebarResizeMove);
-      document.removeEventListener("pointerup", finishSidebarResize);
-      document.removeEventListener("pointercancel", finishSidebarResize);
-    };
-  }, [finishSidebarResize, handleSidebarResizeMove, sidebarResizing]);
+  const { sidebarResizing, handleSidebarResizeStart } = useSidebarResize({
+    sidebarWidth,
+    sidebarPosition,
+    setSidebarWidth,
+    setUiSettingsSnapshot,
+  });
   const handleTabsWheel = useCallback((event) => {
     const scroller = event.currentTarget;
     if (!scroller) {
@@ -2854,82 +2682,18 @@ export default function AppShell() {
                   </IconButton>
                 </Tooltip>
               )}
-              <Menu
-                id="menu-appbar"
+              <AppMenu
                 anchorEl={anchorEl}
-                anchorOrigin={{
-                  vertical: "bottom",
-                  horizontal: "left",
-                }}
-                keepMounted
-                transformOrigin={{
-                  vertical: "top",
-                  horizontal: "left",
-                }}
                 open={open}
-                onClose={handleClose}
-              >
-                <MenuItem
-                  {...intentPreloadProps("settings")}
-                  onClick={handleOpenSettings}
-                >
-                  <SettingsIcon
-                    fontSize="small"
-                    sx={{
-                      mr: 1,
-                    }}
-                  />
-                  {t("menu.settings")}
-                </MenuItem>
-                <MenuItem onClick={handleOpenLogDirectory}>
-                  <FolderOpenIcon
-                    fontSize="small"
-                    sx={{
-                      mr: 1,
-                    }}
-                  />
-                  {t("menu.openLogs")}
-                </MenuItem>
-                <MenuItem onClick={handleExportDiagnostics}>
-                  <BugReportIcon
-                    fontSize="small"
-                    sx={{
-                      mr: 1,
-                    }}
-                  />
-                  {t("menu.exportDiagnostics")}
-                </MenuItem>
-                <MenuItem onClick={handleOpenFeedbackIssue}>
-                  <FeedbackIcon
-                    fontSize="small"
-                    sx={{
-                      mr: 1,
-                    }}
-                  />
-                  {t("menu.feedback")}
-                </MenuItem>
-                <MenuItem
-                  {...intentPreloadProps("aboutDialog")}
-                  onClick={handleOpenAbout}
-                >
-                  <InfoIcon
-                    fontSize="small"
-                    sx={{
-                      mr: 1,
-                    }}
-                  />
-                  {t("menu.about")}
-                </MenuItem>
-                <MenuItem onClick={handleExit}>
-                  <ExitToAppIcon
-                    fontSize="small"
-                    sx={{
-                      mr: 1,
-                    }}
-                  />
-                  {t("menu.exit")}
-                </MenuItem>
-              </Menu>
+                handleClose={handleClose}
+                handleOpenSettings={handleOpenSettings}
+                t={t}
+                handleOpenLogDirectory={handleOpenLogDirectory}
+                handleExportDiagnostics={handleExportDiagnostics}
+                handleOpenFeedbackIssue={handleOpenFeedbackIssue}
+                handleOpenAbout={handleOpenAbout}
+                handleExit={handleExit}
+              />
               <Box
                 sx={{
                   flexGrow: 1,
@@ -3050,151 +2814,22 @@ export default function AppShell() {
           </Box>
 
           {/* 标签页右键菜单 */}
-          <Menu
-            keepMounted
-            open={tabContextMenu.mouseY !== null}
-            onClose={handleTabContextMenuClose}
-            anchorReference="anchorPosition"
-            anchorPosition={
-              tabContextMenu.mouseY !== null && tabContextMenu.mouseX !== null
-                ? {
-                    top: tabContextMenu.mouseY,
-                    left: tabContextMenu.mouseX,
-                  }
-                : undefined
-            }
-            slotProps={{
-              paper: {
-                style: {
-                  minWidth: "200px",
-                },
-              },
-            }}
-          >
-            <MenuItem onClick={handleRefreshTerminal}>
-              <RefreshIcon
-                fontSize="small"
-                sx={{
-                  mr: 1,
-                }}
-              />
-              {t("tabMenu.refresh")}
-            </MenuItem>
-
-            <MenuItem onClick={handleCloseConnection}>
-              <PowerOffIcon
-                fontSize="small"
-                sx={{
-                  mr: 1,
-                }}
-              />
-              {t("tabMenu.close")}
-            </MenuItem>
-
-            {/* 叠加合并后的分屏标签：提供拆分恢复入口（分屏创建仅由拖拽叠加/拖入终端区触发） */}
-            {contextMenuTab &&
-              (splitLayouts[contextMenuTab.id]?.panes?.length || 0) > 1 && (
-                <MenuItem onClick={handleUnsplitTab}>
-                  <SplitscreenIcon
-                    fontSize="small"
-                    sx={{
-                      mr: 1,
-                    }}
-                  />
-                  {t("tabMenu.unsplit")}
-                </MenuItem>
-              )}
-
-            {contextMenuTab?.type === "ssh" && (
-              <ReconnectMenuSection
-                tabId={contextMenuTab.id}
-                open={tabContextMenu.mouseY !== null}
-                onPause={handlePauseReconnect}
-                onResume={handleResumeReconnect}
-              />
-            )}
-
-            {/* 分组相关菜单项 */}
-            {(() => {
-              const tabId = tabContextMenu.tabId;
-              if (!tabId) return null;
-              const group = findGroupByTab(syncGroups, tabId);
-              const groupMenuItems = [];
-              if (group) {
-                // 直接移动到其他分组（免去先移除再加入）
-                syncGroups.forEach((g) => {
-                  if (g.groupId === group.groupId) return;
-                  groupMenuItems.push(
-                    <MenuItem
-                      key={`move-${g.groupId}`}
-                      onClick={() => handleJoinGroup(tabId, g.groupId)}
-                    >
-                      <DriveFileMoveOutlinedIcon
-                        fontSize="small"
-                        sx={{
-                          mr: 1,
-                          color: g.color,
-                        }}
-                      />
-                      <ListItemText>{`${t("tabMenu.moveToGroup")} ${g.groupId.replace("G", "")}`}</ListItemText>
-                    </MenuItem>,
-                  );
-                });
-                groupMenuItems.push(
-                  <MenuItem
-                    key="remove-from-group"
-                    onClick={() => handleRemoveFromGroup(tabId)}
-                  >
-                    <PowerOffIcon
-                      fontSize="small"
-                      sx={{
-                        color: group.color,
-                        mr: 1,
-                      }}
-                    />
-                    <ListItemText>{`${t("tabMenu.removeFromGroup")} ${group.groupId.replace("G", "")}`}</ListItemText>
-                  </MenuItem>,
-                );
-              } else {
-                syncGroups.forEach((g) => {
-                  groupMenuItems.push(
-                    <MenuItem
-                      key={g.groupId}
-                      onClick={() => handleJoinGroup(tabId, g.groupId)}
-                    >
-                      <AddIcon
-                        fontSize="small"
-                        sx={{
-                          mr: 1,
-                        }}
-                      />
-                      <ListItemText>
-                        {t("tabMenu.joinGroup")} {g.groupId.replace("G", "")}
-                      </ListItemText>
-                    </MenuItem>,
-                  );
-                });
-                groupMenuItems.push(
-                  <MenuItem
-                    key="create-group"
-                    onClick={() => handleCreateGroup(tabId)}
-                  >
-                    <AddCircleOutlinedIcon
-                      fontSize="small"
-                      sx={{
-                        mr: 1,
-                      }}
-                    />
-                    <ListItemText>{t("tabMenu.createGroup")}</ListItemText>
-                  </MenuItem>,
-                );
-              }
-              if (groupMenuItems.length > 0) {
-                return [<Divider key="group-divider-top" />, ...groupMenuItems];
-              }
-              return [];
-            })()}
-          </Menu>
+          <SessionContextMenu
+            tabContextMenu={tabContextMenu}
+            handleTabContextMenuClose={handleTabContextMenuClose}
+            handleRefreshTerminal={handleRefreshTerminal}
+            t={t}
+            handleCloseConnection={handleCloseConnection}
+            contextMenuTab={contextMenuTab}
+            splitLayouts={splitLayouts}
+            handleUnsplitTab={handleUnsplitTab}
+            handlePauseReconnect={handlePauseReconnect}
+            handleResumeReconnect={handleResumeReconnect}
+            syncGroups={syncGroups}
+            handleJoinGroup={handleJoinGroup}
+            handleRemoveFromGroup={handleRemoveFromGroup}
+            handleCreateGroup={handleCreateGroup}
+          />
         </AppBar>
         <Box
           sx={{

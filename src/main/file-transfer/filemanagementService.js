@@ -1,13 +1,17 @@
+const {
+  _chooseConcurrency,
+  _buildChunkSegments,
+  _buildFileTaskKey,
+} = require("./transferPolicy");
+const { scanLocalFolder } = require("./localFolderScanner");
 const fs = require("fs");
 const fsp = require("fs/promises");
 const os = require("os");
 const path = require("path");
-const { execFile } = require("child_process");
 const crypto = require("crypto");
 const { app, dialog, BrowserWindow } = require("electron");
 
 const processManager = require("../process/processManager");
-const { getNativeServicesHostPath } = require("../native/nativeServices");
 const nativeSftpClient = require("../native/nativeSftpClient");
 const { logToFile } = require("../utils/logger");
 const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
@@ -26,7 +30,6 @@ const {
   normalizeDroppedTransferRelativePath,
 } = require("./transferShared");
 const { normalizeErrorMessage } = require("../utils/errorResponse");
-const { SESSION_CONFIG, TRANSFER_CONFIG } = require("./sftpConfig");
 const {
   normalizeTransferName,
   buildTransferDisplayName: buildSharedTransferDisplayName,
@@ -42,10 +45,7 @@ const DEFAULT_PROGRESS_INTERVAL_MS = 200;
 const PREPARATION_PROGRESS_PERCENT = 5;
 const EVENT_LOOP_LAG_INTERVAL_MS = 1000;
 const TRANSFER_ENGINE_MODE = "native-sidecar-transfer-v1";
-const CHUNK_PARALLEL_THRESHOLD_BYTES = 128 * 1024 * 1024;
-const CHUNK_PARALLEL_TARGET_CHUNK_BYTES = 32 * 1024 * 1024;
-const CHUNK_PARALLEL_MAX_SEGMENTS = 16;
-const CHUNK_PARALLEL_MIN_SEGMENTS = 2;
+
 const TRANSFER_POOL_IDLE_SHUTDOWN_MS = 2500;
 
 function buildEmptyTransferPoolStats() {
@@ -382,88 +382,6 @@ class FilemanagementService {
     } catch {
       // ignore renderer lifecycle race
     }
-  }
-
-  _chooseConcurrency(
-    totalFiles,
-    totalBytes,
-    isFolderLike = false,
-    direction = "download",
-  ) {
-    const files = Math.max(1, totalFiles || 1);
-    const bytes = Math.max(0, totalBytes || 0);
-    const cpu = Math.max(2, os.cpus()?.length || 4);
-    const isUpload = direction === "upload";
-    const configuredDirectionLimit = isUpload
-      ? TRANSFER_CONFIG?.PARALLEL_FILES_UPLOAD
-      : TRANSFER_CONFIG?.PARALLEL_FILES_DOWNLOAD;
-    const directionLimit =
-      Number.isFinite(configuredDirectionLimit) && configuredDirectionLimit > 0
-        ? Math.floor(configuredDirectionLimit)
-        : files;
-    const sessionLimit =
-      Number.isFinite(SESSION_CONFIG?.MAX_SESSIONS_PER_TAB) &&
-      SESSION_CONFIG.MAX_SESSIONS_PER_TAB > 0
-        ? Math.floor(SESSION_CONFIG.MAX_SESSIONS_PER_TAB)
-        : files;
-
-    let concurrency = Math.max(2, Math.floor(cpu / 2));
-    if (bytes >= 8 * 1024 * 1024 * 1024) {
-      concurrency = Math.min(concurrency, 4);
-    } else if (bytes >= 2 * 1024 * 1024 * 1024) {
-      concurrency = Math.min(concurrency, 5);
-    } else {
-      concurrency = Math.min(concurrency + 1, 8);
-    }
-
-    if (isFolderLike && files > 200) {
-      concurrency = Math.min(concurrency + 2, 10);
-    }
-
-    return Math.max(
-      1,
-      Math.min(concurrency, files, directionLimit, sessionLimit),
-    );
-  }
-
-  _shouldUseChunkParallel(totalBytes) {
-    const size = Number.isFinite(totalBytes) ? totalBytes : 0;
-    return size >= CHUNK_PARALLEL_THRESHOLD_BYTES;
-  }
-
-  _buildChunkSegments(totalBytes) {
-    const size = Number.isFinite(totalBytes) ? Math.floor(totalBytes) : 0;
-    if (size <= 0 || !this._shouldUseChunkParallel(size)) {
-      return [];
-    }
-
-    const estimatedCount = Math.ceil(size / CHUNK_PARALLEL_TARGET_CHUNK_BYTES);
-    const segmentCount = Math.max(
-      CHUNK_PARALLEL_MIN_SEGMENTS,
-      Math.min(CHUNK_PARALLEL_MAX_SEGMENTS, estimatedCount),
-    );
-    const segmentSize = Math.max(1, Math.ceil(size / segmentCount));
-    const segments = [];
-    let offset = 0;
-    let index = 0;
-
-    while (offset < size) {
-      const remaining = size - offset;
-      const length = Math.min(segmentSize, remaining);
-      segments.push({
-        index,
-        offset,
-        length,
-      });
-      offset += length;
-      index += 1;
-    }
-
-    return segments;
-  }
-
-  _buildFileTaskKey(direction, remotePath, localPath, index) {
-    return `${direction || "transfer"}::${index}::${remotePath || ""}::${localPath || ""}`;
   }
 
   async _prepareLocalChunkDownloadTarget(
@@ -919,128 +837,6 @@ class FilemanagementService {
     }
   }
 
-  async _scanLocalFolderWithNativeSidecar(localFolderPath, options = {}) {
-    const scannerPath = getNativeServicesHostPath();
-    if (!scannerPath) {
-      throw new Error(
-        transferText("mainProcess.transfer.errors.scannerHostMissing"),
-      );
-    }
-
-    const args = ["scan-folder", "--path", localFolderPath];
-    const appendPositiveIntegerArg = (flag, value) => {
-      const parsed = Math.floor(Number(value));
-      if (Number.isFinite(parsed) && parsed > 0) {
-        args.push(flag, String(parsed));
-      }
-    };
-
-    appendPositiveIntegerArg("--max-entries", options.maxEntries);
-    appendPositiveIntegerArg("--max-depth", options.maxDepth);
-    appendPositiveIntegerArg("--max-bytes", options.maxBytes);
-
-    return new Promise((resolve, reject) => {
-      execFile(
-        scannerPath,
-        args,
-        {
-          windowsHide: true,
-          maxBuffer: 64 * 1024 * 1024, // 目录扫描输出缓冲区上限（根据系统内存自动调整，非固定值）
-          timeout: 60000,
-        },
-        (error, stdout, stderr) => {
-          if (error) {
-            reject(
-              new Error(
-                stderr?.trim() ||
-                  stdout?.trim() ||
-                  normalizeErrorMessage(error),
-              ),
-            );
-            return;
-          }
-
-          const payload = String(stdout || "").trim();
-          if (!payload) {
-            reject(
-              new Error(
-                transferText("mainProcess.transfer.errors.scannerEmptyOutput"),
-              ),
-            );
-            return;
-          }
-
-          try {
-            resolve(JSON.parse(payload));
-          } catch (parseError) {
-            reject(
-              new Error(
-                transferText("mainProcess.transfer.errors.scannerInvalidJson", {
-                  error: normalizeErrorMessage(parseError),
-                }),
-              ),
-            );
-          }
-        },
-      );
-    });
-  }
-
-  async _scanLocalFolder(localFolderPath) {
-    const normalizedRoot = path.resolve(localFolderPath);
-    const normalizeScanResult = (scanResult) => {
-      const rawFiles = Array.isArray(scanResult?.files) ? scanResult.files : [];
-      const files = rawFiles.map((file) => {
-        const relativePath = toPosixPath(
-          file?.relativePath || file?.path || file?.name || "",
-        );
-        const localPath = file?.localPath || file?.path || "";
-        return {
-          localPath,
-          relativePath,
-          fileName:
-            file?.fileName ||
-            file?.name ||
-            path.basename(localPath || relativePath),
-          size: Number.isFinite(file?.size) ? file.size : 0,
-        };
-      });
-
-      const totalBytesFromPayload =
-        Number.isFinite(scanResult?.totalBytes) && scanResult.totalBytes >= 0
-          ? scanResult.totalBytes
-          : Number.isFinite(scanResult?.totalSize) && scanResult.totalSize >= 0
-            ? scanResult.totalSize
-            : files.reduce(
-                (sum, file) =>
-                  sum + (Number.isFinite(file.size) ? file.size : 0),
-                0,
-              );
-
-      return {
-        schemaVersion: scanResult?.schemaVersion || null,
-        scanId: scanResult?.scanId || null,
-        rootPath: scanResult?.rootPath || normalizedRoot,
-        truncated: scanResult?.truncated === true,
-        truncatedReason: scanResult?.truncatedReason || null,
-        maxEntriesHit:
-          scanResult?.maxEntriesHit === true ||
-          scanResult?.maxFilesHit === true,
-        maxDepthHit: scanResult?.maxDepthHit === true,
-        maxBytesHit: scanResult?.maxBytesHit === true,
-        files,
-        directories: Array.isArray(scanResult?.directories)
-          ? scanResult.directories.map((entry) => toPosixPath(entry || ""))
-          : [],
-        errors: Array.isArray(scanResult?.errors) ? scanResult.errors : [],
-        totalBytes: totalBytesFromPayload,
-      };
-    };
-    const nativeScan =
-      await this._scanLocalFolderWithNativeSidecar(normalizedRoot);
-    return normalizeScanResult(nativeScan);
-  }
-
   async _scanRemoteFolderTree(tabId, remoteRootPath, transferKey = null) {
     const rootPath = this._normalizeRemotePath(remoteRootPath);
     if (transferKey) {
@@ -1312,11 +1108,11 @@ class FilemanagementService {
       transferKey,
       signal: state.abortController.signal,
       segments: (size) =>
-        this._buildChunkSegments(size).length
-          ? this._buildChunkSegments(size)
+        _buildChunkSegments(size).length
+          ? _buildChunkSegments(size)
           : [{ offset: 0, length: size }],
       getAlgorithm: () => state.algorithm,
-      maxConcurrency: this._chooseConcurrency(
+      maxConcurrency: _chooseConcurrency(
         16,
         state.totalBytes,
         false,
@@ -1547,7 +1343,7 @@ class FilemanagementService {
       ).values(),
     ];
     let next = 0;
-    const concurrency = this._chooseConcurrency(
+    const concurrency = _chooseConcurrency(
       files.length,
       totalBytes,
       directoryMode,
@@ -1825,13 +1621,13 @@ class FilemanagementService {
         const fileName = file?.fileName || path.posix.basename(remotePath);
         const localPath = path.join(targetDir, fileName);
         const knownSize = Number.isFinite(file?.size) ? file.size : 0;
-        const fileTaskKey = this._buildFileTaskKey(
+        const fileTaskKey = _buildFileTaskKey(
           "download",
           remotePath,
           localPath,
           index,
         );
-        const chunkSegments = this._buildChunkSegments(knownSize);
+        const chunkSegments = _buildChunkSegments(knownSize);
 
         if (chunkSegments.length > 0) {
           const tempPath = `${localPath}.part`;
@@ -2186,13 +1982,13 @@ class FilemanagementService {
         );
         const remotePath = this._normalizeRemotePath(file.remotePath);
         const knownSize = Number.isFinite(file.size) ? file.size : 0;
-        const fileTaskKey = this._buildFileTaskKey(
+        const fileTaskKey = _buildFileTaskKey(
           "download-folder",
           remotePath,
           localPath,
           index,
         );
-        const chunkSegments = this._buildChunkSegments(knownSize);
+        const chunkSegments = _buildChunkSegments(knownSize);
 
         if (chunkSegments.length > 0) {
           const tempPath = `${localPath}.part`;
@@ -2558,13 +2354,13 @@ class FilemanagementService {
           entry.fileName ||
           path.basename(materialized.localPath || "");
         const knownSize = Number.isFinite(entry.size) ? entry.size : 0;
-        const fileTaskKey = this._buildFileTaskKey(
+        const fileTaskKey = _buildFileTaskKey(
           "upload",
           normalizedRemotePath,
           materialized.localPath,
           index,
         );
-        const chunkSegments = this._buildChunkSegments(knownSize);
+        const chunkSegments = _buildChunkSegments(knownSize);
 
         if (chunkSegments.length > 0 && materialized.localPath) {
           fileStateMap.set(fileTaskKey, {
@@ -3123,7 +2919,7 @@ class FilemanagementService {
         extra: { operationComplete: false, cancelled: false },
       });
 
-      const scan = await this._scanLocalFolder(localFolderPath);
+      const scan = await scanLocalFolder(localFolderPath, transferText);
       this._throwIfTransferCancelled(transferKey);
       const entries = scan.files.map((file) => ({
         localPath: file.localPath,

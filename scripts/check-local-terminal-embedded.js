@@ -9,7 +9,7 @@ const read = (relativePath) =>
 const managerSource = read("src/main/local-terminal/local-terminal-manager.js");
 const handlerSource = read("src/main/ipc/handlers/localTerminalHandlers.js");
 const channelSource = read("src/shared/contracts/ipc/channels.js");
-const preloadSource = read("src/preload/index.js");
+const preloadSource = require("./lib/preload-sources").collectPreloadSources();
 const appSource = require("./lib/renderer-sources.js").collectAppSources();
 const { collectWebTerminalSources } = require("./lib/webterminal-sources.js");
 const webTerminalSource = collectWebTerminalSources();
