@@ -2,7 +2,7 @@
 /**
  * Preload 运行于隔离上下文；类型检查由 scripts/check-preload-typings.js 执行。
  * 主进程尚未细化的响应使用 unknown，调用方应先缩窄类型。
- * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../shared/contracts/preload"
+ * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, TerminalMailboxPayload, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../shared/contracts/preload"
  */
 
 const {
@@ -83,6 +83,7 @@ function createBridgeContext() {
     const removeListener = () => {
       ipcRenderer.removeListener(channel, listener);
     };
+    /** @type {IpcCallback<Record<string, unknown>>} */
     const listener = (_event, data) => {
       if (!shouldHandle(data)) {
         return;
@@ -163,7 +164,11 @@ function createBridgeContext() {
     // Crash reporter may be unavailable in unusual startup modes.
   }
 
-  /** Main process may coalesce OUTPUT into one IPC with an array of messages. */
+  /**
+   * Main process may coalesce OUTPUT into one IPC with an array of messages.
+   * @param {TerminalMailboxPayload} payload
+   * @returns {TerminalMailboxMessage[]}
+   */
   const normalizeTerminalMailboxOutboundMessages = (payload) => {
     if (payload === undefined || payload === null) {
       return [];
@@ -171,6 +176,7 @@ function createBridgeContext() {
     return Array.isArray(payload) ? payload : [payload];
   };
 
+  /** @param {string} channel */
   const getProcessOutputWrapperStore = (channel) => {
     if (!processOutputWrappersByChannel.has(channel)) {
       processOutputWrappersByChannel.set(channel, new WeakMap());
@@ -185,7 +191,9 @@ function createBridgeContext() {
     };
   };
 
+  /** @param {string} channel */
   const removeAllManagedProcessOutputListeners = (channel) => {
+    /** @type {Set<IpcCallback<TerminalMailboxPayload>> | undefined} */
     const listeners = processOutputListenersByChannel.get(channel);
     if (!listeners || listeners.size === 0) {
       return;
@@ -197,6 +205,7 @@ function createBridgeContext() {
     listeners.clear();
   };
 
+  /** @param {string} channel */
   const getTerminalMailboxWrapperStore = (channel) => {
     if (!terminalMailboxWrappersByChannel.has(channel)) {
       terminalMailboxWrappersByChannel.set(channel, new WeakMap());
@@ -211,7 +220,9 @@ function createBridgeContext() {
     };
   };
 
+  /** @param {string} channel */
   const removeAllManagedTerminalMailboxListeners = (channel) => {
+    /** @type {Set<IpcCallback<TerminalMailboxPayload>> | undefined} */
     const listeners = terminalMailboxListenersByChannel.get(channel);
     if (!listeners || listeners.size === 0) {
       return;
@@ -223,9 +234,14 @@ function createBridgeContext() {
     listeners.clear();
   };
 
+  /** @param {unknown} tabId */
   const normalizeListFilesTabId = (tabId) =>
     tabId === undefined || tabId === null ? "" : String(tabId);
 
+  /**
+   * @param {unknown} tabId
+   * @param {unknown} token
+   */
   const trackListFilesToken = (tabId, token) => {
     const normalizedTabId = normalizeListFilesTabId(tabId);
     const normalizedToken =
@@ -256,6 +272,7 @@ function createBridgeContext() {
     listFilesTabByToken.set(normalizedToken, normalizedTabId);
   };
 
+  /** @param {unknown} token */
   const untrackListFilesToken = (token) => {
     const normalizedToken =
       token === undefined || token === null ? "" : String(token);
@@ -280,6 +297,7 @@ function createBridgeContext() {
     }
   };
 
+  /** @param {unknown} tabId */
   const untrackListFilesTokensForTab = (tabId) => {
     const normalizedTabId = normalizeListFilesTabId(tabId);
     if (!normalizedTabId) {
@@ -313,6 +331,10 @@ function createBridgeContext() {
     });
   };
 
+  /**
+   * @param {unknown} url
+   * @param {ExternalOpenOptions} [options]
+   */
   const normalizeExternalOpenRequest = (url, options = {}) => {
     if (typeof url !== "string") {
       throw new Error("Invalid URL");
@@ -355,8 +377,14 @@ function createBridgeContext() {
   };
 
   // 暴露安全的API给渲染进程
+  /**
+   * @param {string} channel
+   * @param {ReconnectCallback} callback
+   * @returns {Unsubscribe}
+   */
   function subscribeReconnectEvent(channel, callback) {
     if (typeof callback !== "function") return () => {};
+    /** @type {IpcCallback} */
     const listener = (_event, data) => callback(null, data);
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.removeListener(channel, listener);

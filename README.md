@@ -175,7 +175,9 @@ npm run publish
 
 Preload contracts use JSDoc and shared declarations in `src/shared/contracts/preload.d.ts`.
 `npm run check` parses exposed methods and IPC calls with TypeScript, then checks
-`src/preload/index.js` against its annotations using `tsconfig.preload.json`. Raw IPC
+all `src/preload/**/*.js` modules against their annotations using
+`tsconfig.preload.json`, with `noImplicitAny` enabled. The editor-discoverable
+`src/preload/tsconfig.json` inherits the same configuration. Raw IPC
 responses that have no detailed contract remain `unknown` and must be narrowed
 by callers; this check does not type-check the renderer or main-process handlers.
 

@@ -110,6 +110,7 @@ function createConnectionsAPI(bridge) {
      */
     onPortForwardStatusUpdated: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_event, data) => callback(data);
       ipcRenderer.on(IPC_EVENT_CHANNELS.PF_STATUS_UPDATED, wrappedCallback);
       return () => {
@@ -184,6 +185,7 @@ function createConnectionsAPI(bridge) {
      */
     onTabConnectionStatus: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_event, data) => callback(data);
       ipcRenderer.on(IPC_EVENT_CHANNELS.TAB_CONNECTION_STATUS, wrappedCallback);
       return () => {
@@ -282,6 +284,7 @@ function createConnectionsAPI(bridge) {
      */
     onTopConnectionsChanged: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrapped = (_e, ids) => callback(ids);
       topConnectionsChangedWrappers.set(callback, wrapped);
       ipcRenderer.on(IPC_EVENT_CHANNELS.TOP_CONNECTIONS_CHANGED, wrapped);
@@ -440,6 +443,7 @@ function createConnectionsAPI(bridge) {
      */
     onSSHAuthRequest: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_, data) => callback(data);
       ipcRenderer.on(IPC_EVENT_CHANNELS.SSH_AUTH_REQUEST, wrappedCallback);
       return () => {
@@ -474,6 +478,7 @@ function createConnectionsAPI(bridge) {
      */
     onTerminalSessionRestored: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_event, data) => callback(data);
       ipcRenderer.on(
         IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORED,
@@ -494,6 +499,7 @@ function createConnectionsAPI(bridge) {
      */
     onTerminalSessionRestoreFailed: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_event, data) => callback(data);
       ipcRenderer.on(
         IPC_EVENT_CHANNELS.TERMINAL_SESSION_RESTORE_FAILED,

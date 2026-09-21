@@ -130,6 +130,22 @@ describe("preload JSDoc implementation type checking", () => {
     expect(getPreloadTypeDiagnostics()).toEqual([]);
   }, 15000);
 
+  it("遗漏 IPC 回调类型时会报告隐式 any", () => {
+    const apiPath = fileURLToPath(
+      new URL("../../src/preload/api/ai.js", import.meta.url),
+    );
+    const original = fs.readFileSync(apiPath, "utf8");
+    const changed = original.replace("/** @type {IpcCallback} */", "");
+    expect(changed).not.toBe(original);
+    const diagnostics = getPreloadTypeDiagnostics(changed, apiPath);
+    const implicitAnyErrors = diagnostics.filter((d) => d.code === 7006);
+    expect(implicitAnyErrors).toHaveLength(2);
+    expect(implicitAnyErrors.map((d) => String(d.messageText))).toEqual([
+      "Parameter 'event' implicitly has an 'any' type.",
+      "Parameter 'data' implicitly has an 'any' type.",
+    ]);
+  }, 15000);
+
   it("把同步 boolean 注释改成 Promise 会失败", () => {
     const apiPath = fileURLToPath(
       new URL("../../src/preload/api/terminal.js", import.meta.url),

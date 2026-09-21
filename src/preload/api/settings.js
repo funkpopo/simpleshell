@@ -166,6 +166,7 @@ function createSettingsAPI(bridge) {
      */
     onConfigSyncAutoEvent: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_event, payload) => callback(payload);
       ipcRenderer.on(
         IPC_EVENT_CHANNELS.CONFIG_SYNC_AUTO_EVENT,
@@ -186,6 +187,7 @@ function createSettingsAPI(bridge) {
      */
     onDiskAlertEvent: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_event, payload) => callback(payload);
       ipcRenderer.on(IPC_EVENT_CHANNELS.DISK_ALERT_EVENT, wrappedCallback);
       return () => {
@@ -203,6 +205,7 @@ function createSettingsAPI(bridge) {
      */
     onConfigTransferImported: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_event, payload) => callback(payload);
       ipcRenderer.on(
         IPC_EVENT_CHANNELS.CONFIG_TRANSFER_IMPORTED,
@@ -223,6 +226,7 @@ function createSettingsAPI(bridge) {
      */
     onLocalDataCleared: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_event, payload) => callback(payload);
       localDataClearedWrappers.set(callback, wrappedCallback);
       ipcRenderer.on(

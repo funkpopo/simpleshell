@@ -173,7 +173,8 @@ npm run publish
 
 Preload 契约使用 JSDoc 和 `src/shared/contracts/preload.d.ts` 中的共享类型声明。
 `npm run check` 通过 TypeScript 解析暴露的方法和 IPC 调用，再根据
-`tsconfig.preload.json` 检查 `src/preload/index.js` 的实现与注释是否一致。
+`tsconfig.preload.json` 检查全部 `src/preload/**/*.js` 模块的实现与注释是否一致，
+并开启 `noImplicitAny`。编辑器通过 `src/preload/tsconfig.json` 继承同一套配置。
 尚未细化契约的原始 IPC 响应保留为 `unknown`，调用方需要先缩窄类型；
 此检查不包含渲染进程或主进程处理器的类型检查。
 

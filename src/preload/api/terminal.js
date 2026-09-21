@@ -2,7 +2,7 @@
 /**
  * Preload 运行于隔离上下文；类型检查由 scripts/check-preload-typings.js 执行。
  * 主进程尚未细化的响应使用 unknown，调用方应先缩窄类型。
- * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../../shared/contracts/preload"
+ * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, TerminalMailboxPayload, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../../shared/contracts/preload"
  */
 
 /** @param {ReturnType<typeof import("../bridgeContext").createBridgeContext>} bridge */
@@ -55,6 +55,7 @@ function createTerminalAPI(bridge) {
       }
 
       const { wrappers, listeners } = getTerminalMailboxWrapperStore(channel);
+      /** @type {IpcCallback<TerminalMailboxPayload>} */
       const wrapped = (_event, messageOrBatch) => {
         for (const message of normalizeTerminalMailboxOutboundMessages(
           messageOrBatch,
@@ -81,6 +82,7 @@ function createTerminalAPI(bridge) {
      */
     onZmodemEvent: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_event, data) => callback(data);
       ipcRenderer.on(IPC_EVENT_CHANNELS.ZMODEM_EVENT, wrappedCallback);
       return () => {
@@ -264,6 +266,7 @@ function createTerminalAPI(bridge) {
      */
     onLocalTerminalStatus: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_event, payload) => callback(payload);
       localTerminalStatusWrappers.set(callback, wrappedCallback);
       ipcRenderer.on(IPC_EVENT_CHANNELS.LOCAL_TERMINAL_STATUS, wrappedCallback);
@@ -379,6 +382,7 @@ function createTerminalAPI(bridge) {
       }
 
       const { wrappers, listeners } = getProcessOutputWrapperStore(channel);
+      /** @type {IpcCallback<TerminalMailboxPayload>} */
       const wrapped = (_event, messageOrBatch) => {
         for (const message of normalizeTerminalMailboxOutboundMessages(
           messageOrBatch,
@@ -574,6 +578,7 @@ function createTerminalAPI(bridge) {
      */
     onCommandHistoryChanged: (callback) => {
       if (typeof callback !== "function") return () => {};
+      /** @type {IpcCallback} */
       const wrappedCallback = (_event, payload) => callback(payload);
       commandHistoryChangedWrappers.set(callback, wrappedCallback);
       ipcRenderer.on(

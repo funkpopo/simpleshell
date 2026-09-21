@@ -65,6 +65,7 @@ function createSystemAPI(bridge) {
       if (typeof callback !== "function") {
         return () => {};
       }
+      /** @type {IpcCallback} */
       const wrapped = (_event, payload) => callback(payload);
       ipcRenderer.on(IPC_EVENT_CHANNELS.APP_MENU_ACTION, wrapped);
       return () => {
@@ -81,6 +82,7 @@ function createSystemAPI(bridge) {
       if (typeof callback !== "function") {
         return () => {};
       }
+      /** @type {IpcCallback} */
       const wrapped = (_event, payload) => callback(payload);
       openFilesWrappers.set(callback, wrapped);
       ipcRenderer.on(IPC_EVENT_CHANNELS.APP_OPEN_FILES, wrapped);
@@ -224,6 +226,7 @@ function createSystemAPI(bridge) {
         return () => {};
       }
 
+      /** @type {IpcCallback<WindowState>} */
       const wrappedCallback = (_event, state) => callback(state);
       ipcRenderer.on(IPC_EVENT_CHANNELS.WINDOW_STATE, wrappedCallback);
       return () =>
@@ -344,6 +347,7 @@ function createSystemAPI(bridge) {
      * @returns {Unsubscribe}
      */
     onLatencyUpdate: (callback) => {
+      /** @type {IpcCallback} */
       const wrappedCallback = (event, data) => callback(event, data);
       ipcRenderer.on(IPC_EVENT_CHANNELS.LATENCY_UPDATED, wrappedCallback);
       return () =>
@@ -359,6 +363,7 @@ function createSystemAPI(bridge) {
      * @returns {Unsubscribe}
      */
     onLatencyError: (callback) => {
+      /** @type {IpcCallback} */
       const wrappedCallback = (event, data) => callback(event, data);
       ipcRenderer.on(IPC_EVENT_CHANNELS.LATENCY_ERROR, wrappedCallback);
       return () =>
@@ -374,6 +379,7 @@ function createSystemAPI(bridge) {
      * @returns {Unsubscribe}
      */
     onLatencyDisconnected: (callback) => {
+      /** @type {IpcCallback} */
       const wrappedCallback = (event, data) => callback(event, data);
       ipcRenderer.on(IPC_EVENT_CHANNELS.LATENCY_DISCONNECTED, wrappedCallback);
       return () =>

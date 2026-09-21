@@ -78,6 +78,7 @@ function createFilesAPI(bridge) {
         return () => {};
       }
 
+      /** @type {IpcCallback<Record<string, unknown>>} */
       const wrapped = (_, data) => {
         if (data?.done && data?.token) {
           untrackListFilesToken(data.token);
@@ -155,6 +156,7 @@ function createFilesAPI(bridge) {
         return () => {};
       }
 
+      /** @type {IpcCallback} */
       const wrapped = (_, data) => callback(data);
       ipcRenderer.on(IPC_EVENT_CHANNELS.DIRECTORY_WATCH_EVENT, wrapped);
       directoryWatchEventWrappers.set(callback, wrapped);
@@ -348,6 +350,7 @@ function createFilesAPI(bridge) {
       if (typeof callback !== "function") {
         return () => {};
       }
+      /** @type {IpcCallback} */
       const wrapped = (_, data) => callback(data);
       ipcRenderer.on(IPC_EVENT_CHANNELS.EXTERNAL_EDITOR_SYNC, wrapped);
       if (!callback._wrappedCallback) callback._wrappedCallback = wrapped;
@@ -697,6 +700,7 @@ function createFilesAPI(bridge) {
      * @returns {Unsubscribe}
      */
     onSftpTransferState: (callback) => {
+      /** @type {IpcCallback} */
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on(IPC_EVENT_CHANNELS.SFTP_TRANSFER_STATE, listener);
       return () =>

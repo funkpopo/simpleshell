@@ -166,6 +166,7 @@ function createAiAPI(bridge) {
     on: (channel, callback) => {
       if (AI_STREAM_CHANNELS.includes(channel)) {
         // 包装回调函数，确保正确传递数据
+        /** @type {IpcCallback} */
         const wrappedCallback = (event, data) => {
           callback(event, data);
         };
@@ -221,6 +222,7 @@ function createAiAPI(bridge) {
     onAIStreamChunk: (callback) => {
       if (typeof callback !== "function") return () => {};
       const channel = IPC_EVENT_CHANNELS.AI_STREAM_CHUNK;
+      /** @type {IpcCallback} */
       const wrappedCallback = (event, data) => callback(event, data);
       ipcRenderer.on(channel, wrappedCallback);
       streamWrappersByChannel[channel].set(callback, wrappedCallback);
@@ -238,6 +240,7 @@ function createAiAPI(bridge) {
     onAIStreamEnd: (callback) => {
       if (typeof callback !== "function") return () => {};
       const channel = IPC_EVENT_CHANNELS.AI_STREAM_END;
+      /** @type {IpcCallback} */
       const wrappedCallback = (event, data) => callback(event, data);
       ipcRenderer.on(channel, wrappedCallback);
       streamWrappersByChannel[channel].set(callback, wrappedCallback);
@@ -255,6 +258,7 @@ function createAiAPI(bridge) {
     onAIStreamError: (callback) => {
       if (typeof callback !== "function") return () => {};
       const channel = IPC_EVENT_CHANNELS.AI_STREAM_ERROR;
+      /** @type {IpcCallback} */
       const wrappedCallback = (event, data) => callback(event, data);
       ipcRenderer.on(channel, wrappedCallback);
       streamWrappersByChannel[channel].set(callback, wrappedCallback);

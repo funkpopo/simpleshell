@@ -21,6 +21,10 @@ export type TerminalMailboxMessage =
   | { type: "resize"; cols: number; rows: number; immediate?: boolean }
   | { type: "pause" | "resume" };
 
+/** The main process may batch terminal output into one IPC event. */
+export type TerminalMailboxPayload =
+  TerminalMailboxMessage | TerminalMailboxMessage[] | null | undefined;
+
 export interface WindowState {
   isMaximized: boolean;
   isFullScreen: boolean;
