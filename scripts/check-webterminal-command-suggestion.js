@@ -19,21 +19,27 @@ const {
   shouldRequestCommandSuggestions,
   shouldResumePromptTrackingOnInput,
 } = require(
-  path.join(ROOT, "src/renderer/modules/terminal/commandSuggestionState.js"),
+  path.join(
+    ROOT,
+    "src/renderer/features/terminal/model/commandSuggestionState.js",
+  ),
 );
 const { buildCommandSuggestionCursorPosition } = require(
-  path.join(ROOT, "src/renderer/modules/terminal/commandSuggestionCursor.js"),
+  path.join(
+    ROOT,
+    "src/renderer/features/terminal/model/commandSuggestionCursor.js",
+  ),
 );
 
 const webTerminalSource = collectWebTerminalSources();
 const commandSuggestionSource = readSource(
-  "src/renderer/components/CommandSuggestion.jsx",
+  "src/renderer/features/terminal/CommandSuggestion.jsx",
 );
 const commandSuggestionHookSource = readSource(
-  "src/renderer/hooks/useTerminalSuggestions.js",
+  "src/renderer/features/terminal/hooks/useTerminalSuggestions.js",
 );
 const promptTrackingSource = readSource(
-  "src/renderer/components/web-terminal/usePromptTracking.js",
+  "src/renderer/features/terminal/hooks/usePromptTracking.js",
 );
 const preloadSource = readSource("src/preload/index.js");
 

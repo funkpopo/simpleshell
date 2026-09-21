@@ -25,7 +25,8 @@ Code using Node/Electron is not shared merely because a worker also uses it.
 
 ## Feature ownership
 
-Renderer features own their components, hooks, state and local helpers. Put
+Renderer features under `src/renderer/features` own their components, hooks,
+state and local helpers. See `src/renderer/features/README.md` for their entries. Put
 reusable UI primitives and browser helpers under renderer/shared; a helper used
 by only one feature stays in that feature. Application composition owns provider
 creation, cross-feature layout and atomic session actions. Do not split a single

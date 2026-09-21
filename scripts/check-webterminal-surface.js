@@ -11,19 +11,23 @@ const read = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
 const webTerminal = collectWebTerminalSources();
-const webTerminalCss = read("src/renderer/components/WebTerminal.css");
+const webTerminalCss = read("src/renderer/features/terminal/WebTerminal.css");
 const terminalCss = read("src/renderer/styles/terminal.css");
 const terminalDom = read(
-  "src/renderer/modules/terminal/controller/terminalDom.js",
+  "src/renderer/features/terminal/runtime/terminalDom.js",
 );
-const terminalTheme = read("src/renderer/modules/terminal/terminalTheme.js");
+const terminalTheme = read(
+  "src/renderer/features/terminal/model/terminalTheme.js",
+);
 const themeVariables = read("src/renderer/styles/theme-variables.css");
 const searchOverlay = readSource(
-  "src/renderer/components/web-terminal/WebTerminalSearchOverlay.jsx",
+  "src/renderer/features/terminal/components/WebTerminalSearchOverlay.jsx",
 );
-const searchHook = read("src/renderer/hooks/useTerminalSearch.js");
+const searchHook = read(
+  "src/renderer/features/terminal/hooks/useTerminalSearch.js",
+);
 const contextMenu = readSource(
-  "src/renderer/components/web-terminal/WebTerminalContextMenu.jsx",
+  "src/renderer/features/terminal/components/WebTerminalContextMenu.jsx",
 );
 
 // Line height remains configurable, but default stays at historical 1.0 (no visual redesign).

@@ -18,7 +18,7 @@ const {
   shouldClearOnTabConnectionStatus,
   shouldMarkPendingOnTabConnectionStatus,
 } = require(
-  path.join(ROOT, "src/renderer/modules/terminal/reconnectTabStatus.js"),
+  path.join(ROOT, "src/renderer/features/terminal/model/reconnectTabStatus.js"),
 );
 
 const t = (key, params = {}) => {

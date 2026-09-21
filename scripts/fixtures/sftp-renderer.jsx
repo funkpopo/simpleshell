@@ -4,13 +4,13 @@ import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { I18nextProvider } from "react-i18next";
 import i18next from "i18next";
 import en from "../../src/shared/locales/en-US.json";
-import TransferSidebar from "../../src/renderer/components/TransferSidebar.jsx";
-import GlobalTransferBar from "../../src/renderer/components/GlobalTransferBar.jsx";
+import TransferSidebar from "../../src/renderer/features/transfers/TransferSidebar.jsx";
+import GlobalTransferBar from "../../src/renderer/features/transfers/GlobalTransferBar.jsx";
 import {
   useAllGlobalTransfers,
   applySftpTransferState,
   clearCompletedTransfersForAllTabs,
-} from "../../src/renderer/store/globalTransferStore";
+} from "../../src/renderer/features/transfers/state/globalTransferStore";
 
 const calls = [];
 let recovery = [

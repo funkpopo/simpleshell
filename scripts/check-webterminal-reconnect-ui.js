@@ -7,10 +7,13 @@ const {
   createSuggestionSuppressionContext,
   resetSessionRestoreInteractionState,
 } = require(
-  path.join(ROOT, "src/renderer/modules/terminal/sessionRestoreUI.js"),
+  path.join(ROOT, "src/renderer/features/terminal/model/sessionRestoreUI.js"),
 );
 const { resolveCommandSuggestionWindowPosition } = require(
-  path.join(ROOT, "src/renderer/modules/terminal/commandSuggestionPosition.js"),
+  path.join(
+    ROOT,
+    "src/renderer/features/terminal/model/commandSuggestionPosition.js",
+  ),
 );
 
 function testSessionRestoreInteractionReset() {

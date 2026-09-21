@@ -3,7 +3,7 @@ import {
   appReducer,
   actions,
   initialState,
-} from "../../src/renderer/store/appReducer.js";
+} from "../../src/renderer/app/state/appReducer.js";
 
 const sshTab = (id, label = id) => ({
   id,

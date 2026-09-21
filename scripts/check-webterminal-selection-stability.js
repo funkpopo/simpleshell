@@ -8,10 +8,10 @@ const read = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
 const webTerminal = collectWebTerminalSources();
-const webTerminalCss = read("src/renderer/components/WebTerminal.css");
+const webTerminalCss = read("src/renderer/features/terminal/WebTerminal.css");
 const terminalSurfaceCss = read("src/renderer/styles/terminal.css");
 const terminalDom = read(
-  "src/renderer/modules/terminal/controller/terminalDom.js",
+  "src/renderer/features/terminal/runtime/terminalDom.js",
 );
 
 const forbiddenWebTerminalPatterns = [

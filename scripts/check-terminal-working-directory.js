@@ -2,9 +2,11 @@ const assert = require("node:assert/strict");
 const createLoader = require("./lib/load-renderer-module.js");
 const load = createLoader();
 const tracking = load(
-  "src/renderer/modules/terminal/workingDirectoryTracking.js",
+  "src/renderer/features/terminal/model/workingDirectoryTracking.js",
 );
-const store = load("src/renderer/modules/terminal/workingDirectoryStore.js");
+const store = load(
+  "src/renderer/features/terminal/model/workingDirectoryStore.js",
+);
 const { parseWorkingDirectoryOsc: osc, parseWorkingDirectoryPrompt: prompt } =
   tracking;
 const title = tracking.parseWorkingDirectoryTitle;

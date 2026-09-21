@@ -84,10 +84,10 @@ function createHarness(sessionKey = "tab::p1", initialStatus = null) {
     { react },
   );
   const { useTerminalIO } = load(
-    "src/renderer/components/web-terminal/useTerminalIO.js",
+    "src/renderer/features/terminal/hooks/useTerminalIO.js",
   );
   const { processCache } = load(
-    "src/renderer/modules/terminal/controller/terminalSessionStore.js",
+    "src/renderer/features/terminal/runtime/terminalSessionStore.js",
   );
   processCache[sessionKey] = "process-1";
   const props = {

@@ -13,7 +13,9 @@ const preloadSource = read("src/preload/index.js");
 const appSource = require("./lib/renderer-sources.js").collectAppSources();
 const { collectWebTerminalSources } = require("./lib/webterminal-sources.js");
 const webTerminalSource = collectWebTerminalSources();
-const sidebarSource = read("src/renderer/components/LocalTerminalSidebar.jsx");
+const sidebarSource = read(
+  "src/renderer/features/terminal/LocalTerminalSidebar.jsx",
+);
 const webpackMainSource = read("webpack.main.config.js");
 const forgeConfigSource = read("forge.config.js");
 const localTerminalConfigSource = read(

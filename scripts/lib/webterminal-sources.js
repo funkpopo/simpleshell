@@ -8,18 +8,18 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "../..");
 
 const WEB_TERMINAL_SOURCE_FILES = [
-  "src/renderer/components/WebTerminal.jsx",
-  "src/renderer/components/web-terminal/terminalHelpers.js",
-  "src/renderer/components/web-terminal/simulatedTerminal.js",
-  "src/renderer/components/web-terminal/useTerminalIO.js",
-  "src/renderer/components/web-terminal/useTerminalLayout.js",
-  "src/renderer/components/web-terminal/usePromptTracking.js",
-  "src/renderer/components/web-terminal/useTerminalClipboard.js",
-  "src/renderer/components/web-terminal/useTerminalContextMenu.js",
-  "src/renderer/components/web-terminal/useTerminalLifecycle.js",
-  "src/renderer/components/web-terminal/useTerminalSessionEvents.js",
-  "src/renderer/components/web-terminal/WebTerminalSearchOverlay.jsx",
-  "src/renderer/components/web-terminal/WebTerminalContextMenu.jsx",
+  "src/renderer/features/terminal/WebTerminal.jsx",
+  "src/renderer/features/terminal/lib/terminalHelpers.js",
+  "src/renderer/features/terminal/lib/simulatedTerminal.js",
+  "src/renderer/features/terminal/hooks/useTerminalIO.js",
+  "src/renderer/features/terminal/hooks/useTerminalLayout.js",
+  "src/renderer/features/terminal/hooks/usePromptTracking.js",
+  "src/renderer/features/terminal/hooks/useTerminalClipboard.js",
+  "src/renderer/features/terminal/hooks/useTerminalContextMenu.js",
+  "src/renderer/features/terminal/hooks/useTerminalLifecycle.js",
+  "src/renderer/features/terminal/hooks/useTerminalSessionEvents.js",
+  "src/renderer/features/terminal/components/WebTerminalSearchOverlay.jsx",
+  "src/renderer/features/terminal/components/WebTerminalContextMenu.jsx",
 ];
 
 function readSource(relativePath) {

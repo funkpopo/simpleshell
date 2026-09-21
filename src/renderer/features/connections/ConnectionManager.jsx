@@ -1,0 +1,3804 @@
+import React, {
+  useState,
+  useEffect,
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
+import Dialog from "../../shared/ui/AccessibleDialog.jsx";
+import {
+  Box,
+  Typography,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  ListItemButton,
+  IconButton,
+  TextField,
+  Button,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Menu,
+  Tooltip,
+  Switch,
+  Checkbox,
+  FormControlLabel,
+  Divider,
+  Alert,
+  CircularProgress,
+} from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import { compactContextMenuPaperSx } from "../../shared/ui/contextMenuStyles";
+import ComputerIcon from "@mui/icons-material/Computer";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import UsbIcon from "@mui/icons-material/Usb";
+import NetworkPingIcon from "@mui/icons-material/NetworkPing";
+import FolderIcon from "@mui/icons-material/Folder";
+import FolderOpenIcon from "@mui/icons-material/FolderOpen";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
+import EditIcon from "@mui/icons-material/Edit";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
+import ErrorOutlinedIcon from "@mui/icons-material/ErrorOutlined";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { alpha } from "@mui/material/styles";
+import { useTranslation } from "react-i18next";
+import { useNotification } from "../../shared/notifications/NotificationContext";
+import { ConnectionManagerSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
+import VirtualizedConnectionList from "./VirtualizedConnectionList.jsx";
+import { sidebarListItemSx } from "../../shared/ui/sidebarItemStyles";
+import SidebarPanel from "../../shared/ui/SidebarPanel.jsx";
+import SidebarSearchField from "../../shared/ui/SidebarSearchField.jsx";
+import useSidebarPanel from "../../shared/hooks/useSidebarPanel";
+import useContextMenuRetarget from "../../shared/hooks/useContextMenuRetarget";
+import { generateId } from "../../../shared/common";
+
+// 自定义比较函数
+const areEqual = (prevProps, nextProps) => {
+  return (
+    prevProps.open === nextProps.open &&
+    prevProps.initialConnections === nextProps.initialConnections &&
+    prevProps.onClose === nextProps.onClose &&
+    prevProps.onConnectionsUpdate === nextProps.onConnectionsUpdate &&
+    prevProps.onOpenConnection === nextProps.onOpenConnection &&
+    prevProps.createConnectionSignal === nextProps.createConnectionSignal &&
+    prevProps.onCreateConnectionSignalConsumed ===
+      nextProps.onCreateConnectionSignalConsumed &&
+    prevProps.sessionContext === nextProps.sessionContext
+  );
+};
+
+const getConnectionTimestamp = (connection) => {
+  if (!connection) {
+    return null;
+  }
+  return (
+    connection.updatedAt ??
+    connection.modifiedAt ??
+    connection.lastUpdated ??
+    connection.lastModified ??
+    connection.timestamp ??
+    connection.meta?.updatedAt ??
+    null
+  );
+};
+
+const getConnectionVersion = (connection) => {
+  if (!connection) {
+    return "";
+  }
+
+  const timestamp = getConnectionTimestamp(connection);
+  if (timestamp) {
+    return String(timestamp);
+  }
+
+  if (connection.type === "group") {
+    return [
+      connection.name || "",
+      connection.expanded ? "1" : "0",
+      (connection.items || []).length,
+    ].join("|");
+  }
+
+  const proxySignature = connection.proxy
+    ? [
+        connection.proxy.type || "",
+        connection.proxy.host || "",
+        connection.proxy.port ?? "",
+        connection.proxy.username || "",
+        connection.proxy.password || "",
+        connection.proxy.useDefault ? "1" : "0",
+      ].join("|")
+    : "";
+
+  return [
+    connection.name || "",
+    connection.host || "",
+    connection.port ?? "",
+    connection.username || "",
+    connection.protocol || "",
+    connection.connectionType || "",
+    connection.authType || "",
+    connection.privateKeyPath || "",
+    connection.agentPath || "",
+    connection.agentForward ? "1" : "0",
+    connection.os || "",
+    connection.password || "",
+    proxySignature,
+  ].join("|");
+};
+
+const areConnectionListsEqual = (prevList = [], nextList = []) => {
+  if (prevList === nextList) {
+    return true;
+  }
+
+  if (!Array.isArray(prevList) || !Array.isArray(nextList)) {
+    return false;
+  }
+
+  if (prevList.length !== nextList.length) {
+    return false;
+  }
+
+  for (let index = 0; index < prevList.length; index += 1) {
+    const prev = prevList[index];
+    const next = nextList[index];
+
+    if (!prev || !next) {
+      return false;
+    }
+
+    if (
+      (prev.id || "") !== (next.id || "") ||
+      (prev.type || "") !== (next.type || "")
+    ) {
+      return false;
+    }
+
+    if (getConnectionVersion(prev) !== getConnectionVersion(next)) {
+      return false;
+    }
+
+    const prevChildren = prev.items || [];
+    const nextChildren = next.items || [];
+
+    if (
+      (prevChildren.length > 0 || nextChildren.length > 0) &&
+      !areConnectionListsEqual(prevChildren, nextChildren)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const cloneConnectionNode = (node) => {
+  if (!node || typeof node !== "object") {
+    return node;
+  }
+
+  const cloned = {
+    ...node,
+  };
+
+  if (node.proxy && typeof node.proxy === "object") {
+    cloned.proxy = { ...node.proxy };
+  }
+
+  if (Array.isArray(node.items)) {
+    cloned.items = node.items.map(cloneConnectionNode);
+  }
+
+  return cloned;
+};
+
+const cloneConnectionList = (list = []) => list.map(cloneConnectionNode);
+
+const dedupeConnectionsById = (list = []) => {
+  if (!Array.isArray(list) || list.length === 0) {
+    return [];
+  }
+
+  const seen = new Set();
+  const deduped = [];
+
+  list.forEach((item) => {
+    if (!item || typeof item !== "object") {
+      return;
+    }
+
+    const itemId = item.id || "";
+    const dedupeKey = `${item.type || "unknown"}:${itemId}`;
+    if (itemId && seen.has(dedupeKey)) {
+      return;
+    }
+    if (itemId) {
+      seen.add(dedupeKey);
+    }
+
+    if (item.type === "group" && Array.isArray(item.items)) {
+      deduped.push({
+        ...item,
+        items: dedupeConnectionsById(item.items),
+      });
+      return;
+    }
+
+    deduped.push(item);
+  });
+
+  return deduped;
+};
+
+const ROOT_CONTAINER_ID = "connection-list";
+const getGroupContainerId = (groupId) => `group-container-${groupId}`;
+const CONNECTION_LIST_VIRTUALIZATION_THRESHOLD = 200;
+const CONNECTION_MANAGER_ROW_DATA_ATTR = "data-connection-manager-item";
+
+/** 复制到剪贴板的主机地址（去掉尾部 :port，保留 [IPv6] 形式） */
+const getHostForClipboard = (connection) => {
+  const raw = String(connection?.host ?? "").trim();
+  if (!raw) {
+    return "";
+  }
+  if (raw.startsWith("[")) {
+    const end = raw.indexOf("]");
+    if (end > 0) {
+      return raw.slice(0, end + 1);
+    }
+    return raw;
+  }
+  const lastColon = raw.lastIndexOf(":");
+  if (lastColon > 0) {
+    const after = raw.slice(lastColon + 1);
+    if (/^\d+$/.test(after)) {
+      return raw.slice(0, lastColon);
+    }
+  }
+  return raw;
+};
+
+// IP地址排序辅助函数
+const parseIpAddress = (ipString) => {
+  if (!ipString) return null;
+
+  // 移除端口号（如果有的话）
+  const ipWithoutPort = ipString.split(":")[0];
+
+  // 支持IPv4格式
+  const ipv4Parts = ipWithoutPort.split(".");
+  if (ipv4Parts.length === 4) {
+    const numericParts = ipv4Parts.map((part) => parseInt(part, 10));
+    if (numericParts.every((num) => !isNaN(num) && num >= 0 && num <= 255)) {
+      // 将IPv4转换为数字以便比较
+      return (
+        numericParts[0] * 16777216 +
+        numericParts[1] * 65536 +
+        numericParts[2] * 256 +
+        numericParts[3]
+      );
+    }
+  }
+
+  // 如果不是有效的IP地址，返回null
+  return null;
+};
+
+const sortConnectionsByIp = (connections) => {
+  if (!Array.isArray(connections) || connections.length === 0) {
+    return connections;
+  }
+
+  return [...connections].sort((a, b) => {
+    // 分组类型始终按名称排序
+    if (a.type === "group" && b.type === "group") {
+      return (a.name || "").localeCompare(b.name || "");
+    }
+
+    // 分组始终在连接之前
+    if (a.type === "group") return -1;
+    if (b.type === "group") return 1;
+
+    // 对于连接，按IP地址排序
+    const ipA = parseIpAddress(a.host);
+    const ipB = parseIpAddress(b.host);
+
+    // 如果两个都有有效的IP地址，按数值排序
+    if (ipA !== null && ipB !== null) {
+      return ipA - ipB;
+    }
+
+    // 有效IP地址排在前面
+    if (ipA !== null) return -1;
+    if (ipB !== null) return 1;
+
+    // 如果都不是有效IP，按主机名字符串排序
+    return (a.host || "").localeCompare(b.host || "");
+  });
+};
+
+const countVisibleItems = (items = []) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return 0;
+  }
+
+  return items.reduce((total, item) => {
+    if (!item || typeof item !== "object") {
+      return total;
+    }
+
+    if (item.type === "group") {
+      const children = item.expanded ? countVisibleItems(item.items || []) : 0;
+      return total + 1 + children;
+    }
+
+    return total + 1;
+  }, 0);
+};
+
+const parsePortValue = (value, fallback = 22) => {
+  const port = Number.parseInt(value, 10);
+  return Number.isFinite(port) ? port : fallback;
+};
+
+const isPortValid = (value) => {
+  const port = Number(value);
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+};
+
+const hasWhitespace = (value) => /\s/.test(String(value || ""));
+const SAVED_PASSWORD_MASK = "********";
+
+// 串口常用波特率
+const SERIAL_BAUD_RATES = [
+  300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200, 230400,
+  460800, 921600,
+];
+const DEFAULT_SERIAL_FORM = {
+  baudRate: 9600,
+  dataBits: 8,
+  stopBits: 1,
+  parity: "none",
+  flowControl: "none",
+};
+
+const DEFAULT_MOSH_FORM = {
+  moshBinaryPath: "",
+  moshUseWsl: false,
+  moshPredict: "adaptive",
+  moshServerPort: "",
+};
+
+const parseBaudRate = (value) => {
+  const baud = Number.parseInt(value, 10);
+  return SERIAL_BAUD_RATES.includes(baud) ? baud : DEFAULT_SERIAL_FORM.baudRate;
+};
+
+const buildConnectionPayloadFromForm = ({
+  formData,
+  id,
+  selectedItem,
+  dialogMode,
+}) => {
+  const protocol = formData.protocol || "ssh";
+  const fallbackPort = protocol === "telnet" ? 23 : 22;
+
+  const shouldPreservePassword =
+    protocol !== "serial" &&
+    protocol !== "mosh" &&
+    dialogMode === "edit" &&
+    selectedItem?.type === "connection" &&
+    (formData.passwordMasked === true || formData.passwordTouched !== true) &&
+    formData.passwordRevealed !== true;
+
+  // 串口连接：host 字段存端口路径（如 COM3 / /dev/ttyUSB0），无端口/认证概念
+  if (protocol === "serial") {
+    return {
+      id:
+        id ||
+        (dialogMode === "add"
+          ? generateId("conn")
+          : selectedItem?.id || generateId("conn")),
+      type: "connection",
+      name: String(formData.name || "").trim(),
+      host: String(formData.host || "").trim(),
+      port: null,
+      username: "",
+      password: "",
+      protocol: "serial",
+      baudRate: parseBaudRate(formData.baudRate),
+      dataBits: Number(formData.dataBits) || DEFAULT_SERIAL_FORM.dataBits,
+      stopBits: Number(formData.stopBits) || DEFAULT_SERIAL_FORM.stopBits,
+      parity: formData.parity || DEFAULT_SERIAL_FORM.parity,
+      flowControl: formData.flowControl || DEFAULT_SERIAL_FORM.flowControl,
+      os: formData.os,
+      connectionType: formData.connectionType,
+      proxy: null,
+    };
+  }
+
+  // Mosh 连接：port 字段为 SSH 引导端口（mosh 先经 SSH 启动 mosh-server），
+  // 认证由 mosh 客户端在终端内交互完成，不保存密码
+  if (protocol === "mosh") {
+    return {
+      id:
+        id ||
+        (dialogMode === "add"
+          ? generateId("conn")
+          : selectedItem?.id || generateId("conn")),
+      type: "connection",
+      name: String(formData.name || "").trim(),
+      host: String(formData.host || "").trim(),
+      port: parsePortValue(formData.port, 22),
+      username: String(formData.username || "").trim(),
+      password: "",
+      protocol: "mosh",
+      moshBinaryPath: String(formData.moshBinaryPath || "").trim(),
+      moshUseWsl: formData.moshUseWsl === true,
+      moshPredict: formData.moshPredict || DEFAULT_MOSH_FORM.moshPredict,
+      moshServerPort: String(formData.moshServerPort || "").trim(),
+      os: formData.os,
+      connectionType: formData.connectionType,
+      proxy: null,
+    };
+  }
+
+  return {
+    id:
+      id ||
+      (dialogMode === "add"
+        ? generateId("conn")
+        : selectedItem?.id || generateId("conn")),
+    type: "connection",
+    name: String(formData.name || "").trim(),
+    host: String(formData.host || "").trim(),
+    port: parsePortValue(formData.port, fallbackPort),
+    username: String(formData.username || "").trim(),
+    password:
+      formData.authType === "password"
+        ? shouldPreservePassword
+          ? selectedItem?.password || ""
+          : formData.password || ""
+        : "",
+    _preservePassword:
+      formData.authType === "password" && shouldPreservePassword,
+    authType: formData.authType || "password",
+    privateKeyPath:
+      formData.authType === "privateKey"
+        ? String(formData.privateKeyPath || "").trim()
+        : "",
+    agentPath: String(formData.agentPath || "").trim(),
+    agentForward: formData.agentForward === true,
+    os: formData.os,
+    connectionType: formData.connectionType,
+    protocol,
+    proxy: formData.enableProxy
+      ? {
+          type: formData.proxyType,
+          host: String(formData.proxyHost || "").trim(),
+          port: parsePortValue(formData.proxyPort, 8080),
+          username: formData.proxyUsername || undefined,
+          password:
+            dialogMode === "edit" &&
+            selectedItem?.type === "connection" &&
+            formData.proxyPasswordTouched !== true
+              ? selectedItem?.proxy?.password || undefined
+              : formData.proxyPassword || undefined,
+          useDefault: formData.proxyUseDefault,
+        }
+      : null,
+  };
+};
+
+const getConnectionValidationSteps = (t, formData, privateKeyCheck) => {
+  if ((formData.protocol || "ssh") !== "ssh") {
+    return [];
+  }
+
+  const host = String(formData.host || "").trim();
+  const username = String(formData.username || "").trim();
+  const proxyHost = String(formData.proxyHost || "").trim();
+  const privateKeyPath = String(formData.privateKeyPath || "").trim();
+  const authType = formData.authType || "password";
+  const isPrivateKeyAuth = authType === "privateKey";
+  const privateKeyUnsafe =
+    privateKeyCheck?.permissions &&
+    /^[0-7]{3,4}$/.test(privateKeyCheck.permissions) &&
+    (Number.parseInt(privateKeyCheck.permissions, 8) & 0o077) !== 0;
+
+  return [
+    {
+      key: "host",
+      title: t("connectionManager.validation.host"),
+      ok: Boolean(host) && !hasWhitespace(host),
+      message: !host
+        ? t("connectionManager.validation.hostMissing")
+        : hasWhitespace(host)
+          ? t("connectionManager.validation.hostWhitespace")
+          : t("connectionManager.validation.hostOk"),
+    },
+    {
+      key: "port",
+      title: t("connectionManager.validation.port"),
+      ok: isPortValid(formData.port),
+      message: isPortValid(formData.port)
+        ? t("connectionManager.validation.portOk")
+        : t("connectionManager.validation.portInvalid"),
+    },
+    {
+      key: "username",
+      title: t("connectionManager.validation.username"),
+      ok: Boolean(username),
+      message: username
+        ? t("connectionManager.validation.usernameOk")
+        : t("connectionManager.validation.usernameMissing"),
+    },
+    {
+      key: "auth",
+      title: t("connectionManager.validation.auth"),
+      ok:
+        authType === "password" ||
+        authType === "agent" ||
+        (isPrivateKeyAuth && Boolean(privateKeyPath)),
+      message:
+        authType === "agent"
+          ? t("connectionManager.validation.agentAuthOk")
+          : authType === "password"
+            ? t("connectionManager.validation.passwordAuthOk")
+            : privateKeyPath
+              ? t("connectionManager.validation.privateKeySelected")
+              : t("connectionManager.validation.privateKeyMissing"),
+    },
+    {
+      key: "proxy",
+      title: t("connectionManager.validation.proxy"),
+      ok:
+        !formData.enableProxy ||
+        formData.proxyUseDefault ||
+        (Boolean(proxyHost) && isPortValid(formData.proxyPort)),
+      message: !formData.enableProxy
+        ? t("connectionManager.validation.proxyDisabled")
+        : formData.proxyUseDefault
+          ? t("connectionManager.validation.proxyDefault")
+          : !proxyHost
+            ? t("connectionManager.validation.proxyHostMissing")
+            : !isPortValid(formData.proxyPort)
+              ? t("connectionManager.validation.proxyPortInvalid")
+              : t("connectionManager.validation.proxyOk"),
+    },
+    {
+      key: "privateKey",
+      title: t("connectionManager.validation.privateKey"),
+      ok:
+        !isPrivateKeyAuth ||
+        privateKeyCheck?.status === "ok" ||
+        privateKeyCheck?.status === "warning",
+      severity:
+        isPrivateKeyAuth &&
+        privateKeyUnsafe &&
+        privateKeyCheck?.status !== "error"
+          ? "warning"
+          : privateKeyCheck?.status === "checking"
+            ? "checking"
+            : "default",
+      message: !isPrivateKeyAuth
+        ? t("connectionManager.validation.privateKeyNotUsed")
+        : !privateKeyPath
+          ? t("connectionManager.validation.privateKeyMissing")
+          : privateKeyCheck?.status === "checking"
+            ? t("connectionManager.validation.privateKeyChecking")
+            : privateKeyCheck?.status === "error"
+              ? privateKeyCheck.message ||
+                t("connectionManager.validation.privateKeyUnreadable")
+              : privateKeyUnsafe
+                ? t("connectionManager.validation.privateKeyUnsafe", {
+                    permissions: privateKeyCheck.permissions,
+                  })
+                : t("connectionManager.validation.privateKeyOk"),
+    },
+  ];
+};
+
+const ConnectionListItem = memo(function ConnectionListItem({
+  theme,
+  connection,
+  parentGroup,
+  onOpenRowContextMenu,
+  onOpen,
+  dragDisabled,
+  isContextMenuTarget = false,
+}) {
+  const containerId = parentGroup
+    ? getGroupContainerId(parentGroup.id)
+    : ROOT_CONTAINER_ID;
+
+  const primaryRef = useRef(null);
+  const secondaryRef = useRef(null);
+  const [isPrimaryTruncated, setIsPrimaryTruncated] = useState(false);
+  const [isSecondaryTruncated, setIsSecondaryTruncated] = useState(false);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: connection.id,
+    data: {
+      type: "connection",
+      parentId: containerId,
+      groupId: parentGroup?.id ?? null,
+    },
+    disabled: dragDisabled,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const getProtocolIcon = () => {
+    if (connection.protocol === "telnet") {
+      return (
+        <ComputerIcon
+          fontSize="small"
+          sx={{ color: theme.palette.warning.main }}
+        />
+      );
+    }
+    if (connection.protocol === "serial") {
+      return (
+        <UsbIcon fontSize="small" sx={{ color: theme.palette.info.main }} />
+      );
+    }
+    if (connection.protocol === "mosh") {
+      return (
+        <NetworkPingIcon
+          fontSize="small"
+          sx={{ color: theme.palette.success.main }}
+        />
+      );
+    }
+    return <ComputerIcon fontSize="small" />;
+  };
+
+  const secondaryText = connection.username
+    ? `${connection.username}@${connection.host}`
+    : connection.host;
+
+  const primaryContent = connection.name || connection.host;
+
+  useEffect(() => {
+    const checkTruncation = () => {
+      if (primaryRef.current) {
+        setIsPrimaryTruncated(
+          primaryRef.current.scrollWidth > primaryRef.current.clientWidth,
+        );
+      }
+      if (secondaryRef.current) {
+        setIsSecondaryTruncated(
+          secondaryRef.current.scrollWidth > secondaryRef.current.clientWidth,
+        );
+      }
+    };
+    checkTruncation();
+  }, [primaryContent, secondaryText]);
+
+  return (
+    <ListItem
+      ref={setNodeRef}
+      style={style}
+      disablePadding
+      sx={{
+        pl: parentGroup ? 1.5 : 0.5,
+        minHeight: "32px",
+        ...sidebarListItemSx(theme, isContextMenuTarget),
+        ...(isDragging
+          ? {
+              background:
+                theme.palette.mode === "dark"
+                  ? theme.palette.grey[700]
+                  : theme.palette.grey[200],
+              boxShadow: theme.shadows[4],
+            }
+          : {}),
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          const focusTarget =
+            e.currentTarget?.querySelector?.(
+              `[${CONNECTION_MANAGER_ROW_DATA_ATTR}="true"]`,
+            ) || e.currentTarget;
+          focusTarget?.focus?.();
+        } catch (_) {
+          // ignore
+        }
+        onOpenRowContextMenu?.(e, connection, parentGroup);
+      }}
+    >
+      <Box
+        ref={setActivatorNodeRef}
+        {...listeners}
+        {...attributes}
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          cursor: dragDisabled ? "default" : "grab",
+          "&:active": {
+            cursor: dragDisabled ? "default" : "grabbing",
+          },
+          minWidth: 20,
+          justifyContent: "center",
+          mr: 0.25,
+          pointerEvents: dragDisabled ? "none" : "auto",
+          color: "text.secondary",
+        }}
+      >
+        <DragIndicatorIcon fontSize="small" />
+      </Box>
+      <ListItemButton
+        {...{ [CONNECTION_MANAGER_ROW_DATA_ATTR]: "true" }}
+        tabIndex={0}
+        onClick={() => onOpen(connection)}
+        dense
+        sx={{
+          flexGrow: 1,
+          py: 0.5,
+          "&:hover": {
+            backgroundColor: "transparent",
+          },
+        }}
+      >
+        <ListItemIcon sx={{ minWidth: 28, ml: -0.5 }}>
+          {getProtocolIcon()}
+        </ListItemIcon>
+        <ListItemText
+          primary={
+            <Tooltip
+              title={primaryContent}
+              placement="top"
+              disableHoverListener={!isPrimaryTruncated}
+            >
+              <span ref={primaryRef}>{primaryContent}</span>
+            </Tooltip>
+          }
+          primaryTypographyProps={{
+            variant: "body2",
+            fontWeight: "medium",
+            margin: 0,
+            fontSize: "0.85rem",
+          }}
+          secondary={
+            <Tooltip
+              title={secondaryText}
+              placement="top"
+              disableHoverListener={!isSecondaryTruncated}
+            >
+              <span ref={secondaryRef}>{secondaryText}</span>
+            </Tooltip>
+          }
+          secondaryTypographyProps={{
+            variant: "caption",
+            color: "text.secondary",
+          }}
+          sx={{
+            my: 0,
+            ".MuiTypography-root": {
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              "& > span": {
+                display: "block",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              },
+            },
+          }}
+        />
+      </ListItemButton>
+    </ListItem>
+  );
+});
+
+const GroupListItem = memo(function GroupListItem({
+  theme,
+  group,
+  dragDisabled,
+  onToggle,
+  onOpenGroupRowContextMenu,
+  onOpenConnectionRowContextMenu,
+  onOpenConnection,
+  contextMenuTarget = null,
+}) {
+  const { t } = useTranslation();
+  const containerId = getGroupContainerId(group.id);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: group.id,
+    data: {
+      type: "group",
+      parentId: ROOT_CONTAINER_ID,
+    },
+    disabled: dragDisabled,
+  });
+
+  const { setNodeRef: setGroupDroppableRef, isOver } = useDroppable({
+    id: containerId,
+    data: {
+      type: "container",
+      parentId: containerId,
+      groupId: group.id,
+    },
+    disabled: dragDisabled,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const shouldShowChildren = group.expanded || (isOver && !dragDisabled);
+  const isContextMenuTarget =
+    contextMenuTarget?.kind === "group" &&
+    contextMenuTarget.group?.id === group.id;
+
+  return (
+    <React.Fragment>
+      <ListItem
+        disablePadding
+        ref={setNodeRef}
+        style={style}
+        sx={{
+          pl: 0.5,
+          minHeight: "32px",
+          ...sidebarListItemSx(theme, isContextMenuTarget),
+          ...(isDragging
+            ? {
+                background:
+                  theme.palette.mode === "dark"
+                    ? theme.palette.grey[700]
+                    : theme.palette.grey[200],
+                boxShadow: theme.shadows[4],
+              }
+            : {}),
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            const focusTarget =
+              e.currentTarget?.querySelector?.(
+                `[${CONNECTION_MANAGER_ROW_DATA_ATTR}="true"]`,
+              ) || e.currentTarget;
+            focusTarget?.focus?.();
+          } catch (_) {
+            // ignore
+          }
+          onOpenGroupRowContextMenu?.(e, group);
+        }}
+      >
+        <Box
+          ref={setActivatorNodeRef}
+          {...listeners}
+          {...attributes}
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            cursor: dragDisabled ? "default" : "grab",
+            "&:active": {
+              cursor: dragDisabled ? "default" : "grabbing",
+            },
+            minWidth: 20,
+            justifyContent: "center",
+            mr: 0.25,
+            pointerEvents: dragDisabled ? "none" : "auto",
+            color: "text.secondary",
+          }}
+        >
+          <DragIndicatorIcon fontSize="small" />
+        </Box>
+        <ListItemButton
+          {...{ [CONNECTION_MANAGER_ROW_DATA_ATTR]: "true" }}
+          tabIndex={0}
+          onClick={() => onToggle(group.id)}
+          sx={{
+            py: 0.5,
+            flexGrow: 1,
+            "&:hover": {
+              backgroundColor: "transparent",
+            },
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: 28, ml: -0.5 }}>
+            {group.expanded ? (
+              <FolderOpenIcon fontSize="small" />
+            ) : (
+              <FolderIcon fontSize="small" />
+            )}
+          </ListItemIcon>
+          <ListItemText
+            primary={group.name}
+            primaryTypographyProps={{
+              variant: "body2",
+              fontWeight: "medium",
+              margin: 0,
+              fontSize: "0.85rem",
+            }}
+            sx={{ my: 0 }}
+          />
+        </ListItemButton>
+      </ListItem>
+
+      <Box
+        ref={setGroupDroppableRef}
+        data-connection-manager-group-area="true"
+        onContextMenu={(e) => {
+          // 分组内部空白（含“没有连接项”占位）右键：打开分组菜单
+          if (
+            e.target instanceof Element &&
+            (e.target.closest(`[${CONNECTION_MANAGER_ROW_DATA_ATTR}]`) ||
+              e.target.closest(".MuiListItemButton-root"))
+          ) {
+            return;
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          onOpenGroupRowContextMenu?.(e, group);
+        }}
+        sx={{
+          backgroundColor: isOver
+            ? theme.palette.mode === "dark"
+              ? alpha(theme.palette.primary.main, 0.2)
+              : alpha(theme.palette.primary.main, 0.15)
+            : "transparent",
+          transition:
+            "background-color 0.2s ease, max-height 0.2s ease, opacity 0.2s ease, margin 0.2s ease",
+          maxHeight: shouldShowChildren ? "none" : "0px",
+          opacity: shouldShowChildren ? 1 : 0,
+          overflow: "hidden",
+          borderRadius: !group.expanded && isOver ? 1 : 0,
+          margin: !group.expanded && isOver ? "0 8px" : 0,
+        }}
+      >
+        <SortableContext
+          id={containerId}
+          items={(group.items || []).map((item) => item.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <List
+            component="div"
+            disablePadding
+            sx={{
+              pl: 1.5,
+              display: shouldShowChildren ? "block" : "none",
+            }}
+          >
+            {group.items &&
+              group.items.map((item) => (
+                <ConnectionListItem
+                  key={item.id}
+                  theme={theme}
+                  connection={item}
+                  parentGroup={group}
+                  onOpenRowContextMenu={onOpenConnectionRowContextMenu}
+                  onOpen={onOpenConnection}
+                  dragDisabled={dragDisabled}
+                  isContextMenuTarget={
+                    contextMenuTarget?.kind === "connection" &&
+                    contextMenuTarget.connection?.id === item.id
+                  }
+                />
+              ))}
+            {(!group.items || group.items.length === 0) && (
+              <ListItem sx={{ pl: 2 }}>
+                <ListItemText
+                  primary={t("connectionManager.noConnections")}
+                  primaryTypographyProps={{
+                    variant: "caption",
+                    sx: {
+                      fontStyle: "italic",
+                      color: "text.disabled",
+                    },
+                  }}
+                />
+              </ListItem>
+            )}
+          </List>
+        </SortableContext>
+      </Box>
+    </React.Fragment>
+  );
+});
+
+const ConnectionManager = memo(
+  ({
+    open,
+    onClose,
+    initialConnections = [],
+    onConnectionsUpdate,
+    onOpenConnection,
+    createConnectionSignal = 0,
+    onCreateConnectionSignalConsumed,
+    sessionContext = null,
+  }) => {
+    const theme = useTheme();
+    const { t, i18n } = useTranslation();
+    const { showError, showSuccess } = useNotification();
+    const [connections, setConnections] = useState(initialConnections);
+    const [isLoading, setIsLoading] = useState(!initialConnections.length);
+    const [searchQuery, setSearchQuery] = useState("");
+    const searchInputRef = useRef(null);
+    const sidebarRootRef = useRef(null);
+    const [connectionListContextMenu, setConnectionListContextMenu] =
+      useState(null);
+    const connectionManagerListRootRef = useRef(null);
+
+    useSidebarPanel({
+      open,
+      rootRef: sidebarRootRef,
+      searchInputRef,
+    });
+
+    useEffect(() => {
+      if (!open) {
+        setConnectionListContextMenu(null);
+      }
+    }, [open]);
+
+    // 初始加载数据
+    useEffect(() => {
+      if (open && isLoading) {
+        try {
+          if (window.terminalAPI && window.terminalAPI.loadConnections) {
+            window.terminalAPI
+              .loadConnections()
+              .then((data) => {
+                if (data && Array.isArray(data)) {
+                  setConnections(data);
+                  if (onConnectionsUpdate) {
+                    onConnectionsUpdate(data);
+                  }
+                }
+                setIsLoading(false);
+              })
+              .catch(() => {
+                showError(t("connectionManager.loadFailed"));
+                setIsLoading(false);
+              });
+          } else {
+            setIsLoading(false);
+          }
+        } catch {
+          setIsLoading(false);
+        }
+      }
+    }, [open, isLoading, onConnectionsUpdate]);
+
+    // 添加监听配置变化的effect，确保连接列表实时更新
+    // 使用 ref 来跟踪当前连接状态，避免在依赖项中使用 connections 导致无限循环
+    const connectionsStateRef = useRef(connections);
+    const isSavingRef = useRef(false); // 标记是否正在保存，用于忽略自己触发的变更事件
+
+    // 更新 ref 以保持最新状态
+    useEffect(() => {
+      connectionsStateRef.current = connections;
+    }, [connections]);
+
+    useEffect(() => {
+      if (!open) return;
+
+      let isMounted = true; // 添加标志以避免组件卸载后的状态更新
+
+      // 定义重新加载连接的函数
+      const reloadConnections = () => {
+        // 如果是自己触发的保存，忽略此次变更事件，避免重复加载
+        if (isSavingRef.current) {
+          return;
+        }
+
+        if (
+          !isMounted ||
+          !window.terminalAPI ||
+          !window.terminalAPI.loadConnections
+        ) {
+          return;
+        }
+
+        window.terminalAPI
+          .loadConnections()
+          .then((data) => {
+            if (isMounted && data && Array.isArray(data)) {
+              // 检查数据是否真的发生了变化，避免不必要的重渲染
+              const sanitized = Array.isArray(data) ? data : [];
+              // 使用 ref 获取当前状态进行比较
+              if (
+                !areConnectionListsEqual(connectionsStateRef.current, sanitized)
+              ) {
+                setConnections(sanitized);
+                if (onConnectionsUpdate) {
+                  onConnectionsUpdate(sanitized);
+                }
+              }
+            }
+          })
+          .catch(() => {
+            if (isMounted) {
+              showError(t("connectionManager.reloadFailed"));
+            }
+          });
+      };
+
+      // 监听连接配置变化事件
+      if (window.terminalAPI && window.terminalAPI.onConnectionsChanged) {
+        window.terminalAPI.onConnectionsChanged(reloadConnections);
+      }
+
+      // 组件卸载时清理监听器
+      return () => {
+        isMounted = false; // 设置标志为false
+        if (window.terminalAPI && window.terminalAPI.offConnectionsChanged) {
+          window.terminalAPI.offConnectionsChanged(reloadConnections);
+        }
+      };
+    }, [open, onConnectionsUpdate]); // 移除 connections 依赖，使用 ref 代替
+
+    // 当接收到新的initialConnections时更新 - 优化比较逻辑避免循环
+    useEffect(() => {
+      if (
+        initialConnections.length > 0 &&
+        initialConnections !== connections &&
+        !areConnectionListsEqual(connections, initialConnections)
+      ) {
+        setConnections(initialConnections);
+        setIsLoading(false);
+      }
+    }, [initialConnections]); // 移除connections依赖避免循环
+
+    // 当连接数据变化时保存到文件 - 添加条件防止不必要的调用
+    const connectionsRef = useRef(connections);
+    const isUpdatingRef = useRef(false); // 添加一个标志来避免重复更新
+
+    useEffect(() => {
+      if (
+        !isLoading &&
+        onConnectionsUpdate &&
+        connectionsRef.current !== connections &&
+        !isUpdatingRef.current // 避免重复更新
+      ) {
+        connectionsRef.current = connections;
+        isUpdatingRef.current = true; // 设置更新标志
+        onConnectionsUpdate(connections);
+        // 在下一个tick重置标志
+        setTimeout(() => {
+          isUpdatingRef.current = false;
+        }, 0);
+      }
+    }, [connections, isLoading, onConnectionsUpdate]);
+
+    // 关闭消息提示 - 不再需要
+    // const handleSnackbarClose = useCallback(() => {
+    //   setSnackbar((prev) => ({ ...prev, open: false }));
+    // }, []);
+
+    // 对话框状态
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [dialogType, setDialogType] = useState(""); // 'connection' 或 'group'
+    const [dialogMode, setDialogMode] = useState(""); // 'add' 或 'edit'
+    const [selectedItem, setSelectedItem] = useState(null);
+
+    // 确认删除对话框状态
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteItem, setDeleteItem] = useState(null);
+
+    const [formData, setFormData] = useState({
+      name: "",
+      host: "",
+      port: 22,
+      username: "",
+      password: "",
+      authType: "password",
+      privateKeyPath: "",
+      agentPath: "",
+      agentForward: false,
+      parentGroup: "",
+      os: "",
+      connectionType: "",
+      protocol: "ssh", // 默认为SSH
+      ...DEFAULT_SERIAL_FORM,
+      ...DEFAULT_MOSH_FORM,
+      passwordTouched: false,
+      passwordRevealed: false,
+      passwordMasked: false,
+      // 代理配置
+      enableProxy: false,
+      proxyType: "http",
+      proxyHost: "",
+      proxyPort: 8080,
+      proxyUsername: "",
+      proxyPassword: "",
+      proxyPasswordTouched: false,
+      proxyUseDefault: true, // 使用默认代理配置
+    });
+    const [showPassword, setShowPassword] = useState(false);
+    const [revealingPassword, setRevealingPassword] = useState(false);
+    const [privateKeyCheck, setPrivateKeyCheck] = useState({
+      status: "idle",
+      message: "",
+      permissions: null,
+    });
+    const [connectionTestResult, setConnectionTestResult] = useState(null);
+    const [testingConnection, setTestingConnection] = useState(false);
+    const lastSavedDraftRef = useRef(null);
+    const flushEditSaveRef = useRef(null);
+
+    // 串口检测状态
+    const [serialPorts, setSerialPorts] = useState([]);
+    const [serialPortsLoading, setSerialPortsLoading] = useState(false);
+
+    const filteredItems = useMemo(() => {
+      let items;
+      if (!searchQuery) {
+        items = connections;
+      } else {
+        const lowercasedQuery = searchQuery.toLowerCase();
+        items = connections.reduce((acc, item) => {
+          if (item.type === "group") {
+            const isGroupNameMatch = item.name
+              .toLowerCase()
+              .includes(lowercasedQuery);
+            const matchingConnections = item.items.filter((c) =>
+              c.name.toLowerCase().includes(lowercasedQuery),
+            );
+
+            if (isGroupNameMatch || matchingConnections.length > 0) {
+              acc.push({
+                ...item,
+                items: isGroupNameMatch ? item.items : matchingConnections,
+              });
+            }
+          } else {
+            if (item.name.toLowerCase().includes(lowercasedQuery)) {
+              acc.push(item);
+            }
+          }
+          return acc;
+        }, []);
+      }
+
+      const dedupedItems = dedupeConnectionsById(items);
+
+      // 对根级别的项目进行排序，并对每个分组内的连接项进行排序
+      const sortedItems = sortConnectionsByIp(dedupedItems).map((item) => {
+        if (item.type === "group" && item.items) {
+          return {
+            ...item,
+            items: sortConnectionsByIp(item.items),
+          };
+        }
+        return item;
+      });
+
+      return sortedItems;
+    }, [connections, searchQuery]);
+
+    // 处理组的展开/折叠 - 添加防抖和状态检查
+    const handleToggleGroup = useCallback((groupId) => {
+      setConnections((prevConnections) => {
+        // 检查当前状态，避免重复更新
+        const targetGroup = prevConnections.find(
+          (item) => item.id === groupId && item.type === "group",
+        );
+        if (!targetGroup) return prevConnections;
+
+        // 创建新的连接数组，确保React检测到变化
+        const newConnections = prevConnections.map((item) => {
+          if (item.id === groupId && item.type === "group") {
+            return { ...item, expanded: !item.expanded };
+          }
+          return item;
+        });
+
+        // 确保状态更新
+        return newConnections;
+      });
+    }, []);
+
+    // 打开添加连接对话框
+    const handleAddConnection = useCallback((parentGroupId = null) => {
+      setSelectedItem(null);
+      setDialogType("connection");
+      setDialogMode("add");
+      setPrivateKeyCheck({ status: "idle", message: "", permissions: null });
+      setConnectionTestResult(null);
+      setFormData({
+        name: "",
+        host: "",
+        port: 22,
+        username: "",
+        password: "",
+        authType: "password",
+        privateKeyPath: "",
+        agentPath: "",
+        agentForward: false,
+        parentGroup: parentGroupId || "",
+        os: "",
+        connectionType: "",
+        protocol: "ssh", // 默认为SSH
+        ...DEFAULT_SERIAL_FORM,
+        ...DEFAULT_MOSH_FORM,
+        passwordTouched: false,
+        passwordRevealed: false,
+        passwordMasked: false,
+        // 代理配置（保持字段完整，避免 undefined）
+        enableProxy: false,
+        proxyType: "http",
+        proxyHost: "",
+        proxyPort: 8080,
+        proxyUsername: "",
+        proxyPassword: "",
+        proxyPasswordTouched: false,
+        proxyUseDefault: true,
+      });
+      setShowPassword(false);
+      setDialogOpen(true);
+    }, []);
+
+    useEffect(() => {
+      if (!open || !createConnectionSignal) {
+        return;
+      }
+
+      handleAddConnection();
+      onCreateConnectionSignalConsumed?.();
+    }, [
+      createConnectionSignal,
+      handleAddConnection,
+      onCreateConnectionSignalConsumed,
+      open,
+    ]);
+
+    // 打开添加组对话框
+    const handleAddGroup = useCallback(() => {
+      setSelectedItem(null);
+      setDialogType("group");
+      setDialogMode("add");
+      setFormData({
+        name: "",
+      });
+      setDialogOpen(true);
+    }, []);
+
+    // 打开编辑对话框
+    const handleEdit = useCallback((item, parentGroup = null) => {
+      setSelectedItem({
+        ...item,
+        parentGroupId: parentGroup ? parentGroup.id : null,
+      });
+      setDialogMode("edit");
+
+      if (item.type === "group") {
+        setDialogType("group");
+        setPrivateKeyCheck({ status: "idle", message: "", permissions: null });
+        setConnectionTestResult(null);
+        setFormData({
+          name: item.name,
+        });
+      } else {
+        setDialogType("connection");
+        setPrivateKeyCheck({ status: "idle", message: "", permissions: null });
+        setConnectionTestResult(null);
+        // 确保端口值与协议类型匹配
+        const port =
+          item.protocol === "serial"
+            ? null
+            : item.port || (item.protocol === "telnet" ? 23 : 22);
+        const hasSavedPassword = Boolean(item.password);
+        setFormData({
+          name: item.name,
+          host: item.host,
+          port: port,
+          username: item.username || "",
+          password: hasSavedPassword ? SAVED_PASSWORD_MASK : "",
+          authType: item.authType || "password",
+          privateKeyPath: item.privateKeyPath || "",
+          agentPath: item.agentPath || "",
+          agentForward: item.agentForward === true,
+          parentGroup: parentGroup ? parentGroup.id : "",
+          os: item.os || "",
+          connectionType: item.connectionType || "",
+          protocol: item.protocol || "ssh",
+          // 串口参数（仅 protocol 为 serial 时使用）
+          ...DEFAULT_SERIAL_FORM,
+          ...(item.protocol === "serial"
+            ? {
+                baudRate: item.baudRate || DEFAULT_SERIAL_FORM.baudRate,
+                dataBits: item.dataBits || DEFAULT_SERIAL_FORM.dataBits,
+                stopBits: item.stopBits || DEFAULT_SERIAL_FORM.stopBits,
+                parity: item.parity || DEFAULT_SERIAL_FORM.parity,
+                flowControl:
+                  item.flowControl || DEFAULT_SERIAL_FORM.flowControl,
+              }
+            : {}),
+          // Mosh 参数（仅 protocol 为 mosh 时使用）
+          ...DEFAULT_MOSH_FORM,
+          ...(item.protocol === "mosh"
+            ? {
+                moshBinaryPath: item.moshBinaryPath || "",
+                moshUseWsl: item.moshUseWsl === true,
+                moshPredict: item.moshPredict || DEFAULT_MOSH_FORM.moshPredict,
+                moshServerPort: item.moshServerPort || "",
+              }
+            : {}),
+          passwordTouched: false,
+          passwordRevealed: false,
+          passwordMasked: hasSavedPassword,
+          // 代理配置
+          enableProxy: !!item.proxy,
+          proxyType: item.proxy?.type || "http",
+          proxyHost: item.proxy?.host || "",
+          proxyPort: item.proxy?.port || 8080,
+          proxyUsername: item.proxy?.username || "",
+          proxyPassword: "",
+          proxyPasswordTouched: false,
+          proxyUseDefault:
+            item.proxy?.useDefault !== undefined ? item.proxy.useDefault : true,
+        });
+      }
+
+      setShowPassword(false);
+      setDialogOpen(true);
+    }, []);
+
+    // 删除项目 - 显示确认对话框
+    const handleDelete = useCallback(
+      (itemId, parentGroup = null) => {
+        const item = parentGroup
+          ? parentGroup.items.find((item) => item.id === itemId)
+          : connections.find((item) => item.id === itemId);
+
+        if (item) {
+          setDeleteItem({ item, parentGroup, itemId });
+          setDeleteConfirmOpen(true);
+        }
+      },
+      [connections],
+    );
+
+    // 确认删除项目
+    const handleConfirmDelete = useCallback(() => {
+      if (!deleteItem) return;
+
+      const { itemId, parentGroup } = deleteItem;
+      let newConnections;
+
+      if (parentGroup) {
+        // 删除组内的连接
+        newConnections = connections.map((group) =>
+          group.id === parentGroup.id
+            ? {
+                ...group,
+                items: group.items.filter((item) => item.id !== itemId),
+              }
+            : group,
+        );
+      } else {
+        // 删除顶级项目
+        newConnections = connections.filter((item) => item.id !== itemId);
+      }
+
+      // 更新本地状态
+      setConnections(newConnections);
+
+      // 保存到配置文件
+      if (window.terminalAPI && window.terminalAPI.saveConnections) {
+        // 设置标志，避免自己触发的变更事件导致重复加载
+        isSavingRef.current = true;
+        window.terminalAPI
+          .saveConnections(newConnections)
+          .catch(() => {
+            showError(t("connectionManager.saveFailed"));
+          })
+          .finally(() => {
+            // 延迟重置标志，确保变更事件已被处理
+            setTimeout(() => {
+              isSavingRef.current = false;
+            }, 100);
+          });
+      }
+
+      // 关闭确认对话框并清理状态
+      setDeleteConfirmOpen(false);
+      setDeleteItem(null);
+
+      showSuccess(t("connectionManager.deleteSuccess"));
+    }, [deleteItem, connections, t, showError, showSuccess]);
+
+    // 取消删除
+    const handleCancelDelete = useCallback(() => {
+      setDeleteConfirmOpen(false);
+      setDeleteItem(null);
+    }, []);
+
+    const handleConnectionListContextMenuClose = useCallback(() => {
+      setConnectionListContextMenu(null);
+    }, []);
+
+    const openConnectionListContextMenuFromEvent = useCallback(
+      (event, payload) => {
+        setConnectionListContextMenu({
+          mouseX: event.clientX,
+          mouseY: event.clientY,
+          ...payload,
+        });
+      },
+      [],
+    );
+
+    const openConnectionContextMenuFromEvent = useCallback(
+      (event, connection, parentGroup) => {
+        openConnectionListContextMenuFromEvent(event, {
+          kind: "connection",
+          connection,
+          parentGroup: parentGroup ?? null,
+        });
+      },
+      [openConnectionListContextMenuFromEvent],
+    );
+
+    const openGroupContextMenuFromEvent = useCallback(
+      (event, group) => {
+        openConnectionListContextMenuFromEvent(event, { kind: "group", group });
+      },
+      [openConnectionListContextMenuFromEvent],
+    );
+
+    const openBlankContextMenuFromEvent = useCallback(
+      (event) => {
+        openConnectionListContextMenuFromEvent(event, { kind: "blank" });
+      },
+      [openConnectionListContextMenuFromEvent],
+    );
+
+    // 空白区域右键：新建连接 / 新建分组（忽略已有连接项/分组行）
+    const handleBlankContextMenu = useCallback(
+      (event) => {
+        if (!(event?.target instanceof Element)) {
+          return;
+        }
+
+        // 行级元素已自行 stopPropagation；此处再兜底一次，避免误触发
+        if (
+          event.target.closest(`[${CONNECTION_MANAGER_ROW_DATA_ATTR}]`) ||
+          event.target.closest(".MuiListItemButton-root")
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        openBlankContextMenuFromEvent(event);
+      },
+      [openBlankContextMenuFromEvent],
+    );
+
+    const handleVirtualizedItemContextMenu = useCallback(
+      (event, item, parentGroup) => {
+        if (!item) {
+          return;
+        }
+        if (item.type === "group") {
+          openGroupContextMenuFromEvent(event, item);
+        } else {
+          openConnectionContextMenuFromEvent(event, item, parentGroup);
+        }
+      },
+      [openConnectionContextMenuFromEvent, openGroupContextMenuFromEvent],
+    );
+
+    useContextMenuRetarget({
+      enabled: Boolean(open && connectionListContextMenu),
+      rootRef: connectionManagerListRootRef,
+      menuSelector: '[data-connection-manager-context-menu="true"]',
+      mode: "redispatch",
+      resolveItemElement: (retargetElement) => {
+        // 优先命中真实连接/分组行（带 data 标记的可聚焦按钮）
+        const rowButton = retargetElement.closest?.(
+          `[${CONNECTION_MANAGER_ROW_DATA_ATTR}]`,
+        );
+        if (rowButton) {
+          return rowButton.closest?.(".MuiListItem-root") || rowButton;
+        }
+
+        const listItem = retargetElement.closest?.(".MuiListItem-root");
+        if (
+          listItem?.querySelector?.(`[${CONNECTION_MANAGER_ROW_DATA_ATTR}]`)
+        ) {
+          return listItem;
+        }
+
+        // 分组内部空白：派发到分组区域，触发 group 菜单
+        const groupArea = retargetElement.closest?.(
+          "[data-connection-manager-group-area]",
+        );
+        if (groupArea) {
+          return groupArea;
+        }
+
+        // 空白区域（含空状态占位）：派发到列表根容器，触发 blank 菜单
+        return (
+          retargetElement.closest?.(
+            '[data-connection-manager-list-root="true"]',
+          ) || retargetElement
+        );
+      },
+      onCloseMenus: () => {
+        setConnectionListContextMenu(null);
+      },
+    });
+
+    const handleDialogClose = useCallback(async () => {
+      if (flushEditSaveRef.current && !(await flushEditSaveRef.current()))
+        return;
+      setDialogOpen(false);
+      setConnectionTestResult(null);
+      setShowPassword(false);
+    }, []);
+
+    // 检测本机可用串口
+    const handleRefreshSerialPorts = useCallback(async () => {
+      if (!window.terminalAPI?.listSerialPorts) {
+        return;
+      }
+      setSerialPortsLoading(true);
+      try {
+        const result = await window.terminalAPI.listSerialPorts();
+        if (result?.success && Array.isArray(result.data)) {
+          setSerialPorts(result.data);
+        } else {
+          setSerialPorts([]);
+        }
+      } catch {
+        setSerialPorts([]);
+      } finally {
+        setSerialPortsLoading(false);
+      }
+    }, []);
+
+    // 串口协议下打开/切换时自动检测一次
+    useEffect(() => {
+      if (
+        dialogOpen &&
+        dialogType === "connection" &&
+        formData.protocol === "serial"
+      ) {
+        handleRefreshSerialPorts();
+      }
+    }, [dialogOpen, dialogType, formData.protocol, handleRefreshSerialPorts]);
+
+    const handleFormChange = useCallback((e) => {
+      const { name, value } = e.target;
+
+      setConnectionTestResult(null);
+      setFormData((prev) => {
+        // 如果修改的是协议字段，根据协议类型自动更新端口值
+        if (name === "protocol") {
+          if (value === "serial") {
+            // 串口没有端口概念，清空端口字段
+            return { ...prev, [name]: value, port: null };
+          }
+          // mosh 的端口为 SSH 引导端口，默认 22
+          const defaultPort = value === "telnet" ? 23 : 22;
+          // 只有在端口是默认值时才更新，如果用户已手动修改则保留
+          if (prev.port === 22 || prev.port === 23 || prev.port === null) {
+            return { ...prev, [name]: value, port: defaultPort };
+          }
+        }
+        if (name === "password") {
+          return {
+            ...prev,
+            [name]: value,
+            passwordTouched: true,
+            passwordRevealed: false,
+            passwordMasked: false,
+          };
+        }
+        if (name === "proxyPassword") {
+          return { ...prev, [name]: value, proxyPasswordTouched: true };
+        }
+        return { ...prev, [name]: value };
+      });
+    }, []);
+
+    const handleTogglePasswordVisibility = useCallback(async () => {
+      if (showPassword) {
+        setShowPassword(false);
+        return;
+      }
+
+      if (dialogMode !== "edit" || !selectedItem?.id) {
+        setShowPassword(true);
+        return;
+      }
+
+      if (formData.passwordTouched && formData.passwordMasked !== true) {
+        setShowPassword(true);
+        return;
+      }
+
+      if (!window.terminalAPI?.getConnectionPassword) {
+        showError(t("connectionManager.passwordRevealUnavailable"));
+        return;
+      }
+
+      setRevealingPassword(true);
+      try {
+        const result = await window.terminalAPI.getConnectionPassword(
+          selectedItem.id,
+        );
+
+        if (result?.success) {
+          setFormData((prev) => ({
+            ...prev,
+            password: result.password || "",
+            passwordMasked: false,
+            passwordRevealed: true,
+          }));
+          setShowPassword(true);
+          return;
+        }
+
+        if (result?.code === "MASTER_PASSWORD_NOT_CONFIGURED") {
+          showError(
+            t("connectionManager.passwordRevealRequiresMasterPassword"),
+          );
+          return;
+        }
+
+        if (result?.code === "CREDENTIAL_STORE_LOCKED") {
+          showError(t("connectionManager.passwordRevealRequiresUnlock"));
+          return;
+        }
+
+        showError(result?.error || t("connectionManager.passwordRevealFailed"));
+      } catch (error) {
+        showError(
+          error?.message || t("connectionManager.passwordRevealFailed"),
+        );
+      } finally {
+        setRevealingPassword(false);
+      }
+    }, [
+      dialogMode,
+      formData.passwordMasked,
+      formData.passwordTouched,
+      selectedItem,
+      showError,
+      showPassword,
+      t,
+    ]);
+
+    useEffect(() => {
+      if (
+        !dialogOpen ||
+        dialogType !== "connection" ||
+        formData.protocol !== "ssh" ||
+        formData.authType !== "privateKey"
+      ) {
+        setPrivateKeyCheck((previous) =>
+          previous.status === "idle"
+            ? previous
+            : { status: "idle", message: "", permissions: null },
+        );
+        return undefined;
+      }
+
+      const privateKeyPath = String(formData.privateKeyPath || "").trim();
+      if (!privateKeyPath) {
+        setPrivateKeyCheck((previous) =>
+          previous.status === "idle"
+            ? previous
+            : { status: "idle", message: "", permissions: null },
+        );
+        return undefined;
+      }
+
+      let cancelled = false;
+      setPrivateKeyCheck({
+        status: "checking",
+        message: t("connectionManager.validation.privateKeyChecking"),
+        permissions: null,
+      });
+
+      const timer = window.setTimeout(async () => {
+        try {
+          if (!window.terminalAPI?.checkPathExists) {
+            if (!cancelled) {
+              setPrivateKeyCheck({
+                status: "warning",
+                message: t(
+                  "connectionManager.validation.privateKeyCannotVerify",
+                ),
+                permissions: null,
+              });
+            }
+            return;
+          }
+
+          const result =
+            await window.terminalAPI.checkPathExists(privateKeyPath);
+          if (cancelled) {
+            return;
+          }
+
+          if (result?.success === false) {
+            setPrivateKeyCheck({
+              status: "error",
+              message:
+                result.error ||
+                t("connectionManager.validation.privateKeyUnreadable"),
+              permissions: null,
+            });
+            return;
+          }
+
+          if (!result?.exists) {
+            setPrivateKeyCheck({
+              status: "error",
+              message: t("connectionManager.validation.privateKeyNotFound"),
+              permissions: null,
+            });
+            return;
+          }
+
+          if (result.isFile === false) {
+            setPrivateKeyCheck({
+              status: "error",
+              message: t("connectionManager.validation.privateKeyNotFile"),
+              permissions: result.permissions || null,
+            });
+            return;
+          }
+
+          if (result.readable === false) {
+            setPrivateKeyCheck({
+              status: "error",
+              message: t("connectionManager.validation.privateKeyUnreadable"),
+              permissions: result.permissions || null,
+            });
+            return;
+          }
+
+          const permissions = result.permissions || null;
+          const unsafe =
+            permissions &&
+            /^[0-7]{3,4}$/.test(permissions) &&
+            (Number.parseInt(permissions, 8) & 0o077) !== 0;
+
+          setPrivateKeyCheck({
+            status: unsafe ? "warning" : "ok",
+            message: unsafe
+              ? t("connectionManager.validation.privateKeyUnsafe", {
+                  permissions,
+                })
+              : t("connectionManager.validation.privateKeyOk"),
+            permissions,
+          });
+        } catch (error) {
+          if (!cancelled) {
+            setPrivateKeyCheck({
+              status: "error",
+              message:
+                error?.message ||
+                t("connectionManager.validation.privateKeyUnreadable"),
+              permissions: null,
+            });
+          }
+        }
+      }, 180);
+
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timer);
+      };
+    }, [
+      dialogOpen,
+      dialogType,
+      formData.authType,
+      formData.privateKeyPath,
+      formData.protocol,
+      t,
+    ]);
+
+    const validationSteps = useMemo(
+      () => getConnectionValidationSteps(t, formData, privateKeyCheck),
+      [formData, privateKeyCheck, t],
+    );
+
+    const firstInvalidStep = useMemo(
+      () => validationSteps.find((step) => !step.ok),
+      [validationSteps],
+    );
+
+    const canTestConnection =
+      dialogType === "connection" &&
+      formData.protocol === "ssh" &&
+      !testingConnection &&
+      !firstInvalidStep;
+
+    const handleTestConnection = useCallback(async () => {
+      if (dialogType !== "connection" || formData.protocol !== "ssh") {
+        return;
+      }
+
+      const invalidStep = validationSteps.find((step) => !step.ok);
+      if (invalidStep) {
+        showError(invalidStep.message);
+        setConnectionTestResult({
+          success: false,
+          message: invalidStep.message,
+        });
+        return;
+      }
+
+      if (!window.terminalAPI?.testSSHConnection) {
+        const message = t("connectionManager.testUnavailable");
+        setConnectionTestResult({ success: false, message });
+        showError(message);
+        return;
+      }
+
+      setTestingConnection(true);
+      setConnectionTestResult(null);
+
+      try {
+        const payload = buildConnectionPayloadFromForm({
+          formData,
+          selectedItem,
+          dialogMode,
+        });
+        const result = await window.terminalAPI.testSSHConnection({
+          ...payload,
+          language: i18n.language,
+        });
+
+        if (result?.success) {
+          const message = t("connectionManager.testSuccess", {
+            duration: Math.max(1, Math.round(Number(result.durationMs) || 1)),
+          });
+          setConnectionTestResult({ success: true, message });
+          showSuccess(message);
+          return;
+        }
+
+        const message =
+          result?.advice || result?.error || t("connectionManager.testFailed");
+        setConnectionTestResult({
+          success: false,
+          message,
+          detail: result?.error || "",
+          kind: result?.failureKind || "",
+        });
+        showError(message);
+      } catch (error) {
+        const message = error?.message || t("connectionManager.testFailed");
+        setConnectionTestResult({ success: false, message });
+        showError(message);
+      } finally {
+        setTestingConnection(false);
+      }
+    }, [
+      dialogMode,
+      dialogType,
+      formData,
+      i18n.language,
+      selectedItem,
+      showError,
+      showSuccess,
+      t,
+      validationSteps,
+    ]);
+
+    const handleSave = useCallback(
+      async (options = {}) => {
+        const autoSave = options.autoSave === true;
+        // 验证必填字段
+        if (!formData.name || !formData.name.trim()) {
+          showError(t("connectionManager.nameRequired"));
+          return;
+        }
+
+        // 只有在创建连接时才检查主机地址（串口协议下为端口路径）
+        if (
+          dialogType === "connection" &&
+          (!formData.host || !formData.host.trim())
+        ) {
+          if (formData.protocol === "serial") {
+            showError(t("connectionManager.serialPortRequired"));
+          } else {
+            showError(t("connectionManager.hostRequired"));
+          }
+          return;
+        }
+
+        if (dialogType === "group") {
+          const groupData = {
+            id: selectedItem?.id || `group_${Date.now()}`,
+            type: "group",
+            name: formData.name,
+            items: selectedItem?.items || [],
+          };
+
+          let newConnections;
+          if (dialogMode === "add") {
+            newConnections = [...connections, groupData];
+          } else {
+            newConnections = connections.map((item) =>
+              item.id === selectedItem.id
+                ? { ...item, name: formData.name }
+                : item,
+            );
+          }
+
+          setConnections(newConnections);
+
+          // 保存到配置文件
+          if (window.terminalAPI && window.terminalAPI.saveConnections) {
+            isSavingRef.current = true;
+            window.terminalAPI
+              .saveConnections(newConnections)
+              .catch(() => {
+                showError(t("connectionManager.saveFailed"));
+              })
+              .finally(() => {
+                setTimeout(() => {
+                  isSavingRef.current = false;
+                }, 100);
+              });
+          }
+
+          setDialogOpen(false);
+          showSuccess(
+            dialogMode === "add"
+              ? t("connectionManager.createSuccess")
+              : t("connectionManager.updateSuccess"),
+          );
+          return;
+        }
+
+        const invalidStep = validationSteps.find((step) => !step.ok);
+        if (invalidStep) {
+          showError(invalidStep.message);
+          return;
+        }
+
+        // 处理连接保存
+        const connectionData = buildConnectionPayloadFromForm({
+          formData,
+          selectedItem,
+          dialogMode,
+        });
+
+        // 保存到本地状态
+        let newConnections;
+        if (dialogMode === "add") {
+          if (formData.parentGroup) {
+            // 添加到组内
+            newConnections = connections.map((item) =>
+              item.id === formData.parentGroup
+                ? { ...item, items: [...(item.items || []), connectionData] }
+                : item,
+            );
+          } else {
+            // 添加到顶级
+            newConnections = [...connections, connectionData];
+          }
+        } else {
+          // 编辑连接
+          const oldParentId = selectedItem.parentGroupId;
+          const newParentId = formData.parentGroup;
+
+          if (oldParentId === newParentId) {
+            // 分组未改变，原地更新
+            if (oldParentId) {
+              // 在组内编辑
+              newConnections = connections.map((group) =>
+                group.id === oldParentId
+                  ? {
+                      ...group,
+                      items: group.items.map((item) =>
+                        item.id === selectedItem.id ? connectionData : item,
+                      ),
+                    }
+                  : group,
+              );
+            } else {
+              // 在顶级编辑
+              newConnections = connections.map((item) =>
+                item.id === selectedItem.id ? connectionData : item,
+              );
+            }
+          } else {
+            // 分组已改变，先删除后添加
+            let tempConnections = [...connections];
+
+            // 1. 从旧位置移除
+            if (oldParentId) {
+              const oldGroupIndex = tempConnections.findIndex(
+                (g) => g.id === oldParentId,
+              );
+              if (oldGroupIndex > -1) {
+                tempConnections[oldGroupIndex] = {
+                  ...tempConnections[oldGroupIndex],
+                  items: tempConnections[oldGroupIndex].items.filter(
+                    (i) => i.id !== selectedItem.id,
+                  ),
+                };
+              }
+            } else {
+              tempConnections = tempConnections.filter(
+                (i) => i.id !== selectedItem.id,
+              );
+            }
+
+            // 2. 添加到新位置
+            if (newParentId) {
+              const newGroupIndex = tempConnections.findIndex(
+                (g) => g.id === newParentId,
+              );
+              if (newGroupIndex > -1) {
+                tempConnections[newGroupIndex] = {
+                  ...tempConnections[newGroupIndex],
+                  items: [
+                    ...(tempConnections[newGroupIndex].items || []),
+                    connectionData,
+                  ],
+                };
+              }
+            } else {
+              tempConnections.push(connectionData);
+            }
+
+            newConnections = tempConnections;
+          }
+        }
+
+        isSavingRef.current = true;
+        try {
+          if (window.terminalAPI?.saveConnections) {
+            const result =
+              await window.terminalAPI.saveConnections(newConnections);
+            if (result === false || result?.success === false)
+              throw new Error(t("connectionManager.saveFailed"));
+          }
+        } catch {
+          showError(t("connectionManager.saveFailed"));
+          return false;
+        } finally {
+          isSavingRef.current = false;
+        }
+
+        setConnections(newConnections);
+        if (dialogMode === "edit") {
+          setSelectedItem({
+            ...connectionData,
+            parentGroupId: formData.parentGroup,
+          });
+        }
+        if (!autoSave) {
+          setDialogOpen(false);
+          showSuccess(
+            dialogMode === "add"
+              ? t("connectionManager.createSuccess")
+              : t("connectionManager.updateSuccess"),
+          );
+        }
+        setConnectionTestResult(null);
+        return true;
+      },
+      [
+        dialogType,
+        dialogMode,
+        formData,
+        selectedItem,
+        connections,
+        t,
+        showError,
+        showSuccess,
+        validationSteps,
+      ],
+    );
+
+    const autoSaveEnabled =
+      dialogOpen &&
+      dialogMode === "edit" &&
+      dialogType === "connection" &&
+      formData.protocol === "ssh";
+    const editDraftSignature = JSON.stringify(formData);
+
+    useEffect(() => {
+      lastSavedDraftRef.current = editDraftSignature;
+    }, [dialogOpen, dialogMode, selectedItem?.id]);
+
+    useEffect(() => {
+      if (!autoSaveEnabled) {
+        flushEditSaveRef.current = null;
+        return;
+      }
+      const saveDraft = async () => {
+        if (lastSavedDraftRef.current === editDraftSignature) return true;
+        const saved = await handleSave({ autoSave: true });
+        if (saved) lastSavedDraftRef.current = editDraftSignature;
+        return saved;
+      };
+      flushEditSaveRef.current = saveDraft;
+      if (firstInvalidStep || lastSavedDraftRef.current === editDraftSignature)
+        return;
+      const timer = setTimeout(() => {
+        void saveDraft();
+      }, 700);
+      return () => clearTimeout(timer);
+    }, [autoSaveEnabled, editDraftSignature, firstInvalidStep, handleSave]);
+
+    const handleOpenConnection = useCallback(
+      (connection) => {
+        if (onOpenConnection) {
+          onOpenConnection(connection);
+        }
+      },
+      [onOpenConnection],
+    );
+
+    const visibleItemCount = useMemo(
+      () => countVisibleItems(filteredItems),
+      [filteredItems],
+    );
+    const useVirtualizedConnectionList =
+      visibleItemCount >= CONNECTION_LIST_VIRTUALIZATION_THRESHOLD;
+    const dragDisabled = searchQuery.length > 0 || useVirtualizedConnectionList;
+
+    const handleDragEnd = useCallback(
+      ({ active, over }) => {
+        if (!over || dragDisabled) {
+          return;
+        }
+
+        const activeId = active.id;
+        const overId = over.id;
+
+        if (activeId === overId) {
+          return;
+        }
+
+        const activeData = active.data.current || {};
+        const overData = over.data.current || {};
+
+        const saveToConfig = (newConnections) => {
+          setConnections(newConnections);
+          if (window.terminalAPI?.saveConnections) {
+            isSavingRef.current = true;
+            window.terminalAPI.saveConnections(newConnections).finally(() => {
+              setTimeout(() => {
+                isSavingRef.current = false;
+              }, 100);
+            });
+          }
+        };
+
+        const findContainerId = (itemId, items = connections) => {
+          if (!itemId) {
+            return null;
+          }
+
+          if (itemId === ROOT_CONTAINER_ID) {
+            return ROOT_CONTAINER_ID;
+          }
+
+          if (items.some((entry) => entry.id === itemId)) {
+            return ROOT_CONTAINER_ID;
+          }
+
+          for (const entry of items) {
+            if (entry.type === "group") {
+              const containerId = getGroupContainerId(entry.id);
+              if (containerId === itemId) {
+                return containerId;
+              }
+              if ((entry.items || []).some((child) => child.id === itemId)) {
+                return containerId;
+              }
+            }
+          }
+
+          return null;
+        };
+
+        const updatedConnections = cloneConnectionList(connections);
+
+        const getGroupIndexFromContainer = (containerId) => {
+          if (containerId === ROOT_CONTAINER_ID) {
+            return -1;
+          }
+          const groupId = containerId.replace("group-container-", "");
+          return updatedConnections.findIndex((item) => item.id === groupId);
+        };
+
+        const sourceContainerId =
+          activeData.parentId || findContainerId(activeId, updatedConnections);
+        const destinationContainerId =
+          overData.type === "container"
+            ? overId
+            : overData.parentId || findContainerId(overId, updatedConnections);
+
+        if (!sourceContainerId || !destinationContainerId) {
+          return;
+        }
+
+        if (activeData.type === "group") {
+          if (destinationContainerId !== ROOT_CONTAINER_ID) {
+            return;
+          }
+
+          const oldIndex = updatedConnections.findIndex(
+            (item) => item.id === activeId,
+          );
+          if (oldIndex === -1) {
+            return;
+          }
+
+          let newIndex = updatedConnections.findIndex(
+            (item) => item.id === overId,
+          );
+
+          if (overData.type === "container" || newIndex === -1) {
+            newIndex = updatedConnections.length - 1;
+          }
+
+          if (newIndex === oldIndex) {
+            return;
+          }
+
+          saveToConfig(arrayMove(updatedConnections, oldIndex, newIndex));
+          return;
+        }
+
+        if (activeData.type !== "connection") {
+          return;
+        }
+
+        if (sourceContainerId === destinationContainerId) {
+          if (sourceContainerId === ROOT_CONTAINER_ID) {
+            const oldIndex = updatedConnections.findIndex(
+              (item) => item.id === activeId,
+            );
+            let newIndex = updatedConnections.findIndex(
+              (item) => item.id === overId,
+            );
+
+            if (overData.type === "container" || newIndex === -1) {
+              newIndex = updatedConnections.length - 1;
+            }
+
+            if (oldIndex === -1 || newIndex === -1 || newIndex === oldIndex) {
+              return;
+            }
+
+            saveToConfig(arrayMove(updatedConnections, oldIndex, newIndex));
+            return;
+          }
+
+          const groupIndex = getGroupIndexFromContainer(sourceContainerId);
+          if (groupIndex === -1) {
+            return;
+          }
+
+          const group = updatedConnections[groupIndex];
+          const items = Array.isArray(group.items) ? [...group.items] : [];
+          const oldIndex = items.findIndex((item) => item.id === activeId);
+          let newIndex = items.findIndex((item) => item.id === overId);
+
+          if (overData.type === "container" || newIndex === -1) {
+            newIndex = items.length - 1;
+          }
+
+          if (oldIndex === -1 || newIndex < 0 || newIndex === oldIndex) {
+            updatedConnections[groupIndex] = {
+              ...group,
+              items,
+            };
+            return;
+          }
+
+          updatedConnections[groupIndex] = {
+            ...group,
+            items: arrayMove(items, oldIndex, newIndex),
+          };
+
+          saveToConfig(updatedConnections);
+          return;
+        }
+
+        let draggedItem = null;
+
+        if (sourceContainerId === ROOT_CONTAINER_ID) {
+          const sourceIndex = updatedConnections.findIndex(
+            (item) => item.id === activeId,
+          );
+          if (sourceIndex !== -1) {
+            [draggedItem] = updatedConnections.splice(sourceIndex, 1);
+          }
+        } else {
+          const sourceGroupIndex =
+            getGroupIndexFromContainer(sourceContainerId);
+          if (sourceGroupIndex !== -1) {
+            const group = updatedConnections[sourceGroupIndex];
+            const items = Array.isArray(group.items) ? [...group.items] : [];
+            const itemIndex = items.findIndex((item) => item.id === activeId);
+            if (itemIndex !== -1) {
+              [draggedItem] = items.splice(itemIndex, 1);
+              updatedConnections[sourceGroupIndex] = {
+                ...group,
+                items,
+              };
+            }
+          }
+        }
+
+        if (!draggedItem || draggedItem.type !== "connection") {
+          return;
+        }
+
+        if (destinationContainerId === ROOT_CONTAINER_ID) {
+          let insertIndex = updatedConnections.findIndex(
+            (item) => item.id === overId,
+          );
+          if (insertIndex === -1 || overData.type === "container") {
+            insertIndex = updatedConnections.length;
+          }
+          updatedConnections.splice(insertIndex, 0, draggedItem);
+          saveToConfig(updatedConnections);
+          return;
+        }
+
+        const targetGroupIndex = getGroupIndexFromContainer(
+          destinationContainerId,
+        );
+        if (targetGroupIndex === -1) {
+          return;
+        }
+
+        const targetGroup = updatedConnections[targetGroupIndex];
+        const targetItems = Array.isArray(targetGroup.items)
+          ? [...targetGroup.items]
+          : [];
+
+        let insertIndex = targetItems.findIndex((item) => item.id === overId);
+        if (
+          overData.type !== "connection" ||
+          overData.parentId !== destinationContainerId ||
+          insertIndex === -1
+        ) {
+          insertIndex = targetItems.length;
+        }
+
+        targetItems.splice(insertIndex, 0, draggedItem);
+
+        updatedConnections[targetGroupIndex] = {
+          ...targetGroup,
+          items: targetItems,
+          expanded: true,
+        };
+
+        saveToConfig(updatedConnections);
+      },
+      [connections, dragDisabled],
+    );
+
+    const sensors = useSensors(
+      useSensor(PointerSensor, {
+        activationConstraint: { distance: 5 },
+      }),
+      useSensor(KeyboardSensor, {
+        coordinateGetter: sortableKeyboardCoordinates,
+      }),
+    );
+
+    const { setNodeRef: setRootDroppableRef, isOver: isRootDraggingOver } =
+      useDroppable({
+        id: ROOT_CONTAINER_ID,
+        data: { type: "container", parentId: ROOT_CONTAINER_ID },
+        disabled: dragDisabled,
+      });
+
+    const connectionsList = useMemo(() => {
+      return (
+        <SortableContext
+          id={ROOT_CONTAINER_ID}
+          items={filteredItems.map((item) => item.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          {filteredItems.map((item) =>
+            item.type === "group" ? (
+              <GroupListItem
+                key={item.id}
+                theme={theme}
+                group={item}
+                dragDisabled={dragDisabled}
+                onToggle={handleToggleGroup}
+                onOpenGroupRowContextMenu={openGroupContextMenuFromEvent}
+                onOpenConnectionRowContextMenu={
+                  openConnectionContextMenuFromEvent
+                }
+                onOpenConnection={handleOpenConnection}
+                contextMenuTarget={connectionListContextMenu}
+              />
+            ) : (
+              <ConnectionListItem
+                key={item.id}
+                theme={theme}
+                connection={item}
+                parentGroup={null}
+                onOpenRowContextMenu={openConnectionContextMenuFromEvent}
+                onOpen={handleOpenConnection}
+                dragDisabled={dragDisabled}
+                isContextMenuTarget={
+                  connectionListContextMenu?.kind === "connection" &&
+                  connectionListContextMenu.connection?.id === item.id
+                }
+              />
+            ),
+          )}
+        </SortableContext>
+      );
+    }, [
+      filteredItems,
+      theme,
+      dragDisabled,
+      handleToggleGroup,
+      openConnectionContextMenuFromEvent,
+      openGroupContextMenuFromEvent,
+      handleOpenConnection,
+      connectionListContextMenu,
+    ]);
+    const groupOptions = useMemo(() => {
+      return connections
+        .filter((c) => c.type === "group")
+        .map((group) => (
+          <MenuItem key={group.id} value={group.id}>
+            {group.name}
+          </MenuItem>
+        ));
+    }, [connections]);
+
+    const renderValidationStep = (step) => {
+      const isChecking = step.severity === "checking";
+      const isWarning = step.severity === "warning";
+      const color = step.ok
+        ? isWarning
+          ? "warning.main"
+          : "success.main"
+        : isChecking
+          ? "text.secondary"
+          : "error.main";
+
+      return (
+        <Box
+          key={step.key}
+          sx={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 1,
+            py: 0.5,
+          }}
+        >
+          <Box sx={{ color, mt: 0.1, lineHeight: 0 }}>
+            {isChecking ? (
+              <CircularProgress size={16} />
+            ) : step.ok ? (
+              <CheckCircleOutlinedIcon fontSize="small" />
+            ) : (
+              <ErrorOutlinedIcon fontSize="small" />
+            )}
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="caption" sx={{ fontWeight: 600 }}>
+              {step.title}
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", lineHeight: 1.35 }}
+            >
+              {step.message}
+            </Typography>
+          </Box>
+        </Box>
+      );
+    };
+
+    return (
+      <SidebarPanel
+        open={open}
+        rootRef={sidebarRootRef}
+        title={t("connectionManager.title")}
+        onClose={onClose}
+        sessionContext={sessionContext}
+      >
+        {/* 操作按钮区 */}
+        <Box
+          sx={{
+            p: 1,
+            display: "flex",
+            justifyContent: "flex-end",
+            borderBottom: 1,
+            borderColor: "divider",
+            gap: 1,
+          }}
+        >
+          <Button
+            size="small"
+            startIcon={<AddIcon />}
+            onClick={() => handleAddConnection()}
+            sx={{ fontSize: "0.75rem" }}
+          >
+            {t("connectionManager.newConnection")}
+          </Button>
+          <Button
+            size="small"
+            startIcon={<FolderIcon />}
+            onClick={handleAddGroup}
+            sx={{ fontSize: "0.75rem" }}
+          >
+            {t("connectionManager.newGroup")}
+          </Button>
+        </Box>
+
+        {/* 搜索框 */}
+        <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
+          <SidebarSearchField
+            inputRef={searchInputRef}
+            placeholder={t("connectionManager.search")}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onClear={() => setSearchQuery("")}
+            enableScale
+          />
+        </Box>
+
+        {/* 连接列表区域 */}
+        <Box
+          ref={connectionManagerListRootRef}
+          data-connection-manager-list-root="true"
+          onContextMenu={handleBlankContextMenu}
+          sx={{
+            flexGrow: 1,
+            overflow: "auto",
+            height: "calc(100% - 160px)", // 调整高度以适应搜索框
+          }}
+        >
+          {isLoading ? (
+            <List dense sx={{ p: 1 }}>
+              <ConnectionManagerSkeleton />
+            </List>
+          ) : useVirtualizedConnectionList ? (
+            <VirtualizedConnectionList
+              className="connection-manager-virtualized-list"
+              connections={filteredItems}
+              selectedItem={
+                connectionListContextMenu?.kind === "connection"
+                  ? connectionListContextMenu.connection
+                  : connectionListContextMenu?.kind === "group"
+                    ? connectionListContextMenu.group
+                    : null
+              }
+              onToggleGroup={handleToggleGroup}
+              onSelectConnection={handleOpenConnection}
+              onDoubleClick={handleOpenConnection}
+              onItemContextMenu={handleVirtualizedItemContextMenu}
+              onBlankContextMenu={handleBlankContextMenu}
+              height="100%"
+              itemHeight={36}
+              enableVirtualization
+              emptyMessage={t("connectionManager.noConnections")}
+            />
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <List
+                dense
+                ref={setRootDroppableRef}
+                sx={{
+                  p: 1,
+                  minHeight: "100%",
+                  backgroundColor: isRootDraggingOver
+                    ? theme.palette.mode === "dark"
+                      ? alpha(theme.palette.primary.main, 0.2)
+                      : alpha(theme.palette.primary.main, 0.15)
+                    : "transparent",
+                  transition: "background-color 0.2s ease",
+                }}
+              >
+                <>
+                  {connectionsList}
+                  {filteredItems.length === 0 && (
+                    <ListItem>
+                      <ListItemText
+                        primary={t("connectionManager.noConnections")}
+                        primaryTypographyProps={{
+                          variant: "body2",
+                          sx: {
+                            fontStyle: "italic",
+                            color: "text.secondary",
+                            textAlign: "center",
+                          },
+                        }}
+                      />
+                    </ListItem>
+                  )}
+                </>
+              </List>
+            </DndContext>
+          )}
+        </Box>
+
+        <Menu
+          open={Boolean(connectionListContextMenu)}
+          onClose={handleConnectionListContextMenuClose}
+          anchorReference="anchorPosition"
+          anchorPosition={
+            connectionListContextMenu
+              ? {
+                  top: connectionListContextMenu.mouseY,
+                  left: connectionListContextMenu.mouseX,
+                }
+              : undefined
+          }
+          transitionDuration={0}
+          disableAutoFocusItem
+          disableScrollLock
+          PaperProps={{
+            "data-connection-manager-context-menu": "true",
+            sx: compactContextMenuPaperSx,
+          }}
+        >
+          {connectionListContextMenu?.kind === "connection" && (
+            <>
+              <MenuItem
+                disabled={
+                  !getHostForClipboard(connectionListContextMenu.connection)
+                }
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "connection") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const text = getHostForClipboard(ctx.connection);
+                  if (!text) {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  handleConnectionListContextMenuClose();
+                  window.clipboardAPI?.writeText(text).catch(() => {
+                    showError(t("connectionManager.copyFailed"));
+                  });
+                }}
+              >
+                <ListItemIcon>
+                  <ContentCopyIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.contextCopyIp")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "connection") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const { connection, parentGroup } = ctx;
+                  handleConnectionListContextMenuClose();
+                  handleEdit(connection, parentGroup ?? null);
+                }}
+              >
+                <ListItemIcon>
+                  <EditIcon fontSize="small" />
+                </ListItemIcon>
+                {t("common.edit")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "connection") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const { connection, parentGroup } = ctx;
+                  handleConnectionListContextMenuClose();
+                  handleDelete(connection.id, parentGroup ?? null);
+                }}
+              >
+                <ListItemIcon>
+                  <DeleteIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.delete")}
+              </MenuItem>
+            </>
+          )}
+          {connectionListContextMenu?.kind === "group" && (
+            <>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "group") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const groupId = ctx.group.id;
+                  handleConnectionListContextMenuClose();
+                  handleAddConnection(groupId);
+                }}
+              >
+                <ListItemIcon>
+                  <AddIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.contextAddConnection")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "group") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const { group } = ctx;
+                  handleConnectionListContextMenuClose();
+                  handleEdit(group);
+                }}
+              >
+                <ListItemIcon>
+                  <EditIcon fontSize="small" />
+                </ListItemIcon>
+                {t("common.edit")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "group") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const groupId = ctx.group.id;
+                  handleConnectionListContextMenuClose();
+                  handleDelete(groupId);
+                }}
+              >
+                <ListItemIcon>
+                  <DeleteIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.delete")}
+              </MenuItem>
+            </>
+          )}
+          {connectionListContextMenu?.kind === "blank" && (
+            <>
+              <MenuItem
+                onClick={() => {
+                  handleConnectionListContextMenuClose();
+                  handleAddConnection();
+                }}
+              >
+                <ListItemIcon>
+                  <AddIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.newConnection")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  handleConnectionListContextMenuClose();
+                  handleAddGroup();
+                }}
+              >
+                <ListItemIcon>
+                  <FolderIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connectionManager.newGroup")}
+              </MenuItem>
+            </>
+          )}
+        </Menu>
+
+        {/* 添加/编辑对话框 */}
+        <Dialog
+          open={dialogOpen}
+          onClose={handleDialogClose}
+          maxWidth="sm"
+          fullWidth
+          slotProps={{
+            paper: {
+              sx: {
+                maxHeight: "90vh",
+              },
+            },
+          }}
+        >
+          <DialogTitle>
+            {dialogMode === "add"
+              ? dialogType === "connection"
+                ? t("connectionManager.newConnection")
+                : t("connectionManager.newGroup")
+              : dialogType === "connection"
+                ? t("connectionManager.editConnection")
+                : t("connectionManager.editGroup")}
+          </DialogTitle>
+          <DialogContent
+            dividers
+            sx={{
+              overflow: "auto",
+              maxHeight: "calc(90vh - 120px)",
+            }}
+          >
+            <Box
+              component="form"
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 1.5,
+                py: 1,
+              }}
+            >
+              <TextField
+                label={t("common.name")}
+                name="name"
+                value={formData.name}
+                onChange={handleFormChange}
+                fullWidth
+                size="small"
+                required
+              />
+
+              {dialogType === "connection" && (
+                <>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>{t("connectionManager.protocol")}</InputLabel>
+                    <Select
+                      name="protocol"
+                      value={formData.protocol || "ssh"}
+                      label={t("connectionManager.protocol")}
+                      onChange={handleFormChange}
+                    >
+                      <MenuItem value="ssh">SSH</MenuItem>
+                      <MenuItem value="telnet">Telnet</MenuItem>
+                      <MenuItem value="serial">
+                        {t("connectionManager.serialProtocol")}
+                      </MenuItem>
+                      <MenuItem value="mosh">
+                        {t("connectionManager.moshProtocol")}
+                      </MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  {formData.protocol === "serial" ? (
+                    <>
+                      <Box
+                        sx={{ display: "flex", gap: 1, alignItems: "center" }}
+                      >
+                        <TextField
+                          label={t("connectionManager.serialPortPath")}
+                          name="host"
+                          value={formData.host}
+                          onChange={handleFormChange}
+                          fullWidth
+                          size="small"
+                          required
+                          placeholder="COM3"
+                          helperText={t("connectionManager.serialPortPathHint")}
+                          sx={{ flexGrow: 1, minWidth: 0 }}
+                        />
+                        <Tooltip title={t("connectionManager.detectPorts")}>
+                          <span>
+                            <IconButton
+                              aria-label={t("connectionManager.detectPorts")}
+                              size="small"
+                              onClick={handleRefreshSerialPorts}
+                              disabled={serialPortsLoading}
+                              sx={{
+                                width: 40,
+                                height: 40,
+                                flexShrink: 0,
+                                border: 1,
+                                borderColor: "divider",
+                                borderRadius: 1,
+                              }}
+                            >
+                              {serialPortsLoading ? (
+                                <CircularProgress size={18} />
+                              ) : (
+                                <RefreshIcon fontSize="small" />
+                              )}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Box>
+
+                      {serialPorts.length > 0 && (
+                        <FormControl fullWidth size="small">
+                          <InputLabel>
+                            {t("connectionManager.detectedPorts")}
+                          </InputLabel>
+                          <Select
+                            name="detectedSerialPort"
+                            value=""
+                            label={t("connectionManager.detectedPorts")}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  host: e.target.value,
+                                }));
+                              }
+                            }}
+                          >
+                            {serialPorts.map((port) => (
+                              <MenuItem key={port.path} value={port.path}>
+                                {port.friendlyName &&
+                                port.friendlyName !== port.path
+                                  ? `${port.path} - ${port.friendlyName}`
+                                  : port.path}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      )}
+
+                      <Box sx={{ display: "flex", gap: 1 }}>
+                        <FormControl size="small" sx={{ flex: 2, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.baudRate")}
+                          </InputLabel>
+                          <Select
+                            name="baudRate"
+                            value={formData.baudRate}
+                            label={t("connectionManager.baudRate")}
+                            onChange={handleFormChange}
+                          >
+                            {SERIAL_BAUD_RATES.map((rate) => (
+                              <MenuItem key={rate} value={rate}>
+                                {rate}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.dataBits")}
+                          </InputLabel>
+                          <Select
+                            name="dataBits"
+                            value={formData.dataBits}
+                            label={t("connectionManager.dataBits")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value={7}>7</MenuItem>
+                            <MenuItem value={8}>8</MenuItem>
+                          </Select>
+                        </FormControl>
+                        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.stopBits")}
+                          </InputLabel>
+                          <Select
+                            name="stopBits"
+                            value={formData.stopBits}
+                            label={t("connectionManager.stopBits")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value={1}>1</MenuItem>
+                            <MenuItem value={2}>2</MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Box>
+
+                      <Box sx={{ display: "flex", gap: 1 }}>
+                        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.parity")}
+                          </InputLabel>
+                          <Select
+                            name="parity"
+                            value={formData.parity}
+                            label={t("connectionManager.parity")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value="none">
+                              {t("connectionManager.parityNone")}
+                            </MenuItem>
+                            <MenuItem value="even">
+                              {t("connectionManager.parityEven")}
+                            </MenuItem>
+                            <MenuItem value="odd">
+                              {t("connectionManager.parityOdd")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.flowControl")}
+                          </InputLabel>
+                          <Select
+                            name="flowControl"
+                            value={formData.flowControl}
+                            label={t("connectionManager.flowControl")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value="none">
+                              {t("connectionManager.flowControlNone")}
+                            </MenuItem>
+                            <MenuItem value="rtscts">
+                              {t("connectionManager.flowControlRtsCts")}
+                            </MenuItem>
+                            <MenuItem value="xonxoff">
+                              {t("connectionManager.flowControlXonXoff")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Box>
+                    </>
+                  ) : formData.protocol === "mosh" ? (
+                    <>
+                      <TextField
+                        label={t("connectionManager.hostAddress")}
+                        name="host"
+                        value={formData.host}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        required
+                      />
+
+                      <TextField
+                        label={t("connectionManager.port")}
+                        name="port"
+                        type="number"
+                        value={formData.port}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        placeholder="22"
+                        helperText={t("connectionManager.moshSshPortHint")}
+                      />
+
+                      <TextField
+                        label={t("connectionManager.username")}
+                        name="username"
+                        value={formData.username}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        helperText={t("connectionManager.moshUsernameHint")}
+                      />
+
+                      <TextField
+                        label={t("connectionManager.moshBinaryPath")}
+                        name="moshBinaryPath"
+                        value={formData.moshBinaryPath}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        placeholder="mosh"
+                        helperText={t("connectionManager.moshBinaryPathHint")}
+                      />
+
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={formData.moshUseWsl === true}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                moshUseWsl: e.target.checked,
+                              }))
+                            }
+                            size="small"
+                          />
+                        }
+                        label={
+                          <Box>
+                            <Typography variant="body2">
+                              {t("connectionManager.moshUseWsl")}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {t("connectionManager.moshUseWslHint")}
+                            </Typography>
+                          </Box>
+                        }
+                      />
+
+                      <Box sx={{ display: "flex", gap: 1 }}>
+                        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+                          <InputLabel>
+                            {t("connectionManager.moshPredict")}
+                          </InputLabel>
+                          <Select
+                            name="moshPredict"
+                            value={formData.moshPredict}
+                            label={t("connectionManager.moshPredict")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value="adaptive">
+                              {t("connectionManager.moshPredictAdaptive")}
+                            </MenuItem>
+                            <MenuItem value="always">
+                              {t("connectionManager.moshPredictAlways")}
+                            </MenuItem>
+                            <MenuItem value="never">
+                              {t("connectionManager.moshPredictNever")}
+                            </MenuItem>
+                            <MenuItem value="experimental">
+                              {t("connectionManager.moshPredictExperimental")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                        <TextField
+                          label={t("connectionManager.moshServerPort")}
+                          name="moshServerPort"
+                          value={formData.moshServerPort}
+                          onChange={handleFormChange}
+                          size="small"
+                          sx={{ flex: 1, minWidth: 0 }}
+                          placeholder="60000"
+                          helperText={t("connectionManager.moshServerPortHint")}
+                        />
+                      </Box>
+                    </>
+                  ) : (
+                    <>
+                      <TextField
+                        label={t("connectionManager.hostAddress")}
+                        name="host"
+                        value={formData.host}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        required
+                      />
+
+                      <TextField
+                        label={t("connectionManager.port")}
+                        name="port"
+                        type="number"
+                        value={formData.port}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                        placeholder={
+                          formData.protocol === "telnet" ? "23" : "22"
+                        }
+                      />
+
+                      <TextField
+                        label={t("connectionManager.username")}
+                        name="username"
+                        value={formData.username}
+                        onChange={handleFormChange}
+                        fullWidth
+                        size="small"
+                      />
+
+                      <Box
+                        sx={{ display: "flex", gap: 1, alignItems: "center" }}
+                      >
+                        <TextField
+                          label={t("connectionManager.password")}
+                          name="password"
+                          type={showPassword ? "text" : "password"}
+                          value={formData.password}
+                          onChange={handleFormChange}
+                          fullWidth
+                          size="small"
+                          disabled={
+                            formData.protocol === "ssh" &&
+                            formData.authType === "privateKey"
+                          }
+                          sx={{ flex: 1, minWidth: 0 }}
+                        />
+                        <Tooltip
+                          title={
+                            showPassword
+                              ? t("common.hidePassword")
+                              : t("common.showPassword")
+                          }
+                        >
+                          <span>
+                            <IconButton
+                              aria-label={
+                                showPassword
+                                  ? t("common.hidePassword")
+                                  : t("common.showPassword")
+                              }
+                              size="small"
+                              onClick={handleTogglePasswordVisibility}
+                              disabled={
+                                revealingPassword ||
+                                (formData.protocol === "ssh" &&
+                                  formData.authType === "privateKey")
+                              }
+                              sx={{
+                                width: 40,
+                                height: 40,
+                                flexShrink: 0,
+                                border: 1,
+                                borderColor: "divider",
+                                borderRadius: 1,
+                              }}
+                            >
+                              {revealingPassword ? (
+                                <CircularProgress size={18} />
+                              ) : showPassword ? (
+                                <VisibilityOffIcon fontSize="small" />
+                              ) : (
+                                <VisibilityIcon fontSize="small" />
+                              )}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Box>
+
+                      {formData.protocol === "ssh" && (
+                        <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+                          <InputLabel>
+                            {t("connectionManager.authType")}
+                          </InputLabel>
+                          <Select
+                            name="authType"
+                            value={formData.authType || "password"}
+                            label={t("connectionManager.authType")}
+                            onChange={handleFormChange}
+                          >
+                            <MenuItem value="password">
+                              {t("connectionManager.passwordAuth")}
+                            </MenuItem>
+                            <MenuItem value="privateKey">
+                              {t("connectionManager.privateKeyAuth")}
+                            </MenuItem>
+                            <MenuItem value="agent">
+                              {t("connectionManager.agentAuth")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      )}
+
+                      {formData.protocol === "ssh" &&
+                        formData.authType === "privateKey" && (
+                          <Box sx={{ display: "flex", mt: 1 }}>
+                            <TextField
+                              label={t("connectionManager.privateKeyPath")}
+                              name="privateKeyPath"
+                              value={formData.privateKeyPath}
+                              onChange={handleFormChange}
+                              fullWidth
+                              size="small"
+                              sx={{ flexGrow: 1 }}
+                            />
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              sx={{ ml: 1 }}
+                              onClick={() => {
+                                if (
+                                  window.terminalAPI &&
+                                  window.terminalAPI.selectKeyFile
+                                ) {
+                                  window.terminalAPI
+                                    .selectKeyFile()
+                                    .then((result) => {
+                                      if (
+                                        result &&
+                                        result.success &&
+                                        result.path
+                                      ) {
+                                        setFormData((prev) => ({
+                                          ...prev,
+                                          privateKeyPath: result.path,
+                                        }));
+                                      }
+                                    });
+                                }
+                              }}
+                            >
+                              {t("connectionManager.browse")}
+                            </Button>
+                          </Box>
+                        )}
+
+                      {formData.protocol === "ssh" && (
+                        <Box sx={{ mt: 1 }}>
+                          {(formData.authType === "agent" ||
+                            formData.agentForward === true) && (
+                            <TextField
+                              label={t("connectionManager.agentPath")}
+                              name="agentPath"
+                              value={formData.agentPath || ""}
+                              onChange={handleFormChange}
+                              fullWidth
+                              size="small"
+                              placeholder={t(
+                                "connectionManager.agentPathPlaceholder",
+                              )}
+                              helperText={t("connectionManager.agentPathHint")}
+                            />
+                          )}
+                          <FormControlLabel
+                            sx={{ mt: 1 }}
+                            control={
+                              <Checkbox
+                                checked={formData.agentForward === true}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    agentForward: e.target.checked,
+                                  }))
+                                }
+                                size="small"
+                              />
+                            }
+                            label={
+                              <Typography variant="body2">
+                                {t("connectionManager.agentForward")}
+                              </Typography>
+                            }
+                          />
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: "block" }}
+                          >
+                            {t("connectionManager.agentForwardHint")}
+                          </Typography>
+                        </Box>
+                      )}
+                    </>
+                  )}
+
+                  <FormControl fullWidth size="small">
+                    <InputLabel>{t("connectionManager.group")}</InputLabel>
+                    <Select
+                      name="parentGroup"
+                      value={formData.parentGroup || ""}
+                      label={t("connectionManager.group")}
+                      onChange={handleFormChange}
+                    >
+                      <MenuItem value="">
+                        <em>{t("connectionManager.noGroup")}</em>
+                      </MenuItem>
+                      {groupOptions}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl fullWidth size="small">
+                    <InputLabel>{t("connectionManager.type")}</InputLabel>
+                    <Select
+                      name="connectionType"
+                      value={formData.connectionType || ""}
+                      label={t("connectionManager.type")}
+                      onChange={handleFormChange}
+                    >
+                      <MenuItem value="">
+                        <em>{t("common.none")}</em>
+                      </MenuItem>
+                      <MenuItem value="VPS">VPS</MenuItem>
+                      <MenuItem value="NAS">NAS</MenuItem>
+                      <MenuItem value="BareMetal">
+                        {t("connectionManager.bareMetal")}
+                      </MenuItem>
+                      <MenuItem value="Other">{t("common.other")}</MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  <FormControl fullWidth size="small">
+                    <InputLabel>{t("connectionManager.os")}</InputLabel>
+                    <Select
+                      name="os"
+                      value={formData.os || ""}
+                      label={t("connectionManager.os")}
+                      onChange={handleFormChange}
+                    >
+                      <MenuItem value="">
+                        <em>{t("common.none")}</em>
+                      </MenuItem>
+                      <MenuItem value="Linux">Linux</MenuItem>
+                      <MenuItem value="Windows">Windows</MenuItem>
+                      <MenuItem value="macOS">macOS</MenuItem>
+                      <MenuItem value="Other">{t("common.other")}</MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  {/* 代理配置分割线 */}
+                  <Divider sx={{ my: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("connectionManager.proxyConfig")}
+                    </Typography>
+                  </Divider>
+
+                  {/* 启用代理开关 */}
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={formData.enableProxy}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            enableProxy: e.target.checked,
+                          }))
+                        }
+                        size="small"
+                      />
+                    }
+                    label={t("connectionManager.enableProxy")}
+                  />
+
+                  {/* 代理配置表单 */}
+                  {formData.enableProxy && (
+                    <>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={formData.proxyUseDefault}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                proxyUseDefault: e.target.checked,
+                              }))
+                            }
+                            size="small"
+                          />
+                        }
+                        label={t("connectionManager.useSystemProxy")}
+                      />
+
+                      {!formData.proxyUseDefault && (
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 1.5,
+                            pl: 2,
+                            borderLeft: 2,
+                            borderColor: "divider",
+                          }}
+                        >
+                          <Box sx={{ display: "flex", gap: 1 }}>
+                            <FormControl size="small" sx={{ minWidth: 100 }}>
+                              <InputLabel>
+                                {t("connectionManager.type")}
+                              </InputLabel>
+                              <Select
+                                name="proxyType"
+                                value={formData.proxyType}
+                                label={t("connectionManager.type")}
+                                onChange={handleFormChange}
+                              >
+                                <MenuItem value="http">HTTP</MenuItem>
+                                <MenuItem value="https">HTTPS</MenuItem>
+                                <MenuItem value="socks4">SOCKS4</MenuItem>
+                                <MenuItem value="socks5">SOCKS5</MenuItem>
+                              </Select>
+                            </FormControl>
+                            <TextField
+                              label={t("connectionManager.proxyHost")}
+                              name="proxyHost"
+                              value={formData.proxyHost}
+                              onChange={handleFormChange}
+                              size="small"
+                              sx={{ flexGrow: 1 }}
+                              placeholder="127.0.0.1"
+                            />
+                            <TextField
+                              label={t("connectionManager.proxyPort")}
+                              name="proxyPort"
+                              type="number"
+                              value={formData.proxyPort}
+                              onChange={handleFormChange}
+                              size="small"
+                              sx={{ width: 90 }}
+                              placeholder="8080"
+                            />
+                          </Box>
+
+                          <Box sx={{ display: "flex", gap: 1 }}>
+                            <TextField
+                              label={t("connectionManager.proxyUsername")}
+                              name="proxyUsername"
+                              value={formData.proxyUsername}
+                              onChange={handleFormChange}
+                              size="small"
+                              sx={{ flexGrow: 1 }}
+                            />
+                            <TextField
+                              label={t("connectionManager.proxyPassword")}
+                              name="proxyPassword"
+                              type="password"
+                              value={formData.proxyPassword}
+                              onChange={handleFormChange}
+                              size="small"
+                              sx={{ flexGrow: 1 }}
+                            />
+                          </Box>
+                        </Box>
+                      )}
+                    </>
+                  )}
+
+                  {formData.protocol === "ssh" && (
+                    <Box
+                      sx={{
+                        border: 1,
+                        borderColor: "divider",
+                        borderRadius: 1,
+                        p: 1.25,
+                        bgcolor: "background.default",
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontWeight: 700,
+                          display: "block",
+                          mb: 0.5,
+                        }}
+                      >
+                        {t("connectionManager.validation.title")}
+                      </Typography>
+                      <Box>{validationSteps.map(renderValidationStep)}</Box>
+
+                      {connectionTestResult ? (
+                        <Alert
+                          severity={
+                            connectionTestResult.success ? "success" : "warning"
+                          }
+                          variant="outlined"
+                          sx={{ mt: 1 }}
+                        >
+                          <Typography variant="body2">
+                            {connectionTestResult.message}
+                          </Typography>
+                          {connectionTestResult.detail ? (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: "block", mt: 0.25 }}
+                            >
+                              {connectionTestResult.detail}
+                            </Typography>
+                          ) : null}
+                        </Alert>
+                      ) : null}
+                    </Box>
+                  )}
+                </>
+              )}
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            {autoSaveEnabled && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ mr: "auto", pl: 2 }}
+              >
+                {t("connectionManager.autoSaveHint")}
+              </Typography>
+            )}
+            {dialogType === "connection" && formData.protocol === "ssh" && (
+              <Button
+                onClick={handleTestConnection}
+                disabled={!canTestConnection}
+                startIcon={
+                  testingConnection ? <CircularProgress size={16} /> : null
+                }
+              >
+                {testingConnection
+                  ? t("connectionManager.testing")
+                  : t("connectionManager.testConnection")}
+              </Button>
+            )}
+            <Button onClick={handleDialogClose}>
+              {autoSaveEnabled ? t("common.close") : t("common.cancel")}
+            </Button>
+            <Button onClick={handleSave} variant="contained">
+              {t("common.save")}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* 删除确认对话框 */}
+        <Dialog
+          open={deleteConfirmOpen}
+          onClose={handleCancelDelete}
+          maxWidth="xs"
+        >
+          <DialogTitle>{t("connectionManager.confirmDelete")}</DialogTitle>
+          <DialogContent>
+            <Typography>
+              {deleteItem?.item?.type === "group"
+                ? t("connectionManager.deleteGroupConfirm", {
+                    name: deleteItem?.item?.name,
+                  })
+                : t("connectionManager.deleteConnectionConfirm", {
+                    name: deleteItem?.item?.name,
+                  })}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {t("connectionManager.cannotUndo")}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCancelDelete}>{t("common.cancel")}</Button>
+            <Button
+              onClick={handleConfirmDelete}
+              variant="contained"
+              color="error"
+            >
+              {t("common.delete")}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </SidebarPanel>
+    );
+  },
+  areEqual,
+);
+
+// 设置显示名称用于调试
+ConnectionManager.displayName = "ConnectionManager";
+
+export default ConnectionManager;

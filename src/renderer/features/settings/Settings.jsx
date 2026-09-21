@@ -1,0 +1,3137 @@
+import * as React from "react";
+import { GlassDialog } from "../../shared/ui/styledDialogs.jsx";
+import { memo } from "react";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
+import Button from "@mui/material/Button";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
+import CloseIcon from "@mui/icons-material/Close";
+import Typography from "@mui/material/Typography";
+import Box from "@mui/material/Box";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
+import Select from "@mui/material/Select";
+import MenuItem from "@mui/material/MenuItem";
+import Slider from "@mui/material/Slider";
+import TextField from "@mui/material/TextField";
+import InputAdornment from "@mui/material/InputAdornment";
+import Switch from "@mui/material/Switch";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import Chip from "@mui/material/Chip";
+import Alert from "@mui/material/Alert";
+import AlertTitle from "@mui/material/AlertTitle";
+import Grid from "@mui/material/Grid";
+import List from "@mui/material/List";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
+import TuneIcon from "@mui/icons-material/Tune";
+import SettingsIcon from "@mui/icons-material/Settings";
+import TerminalIcon from "@mui/icons-material/Terminal";
+import LockIcon from "@mui/icons-material/Lock";
+import ImageIcon from "@mui/icons-material/Image";
+import MemoryIcon from "@mui/icons-material/Memory";
+import CachedIcon from "@mui/icons-material/Cached";
+import DisplaySettingsIcon from "@mui/icons-material/DisplaySettings";
+import FolderOpenIcon from "@mui/icons-material/FolderOpen";
+import BugReportIcon from "@mui/icons-material/BugReport";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import FeedbackIcon from "@mui/icons-material/Feedback";
+import BackupIcon from "@mui/icons-material/Backup";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
+import CloudSyncIcon from "@mui/icons-material/CloudSync";
+import RestoreIcon from "@mui/icons-material/Restore";
+import { useTranslation } from "react-i18next";
+import { changeLanguage } from "../../i18n/i18n";
+import { SettingsSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
+import { useNotification } from "../../shared/notifications/NotificationContext";
+import OpenSSHImportDialog from "../connections/components/OpenSSHImportDialog.jsx";
+import {
+  openLogDirectory,
+  exportDiagnostics,
+  openFeedbackIssue,
+} from "../diagnostics/diagnosticsActions.js";
+
+const sectionCardSx = {
+  p: 1.5,
+  borderRadius: 1.5,
+  border: "1px solid",
+  borderColor: "divider",
+  bgcolor: (theme) =>
+    theme.palette.mode === "dark"
+      ? "rgba(255, 255, 255, 0.03)"
+      : "rgba(17, 24, 39, 0.025)",
+};
+
+const sectionTitleRowSx = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  mb: 1,
+};
+
+const compactFieldSx = {
+  mb: 1,
+};
+
+const subSectionLabelSx = {
+  fontSize: "0.7rem",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.5px",
+  color: "text.secondary",
+  mb: 0.75,
+  mt: 1.5,
+  "&:first-of-type": { mt: 0 },
+};
+
+const SettingsToggleRow = ({ id, label, description, checked, onChange }) => (
+  <Box
+    sx={{
+      minWidth: 0,
+      pt: 1.25,
+      borderTop: "1px solid",
+      borderColor: "divider",
+      display: "flex",
+      flexDirection: "column",
+      gap: 0.5,
+    }}
+  >
+    <FormControlLabel
+      labelPlacement="start"
+      control={
+        <Switch
+          checked={checked}
+          onChange={onChange}
+          size="small"
+          slotProps={{ input: { "aria-describedby": `${id}-description` } }}
+          sx={{ flexShrink: 0 }}
+        />
+      }
+      label={
+        <Typography
+          variant="body2"
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            fontWeight: 500,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {label}
+        </Typography>
+      }
+      sx={{
+        m: 0,
+        width: "100%",
+        gap: 1.5,
+        justifyContent: "space-between",
+      }}
+    />
+    <Typography
+      id={`${id}-description`}
+      component="p"
+      variant="caption"
+      color="text.secondary"
+      sx={{ m: 0, display: "block", lineHeight: 1.6, overflowWrap: "anywhere" }}
+    >
+      {description}
+    </Typography>
+  </Box>
+);
+
+// Custom styled dialog title
+const BootstrapDialogTitle = memo((props) => {
+  const { t } = useTranslation();
+  const { children, onClose, ...other } = props;
+
+  return (
+    <DialogTitle sx={{ m: 0, p: 2 }} {...other}>
+      {children}
+      {onClose ? (
+        <Tooltip title={t("common.close")}>
+          <IconButton
+            aria-label={t("common.close")}
+            onClick={onClose}
+            sx={{
+              position: "absolute",
+              right: 8,
+              top: 8,
+              color: (theme) => theme.palette.grey[500],
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+    </DialogTitle>
+  );
+});
+
+BootstrapDialogTitle.displayName = "BootstrapDialogTitle";
+
+const Settings = memo(({ open, onClose }) => {
+  const { t, i18n } = useTranslation();
+  const { showError, showSuccess } = useNotification();
+
+  // Define available languages
+  const languages = [
+    { code: "zh-CN", name: t("languages.zh-CN") },
+    { code: "en-US", name: t("languages.en-US") },
+  ];
+
+  // Define font size options
+  const fontSizes = [
+    { value: 12, label: t("settings.fontSizeLabels.small") },
+    { value: 14, label: t("settings.fontSizeLabels.medium") },
+    { value: 16, label: t("settings.fontSizeLabels.large") },
+    { value: 18, label: t("settings.fontSizeLabels.xlarge") },
+  ];
+
+  // Define terminal font family options (only fonts available in /src/renderer/assets/fonts)
+  const terminalFonts = [
+    {
+      value: "Fira Code",
+      label: t("settings.fonts.fira-code"),
+      description: t("settings.terminalFonts.firaCodeDescription"),
+    },
+    {
+      value: "Space Mono",
+      label: t("settings.fonts.space-mono"),
+      description: t("settings.terminalFonts.spaceMonoDescription"),
+    },
+    {
+      value: "Consolas",
+      label: t("settings.fonts.consolas"),
+      description: t("settings.terminalFonts.consolasDescription"),
+    },
+  ];
+
+  // Define log level options
+  const logLevels = [
+    { value: "DEBUG", label: t("settings.logLevels.debug") },
+    { value: "INFO", label: t("settings.logLevels.info") },
+    { value: "WARN", label: t("settings.logLevels.warn") },
+    { value: "ERROR", label: t("settings.logLevels.error") },
+  ];
+
+  // Initial states
+  const [language, setLanguage] = React.useState("");
+  const [fontSize, setFontSize] = React.useState(14);
+  const [editorFont, setEditorFont] = React.useState("system");
+  const [terminalFont, setTerminalFont] = React.useState("Fira Code");
+  const [terminalFontSize, setTerminalFontSize] = React.useState(14);
+  const [terminalFontWeight, setTerminalFontWeight] = React.useState(500);
+  const [terminalLineHeight, setTerminalLineHeight] = React.useState(1.0);
+  const [terminalScrollbackLines, setTerminalScrollbackLines] =
+    React.useState(50000);
+  const [darkMode, setDarkMode] = React.useState(true);
+  const [externalEditorEnabled, setExternalEditorEnabled] =
+    React.useState(false);
+  const [externalEditorCommand, setExternalEditorCommand] = React.useState("");
+  const [diskAlertEnabled, setDiskAlertEnabled] = React.useState(false);
+  const [diskAlertThreshold, setDiskAlertThreshold] = React.useState(90);
+  const [diskAlertIntervalSeconds, setDiskAlertIntervalSeconds] =
+    React.useState(60);
+  // 资源监控显示模式：independent 独立 CPU/内存卡片 / trend 历史趋势曲线（二选一）
+  const [resourceMonitorDisplayMode, setResourceMonitorDisplayMode] =
+    React.useState("independent");
+  const [logLevel, setLogLevel] = React.useState("WARN");
+  const [maxFileSize, setMaxFileSize] = React.useState(5);
+  const [cleanupIntervalDays, setCleanupIntervalDays] = React.useState(7);
+  const [backupRetentionDays, setBackupRetentionDays] = React.useState(30);
+  const [errorReportingEnabled, setErrorReportingEnabled] =
+    React.useState(false);
+  const [includeDiagnosticsInFeedback, setIncludeDiagnosticsInFeedback] =
+    React.useState(false);
+  const [crashCaptureEnabled, setCrashCaptureEnabled] = React.useState(true);
+  const [crashReporterStatus, setCrashReporterStatus] = React.useState(null);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [masterPasswordEnabled, setMasterPasswordEnabled] =
+    React.useState(false);
+  const [initialMasterPasswordEnabled, setInitialMasterPasswordEnabled] =
+    React.useState(false);
+  const [masterPassword, setMasterPassword] = React.useState("");
+  const [confirmMasterPassword, setConfirmMasterPassword] = React.useState("");
+
+  // 性能设置状态
+  const [imageSupported, setImageSupported] = React.useState(true);
+  const [cacheEnabled, setCacheEnabled] = React.useState(true);
+  const [prefetchEnabled, setPrefetchEnabled] = React.useState(true);
+  const [hardwareAccelerationEnabled, setHardwareAccelerationEnabled] =
+    React.useState(true);
+  const [gpuInfo, setGpuInfo] = React.useState(null);
+  const [gpuInfoLoading, setGpuInfoLoading] = React.useState(false);
+
+  // DnD settings
+  const [dndEnabled, setDndEnabled] = React.useState(true);
+  const [dndAutoScroll, setDndAutoScroll] = React.useState(true);
+  const [dndCompactPreview, setDndCompactPreview] = React.useState(false);
+  const [trayEnabled, setTrayEnabled] = React.useState(false);
+  const [closeToTray, setCloseToTray] = React.useState(false);
+
+  // 传输栏显示模式: "bottom" | "sidebar"
+  const [transferBarMode, setTransferBarMode] = React.useState("bottom");
+  const [transferIntegrity, setTransferIntegrity] = React.useState(false);
+  const [sftpFollowTerminalDirectory, setSftpFollowTerminalDirectory] =
+    React.useState(true);
+
+  // 需要重启的设置变更标志
+  const [needsRestart, setNeedsRestart] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState(0);
+  const [sshImportOpen, setSshImportOpen] = React.useState(false);
+  const handleCloseSshImport = React.useCallback(
+    () => setSshImportOpen(false),
+    [],
+  );
+  React.useEffect(() => {
+    if (!open) setSshImportOpen(false);
+  }, [open]);
+  const [originalPerformanceSettings, setOriginalPerformanceSettings] =
+    React.useState({});
+
+  // 配置导入/导出/同步状态
+  const [exportPassword, setExportPassword] = React.useState("");
+  const [exportConfirmPassword, setExportConfirmPassword] = React.useState("");
+  const [importFilePath, setImportFilePath] = React.useState("");
+  const [importPassword, setImportPassword] = React.useState("");
+  const [importMode, setImportMode] = React.useState("merge");
+  const [webdavUrl, setWebdavUrl] = React.useState("");
+  const [webdavUsername, setWebdavUsername] = React.useState("");
+  const [webdavPassword, setWebdavPassword] = React.useState("");
+  const [webdavFileName, setWebdavFileName] = React.useState("");
+  const [configTransferBusy, setConfigTransferBusy] = React.useState("");
+  const [autoSyncEnabled, setAutoSyncEnabled] = React.useState(false);
+  const [autoSyncOnStartup, setAutoSyncOnStartup] = React.useState(true);
+  const [autoSyncIntervalMinutes, setAutoSyncIntervalMinutes] =
+    React.useState(30);
+  const [rememberExportPassword, setRememberExportPassword] =
+    React.useState(false);
+  const [autoSyncStatus, setAutoSyncStatus] = React.useState(null);
+
+  // Load settings from config.json via API
+  React.useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        setIsLoading(true);
+
+        // 加载UI设置
+        if (window.terminalAPI?.loadUISettings) {
+          const response = await window.terminalAPI.loadUISettings();
+          // 检查响应结构 - IPC handler 返回 { success: true, settings: {...} }
+          const settings = response?.success ? response.settings : response;
+          if (settings) {
+            setLanguage(settings.language || "zh-CN");
+            setFontSize(settings.fontSize || 14);
+            setEditorFont(settings.editorFont || "system");
+            setTerminalFont(settings.terminalFont || "Fira Code");
+            setTerminalFontSize(settings.terminalFontSize || 14);
+            setTerminalFontWeight(settings.terminalFontWeight || 500);
+            const rawLineHeight = Number(settings.terminalLineHeight);
+            setTerminalLineHeight(
+              Number.isFinite(rawLineHeight)
+                ? Math.min(
+                    1.4,
+                    Math.max(1.0, Math.round(rawLineHeight * 100) / 100),
+                  )
+                : 1.0,
+            );
+            const rawSb = Number(settings.terminalScrollbackLines);
+            setTerminalScrollbackLines(
+              Number.isFinite(rawSb)
+                ? Math.min(500000, Math.max(1000, Math.floor(rawSb)))
+                : 50000,
+            );
+            setDarkMode(
+              settings.darkMode !== undefined ? settings.darkMode : true,
+            );
+
+            // 加载性能设置
+            const externalEditorSettings = settings.externalEditor || {};
+            setExternalEditorEnabled(
+              externalEditorSettings.enabled === true ||
+                settings.externalEditorEnabled === true,
+            );
+            setExternalEditorCommand(
+              externalEditorSettings.command ||
+                settings.externalEditorCommand ||
+                "",
+            );
+
+            // 加载磁盘空间告警设置（与主进程默认值一致：未配置时默认关闭）
+            const diskAlertSettings = settings.diskAlert || {};
+            setDiskAlertEnabled(diskAlertSettings.enabled === true);
+            const rawThreshold = Number(diskAlertSettings.thresholdPercent);
+            setDiskAlertThreshold(
+              Number.isFinite(rawThreshold) &&
+                rawThreshold >= 50 &&
+                rawThreshold <= 99
+                ? Math.floor(rawThreshold)
+                : 90,
+            );
+            const rawInterval = Number(diskAlertSettings.intervalSeconds);
+            setDiskAlertIntervalSeconds(
+              Number.isFinite(rawInterval) && rawInterval >= 30
+                ? Math.floor(rawInterval)
+                : 60,
+            );
+
+            // 加载资源监控显示模式
+            const resourceMonitorSettings = settings.resourceMonitor || {};
+            setResourceMonitorDisplayMode(
+              resourceMonitorSettings.displayMode === "trend"
+                ? "trend"
+                : "independent",
+            );
+
+            const performanceSettings = settings.performance || {
+              imageSupported: true,
+              cacheEnabled: true,
+              prefetchEnabled: true,
+              webglEnabled: true,
+              hardwareAcceleration: true,
+            };
+            // DnD settings
+            const dnd = settings.dnd || {};
+            setDndEnabled(dnd.enabled !== false);
+            setDndAutoScroll(dnd.autoScroll !== false);
+            setDndCompactPreview(dnd.compactDragPreview === true);
+            const desktopIntegration = settings.desktopIntegration || {};
+            setTrayEnabled(desktopIntegration.trayEnabled === true);
+            setCloseToTray(
+              desktopIntegration.trayEnabled === true &&
+                desktopIntegration.closeToTray === true,
+            );
+
+            // 传输栏显示模式
+            setTransferBarMode(settings.transferBarMode || "bottom");
+            setTransferIntegrity(settings.transferIntegrity === true);
+            setSftpFollowTerminalDirectory(
+              settings.sftpFollowTerminalDirectory !== false,
+            );
+
+            // 备份保留天数
+            if (settings.backupRetentionDays !== undefined) {
+              setBackupRetentionDays(settings.backupRetentionDays);
+            }
+
+            setImageSupported(performanceSettings.imageSupported !== false);
+            setCacheEnabled(performanceSettings.cacheEnabled !== false);
+            setPrefetchEnabled(performanceSettings.prefetchEnabled !== false);
+            const hardwareAcceleration =
+              performanceSettings.hardwareAcceleration !== false;
+            setHardwareAccelerationEnabled(hardwareAcceleration);
+
+            // 保存原始设置用于比较
+            setOriginalPerformanceSettings(performanceSettings);
+          }
+        }
+
+        if (window.terminalAPI?.getCredentialSecurityStatus) {
+          const response =
+            await window.terminalAPI.getCredentialSecurityStatus();
+          const securityStatus = response?.success ? response.status : response;
+          const enabled = securityStatus?.masterPasswordEnabled === true;
+          setMasterPasswordEnabled(enabled);
+          setInitialMasterPasswordEnabled(enabled);
+          setMasterPassword("");
+          setConfirmMasterPassword("");
+        }
+
+        // 加载日志设置
+        if (window.terminalAPI?.loadLogSettings) {
+          const response = await window.terminalAPI.loadLogSettings();
+          // 检查响应结构 - IPC handler 返回 { success: true, settings: {...} }
+          const logSettings = response?.success ? response.settings : response;
+          if (logSettings) {
+            setLogLevel(logSettings.level || "WARN");
+            // 将字节转换为MB
+            setMaxFileSize(
+              logSettings.maxFileSize
+                ? Math.round(logSettings.maxFileSize / (1024 * 1024))
+                : 5,
+            );
+            setCleanupIntervalDays(logSettings.cleanupIntervalDays || 7);
+          }
+        }
+
+        if (window.terminalAPI?.getErrorReportingSettings) {
+          const response = await window.terminalAPI.getErrorReportingSettings();
+          if (response?.success !== false) {
+            const settings = response?.settings || {};
+            setErrorReportingEnabled(settings.enabled === true);
+            setIncludeDiagnosticsInFeedback(
+              settings.includeDiagnosticsInFeedback === true,
+            );
+            setCrashCaptureEnabled(settings.crashCaptureEnabled !== false);
+            setCrashReporterStatus(response?.crashReporter || null);
+          }
+        }
+
+        // 加载 WebDAV 同步设置
+        if (window.terminalAPI?.configSyncLoadSettings) {
+          const response = await window.terminalAPI.configSyncLoadSettings();
+          const syncSettings = response?.success ? response.settings : null;
+          if (syncSettings) {
+            setWebdavUrl(syncSettings.url || "");
+            setWebdavUsername(syncSettings.username || "");
+            setWebdavPassword(syncSettings.password || "");
+            setWebdavFileName(
+              syncSettings.fileName ||
+                syncSettings.defaultRemoteFileName ||
+                "simpleshell-config.ssx",
+            );
+            setAutoSyncEnabled(syncSettings.autoSyncEnabled === true);
+            setAutoSyncOnStartup(syncSettings.autoSyncOnStartup !== false);
+            setAutoSyncIntervalMinutes(
+              Number(syncSettings.autoSyncIntervalMinutes) || 30,
+            );
+            setRememberExportPassword(
+              syncSettings.rememberExportPassword === true,
+            );
+          }
+        }
+
+        // 加载自动同步运行状态
+        if (window.terminalAPI?.configSyncGetStatus) {
+          const response = await window.terminalAPI.configSyncGetStatus();
+          if (response?.success !== false) {
+            setAutoSyncStatus(response?.status || response || null);
+          }
+        }
+      } catch {
+        /* intentionally ignored */
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (open) {
+      loadSettings();
+    }
+  }, [open]);
+
+  // 加载 GPU 信息（用于验证集显/独显是否生效）
+  React.useEffect(() => {
+    if (!open) return;
+    if (!window.terminalAPI?.getGpuInfo) return;
+    let cancelled = false;
+    setGpuInfoLoading(true);
+    window.terminalAPI
+      .getGpuInfo()
+      .then((info) => {
+        if (!cancelled) setGpuInfo(info || null);
+      })
+      .catch(() => {
+        if (!cancelled) setGpuInfo(null);
+      })
+      .finally(() => {
+        if (!cancelled) setGpuInfoLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  // Handle language change
+  const handleLanguageChange = (event) => {
+    setLanguage(event.target.value);
+  };
+
+  // Handle font size change
+  const handleFontSizeChange = (event, newValue) => {
+    setFontSize(newValue);
+  };
+
+  // Handle terminal font change
+  const handleTerminalFontChange = (event) => {
+    setTerminalFont(event.target.value);
+  };
+
+  // Handle terminal font size change
+  const handleTerminalFontSizeChange = (event, newValue) => {
+    setTerminalFontSize(newValue);
+  };
+
+  // Handle terminal font weight change
+  const handleTerminalFontWeightChange = (event, newValue) => {
+    setTerminalFontWeight(newValue);
+  };
+
+  // Handle theme mode change
+  const handleDarkModeChange = (event) => {
+    setDarkMode(event.target.value === "dark");
+  };
+
+  // Handle log level change
+  const handleLogLevelChange = (event) => {
+    setLogLevel(event.target.value);
+  };
+
+  // Handle max file size change
+  const handleMaxFileSizeChange = (event) => {
+    const value = event.target.value;
+    // 确保输入的是数字，且大于0
+    if (!isNaN(value) && Number(value) > 0) {
+      setMaxFileSize(Number(value));
+    }
+  };
+
+  const handleOpenLogDirectory = () =>
+    openLogDirectory({ t, showSuccess, showError });
+
+  const handleExportDiagnostics = () =>
+    exportDiagnostics({ t, showSuccess, showError });
+
+  const handleCopyDiagnosticPackage = async () => {
+    try {
+      const result = await window.terminalAPI?.copyDiagnosticPackage?.({
+        source: "settings",
+        title: t("settings.feedback.defaultTitle"),
+      });
+      if (result?.success === false) {
+        throw new Error(
+          result.error || t("settings.feedback.copyPackageFailed"),
+        );
+      }
+      showSuccess(t("settings.feedback.packageCopied"));
+    } catch (error) {
+      showError(error?.message || t("settings.feedback.copyPackageFailed"));
+    }
+  };
+
+  const handleOpenFeedbackIssue = () =>
+    openFeedbackIssue({
+      t,
+      showSuccess,
+      showError,
+      source: "settings",
+      confirmButtonLabel: t("settings.feedback.openIssue"),
+    });
+
+  // ==================== 配置导入/导出/同步 ====================
+
+  // dataSync 错误码白名单：check-i18n 要求 t() 使用静态字面量 key，
+  // 后端返回的错误码只能映射到已定义翻译的错误码
+  const getConfigTransferErrorMessage = (result, fallbackKey) => {
+    const code = result?.errorCode || result?.code;
+    switch (code) {
+      case "CREDENTIAL_STORE_LOCKED":
+        return t("settings.dataSync.errors.CREDENTIAL_STORE_LOCKED");
+      case "DECRYPT_FAILED":
+        return t("settings.dataSync.errors.DECRYPT_FAILED");
+      case "INVALID_PACKAGE":
+        return t("settings.dataSync.errors.INVALID_PACKAGE");
+      case "PACKAGE_TOO_LARGE":
+        return t("settings.dataSync.errors.PACKAGE_TOO_LARGE");
+      case "PASSWORD_TOO_WEAK":
+        return t("settings.dataSync.errors.PASSWORD_TOO_WEAK");
+      case "WEBDAV_AUTH_FAILED":
+        return t("settings.dataSync.errors.WEBDAV_AUTH_FAILED");
+      case "WEBDAV_CONFLICT":
+        return t("settings.dataSync.errors.WEBDAV_CONFLICT");
+      case "WEBDAV_REMOTE_NOT_FOUND":
+        return t("settings.dataSync.errors.WEBDAV_REMOTE_NOT_FOUND");
+      case "WEBDAV_REQUEST_FAILED":
+        return t("settings.dataSync.errors.WEBDAV_REQUEST_FAILED");
+      case "WEBDAV_URL_INVALID":
+        return t("settings.dataSync.errors.WEBDAV_URL_INVALID");
+      case "WEBDAV_URL_REQUIRED":
+        return t("settings.dataSync.errors.WEBDAV_URL_REQUIRED");
+      default:
+        break;
+    }
+
+    // fallbackKey 同样静态映射（调用点均为固定值）
+    switch (fallbackKey) {
+      case "settings.dataSync.export.failed":
+        return t("settings.dataSync.export.failed");
+      case "settings.dataSync.import.failed":
+        return t("settings.dataSync.import.failed");
+      case "settings.dataSync.webdav.testFailed":
+        return t("settings.dataSync.webdav.testFailed");
+      case "settings.dataSync.webdav.uploadFailed":
+        return t("settings.dataSync.webdav.uploadFailed");
+      case "settings.dataSync.webdav.downloadFailed":
+        return t("settings.dataSync.webdav.downloadFailed");
+      case "settings.dataSync.webdav.saveFailed":
+        return t("settings.dataSync.webdav.saveFailed");
+      default:
+        break;
+    }
+
+    return result?.error || result?.message || fallbackKey;
+  };
+
+  // 自动同步跳过原因白名单（未识别原因回退到通用提示）
+  const getAutoSyncSkippedMessage = (reason) => {
+    switch (reason) {
+      case "CREDENTIAL_STORE_LOCKED":
+        return t("settings.dataSync.autoSync.skipped.CREDENTIAL_STORE_LOCKED");
+      case "EXPORT_PASSWORD_NOT_SAVED":
+        return t(
+          "settings.dataSync.autoSync.skipped.EXPORT_PASSWORD_NOT_SAVED",
+        );
+      case "NO_URL":
+        return t("settings.dataSync.autoSync.skipped.NO_URL");
+      case "WEBDAV_AUTH_FAILED":
+        return t("settings.dataSync.autoSync.skipped.WEBDAV_AUTH_FAILED");
+      case "WEBDAV_REMOTE_NOT_FOUND":
+        return t("settings.dataSync.autoSync.skipped.WEBDAV_REMOTE_NOT_FOUND");
+      case "WEBDAV_REQUEST_FAILED":
+        return t("settings.dataSync.autoSync.skipped.WEBDAV_REQUEST_FAILED");
+      default:
+        return t("settings.dataSync.autoSync.autoSkipped");
+    }
+  };
+
+  // 最近一次自动同步状态白名单
+  const getAutoSyncStatusMessage = (status) => {
+    switch (status) {
+      case "error":
+        return t("settings.dataSync.autoSync.status.error");
+      case "locked":
+        return t("settings.dataSync.autoSync.status.locked");
+      case "no-export-password":
+        return t("settings.dataSync.autoSync.status.no-export-password");
+      case "remote-missing":
+        return t("settings.dataSync.autoSync.status.remote-missing");
+      case "up-to-date":
+        return t("settings.dataSync.autoSync.status.up-to-date");
+      case "updated":
+        return t("settings.dataSync.autoSync.status.updated");
+      default:
+        return t("settings.dataSync.autoSync.status.never");
+    }
+  };
+
+  const buildExportFileName = () => {
+    const now = new Date();
+    const pad = (value) => String(value).padStart(2, "0");
+    const stamp =
+      `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+      `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    return `simpleshell-config-${stamp}.ssx`;
+  };
+
+  const handleExportConfig = async () => {
+    if (exportPassword.length < 4) {
+      showError(t("settings.dataSync.export.passwordRequired"));
+      return;
+    }
+    if (exportPassword !== exportConfirmPassword) {
+      showError(t("settings.dataSync.export.passwordMismatch"));
+      return;
+    }
+    setConfigTransferBusy("export");
+    try {
+      const dialogResult = await window.dialogAPI?.showSaveDialog?.({
+        title: t("settings.dataSync.export.dialogTitle"),
+        defaultPath: buildExportFileName(),
+        filters: [{ name: "SimpleShell Config", extensions: ["ssx"] }],
+      });
+      if (dialogResult?.canceled || !dialogResult?.filePath) {
+        return;
+      }
+      const filePath = dialogResult.filePath;
+      const result = await window.terminalAPI.configTransferExport({
+        filePath,
+        password: exportPassword,
+      });
+      if (result?.success === false) {
+        throw Object.assign(new Error(result.error), {
+          code: result.errorCode,
+        });
+      }
+      showSuccess(t("settings.dataSync.export.success"));
+      setExportPassword("");
+      setExportConfirmPassword("");
+    } catch (error) {
+      showError(
+        getConfigTransferErrorMessage(error, "settings.dataSync.export.failed"),
+      );
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
+
+  const handlePickImportFile = async () => {
+    try {
+      const dialogResult = await window.dialogAPI?.showOpenDialog?.({
+        title: t("settings.dataSync.import.dialogTitle"),
+        properties: ["openFile"],
+        filters: [
+          { name: "SimpleShell Config", extensions: ["ssx", "json"] },
+          { name: "All Files", extensions: ["*"] },
+        ],
+      });
+      const filePath = dialogResult?.filePaths?.[0];
+      if (dialogResult?.canceled || !filePath) {
+        return;
+      }
+      setImportFilePath(filePath);
+    } catch (error) {
+      showError(error?.message || t("settings.dataSync.import.failed"));
+    }
+  };
+
+  const handleImportConfig = async () => {
+    if (!importFilePath) {
+      showError(t("settings.dataSync.import.noFile"));
+      return;
+    }
+    setConfigTransferBusy("import");
+    try {
+      const result = await window.terminalAPI.configTransferImport({
+        filePath: importFilePath,
+        password: importPassword,
+        mode: importMode,
+      });
+      if (result?.success === false) {
+        throw Object.assign(new Error(result.error), {
+          code: result.errorCode,
+        });
+      }
+      showSuccess(t("settings.dataSync.import.success"));
+      setImportPassword("");
+    } catch (error) {
+      showError(
+        getConfigTransferErrorMessage(error, "settings.dataSync.import.failed"),
+      );
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
+
+  const persistWebdavSettings = async () => {
+    const saveResult = await window.terminalAPI.configSyncSaveSettings({
+      url: webdavUrl,
+      username: webdavUsername,
+      password: webdavPassword,
+      fileName: webdavFileName,
+    });
+    if (saveResult?.success === false) {
+      throw new Error(
+        saveResult.error || t("settings.dataSync.webdav.saveFailed"),
+      );
+    }
+  };
+
+  const handleWebdavTest = async () => {
+    setConfigTransferBusy("webdav-test");
+    try {
+      const result = await window.terminalAPI.configSyncTest({
+        url: webdavUrl,
+        username: webdavUsername,
+        password: webdavPassword,
+        fileName: webdavFileName,
+      });
+      if (result?.success === false) {
+        throw Object.assign(new Error(result.error), {
+          code: result.errorCode,
+        });
+      }
+      showSuccess(
+        result?.note === "REMOTE_NOT_FOUND"
+          ? t("settings.dataSync.webdav.testSuccessRemoteMissing")
+          : t("settings.dataSync.webdav.testSuccess"),
+      );
+    } catch (error) {
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.testFailed",
+        ),
+      );
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
+
+  const handleWebdavUpload = async (force = false) => {
+    if (exportPassword.length < 4) {
+      showError(t("settings.dataSync.export.passwordRequired"));
+      return;
+    }
+    if (exportPassword !== exportConfirmPassword) {
+      showError(t("settings.dataSync.export.passwordMismatch"));
+      return;
+    }
+    setConfigTransferBusy("webdav-upload");
+    try {
+      await persistWebdavSettings();
+      const upload = async (forceOverride) => {
+        const result = await window.terminalAPI.configSyncUpload({
+          url: webdavUrl,
+          username: webdavUsername,
+          password: webdavPassword,
+          fileName: webdavFileName,
+          exportPassword,
+          // 确认覆盖后重试时必须以 force=true 重新上传，
+          // 否则会捕获外层 force=false 再次冲突造成死循环
+          force: forceOverride ?? force,
+        });
+        if (result?.success === false) {
+          throw Object.assign(new Error(result.error), {
+            code: result.errorCode,
+          });
+        }
+        return result;
+      };
+      try {
+        await upload();
+      } catch (error) {
+        if (error?.code !== "WEBDAV_CONFLICT") {
+          throw error;
+        }
+        // 远端配置包与本地不一致：提示用户确认是否覆盖，避免多设备后写者覆盖前写者
+        const answer = await window.dialogAPI?.showMessageBox?.({
+          type: "warning",
+          buttons: [
+            t("settings.dataSync.webdav.conflictOverwrite"),
+            t("settings.dataSync.webdav.conflictCancel"),
+          ],
+          defaultId: 1,
+          cancelId: 1,
+          message: t("settings.dataSync.webdav.conflictMessage"),
+          detail: t("settings.dataSync.webdav.conflictDetail"),
+        });
+        if (!answer || answer.response !== 0) {
+          return;
+        }
+        await upload(true);
+      }
+      showSuccess(t("settings.dataSync.webdav.uploadSuccess"));
+    } catch (error) {
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.uploadFailed",
+        ),
+      );
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
+
+  const handleWebdavDownload = async () => {
+    if (!importPassword) {
+      showError(t("settings.dataSync.import.passwordRequired"));
+      return;
+    }
+    setConfigTransferBusy("webdav-download");
+    try {
+      await persistWebdavSettings();
+      const result = await window.terminalAPI.configSyncDownload({
+        url: webdavUrl,
+        username: webdavUsername,
+        password: webdavPassword,
+        fileName: webdavFileName,
+        importPassword,
+        mode: importMode,
+      });
+      if (result?.success === false) {
+        throw Object.assign(new Error(result.error), {
+          code: result.errorCode,
+        });
+      }
+      showSuccess(t("settings.dataSync.webdav.downloadSuccess"));
+      setImportPassword("");
+    } catch (error) {
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.downloadFailed",
+        ),
+      );
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
+
+  // ==================== 自动同步（启动时/定期拉取） ====================
+
+  const refreshAutoSyncStatus = React.useCallback(async () => {
+    try {
+      const response = await window.terminalAPI?.configSyncGetStatus?.();
+      if (response?.success !== false) {
+        setAutoSyncStatus(response?.status || response || null);
+      }
+    } catch {
+      /* intentionally ignored */
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const offEvent = window.terminalAPI?.onConfigSyncAutoEvent?.((payload) => {
+      refreshAutoSyncStatus();
+      // manual 触发的结果由 handleSyncPullNow 直接提示，避免重复 toast
+      if (payload?.trigger === "manual") {
+        return;
+      }
+      const status = payload?.status;
+      if (status === "updated") {
+        showSuccess(t("settings.dataSync.autoSync.autoUpdated"));
+      } else if (status === "error") {
+        showError(
+          t("settings.dataSync.autoSync.autoError", {
+            error: payload?.error || payload?.reason || "",
+          }),
+        );
+      } else if (
+        payload?.trigger === "manual" &&
+        payload?.reason === "UP_TO_DATE"
+      ) {
+        showSuccess(t("settings.dataSync.autoSync.alreadyUpToDate"));
+      }
+    });
+    return () => {
+      if (typeof offEvent === "function") {
+        offEvent();
+      }
+    };
+  }, [open, refreshAutoSyncStatus, showSuccess, showError, t]);
+
+  const persistAutoSyncSettings = async (patch) => {
+    const saveResult = await window.terminalAPI.configSyncSaveSettings(patch);
+    if (saveResult?.success === false) {
+      throw new Error(
+        saveResult.error || t("settings.dataSync.webdav.saveFailed"),
+      );
+    }
+    await refreshAutoSyncStatus();
+  };
+
+  const handleToggleAutoSync = async (checked) => {
+    if (checked) {
+      if (!webdavUrl.trim()) {
+        showError(t("settings.dataSync.errors.WEBDAV_URL_REQUIRED"));
+        setAutoSyncEnabled(false);
+        return;
+      }
+      if (!rememberExportPassword && !exportPassword) {
+        // 自动拉取需要能解密：要求记住导出密码
+        showError(t("settings.dataSync.autoSync.exportPasswordNeeded"));
+        setAutoSyncEnabled(false);
+        return;
+      }
+      try {
+        setConfigTransferBusy("auto-sync");
+        await persistAutoSyncSettings({
+          autoSyncEnabled: true,
+          rememberExportPassword: true,
+          // 当前输入的导出密码非空时更新保存的密码，否则保留已存密码
+          exportPassword,
+          autoSyncOnStartup,
+          autoSyncIntervalMinutes,
+        });
+        setRememberExportPassword(true);
+        setExportPassword("");
+        setExportConfirmPassword("");
+        showSuccess(t("settings.dataSync.autoSync.enabled"));
+      } catch (error) {
+        setAutoSyncEnabled(false);
+        showError(
+          getConfigTransferErrorMessage(
+            error,
+            "settings.dataSync.webdav.saveFailed",
+          ),
+        );
+      } finally {
+        setConfigTransferBusy("");
+      }
+    } else {
+      setAutoSyncEnabled(false);
+      try {
+        await persistAutoSyncSettings({ autoSyncEnabled: false });
+      } catch {
+        /* intentionally ignored */
+      }
+    }
+  };
+
+  const handleAutoSyncOptionChange = async (patch) => {
+    try {
+      await persistAutoSyncSettings(patch);
+    } catch (error) {
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.saveFailed",
+        ),
+      );
+    }
+  };
+
+  const handleRememberExportPasswordChange = async (checked) => {
+    if (checked && !exportPassword) {
+      showError(t("settings.dataSync.autoSync.exportPasswordNeeded"));
+      return;
+    }
+    try {
+      await persistAutoSyncSettings({
+        rememberExportPassword: checked,
+        exportPassword: checked ? exportPassword : "",
+      });
+      setRememberExportPassword(checked);
+      if (checked) {
+        setExportPassword("");
+        setExportConfirmPassword("");
+        showSuccess(t("settings.dataSync.autoSync.exportPasswordSaved"));
+      }
+    } catch (error) {
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.saveFailed",
+        ),
+      );
+    }
+  };
+
+  const handleSyncPullNow = async () => {
+    setConfigTransferBusy("sync-pull");
+    try {
+      const result = await window.terminalAPI.configSyncPullNow();
+      if (result?.skipped) {
+        if (result.reason === "UP_TO_DATE") {
+          showSuccess(t("settings.dataSync.autoSync.alreadyUpToDate"));
+        } else if (result.reason !== "BUSY") {
+          showError(getAutoSyncSkippedMessage(result.reason));
+        }
+      } else if (result?.success === false) {
+        throw Object.assign(new Error(result.error), {
+          code: result.reason || result.errorCode,
+        });
+      } else if (result?.status === "updated") {
+        showSuccess(t("settings.dataSync.autoSync.pulledNow"));
+      }
+      await refreshAutoSyncStatus();
+    } catch (error) {
+      showError(
+        getConfigTransferErrorMessage(
+          error,
+          "settings.dataSync.webdav.downloadFailed",
+        ),
+      );
+    } finally {
+      setConfigTransferBusy("");
+    }
+  };
+
+  // 检查性能设置是否需要重启
+  const checkIfRestartNeeded = (newSettings) => {
+    const current = {
+      imageSupported,
+      cacheEnabled,
+      prefetchEnabled,
+      webglEnabled: hardwareAccelerationEnabled,
+      hardwareAcceleration: hardwareAccelerationEnabled,
+      ...newSettings,
+    };
+
+    // 图像支持或硬件加速变更需要重启
+    const needsRestartForImage =
+      current.imageSupported !== originalPerformanceSettings.imageSupported;
+    const needsRestartForGpu =
+      current.hardwareAcceleration !==
+      (originalPerformanceSettings.hardwareAcceleration !== false);
+
+    return needsRestartForImage || needsRestartForGpu;
+  };
+
+  // Handle performance settings change
+  const handlePerformanceChange = (setting, value) => {
+    const newSettings = { [setting]: value };
+
+    switch (setting) {
+      case "imageSupported":
+        setImageSupported(value);
+        break;
+      case "cacheEnabled":
+        setCacheEnabled(value);
+        // 缓存设置可以实时生效
+        if (window.terminalAPI?.configureRuntimeFileResource) {
+          window.terminalAPI.configureRuntimeFileResource("file-cache", {
+            enabled: value,
+          });
+        }
+        break;
+      case "prefetchEnabled":
+        setPrefetchEnabled(value);
+        // 预取设置可以实时生效
+        if (window.terminalAPI?.updatePrefetchSettings) {
+          window.terminalAPI.updatePrefetchSettings({ enabled: value });
+        }
+        break;
+      case "hardwareAcceleration":
+        setHardwareAccelerationEnabled(value);
+        break;
+    }
+
+    // 检查是否需要重启
+    setNeedsRestart(checkIfRestartNeeded(newSettings));
+  };
+
+  // 构建 UI 设置快照（保存与广播共用，避免字段/ clamp 逻辑重复维护）
+  const buildUISettingsSnapshot = () => ({
+    language,
+    fontSize,
+    editorFont,
+    terminalFont,
+    terminalFontSize,
+    terminalFontWeight,
+    terminalLineHeight: Math.min(
+      1.4,
+      Math.max(
+        1.0,
+        Math.round((Number(terminalLineHeight) || 1.0) * 100) / 100,
+      ),
+    ),
+    terminalScrollbackLines: Math.min(
+      500000,
+      Math.max(1000, Math.floor(Number(terminalScrollbackLines)) || 50000),
+    ),
+    darkMode,
+    performance: {
+      imageSupported,
+      cacheEnabled,
+      prefetchEnabled,
+      webglEnabled: hardwareAccelerationEnabled,
+      hardwareAcceleration: hardwareAccelerationEnabled,
+    },
+    dnd: {
+      enabled: dndEnabled,
+      autoScroll: dndAutoScroll,
+      compactDragPreview: dndCompactPreview,
+    },
+    desktopIntegration: {
+      trayEnabled,
+      closeToTray: trayEnabled && closeToTray,
+    },
+    transferBarMode,
+    transferIntegrity,
+    sftpFollowTerminalDirectory,
+    backupRetentionDays,
+    externalEditor: {
+      enabled: externalEditorEnabled,
+      command: externalEditorCommand.trim(),
+    },
+    diskAlert: {
+      enabled: diskAlertEnabled,
+      thresholdPercent: Math.min(
+        99,
+        Math.max(50, Math.floor(Number(diskAlertThreshold) || 90)),
+      ),
+      intervalSeconds: Math.min(
+        3600,
+        Math.max(30, Math.floor(Number(diskAlertIntervalSeconds) || 60)),
+      ),
+    },
+    resourceMonitor: {
+      displayMode:
+        resourceMonitorDisplayMode === "trend" ? "trend" : "independent",
+    },
+  });
+
+  // Save settings
+  const handleSave = async () => {
+    try {
+      const shouldUpdateCredentialSecurity =
+        masterPasswordEnabled !== initialMasterPasswordEnabled ||
+        (masterPasswordEnabled && masterPassword.trim() !== "");
+
+      if (shouldUpdateCredentialSecurity) {
+        if (
+          masterPasswordEnabled &&
+          !initialMasterPasswordEnabled &&
+          !masterPassword.trim()
+        ) {
+          showError(t("settings.security.passwordRequired"));
+          return;
+        }
+
+        if (masterPasswordEnabled && masterPassword.trim()) {
+          if (masterPassword !== confirmMasterPassword) {
+            showError(t("settings.security.passwordMismatch"));
+            return;
+          }
+        }
+
+        if (window.terminalAPI?.updateCredentialSecurity) {
+          const securityResponse =
+            await window.terminalAPI.updateCredentialSecurity({
+              masterPasswordEnabled,
+              masterPassword: masterPasswordEnabled ? masterPassword : "",
+            });
+
+          if (securityResponse?.success === false) {
+            throw new Error(
+              securityResponse.error || t("settings.security.updateFailed"),
+            );
+          }
+
+          const securityStatus = securityResponse?.status ||
+            securityResponse?.data || {
+              masterPasswordEnabled,
+              unlocked: true,
+              requiresUnlock: false,
+            };
+
+          window.dispatchEvent(
+            new CustomEvent("credentialSecurityChanged", {
+              detail: { status: securityStatus },
+            }),
+          );
+
+          setInitialMasterPasswordEnabled(masterPasswordEnabled);
+          setMasterPassword("");
+          setConfirmMasterPassword("");
+        }
+      }
+
+      // 保存UI设置
+      if (window.terminalAPI?.saveUISettings) {
+        const settings = buildUISettingsSnapshot();
+        await window.terminalAPI.saveUISettings(settings);
+      }
+
+      // 保存日志设置
+      if (window.terminalAPI?.saveLogSettings) {
+        const logSettings = {
+          level: logLevel,
+          // 将MB转换为字节
+          maxFileSize: maxFileSize * 1024 * 1024,
+          // 保留其他设置默认值
+          maxFiles: 5,
+          compressOldLogs: true,
+          cleanupIntervalDays: cleanupIntervalDays,
+        };
+        await window.terminalAPI.saveLogSettings(logSettings);
+      }
+
+      if (window.terminalAPI?.saveErrorReportingSettings) {
+        const response = await window.terminalAPI.saveErrorReportingSettings({
+          enabled: errorReportingEnabled,
+          prompted: true,
+          includeDiagnosticsInFeedback:
+            errorReportingEnabled && includeDiagnosticsInFeedback,
+          crashCaptureEnabled,
+        });
+        if (response?.success === false) {
+          throw new Error(response.error || t("settings.feedback.saveFailed"));
+        }
+        setCrashReporterStatus(response?.crashReporter || null);
+      }
+
+      // Apply language change
+      if (language && i18n.language !== language) {
+        changeLanguage(language);
+      }
+
+      // Notify app to apply changes
+      window.dispatchEvent(
+        new CustomEvent("settingsChanged", {
+          detail: buildUISettingsSnapshot(),
+        }),
+      );
+
+      // 显示成功提示
+      showSuccess(t("settings.saveSuccess"));
+
+      // 延迟关闭对话框，让用户能看到成功提示
+      setTimeout(() => {
+        onClose();
+      }, 500);
+    } catch (error) {
+      showError(error?.message || t("settings.saveError"));
+    }
+  };
+
+  const sidebarItems = [
+    {
+      id: 0,
+      label: t("settings.general"),
+      icon: <SettingsIcon fontSize="small" />,
+    },
+    {
+      id: 1,
+      label: t("settings.terminalAndLogs"),
+      icon: <TerminalIcon fontSize="small" />,
+    },
+    {
+      id: 2,
+      label: t("settings.performanceSettings"),
+      icon: <TuneIcon fontSize="small" />,
+    },
+    {
+      id: 3,
+      label: t("settings.security.title"),
+      icon: <LockIcon fontSize="small" />,
+    },
+    {
+      id: 4,
+      label: t("settings.dataSync.title"),
+      icon: <CloudSyncIcon fontSize="small" />,
+    },
+    {
+      id: 5,
+      label: t("settings.feedback.title"),
+      icon: <BugReportIcon fontSize="small" />,
+    },
+  ];
+
+  return (
+    <GlassDialog
+      open={open}
+      onClose={onClose}
+      aria-labelledby="settings-dialog-title"
+      maxWidth="md"
+      fullWidth
+      paperMaxHeight="80vh"
+    >
+      <BootstrapDialogTitle id="settings-dialog-title" onClose={onClose}>
+        {t("settings.title")}
+      </BootstrapDialogTitle>
+      <DialogContent dividers sx={{ p: 0, overflow: "hidden" }}>
+        {isLoading ? (
+          <SettingsSkeleton />
+        ) : (
+          <Box sx={{ display: "flex", minHeight: 420, maxHeight: "65vh" }}>
+            {/* Sidebar */}
+            <Box
+              sx={{
+                width: { xs: 128, sm: 160 },
+                flexShrink: 0,
+                borderRight: 1,
+                borderColor: "divider",
+                overflowY: "auto",
+              }}
+            >
+              <List dense component="nav" sx={{ pt: 1, pb: 1 }}>
+                {sidebarItems.map((item) => (
+                  <ListItemButton
+                    key={item.id}
+                    selected={activeTab === item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    sx={{ px: { xs: 1, sm: 2 } }}
+                  >
+                    <ListItemIcon sx={{ minWidth: { xs: 28, sm: 36 } }}>
+                      {item.icon}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={item.label}
+                      slotProps={{
+                        primary: {
+                          variant: "body2",
+                          sx: { overflowWrap: "anywhere" },
+                        },
+                      }}
+                    />
+                  </ListItemButton>
+                ))}
+              </List>
+            </Box>
+
+            {/* Content Panel */}
+            <Box
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                overflowY: "auto",
+                p: { xs: 1.5, sm: 2 },
+              }}
+            >
+              {/* Tab 0: General */}
+              {activeTab === 0 && (
+                <Grid container spacing={2}>
+                  {/* Left: Appearance + file management */}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.appearance")}
+                    </Typography>
+                    <Box sx={sectionCardSx}>
+                      <Box sx={compactFieldSx}>
+                        <Typography variant="subtitle2" gutterBottom>
+                          {t("settings.language")}
+                        </Typography>
+                        <FormControl fullWidth variant="outlined" size="small">
+                          <Select
+                            value={language}
+                            onChange={handleLanguageChange}
+                          >
+                            {languages.map((lang) => (
+                              <MenuItem key={lang.code} value={lang.code}>
+                                {lang.name}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <Typography variant="subtitle2" gutterBottom>
+                          {t("settings.theme")}
+                        </Typography>
+                        <FormControl fullWidth variant="outlined" size="small">
+                          <Select
+                            value={darkMode ? "dark" : "light"}
+                            onChange={handleDarkModeChange}
+                          >
+                            <MenuItem value="light">
+                              {t("settings.themeLight")}
+                            </MenuItem>
+                            <MenuItem value="dark">
+                              {t("settings.themeDark")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <Typography variant="subtitle2" gutterBottom>
+                          {t("settings.fontSize")}
+                        </Typography>
+                        <Box sx={{ px: 1 }}>
+                          <Slider
+                            value={fontSize}
+                            onChange={handleFontSizeChange}
+                            step={null}
+                            marks={fontSizes.map((size) => ({
+                              value: size.value,
+                              label: size.label,
+                            }))}
+                            min={12}
+                            max={18}
+                            size="small"
+                          />
+                        </Box>
+                      </Box>
+                    </Box>
+
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.fileManagement")}
+                    </Typography>
+                    <Box
+                      sx={{
+                        ...sectionCardSx,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 1.5,
+                      }}
+                    >
+                      <Box>
+                        <Typography variant="subtitle2" gutterBottom>
+                          {t("settings.transferDisplay")}
+                        </Typography>
+                        <FormControl fullWidth variant="outlined" size="small">
+                          <Select
+                            value={transferBarMode}
+                            onChange={(e) => setTransferBarMode(e.target.value)}
+                          >
+                            <MenuItem value="bottom">
+                              {t("settings.transferDisplayBottom")}
+                            </MenuItem>
+                            <MenuItem value="sidebar">
+                              {t("settings.transferDisplaySidebar")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Box>
+                      <SettingsToggleRow
+                        id="settings-transfer-integrity"
+                        label={t("settings.transferIntegrity")}
+                        description={t("settings.transferIntegrityHelp")}
+                        checked={transferIntegrity}
+                        onChange={(event) =>
+                          setTransferIntegrity(event.target.checked)
+                        }
+                      />
+                      <SettingsToggleRow
+                        id="settings-follow-terminal"
+                        label={t("settings.sftpFollowTerminalDirectory")}
+                        description={t(
+                          "settings.sftpFollowTerminalDirectoryHelp",
+                        )}
+                        checked={sftpFollowTerminalDirectory}
+                        onChange={(event) =>
+                          setSftpFollowTerminalDirectory(event.target.checked)
+                        }
+                      />
+                    </Box>
+                  </Grid>
+
+                  {/* Right: DnD + Desktop + Editor */}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.dnd.title")}
+                    </Typography>
+                    <Box sx={{ ...sectionCardSx, mb: 1.5 }}>
+                      <Box sx={{ display: "flex", flexDirection: "column" }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={dndEnabled}
+                              onChange={(e) => setDndEnabled(e.target.checked)}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.dnd.enable")}
+                            </Typography>
+                          }
+                        />
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={dndAutoScroll}
+                              onChange={(e) =>
+                                setDndAutoScroll(e.target.checked)
+                              }
+                              disabled={!dndEnabled}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.dnd.autoScroll")}
+                            </Typography>
+                          }
+                        />
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={dndCompactPreview}
+                              onChange={(e) =>
+                                setDndCompactPreview(e.target.checked)
+                              }
+                              disabled={!dndEnabled}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.dnd.compactPreview")}
+                            </Typography>
+                          }
+                        />
+                      </Box>
+                    </Box>
+
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.desktopIntegration.title")}
+                    </Typography>
+                    <Box sx={{ ...sectionCardSx, mb: 1.5 }}>
+                      <Box sx={{ display: "flex", flexDirection: "column" }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={trayEnabled}
+                              onChange={(e) => {
+                                setTrayEnabled(e.target.checked);
+                                if (!e.target.checked) {
+                                  setCloseToTray(false);
+                                }
+                              }}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.desktopIntegration.trayEnabled")}
+                            </Typography>
+                          }
+                        />
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={closeToTray}
+                              onChange={(e) => setCloseToTray(e.target.checked)}
+                              disabled={!trayEnabled}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.desktopIntegration.closeToTray")}
+                            </Typography>
+                          }
+                        />
+                      </Box>
+                    </Box>
+
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.externalEditor.title")}
+                    </Typography>
+                    <Box sx={sectionCardSx}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={externalEditorEnabled}
+                            onChange={(e) =>
+                              setExternalEditorEnabled(e.target.checked)
+                            }
+                            size="small"
+                          />
+                        }
+                        label={
+                          <Typography variant="body2">
+                            {t("settings.externalEditor.enable")}
+                          </Typography>
+                        }
+                        sx={{ mb: 0.75 }}
+                      />
+                      <TextField
+                        fullWidth
+                        size="small"
+                        placeholder={t(
+                          "settings.externalEditor.commandPlaceholder",
+                        )}
+                        value={externalEditorCommand}
+                        onChange={(e) =>
+                          setExternalEditorCommand(e.target.value)
+                        }
+                        disabled={!externalEditorEnabled}
+                      />
+                    </Box>
+
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.diskAlert.title")}
+                    </Typography>
+                    <Box sx={sectionCardSx}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={diskAlertEnabled}
+                            onChange={(e) =>
+                              setDiskAlertEnabled(e.target.checked)
+                            }
+                            size="small"
+                          />
+                        }
+                        label={
+                          <Typography variant="body2">
+                            {t("settings.diskAlert.enable")}
+                          </Typography>
+                        }
+                        sx={{ mb: 1 }}
+                      />
+                      <Box
+                        sx={{
+                          display: "flex",
+                          gap: 1.5,
+                          flexWrap: "wrap",
+                          opacity: diskAlertEnabled ? 1 : 0.5,
+                          pointerEvents: diskAlertEnabled ? "auto" : "none",
+                        }}
+                      >
+                        <TextField
+                          size="small"
+                          type="number"
+                          label={t("settings.diskAlert.threshold")}
+                          value={diskAlertThreshold}
+                          onChange={(e) =>
+                            setDiskAlertThreshold(e.target.value)
+                          }
+                          inputProps={{ min: 50, max: 99 }}
+                          sx={{ width: 160 }}
+                        />
+                        <TextField
+                          size="small"
+                          select
+                          label={t("settings.diskAlert.interval")}
+                          value={diskAlertIntervalSeconds}
+                          onChange={(e) =>
+                            setDiskAlertIntervalSeconds(Number(e.target.value))
+                          }
+                          sx={{ width: 160 }}
+                        >
+                          {[30, 60, 120, 300, 600].map((seconds) => (
+                            <MenuItem key={seconds} value={seconds}>
+                              {t("settings.diskAlert.intervalSeconds", {
+                                seconds,
+                              })}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      </Box>
+                    </Box>
+
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.resourceMonitor.title")}
+                    </Typography>
+                    <Box sx={sectionCardSx}>
+                      <FormControl fullWidth variant="outlined" size="small">
+                        <Select
+                          value={resourceMonitorDisplayMode}
+                          onChange={(e) =>
+                            setResourceMonitorDisplayMode(e.target.value)
+                          }
+                        >
+                          <MenuItem value="independent">
+                            {t("settings.resourceMonitor.modeIndependent")}
+                          </MenuItem>
+                          <MenuItem value="trend">
+                            {t("settings.resourceMonitor.modeTrend")}
+                          </MenuItem>
+                        </Select>
+                      </FormControl>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ mt: 0.75, display: "block" }}
+                      >
+                        {t("settings.resourceMonitor.modeHint")}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
+              )}
+
+              {/* Tab 1: Terminal & Logs */}
+              {activeTab === 1 && (
+                <Grid container spacing={2}>
+                  {/* Left: Terminal */}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.terminalFontSectionTitle")}
+                    </Typography>
+                    <Box sx={sectionCardSx}>
+                      <Box sx={compactFieldSx}>
+                        <FormControl fullWidth variant="outlined" size="small">
+                          <InputLabel>
+                            {t("settings.terminalFontFamily")}
+                          </InputLabel>
+                          <Select
+                            value={terminalFont}
+                            onChange={handleTerminalFontChange}
+                            label={t("settings.terminalFontFamily")}
+                          >
+                            {terminalFonts.map((font) => (
+                              <MenuItem key={font.value} value={font.value}>
+                                <Typography style={{ fontFamily: font.value }}>
+                                  {font.label}
+                                </Typography>
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1,
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            sx={{ minWidth: 52, fontSize: "0.8rem" }}
+                          >
+                            {t("settings.terminalFontSizeLabel")}
+                          </Typography>
+                          <Slider
+                            value={terminalFontSize}
+                            onChange={handleTerminalFontSizeChange}
+                            step={null}
+                            marks={fontSizes.map((size) => ({
+                              value: size.value,
+                              label: size.label,
+                            }))}
+                            min={12}
+                            max={18}
+                            size="small"
+                            sx={{ flex: 1 }}
+                          />
+                        </Box>
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.5,
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            sx={{ minWidth: 44, fontSize: "0.8rem" }}
+                          >
+                            {t("settings.fontWeight")}
+                          </Typography>
+                          <Slider
+                            value={terminalFontWeight}
+                            onChange={handleTerminalFontWeightChange}
+                            min={300}
+                            max={1000}
+                            size="small"
+                            sx={{ flex: 1 }}
+                          />
+                          <TextField
+                            value={terminalFontWeight}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              if (!isNaN(val)) setTerminalFontWeight(val);
+                            }}
+                            size="small"
+                            type="number"
+                            inputProps={{
+                              min: 300,
+                              max: 1000,
+                              style: { textAlign: "center" },
+                            }}
+                            sx={{ width: 64 }}
+                          />
+                        </Box>
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.5,
+                          }}
+                        >
+                          <Typography
+                            variant="body2"
+                            sx={{ minWidth: 52, fontSize: "0.8rem" }}
+                          >
+                            {t("settings.terminalLineHeight")}
+                          </Typography>
+                          <Slider
+                            value={terminalLineHeight}
+                            onChange={(_event, value) => {
+                              const next = Array.isArray(value)
+                                ? value[0]
+                                : value;
+                              setTerminalLineHeight(
+                                Math.round(Number(next) * 100) / 100,
+                              );
+                            }}
+                            min={1.0}
+                            max={1.4}
+                            step={0.05}
+                            marks={[
+                              { value: 1.0, label: "1.0" },
+                              { value: 1.2, label: "1.2" },
+                              { value: 1.4, label: "1.4" },
+                            ]}
+                            size="small"
+                            sx={{ flex: 1 }}
+                            valueLabelDisplay="auto"
+                          />
+                        </Box>
+                      </Box>
+
+                      <Box>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="number"
+                          label={t("settings.terminalScrollbackLines")}
+                          value={terminalScrollbackLines}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            if (Number.isFinite(v)) {
+                              setTerminalScrollbackLines(v);
+                            }
+                          }}
+                          inputProps={{ min: 1000, max: 500000, step: 1000 }}
+                        />
+                      </Box>
+                    </Box>
+                  </Grid>
+
+                  {/* Right: Logs */}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography sx={subSectionLabelSx}>
+                      {t("settings.logSettingsTitle")}
+                    </Typography>
+                    <Box sx={sectionCardSx}>
+                      <Box sx={compactFieldSx}>
+                        <FormControl fullWidth variant="outlined" size="small">
+                          <Select
+                            value={logLevel}
+                            onChange={handleLogLevelChange}
+                          >
+                            {logLevels.map((level) => (
+                              <MenuItem key={level.value} value={level.value}>
+                                {level.label}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="number"
+                          label={t("settings.logFileSizeLimitLabel")}
+                          value={maxFileSize}
+                          onChange={handleMaxFileSizeChange}
+                          InputProps={{
+                            endAdornment: (
+                              <InputAdornment position="end">MB</InputAdornment>
+                            ),
+                          }}
+                          inputProps={{ min: 1 }}
+                        />
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="number"
+                          label={t("settings.logCleanupIntervalLabel")}
+                          value={cleanupIntervalDays}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            if (!isNaN(v) && v > 0) {
+                              setCleanupIntervalDays(v);
+                            }
+                          }}
+                          inputProps={{ min: 1 }}
+                        />
+                      </Box>
+
+                      <Box sx={compactFieldSx}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="number"
+                          label={t("settings.backupRetentionLabel")}
+                          value={backupRetentionDays}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            if (!isNaN(v) && v > 0) {
+                              setBackupRetentionDays(v);
+                            }
+                          }}
+                          inputProps={{ min: 1, max: 365 }}
+                        />
+                      </Box>
+
+                      <Box
+                        sx={{ display: "flex", gap: 0.75, flexWrap: "wrap" }}
+                      >
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<FolderOpenIcon />}
+                          onClick={handleOpenLogDirectory}
+                        >
+                          {t("settings.openLogDirectory")}
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<BugReportIcon />}
+                          onClick={handleExportDiagnostics}
+                        >
+                          {t("settings.exportDiagnostics")}
+                        </Button>
+                      </Box>
+                    </Box>
+                  </Grid>
+                </Grid>
+              )}
+
+              {/* Tab 2: Performance */}
+              {activeTab === 2 && (
+                <Box>
+                  {needsRestart && (
+                    <Alert severity="warning" sx={{ mb: 1.5 }}>
+                      <AlertTitle>{t("settings.restartRequired")}</AlertTitle>
+                      {t("settings.restartMessage")}
+                    </Alert>
+                  )}
+                  <Grid container spacing={1.5}>
+                    {/* 硬件加速 (全局 GPU 开关) */}
+                    <Grid size={{ xs: 12 }}>
+                      <Box sx={{ ...sectionCardSx, height: "100%" }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.75,
+                            mb: 0.75,
+                          }}
+                        >
+                          <DisplaySettingsIcon
+                            sx={{ color: "info.main", fontSize: 20 }}
+                          />
+                          <Typography variant="subtitle2" component="div">
+                            {t("settings.hardwareAcceleration")}
+                          </Typography>
+                          {hardwareAccelerationEnabled !==
+                            (originalPerformanceSettings.hardwareAcceleration !==
+                              false) && (
+                            <Chip
+                              label={t("settings.needsRestart")}
+                              size="small"
+                              color="warning"
+                            />
+                          )}
+                        </Box>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={hardwareAccelerationEnabled}
+                              onChange={(e) =>
+                                handlePerformanceChange(
+                                  "hardwareAcceleration",
+                                  e.target.checked,
+                                )
+                              }
+                              color="primary"
+                            />
+                          }
+                          label={t("settings.enableHardwareAcceleration")}
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.5 }}
+                        >
+                          {t("settings.hardwareAccelerationDescription")}
+                        </Typography>
+
+                        {/* GPU 信息 */}
+                        <Box
+                          sx={{
+                            mt: 1,
+                            p: 1,
+                            borderRadius: 1,
+                            bgcolor: (theme) =>
+                              theme.palette.mode === "dark"
+                                ? "rgba(255,255,255,0.04)"
+                                : "rgba(0,0,0,0.03)",
+                            fontFamily: "monospace",
+                            fontSize: 12,
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: "block", mb: 0.25 }}
+                          >
+                            {t("settings.gpuInfo")}
+                          </Typography>
+                          {gpuInfoLoading && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {t("settings.gpuInfoLoading")}
+                            </Typography>
+                          )}
+                          {!gpuInfoLoading && !gpuInfo && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {t("settings.gpuInfoUnavailable")}
+                            </Typography>
+                          )}
+                          {!gpuInfoLoading && gpuInfo && (
+                            <Box>
+                              <Box>
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  component="span"
+                                >
+                                  {t("settings.gpuRenderer")}:{" "}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  component="span"
+                                  sx={{ wordBreak: "break-all" }}
+                                >
+                                  {gpuInfo.displayRenderer ||
+                                    gpuInfo.activeGpu?.deviceString ||
+                                    t("settings.gpuUnknown")}
+                                </Typography>
+                              </Box>
+                              {gpuInfo.displayVendor && (
+                                <Box>
+                                  <Typography
+                                    variant="caption"
+                                    color="text.secondary"
+                                    component="span"
+                                  >
+                                    {t("settings.gpuVendor")}:{" "}
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    component="span"
+                                  >
+                                    {gpuInfo.displayVendor}
+                                  </Typography>
+                                </Box>
+                              )}
+                              {gpuInfo.activeGpu &&
+                                (gpuInfo.activeGpu.vendorId ||
+                                  gpuInfo.activeGpu.deviceId) && (
+                                  <Box>
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                      component="span"
+                                    >
+                                      {t("settings.gpuDeviceId")}:{" "}
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      component="span"
+                                    >
+                                      {gpuInfo.activeGpu.vendorId || "?"}/
+                                      {gpuInfo.activeGpu.deviceId || "?"}
+                                    </Typography>
+                                  </Box>
+                                )}
+                              <Box sx={{ mt: 0.25 }}>
+                                {gpuInfo.softwareRendering ? (
+                                  <Chip
+                                    size="small"
+                                    color="warning"
+                                    label={t("settings.gpuSoftwareFallback")}
+                                  />
+                                ) : (
+                                  <Chip
+                                    size="small"
+                                    color="success"
+                                    label={t("settings.gpuHardwareActive")}
+                                  />
+                                )}
+                              </Box>
+                            </Box>
+                          )}
+                        </Box>
+                      </Box>
+                    </Grid>
+
+                    {/* 图像支持 */}
+                    <Grid size={{ xs: 12 }}>
+                      <Box sx={{ ...sectionCardSx, height: "100%" }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            mb: 0.75,
+                          }}
+                        >
+                          <ImageIcon
+                            sx={{
+                              mr: 0.75,
+                              color: "primary.main",
+                              fontSize: 20,
+                            }}
+                          />
+                          <Typography variant="subtitle2" component="div">
+                            {t("settings.imageSupport")}
+                          </Typography>
+                          {needsRestart &&
+                            imageSupported !==
+                              originalPerformanceSettings.imageSupported && (
+                              <Chip
+                                label={t("settings.needsRestart")}
+                                size="small"
+                                color="warning"
+                                sx={{ ml: 0.5 }}
+                              />
+                            )}
+                        </Box>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={imageSupported}
+                              onChange={(e) =>
+                                handlePerformanceChange(
+                                  "imageSupported",
+                                  e.target.checked,
+                                )
+                              }
+                              color="primary"
+                            />
+                          }
+                          label={t("settings.enableImageSupport")}
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.5 }}
+                        >
+                          {t("settings.imageDescription")}
+                        </Typography>
+                      </Box>
+                    </Grid>
+
+                    {/* 智能缓存 */}
+                    <Grid size={{ xs: 12 }}>
+                      <Box sx={{ ...sectionCardSx, height: "100%" }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            mb: 0.75,
+                          }}
+                        >
+                          <MemoryIcon
+                            sx={{
+                              mr: 0.75,
+                              color: "success.main",
+                              fontSize: 20,
+                            }}
+                          />
+                          <Typography variant="subtitle2" component="div">
+                            {t("settings.smartCache")}
+                          </Typography>
+                          <Chip
+                            label={t("settings.realTime")}
+                            size="small"
+                            color="success"
+                            sx={{ ml: 0.5 }}
+                          />
+                        </Box>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={cacheEnabled}
+                              onChange={(e) =>
+                                handlePerformanceChange(
+                                  "cacheEnabled",
+                                  e.target.checked,
+                                )
+                              }
+                              color="primary"
+                            />
+                          }
+                          label={t("settings.enableCache")}
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.5 }}
+                        >
+                          {t("settings.cacheDescription")}
+                        </Typography>
+                      </Box>
+                    </Grid>
+
+                    {/* 智能预取 */}
+                    <Grid size={{ xs: 12 }}>
+                      <Box sx={{ ...sectionCardSx, height: "100%" }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            mb: 0.75,
+                          }}
+                        >
+                          <CachedIcon
+                            sx={{
+                              mr: 0.75,
+                              color: "success.main",
+                              fontSize: 20,
+                            }}
+                          />
+                          <Typography variant="subtitle2" component="div">
+                            {t("settings.smartPrefetch")}
+                          </Typography>
+                          <Chip
+                            label={t("settings.realTime")}
+                            size="small"
+                            color="success"
+                            sx={{ ml: 0.5 }}
+                          />
+                        </Box>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={prefetchEnabled}
+                              onChange={(e) =>
+                                handlePerformanceChange(
+                                  "prefetchEnabled",
+                                  e.target.checked,
+                                )
+                              }
+                              color="primary"
+                            />
+                          }
+                          label={t("settings.enablePrefetch")}
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.5 }}
+                        >
+                          {t("settings.prefetchDescription")}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  </Grid>
+                </Box>
+              )}
+
+              {/* Tab 3: Security */}
+              {activeTab === 3 && (
+                <Box>
+                  <Box sx={sectionCardSx}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Typography variant="subtitle1">
+                        {t("settings.security.title")}
+                      </Typography>
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 0.75 }}
+                    >
+                      {t("settings.security.description")}
+                    </Typography>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={masterPasswordEnabled}
+                          onChange={(e) =>
+                            setMasterPasswordEnabled(e.target.checked)
+                          }
+                          size="small"
+                        />
+                      }
+                      label={
+                        <Typography variant="body2">
+                          {t("settings.security.enable")}
+                        </Typography>
+                      }
+                    />
+
+                    {masterPasswordEnabled ? (
+                      <Box sx={{ mt: 0.75 }}>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mb: 0.75 }}
+                        >
+                          {initialMasterPasswordEnabled
+                            ? t("settings.security.changeHint")
+                            : t("settings.security.createHint")}
+                        </Typography>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.security.password")}
+                          value={masterPassword}
+                          onChange={(e) => setMasterPassword(e.target.value)}
+                          sx={{ mb: 0.75 }}
+                        />
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.security.confirmPassword")}
+                          value={confirmMasterPassword}
+                          onChange={(e) =>
+                            setConfirmMasterPassword(e.target.value)
+                          }
+                        />
+                      </Box>
+                    ) : (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: "block", mt: 0.5 }}
+                      >
+                        {t("settings.security.disableHint")}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              )}
+
+              {/* Tab 4: Data & Sync */}
+              {activeTab === 4 && (
+                <Box>
+                  <Box sx={{ ...sectionCardSx, mb: 1.5 }}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Box
+                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                      >
+                        <TerminalIcon sx={{ color: "primary.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.dataSync.sshImportTitle")}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {t("settings.dataSync.sshImportDescription")}
+                    </Typography>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<RestoreIcon />}
+                      disabled={configTransferBusy !== ""}
+                      onClick={() => setSshImportOpen(true)}
+                    >
+                      {t("connectionManager.sshImport")}
+                    </Button>
+                  </Box>
+
+                  {/* 导出加密包 */}
+                  <Box sx={sectionCardSx}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                        }}
+                      >
+                        <BackupIcon sx={{ color: "primary.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.dataSync.export.title")}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {t("settings.dataSync.export.description")}
+                    </Typography>
+                    <Grid container spacing={1}>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.dataSync.export.password")}
+                          value={exportPassword}
+                          onChange={(e) => setExportPassword(e.target.value)}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.dataSync.export.confirmPassword")}
+                          value={exportConfirmPassword}
+                          onChange={(e) =>
+                            setExportConfirmPassword(e.target.value)
+                          }
+                        />
+                      </Grid>
+                    </Grid>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={rememberExportPassword}
+                          onChange={(e) =>
+                            handleRememberExportPasswordChange(e.target.checked)
+                          }
+                          size="small"
+                        />
+                      }
+                      label={
+                        <Typography variant="body2">
+                          {t("settings.dataSync.autoSync.rememberPassword")}
+                        </Typography>
+                      }
+                    />
+                    <Box sx={{ mt: 1 }}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<BackupIcon />}
+                        disabled={configTransferBusy !== ""}
+                        onClick={handleExportConfig}
+                      >
+                        {configTransferBusy === "export"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.export.button")}
+                      </Button>
+                    </Box>
+                  </Box>
+
+                  {/* 导入配置包 */}
+                  <Box sx={{ ...sectionCardSx, mt: 1.5 }}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                        }}
+                      >
+                        <RestoreIcon sx={{ color: "primary.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.dataSync.import.title")}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {t("settings.dataSync.import.description")}
+                    </Typography>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                        mb: 1,
+                      }}
+                    >
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<FolderOpenIcon />}
+                        onClick={handlePickImportFile}
+                      >
+                        {t("settings.dataSync.import.pickFile")}
+                      </Button>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {importFilePath || t("settings.dataSync.import.noFile")}
+                      </Typography>
+                    </Box>
+                    <Grid container spacing={1}>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.dataSync.import.password")}
+                          value={importPassword}
+                          onChange={(e) => setImportPassword(e.target.value)}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel>
+                            {t("settings.dataSync.import.mode")}
+                          </InputLabel>
+                          <Select
+                            value={importMode}
+                            label={t("settings.dataSync.import.mode")}
+                            onChange={(e) => setImportMode(e.target.value)}
+                          >
+                            <MenuItem value="merge">
+                              {t("settings.dataSync.import.modeMerge")}
+                            </MenuItem>
+                            <MenuItem value="replace">
+                              {t("settings.dataSync.import.modeReplace")}
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                    </Grid>
+                    <Box sx={{ mt: 1 }}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<RestoreIcon />}
+                        disabled={configTransferBusy !== "" || !importFilePath}
+                        onClick={handleImportConfig}
+                      >
+                        {configTransferBusy === "import"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.import.button")}
+                      </Button>
+                    </Box>
+                  </Box>
+
+                  {/* WebDAV 多机同步 */}
+                  <Box sx={{ ...sectionCardSx, mt: 1.5 }}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                        }}
+                      >
+                        <CloudSyncIcon sx={{ color: "primary.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.dataSync.webdav.title")}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {t("settings.dataSync.webdav.description")}
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label={t("settings.dataSync.webdav.url")}
+                      placeholder={t("settings.dataSync.webdav.urlPlaceholder")}
+                      value={webdavUrl}
+                      onChange={(e) => setWebdavUrl(e.target.value)}
+                      sx={{ mb: 1 }}
+                    />
+                    <Grid container spacing={1}>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label={t("settings.dataSync.webdav.username")}
+                          value={webdavUsername}
+                          onChange={(e) => setWebdavUsername(e.target.value)}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="password"
+                          label={t("settings.dataSync.webdav.password")}
+                          value={webdavPassword}
+                          onChange={(e) => setWebdavPassword(e.target.value)}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label={t("settings.dataSync.webdav.fileName")}
+                          value={webdavFileName}
+                          onChange={(e) => setWebdavFileName(e.target.value)}
+                        />
+                      </Grid>
+                    </Grid>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", mt: 0.75, mb: 1 }}
+                    >
+                      {t("settings.dataSync.webdav.hint")}
+                    </Typography>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        gap: 0.75,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        disabled={
+                          configTransferBusy !== "" || !webdavUrl.trim()
+                        }
+                        onClick={handleWebdavTest}
+                      >
+                        {configTransferBusy === "webdav-test"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.webdav.test")}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<CloudUploadIcon />}
+                        disabled={
+                          configTransferBusy !== "" || !webdavUrl.trim()
+                        }
+                        onClick={() => handleWebdavUpload(false)}
+                      >
+                        {configTransferBusy === "webdav-upload"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.webdav.upload")}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<CloudDownloadIcon />}
+                        disabled={
+                          configTransferBusy !== "" ||
+                          !webdavUrl.trim() ||
+                          !importPassword
+                        }
+                        onClick={handleWebdavDownload}
+                      >
+                        {configTransferBusy === "webdav-download"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.webdav.download")}
+                      </Button>
+                    </Box>
+                  </Box>
+
+                  {/* 自动同步 */}
+                  <Box sx={{ ...sectionCardSx, mt: 1.5 }}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                        }}
+                      >
+                        <CloudSyncIcon sx={{ color: "primary.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.dataSync.autoSync.title")}
+                        </Typography>
+                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={autoSyncEnabled}
+                            onChange={(e) =>
+                              handleToggleAutoSync(e.target.checked)
+                            }
+                            disabled={configTransferBusy !== ""}
+                            size="small"
+                          />
+                        }
+                        label={
+                          <Typography variant="body2">
+                            {t("settings.dataSync.autoSync.enable")}
+                          </Typography>
+                        }
+                      />
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {t("settings.dataSync.autoSync.description")}
+                    </Typography>
+
+                    {autoSyncEnabled && (
+                      <>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={autoSyncOnStartup}
+                              onChange={(e) => {
+                                setAutoSyncOnStartup(e.target.checked);
+                                handleAutoSyncOptionChange({
+                                  autoSyncOnStartup: e.target.checked,
+                                });
+                              }}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.dataSync.autoSync.onStartup")}
+                            </Typography>
+                          }
+                        />
+                        <FormControl fullWidth size="small" sx={{ mt: 0.5 }}>
+                          <InputLabel>
+                            {t("settings.dataSync.autoSync.interval")}
+                          </InputLabel>
+                          <Select
+                            value={autoSyncIntervalMinutes}
+                            label={t("settings.dataSync.autoSync.interval")}
+                            onChange={(e) => {
+                              const value = Number(e.target.value);
+                              setAutoSyncIntervalMinutes(value);
+                              handleAutoSyncOptionChange({
+                                autoSyncIntervalMinutes: value,
+                              });
+                            }}
+                          >
+                            {[5, 15, 30, 60, 180, 360, 720, 1440].map(
+                              (minutes) => (
+                                <MenuItem key={minutes} value={minutes}>
+                                  {minutes < 60
+                                    ? t(
+                                        "settings.dataSync.autoSync.intervalMinutes",
+                                        { n: minutes },
+                                      )
+                                    : t(
+                                        "settings.dataSync.autoSync.intervalHours",
+                                        { n: minutes / 60 },
+                                      )}
+                                </MenuItem>
+                              ),
+                            )}
+                          </Select>
+                        </FormControl>
+                      </>
+                    )}
+
+                    <Box sx={{ mt: 1 }}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<CloudDownloadIcon />}
+                        disabled={configTransferBusy !== ""}
+                        onClick={handleSyncPullNow}
+                      >
+                        {configTransferBusy === "sync-pull"
+                          ? t("settings.dataSync.working")
+                          : t("settings.dataSync.autoSync.pullNow")}
+                      </Button>
+                    </Box>
+
+                    {autoSyncStatus && (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: "block", mt: 0.75 }}
+                      >
+                        {t("settings.dataSync.autoSync.lastCheck")}
+                        {": "}
+                        {autoSyncStatus.lastCheckAt
+                          ? new Date(
+                              autoSyncStatus.lastCheckAt,
+                            ).toLocaleString()
+                          : "—"}
+                        {" · "}
+                        {t("settings.dataSync.autoSync.lastSync")}
+                        {": "}
+                        {autoSyncStatus.lastSyncAt
+                          ? new Date(autoSyncStatus.lastSyncAt).toLocaleString()
+                          : "—"}
+                        {" · "}
+                        {getAutoSyncStatusMessage(
+                          autoSyncStatus.lastSyncStatus,
+                        )}
+                        {autoSyncEnabled && autoSyncStatus.nextRunAt
+                          ? ` · ${t("settings.dataSync.autoSync.nextCheck")}: ${new Date(
+                              autoSyncStatus.nextRunAt,
+                            ).toLocaleTimeString()}`
+                          : ""}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              )}
+
+              {/* Tab 5: Feedback */}
+              {activeTab === 5 && (
+                <Box>
+                  <Box sx={sectionCardSx}>
+                    <Box sx={sectionTitleRowSx}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                        }}
+                      >
+                        <BugReportIcon sx={{ color: "error.main" }} />
+                        <Typography variant="subtitle1">
+                          {t("settings.feedback.title")}
+                        </Typography>
+                      </Box>
+                      <Chip
+                        size="small"
+                        color={
+                          crashReporterStatus?.started ? "success" : "warning"
+                        }
+                        variant="outlined"
+                        label={
+                          crashReporterStatus?.started
+                            ? t("settings.feedback.localCrashCaptureOn")
+                            : t("settings.feedback.localCrashCaptureOff")
+                        }
+                      />
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 0.75 }}
+                    >
+                      {t("settings.feedback.description")}
+                    </Typography>
+                    <Grid container spacing={1}>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={errorReportingEnabled}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setErrorReportingEnabled(checked);
+                                if (!checked) {
+                                  setIncludeDiagnosticsInFeedback(false);
+                                } else {
+                                  setIncludeDiagnosticsInFeedback(true);
+                                }
+                              }}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.feedback.enable")}
+                            </Typography>
+                          }
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.25 }}
+                        >
+                          {t("settings.feedback.enableHelper")}
+                        </Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 6 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={
+                                errorReportingEnabled &&
+                                includeDiagnosticsInFeedback
+                              }
+                              onChange={(e) =>
+                                setIncludeDiagnosticsInFeedback(
+                                  e.target.checked,
+                                )
+                              }
+                              disabled={!errorReportingEnabled}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.feedback.includeDiagnostics")}
+                            </Typography>
+                          }
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.25 }}
+                        >
+                          {t("settings.feedback.includeDiagnosticsHelper")}
+                        </Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={crashCaptureEnabled}
+                              onChange={(e) =>
+                                setCrashCaptureEnabled(e.target.checked)
+                              }
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.feedback.enableCrashCapture")}
+                            </Typography>
+                          }
+                        />
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.25 }}
+                        >
+                          {t("settings.feedback.crashCaptureHelper")}
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                    {crashReporterStatus?.crashDirectory ? (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          display: "block",
+                          mt: 0.75,
+                          wordBreak: "break-all",
+                          fontFamily: "monospace",
+                        }}
+                      >
+                        {t("settings.feedback.crashDirectory")}:{" "}
+                        {crashReporterStatus.crashDirectory}
+                      </Typography>
+                    ) : null}
+                    <Box
+                      sx={{
+                        display: "flex",
+                        gap: 0.75,
+                        mt: 1,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<ContentCopyIcon />}
+                        onClick={handleCopyDiagnosticPackage}
+                      >
+                        {t("settings.feedback.copyPackage")}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<BugReportIcon />}
+                        onClick={handleExportDiagnostics}
+                      >
+                        {t("settings.exportDiagnostics")}
+                      </Button>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<FeedbackIcon />}
+                        onClick={handleOpenFeedbackIssue}
+                      >
+                        {t("settings.feedback.openIssue")}
+                      </Button>
+                    </Box>
+                  </Box>
+                </Box>
+              )}
+            </Box>
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 2, py: 1, gap: 0.75 }}>
+        <Button onClick={onClose} color="primary" variant="outlined">
+          {t("settings.cancel")}
+        </Button>
+        <Button onClick={handleSave} color="primary" variant="contained">
+          {t("settings.save")}
+        </Button>
+      </DialogActions>
+      {open && sshImportOpen && (
+        <OpenSSHImportDialog onClose={handleCloseSshImport} />
+      )}
+    </GlassDialog>
+  );
+});
+
+Settings.displayName = "Settings";
+
+export default Settings;

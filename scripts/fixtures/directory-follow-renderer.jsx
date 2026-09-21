@@ -1,15 +1,15 @@
 import React, { useState } from "react";
 import { Terminal } from "@xterm/xterm";
-import FileManager from "../../src/renderer/components/FileManager.jsx";
-import Settings from "../../src/renderer/components/Settings.jsx";
+import FileManager from "../../src/renderer/features/file-manager/index.jsx";
+import Settings from "../../src/renderer/features/settings/Settings.jsx";
 import i18next from "i18next";
-import { useSftpFollowSetting } from "../../src/renderer/hooks/useSftpFollowSetting.js";
-import { attachWorkingDirectoryTracking } from "../../src/renderer/modules/terminal/workingDirectoryTracking.js";
+import { useSftpFollowSetting } from "../../src/renderer/features/file-manager/hooks/useSftpFollowSetting.js";
+import { attachWorkingDirectoryTracking } from "../../src/renderer/features/terminal/model/workingDirectoryTracking.js";
 import {
   clearWorkingDirectorySession,
   getWorkingDirectoryState,
   setTerminalWorkingDirectory,
-} from "../../src/renderer/modules/terminal/workingDirectoryStore.js";
+} from "../../src/renderer/features/terminal/model/workingDirectoryStore.js";
 
 export async function runDirectoryFollowChecks({
   render,

@@ -1,0 +1,306 @@
+/**
+ * 可执行命令组件
+ * 显示AI回复中的命令块，带有风险等级标识和执行按钮
+ */
+import React, { useState, useEffect, memo } from "react";
+import Dialog from "../../shared/ui/AccessibleDialog.jsx";
+import {
+  Box,
+  Typography,
+  IconButton,
+  Tooltip,
+  Chip,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Button,
+  Alert,
+} from "@mui/material";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import ErrorIcon from "@mui/icons-material/Error";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import InfoIcon from "@mui/icons-material/Info";
+import { useTranslation } from "react-i18next";
+import { RISK_LEVELS, requiresConfirmation } from "./lib/aiSystemPrompt";
+
+/**
+ * 获取风险等级对应的图标
+ */
+const getRiskIcon = (risk) => {
+  switch (risk.name) {
+    case "critical":
+      return <ErrorIcon fontSize="small" sx={{ color: risk.color }} />;
+    case "high":
+      return <WarningAmberIcon fontSize="small" sx={{ color: risk.color }} />;
+    case "medium":
+      return <WarningAmberIcon fontSize="small" sx={{ color: risk.color }} />;
+    case "low":
+      return <InfoIcon fontSize="small" sx={{ color: risk.color }} />;
+    default:
+      return <CheckCircleIcon fontSize="small" sx={{ color: risk.color }} />;
+  }
+};
+
+const getRiskLevelText = (t, riskName) => {
+  switch (riskName) {
+    case "critical":
+      return t("ai.riskLevels.critical");
+    case "high":
+      return t("ai.riskLevels.high");
+    case "medium":
+      return t("ai.riskLevels.medium");
+    case "low":
+      return t("ai.riskLevels.low");
+    case "safe":
+    default:
+      return t("ai.riskLevels.safe");
+  }
+};
+
+const getRiskDescriptionText = (t, riskName) => {
+  switch (riskName) {
+    case "critical":
+      return t("ai.riskDescriptions.critical");
+    case "high":
+      return t("ai.riskDescriptions.high");
+    case "medium":
+      return t("ai.riskDescriptions.medium");
+    case "low":
+      return t("ai.riskDescriptions.low");
+    case "safe":
+    default:
+      return t("ai.riskDescriptions.safe");
+  }
+};
+
+/**
+ * 确认对话框组件
+ */
+const ConfirmationDialog = memo(
+  ({ open, onClose, onConfirm, command, risk, t }) => (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        {getRiskIcon(risk)}
+        <Typography variant="h6">{t("ai.confirmExecution")}</Typography>
+      </DialogTitle>
+      <DialogContent>
+        <Alert
+          severity={risk.level >= RISK_LEVELS.HIGH.level ? "error" : "warning"}
+          sx={{ mb: 2 }}
+        >
+          {t("ai.riskWarning", {
+            level: getRiskLevelText(t, risk.name),
+          })}
+        </Alert>
+        <DialogContentText sx={{ mb: 2 }}>
+          {getRiskDescriptionText(t, risk.name)}
+        </DialogContentText>
+        <Box
+          sx={{
+            p: 2,
+            bgcolor: "background.paper",
+            borderRadius: 1,
+            border: "1px solid",
+            borderColor: "divider",
+            fontFamily: "monospace",
+            fontSize: "0.9rem",
+            wordBreak: "break-all",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {command}
+        </Box>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onClose} color="inherit">
+          {t("common.cancel")}
+        </Button>
+        <Button
+          onClick={onConfirm}
+          variant="contained"
+          color={risk.level >= RISK_LEVELS.CRITICAL.level ? "error" : "warning"}
+          startIcon={<PlayArrowIcon />}
+        >
+          {t("ai.executeAnyway")}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  ),
+);
+
+/**
+ * 单个可执行命令块组件
+ */
+const ExecutableCommand = memo(
+  ({ command, risk, onExecute, onCopy, disabled = false }) => {
+    const { t } = useTranslation();
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [copied, setCopied] = useState(false);
+
+    const riskLabel = getRiskLevelText(t, risk.name);
+
+    useEffect(() => {
+      if (disabled) setConfirmOpen(false);
+    }, [disabled]);
+    const handleExecuteClick = () => {
+      if (disabled) return;
+      if (requiresConfirmation(risk)) {
+        setConfirmOpen(true);
+      } else {
+        onExecute?.(command);
+      }
+    };
+
+    const handleConfirm = () => {
+      setConfirmOpen(false);
+      if (!disabled) onExecute?.(command);
+    };
+
+    const handleCopy = async () => {
+      try {
+        await window.clipboardAPI.writeText(command);
+        setCopied(true);
+        onCopy?.(command);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error("Failed to copy command:", err);
+      }
+    };
+
+    return (
+      <>
+        <Box
+          className="ai-exec-command"
+          sx={{
+            display: "flex",
+            alignItems: "stretch",
+            bgcolor: "transparent",
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: "10px",
+            overflow: "hidden",
+            my: 1,
+            transition: "border-color 0.15s ease",
+          }}
+        >
+          {/* 风险等级标识条 */}
+          <Box
+            sx={{
+              width: 2,
+              bgcolor: risk.color,
+              flexShrink: 0,
+            }}
+          />
+
+          {/* 命令内容区 */}
+          <Box
+            sx={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 0,
+            }}
+          >
+            {/* 风险标签行 */}
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                px: 1.25,
+                py: 0.5,
+                bgcolor: "transparent",
+                borderBottom: "1px solid",
+                borderColor: "divider",
+              }}
+            >
+              <Chip
+                size="small"
+                icon={getRiskIcon(risk)}
+                label={riskLabel}
+                sx={{
+                  height: 20,
+                  fontSize: "11.5px",
+                  fontWeight: 500,
+                  bgcolor: "transparent",
+                  color: risk.color,
+                  "& .MuiChip-icon": {
+                    color: risk.color,
+                    fontSize: 14,
+                  },
+                }}
+              />
+              <Box sx={{ display: "flex", gap: 0.5 }}>
+                <Tooltip title={copied ? t("ai.copied") : t("ai.copyCommand")}>
+                  <IconButton
+                    size="small"
+                    onClick={handleCopy}
+                    sx={{ p: 0.5 }}
+                    aria-label={copied ? t("ai.copied") : t("ai.copyCommand")}
+                  >
+                    <ContentCopyIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title={t("ai.executeCommand")}>
+                  <span>
+                    <IconButton
+                      size="small"
+                      onClick={handleExecuteClick}
+                      disabled={disabled}
+                      sx={{
+                        p: 0.4,
+                        borderRadius: "6px",
+                        color: risk.color,
+                        "&:hover": {
+                          bgcolor: "action.hover",
+                        },
+                        "&.Mui-disabled": {
+                          color: "action.disabled",
+                        },
+                      }}
+
+                      aria-label={t("ai.executeCommand")}
+                    >
+                      <PlayArrowIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </Box>
+            </Box>
+
+            {/* 命令文本 */}
+            <Box
+              sx={{
+                px: 1.25,
+                py: 1,
+                fontFamily: "monospace",
+                fontSize: "12px",
+                lineHeight: 1.55,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+                bgcolor: "transparent",
+              }}
+            >
+              {command}
+            </Box>
+          </Box>
+        </Box>
+
+        {/* 确认对话框 */}
+        <ConfirmationDialog
+          open={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          onConfirm={handleConfirm}
+          command={command}
+          risk={risk}
+          t={t}
+        />
+      </>
+    );
+  },
+);
+
+export default ExecutableCommand;

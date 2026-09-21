@@ -7,7 +7,7 @@ const createLoader = require("./lib/load-renderer-module.js");
 
 const root = path.resolve(__dirname, "..");
 const load = createLoader();
-const suggestionState = require("../src/renderer/modules/terminal/commandSuggestionState.js");
+const suggestionState = require("../src/renderer/features/terminal/model/commandSuggestionState.js");
 
 function createHarness() {
   const slots = [];
@@ -51,14 +51,11 @@ function createHarness() {
   const noop = () => {};
   const context = {
     ...suggestionState,
-    ...require("../src/renderer/modules/terminal/commandSuggestionCursor.js"),
-    ...require("../src/renderer/modules/terminal/promptDetection.js"),
-    ...require("../src/renderer/modules/terminal/sessionRestoreUI.js"),
+    ...require("../src/renderer/features/terminal/model/commandSuggestionCursor.js"),
+    ...require("../src/renderer/features/terminal/model/promptDetection.js"),
+    ...require("../src/renderer/features/terminal/model/sessionRestoreUI.js"),
     ...load(
-      path.join(
-        root,
-        "src/renderer/components/web-terminal/terminalHelpers.js",
-      ),
+      path.join(root, "src/renderer/features/terminal/lib/terminalHelpers.js"),
     ),
     shouldChunkInputPayload: () => false,
     getCharacterMetricsCss: () => null,
@@ -126,13 +123,16 @@ function createHarness() {
   context.window.clearTimeout = context.clearTimeout;
   vm.createContext(context);
   for (const [filename, name] of [
-    ["src/renderer/hooks/useTerminalSuggestions.js", "useTerminalSuggestions"],
     [
-      "src/renderer/components/web-terminal/usePromptTracking.js",
+      "src/renderer/features/terminal/hooks/useTerminalSuggestions.js",
+      "useTerminalSuggestions",
+    ],
+    [
+      "src/renderer/features/terminal/hooks/usePromptTracking.js",
       "usePromptTracking",
     ],
     [
-      "src/renderer/components/web-terminal/useTerminalSessionEvents.js",
+      "src/renderer/features/terminal/hooks/useTerminalSessionEvents.js",
       "useTerminalSessionEvents",
     ],
   ]) {

@@ -6,7 +6,10 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const source = fs
   .readFileSync(
-    path.join(root, "src/renderer/hooks/useTerminalSuggestions.js"),
+    path.join(
+      root,
+      "src/renderer/features/terminal/hooks/useTerminalSuggestions.js",
+    ),
     "utf8",
   )
   .replace(/^import[\s\S]*?;\r?\n/gm, "")
@@ -31,8 +34,8 @@ function createHarness() {
   };
   let resizeCallback;
   const context = {
-    ...require("../src/renderer/modules/terminal/commandSuggestionState.js"),
-    ...require("../src/renderer/modules/terminal/commandSuggestionCursor.js"),
+    ...require("../src/renderer/features/terminal/model/commandSuggestionState.js"),
+    ...require("../src/renderer/features/terminal/model/commandSuggestionCursor.js"),
     getCharacterMetricsCss: () => null,
     useWindowEvent: () => {},
     processCache: {},
@@ -217,13 +220,16 @@ async function run() {
   );
 
   const listSource = fs.readFileSync(
-    path.join(root, "src/renderer/components/VirtualizedConnectionList.jsx"),
+    path.join(
+      root,
+      "src/renderer/features/connections/VirtualizedConnectionList.jsx",
+    ),
     "utf8",
   );
   assert.doesNotMatch(listSource, /setExpandedGroups/);
   assert.match(listSource, /const expandedGroups = useMemo/);
   const managerSource = fs.readFileSync(
-    path.join(root, "src/renderer/components/ConnectionManager.jsx"),
+    path.join(root, "src/renderer/features/connections/ConnectionManager.jsx"),
     "utf8",
   );
   const toggleSource = managerSource.slice(

@@ -7,10 +7,10 @@ const read = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
 const store = read(
-  "src/renderer/modules/terminal/controller/terminalSessionStore.js",
+  "src/renderer/features/terminal/runtime/terminalSessionStore.js",
 );
 const lifecycle = read(
-  "src/renderer/components/web-terminal/useTerminalLifecycle.js",
+  "src/renderer/features/terminal/hooks/useTerminalLifecycle.js",
 );
 const app = require("./lib/renderer-sources.js").collectAppSources();
 

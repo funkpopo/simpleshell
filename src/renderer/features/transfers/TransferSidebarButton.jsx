@@ -1,0 +1,165 @@
+import React, { memo, useMemo, forwardRef } from "react";
+import PropTypes from "prop-types";
+import { Badge, Box, IconButton, CircularProgress } from "@mui/material";
+import SidebarTooltip from "../../shared/ui/SidebarTooltip.jsx";
+import { useTheme } from "@mui/material/styles";
+import SwapVert from "@mui/icons-material/SwapVert";
+import { useTranslation } from "react-i18next";
+import { useAllGlobalTransfers } from "./state/globalTransferStore.js";
+import { sumTransferFileCount } from "./lib/transferCounts.js";
+import { sidebarRailButtonSx } from "../../shared/ui/sidebarItemStyles";
+
+/**
+ * 传输侧边栏按钮 - 带环形进度条
+ */
+const TransferSidebarButton = memo(
+  forwardRef(
+    (
+      { isOpen, onClick, tooltipPlacement = "top", resumableCount = 0 },
+      ref,
+    ) => {
+      const theme = useTheme();
+      const { t } = useTranslation();
+      const { allTransfers } = useAllGlobalTransfers();
+
+      // 计算总进度
+      const { totalProgress, hasActiveTransfers, activeCount } = useMemo(() => {
+        if (!allTransfers || allTransfers.length === 0) {
+          return {
+            totalProgress: 0,
+            hasActiveTransfers: false,
+            activeCount: 0,
+          };
+        }
+
+        const activeTransfers = allTransfers.filter(
+          (t) => t.progress < 100 && !t.isCancelled && !t.error,
+        );
+
+        if (activeTransfers.length === 0) {
+          return {
+            totalProgress: 0,
+            hasActiveTransfers: false,
+            activeCount: 0,
+          };
+        }
+
+        const total = activeTransfers.reduce(
+          (sum, t) => sum + (t.progress || 0),
+          0,
+        );
+        const avg = total / activeTransfers.length;
+
+        return {
+          totalProgress: avg,
+          hasActiveTransfers: true,
+          activeCount: sumTransferFileCount(activeTransfers),
+        };
+      }, [allTransfers]);
+
+      const showProgressRing = hasActiveTransfers && !isOpen;
+
+      return (
+        <Badge badgeContent={resumableCount} color="warning" max={99}>
+          <SidebarTooltip
+            title={t("fileManager.transfer.panelTitle")}
+            placement={tooltipPlacement}
+          >
+            <Box
+              ref={ref}
+              sx={{
+                position: "relative",
+                width: 40,
+                height: 40,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {/* 环形进度条背景 */}
+              {showProgressRing && (
+                <CircularProgress
+                  variant="determinate"
+                  value={100}
+                  size={38}
+                  thickness={3}
+                  sx={{
+                    position: "absolute",
+                    color: theme.palette.action.disabledBackground,
+                  }}
+                />
+              )}
+              {/* 环形进度条 */}
+              {showProgressRing && (
+                <CircularProgress
+                  variant="determinate"
+                  value={totalProgress}
+                  size={38}
+                  thickness={3}
+                  sx={{
+                    position: "absolute",
+                    color: theme.palette.primary.main,
+                    "& .MuiCircularProgress-circle": {
+                      strokeLinecap: "round",
+                    },
+                  }}
+                />
+              )}
+              {/* 按钮 */}
+              <IconButton
+                onClick={onClick}
+                size="small"
+                aria-label={t("fileManager.transfer.panelTitle")}
+                sx={{
+                  width: 32,
+                  height: 32,
+                  ...sidebarRailButtonSx(theme, isOpen),
+                }}
+              >
+                <SwapVert
+                  sx={{
+                    fontSize: 20,
+                  }}
+                />
+              </IconButton>
+              {/* 活跃传输数量徽章 */}
+              {activeCount > 0 && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    right: 0,
+                    minWidth: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    bgcolor: theme.palette.primary.main,
+                    color: theme.palette.primary.contrastText,
+                    fontSize: 10,
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    px: 0.5,
+                  }}
+                >
+                  {activeCount}
+                </Box>
+              )}
+            </Box>
+          </SidebarTooltip>
+        </Badge>
+      );
+    },
+  ),
+);
+
+TransferSidebarButton.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClick: PropTypes.func.isRequired,
+  tooltipPlacement: PropTypes.string,
+  resumableCount: PropTypes.number,
+};
+
+TransferSidebarButton.displayName = "TransferSidebarButton";
+
+export default TransferSidebarButton;

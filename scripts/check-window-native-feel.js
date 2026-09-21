@@ -52,7 +52,9 @@ const settingsHandlersSource = readSource(
   "src/main/ipc/handlers/settingsHandlers.js",
 );
 const configServiceSource = readSource("src/main/settings/configService.js");
-const settingsSource = readSource("src/renderer/components/Settings.jsx");
+const settingsSource = readSource(
+  "src/renderer/features/settings/Settings.jsx",
+);
 const globalCssSource = readSource("src/renderer/styles/global.css");
 const fileManagerSource =
   require("./lib/renderer-sources.js").collectFileManagerSources();
@@ -66,12 +68,12 @@ const nativeSftpClientSource = readSource(
 const ipcTraceSource = readSource("src/main/ipc/ipcTrace.js");
 const preloadSource = readSource("src/preload/index.js");
 const commandSuggestionSource = readSource(
-  "src/renderer/components/CommandSuggestion.jsx",
+  "src/renderer/features/terminal/CommandSuggestion.jsx",
 );
 const connectionManagerSource = readSource(
-  "src/renderer/components/ConnectionManager.jsx",
+  "src/renderer/features/connections/ConnectionManager.jsx",
 );
-const customTabSource = readSource("src/renderer/components/CustomTab.jsx");
+const customTabSource = readSource("src/renderer/app/components/CustomTab.jsx");
 
 function testStartupAndWindowLifecycle() {
   assertContains(
@@ -427,27 +429,27 @@ function testReducedMotionIsGlobal() {
 function testDragAndDropUsesNativeValidatedLocalPaths() {
   const dragDropSource =
     require("./lib/renderer-sources.js").readRendererCallback(
-      "src/renderer/components/filemanager/hooks/useDragDrop.js",
+      "src/renderer/features/file-manager/hooks/useDragDrop.js",
       "handleDrop",
     );
   const dragUploadSource =
     require("./lib/renderer-sources.js").readRendererCallback(
-      "src/renderer/components/filemanager/hooks/useTransferTasks.js",
+      "src/renderer/features/file-manager/hooks/useTransferTasks.js",
       "handleDroppedItems",
     );
   const uploadTransferSource =
     require("./lib/renderer-sources.js").readRendererCallback(
-      "src/renderer/components/filemanager/hooks/useTransferTasks.js",
+      "src/renderer/features/file-manager/hooks/useTransferTasks.js",
       "runUploadTransfer",
     );
   const downloadSource =
     require("./lib/renderer-sources.js").readRendererCallback(
-      "src/renderer/components/filemanager/hooks/useTransferTasks.js",
+      "src/renderer/features/file-manager/hooks/useTransferTasks.js",
       "handleDownload",
     );
   const downloadFolderSource =
     require("./lib/renderer-sources.js").readRendererCallback(
-      "src/renderer/components/filemanager/hooks/useTransferTasks.js",
+      "src/renderer/features/file-manager/hooks/useTransferTasks.js",
       "handleDownloadFolder",
     );
 
@@ -953,7 +955,7 @@ function testNativeListAndScrollConventions() {
   );
 
   assertNotContains(
-    readSource("src/renderer/components/filemanager/panels/FileList.jsx"),
+    readSource("src/renderer/features/file-manager/panels/FileList.jsx"),
     /cursor:\s*"pointer"/,
     "File list rows must keep the native list-row cursor.",
   );

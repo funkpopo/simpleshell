@@ -41,6 +41,18 @@ function checkImport(filename, specifier) {
       return;
     }
     const targetOwner = path.relative(sourceRoot, target).split(path.sep)[0];
+    const sourceParts = relative.split(path.sep);
+    const targetParts = path.relative(sourceRoot, target).split(path.sep);
+    if (
+      sourceParts[0] === "renderer" &&
+      sourceParts[1] === "shared" &&
+      targetParts[0] === "renderer" &&
+      ["app", "features"].includes(targetParts[1])
+    ) {
+      failures.push(
+        `${relative}: renderer/shared cannot depend on application or feature implementations`,
+      );
+    }
     if (!allowed[owner].has(targetOwner)) {
       failures.push(
         `${relative}: ${owner} cannot import ${targetOwner} (${specifier})`,

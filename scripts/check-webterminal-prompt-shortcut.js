@@ -4,13 +4,16 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..");
 
 const { isLikelyPromptLine, isPromptReadyFromTerminal } = require(
-  path.join(ROOT, "src/renderer/modules/terminal/promptDetection.js"),
+  path.join(ROOT, "src/renderer/features/terminal/model/promptDetection.js"),
 );
 const {
   isSystemShortcutRecoveryKey,
   shouldArmSystemShortcutRecovery,
 } = require(
-  path.join(ROOT, "src/renderer/modules/terminal/systemShortcutRecovery.js"),
+  path.join(
+    ROOT,
+    "src/renderer/features/terminal/model/systemShortcutRecovery.js",
+  ),
 );
 
 function createMockTerm({

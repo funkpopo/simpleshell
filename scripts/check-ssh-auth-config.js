@@ -555,7 +555,7 @@ async function checkRendererAuthHandoff() {
   const source = fs.readFileSync(
     require("node:path").join(
       __dirname,
-      "../src/renderer/components/app/hooks/useSSHAuthentication.js",
+      "../src/renderer/app/hooks/useSSHAuthentication.js",
     ),
     "utf8",
   );
@@ -628,7 +628,7 @@ async function run() {
   await checkRendererAuthHandoff();
   const load = require("./lib/load-renderer-module")();
   const { areWebTerminalPropsEqual } = load(
-    "src/renderer/components/web-terminal/terminalHelpers.js",
+    "src/renderer/features/terminal/lib/terminalHelpers.js",
   );
   const props = {
     tabId: "tab-a",

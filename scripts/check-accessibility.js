@@ -7,7 +7,7 @@ const ROOT = path.resolve(__dirname, "..");
 const SRC_DIR = path.join(ROOT, "src");
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx"]);
 const ALLOWED_NATIVE_DIALOG_FILES = new Set([
-  path.normalize(path.join("src/renderer/components/AccessibleDialog.jsx")),
+  path.normalize(path.join("src/renderer/shared/ui/AccessibleDialog.jsx")),
 ]);
 
 const readSourceFiles = (dir, output = []) => {

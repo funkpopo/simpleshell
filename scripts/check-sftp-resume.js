@@ -85,6 +85,18 @@ async function main() {
         async () => {
           let killed = false;
           let context;
+          const kill = () => {
+            if (killed) return;
+            killed = true;
+            for (const entry of context.pool.runningTasks.values())
+              entry.child?.kill();
+          };
+          if (direction === "upload") {
+            server.control.writeDelay = 5;
+            server.control.afterWrite = ({ offset, length }) => {
+              if (offset + length >= 256 * 1024) kill();
+            };
+          }
           const localPath =
             direction === "upload"
               ? source
@@ -97,15 +109,18 @@ async function main() {
             remotePath,
             algorithm: "sha256",
             onProgress: (bytes) => {
-              if (!killed && bytes >= 256 * 1024 && bytes < data.length) {
-                killed = true;
-                for (const entry of context.pool.runningTasks.values())
-                  entry.child?.kill();
-              }
+              if (
+                direction === "download" &&
+                bytes >= 256 * 1024 &&
+                bytes < data.length
+              )
+                kill();
             },
           });
           const logStart = runtime.logs.length;
           const result = await context.runner.run();
+          server.control.afterWrite = null;
+          server.control.writeDelay = 0;
           assert.ok(killed && result.verified);
           const retry = runtime.logs
             .slice(logStart)

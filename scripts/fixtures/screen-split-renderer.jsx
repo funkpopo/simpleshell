@@ -12,24 +12,24 @@ import {
   AppProvider,
   useAppState,
   useAppDispatch,
-} from "../../src/renderer/store/AppContext.jsx";
-import { actions } from "../../src/renderer/store/appReducer.js";
+} from "../../src/renderer/app/state/AppContext.jsx";
+import { actions } from "../../src/renderer/app/state/appReducer.js";
 import {
   getLiveSessionKeys,
   getSessionDescriptor,
-} from "../../src/renderer/modules/terminal/paneLayout.js";
-import TerminalWorkspace from "../../src/renderer/components/terminal-pane/TerminalWorkspace.jsx";
-import WebTerminal from "../../src/renderer/components/WebTerminal.jsx";
+} from "../../src/renderer/features/terminal/model/paneLayout.js";
+import TerminalWorkspace from "../../src/renderer/features/terminal/components/TerminalWorkspace.jsx";
+import WebTerminal from "../../src/renderer/features/terminal/WebTerminal.jsx";
 import {
   terminalCache,
   processCache,
   disposeTerminalSession,
   getTerminalSessionDiagnostics,
-} from "../../src/renderer/modules/terminal/controller/terminalSessionStore.js";
-import { dispatchCommandToGroup } from "../../src/renderer/modules/terminal/syncGroupCommandDispatcher.js";
-import { useAllGlobalTransfers } from "../../src/renderer/store/globalTransferStore.js";
-import useDragResize from "../../src/renderer/hooks/useDragResize.js";
-import { getWorkingDirectoryState } from "../../src/renderer/modules/terminal/workingDirectoryStore.js";
+} from "../../src/renderer/features/terminal/runtime/terminalSessionStore.js";
+import { dispatchCommandToGroup } from "../../src/renderer/features/terminal/model/syncGroupCommandDispatcher.js";
+import { useAllGlobalTransfers } from "../../src/renderer/features/transfers/state/globalTransferStore.js";
+import useDragResize from "../../src/renderer/shared/hooks/useDragResize.js";
+import { getWorkingDirectoryState } from "../../src/renderer/features/terminal/model/workingDirectoryStore.js";
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);

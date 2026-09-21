@@ -1,0 +1,538 @@
+import { useSyncExternalStore, useMemo, useCallback } from "react";
+import { generateId } from "../../../../shared/common";
+
+/**
+ * 全局传输状态管理
+ * 用于管理所有SFTP传输任务的状态，支持底部栏显示和浮动窗口查看
+ */
+
+// 全局传输状态，按tabId组织
+const transferState = new Map();
+const sftpStates = new Map();
+// 传输历史记录（保留已完成的传输）
+const transferHistory = [];
+// 历史记录最大数量
+const MAX_HISTORY_SIZE = 100;
+// 监听器集合
+const listeners = new Set();
+// 历史记录监听器
+const historyListeners = new Set();
+// 自动移除定时器
+const autoRemovalTimers = new Map();
+// 空传输列表常量
+const EMPTY_TRANSFER_LIST = Object.freeze([]);
+// 快照缓存
+const snapshotCache = new Map();
+// 历史记录快照缓存
+let historySnapshotCache = null;
+
+const generateTransferId = () => generateId("transfer");
+
+const generateHistoryId = () => generateId("history");
+
+// 当硬件加速开启时，把高频的 progress 通知合并到每个动画帧一次，
+// 避免 SFTP worker 的进度事件直接淹没 React 渲染队列；关闭时回退到同步。
+let notifyScheduled = false;
+const isHardwareAccelerationEnabled = () => {
+  if (typeof window === "undefined") return true;
+  return window.__hardwareAccelerationEnabled !== false;
+};
+
+// 同步派发所有 listener
+const flushNotify = () => {
+  notifyScheduled = false;
+  for (const listener of listeners) {
+    try {
+      listener();
+    } catch (error) {
+      console.error("globalTransferStore: listener execution failed", error);
+    }
+  }
+};
+
+const notify = () => {
+  if (!isHardwareAccelerationEnabled()) {
+    flushNotify();
+    return;
+  }
+  if (notifyScheduled) return;
+  notifyScheduled = true;
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(flushNotify);
+  } else {
+    setTimeout(flushNotify, 16);
+  }
+};
+
+const notifyHistory = () => {
+  historySnapshotCache = null;
+  for (const listener of historyListeners) {
+    try {
+      listener();
+    } catch (error) {
+      console.error(
+        "globalTransferStore: history listener execution failed",
+        error,
+      );
+    }
+  }
+};
+
+// 添加到历史记录
+const addToHistory = (transfer) => {
+  const historyEntry = {
+    ...transfer,
+    historyId: transfer.historyId || generateHistoryId(),
+    completedTime: Date.now(),
+  };
+  transferHistory.unshift(historyEntry);
+  // 限制历史记录数量
+  if (transferHistory.length > MAX_HISTORY_SIZE) {
+    transferHistory.pop();
+  }
+  notifyHistory();
+};
+
+// 删除单条历史记录
+const removeHistoryAt = (index) => {
+  if (typeof index !== "number") return;
+  if (index < 0 || index >= transferHistory.length) return;
+  transferHistory.splice(index, 1);
+  notifyHistory();
+};
+
+// 删除单条历史记录（优先按 historyId）
+const removeHistoryById = (historyId) => {
+  if (!historyId) return;
+  const idx = transferHistory.findIndex((h) => h.historyId === historyId);
+  if (idx === -1) return;
+  transferHistory.splice(idx, 1);
+  notifyHistory();
+};
+
+const getTransfersInternal = (tabId) => {
+  if (!tabId) return EMPTY_TRANSFER_LIST;
+  return transferState.get(tabId) ?? EMPTY_TRANSFER_LIST;
+};
+
+const getAllTransfersInternal = () => {
+  const allTransfers = [];
+  for (const [tabId, transfers] of transferState.entries()) {
+    allTransfers.push(
+      ...transfers.map((t) => ({
+        ...t,
+        tabId,
+      })),
+    );
+  }
+  return allTransfers;
+};
+
+const setTransfersInternal = (tabId, transfers) => {
+  if (!tabId) return;
+
+  if (!transfers || transfers.length === 0) {
+    transferState.delete(tabId);
+  } else {
+    transferState.set(tabId, transfers);
+  }
+  notify();
+};
+
+const clearAutoRemovalTimer = (transferId) => {
+  const timerRef = autoRemovalTimers.get(transferId);
+  if (timerRef) {
+    clearTimeout(timerRef.timer);
+    autoRemovalTimers.delete(transferId);
+  }
+};
+
+const scheduleAutoRemoval = (tabId, transferId, delayMs = 1000) => {
+  clearAutoRemovalTimer(transferId);
+
+  const timer = setTimeout(
+    () => {
+      autoRemovalTimers.delete(transferId);
+      removeTransfer(tabId, transferId);
+    },
+    Math.max(0, delayMs),
+  );
+
+  autoRemovalTimers.set(transferId, { timer, tabId });
+};
+
+const addTransfer = (tabId, transferData) => {
+  if (!tabId) return null;
+
+  const transferId = transferData.transferId || generateTransferId();
+  const transfers = getTransfersInternal(tabId);
+
+  const newTransfer = {
+    transferId,
+    ...transferData,
+    startTime: transferData.startTime || Date.now(),
+  };
+
+  setTransfersInternal(tabId, [...transfers, newTransfer]);
+  return transferId;
+};
+
+const updateTransfer = (tabId, transferId, updateData = {}) => {
+  if (!tabId) return;
+
+  const transfers = getTransfersInternal(tabId);
+  if (transfers.length === 0) return;
+
+  const { autoRemoveDelay, ...rest } = updateData || {};
+
+  const next = transfers.map((transfer) =>
+    transfer.transferId === transferId
+      ? {
+          ...transfer,
+          ...rest,
+          ...sftpStates.get(rest.transferKey || transfer.transferKey),
+        }
+      : transfer,
+  );
+
+  setTransfersInternal(tabId, next);
+
+  if (typeof autoRemoveDelay === "number") {
+    scheduleAutoRemoval(tabId, transferId, autoRemoveDelay);
+  } else if (rest && rest.isCancelled) {
+    scheduleAutoRemoval(tabId, transferId, 1000);
+  }
+};
+
+const removeTransfer = (tabId, transferId, skipHistory = false) => {
+  if (!tabId) return;
+
+  clearAutoRemovalTimer(transferId);
+
+  const transfers = getTransfersInternal(tabId);
+  if (transfers.length === 0) return;
+
+  // 找到要移除的传输并添加到历史记录
+  if (!skipHistory) {
+    const transferToRemove = transfers.find((t) => t.transferId === transferId);
+    if (transferToRemove) {
+      addToHistory({ ...transferToRemove, tabId });
+    }
+  }
+
+  const next = transfers.filter(
+    (transfer) => transfer.transferId !== transferId,
+  );
+  setTransfersInternal(tabId, next);
+};
+
+const clearCompletedTransfers = (tabId) => {
+  if (!tabId) return;
+
+  const transfers = getTransfersInternal(tabId);
+  if (transfers.length === 0) return;
+
+  const remaining = transfers.filter((transfer) => {
+    const isDone =
+      transfer.progress >= 100 || transfer.isCancelled || transfer.error;
+    if (isDone) {
+      clearAutoRemovalTimer(transfer.transferId);
+      // 添加到历史记录
+      addToHistory({ ...transfer, tabId });
+    }
+    return !isDone;
+  });
+
+  setTransfersInternal(tabId, remaining);
+};
+
+const clearAllTransfers = (tabId) => {
+  if (!tabId) return;
+
+  const transfers = getTransfersInternal(tabId);
+  if (transfers.length === 0) return;
+
+  for (const transfer of transfers) {
+    clearAutoRemovalTimer(transfer.transferId);
+  }
+
+  transferState.delete(tabId);
+  notify();
+};
+
+const scheduleTransferCleanup = (tabId, transferId, delayMs) => {
+  if (!tabId) return;
+  scheduleAutoRemoval(tabId, transferId, delayMs);
+};
+
+const subscribe = (listener) => {
+  listeners.add(listener);
+
+  return () => {
+    listeners.delete(listener);
+  };
+};
+
+/**
+ * 取消传输并把状态标记为「已取消」。
+ * TransferSidebar 与 GlobalTransferFloat 的取消按钮共用；
+ * GlobalTransferFloat 额外把进度重置为 0（resetProgress）。
+ */
+export const cancelTransferWithNotice = (
+  tabId,
+  transfer,
+  cancelledText,
+  { resetProgress = false } = {},
+) => {
+  if (!tabId || !transfer?.transferKey || !window.terminalAPI?.cancelTransfer) {
+    return;
+  }
+
+  const markCancelled = () => {
+    updateTransfer(tabId, transfer.transferId, {
+      ...(resetProgress ? { progress: 0 } : {}),
+      isCancelled: true,
+      statusText: cancelledText,
+      cancelMessage: cancelledText,
+    });
+  };
+
+  window.terminalAPI
+    .cancelTransfer(tabId, transfer.transferKey)
+    .then((result) => {
+      if (result.success) {
+        markCancelled();
+      }
+    })
+    .catch(() => {
+      markCancelled();
+    });
+};
+
+/**
+ * 清除所有标签页的已完成传输。
+ * TransferSidebar 与 GlobalTransferBar 的「清除已完成」按钮共用。
+ */
+export const clearCompletedTransfersForAllTabs = () => {
+  for (const tabId of [...transferState.keys()]) {
+    clearCompletedTransfers(tabId);
+  }
+};
+
+// 用于深比较两个传输对象是否相等
+const isTransferEqual = (a, b) => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  // 比较关键字段
+  return (
+    a.transferId === b.transferId &&
+    a.status === b.status &&
+    a.verified === b.verified &&
+    a.algorithm === b.algorithm &&
+    a.integrity === b.integrity &&
+    a.resumeIds === b.resumeIds &&
+    a.progress === b.progress &&
+    a.fileName === b.fileName &&
+    a.statusText === b.statusText &&
+    a.transferredBytes === b.transferredBytes &&
+    a.totalBytes === b.totalBytes &&
+    a.transferSpeed === b.transferSpeed &&
+    a.remainingTime === b.remainingTime &&
+    a.currentFileIndex === b.currentFileIndex &&
+    a.processedFiles === b.processedFiles &&
+    a.totalFiles === b.totalFiles &&
+    a.currentFile === b.currentFile &&
+    a.isCancelled === b.isCancelled &&
+    a.error === b.error &&
+    a.warning === b.warning &&
+    a.isCompleted === b.isCompleted &&
+    a.tabId === b.tabId
+  );
+};
+
+export const applySftpTransferState = (payload) => {
+  const { tabId, transferKey } = payload;
+  if (!tabId || !transferKey) return;
+  const state = {
+    status: payload.status,
+    algorithm: payload.algorithm,
+    verified: payload.verified,
+    integrity: payload.integrity,
+    resumeIds: payload.resumeIds,
+    errorKind: payload.errorKind,
+    retryable: payload.retryable,
+    progress:
+      payload.status === "completed" ? 100 : Math.min(99.9, payload.progress),
+    transferredBytes: payload.transferredBytes,
+    totalBytes: payload.totalBytes,
+    transferSpeed: payload.transferSpeed,
+    ...(payload.error ? { error: payload.error } : {}),
+    ...(payload.status === "paused" ? { isCancelled: true } : {}),
+  };
+  sftpStates.set(transferKey, state);
+  const existing = getTransfersInternal(tabId).find(
+    (item) => item.transferKey === transferKey,
+  );
+  if (existing) updateTransfer(tabId, existing.transferId, state);
+  else if (transferKey.includes("-resume-")) {
+    addTransfer(tabId, { ...payload, ...state, transferId: transferKey });
+  }
+  if (sftpStates.size > 500) {
+    for (const [key, value] of sftpStates) {
+      if (["completed", "error", "paused"].includes(value.status))
+        sftpStates.delete(key);
+      if (sftpStates.size <= 400) break;
+    }
+  }
+};
+
+// 用于比较两个传输列表是否相等
+const areTransfersEqual = (a, b) => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!isTransferEqual(a[i], b[i])) return false;
+  }
+  return true;
+};
+
+const getSnapshot = (tabId) => {
+  const key = tabId || "__all__";
+
+  if (tabId) {
+    const transfers = getTransfersInternal(tabId);
+    // 检查是否有变化（使用浅比较）
+    const cached = snapshotCache.get(key);
+    if (cached && areTransfersEqual(cached, transfers)) {
+      return cached;
+    }
+    snapshotCache.set(key, transfers);
+    return transfers;
+  }
+
+  const allTransfers = getAllTransfersInternal();
+  const cached = snapshotCache.get(key);
+  // 使用浅比较检查是否有变化
+  if (cached && areTransfersEqual(cached, allTransfers)) {
+    return cached;
+  }
+  snapshotCache.set(key, allTransfers);
+  return allTransfers;
+};
+
+/**
+ * React Hook - 获取特定tabId的传输列表
+ */
+export const useGlobalTransfers = (tabId) => {
+  const subscribeToStore = useCallback((listener) => subscribe(listener), []);
+
+  const getCurrentSnapshot = useCallback(() => getSnapshot(tabId), [tabId]);
+
+  const transferList = useSyncExternalStore(
+    subscribeToStore,
+    getCurrentSnapshot,
+    getCurrentSnapshot,
+  );
+
+  return { transferList, ...useTransferActions(tabId) };
+};
+
+/** Stable task commands without a progress subscription. */
+export const useTransferActions = (tabId) => {
+  const helpers = useMemo(() => {
+    return {
+      addTransferProgress: (transferData) => addTransfer(tabId, transferData),
+      updateTransferProgress: (transferId, updateData) =>
+        updateTransfer(tabId, transferId, updateData),
+      removeTransferProgress: (transferId) => removeTransfer(tabId, transferId),
+      clearCompletedTransfers: () => clearCompletedTransfers(tabId),
+      clearAllTransfers: () => clearAllTransfers(tabId),
+      scheduleTransferCleanup: (transferId, delayMs) =>
+        scheduleTransferCleanup(tabId, transferId, delayMs),
+    };
+  }, [tabId]);
+
+  const getTransferList = useCallback(() => getSnapshot(tabId), [tabId]);
+  return { ...helpers, getTransferList };
+};
+
+/**
+ * React Hook - 获取所有传输任务（用于全局底部栏）
+ */
+export const useAllGlobalTransfers = () => {
+  const subscribeToStore = useCallback((listener) => subscribe(listener), []);
+
+  const getCurrentSnapshot = useCallback(() => getSnapshot(null), []);
+
+  const allTransfers = useSyncExternalStore(
+    subscribeToStore,
+    getCurrentSnapshot,
+    getCurrentSnapshot,
+  );
+
+  const helpers = useMemo(() => {
+    return {
+      addTransferProgress: (tabId, transferData) =>
+        addTransfer(tabId, transferData),
+      updateTransferProgress: (tabId, transferId, updateData) =>
+        updateTransfer(tabId, transferId, updateData),
+      removeTransferProgress: (tabId, transferId) =>
+        removeTransfer(tabId, transferId),
+      clearCompletedTransfers: (tabId) => clearCompletedTransfers(tabId),
+      clearAllTransfers: (tabId) => clearAllTransfers(tabId),
+      scheduleTransferCleanup: (tabId, transferId, delayMs) =>
+        scheduleTransferCleanup(tabId, transferId, delayMs),
+    };
+  }, []);
+
+  return {
+    allTransfers,
+    ...helpers,
+  };
+};
+
+/**
+ * React Hook - 获取传输历史记录
+ */
+export const useTransferHistory = () => {
+  const subscribeToHistory = useCallback((listener) => {
+    historyListeners.add(listener);
+    return () => {
+      historyListeners.delete(listener);
+    };
+  }, []);
+
+  const getHistorySnapshot = useCallback(() => {
+    if (historySnapshotCache === null) {
+      historySnapshotCache = [...transferHistory];
+    }
+    return historySnapshotCache;
+  }, []);
+
+  const history = useSyncExternalStore(
+    subscribeToHistory,
+    getHistorySnapshot,
+    getHistorySnapshot,
+  );
+
+  const clearHistory = useCallback(() => {
+    transferHistory.length = 0;
+    notifyHistory();
+  }, []);
+
+  const removeHistoryItemAt = useCallback((index) => {
+    removeHistoryAt(index);
+  }, []);
+
+  const removeHistoryItemById = useCallback((historyId) => {
+    removeHistoryById(historyId);
+  }, []);
+
+  return {
+    history,
+    clearHistory,
+    removeHistoryItemAt,
+    removeHistoryItemById,
+  };
+};
