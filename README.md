@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.4.24-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platform">
 </p>
@@ -116,7 +116,7 @@ For Serial/Mosh, SSH agent forwarding, and native SFTP manual verification, see 
 
 ### **Prerequisites**
 
-- Node.js 22+ and npm
+- Node.js 22.22.2+ (22 LTS) or 24.15.0+ and npm
 - Git
 - Python (for node-gyp compilation)
 - Build tools for your platform:
@@ -240,8 +240,8 @@ simpleshell/
 ### **Core Technologies**
 
 - **[Electron](https://www.electronjs.org/)** 40.4.1 - Cross-platform desktop framework
-- **[React](https://react.dev/)** 19.2.4 - UI library (React 19)
-- **[Material UI](https://mui.com/)** 7.3.9 - Component library
+- **[React](https://react.dev/)** 19.2.8 - UI library (React 19)
+- **[Material UI](https://mui.com/)** 9.2.0 - Component library
 - **Electron Forge + Webpack** + **ESLint/Prettier** - Build and code quality toolchain
 - JavaScript/JSX + Babel toolchain (no TypeScript build in this repo)
 
@@ -262,7 +262,6 @@ simpleshell/
 - **CodeMirror 6** (`@codemirror/*`, `@uiw/react-codemirror`) - Syntax highlighting and editors
 - **highlight.js** - Additional code highlighting
 - **react-markdown** + `remark-gfm` - Markdown rendering
-- **react-syntax-highlighter** - Fallback code highlighting for rendered markdown/code
 - **react-pdf** - PDF preview
 - **DND kit** (`@dnd-kit/*`) - Drag-and-drop interactions
 

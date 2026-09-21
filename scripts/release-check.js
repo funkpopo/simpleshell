@@ -21,12 +21,7 @@ const windowManagerPath = path.join(
   "windowManager.js",
 );
 const indexHtmlPath = path.join(projectRoot, "src", "index.html");
-const releaseWorkflowPath = path.join(
-  projectRoot,
-  ".github",
-  "workflows",
-  "release.yml",
-);
+const releaseGuidePath = path.join(projectRoot, "docs", "RELEASING.md");
 const logoIcoPath = path.join(projectRoot, "src", "assets", "logo.ico");
 const logoPngPath = path.join(projectRoot, "src", "assets", "SimpleShell.png");
 
@@ -123,7 +118,9 @@ function main() {
   requireText(mainPath, "app.setName(PRODUCT_NAME)");
   requireText(windowManagerPath, 'title: "SimpleShell"');
   requireText(indexHtmlPath, "<title>SimpleShell</title>");
-  requireText(releaseWorkflowPath, "name: SimpleShell ${{ github.ref_name }}");
+  requireText(releaseGuidePath, "npm run release:check");
+  requireText(releaseGuidePath, "npm run make");
+  requireText(releaseGuidePath, "npm run release:checksums");
   requireText(forgeConfigPath, "win32metadata");
   requireText(forgeConfigPath, "osxSign");
   requireText(forgeConfigPath, "osxNotarize");

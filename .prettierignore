@@ -1,0 +1,17 @@
+node_modules/
+.webpack/
+.webpack_cache/
+.cache/
+out/
+dist/
+coverage/
+native-services/**/target/
+native-services/bin/
+config.json
+config-backups/
+diagnostics/
+log/
+temp/
+installer/
+package-lock.json
+src/assets/countries-110m.json

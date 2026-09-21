@@ -11,7 +11,10 @@ import {
   LinearProgress,
   Chip,
 } from "@mui/material";
-import { Close, Minimize, ExpandMore, SwapVert } from "@mui/icons-material";
+import Close from "@mui/icons-material/Close";
+import Minimize from "@mui/icons-material/Minimize";
+import ExpandMore from "@mui/icons-material/ExpandMore";
+import SwapVert from "@mui/icons-material/SwapVert";
 import { useTheme, alpha } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import {

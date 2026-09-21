@@ -3,7 +3,7 @@ import PropTypes from "prop-types";
 import { Badge, Box, IconButton, CircularProgress } from "@mui/material";
 import SidebarTooltip from "./SidebarTooltip.jsx";
 import { useTheme } from "@mui/material/styles";
-import { SwapVert } from "@mui/icons-material";
+import SwapVert from "@mui/icons-material/SwapVert";
 import { useTranslation } from "react-i18next";
 import { useAllGlobalTransfers } from "../store/globalTransferStore.js";
 import { sumTransferFileCount } from "../utils/transferCounts.js";

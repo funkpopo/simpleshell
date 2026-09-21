@@ -19,13 +19,11 @@ import {
   IconButton,
   Tooltip,
 } from "@mui/material";
-import {
-  Computer as ComputerIcon,
-  Folder as FolderIcon,
-  FolderOpen as FolderOpenIcon,
-  ExpandMore as ExpandMoreIcon,
-  DragIndicator as DragIndicatorIcon,
-} from "@mui/icons-material";
+import ComputerIcon from "@mui/icons-material/Computer";
+import FolderIcon from "@mui/icons-material/Folder";
+import FolderOpenIcon from "@mui/icons-material/FolderOpen";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import { useTranslation } from "react-i18next";
 import { sidebarListItemSx } from "./sidebarItemStyles";
 

@@ -53,6 +53,18 @@ module.exports = [
     },
     rules: {
       ...reactPlugin.configs.recommended.rules,
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@mui/icons-material",
+              message:
+                "Import individual icons by subpath so tests and builds do not load the entire icon catalogue.",
+            },
+          ],
+        },
+      ],
       "no-control-regex": "off",
       "no-unused-vars": [
         "error",

@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/版本-0.4.24-blue" alt="版本">
+  <img src="https://img.shields.io/badge/版本-0.5.1-blue" alt="版本">
   <img src="https://img.shields.io/badge/许可证-Apache%202.0-green" alt="许可证">
   <img src="https://img.shields.io/badge/平台-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="平台">
 </p>
@@ -114,7 +114,7 @@ curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/main/scripts/i
 
 ### **前提条件**
 
-- Node.js 22+ 和 npm
+- Node.js 22.22.2+ (22 LTS) or 24.15.0+ 和 npm
 - Git
 - Python（用于 node-gyp 编译）
 - 平台构建工具：
@@ -238,8 +238,8 @@ simpleshell/
 ### **核心技术**
 
 - **[Electron](https://www.electronjs.org/)** 40.4.1 - 跨平台桌面框架
-- **[React](https://react.dev/)** 19.2.4 - UI 库（React 19）
-- **[Material UI](https://mui.com/)** 7.3.9 - 组件库
+- **[React](https://react.dev/)** 19.2.8 - UI 库（React 19）
+- **[Material UI](https://mui.com/)** 9.2.0 - 组件库
 - **Electron Forge + Webpack** + **ESLint/Prettier** - 构建与代码质量工具链
 - JavaScript/JSX + Babel 工具链（此仓库未使用 TypeScript 构建）
 
@@ -260,7 +260,6 @@ simpleshell/
 - **CodeMirror 6**（`@codemirror/*`、`@uiw/react-codemirror`）- 语法高亮与编辑器
 - **highlight.js** - 额外的代码高亮
 - **react-markdown** + `remark-gfm` - Markdown 渲染
-- **react-syntax-highlighter** - 渲染内容的代码高亮兜底
 - **react-pdf** - PDF 预览
 - **DND kit**（`@dnd-kit/*`）- 拖放交互
 

@@ -18,13 +18,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { formatBytes } from "../shared/common";
 import { useNotification } from "../contexts/NotificationContext";
-import {
-  Download as DownloadIcon,
-  Update as UpdateIcon,
-  Check as CheckIcon,
-  Cancel as CancelIcon,
-  Schedule as ScheduleIcon,
-} from "@mui/icons-material";
+import DownloadIcon from "@mui/icons-material/Download";
+import UpdateIcon from "@mui/icons-material/Update";
+import CheckIcon from "@mui/icons-material/Check";
+import CancelIcon from "@mui/icons-material/Cancel";
+import ScheduleIcon from "@mui/icons-material/Schedule";
 
 const updatePanelSx = {
   mt: 1,
