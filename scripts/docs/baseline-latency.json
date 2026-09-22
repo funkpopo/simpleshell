@@ -1,0 +1,48 @@
+{
+  "platform": "win32",
+  "timestamp": "2026-09-22T03:20:29.430Z",
+  "results": [
+    {
+      "connections": 1,
+      "busy": false,
+      "measured": 1,
+      "medianProbeMs": 2,
+      "medianCompletionMs": 39
+    },
+    {
+      "connections": 1,
+      "busy": true,
+      "measured": 1,
+      "medianProbeMs": 21,
+      "medianCompletionMs": 7054
+    },
+    {
+      "connections": 4,
+      "busy": false,
+      "measured": 4,
+      "medianProbeMs": 1,
+      "medianCompletionMs": 7037
+    },
+    {
+      "connections": 4,
+      "busy": true,
+      "measured": 4,
+      "medianProbeMs": 1,
+      "medianCompletionMs": 7034
+    },
+    {
+      "connections": 20,
+      "busy": false,
+      "measured": 16,
+      "medianProbeMs": 1,
+      "medianCompletionMs": 21049
+    },
+    {
+      "connections": 20,
+      "busy": true,
+      "measured": 16,
+      "medianProbeMs": 1,
+      "medianCompletionMs": 21050
+    }
+  ]
+}

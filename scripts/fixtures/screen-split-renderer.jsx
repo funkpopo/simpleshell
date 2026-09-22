@@ -378,7 +378,7 @@ async function run() {
   const stats = await ipcRenderer.invoke("fixture-stats");
   assert(
     stats.uploads === 1 && stats.downloads === 1 && stats.reconnects === 1,
-    "SSH transfer/reconnect acceptance incomplete",
+    `SSH transfer/reconnect acceptance incomplete: ${JSON.stringify(stats)}`,
   );
   assert(
     mounts.C === 1 && !unmounts.C,

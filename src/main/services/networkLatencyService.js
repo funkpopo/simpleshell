@@ -7,6 +7,10 @@ const latencyText = (key, params = {}) =>
   translateLocale(key, { lng: getUiLanguage(configService), ...params });
 const net = require("node:net");
 const proxyManager = require("../proxy/proxy-manager");
+const { nativeLatencyClient } = require("../native/nativeLatencyClient");
+const {
+  resolveNativeSidecarNetworkPath,
+} = require("../native/nativeSidecarNetworkPath");
 const {
   computeNetworkQuality,
   getCheckIntervalForQuality,
@@ -99,6 +103,10 @@ class NetworkLatencyService extends EventEmitter {
     this.activeCheckCount = 0;
     this.serviceGeneration += 1;
 
+    // 服务停止：关闭原生探测子进程并清理所有关联请求
+    nativeLatencyClient.cancelSession(null);
+    nativeLatencyClient.close();
+
     // 清除延迟数据
     this.latencyData.clear();
 
@@ -154,6 +162,7 @@ class NetworkLatencyService extends EventEmitter {
       lastError: null,
       checkPromise: null,
       nextCheckAt: nowMs(),
+      proxyRevision: 1,
       quality: null,
       previousQualityLevel: null,
       previousQualityLevelAt: null,
@@ -220,7 +229,26 @@ class NetworkLatencyService extends EventEmitter {
     if (hadConnection) {
       logToFile(`Unregistered connection status: ${tabId}`, "INFO");
     }
+    // 连接注销：取消原生侧关联请求并移除会话快照
+    nativeLatencyClient.cancelSession(tabId);
     this.emit("latency:disconnected", { tabId });
+  }
+
+  /** 连接替换或代理变更时更新会话代理快照，新探测使用新 revision；取消旧 revision 的待执行探测 */
+  updateConnectionProxy(tabId, proxyConfig) {
+    const data = this.latencyData.get(tabId);
+    if (!data || data.protocol === "mosh") {
+      return false;
+    }
+    data.proxyConfig = proxyConfig || null;
+    data.proxyRevision = (data.proxyRevision || 0) + 1;
+    // 代理变更：取消关联的待执行探测（旧 revision 的迟到结果由代次检查丢弃）
+    nativeLatencyClient.updateSessionProxy(tabId, {
+      proxyRevision: data.proxyRevision,
+      proxy: null,
+      proxyRequired: false,
+    });
+    return true;
   }
 
   /**
@@ -345,6 +373,8 @@ class NetworkLatencyService extends EventEmitter {
             host: currentData.host,
             port: currentData.port,
             proxyConfig: currentData.proxyConfig,
+            sessionId: tabId,
+            proxyRevision: currentData.proxyRevision,
           },
         );
         const latency = Number.isFinite(measuredLatency)
@@ -408,6 +438,12 @@ class NetworkLatencyService extends EventEmitter {
           return null;
         }
 
+        // busy：原生探测超额，交回 JS 重新调度，不计为网络质量失败
+        if (error?.errorKind === "busy") {
+          currentData.busyReschedule = true;
+          return null;
+        }
+
         currentData.latency = null;
         currentData.errors++;
         currentData.checkCount++;
@@ -441,10 +477,15 @@ class NetworkLatencyService extends EventEmitter {
         if (this.serviceGeneration === checkGeneration) {
           if (this.latencyData.get(tabId) === currentData) {
             currentData.checkPromise = null;
-            const qualityLevel =
-              currentData.quality?.level || NETWORK_QUALITY_LEVELS.GOOD;
-            const adaptiveInterval = getCheckIntervalForQuality(qualityLevel);
-            currentData.nextCheckAt = nowMs() + adaptiveInterval;
+            if (currentData.busyReschedule) {
+              currentData.busyReschedule = false;
+              currentData.nextCheckAt = nowMs() + this.schedulerIntervalMs;
+            } else {
+              const qualityLevel =
+                currentData.quality?.level || NETWORK_QUALITY_LEVELS.GOOD;
+              const adaptiveInterval = getCheckIntervalForQuality(qualityLevel);
+              currentData.nextCheckAt = nowMs() + adaptiveInterval;
+            }
           }
 
           this.activeCheckCount = Math.max(0, this.activeCheckCount - 1);
@@ -461,12 +502,27 @@ class NetworkLatencyService extends EventEmitter {
 
   /**
    * 测量 SSH 连接的网络延迟（TCP 建连 RTT，与 ICMP ping 同量级）。
+   * 优先由原生 latency-serve 执行 TCP/代理隧道探测；宿主不可用或普通网络
+   * 失败时回退 SSH exec。取消、注销、服务停止、过时代次不触发回退。
    * @param {object} sshConnection SSH连接实例
    * @returns {Promise<number>} 延迟时间(毫秒)
    */
-  async measureLatency(sshConnection, { host, port, proxyConfig } = {}) {
-    // 优先使用 TCP connect 测量（可通过代理建隧道）
+  async measureLatency(
+    sshConnection,
+    { host, port, proxyConfig, sessionId, proxyRevision } = {},
+  ) {
     if (host && port) {
+      const nativeLatency = await this._measureLatencyNative({
+        host,
+        port,
+        proxyConfig,
+        sessionId,
+        proxyRevision,
+      });
+      if (nativeLatency !== null) {
+        return nativeLatency;
+      }
+      // 宿主不可用或普通网络探测失败：回退 JS TCP，再回退 SSH exec
       try {
         const resolvedProxy = await proxyManager.resolveProxyConfigAsync({
           host,
@@ -487,9 +543,52 @@ class NetworkLatencyService extends EventEmitter {
         // 回退到 SSH exec（例如代理握手失败、DNS/路由异常等）
       }
     }
-
-    // 回退：使用SSH连接执行简单的echo命令来测量延迟（兼容旧逻辑）
     return await this._measureLatencyViaSshExec(sshConnection);
+  }
+
+  /**
+   * 原生探测执行：复用已解析的会话网络路径。
+   * 返回 null 表示允许回退（宿主不可用、busy 或普通网络失败）；
+   * 取消与过时代次直接抛出，不回退。
+   */
+  async _measureLatencyNative({
+    host,
+    port,
+    proxyConfig,
+    sessionId,
+    proxyRevision,
+  }) {
+    try {
+      const resolved = await resolveNativeSidecarNetworkPath(
+        { proxy: proxyConfig || null },
+        { proxyManager, strictProxy: true },
+      );
+      const result = await nativeLatencyClient.probe({
+        sessionId: sessionId || `tcp:${host}:${port}`,
+        generation: this.serviceGeneration,
+        host,
+        port,
+        timeoutMs: 5000,
+        proxyRevision: proxyRevision || 0,
+        proxy: resolved.proxy,
+        proxyRequired: resolved.proxyRequired,
+      });
+      if (!Number.isFinite(result.latencyMs)) {
+        return null;
+      }
+      return result.latencyMs;
+    } catch (error) {
+      // 取消、连接注销、服务停止以及过时代次不触发回退
+      if (error?.errorKind === "cancelled") {
+        throw error;
+      }
+      // busy 交回 JS 重新调度，不计为网络质量失败
+      if (error?.errorKind === "busy") {
+        throw error;
+      }
+      // 宿主不可用或普通网络失败：回退
+      return null;
+    }
   }
 
   /**

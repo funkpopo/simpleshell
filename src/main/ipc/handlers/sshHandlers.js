@@ -896,6 +896,35 @@ class SSHHandlers {
       emitOutput(text, { trackBackpressure: false });
     };
 
+    // ZMODEM native 后端：sidecar 透传字节回到同一解码/输出缓冲管线（P3.5），
+    // 并经独立 "zmodem" 暂停原因接入统一流控（P3.6）
+    const appendRawZmodemBytes = (rawChunk) => {
+      buffer = Buffer.concat([buffer, rawChunk]);
+      this._setProcessBufferedBytes(processId, bufferedBytesTotal());
+      scheduleFlush();
+    };
+    const setZmodemPaused = (paused) => {
+      if (!this.terminalIOMailboxManager) {
+        return;
+      }
+      try {
+        if (paused) {
+          this.terminalIOMailboxManager.pause(processId, "zmodem");
+        } else {
+          this.terminalIOMailboxManager.resume(processId, "zmodem");
+        }
+      } catch (error) {
+        logToFile(
+          `ZMODEM backpressure update failed: ${error.message}`,
+          "WARN",
+        );
+      }
+    };
+
+    // sidecar 未决字节（输入队列 + writeRemote 队列）计入缓冲统计
+    const bufferedBytesTotal = () =>
+      buffer.length + (zmodemTransferService.getHeldBytes?.(processId) || 0);
+
     // ZMODEM 检测上下文：原始字节先经 zmodemTransferService 过滤，
     // 会话活跃时协议字节被拦截，仅透传非 ZMODEM 字节
     const feedZmodem = (chunk) =>
@@ -904,6 +933,8 @@ class SSHHandlers {
         tabId: sshConfig.tabId,
         sshConfig,
         emitTerminalText: emitZmodemTerminalText,
+        onRawOutput: appendRawZmodemBytes,
+        onBackpressure: setZmodemPaused,
       });
 
     const emitDroppedBytesWarning = () => {
@@ -947,7 +978,7 @@ class SSHHandlers {
         emitDroppedBytesWarning();
 
         if (!output && !flushDecoderRemainder) {
-          this._setProcessBufferedBytes(processId, buffer.length);
+          this._setProcessBufferedBytes(processId, bufferedBytesTotal());
           return;
         }
 
@@ -961,7 +992,7 @@ class SSHHandlers {
           "ERROR",
         );
       } finally {
-        this._setProcessBufferedBytes(processId, buffer.length);
+        this._setProcessBufferedBytes(processId, bufferedBytesTotal());
       }
     };
 
@@ -982,7 +1013,7 @@ class SSHHandlers {
         );
         if (!chunk || !chunk.length) {
           // ZMODEM 会话拦截了全部字节，无终端输出
-          this._setProcessBufferedBytes(processId, buffer.length);
+          this._setProcessBufferedBytes(processId, bufferedBytesTotal());
           return;
         }
         const totalLength = buffer.length + chunk.length;
@@ -1014,7 +1045,7 @@ class SSHHandlers {
 
         if (chunk.length === 0) {
           scheduleFlush();
-          this._setProcessBufferedBytes(processId, buffer.length);
+          this._setProcessBufferedBytes(processId, bufferedBytesTotal());
           return;
         }
 
@@ -1032,7 +1063,7 @@ class SSHHandlers {
           scheduleFlush();
         }
 
-        this._setProcessBufferedBytes(processId, buffer.length);
+        this._setProcessBufferedBytes(processId, bufferedBytesTotal());
       } catch (error) {
         logToFile(`Error handling stream data: ${error.message}`, "ERROR");
         buffer = Buffer.alloc(0); // 错误时清理缓冲区

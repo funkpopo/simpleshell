@@ -1,3 +1,7 @@
+use crate::shared::network::{
+    connect_tcp, connect_via_proxy, direct_network_path, safe_proxy_config, NetworkPath,
+    ProxyConfig,
+};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
 use futures_util::StreamExt;
@@ -15,7 +19,6 @@ use std::cmp::min;
 use std::env;
 use std::fs;
 use std::io::Write;
-use std::net::IpAddr;
 use std::panic;
 use std::path::{Path, PathBuf};
 use std::process;
@@ -24,7 +27,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::fs::OpenOptions as TokioOpenOptions;
 use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tokio::time::timeout;
 
 type SshHandle = Handle<ExpectedServerKey>;
 const SIDECAR_SCHEMA_VERSION: u32 = 1;
@@ -90,6 +92,56 @@ mod transfer_tests {
         );
         assert!(!classify_error("checksum source changed while reading").retryable);
     }
+
+    #[test]
+    fn checksum_file_args_parse_and_validate() {
+        let args = [
+            "--path".to_string(),
+            "/tmp/file".to_string(),
+            "--algorithm".to_string(),
+            "sha256".to_string(),
+            "--offset".to_string(),
+            "10".to_string(),
+            "--length".to_string(),
+            "20".to_string(),
+        ];
+        let parsed = parse_checksum_file_args(args.into_iter()).unwrap();
+        assert_eq!(parsed.path, "/tmp/file");
+        assert_eq!(parsed.algorithm, "sha256");
+        assert_eq!(parsed.offset, Some(10));
+        assert_eq!(parsed.length, Some(20));
+
+        assert!(parse_checksum_file_args(Vec::new().into_iter()).is_err());
+        assert!(parse_checksum_file_args(
+            [
+                "--path".to_string(),
+                "/tmp/f".to_string(),
+                "--algorithm".to_string(),
+                "sha1".to_string()
+            ]
+            .into_iter()
+        )
+        .is_ok());
+        assert!(parse_checksum_file_args(
+            [
+                "--path".to_string(),
+                "/tmp/f".to_string(),
+                "--offset".to_string(),
+                "-1".to_string()
+            ]
+            .into_iter()
+        )
+        .is_err());
+        assert!(parse_checksum_file_args(
+            [
+                "--path".to_string(),
+                "/tmp/f".to_string(),
+                "--unknown".to_string()
+            ]
+            .into_iter()
+        )
+        .is_err());
+    }
 }
 
 #[derive(Serialize)]
@@ -144,35 +196,6 @@ struct SshConnectionConfig {
     proxy: Option<ProxyConfig>,
     proxy_required: Option<bool>,
     network_path: Option<NetworkPath>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ProxyConfig {
-    r#type: String,
-    host: String,
-    port: u16,
-    username: Option<String>,
-    password: Option<String>,
-    source: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SafeProxyConfig {
-    r#type: String,
-    host: String,
-    port: u16,
-    source: Option<String>,
-    has_auth: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct NetworkPath {
-    mode: String,
-    proxy_required: bool,
-    proxy: Option<SafeProxyConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -804,31 +827,6 @@ pub async fn run_sftp_watch() -> Result<(), String> {
     Ok(())
 }
 
-fn safe_proxy_config(proxy: &ProxyConfig) -> SafeProxyConfig {
-    SafeProxyConfig {
-        r#type: proxy.r#type.trim().to_ascii_lowercase(),
-        host: proxy.host.clone(),
-        port: proxy.port,
-        source: proxy.source.clone(),
-        has_auth: proxy
-            .username
-            .as_deref()
-            .is_some_and(|value| !value.is_empty())
-            || proxy
-                .password
-                .as_deref()
-                .is_some_and(|value| !value.is_empty()),
-    }
-}
-
-fn direct_network_path(proxy_required: bool) -> NetworkPath {
-    NetworkPath {
-        mode: "direct".to_string(),
-        proxy_required,
-        proxy: None,
-    }
-}
-
 fn resolve_network_path(config: &SshConnectionConfig) -> NetworkPath {
     if let Some(proxy) = config.proxy.as_ref() {
         return NetworkPath {
@@ -859,292 +857,6 @@ async fn open_ssh_transport(config: &SshConnectionConfig) -> Result<TcpStream, S
     }
 
     connect_tcp(&config.host, target_port, "SSH target").await
-}
-
-const PROXY_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
-const HTTP_PROXY_HEADER_LIMIT: usize = 64 * 1024;
-
-async fn connect_tcp(host: &str, port: u16, label: &str) -> Result<TcpStream, String> {
-    let stream = timeout(PROXY_HANDSHAKE_TIMEOUT, TcpStream::connect((host, port)))
-        .await
-        .map_err(|_| format!("{label} TCP connect timed out"))?
-        .map_err(|error| format!("{label} TCP connect failed: {error}"))?;
-    let _ = stream.set_nodelay(true);
-    Ok(stream)
-}
-
-async fn connect_via_proxy(
-    proxy: &ProxyConfig,
-    target_host: &str,
-    target_port: u16,
-) -> Result<TcpStream, String> {
-    match proxy.r#type.trim().to_ascii_lowercase().as_str() {
-        "http" | "https" => connect_via_http_proxy(proxy, target_host, target_port).await,
-        "socks5" => connect_via_socks5_proxy(proxy, target_host, target_port).await,
-        "socks4" => connect_via_socks4_proxy(proxy, target_host, target_port).await,
-        other => Err(format!("unsupported proxy type for native SFTP: {other}")),
-    }
-}
-
-async fn write_all_proxy(socket: &mut TcpStream, bytes: &[u8], label: &str) -> Result<(), String> {
-    timeout(PROXY_HANDSHAKE_TIMEOUT, socket.write_all(bytes))
-        .await
-        .map_err(|_| format!("proxy handshake timed out while writing {label}"))?
-        .map_err(|error| format!("proxy handshake failed while writing {label}: {error}"))
-}
-
-async fn read_exact_proxy(
-    socket: &mut TcpStream,
-    bytes: &mut [u8],
-    label: &str,
-) -> Result<(), String> {
-    timeout(PROXY_HANDSHAKE_TIMEOUT, socket.read_exact(bytes))
-        .await
-        .map_err(|_| format!("proxy handshake timed out while reading {label}"))?
-        .map_err(|error| format!("proxy handshake failed while reading {label}: {error}"))?;
-    Ok(())
-}
-
-fn host_port_for_connect(host: &str, port: u16) -> String {
-    if host.parse::<IpAddr>().is_ok() && host.contains(':') {
-        format!("[{host}]:{port}")
-    } else {
-        format!("{host}:{port}")
-    }
-}
-
-async fn read_http_proxy_header(socket: &mut TcpStream) -> Result<Vec<u8>, String> {
-    let mut header = Vec::with_capacity(256);
-    let mut byte = [0u8; 1];
-
-    loop {
-        read_exact_proxy(socket, &mut byte, "HTTP proxy CONNECT response").await?;
-        header.push(byte[0]);
-
-        if header.ends_with(b"\r\n\r\n") {
-            return Ok(header);
-        }
-
-        if header.len() > HTTP_PROXY_HEADER_LIMIT {
-            return Err("proxy HTTP CONNECT response header is too large".to_string());
-        }
-    }
-}
-
-async fn connect_via_http_proxy(
-    proxy: &ProxyConfig,
-    target_host: &str,
-    target_port: u16,
-) -> Result<TcpStream, String> {
-    let mut socket = connect_tcp(&proxy.host, proxy.port, "HTTP proxy").await?;
-    let target = host_port_for_connect(target_host, target_port);
-    let mut headers = vec![
-        format!("CONNECT {target} HTTP/1.1"),
-        format!("Host: {target}"),
-        "Proxy-Connection: Keep-Alive".to_string(),
-        "Connection: Keep-Alive".to_string(),
-    ];
-
-    if let Some(username) = proxy.username.as_deref().filter(|value| !value.is_empty()) {
-        let token = BASE64_STANDARD.encode(format!(
-            "{}:{}",
-            username,
-            proxy.password.as_deref().unwrap_or("")
-        ));
-        headers.push(format!("Proxy-Authorization: Basic {token}"));
-    }
-
-    let request = format!("{}\r\n\r\n", headers.join("\r\n"));
-    write_all_proxy(
-        &mut socket,
-        request.as_bytes(),
-        "HTTP proxy CONNECT request",
-    )
-    .await?;
-
-    let header = read_http_proxy_header(&mut socket).await?;
-    let header_text = String::from_utf8_lossy(&header);
-    let status_line = header_text.lines().next().unwrap_or("").trim();
-    let status_code = status_line
-        .split_whitespace()
-        .nth(1)
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(0);
-
-    if status_code != 200 {
-        if status_code == 407 {
-            return Err(format!(
-                "proxy HTTP CONNECT authentication required: {status_line}"
-            ));
-        }
-        return Err(format!("proxy HTTP CONNECT failed: {status_line}"));
-    }
-
-    Ok(socket)
-}
-
-async fn connect_via_socks5_proxy(
-    proxy: &ProxyConfig,
-    target_host: &str,
-    target_port: u16,
-) -> Result<TcpStream, String> {
-    let mut socket = connect_tcp(&proxy.host, proxy.port, "SOCKS5 proxy").await?;
-    let has_auth = proxy
-        .username
-        .as_deref()
-        .is_some_and(|value| !value.is_empty());
-    let greeting: Vec<u8> = if has_auth {
-        vec![0x05, 0x02, 0x02, 0x00]
-    } else {
-        vec![0x05, 0x01, 0x00]
-    };
-    write_all_proxy(&mut socket, &greeting, "SOCKS5 greeting").await?;
-
-    let mut method_response = [0u8; 2];
-    read_exact_proxy(&mut socket, &mut method_response, "SOCKS5 method response").await?;
-    if method_response[0] != 0x05 {
-        return Err("proxy SOCKS5 returned an invalid method response".to_string());
-    }
-    match method_response[1] {
-        0x00 => {}
-        0x02 => {
-            let username = proxy.username.as_deref().unwrap_or("");
-            let password = proxy.password.as_deref().unwrap_or("");
-            let username_bytes = username.as_bytes();
-            let password_bytes = password.as_bytes();
-            if username_bytes.len() > u8::MAX as usize || password_bytes.len() > u8::MAX as usize {
-                return Err("proxy SOCKS5 username/password is too long".to_string());
-            }
-
-            let mut auth = Vec::with_capacity(3 + username_bytes.len() + password_bytes.len());
-            auth.push(0x01);
-            auth.push(username_bytes.len() as u8);
-            auth.extend_from_slice(username_bytes);
-            auth.push(password_bytes.len() as u8);
-            auth.extend_from_slice(password_bytes);
-            write_all_proxy(&mut socket, &auth, "SOCKS5 authentication").await?;
-
-            let mut auth_response = [0u8; 2];
-            read_exact_proxy(
-                &mut socket,
-                &mut auth_response,
-                "SOCKS5 authentication response",
-            )
-            .await?;
-            if auth_response != [0x01, 0x00] {
-                return Err("proxy SOCKS5 authentication failed".to_string());
-            }
-        }
-        0xff => return Err("proxy SOCKS5 has no acceptable authentication method".to_string()),
-        method => {
-            return Err(format!(
-                "proxy SOCKS5 selected unsupported authentication method 0x{method:02x}"
-            ))
-        }
-    }
-
-    let mut request = vec![0x05, 0x01, 0x00];
-    match target_host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(ip)) => {
-            request.push(0x01);
-            request.extend_from_slice(&ip.octets());
-        }
-        Ok(IpAddr::V6(ip)) => {
-            request.push(0x04);
-            request.extend_from_slice(&ip.octets());
-        }
-        Err(_) => {
-            let host_bytes = target_host.as_bytes();
-            if host_bytes.len() > u8::MAX as usize {
-                return Err("proxy SOCKS5 target host is too long".to_string());
-            }
-            request.push(0x03);
-            request.push(host_bytes.len() as u8);
-            request.extend_from_slice(host_bytes);
-        }
-    }
-    request.extend_from_slice(&target_port.to_be_bytes());
-    write_all_proxy(&mut socket, &request, "SOCKS5 CONNECT request").await?;
-
-    let mut response_head = [0u8; 4];
-    read_exact_proxy(&mut socket, &mut response_head, "SOCKS5 CONNECT response").await?;
-    if response_head[0] != 0x05 {
-        return Err("proxy SOCKS5 returned an invalid CONNECT response".to_string());
-    }
-    if response_head[1] != 0x00 {
-        return Err(format!(
-            "proxy SOCKS5 CONNECT failed with reply 0x{:02x}",
-            response_head[1]
-        ));
-    }
-
-    match response_head[3] {
-        0x01 => {
-            let mut rest = [0u8; 6];
-            read_exact_proxy(&mut socket, &mut rest, "SOCKS5 IPv4 bind address").await?;
-        }
-        0x04 => {
-            let mut rest = [0u8; 18];
-            read_exact_proxy(&mut socket, &mut rest, "SOCKS5 IPv6 bind address").await?;
-        }
-        0x03 => {
-            let mut len = [0u8; 1];
-            read_exact_proxy(&mut socket, &mut len, "SOCKS5 domain bind length").await?;
-            let mut rest = vec![0u8; len[0] as usize + 2];
-            read_exact_proxy(&mut socket, &mut rest, "SOCKS5 domain bind address").await?;
-        }
-        atyp => return Err(format!("proxy SOCKS5 returned invalid ATYP 0x{atyp:02x}")),
-    }
-
-    Ok(socket)
-}
-
-async fn connect_via_socks4_proxy(
-    proxy: &ProxyConfig,
-    target_host: &str,
-    target_port: u16,
-) -> Result<TcpStream, String> {
-    let mut socket = connect_tcp(&proxy.host, proxy.port, "SOCKS4 proxy").await?;
-    let user_id = proxy.username.as_deref().unwrap_or("").as_bytes();
-    if user_id.contains(&0) {
-        return Err("proxy SOCKS4 username contains a NUL byte".to_string());
-    }
-
-    let mut request = vec![0x04, 0x01];
-    request.extend_from_slice(&target_port.to_be_bytes());
-    match target_host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(ip)) => {
-            request.extend_from_slice(&ip.octets());
-            request.extend_from_slice(user_id);
-            request.push(0x00);
-        }
-        _ => {
-            let host_bytes = target_host.as_bytes();
-            if host_bytes.contains(&0) {
-                return Err("proxy SOCKS4 target host contains a NUL byte".to_string());
-            }
-            request.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
-            request.extend_from_slice(user_id);
-            request.push(0x00);
-            request.extend_from_slice(host_bytes);
-            request.push(0x00);
-        }
-    }
-
-    write_all_proxy(&mut socket, &request, "SOCKS4 CONNECT request").await?;
-    let mut response = [0u8; 8];
-    read_exact_proxy(&mut socket, &mut response, "SOCKS4 CONNECT response").await?;
-    if response[0] != 0x00 && response[0] != 0x04 {
-        return Err("proxy SOCKS4 returned an invalid response".to_string());
-    }
-    if response[1] != 0x5a {
-        return Err(format!(
-            "proxy SOCKS4 CONNECT failed with code 0x{:02x}",
-            response[1]
-        ));
-    }
-
-    Ok(socket)
 }
 
 async fn connect_sftp(
@@ -2254,6 +1966,199 @@ async fn checksum_remote_file(
         return Err("checksum source changed while reading".to_string());
     }
     Ok(digest)
+}
+
+// ------------------------- 本地校验和一次性命令 -------------------------
+// checksum-file --path <absolute-path> --algorithm <md5|sha256> [--offset <bytes>] [--length <bytes>]
+// stdout 恰好输出一行 JSON；成功退出码 0，业务/参数错误退出码非 0 且仍输出结构化失败。
+
+struct ChecksumFileInvocation {
+    path: String,
+    algorithm: String,
+    offset: Option<u64>,
+    length: Option<u64>,
+}
+
+fn parse_checksum_file_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<ChecksumFileInvocation, String> {
+    let mut path: Option<String> = None;
+    let mut algorithm: Option<String> = None;
+    let mut offset: Option<u64> = None;
+    let mut length: Option<u64> = None;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--path" => {
+                path = Some(args.next().ok_or("--path requires a value")?);
+            }
+            "--algorithm" => {
+                algorithm = Some(args.next().ok_or("--algorithm requires a value")?);
+            }
+            "--offset" => {
+                let value = args
+                    .next()
+                    .ok_or("--offset requires a value")?
+                    .parse::<u64>()
+                    .map_err(|error| format!("invalid --offset: {error}"))?;
+                offset = Some(value);
+            }
+            "--length" => {
+                let value = args
+                    .next()
+                    .ok_or("--length requires a value")?
+                    .parse::<u64>()
+                    .map_err(|error| format!("invalid --length: {error}"))?;
+                length = Some(value);
+            }
+            other => return Err(format!("unsupported checksum-file argument: {other}")),
+        }
+    }
+
+    Ok(ChecksumFileInvocation {
+        path: path.ok_or("--path is required")?,
+        algorithm: algorithm.ok_or("--algorithm is required")?,
+        offset,
+        length,
+    })
+}
+
+fn emit_checksum_file_error(message: &str, error_code: &str, error_kind: &str, retryable: bool) {
+    let _ = emit_stdout_line(
+        serde_json::to_string(&json!({
+            "schemaVersion": SIDECAR_SCHEMA_VERSION,
+            "success": false,
+            "error": message,
+            "errorCode": error_code,
+            "errorKind": error_kind,
+            "retryable": retryable,
+            "sidecarVersion": env!("CARGO_PKG_VERSION"),
+            "timestamp": current_timestamp_ms(),
+        }))
+        .unwrap_or_else(|_| "{}".to_string()),
+    );
+    process::exit(1);
+}
+
+/// 计算本地文件的校验和；错误以 (message, errorCode, errorKind) 返回。
+async fn compute_local_checksum(
+    invocation: &ChecksumFileInvocation,
+) -> Result<serde_json::Value, (String, &'static str, &'static str)> {
+    if invocation.algorithm != "md5" && invocation.algorithm != "sha256" {
+        return Err((
+            format!("unsupported checksum algorithm: {}", invocation.algorithm),
+            "CHECKSUM_UNSUPPORTED_ALGORITHM",
+            "unsupported",
+        ));
+    }
+
+    let before = tokio::fs::metadata(&invocation.path)
+        .await
+        .map_err(|error| {
+            (
+                format!("checksum source open failed: {error}"),
+                "CHECKSUM_SOURCE_UNAVAILABLE",
+                "io",
+            )
+        })?;
+    if !before.is_file() {
+        return Err((
+            "checksum requires a regular file".to_string(),
+            "CHECKSUM_INVALID_REQUEST",
+            "validation",
+        ));
+    }
+
+    // 区间校验：offset <= size 且 length <= size - offset，不默默截断越界请求。
+    let (offset, length) =
+        resolve_transfer_window(before.len(), invocation.offset, invocation.length)
+            .map_err(|message| (message, "CHECKSUM_INVALID_REQUEST", "validation"))?;
+
+    let mut file = tokio::fs::File::open(&invocation.path)
+        .await
+        .map_err(|error| {
+            (
+                format!("checksum source open failed: {error}"),
+                "CHECKSUM_SOURCE_UNAVAILABLE",
+                "io",
+            )
+        })?;
+    file.seek(std::io::SeekFrom::Start(offset))
+        .await
+        .map_err(|error| {
+            (
+                format!("checksum seek failed: {error}"),
+                "CHECKSUM_READ_FAILED",
+                "io",
+            )
+        })?;
+
+    let mut reader = file.take(length);
+    let digest = match invocation.algorithm.as_str() {
+        "md5" => hash_reader::<_, Md5>(&mut reader).await,
+        "sha256" => hash_reader::<_, Sha256>(&mut reader).await,
+        _ => unreachable!(),
+    }
+    .map_err(|message| (message, "CHECKSUM_READ_FAILED", "io"))?;
+
+    if reader.limit() != 0 {
+        return Err((
+            "checksum source truncated while reading".to_string(),
+            "CHECKSUM_SOURCE_TRUNCATED",
+            "io",
+        ));
+    }
+
+    let after = tokio::fs::metadata(&invocation.path)
+        .await
+        .map_err(|error| {
+            (
+                format!("checksum source open failed: {error}"),
+                "CHECKSUM_SOURCE_UNAVAILABLE",
+                "io",
+            )
+        })?;
+    let before_mtime = before.modified().ok();
+    let after_mtime = after.modified().ok();
+    if before.len() != after.len() || before_mtime != after_mtime {
+        return Err((
+            "checksum source changed while reading".to_string(),
+            "CHECKSUM_SOURCE_CHANGED",
+            "source-changed",
+        ));
+    }
+
+    Ok(json!({
+        "schemaVersion": SIDECAR_SCHEMA_VERSION,
+        "success": true,
+        "algorithm": invocation.algorithm,
+        "digest": digest,
+        "bytesHashed": length,
+    }))
+}
+
+pub async fn run_checksum_file(args: impl Iterator<Item = String>) -> Result<(), String> {
+    let invocation = match parse_checksum_file_args(args) {
+        Ok(value) => value,
+        Err(error) => {
+            emit_checksum_file_error(&error, "CHECKSUM_INVALID_REQUEST", "validation", false);
+            unreachable!();
+        }
+    };
+
+    match compute_local_checksum(&invocation).await {
+        Ok(value) => {
+            emit_stdout_line(
+                serde_json::to_string(&value)
+                    .map_err(|error| format!("failed to serialize checksum result: {error}"))?,
+            )?;
+            Ok(())
+        }
+        Err((message, error_code, error_kind)) => {
+            emit_checksum_file_error(&message, error_code, error_kind, false);
+            unreachable!();
+        }
+    }
 }
 
 async fn create_file(sftp: &Sftp, remote_path: &str) -> Result<(), String> {

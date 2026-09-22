@@ -69,7 +69,8 @@
     "typescript": "5.9.3",
     "vite": "^8.3.0",
     "vitest": "^5.0.1",
-    "webpack": "5.103.0"
+    "webpack": "5.103.0",
+    "zmodem2": "1.4.0"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "6.0.3",
@@ -131,8 +132,7 @@
     "ssh2": "1.17.0",
     "systeminformation": "5.33.1",
     "telnet-client": "2.2.14",
-    "uuid": "8.3.2",
-    "zmodem2": "1.4.0"
+    "uuid": "8.3.2"
   },
   "allowScripts": {
     "@serialport/bindings-cpp@13.0.0": true

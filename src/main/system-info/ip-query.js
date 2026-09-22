@@ -467,7 +467,7 @@ function fetchIpInfo(provider, ip, logger, proxyConfig = null) {
   });
 }
 
-async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
+async function queryIpAddressLegacy(ip = "", logger = null, proxyConfig = null) {
   try {
     // Input validation and private/special detection when an IP is provided
     if (ip && ip.trim()) {
@@ -593,6 +593,105 @@ async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// native 后端（Phase 4 P4.1–P4.5）：供应商竞速与缓存迁移到 sidecar，
+// JS 保留外部接口、私有/保留 IP 前置校验与本地化消息。
+// 后端选择：SIMPLESHELL_IPQUERY_BACKEND=js → 保留的 JS 实现（legacy）。
+// ---------------------------------------------------------------------------
+
+const IPQUERY_BACKEND = (() => {
+  const env = process.env.SIMPLESHELL_IPQUERY_BACKEND;
+  return env === "js" ? "js" : "native";
+})();
+
+let nativeIpQueryClient = null;
+const getNativeClient = () => {
+  if (!nativeIpQueryClient) {
+    const { nativeIpQueryClient: shared } = require("../native/nativeIpQueryClient");
+    nativeIpQueryClient = shared;
+    // 配置过的密钥经 stdin 下发（sidecar 内不落盘不记录）
+    const initialKeys = {};
+    if (KEY_API_PROVIDERS.ip2location?.key) {
+      initialKeys.ip2location = KEY_API_PROVIDERS.ip2location.key;
+    }
+    if (Object.keys(initialKeys).length) {
+      nativeIpQueryClient.updateKeys(initialKeys);
+    }
+  }
+  return nativeIpQueryClient;
+};
+
+/**
+ * native 查询路径：缓存/竞速/代理在 sidecar 内；结果结构与 JS 完全一致
+ * （`{ ret: "ok", data }` 或 `{ ret: "failed", msg }`）。
+ * sidecar 不可用或查询失败时回退到保留的 JS 实现（IP 查询非关键路径，
+ * 两条路径语义一致；失败不伪装成功，由 legacy 路径给出本地化错误）。
+ */
+async function queryIpAddressNative(ip = "", logger = null, proxyConfig = null) {
+  if (ip && ip.trim()) {
+    const ver = ipUtils.isIP(ip.trim());
+    if (ver === 0) {
+      return { ret: "failed", msg: ipQueryText("mainProcess.ipQuery.invalidIp") };
+    }
+    if (ipUtils.isPrivateOrSpecial(ip.trim())) {
+      return { ret: "failed", msg: ipQueryText("mainProcess.ipQuery.privateOrReserved") };
+    }
+  }
+
+  try {
+    const client = getNativeClient();
+    // 记录代理配置使用情况（不含密钥与完整 URL）
+    if (proxyConfig && proxyConfig.host && proxyConfig.port) {
+      if (typeof logger === "function") {
+        logger(
+          `Using proxy for IP query: ${proxyConfig.type} ${proxyConfig.host}:${proxyConfig.port}`,
+          "INFO",
+        );
+      }
+    }
+    if (ip && ip.trim() && typeof logger === "function") {
+      logger(`Querying IP address: ${ip.trim()}`, "INFO");
+    } else if (!ip.trim() && typeof logger === "function") {
+      logger("Querying own IP...", "INFO");
+    }
+
+    const message = await client.query(ip.trim(), proxyConfig);
+    const result = message.result;
+    if (result && result.ret === "ok") {
+      if (typeof logger === "function") {
+        logger(
+          message.cached
+            ? `IP query cache hit: ${message.provider || "cache"}`
+            : `IP query ok via ${message.provider || "network"}`,
+          "INFO",
+        );
+      }
+      return result;
+    }
+    if (typeof logger === "function") {
+      logger(`IP query failed: ${result?.msg || "unknown"}`, "WARN");
+    }
+    return { ret: "failed", msg: ipQueryText("mainProcess.ipQuery.allProvidersFailed") };
+  } catch (error) {
+    // sidecar 不可用/超时/退出：回退到保留的 JS 实现
+    if (typeof logger === "function") {
+      logger(
+        `IP query native path failed (${error.message}); falling back to JS providers`,
+        "WARN",
+      );
+    }
+    return queryIpAddressLegacy(ip, logger, proxyConfig);
+  }
+}
+
+async function queryIpAddress(ip = "", logger = null, proxyConfig = null) {
+  if (IPQUERY_BACKEND === "js") {
+    return queryIpAddressLegacy(ip, logger, proxyConfig);
+  }
+  return queryIpAddressNative(ip, logger, proxyConfig);
+}
+
 module.exports = {
   queryIpAddress,
+  queryIpAddressLegacy,
 };

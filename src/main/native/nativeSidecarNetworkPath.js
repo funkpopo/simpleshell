@@ -137,6 +137,14 @@ async function resolveNativeSidecarNetworkPath(rawConfig, options = {}) {
 
   const normalizedProxy = normalizeProxyConfig(resolvedProxy);
   if (!normalizedProxy) {
+    // strictProxy：调用方（如延迟探测）要求区分“用户选择直连”与
+    // “要求代理但解析失败”。后者返回错误，不尝试绕过代理直连。
+    if (options.strictProxy) {
+      throw createProxyResolutionError(
+        "Proxy is required but the resolved proxy configuration is invalid",
+        { retryable: true },
+      );
+    }
     return {
       proxy: null,
       proxyRequired: false,

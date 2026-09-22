@@ -1,7 +1,6 @@
-const fs = require("node:fs");
 const fsp = require("node:fs/promises");
-const crypto = require("node:crypto");
 const native = require("../native/nativeSftpClient");
+const checksumClient = require("../native/nativeChecksumClient");
 
 function validateAlgorithm(algorithm) {
   if (!["md5", "sha256"].includes(algorithm)) {
@@ -34,29 +33,16 @@ async function hashLocalFile(
     throw new Error("Invalid local checksum range");
   }
   signal?.throwIfAborted();
-  const hash = crypto.createHash(algorithm);
-  if (length > 0) {
-    const stream = fs.createReadStream(localPath, {
-      start: segmentOffset,
-      end: segmentOffset + length - 1,
-      signal,
-    });
-    let read = 0;
-    for await (const chunk of stream) {
-      hash.update(chunk);
-      read += chunk.length;
-    }
-    if (read !== length)
-      throw new Error("Checksum source truncated while reading");
-  }
-  const after = await fsp.stat(localPath);
-  if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
-    throw Object.assign(new Error("Checksum source changed while reading"), {
-      errorKind: "source-changed",
-      retryable: false,
-    });
-  }
-  return hash.digest("hex");
+  // Phase 1：委托原生 checksum-file 一次性命令；不静默回退到 Node 哈希。
+  // 宿主缺失/过旧、读权限、源文件变化、取消和协议损坏均原样失败。
+  const result = await checksumClient.invokeLocalChecksum({
+    localPath,
+    algorithm,
+    segmentOffset,
+    segmentLength: length,
+    signal,
+  });
+  return result.digest;
 }
 
 // A single SFTP protocol path supports shell-less servers and arbitrary filenames.

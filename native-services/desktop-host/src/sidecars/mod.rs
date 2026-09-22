@@ -3,3 +3,6 @@
 
 pub mod ai;
 pub mod file_management;
+pub mod ip_query;
+pub mod latency;
+pub mod zmodem;

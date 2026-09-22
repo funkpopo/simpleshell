@@ -78,9 +78,15 @@ const server = new Server(
           const pump = () => {
             if (!peer || pumping) return;
             pumping = true;
-            setTimeout(() => {
+            // setImmediate：Windows 下 setTimeout(2) 会被钳制到 ~15.6ms
+            //（定时器粒度），422 帧 × 数次泵送会逼近 20s 断言窗口
+            setImmediate(() => {
               pumping = false;
               if (!peer) return;
+              // npm zmodem2 在 updateReceiverCaps（收到 ZRINIT）时会重置
+              // maxSubpacketSize（其常量 8192）；Rust crate 接收缓冲上限
+              // 1024，每次驱动都须对齐，否则侧边车报 "out of memory"
+              peer.maxSubpacketSize = 1024;
               const outgoing = peer.drainOutgoing();
               if (outgoing.length) stream.write(Buffer.from(outgoing));
               let event;
@@ -117,14 +123,10 @@ const server = new Server(
                 const data = peer.drainFile();
                 if (data?.length) received.push(Buffer.from(data));
               }
-              if (
-                pendingInput.length &&
-                !peer.hasOutgoing() &&
-                peer.state !== 7 &&
-                (peer instanceof Receiver
-                  ? !peer.hasFileData() && !peer.pendingEventsFull()
-                  : peer.pendingRequest === null)
-              ) {
+              // 对端投递不做吸收条件限制（与 check-zmodem-sidecar.js 的
+              // 对端驱动一致）：npm zmodem2 在等待 ZFIN 应答（state 7）时
+              // 也需接收 "OO" 才能触发 SessionComplete
+              if (pendingInput.length) {
                 const consumed = peer.feedIncoming(pendingInput);
                 pendingInput =
                   consumed > 0
@@ -132,7 +134,7 @@ const server = new Server(
                     : Buffer.alloc(0);
               }
               pump();
-            }, 8);
+            });
           };
           stream.on("data", (data) => {
             if (peer) {
@@ -143,6 +145,9 @@ const server = new Server(
             const command = data.toString().trim();
             if (command === "fixture-download") {
               peer = new Sender(true);
+              // npm zmodem2 Sender 忽略 ZRINIT 的 buffer_len（其常量 8192）；
+              // Rust crate 接收缓冲上限 1024，须对齐
+              peer.maxSubpacketSize = 1024;
               peer.startFile(
                 `download-${name}-${Date.now()}.txt`,
                 payload.length,
@@ -176,22 +181,22 @@ const connect = async (tabId, processId = nextProcess++) => {
           return;
         }
         record.stream = stream;
+        const emitOutput = (text) =>
+          win.webContents.send(`fixture-output-${processId}`, {
+            type: "output",
+            data: text,
+          });
         stream.on("data", (data) => {
+          // native 后端：透传字节经 onRawOutput 回调进入终端（与
+          // sshHandlers 的真实集成一致）；feedOutput 同步返回恒为空
           const visible = transfer.feedOutput(processId, data, {
             stream,
             tabId,
             sshConfig: { host: "127.0.0.1" },
-            emitTerminalText: (text) =>
-              win.webContents.send(`fixture-output-${processId}`, {
-                type: "output",
-                data: text,
-              }),
+            emitTerminalText: emitOutput,
+            onRawOutput: (raw) => emitOutput(raw.toString("utf8")),
           });
-          if (visible?.length)
-            win.webContents.send(`fixture-output-${processId}`, {
-              type: "output",
-              data: visible.toString(),
-            });
+          if (visible?.length) emitOutput(visible.toString());
         });
         resolve();
       }),
