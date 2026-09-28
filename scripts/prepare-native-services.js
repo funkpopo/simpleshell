@@ -184,7 +184,10 @@ function main() {
   }
 
   syncSidecarManifestVersion(appVersion);
-  const sourceMtime = getNewestMtimeMs(sourceRoot);
+  const sourceMtime = Math.max(
+    getNewestMtimeMs(sourceRoot),
+    getNewestMtimeMs(path.join(projectRoot, "native-services", "vendor")),
+  );
 
   if (hasStagedBinary() && !isStagedBinaryOutdated(sourceMtime)) {
     log(

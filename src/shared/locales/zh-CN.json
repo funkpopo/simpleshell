@@ -393,6 +393,21 @@
       "sessionLocal": "本机"
     },
     "portForwarding": {
+      "errors": {
+        "algorithms": "原生转发与服务器没有共同支持的 SSH 算法，请更新服务器算法配置。",
+        "hostTrust": "转发连接的主机指纹尚未确认或已变化，请重新连接终端并确认主机身份。",
+        "authentication": "端口转发 SSH 认证失败，请检查密码、私钥或交互认证信息。",
+        "agent": "无法访问 SSH Agent，请检查 Agent 服务及套接字配置。",
+        "listen": "无法建立转发监听，请检查端口占用及服务器转发权限。",
+        "proxy": "无法使用配置的代理建立转发连接，请检查代理设置。",
+        "cancelled": "端口转发操作已取消。",
+        "unavailable": "原生端口转发服务不可用，请准备或更新原生服务程序。",
+        "busy": "端口转发已达到资源限制，请关闭部分规则后重试。",
+        "session": "SSH 会话尚未就绪或已关闭。",
+        "connection": "端口转发 SSH 连接中断或超时，请检查网络后重试。",
+        "configuration": "端口转发配置无效，请检查监听地址、端口和目标地址。",
+        "service": "端口转发服务异常，相关连接已清理，请重试。"
+      },
       "title": "端口转发",
       "session": "SSH 会话",
       "selectSessionFirst": "请先选择一个活跃的 SSH 会话",

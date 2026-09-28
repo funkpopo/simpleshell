@@ -395,6 +395,21 @@
       "sessionLocal": "Local"
     },
     "portForwarding": {
+      "errors": {
+        "algorithms": "Native forwarding and the server have no compatible SSH algorithm. Update the server's algorithm configuration.",
+        "hostTrust": "The forwarding host key is untrusted or has changed. Reconnect the terminal and confirm the host identity.",
+        "authentication": "SSH authentication for port forwarding failed. Check your password, private key, or interactive authentication.",
+        "agent": "The SSH agent is unavailable. Check the agent service and socket settings.",
+        "listen": "Could not bind the forwarding listener. Check port availability and server forwarding permissions.",
+        "proxy": "The configured proxy could not establish the forwarding connection. Check your proxy settings.",
+        "cancelled": "Port forwarding was cancelled.",
+        "unavailable": "Native port forwarding is unavailable. Prepare or update the native services executable.",
+        "busy": "Port forwarding has reached its resource limit. Stop some rules and retry.",
+        "session": "The SSH session is not ready or has closed.",
+        "connection": "The forwarding SSH connection was lost or timed out. Check the network and retry.",
+        "configuration": "Invalid port forwarding configuration. Check the listening address, ports, and destination.",
+        "service": "The port forwarding service failed and its connections were cleaned up. Please retry."
+      },
       "title": "Port Forwarding",
       "session": "SSH Session",
       "selectSessionFirst": "Please select an active SSH session first",

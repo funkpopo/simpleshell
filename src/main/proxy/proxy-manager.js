@@ -2,9 +2,11 @@ const { logToFile } = require("../utils/logger");
 const configService = require("../settings/configService");
 const net = require("node:net");
 const { Buffer } = require("node:buffer");
+const { EventEmitter } = require("node:events");
 
-class ProxyManager {
+class ProxyManager extends EventEmitter {
   constructor() {
+    super();
     this.defaultProxyConfig = null;
     this.systemProxyConfig = null;
     this.initialized = false;
@@ -60,6 +62,7 @@ class ProxyManager {
       if (this.isValidProxyConfig(proxyConfig)) {
         this.defaultProxyConfig = proxyConfig;
         configService.set("defaultProxyConfig", proxyConfig);
+        this.emit("changed");
         logToFile("Default proxy config saved", "INFO");
         return true;
       } else {

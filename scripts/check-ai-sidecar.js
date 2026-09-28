@@ -17,39 +17,33 @@ const fileManagementSidecarSourceDirectory = path.join(
   sidecarsSourceDirectory,
   "file_management",
 );
-const executable = path.join(
-  ROOT,
-  "native-services",
-  "desktop-host",
-  "target",
-  "debug",
-  process.platform === "win32"
-    ? "simpleshell-native-services.exe"
-    : "simpleshell-native-services",
-);
+const executable =
+  process.env.SIMPLESHELL_NATIVE_SERVICES_PATH ||
+  path.join(
+    ROOT,
+    "native-services",
+    "desktop-host",
+    "target",
+    "debug",
+    process.platform === "win32"
+      ? "simpleshell-native-services.exe"
+      : "simpleshell-native-services",
+  );
 assert.ok(
   fs.existsSync(executable),
   "Build the Rust sidecar before running this check",
 );
 assert.ok(
-  fs.existsSync(path.join(sidecarsSourceDirectory, "README.md")),
-  "Sidecar root must document the shared layout",
+  fs.existsSync(path.join(sidecarsSourceDirectory, "mod.rs")),
+  "Sidecar root must declare its modules",
 );
 assert.ok(
   fs.existsSync(path.join(aiSidecarSourceDirectory, "mod.rs")),
   "AI sidecar implementation must live in src/sidecars/ai/mod.rs",
 );
 assert.ok(
-  fs.existsSync(path.join(aiSidecarSourceDirectory, "README.md")),
-  "AI sidecar module must document its boundary and protocol",
-);
-assert.ok(
   fs.existsSync(path.join(fileManagementSidecarSourceDirectory, "mod.rs")),
   "File-management sidecar implementation must live in src/sidecars/file_management/mod.rs",
-);
-assert.ok(
-  fs.existsSync(path.join(fileManagementSidecarSourceDirectory, "README.md")),
-  "File-management sidecar module must document its boundary and protocol",
 );
 assert.equal(
   fs.existsSync(

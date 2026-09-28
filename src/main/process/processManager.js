@@ -4,6 +4,8 @@
  */
 
 const { logToFile } = require("../utils/logger");
+const { EventEmitter } = require("node:events");
+const events = new EventEmitter();
 
 // 子进程映射表
 const childProcesses = new Map();
@@ -76,7 +78,9 @@ function hasProcess(processId) {
  * @param {Object} processInfo 进程信息对象
  */
 function setProcess(processId, processInfo) {
+  const previous = childProcesses.get(processId);
   childProcesses.set(processId, processInfo);
+  events.emit("processSet", { id: processId, process: processInfo, previous });
 }
 
 /**
@@ -84,7 +88,9 @@ function setProcess(processId, processInfo) {
  * @param {string|number} processId 进程ID
  */
 function deleteProcess(processId) {
+  const proc = childProcesses.get(processId);
   childProcesses.delete(processId);
+  if (proc) events.emit("processDeleted", { id: processId, process: proc });
 }
 
 /**
@@ -107,7 +113,7 @@ function getProcessMap() {
  * 清空所有进程
  */
 function clearAllProcesses() {
-  childProcesses.clear();
+  for (const id of [...childProcesses.keys()]) deleteProcess(id);
 }
 
 /**
@@ -220,15 +226,15 @@ function cleanupProcess(processId, options = {}) {
     }
 
     // 删除进程映射
-    childProcesses.delete(processId);
+    deleteProcess(processId);
     if (proc.processId && proc.processId !== processId) {
-      childProcesses.delete(proc.processId);
+      deleteProcess(proc.processId);
     }
     if (proc.config?.tabId && proc.config.tabId !== processId) {
-      childProcesses.delete(proc.config.tabId);
+      deleteProcess(proc.config.tabId);
     }
     if (proc.tabId && proc.tabId !== processId) {
-      childProcesses.delete(proc.tabId);
+      deleteProcess(proc.tabId);
       terminalProcesses.delete(proc.tabId);
     }
   } catch (error) {
@@ -275,10 +281,11 @@ function cleanupAllProcesses(options = {}) {
     }
   }
 
-  childProcesses.clear();
+  clearAllProcesses();
 }
 
 module.exports = {
+  events,
   // 进程ID管理
   getNextProcessId,
 

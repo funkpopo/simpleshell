@@ -43,8 +43,20 @@ installer/*
 
 # Native-services source stays in repo; build outputs do not.
 native-services/bin/*
-!native-services/bin/README.md
 native-services/**/target/
+
+# Native profiling, downloaded crate archives and formatter backups.
+native-services/**/*.profraw
+native-services/**/*.profdata
+native-services/**/*.crate
+native-services/**/*.rs.bk
+native-services/**/benchmark-results*.json
+
+# Registry-generated metadata is not needed for vendored library builds.
+# Keep Cargo.lock files for reproducible application builds and vendor tests.
+native-services/vendor/**/Cargo.toml.orig
+native-services/vendor/**/.cargo_vcs_info.json
+native-services/vendor/**/.cargo-ok
 
 # Release metadata generated next to packaged artifacts.
 SHA256SUMS

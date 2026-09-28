@@ -409,6 +409,9 @@ class TerminalHandlers {
    */
   async killProcess(event, processId) {
     const proc = this.processManager.getProcess(processId);
+    await require("../../services/port-forwarding-service").closeTab(
+      proc?.config?.tabId || proc?.tabId || processId,
+    );
     if (proc && proc.process) {
       try {
         filemanagementService.cleanupTransfersForTab(processId);
@@ -655,6 +658,9 @@ class TerminalHandlers {
     // 删除子进程映射
     if (this.processManager.hasProcess(processId)) {
       const processObj = this.processManager.getProcess(processId);
+      await require("../../services/port-forwarding-service").closeTab(
+        processObj?.config?.tabId || processObj?.tabId || processId,
+      );
 
       // 关闭SSH连接（如果存在）；清理失败只记日志，不阻断整体 cleanup
       try {

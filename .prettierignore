@@ -7,6 +7,7 @@ dist/
 coverage/
 native-services/**/target/
 native-services/bin/
+native-services/vendor/
 config.json
 config-backups/
 diagnostics/

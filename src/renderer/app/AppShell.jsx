@@ -3175,6 +3175,12 @@ export default function AppShell() {
                   {portForwardingPresent && (
                     <PortForwardingDialog
                       open={portForwardingOpen}
+                      activeTabId={
+                        activeSession?.type === "ssh" ? activeSessionKey : null
+                      }
+                      activeSessionConnected={
+                        activeSession?.status?.isConnected === true
+                      }
                       onClose={() => {
                         dispatch(actions.setPortForwardingOpen(false));
                         setFallbackSidebarAfterClose("forwarding");

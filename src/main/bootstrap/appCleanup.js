@@ -181,7 +181,7 @@ class AppCleanup {
   /**
    * 清理连接管理器
    */
-  cleanupConnectionManager() {
+  async cleanupConnectionManager() {
     // 停止自动同步调度器，避免退出时残留定时器
     try {
       configTransferService.stopAutoSyncScheduler();
@@ -191,7 +191,7 @@ class AppCleanup {
     }
     // 先停止所有端口转发，避免退出时残留本地监听
     try {
-      portForwardingService.stopAll();
+      await portForwardingService.stopAll();
       logToFile("端口转发已全部停止", "INFO");
     } catch (error) {
       logToFile(`停止端口转发失败: ${error.message}`, "ERROR");
@@ -377,7 +377,7 @@ class AppCleanup {
     await this.cleanupMemoryFile();
     await this.cleanupAllProcesses();
     await this.cleanupGlobalSftpResources();
-    this.cleanupConnectionManager();
+    await this.cleanupConnectionManager();
     await this.cleanupRuntimeFiles();
     this.saveCommandHistory();
     this.saveLastConnections();

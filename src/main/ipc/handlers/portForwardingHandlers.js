@@ -11,8 +11,9 @@ const {
  */
 class PortForwardingHandlers {
   constructor() {
+    portForwardingService.initialize();
     // 转发状态变化时广播到所有窗口
-    portForwardingService.on("statusUpdated", () => {
+    this.onStatus = () => {
       try {
         broadcastToAllWindows(
           IPC_EVENT_CHANNELS.PF_STATUS_UPDATED,
@@ -21,7 +22,13 @@ class PortForwardingHandlers {
       } catch {
         /* intentionally ignored */
       }
-    });
+    };
+    portForwardingService.on("statusUpdated", this.onStatus);
+  }
+
+  async cleanup() {
+    portForwardingService.removeListener("statusUpdated", this.onStatus);
+    await portForwardingService.stopAll();
   }
 
   /**
@@ -71,19 +78,19 @@ class PortForwardingHandlers {
     return portForwardingService.getRulesWithStatus();
   }
 
-  async saveRule(rule) {
+  async saveRule(_event, rule) {
     return portForwardingService.saveRule(rule);
   }
 
-  async deleteRule(ruleId) {
+  async deleteRule(_event, ruleId) {
     return portForwardingService.deleteRule(ruleId);
   }
 
-  async startRule({ ruleId, tabId }) {
+  async startRule(_event, { ruleId, tabId }) {
     return portForwardingService.startRule(ruleId, tabId);
   }
 
-  async stopRule(ruleId) {
+  async stopRule(_event, ruleId) {
     return portForwardingService.stopRule(ruleId);
   }
 

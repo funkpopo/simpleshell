@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -51,46 +51,90 @@ const buildRuleSummary = (rule) => {
   return `${typeTag} ${listen} -> ${rule.remoteHost}:${rule.remotePort}`;
 };
 
+// IPC failures resolve to structured results; only transport failures reject.
+const requireResult = (result, fallback) => {
+  if (result?.success === false) {
+    throw new Error(result.error || result.message || fallback);
+  }
+  return result;
+};
+
 /**
  * 端口转发（SSH隧道）管理侧边栏
  * 支持 L/R/D 三类转发规则的图形化管理和状态指示
  */
-const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
+const PortForwardingDialog = ({
+  open,
+  onClose,
+  sessionContext = null,
+  activeTabId = null,
+  activeSessionConnected = false,
+}) => {
   const { t } = useTranslation();
 
   const [rules, setRules] = useState([]);
   const [runtimeStatus, setRuntimeStatus] = useState({});
   const [sessions, setSessions] = useState([]);
-  const [selectedTabId, setSelectedTabId] = useState("");
+  const [sessionSelection, setSessionSelection] = useState(null);
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [targetHostEdited, setTargetHostEdited] = useState(false);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [busyRuleId, setBusyRuleId] = useState(null);
+  const [busyRules, setBusyRules] = useState({});
+  const refreshVersion = useRef(0);
+  const rulesVersion = useRef(0);
+
+  // A manual selection applies to the focused tab; changing focus follows the
+  // new SSH tab, while refreshing the list keeps the user's selection.
+  const selectedSession =
+    sessions.find(
+      (session) =>
+        sessionSelection?.activeTabId === activeTabId &&
+        session.tabId === sessionSelection?.tabId,
+    ) ||
+    sessions.find((session) => session.tabId === activeTabId) ||
+    sessions[0];
+  const selectedTabId = selectedSession?.tabId || "";
+  // -L connects from the SSH server to the target; -R connects from this
+  // computer. Never use the SSH server address as a local listen address.
+  const targetHost =
+    !form.id && !targetHostEdited
+      ? (form.type === "local" && selectedSession?.host) ||
+        EMPTY_FORM.remoteHost
+      : form.remoteHost;
 
   const refresh = useCallback(async () => {
+    const version = ++refreshVersion.current;
+    const snapshotVersion = rulesVersion.current;
     setLoading(true);
     try {
       const [rulesResult, sessionsResult] = await Promise.all([
         window.terminalAPI.getPortForwardRules(),
         window.terminalAPI.getPortForwardActiveSessions(),
       ]);
-      setRules(rulesResult?.rules || []);
-      setRuntimeStatus(rulesResult?.runtimeStatus || {});
-      setSessions(sessionsResult || []);
-      setSelectedTabId((prev) => {
-        if (prev && (sessionsResult || []).some((s) => s.tabId === prev)) {
-          return prev;
-        }
-        return (sessionsResult || [])[0]?.tabId || "";
-      });
+      requireResult(rulesResult, t("portForwarding.loadFailed"));
+      requireResult(sessionsResult, t("portForwarding.loadFailed"));
+      if (
+        !Array.isArray(rulesResult?.rules) ||
+        !Array.isArray(sessionsResult)
+      ) {
+        throw new Error(t("portForwarding.loadFailed"));
+      }
+      if (version !== refreshVersion.current) return;
+      if (snapshotVersion === rulesVersion.current) {
+        setRules(rulesResult.rules);
+        setRuntimeStatus(rulesResult.runtimeStatus || {});
+      }
+      setSessions(sessionsResult);
       setActionError("");
     } catch (error) {
-      setActionError(error?.message || t("portForwarding.loadFailed"));
+      if (version === refreshVersion.current)
+        setActionError(error?.message || t("portForwarding.loadFailed"));
     } finally {
-      setLoading(false);
+      if (version === refreshVersion.current) setLoading(false);
     }
   }, [t]);
 
@@ -100,23 +144,27 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
 
     const unsubscribe =
       window.terminalAPI.onPortForwardStatusUpdated?.((payload) => {
-        if (!payload) return;
-        setRules(payload.rules || []);
+        if (!Array.isArray(payload?.rules)) return;
+        rulesVersion.current++;
+        setRules(payload.rules);
         setRuntimeStatus(payload.runtimeStatus || {});
       }) || null;
 
     return () => {
+      refreshVersion.current++;
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [open, refresh]);
+  }, [open, refresh, activeTabId, activeSessionConnected]);
 
   const handleOpenCreate = () => {
     setForm({ ...EMPTY_FORM });
+    setTargetHostEdited(false);
     setFormError("");
     setFormOpen(true);
   };
 
   const handleOpenEdit = (rule) => {
+    setTargetHostEdited(true);
     setForm({
       id: rule.id,
       name: rule.name || "",
@@ -136,6 +184,7 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
       event.target.type === "checkbox"
         ? event.target.checked
         : event.target.value;
+    if (field === "remoteHost") setTargetHostEdited(true);
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -143,16 +192,17 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
     setSaving(true);
     setFormError("");
     try {
-      await window.terminalAPI.savePortForwardRule({
+      const result = await window.terminalAPI.savePortForwardRule({
         id: form.id || undefined,
         name: form.name,
         type: form.type,
         listenHost: form.listenHost,
         listenPort: Number(form.listenPort),
-        remoteHost: form.remoteHost,
+        remoteHost: targetHost,
         remotePort: Number(form.remotePort),
         autoStart: form.autoStart,
       });
+      requireResult(result, t("portForwarding.saveFailed"));
       setFormOpen(false);
       await refresh();
     } catch (error) {
@@ -162,49 +212,83 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
     }
   };
 
+  const clearRuleBusy = (ruleId) => {
+    setBusyRules((previous) => {
+      const next = { ...previous };
+      delete next[ruleId];
+      return next;
+    });
+  };
+
   const handleDeleteRule = async (rule) => {
-    setBusyRuleId(rule.id);
+    if (busyRules[rule.id]) return;
+    setBusyRules((previous) => ({ ...previous, [rule.id]: "delete" }));
+    setActionError("");
     try {
-      await window.terminalAPI.deletePortForwardRule(rule.id);
-      await refresh();
+      requireResult(
+        await window.terminalAPI.deletePortForwardRule(rule.id),
+        t("portForwarding.deleteFailed"),
+      );
+      // Status publication normally removes the row before SSH cleanup ends.
+      // Also apply the confirmed result if that event was missed; no extra list
+      // or session request is needed, and older refreshes must not restore it.
+      rulesVersion.current++;
+      setRules((previous) => previous.filter((entry) => entry.id !== rule.id));
+      setRuntimeStatus((previous) => {
+        const next = { ...previous };
+        delete next[rule.id];
+        return next;
+      });
     } catch (error) {
       setActionError(error?.message || t("portForwarding.deleteFailed"));
     } finally {
-      setBusyRuleId(null);
+      clearRuleBusy(rule.id);
     }
   };
 
   const handleToggleRule = async (rule) => {
-    if (!selectedTabId) {
+    if (busyRules[rule.id]) return;
+    const running = runtimeStatus[rule.id]?.status === "running";
+    if (!running && !selectedTabId) {
       setActionError(t("portForwarding.selectSessionFirst"));
       return;
     }
-    const running = !!runtimeStatus[rule.id];
-    setBusyRuleId(rule.id);
+    setBusyRules((previous) => ({ ...previous, [rule.id]: "toggle" }));
     setActionError("");
     try {
       if (running) {
-        await window.terminalAPI.stopPortForwardRule(rule.id);
+        requireResult(
+          await window.terminalAPI.stopPortForwardRule(rule.id),
+          t("portForwarding.toggleFailed"),
+        );
       } else {
-        await window.terminalAPI.startPortForwardRule(rule.id, selectedTabId);
+        requireResult(
+          await window.terminalAPI.startPortForwardRule(rule.id, selectedTabId),
+          t("portForwarding.toggleFailed"),
+        );
       }
       await refresh();
     } catch (error) {
       setActionError(error?.message || t("portForwarding.toggleFailed"));
     } finally {
-      setBusyRuleId(null);
+      clearRuleBusy(rule.id);
     }
   };
 
   const renderStatusChip = (rule) => {
     const runtime = runtimeStatus[rule.id];
-    if (!runtime) {
+    if (!runtime || runtime.status === "stopped") {
       return (
         <Chip
           size="small"
           variant="outlined"
           label={t("portForwarding.status.stopped")}
-          sx={{ height: 20, fontSize: "0.7rem" }}
+          sx={{
+            minHeight: 22,
+            height: "auto",
+            flexShrink: 0,
+            fontSize: "0.7rem",
+          }}
         />
       );
     }
@@ -219,7 +303,12 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
               ? t("portForwarding.status.running")
               : t("portForwarding.status.error")
           }
-          sx={{ height: 20, fontSize: "0.7rem" }}
+          sx={{
+            minHeight: 22,
+            height: "auto",
+            flexShrink: 0,
+            fontSize: "0.7rem",
+          }}
         />
       </Tooltip>
     );
@@ -229,33 +318,55 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
     <SidebarPanel
       open={open}
       title={t("portForwarding.title")}
+      titleSx={{
+        whiteSpace: "normal",
+        overflowWrap: "anywhere",
+        lineHeight: 1.35,
+      }}
       onClose={onClose}
       sessionContext={sessionContext}
       actions={
-        <Tooltip title={t("portForwarding.addRule")}>
-          <IconButton
-            size="small"
-            onClick={handleOpenCreate}
-            aria-label={t("portForwarding.addRule")}
-          >
-            <AddIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <>
+          <Tooltip title={t("common.refresh")}>
+            <IconButton
+              size="small"
+              onClick={() => void refresh()}
+              aria-label={t("common.refresh")}
+            >
+              <RefreshIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={t("portForwarding.addRule")}>
+            <IconButton
+              size="small"
+              onClick={handleOpenCreate}
+              aria-label={t("portForwarding.addRule")}
+            >
+              <AddIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </>
       }
     >
       <Box
         sx={{
           flex: 1,
+          minHeight: 0,
+          minWidth: 0,
           overflowY: "auto",
-          px: 1.5,
-          pb: 1.5,
+          p: 1.5,
           display: "flex",
           flexDirection: "column",
           gap: 1,
         }}
       >
         {/* 会话选择：用于启动转发 */}
-        <FormControl size="small" fullWidth disabled={sessions.length === 0}>
+        <FormControl
+          size="small"
+          fullWidth
+          disabled={sessions.length === 0}
+          sx={{ flexShrink: 0, minWidth: 0 }}
+        >
           <InputLabel id="pf-session-select-label">
             {t("portForwarding.session")}
           </InputLabel>
@@ -263,10 +374,40 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
             labelId="pf-session-select-label"
             value={selectedTabId}
             label={t("portForwarding.session")}
-            onChange={(event) => setSelectedTabId(event.target.value)}
+            renderValue={(value) => {
+              const session = sessions.find((entry) => entry.tabId === value);
+              return (
+                <Typography
+                  component="span"
+                  sx={{
+                    display: "block",
+                    whiteSpace: "normal",
+                    overflowWrap: "anywhere",
+                    lineHeight: 1.35,
+                  }}
+                >
+                  {session ? `${session.label}:${session.port}` : ""}
+                </Typography>
+              );
+            }}
+            onChange={(event) =>
+              setSessionSelection({ activeTabId, tabId: event.target.value })
+            }
+            sx={{
+              minWidth: 0,
+              "& .MuiSelect-select": {
+                whiteSpace: "normal",
+                overflowWrap: "anywhere",
+                height: "auto",
+              },
+            }}
           >
             {sessions.map((session) => (
-              <MenuItem key={session.tabId} value={session.tabId}>
+              <MenuItem
+                key={session.tabId}
+                value={session.tabId}
+                sx={{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+              >
                 {`${session.label}:${session.port}`}
               </MenuItem>
             ))}
@@ -274,7 +415,12 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
         </FormControl>
 
         {actionError ? (
-          <Typography variant="caption" color="error" sx={{ px: 0.5 }}>
+          <Typography
+            role="alert"
+            variant="caption"
+            color="error"
+            sx={{ px: 0.5, overflowWrap: "anywhere", flexShrink: 0 }}
+          >
             {actionError}
           </Typography>
         ) : null}
@@ -295,11 +441,15 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
           </Typography>
         ) : (
           rules.map((rule) => {
-            const running = !!runtimeStatus[rule.id];
+            const running = runtimeStatus[rule.id]?.status === "running";
             return (
               <Box
                 key={rule.id}
+                role="group"
+                aria-label={rule.name || buildRuleSummary(rule)}
                 sx={{
+                  minWidth: 0,
+                  flexShrink: 0,
                   border: 1,
                   borderColor: "divider",
                   borderRadius: 1,
@@ -312,14 +462,18 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
                 <Box
                   sx={{
                     display: "flex",
-                    alignItems: "center",
+                    alignItems: "flex-start",
                     gap: 0.5,
                   }}
                 >
                   <Typography
                     variant="body2"
-                    sx={{ flex: 1, minWidth: 0, fontWeight: 500 }}
-                    noWrap
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontWeight: 500,
+                      overflowWrap: "anywhere",
+                    }}
                     title={rule.name || buildRuleSummary(rule)}
                   >
                     {rule.name || buildRuleSummary(rule)}
@@ -329,17 +483,24 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
                 <Typography
                   variant="caption"
                   color="text.secondary"
-                  sx={{ fontFamily: "monospace" }}
-                  noWrap
+                  sx={{ fontFamily: "monospace", overflowWrap: "anywhere" }}
                 >
                   {buildRuleSummary(rule)}
                 </Typography>
                 {runtimeStatus[rule.id]?.error ? (
-                  <Typography variant="caption" color="error" noWrap>
+                  <Typography
+                    variant="caption"
+                    color="error"
+                    sx={{ overflowWrap: "anywhere" }}
+                  >
                     {runtimeStatus[rule.id].error}
                   </Typography>
                 ) : null}
-                <Stack direction="row" spacing={0.5} alignItems="center">
+                <Stack
+                  direction="row"
+                  spacing={0.5}
+                  sx={{ alignItems: "center" }}
+                >
                   <Tooltip
                     title={
                       running
@@ -352,7 +513,8 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
                         size="small"
                         color={running ? "default" : "primary"}
                         disabled={
-                          busyRuleId === rule.id || (!running && !selectedTabId)
+                          Boolean(busyRules[rule.id]) ||
+                          (!running && !selectedTabId)
                         }
                         onClick={() => handleToggleRule(rule)}
                         aria-label={
@@ -361,7 +523,7 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
                             : t("portForwarding.start")
                         }
                       >
-                        {busyRuleId === rule.id ? (
+                        {busyRules[rule.id] === "toggle" ? (
                           <CircularProgress size={16} />
                         ) : running ? (
                           <StopIcon fontSize="small" />
@@ -374,6 +536,7 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
                   <Tooltip title={t("portForwarding.edit")}>
                     <IconButton
                       size="small"
+                      disabled={Boolean(busyRules[rule.id])}
                       onClick={() => handleOpenEdit(rule)}
                       aria-label={t("portForwarding.edit")}
                     >
@@ -384,21 +547,15 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
                     <IconButton
                       size="small"
                       color="error"
-                      disabled={busyRuleId === rule.id}
+                      disabled={Boolean(busyRules[rule.id])}
                       onClick={() => handleDeleteRule(rule)}
                       aria-label={t("portForwarding.delete")}
                     >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                  <Box sx={{ flex: 1 }} />
-                  <Tooltip title={t("common.refresh")}>
-                    <IconButton
-                      size="small"
-                      onClick={() => void refresh()}
-                      aria-label={t("common.refresh")}
-                    >
-                      <RefreshIcon fontSize="small" />
+                      {busyRules[rule.id] === "delete" ? (
+                        <CircularProgress size={16} />
+                      ) : (
+                        <DeleteIcon fontSize="small" />
+                      )}
                     </IconButton>
                   </Tooltip>
                 </Stack>
@@ -411,7 +568,11 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
           <Typography
             variant="caption"
             color="text.secondary"
-            sx={{ textAlign: "center" }}
+            sx={{
+              textAlign: "center",
+              flexShrink: 0,
+              overflowWrap: "anywhere",
+            }}
           >
             {t("portForwarding.noActiveSessions")}
           </Typography>
@@ -421,7 +582,9 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
       {/* 新增/编辑规则对话框 */}
       <AccessibleDialog
         open={formOpen}
-        onClose={() => setFormOpen(false)}
+        onClose={() => {
+          if (!saving) setFormOpen(false);
+        }}
         maxWidth="xs"
         fullWidth
         PaperProps={{ sx: { borderRadius: 2 } }}
@@ -430,7 +593,7 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
           {form.id ? t("portForwarding.editRule") : t("portForwarding.addRule")}
         </DialogTitle>
         <DialogContent>
-          <Stack spacing={1.5} sx={{ pt: 0.5 }}>
+          <Stack spacing={1.5} sx={{ pt: 1 }}>
             <TextField
               size="small"
               label={t("portForwarding.ruleName")}
@@ -473,7 +636,7 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
                 label={t("portForwarding.listenHost")}
                 value={form.listenHost}
                 onChange={handleFormChange("listenHost")}
-                sx={{ flex: 1 }}
+                sx={{ flex: 1, minWidth: 0 }}
               />
               <TextField
                 size="small"
@@ -481,7 +644,7 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
                 value={form.listenPort}
                 onChange={handleFormChange("listenPort")}
                 type="number"
-                sx={{ flex: 1 }}
+                sx={{ flex: 1, minWidth: 0 }}
               />
             </Box>
             {form.type !== "dynamic" ? (
@@ -489,9 +652,9 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
                 <TextField
                   size="small"
                   label={t("portForwarding.targetHost")}
-                  value={form.remoteHost}
+                  value={targetHost}
                   onChange={handleFormChange("remoteHost")}
-                  sx={{ flex: 1 }}
+                  sx={{ flex: 1, minWidth: 0 }}
                 />
                 <TextField
                   size="small"
@@ -499,7 +662,7 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
                   value={form.remotePort}
                   onChange={handleFormChange("remotePort")}
                   type="number"
-                  sx={{ flex: 1 }}
+                  sx={{ flex: 1, minWidth: 0 }}
                 />
               </Box>
             ) : null}
@@ -514,14 +677,19 @@ const PortForwardingDialog = ({ open, onClose, sessionContext = null }) => {
               label={t("portForwarding.autoStart")}
             />
             {formError ? (
-              <Typography variant="caption" color="error">
+              <Typography
+                role="alert"
+                variant="caption"
+                color="error"
+                sx={{ overflowWrap: "anywhere" }}
+              >
                 {formError}
               </Typography>
             ) : null}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setFormOpen(false)}>
+          <Button onClick={() => setFormOpen(false)} disabled={saving}>
             {t("common.cancel")}
           </Button>
           <Button

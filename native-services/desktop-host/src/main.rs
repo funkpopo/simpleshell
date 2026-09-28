@@ -27,7 +27,7 @@ async fn main() {
 async fn run() -> Result<(), String> {
     let mut args = env::args().skip(1);
     let command = args.next().ok_or_else(|| {
-        "missing command, expected ai-serve, checksum-file, ip-query-serve, latency-serve, zmodem-serve, scan-folder, sftp-request, sftp-session, or sftp-watch".to_string()
+        "missing command, expected ai-serve, checksum-file, ip-query-serve, latency-serve, port-forward-serve, port-forward-prototype, zmodem-serve, scan-folder, sftp-request, sftp-session, or sftp-watch".to_string()
     })?;
 
     match command.as_str() {
@@ -35,6 +35,8 @@ async fn run() -> Result<(), String> {
         "latency-serve" => sidecars::latency::serve().await,
         "zmodem-serve" => sidecars::zmodem::serve().await,
         "ip-query-serve" => sidecars::ip_query::serve().await,
+        "port-forward-prototype" => sidecars::port_forwarding::serve(true).await,
+        "port-forward-serve" => sidecars::port_forwarding::serve(false).await,
         "checksum-file" => sidecars::file_management::run_checksum_file(args).await,
         "scan-folder" => sidecars::file_management::run_scan_folder(args),
         "sftp-request" => sidecars::file_management::run_sftp_request().await,

@@ -8,7 +8,7 @@ base64 = "0.22.1"
 bytes = "1.11.1"
 futures-util = "0.3.32"
 openssh-sftp-client = "0.15.4"
-russh = { version = "0.58.0", default-features = false, features = ["flate2", "ring", "rsa"] }
+russh = { version = "=0.58.0", default-features = false, features = ["flate2", "ring", "rsa", "dsa", "des", "legacy-macs"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 sha2 = "0.10.9"
@@ -18,3 +18,6 @@ tokio = { version = "1.50.0", features = ["fs", "io-std", "io-util", "macros", "
 tokio-util = { version = "0.7.18", features = ["rt"] }
 zmodem2 = "0.7.2"
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "socks", "stream"] }
+
+[patch.crates-io]
+russh = { path = "../vendor/russh" }
