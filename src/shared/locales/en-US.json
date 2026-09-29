@@ -514,10 +514,6 @@
       "welcome": "Welcome",
       "pane": {
         "splitSourceBlocked": "A split tab cannot be merged into another tab. Restore its panes to separate tabs first.",
-        "splitRight": "Split → Right",
-        "splitDown": "Split → Below",
-        "splitGrid": "Split → 2×2",
-        "resetLayout": "Reset Split",
         "closePane": "Close Pane",
         "closeOtherPanes": "Close Other Panes",
         "maxReached": "Up to 4 panes are supported",
@@ -552,6 +548,7 @@
         "reconnectFailed": "Reconnect failed: {{error}}",
         "connectionAdvice": "Suggestion: {{advice}}",
         "unknownError": "Unknown error",
+        "openExternalFailed": "Failed to open external URL",
         "newConnectionEstablished": "New connection established",
         "noProcessId": "Could not get process ID",
         "welcome": "Welcome to WebTerminal!",
@@ -569,6 +566,7 @@
       "newGroup": "New Group",
       "search": "Search...",
       "noConnections": "No Connections",
+      "noMatchingConnections": "No matching connections found",
       "loadFailed": "Failed to load connection configuration",
       "reloadFailed": "Failed to reload connection configuration",
       "saveFailed": "Failed to save connection configuration",
@@ -1042,6 +1040,7 @@
     },
     "sshKeyGenerator": {
       "keyType": "Key Type",
+      "ed25519Recommended": "ED25519 (Recommended)",
       "keySize": "Key Size",
       "comment": "Comment",
       "passphrase": "Passphrase",
@@ -1187,7 +1186,9 @@
         "saveApiUnavailable": "File save API is unavailable",
         "restoreFailed": "Restore failed",
         "restoreFailedWithMessage": "Restore failed: {{error}}",
-        "pdfLoadFailed": "PDF load failed: {{error}}"
+        "pdfLoadFailed": "PDF load failed: {{error}}",
+        "codemirrorUnsupported": "Unsupported CodeMirror language: {{languageId}}",
+        "codemirrorLoadFailed": "Failed to load CodeMirror language \"{{languageId}}\": {{reason}}"
       },
       "contextMenu": {
         "cut": "Cut",
@@ -1308,9 +1309,10 @@
         "dragDropUnsupportedItem": "This dropped item is not an uploadable local file or folder: {{name}}",
         "dragDropConflictCancelled": "Drag upload cancelled because remote items already exist.",
         "noConnection": "No SSH connection available",
+        "listFilesFailed": "List files failed",
+        "listFilesTokenMissing": "List files response missing token",
         "userCancelled": "User cancelled",
         "connectionNotReady": "SSH connection not ready",
-        "updateFailed": "Update failed",
         "permissionSetFailed": "Permission set failed",
         "batchDownloadFailed": "Batch download failed",
         "transferCancelled": "Transfer cancelled",
@@ -1635,6 +1637,9 @@
       "solutions": "Suggestions"
     },
     "errors": {
+      "common": {
+        "unknownError": "Unknown error"
+      },
       "classification": {
         "fatal": "Fatal error",
         "retry": "Retry needed",
@@ -1969,7 +1974,6 @@
         "selectUploadFolder": "Select folder to upload",
         "uploadFolderButton": "Upload Folder",
         "dragUpload": "Drag and drop upload",
-        "emptyFolderNoUpload": "Folder is empty; nothing to upload.",
         "uploadFileFailed": "File upload failed: {{error}}",
         "uploadFolderFailed": "Folder upload failed: {{error}}",
         "errors": {
@@ -1982,7 +1986,6 @@
           "taskFailedAfterRetries": "Transfer task failed after retries",
           "nativeTransferFailed": "Native transfer task failed",
           "downloadTaskFailed": "Download task failed",
-          "downloadChunkTaskFailed": "Download chunk task failed",
           "downloadChunkIncomplete": "Download chunk incomplete",
           "uploadTaskFailed": "Upload task failed",
           "uploadChunkIncomplete": "Upload chunk incomplete",

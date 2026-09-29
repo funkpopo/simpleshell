@@ -618,10 +618,13 @@ export default function useFileNav({
         if (typeof resolve === "function") {
           resolve({
             ok: false,
-            error: response?.error || "listFiles failed",
+            error: response?.error || t("fileManager.errors.listFilesFailed"),
           });
         }
-        return { ok: false, error: response?.error || "listFiles failed" };
+        return {
+          ok: false,
+          error: response?.error || t("fileManager.errors.listFilesFailed"),
+        };
       }
 
       // nonBlocking 模式下依赖 token + chunk 事件完成
@@ -681,7 +684,7 @@ export default function useFileNav({
       bg.resolve = null;
       bg.reject = null;
       backgroundListBufferRef.current = [];
-      const protocolError = "listFiles nonBlocking response missing token";
+      const protocolError = t("fileManager.errors.listFilesTokenMissing");
       if (typeof resolve === "function") {
         resolve({ ok: false, error: protocolError });
       }

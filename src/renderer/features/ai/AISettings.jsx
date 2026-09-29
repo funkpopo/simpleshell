@@ -465,13 +465,13 @@ const AISettings = ({ open, onClose }) => {
           setError(
             t("aiSettings.testFailed") +
               ": " +
-              (result?.error || "Unknown error"),
+              (result?.error || t("errors.common.unknownError")),
           );
         }
       }
     } catch (err) {
       // 处理不同的错误格式
-      let errorMessage = "Unknown error";
+      let errorMessage = t("errors.common.unknownError");
       if (err?.error?.message) {
         // 从Worker返回的错误对象格式: {error: {message: "..."}}
         errorMessage = err.error.message;
@@ -544,7 +544,7 @@ const AISettings = ({ open, onClose }) => {
       }
     } catch (err) {
       // 处理不同的错误格式
-      let errorMessage = "Unknown error";
+      let errorMessage = t("errors.common.unknownError");
       if (err?.error?.message) {
         // 从Worker返回的错误对象格式: {error: {message: "..."}}
         errorMessage = err.error.message;

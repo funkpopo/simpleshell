@@ -663,13 +663,16 @@ export function useTerminalLifecycle({
               "success" in result &&
               !result.success
             ) {
-              throw new Error(result.error || "Failed to open external URL");
+              throw new Error(
+                result.error ||
+                  tRef.current("webTerminal.runtime.openExternalFailed"),
+              );
             }
           } catch (error) {
             const message =
               error instanceof Error
                 ? error.message
-                : "Failed to open external URL";
+                : tRef.current("webTerminal.runtime.openExternalFailed");
             console.error(`Failed to open external link: ${uri}`, error);
 
             if (typeof term.writeln === "function") {

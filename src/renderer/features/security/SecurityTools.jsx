@@ -392,7 +392,9 @@ const RandomPasswordGenerator = ({ open, onClose, sessionContext = null }) => {
                 label={t("sshKeyGenerator.keyType")}
                 onChange={handleKeyTypeChange}
               >
-                <MenuItem value="ed25519">ED25519 (推荐)</MenuItem>
+                <MenuItem value="ed25519">
+                  {t("sshKeyGenerator.ed25519Recommended")}
+                </MenuItem>
                 <MenuItem value="rsa">RSA</MenuItem>
                 <MenuItem value="ecdsa">ECDSA</MenuItem>
               </Select>

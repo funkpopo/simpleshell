@@ -512,10 +512,6 @@
       "welcome": "欢迎",
       "pane": {
         "splitSourceBlocked": "已分屏的标签不能并入其他标签，请先还原为独立标签。",
-        "splitRight": "分屏 → 右侧",
-        "splitDown": "分屏 → 下方",
-        "splitGrid": "分屏 → 2×2",
-        "resetLayout": "取消分屏",
         "closePane": "关闭当前窗格",
         "closeOtherPanes": "关闭其他窗格",
         "maxReached": "最多支持 4 个窗格",
@@ -550,6 +546,7 @@
         "reconnectFailed": "重连失败: {{error}}",
         "connectionAdvice": "建议: {{advice}}",
         "unknownError": "未知错误",
+        "openExternalFailed": "打开外部链接失败",
         "newConnectionEstablished": "已建立新连接",
         "noProcessId": "未能获取进程 ID",
         "welcome": "欢迎使用 WebTerminal!",
@@ -567,6 +564,7 @@
       "newGroup": "新建分组",
       "search": "搜索...",
       "noConnections": "没有连接项",
+      "noMatchingConnections": "未找到匹配的连接",
       "loadFailed": "加载连接配置失败",
       "reloadFailed": "重新加载连接配置失败",
       "saveFailed": "保存连接配置失败",
@@ -1037,6 +1035,7 @@
     },
     "sshKeyGenerator": {
       "keyType": "密钥类型",
+      "ed25519Recommended": "ED25519 (推荐)",
       "keySize": "密钥长度",
       "comment": "注释",
       "passphrase": "密码短语",
@@ -1182,7 +1181,9 @@
         "saveApiUnavailable": "文件保存 API 不可用",
         "restoreFailed": "回退失败",
         "restoreFailedWithMessage": "回退失败: {{error}}",
-        "pdfLoadFailed": "PDF 加载失败: {{error}}"
+        "pdfLoadFailed": "PDF 加载失败: {{error}}",
+        "codemirrorUnsupported": "不支持的 CodeMirror 语言: {{languageId}}",
+        "codemirrorLoadFailed": "加载 CodeMirror 语言失败: \"{{languageId}}\": {{reason}}"
       },
       "contextMenu": {
         "cut": "剪切",
@@ -1299,9 +1300,10 @@
         "dragDropUnsupportedItem": "该拖放项目不是可上传的本地文件或文件夹：{{name}}",
         "dragDropConflictCancelled": "已取消拖放上传，远端已有同名项目。",
         "noConnection": "没有可用的 SSH 连接",
+        "listFilesFailed": "获取文件列表失败",
+        "listFilesTokenMissing": "文件列表响应缺少 token",
         "userCancelled": "用户已取消",
         "connectionNotReady": "SSH 连接尚未就绪",
-        "updateFailed": "更新失败",
         "permissionSetFailed": "设置权限失败",
         "batchDownloadFailed": "批量下载失败",
         "transferCancelled": "传输已取消",
@@ -1613,6 +1615,9 @@
       "solutions": "处理建议"
     },
     "errors": {
+      "common": {
+        "unknownError": "未知错误"
+      },
       "classification": {
         "fatal": "致命错误",
         "retry": "可重试错误",
@@ -1945,7 +1950,6 @@
         "selectUploadFolder": "选择要上传的文件夹",
         "uploadFolderButton": "上传文件夹",
         "dragUpload": "拖拽上传",
-        "emptyFolderNoUpload": "文件夹为空，无需上传。",
         "uploadFileFailed": "上传文件失败: {{error}}",
         "uploadFolderFailed": "上传文件夹失败: {{error}}",
         "errors": {
@@ -1958,7 +1962,6 @@
           "taskFailedAfterRetries": "传输任务多次重试后仍失败",
           "nativeTransferFailed": "底层传输任务失败",
           "downloadTaskFailed": "下载任务失败",
-          "downloadChunkTaskFailed": "下载分块任务失败",
           "downloadChunkIncomplete": "下载分块不完整",
           "uploadTaskFailed": "上传任务失败",
           "uploadChunkIncomplete": "上传分块不完整",

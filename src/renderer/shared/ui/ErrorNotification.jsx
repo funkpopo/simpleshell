@@ -66,7 +66,10 @@ function getClassifiedErrorTranslation(error, classification) {
   const originalMessage =
     typeof error === "string"
       ? error
-      : error?.message || error?.error || error?.reason || "Unknown error";
+      : error?.message ||
+        error?.error ||
+        error?.reason ||
+        i18n.t("errors.common.unknownError");
 
   const base = {
     severity: classification.severity || "error",

@@ -319,9 +319,10 @@ const VirtualizedConnectionList = ({
   devicePerformance = "medium",
   enableDragDrop = false,
   searchTerm = "",
-  emptyMessage = "No connections",
+  emptyMessage,
   className,
 }) => {
+  const { t } = useTranslation();
   const { addResizeObserver } = useAutoCleanup();
   const containerRef = useRef(null);
   const listRef = useRef(null);
@@ -455,7 +456,9 @@ const VirtualizedConnectionList = ({
         <Box>
           <ComputerIcon sx={{ fontSize: 48, mb: 1, opacity: 0.5 }} />
           <Typography variant="body2">
-            {searchTerm ? "No matching connections found" : emptyMessage}
+            {searchTerm
+              ? t("connectionManager.noMatchingConnections")
+              : emptyMessage || t("connectionManager.noConnections")}
           </Typography>
         </Box>
       </Box>

@@ -4,6 +4,8 @@
  * Bundled by webpack into async chunks; safe for packaged Electron (no Node.js on user PC).
  */
 
+import i18n from "../../../i18n/i18n";
+
 export const getFileExtension = (filename) =>
   filename.slice(((filename.lastIndexOf(".") - 1) >>> 0) + 2).toLowerCase();
 
@@ -155,7 +157,9 @@ export async function loadCodemirrorLanguageExtension(languageId) {
   }
   const loader = loaders[languageId];
   if (!loader) {
-    throw new Error(`Unsupported CodeMirror language "${languageId}"`);
+    throw new Error(
+      i18n.t("filePreview.errors.codemirrorUnsupported", { languageId }),
+    );
   }
 
   if (!extensionCache.has(languageId)) {
@@ -164,9 +168,10 @@ export async function loadCodemirrorLanguageExtension(languageId) {
       loader().catch((error) => {
         extensionCache.delete(languageId);
         throw new Error(
-          `Failed to load CodeMirror language "${languageId}": ${
-            error?.message || "unknown error"
-          }`,
+          i18n.t("filePreview.errors.codemirrorLoadFailed", {
+            languageId,
+            reason: error?.message || i18n.t("errors.common.unknownError"),
+          }),
         );
       }),
     );

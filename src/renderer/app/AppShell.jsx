@@ -2298,7 +2298,7 @@ export default function AppShell() {
   const handleLaunchLocalTerminal = useCallback(
     async (terminalConfig) => {
       if (!terminalConfig) {
-        throw new Error("No local terminal selected");
+        throw new Error(t("localTerminal.noTerminalSelected"));
       }
       const terminalId = `local-${Date.now()}`;
       const defaultDistribution = Array.isArray(

@@ -1,4 +1,5 @@
 // 分组状态
+import i18n from "../../i18n/i18n";
 import {
   addTabToSyncGroup,
   createSyncGroup,
@@ -95,7 +96,7 @@ export const initialState = {
   tabs: [
     {
       id: "welcome",
-      label: "Welcome",
+      label: i18n.t("terminal.welcome"),
       type: "welcome",
     },
   ],

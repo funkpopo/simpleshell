@@ -23,6 +23,10 @@ const { terminalRender, tabRender, workspaceRender, translate } = vi.hoisted(
   }),
 );
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: translate }) }));
+vi.mock("../../src/renderer/i18n/i18n", () => ({
+  default: { t: (key) => key },
+  changeLanguage: vi.fn(),
+}));
 vi.mock("../../src/renderer/app/components/CustomTab.jsx", () => ({
   default: (props) => {
     tabRender(props);

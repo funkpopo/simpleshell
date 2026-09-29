@@ -18,7 +18,10 @@ const { translate, notify, changeLanguage } = vi.hoisted(() => ({
   changeLanguage: vi.fn(),
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: translate }) }));
-vi.mock("../../src/renderer/i18n/i18n", () => ({ changeLanguage }));
+vi.mock("../../src/renderer/i18n/i18n", () => ({
+  default: { t: (key) => key },
+  changeLanguage,
+}));
 vi.mock(
   "../../src/renderer/shared/notifications/NotificationContext.jsx",
   () => ({
