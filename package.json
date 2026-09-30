@@ -2,7 +2,7 @@
   "name": "simpleshell",
   "productName": "SimpleShell",
   "version": "0.5.1",
-  "description": "A Simple Electron SSH Terminal for Windows",
+  "description": "A Simple Cross-Platform Electron SSH Terminal",
   "main": ".webpack/main",
   "scripts": {
     "format": "prettier --write .",
@@ -70,8 +70,7 @@
     "typescript": "5.9.3",
     "vite": "^8.3.0",
     "vitest": "^5.0.1",
-    "webpack": "5.103.0",
-    "zmodem2": "1.4.0"
+    "webpack": "5.103.0"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "6.0.3",

@@ -112,7 +112,7 @@ If you prefer to build from source, follow the development instructions below.
 
 ## **Development**
 
-For Serial/Mosh, SSH agent forwarding, and native SFTP manual verification, see [Manual checks](MANUAL_TESTING.md). The guide covers network roaming, split-pane status, client cleanup, forwarding with password/private-key login, and upload conflicts.
+Scripted behavior checks for Serial/Mosh, SSH agent forwarding, native SFTP, port forwarding, and ZMODEM live in `scripts/check-*.js` and run via `npm run check`.
 
 ### **Prerequisites**
 
@@ -206,12 +206,11 @@ simpleshell/
 ├── native-services/         # Rust native-services crate
 ├── tests/                   # Unit and composition tests
 ├── scripts/                 # Build, release and integration checks
-├── docs/                    # Release and architecture documentation
 ├── forge.config.js
 └── webpack.*.config.js
 ```
 
-Source is organized by runtime. See [DIRECTORY_CONVENTIONS.md](DIRECTORY_CONVENTIONS.md), [MANUAL_TESTING.md](MANUAL_TESTING.md) and [docs/RELEASING.md](docs/RELEASING.md).
+Source is organized by runtime. Area-specific conventions live in README files next to the code (for example `src/main/file-transfer/` and `src/renderer/features/`).
 
 ## **Tech Stack**
 

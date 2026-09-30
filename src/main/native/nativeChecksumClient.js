@@ -16,7 +16,7 @@ const SUPPORTED_ALGORITHMS = new Set(["md5", "sha256"]);
 const DIGEST_HEX_LENGTH = { md5: 32, sha256: 64 };
 const CHECKSUM_SCHEMA_VERSION = 1;
 
-// 进程并发上限：一次进程启动约 5-20ms（见 docs/migration-baseline.md），
+// 进程并发上限：一次进程启动约 5-20ms（P0 基线测量），
 // 大文件不套用短网络超时；默认 2，可用环境变量调整。
 const MAX_CONCURRENT_PROCESSES = Math.max(
   1,

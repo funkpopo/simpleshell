@@ -4,7 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
-const { Receiver, Sender } = require("zmodem2");
+const { ZmodemPeer, buildZrinitFrame } = require("./fixtures/zmodem-peer");
 
 /**
  * zmodem-serve sidecar 行为契约检查（Phase 3）。
@@ -12,8 +12,10 @@ const { Receiver, Sender } = require("zmodem2");
  * 1. 检测与透传（P3.3）：任意分块组合下透传字节严格等于预期普通终端字节；
  *    跨块起始序列、扣留前缀冲刷（500ms）、相似前缀输出。
  * 2. 会话生命周期：open/input/cancel/close；迟到输入按普通输出放行。
- * 3. 真实协议回环互操作：sidecar Receiver/Decoder ↔ npm zmodem2 状态机，
- *    覆盖下载（对端 sz 发文件）与上传（对端 rz 收文件），最终文件摘要一致。
+ * 3. 真实协议回环：sidecar ↔ 第二个 zmodem-serve 实例
+ *    （scripts/fixtures/zmodem-peer.js）；对端发送由手工构造的 ZRINIT 帧
+ *    触发（模拟 rz 启动序列），覆盖下载（对端 sz 发文件）与上传
+ *    （对端 rz 收文件），最终文件摘要一致。
  * 4. 字节协议开销：测量 Base64 体积放大与编解码耗时（NDJSON+Base64 契约）。
  */
 
@@ -27,7 +29,9 @@ function nativeHostPath() {
     "native-services",
     "bin",
     `${process.platform}-${process.arch}`,
-    process.platform === "win32" ? "simpleshell-native-services.exe" : "simpleshell-native-services",
+    process.platform === "win32"
+      ? "simpleshell-native-services.exe"
+      : "simpleshell-native-services",
   );
   if (fs.existsSync(staged)) return staged;
   return path.join(
@@ -36,7 +40,9 @@ function nativeHostPath() {
     "desktop-host",
     "target",
     "release",
-    process.platform === "win32" ? "simpleshell-native-services.exe" : "simpleshell-native-services",
+    process.platform === "win32"
+      ? "simpleshell-native-services.exe"
+      : "simpleshell-native-services",
   );
 }
 
@@ -65,7 +71,9 @@ function startSidecar() {
       }
     }
   });
-  child.stderr.on("data", (chunk) => process.stderr.write(`[sidecar stderr] ${chunk}`));
+  child.stderr.on("data", (chunk) =>
+    process.stderr.write(`[sidecar stderr] ${chunk}`),
+  );
 
   const waitFor = (predicate, timeoutMs = 10000) =>
     new Promise((resolve, reject) => {
@@ -110,7 +118,8 @@ async function main() {
   const sidecar = startSidecar();
   const ready = await sidecar.waitFor((m) => m.type === "ready");
   try {
-    if (ready.schemaVersion !== 1) throw new Error("ready schemaVersion mismatch");
+    if (ready.schemaVersion !== 1)
+      throw new Error("ready schemaVersion mismatch");
     pass("ready protocol");
 
     // ---------------------------------------------------------------
@@ -146,7 +155,10 @@ async function main() {
       const combined = Buffer.concat(chunks).toString("latin1");
       // "**" 后不是 "\x18B0" 起始序列；除末尾可能扣留的前缀外全部放行
       assert.ok(combined.includes("$ echo "), "prefix-like output missing");
-      assert.ok(!combined.startsWith("$ echo **B0 something\r\nmore output\r\n") === false || true);
+      assert.ok(
+        !combined.startsWith("$ echo **B0 something\r\nmore output\r\n") ===
+          false || true,
+      );
       pass("detection passthrough: prefix-like output flushed");
     }
 
@@ -154,12 +166,19 @@ async function main() {
     {
       const sessionId = "hold-flush";
       sidecar.send({ type: "open", sessionId });
-      sidecar.send({ type: "input", sessionId, dataBase64: b64(Buffer.from([42, 42, 24])) });
+      sidecar.send({
+        type: "input",
+        sessionId,
+        dataBase64: b64(Buffer.from([42, 42, 24])),
+      });
       // 等待冲刷（500ms + 看门狗容差）
       await new Promise((resolve) => setTimeout(resolve, 1200));
       const chunks = await collectPassthrough(sidecar, sessionId, false);
       const combined = Buffer.concat(chunks);
-      assert.equal(combined.toString("latin1"), Buffer.from([42, 42, 24]).toString("latin1"));
+      assert.equal(
+        combined.toString("latin1"),
+        Buffer.from([42, 42, 24]).toString("latin1"),
+      );
       pass("detection passthrough: held prefix flushed after 500ms idle");
     }
 
@@ -207,143 +226,92 @@ async function main() {
     // 1e. 迟到输入（未注册/已结束会话）按普通输出放行
     {
       const sessionId = "late-input";
-      sidecar.send({ type: "input", sessionId, dataBase64: b64(Buffer.from("late shell output\r\n")) });
+      sidecar.send({
+        type: "input",
+        sessionId,
+        dataBase64: b64(Buffer.from("late shell output\r\n")),
+      });
       await new Promise((resolve) => setTimeout(resolve, 200));
       const chunks = await collectPassthrough(sidecar, sessionId, false);
-      assert.equal(Buffer.concat(chunks).toString("latin1"), "late shell output\r\n");
+      assert.equal(
+        Buffer.concat(chunks).toString("latin1"),
+        "late shell output\r\n",
+      );
       pass("detection passthrough: unregistered session input passes through");
     }
 
     // ---------------------------------------------------------------
-    // 2. 真实协议回环：下载（sidecar 接收 ↔ npm zmodem2 Sender 对端）
+    // 2. 真实协议回环：下载（sidecar 接收 ↔ 对端 zmodem-serve 发送）
     // ---------------------------------------------------------------
     {
       const sessionId = "loop-download";
       const fileBytes = crypto.randomBytes(64 * 1024 + 5);
       const fileName = "回环 测试.bin";
       const target = path.join(os.tmpdir(), `zmodem-loop-${Date.now()}.bin`);
-
-      sidecar.send({ type: "open", sessionId });
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      // 对端 sz：用 npm zmodem2 Sender 模拟
-      const peer = new Sender(false);
-      const peerState = {
-        pendingInput: Buffer.alloc(0),
-        finished: false,
-        started: false,
-        zrinitReceived: false,
-        fileBytes,
-        currentOffset: 0,
-      };
-
-      // 对端 sz 发出的第一段字节：ZRQINIT（由 peer 状态机生成）
-      peer.queueZrqinit();
-      const intro = Buffer.from(peer.drainOutgoing());
-      peer.advanceOutgoing(intro.length);
-      sidecar.send({ type: "input", sessionId, dataBase64: b64(intro) });
-
-      const offerPromise = sidecar.waitFor(
-        (m) => m.type === "event" && m.sessionId === sessionId && m.kind === "offer",
-        15000,
+      // 对端 sz 的源文件：zmodem-serve 发送角色从磁盘读取
+      const peerSource = path.join(
+        os.tmpdir(),
+        `zmodem-peer-src-${Date.now()}.bin`,
       );
+      fs.writeFileSync(peerSource, fileBytes);
 
-      // 对端驱动循环：sidecar writeRemote → peer feedIncoming；
-      // peer drainOutgoing → sidecar input
-      const peerDrive = async () => {
-        let progressed = true;
-        while (progressed && !peerState.finished) {
-          progressed = false;
-          const outgoing = peer.drainOutgoing();
-          if (outgoing && outgoing.length) {
-            sidecar.send({ type: "input", sessionId, dataBase64: b64(Buffer.from(outgoing)) });
-            peer.advanceOutgoing(outgoing.length);
-            progressed = true;
-          }
-          if (peerState.pendingInput.length) {
-            const consumed = peer.feedIncoming(peerState.pendingInput);
-            if (consumed > 0) {
-              peerState.pendingInput = peerState.pendingInput.subarray(consumed);
-              progressed = true;
-            } else {
-              peerState.pendingInput = Buffer.alloc(0);
-            }
-          }
-          let event = peer.pollEvent();
-          while (event) {
-            if (event === "FileComplete") {
-              // 真实 sz 在全部文件完成后发送 ZFIN 结束会话
-              peer.finishSession();
-              progressed = true;
-            }
-            if (event === "SessionComplete") {
-              peerState.finished = true;
-              progressed = true;
-            }
-            event = peer.pollEvent();
-          }
-          if (!peerState.started) {
-            // 对端 ZRINIT（来自 sidecar 接收器）已被消费后启动文件
-            if (peerState.zrinitReceived && peerState.pendingInput.length === 0) {
-              peer.startFile(fileName, fileBytes.length, Date.now());
-              peerState.started = true;
-              progressed = true;
-            }
-          } else {
-            // npm zmodem2 Sender 忽略 ZRINIT 的 buffer_len（其常量 8192），
-            // Rust crate 接收缓冲上限 1024；真实 lrzsz sz 用 1024，此处对齐 lrzsz
-            peer.maxSubpacketSize = 1024;
-            const request = peer.pollFile();
-            if (request) {
-              const remaining = fileBytes.length - peerState.currentOffset;
-              const len = Math.min(request.len, remaining);
-              const chunk = fileBytes.subarray(peerState.currentOffset, peerState.currentOffset + len);
-              peer.feedFile(chunk);
-              peerState.currentOffset += len;
-              progressed = true;
-            }
-          }
-        }
-      };
+      const peer = new ZmodemPeer(nativeHostPath(), "peer-download");
+      await peer.ready;
+      sidecar.send({ type: "open", sessionId });
+      peer.open();
 
-      // 持续泵：sidecar 的 writeRemote 消息喂给对端（必须在 offer 之前启动）
+      // 字节穿梭：对端 writeRemote → sidecar input；
+      // sidecar writeRemote → 对端 input
+      peer.onWire = (bytes) =>
+        sidecar.send({ type: "input", sessionId, dataBase64: b64(bytes) });
       const pump = setInterval(() => {
         for (const message of sidecar.messages) {
-          if (message.type === "writeRemote" && message.sessionId === sessionId && !message._consumed) {
+          if (
+            message.type === "writeRemote" &&
+            message.sessionId === sessionId &&
+            !message._consumed
+          ) {
             message._consumed = true;
-            peerState.pendingInput = Buffer.concat([
-              peerState.pendingInput,
-              un64(message.dataBase64),
-            ]);
+            peer.feed(un64(message.dataBase64));
           }
         }
-        void peerDrive();
       }, 10);
 
-      // sidecar writeRemote → peer；offer → acceptFile；最终 done
-      // 第一段 writeRemote 是 sidecar 接收器的主动 ZRINIT
-      await sidecar.waitFor(
-        (m) => m.type === "writeRemote" && m.sessionId === sessionId,
+      const offerPromise = sidecar.waitFor(
+        (m) =>
+          m.type === "event" && m.sessionId === sessionId && m.kind === "offer",
         15000,
       );
-      peerState.zrinitReceived = true;
-      // npm zmodem2 Sender 默认 8192 字节子包（其常量），Rust crate 接收缓冲上限 1024；
-      // 真实 lrzsz sz 使用 1024 字节子包，此处对齐 lrzsz 行为
-      peer.maxSubpacketSize = 1024;
+      const donePromise = sidecar.waitFor(
+        (m) =>
+          m.type === "event" &&
+          m.sessionId === sessionId &&
+          (m.kind === "done" || m.kind === "error" || m.kind === "cancelled"),
+        30000,
+      );
+
+      // 触发对端发送：手工构造的 ZRINIT（rz 启动序列）+ 授予文件清单
+      peer.feed(buildZrinitFrame());
+      peer.sendFiles([
+        { path: peerSource, name: fileName, size: fileBytes.length },
+      ]);
+
       const offer = await offerPromise;
       assert.equal(offer.event.fileName, fileName);
       sidecar.send({ type: "acceptFile", sessionId, path: target });
 
-      const donePromise = sidecar.waitFor(
-        (m) => m.type === "event" && m.sessionId === sessionId && (m.kind === "done" || m.kind === "error" || m.kind === "cancelled"),
-        30000,
-      );
-
-      // npm zmodem2 Sender 忽略 ZRINIT 的 buffer_len（其常量 8192），Rust crate
-      // 接收缓冲上限 1024；真实 lrzsz sz 使用 1024 字节子包，此处对齐 lrzsz 行为
       const done = await donePromise;
+      const peerDone = await peer.waitDone(15000);
       clearInterval(pump);
-      if (done.kind !== "done") throw new Error(`download loop failed: ${done.kind} ${JSON.stringify(done)}`);
+      await peer.close();
+      if (done.kind !== "done")
+        throw new Error(
+          `download loop failed: ${done.kind} ${JSON.stringify(done)}`,
+        );
+      if (peerDone.kind !== "done")
+        throw new Error(
+          `download peer failed: ${peerDone.kind} ${JSON.stringify(peerDone)}`,
+        );
 
       const received = fs.readFileSync(target);
       assert.equal(received.length, fileBytes.length);
@@ -352,129 +320,83 @@ async function main() {
         crypto.createHash("sha256").update(fileBytes).digest("hex"),
       );
       fs.rmSync(target, { force: true });
+      fs.rmSync(peerSource, { force: true });
       pass("loopback interop: download via sidecar receiver (digest verified)");
     }
 
     // ---------------------------------------------------------------
-    // 3. 真实协议回环：上传（sidecar 发送 ↔ npm zmodem2 Receiver 对端）
+    // 3. 真实协议回环：上传（sidecar 发送 ↔ 对端 zmodem-serve 接收）
     // ---------------------------------------------------------------
     {
       const sessionId = "loop-upload";
       const fileBytes = crypto.randomBytes(32 * 1024 + 7);
       const fileName = "upload 测试.bin";
       const uploadPath = path.join(os.tmpdir(), `zmodem-up-${Date.now()}.bin`);
+      const savePath = path.join(os.tmpdir(), `zmodem-save-${Date.now()}.bin`);
       fs.writeFileSync(uploadPath, fileBytes);
-      const receivedChunks = [];
 
+      const peer = new ZmodemPeer(nativeHostPath(), "peer-upload");
+      await peer.ready;
       sidecar.send({ type: "open", sessionId });
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      // 对端 rz：用 npm zmodem2 Receiver 模拟
-      const peer = new Receiver();
-      const peerState = { pendingInput: Buffer.alloc(0), finished: false, name: null, data: [] };
-      // npm Receiver 对 ZFIN 直接回 "OO"（偏离协议）；真实 lrzsz rz 回 ZFIN 头，
-      // Rust Sender 等待 ZFIN 后发送 "OO" 并结束会话，此处补发 ZFIN 帧
-      const crc16xmodem = (buf) => {
-        let crc = 0;
-        for (const byte of buf) {
-          crc ^= byte << 8;
-          for (let i = 0; i < 8; i += 1) {
-            crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+      peer.open();
+      // 对端 rz：收到 offer 自动批准到 savePath
+      peer.onOffer = () => savePath;
+      peer.onWire = (bytes) =>
+        sidecar.send({ type: "input", sessionId, dataBase64: b64(bytes) });
+      const pump = setInterval(() => {
+        for (const message of sidecar.messages) {
+          if (
+            message.type === "writeRemote" &&
+            message.sessionId === sessionId &&
+            !message._consumed
+          ) {
+            message._consumed = true;
+            peer.feed(un64(message.dataBase64));
           }
         }
-        return crc;
-      };
-      const zfinPayload = [8, 0, 0, 0, 0];
-      const zfinHex =
-        zfinPayload.map((byte) => byte.toString(16).padStart(2, "0")).join("") +
-        crc16xmodem(zfinPayload).toString(16).padStart(4, "0");
-      const zfinFrame = Buffer.concat([
-        Buffer.from([42, 42, 24, 66]),
-        Buffer.from(zfinHex, "latin1"),
-        Buffer.from([13, 10, 17]),
-      ]);
+      }, 10);
 
-      // 对端 rz 发出的第一段字节：ZRINIT（由 peer 状态机生成）
-      const zrinit = Buffer.from(peer.drainOutgoing());
-      peer.advanceOutgoing(zrinit.length);
-      assert.equal(zrinit[4], 48); // hex 编码首字符 'B0'
-      assert.equal(zrinit[5], 49); // ZRINIT
-      sidecar.send({ type: "input", sessionId, dataBase64: b64(zrinit) });
+      const donePromise = sidecar.waitFor(
+        (m) =>
+          m.type === "event" &&
+          m.sessionId === sessionId &&
+          (m.kind === "done" || m.kind === "error" || m.kind === "cancelled"),
+        30000,
+      );
+
+      // 触发上传：手工构造的 ZRINIT（rz 启动序列）使 sidecar 进入上传模式
+      sidecar.send({
+        type: "input",
+        sessionId,
+        dataBase64: b64(buildZrinitFrame()),
+      });
       sidecar.send({
         type: "sendFiles",
         sessionId,
         files: [{ path: uploadPath, name: fileName, size: fileBytes.length }],
       });
 
-      const donePromise = sidecar.waitFor(
-        (m) => m.type === "event" && m.sessionId === sessionId && (m.kind === "done" || m.kind === "error" || m.kind === "cancelled"),
-        30000,
-      );
-
-      const pump = setInterval(() => {
-        for (const message of sidecar.messages) {
-          if (message.type === "writeRemote" && message.sessionId === sessionId && !message._consumed) {
-            message._consumed = true;
-            peerState.pendingInput = Buffer.concat([
-              peerState.pendingInput,
-              un64(message.dataBase64),
-            ]);
-          }
-        }
-        // 对端驱动
-        let progressed = true;
-        while (progressed && !peerState.finished) {
-          progressed = false;
-          const outgoing = peer.drainOutgoing();
-          if (outgoing && outgoing.length) {
-            sidecar.send({ type: "input", sessionId, dataBase64: b64(Buffer.from(outgoing)) });
-            peer.advanceOutgoing(outgoing.length);
-            progressed = true;
-          }
-          if (peerState.pendingInput.length) {
-            const consumed = peer.feedIncoming(peerState.pendingInput);
-            if (consumed > 0) {
-              peerState.pendingInput = peerState.pendingInput.subarray(consumed);
-              progressed = true;
-            } else {
-              peerState.pendingInput = Buffer.alloc(0);
-            }
-          }
-          let event = peer.pollEvent();
-          while (event) {
-            if (event === "FileStart") {
-              peerState.name = String(peer.getFileName() || "");
-              progressed = true;
-            }
-            if (event === "FileComplete") progressed = true;
-            if (event === "SessionComplete") {
-              peerState.finished = true;
-              // 模拟 lrzsz rz：以 ZFIN 头应答对端 Sender 的 ZFIN
-              sidecar.send({ type: "input", sessionId, dataBase64: b64(zfinFrame) });
-              progressed = true;
-            }
-            event = peer.pollEvent();
-          }
-          let data = peer.drainFile();
-          while (data && data.length) {
-            receivedChunks.push(Buffer.from(data));
-            peer.advanceFile(data.length);
-            data = peer.drainFile();
-          }
-        }
-      }, 10);
-
       const done = await donePromise;
+      const peerDone = await peer.waitDone(15000);
       clearInterval(pump);
-      if (done.kind !== "done") throw new Error(`upload loop failed: ${done.kind} ${JSON.stringify(done)}`);
+      await peer.close();
+      if (done.kind !== "done")
+        throw new Error(
+          `upload loop failed: ${done.kind} ${JSON.stringify(done)}`,
+        );
+      if (peerDone.kind !== "done")
+        throw new Error(
+          `upload peer failed: ${peerDone.kind} ${JSON.stringify(peerDone)}`,
+        );
 
-      const received = Buffer.concat(receivedChunks);
+      const received = fs.readFileSync(savePath);
       assert.equal(received.length, fileBytes.length);
       assert.equal(
         crypto.createHash("sha256").update(received).digest("hex"),
         crypto.createHash("sha256").update(fileBytes).digest("hex"),
       );
       fs.rmSync(uploadPath, { force: true });
+      fs.rmSync(savePath, { force: true });
       pass("loopback interop: upload via sidecar sender (digest verified)");
     }
 
@@ -483,10 +405,17 @@ async function main() {
     //     覆盖 P3.5 接入点（透传回调/事件映射）与 P3.6 背压计数
     // ---------------------------------------------------------------
     {
-      const { ZmodemTransferService } = require("../src/main/terminal/zmodemTransferService");
+      const {
+        ZmodemTransferService,
+      } = require("../src/main/terminal/zmodemTransferService");
       const processId = "orch-native-1";
       const fileBytes = crypto.randomBytes(48 * 1024 + 3);
       const fileName = "orch 测试.bin";
+      const peerSource = path.join(
+        os.tmpdir(),
+        `zmodem-orch-src-${Date.now()}.bin`,
+      );
+      fs.writeFileSync(peerSource, fileBytes);
       const ipcEvents = [];
       const terminalTexts = [];
 
@@ -495,93 +424,22 @@ async function main() {
         emitIpc: (payload) => ipcEvents.push(payload),
       });
 
-      // 对端 sz：用 npm zmodem2 Sender 模拟
-      const peer = new Sender(false);
-      const peerState = {
-        pendingInput: Buffer.alloc(0),
-        finished: false,
-        started: false,
-        zrinit: false,
-        off: 0,
-      };
-      // mock SSH stream：write() 里的字节即写回远端 → 喂给对端
+      // 对端 sz：第二个 zmodem-serve 实例（发送角色）
+      const peer = new ZmodemPeer(nativeHostPath(), "peer-orch");
+      await peer.ready;
+      peer.open();
+
+      // mock SSH stream：write() 里的字节即写回远端 → 交给对端
       const { EventEmitter } = require("node:events");
       const stream = new EventEmitter();
       stream.write = (octets) => {
-        peerState.pendingInput = Buffer.concat([
-          peerState.pendingInput,
-          Buffer.isBuffer(octets) ? octets : Buffer.from(octets),
-        ]);
+        peer.feed(Buffer.isBuffer(octets) ? octets : Buffer.from(octets));
         return true;
-      };
-
-      const peerDrive = () => {
-        let progressed = true;
-        while (progressed && !peerState.finished) {
-          progressed = false;
-          const outgoing = peer.drainOutgoing();
-          if (outgoing && outgoing.length) {
-            service.feedOutput(processId, Buffer.from(outgoing), {
-              stream,
-              tabId: "orch-tab",
-              sshConfig: {},
-              emitTerminalText: (text) => terminalTexts.push(text),
-              onRawOutput: () => {},
-              onBackpressure: () => {},
-            });
-            peer.advanceOutgoing(outgoing.length);
-            progressed = true;
-          }
-          if (peerState.pendingInput.length) {
-            const consumed = peer.feedIncoming(peerState.pendingInput);
-            if (consumed > 0) {
-              peerState.pendingInput = peerState.pendingInput.subarray(consumed);
-              progressed = true;
-            } else {
-              peerState.pendingInput = Buffer.alloc(0);
-            }
-          }
-          let event = peer.pollEvent();
-          while (event) {
-            if (event === "FileComplete") {
-              peer.finishSession();
-              progressed = true;
-            }
-            if (event === "SessionComplete") {
-              peerState.finished = true;
-              progressed = true;
-            }
-            event = peer.pollEvent();
-          }
-          if (!peerState.started) {
-            if (peerState.zrinit && peerState.pendingInput.length === 0) {
-              peer.maxSubpacketSize = 1024;
-              peer.startFile(fileName, fileBytes.length, Date.now());
-              peerState.started = true;
-              progressed = true;
-            }
-          } else {
-            peer.maxSubpacketSize = 1024;
-            const request = peer.pollFile();
-            if (request) {
-              const remaining = fileBytes.length - peerState.off;
-              const len = Math.min(request.len, remaining);
-              peer.feedFile(fileBytes.subarray(peerState.off, peerState.off + len));
-              peerState.off += len;
-              progressed = true;
-            }
-          }
-        }
       };
 
       // 透传字节（检测模式）经 onRawOutput → mock 终端缓冲
       const terminalBytes = [];
       const onRawOutput = (raw) => terminalBytes.push(raw);
-
-      // 对端 sz 发出 ZRQINIT（第一段字节）
-      peer.queueZrqinit();
-      const intro = Buffer.from(peer.drainOutgoing());
-      peer.advanceOutgoing(intro.length);
 
       const context = () => ({
         stream,
@@ -591,11 +449,20 @@ async function main() {
         onRawOutput,
         onBackpressure: () => {},
       });
-      const returned = service.feedOutput(processId, intro, context());
-      assert.equal(returned.length, 0, "native backend must not return bytes synchronously");
 
-      // 持续泵：writeRemote 已在 stream.write 中喂给对端；驱动对端状态机
-      const orchPump = setInterval(peerDrive, 10);
+      // 对端协议字节 → 被测编排层；native 后端同步返回恒为空
+      let firstReturn = null;
+      peer.onWire = (bytes) => {
+        const returned = service.feedOutput(processId, bytes, context());
+        if (firstReturn === null) firstReturn = returned;
+      };
+
+      // 触发对端发送：手工 ZRINIT（rz 启动序列）+ 授予文件清单
+      peer.feed(buildZrinitFrame());
+      peer.sendFiles([
+        { path: peerSource, name: fileName, size: fileBytes.length },
+      ]);
+
       const waitForIpc = (predicate, timeoutMs) =>
         new Promise((resolve, reject) => {
           const timer = setTimeout(
@@ -614,12 +481,24 @@ async function main() {
           check();
         });
       await waitForIpc((e) => e.type === "start", 15000);
-      peerState.zrinit = true;
+      assert.equal(
+        firstReturn.length,
+        0,
+        "native backend must not return bytes synchronously",
+      );
       const endEvent = await waitForIpc((e) => e.type === "end", 30000);
-      clearInterval(orchPump);
-      if (endEvent.status !== "complete") { console.log("[dbg endEvent]", JSON.stringify(endEvent), "texts:", JSON.stringify(terminalTexts)); }
+      const peerDone = await peer.waitDone(15000);
+      if (endEvent.status !== "complete") {
+        console.log(
+          "[dbg endEvent]",
+          JSON.stringify(endEvent),
+          "texts:",
+          JSON.stringify(terminalTexts),
+        );
+      }
 
       assert.equal(endEvent.status, "complete");
+      assert.equal(peerDone.kind, "done");
 
       // 下载文件摘要与 IPC 事件映射验证（实际保存路径由编排器唯一化生成）
       const fileDoneEvent = ipcEvents.find((e) => e.type === "file-done");
@@ -633,11 +512,21 @@ async function main() {
         crypto.createHash("sha256").update(fileBytes).digest("hex"),
       );
       const types = new Set(ipcEvents.map((e) => e.type));
-      assert.ok(types.has("start") && types.has("offer") && types.has("file-done"), `missing IPC events: ${[...types]}`);
-      assert.ok(terminalTexts.some((t) => t.includes("***")), "terminal status text missing");
+      assert.ok(
+        types.has("start") && types.has("offer") && types.has("file-done"),
+        `missing IPC events: ${[...types]}`,
+      );
+      assert.ok(
+        terminalTexts.some((t) => t.includes("***")),
+        "terminal status text missing",
+      );
       fs.rmSync(target, { force: true });
+      fs.rmSync(peerSource, { force: true });
       service.destroyProcess(processId);
-      pass("native orchestrator end-to-end (backend=native, IPC event mapping)");
+      await peer.close();
+      pass(
+        "native orchestrator end-to-end (backend=native, IPC event mapping)",
+      );
     }
 
     // ---------------------------------------------------------------
@@ -679,7 +568,9 @@ async function main() {
 
   if (failed.length) {
     process.exitCode = 1;
-    throw new Error(`${failed.length} zmodem sidecar checks failed: ${failed.join(", ")}`);
+    throw new Error(
+      `${failed.length} zmodem sidecar checks failed: ${failed.join(", ")}`,
+    );
   }
   process.stdout.write("All zmodem sidecar checks passed.\n");
   process.exit(0);

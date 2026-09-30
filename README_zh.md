@@ -203,12 +203,11 @@ simpleshell/
 ├── native-services/         # Rust native-services crate
 ├── tests/                   # Unit and composition tests
 ├── scripts/                 # Build, release and integration checks
-├── docs/                    # Release and architecture documentation
 ├── forge.config.js
 └── webpack.*.config.js
 ```
 
-源码按运行环境划分。目录规则见 [DIRECTORY_CONVENTIONS.md](DIRECTORY_CONVENTIONS.md)，验证流程见 [MANUAL_TESTING.md](MANUAL_TESTING.md)，发布步骤见 [docs/RELEASING.md](docs/RELEASING.md)。
+源码按运行环境划分。各领域的约定记录在代码旁的 README 中（例如 `src/main/file-transfer/`、`src/renderer/features/`）。
 
 ## **技术栈**
 

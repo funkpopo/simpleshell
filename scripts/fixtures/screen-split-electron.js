@@ -3,7 +3,10 @@ const { Server, Client } = require("ssh2");
 const { generateKeyPairSync } = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
-const { Sender, Receiver } = require("zmodem2");
+const { ZmodemPeer, buildZrinitFrame } = require("./zmodem-peer");
+const {
+  getNativeServicesHostPath,
+} = require("../../src/main/native/nativeServices");
 const {
   ZmodemTransferService,
 } = require("../../src/main/terminal/zmodemTransferService");
@@ -70,94 +73,80 @@ const server = new Server(
         session.on("shell", (acceptShell) => {
           const stream = acceptShell();
           channels.set(name, stream);
+          // ZMODEM 对端：第二个 zmodem-serve 实例（模拟远端 rz/sz）。
+          // 字节穿梭是事件直驱：SSH 流字节 feed 给对端，对端 writeRemote
+          // 直接写回 SSH 流；无轮询泵，避开 Windows 定时器粒度钳制。
           let peer = null;
-          let received = [];
-          let offset = 0;
-          let pumping = false;
-          let pendingInput = Buffer.alloc(0);
-          const pump = () => {
-            if (!peer || pumping) return;
-            pumping = true;
-            // setImmediate：Windows 下 setTimeout(2) 会被钳制到 ~15.6ms
-            //（定时器粒度），422 帧 × 数次泵送会逼近 20s 断言窗口
-            setImmediate(() => {
-              pumping = false;
-              if (!peer) return;
-              // npm zmodem2 在 updateReceiverCaps（收到 ZRINIT）时会重置
-              // maxSubpacketSize（其常量 8192）；Rust crate 接收缓冲上限
-              // 1024，每次驱动都须对齐，否则侧边车报 "out of memory"
-              peer.maxSubpacketSize = 1024;
-              const outgoing = peer.drainOutgoing();
-              if (outgoing.length) stream.write(Buffer.from(outgoing));
-              let event;
-              while ((event = peer.pollEvent())) {
-                console.log("PEER", name, event);
-                if (event === "FileComplete" && peer instanceof Sender)
-                  peer.finishSession();
-                if (event === "SessionComplete") {
-                  if (peer instanceof Receiver) {
-                    const tail = peer.drainFile();
-                    if (tail?.length) received.push(Buffer.from(tail));
-                    if (!Buffer.concat(received).equals(payload))
-                      throw new Error("SSH ZMODEM upload bytes differ");
-                    stats.uploads++;
-                  } else stats.downloads++;
-                  peer = null;
-                  stream.write(`\r\n${name}:transfer-complete\r\n`);
-                  return;
-                }
-              }
-              if (peer instanceof Sender) {
-                const request = peer.pollFile();
-                if (request) {
-                  offset = request.offset;
-                  peer.feedFile(
-                    payload.subarray(
-                      offset,
-                      Math.min(offset + request.len, payload.length),
-                    ),
-                  );
-                  pump();
-                }
-              } else {
-                const data = peer.drainFile();
-                if (data?.length) received.push(Buffer.from(data));
-              }
-              // 对端投递不做吸收条件限制（与 check-zmodem-sidecar.js 的
-              // 对端驱动一致）：npm zmodem2 在等待 ZFIN 应答（state 7）时
-              // 也需接收 "OO" 才能触发 SessionComplete
-              if (pendingInput.length) {
-                const consumed = peer.feedIncoming(pendingInput);
-                pendingInput =
-                  consumed > 0
-                    ? pendingInput.subarray(consumed)
-                    : Buffer.alloc(0);
-              }
-              pump();
+          const runPeer = (task) =>
+            task().catch((error) => {
+              console.error("SCREEN_SPLIT FAIL", error.stack);
+              app.exit(1);
             });
+          const startPeer = async () => {
+            const instance = new ZmodemPeer(
+              getNativeServicesHostPath(),
+              `peer-${name}`,
+            );
+            await instance.ready;
+            instance.open();
+            instance.onWire = (bytes) => stream.write(bytes);
+            return instance;
           };
+          const finishPeer = async (ev, role) => {
+            if (ev.kind !== "done")
+              throw new Error(`fixture ${role} failed: ${ev.kind}`);
+            stats[role === "download" ? "downloads" : "uploads"]++;
+            await peer.close();
+            peer = null;
+            stream.write(`\r\n${name}:transfer-complete\r\n`);
+          };
+          stream.on("close", () => {
+            if (peer) {
+              peer.close();
+              peer = null;
+            }
+          });
           stream.on("data", (data) => {
             if (peer) {
-              pendingInput = Buffer.concat([pendingInput, data]);
-              pump();
+              peer.feed(data);
               return;
             }
             const command = data.toString().trim();
             if (command === "fixture-download") {
-              peer = new Sender(true);
-              // npm zmodem2 Sender 忽略 ZRINIT 的 buffer_len（其常量 8192）；
-              // Rust crate 接收缓冲上限 1024，须对齐
-              peer.maxSubpacketSize = 1024;
-              peer.startFile(
-                `download-${name}-${Date.now()}.txt`,
-                payload.length,
-                Date.now(),
-              );
-              pump();
+              runPeer(async () => {
+                peer = await startPeer();
+                // 触发对端发送：手工 ZRINIT（rz 启动序列）+ 授予文件清单
+                peer.feed(buildZrinitFrame());
+                peer.sendFiles([
+                  {
+                    path: uploadPath,
+                    name: `download-${name}-${Date.now()}.txt`,
+                    size: payload.length,
+                  },
+                ]);
+                await finishPeer(await peer.waitDone(60000), "download");
+              });
             } else if (command === "fixture-upload") {
-              received = [];
-              peer = new Receiver();
-              pump();
+              runPeer(async () => {
+                peer = await startPeer();
+                const savePath = path.join(
+                  output,
+                  `upload-${name}-${Date.now()}.bin`,
+                );
+                peer.onOffer = () => savePath;
+                // 模拟 rz 启动序列：主动写入 SSH 流，触发应用侧上传状态机
+                stream.write(buildZrinitFrame());
+                const ev = await peer.waitDone(60000);
+                if (ev.kind !== "done")
+                  throw new Error(`fixture upload failed: ${ev.kind}`);
+                if (!fs.readFileSync(savePath).equals(payload))
+                  throw new Error("SSH ZMODEM upload bytes differ");
+                fs.rmSync(savePath, { force: true });
+                stats.uploads++;
+                await peer.close();
+                peer = null;
+                stream.write(`\r\n${name}:transfer-complete\r\n`);
+              });
             } else if (command === "fixture-cwd") {
               stream.write(`\x1b]7;file://loopback/sessions/${name}\x07`);
             } else stream.write(`\r\n${name}:${command}\r\n`);
