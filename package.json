@@ -1,7 +1,7 @@
 {
   "name": "simpleshell",
   "productName": "SimpleShell",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "A Simple Cross-Platform Electron SSH Terminal",
   "main": ".webpack/main",
   "scripts": {
