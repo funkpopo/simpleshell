@@ -45,8 +45,12 @@ export default function useAppTheme() {
     // 与 shared/startupTheme.clearStartupThemeBootstrap 保持一致（避免 CJS 动态 import）
     document.body?.classList.remove("ss-bootstrapping");
     document.documentElement?.style.removeProperty("background-color");
+    // inline color-scheme / data-ss-boot-theme 也要清除，否则主题切换后残留过期值
+    document.documentElement?.style.removeProperty("color-scheme");
+    document.documentElement?.removeAttribute("data-ss-boot-theme");
     document.body?.style.removeProperty("background-color");
     document.getElementById("root")?.style.removeProperty("background-color");
+    document.getElementById("ss-startup-boot")?.remove();
 
     // 双 rAF：确保 CssBaseline / 首屏布局已提交到合成器后再 show
     outerRaf = requestAnimationFrame(() => {

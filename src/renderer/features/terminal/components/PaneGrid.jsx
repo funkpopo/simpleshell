@@ -7,7 +7,11 @@ import Typography from "@mui/material/Typography";
 import CloseIcon from "@mui/icons-material/Close";
 import { useTranslation } from "react-i18next";
 import useDragResize from "../../../shared/hooks/useDragResize.js";
-import { clampRatio } from "../model/paneLayout.js";
+import {
+  clampRatio,
+  MIN_PANE_RATIO,
+  MAX_PANE_RATIO,
+} from "../model/paneLayout.js";
 
 const DIVIDER_THICKNESS = 5;
 const DIVIDER_HIT_AREA = 12;
@@ -227,15 +231,32 @@ const PaneDivider = ({ orientation, getRatio, setRatio, sx }) => {
       role="separator"
       aria-orientation={orientation}
       aria-valuenow={Math.round(getRatio())}
-      aria-valuemin={15}
-      aria-valuemax={85}
+      aria-valuemin={MIN_PANE_RATIO}
+      aria-valuemax={MAX_PANE_RATIO}
       tabIndex={0}
       onKeyDown={(event) => {
         const negative = isVertical ? "ArrowLeft" : "ArrowUp";
         const positive = isVertical ? "ArrowRight" : "ArrowDown";
         if (event.key !== negative && event.key !== positive) return;
         event.preventDefault();
-        setRatio(clampRatio(getRatio() + (event.key === positive ? 2 : -2)));
+        // 与拖拽的像素下限（MIN_PANE_SIZE_PX）保持一致：
+        // 小容器下 15% 可能不足 80px，需换算为百分比钳制
+        measureContainer();
+        const size = isVertical
+          ? containerSizeRef.current.width
+          : containerSizeRef.current.height;
+        const minPct =
+          size > 0
+            ? Math.max(MIN_PANE_RATIO, (MIN_PANE_SIZE_PX / size) * 100)
+            : MIN_PANE_RATIO;
+        const maxPct = Math.max(minPct, 100 - minPct);
+        setRatio(
+          clampRatio(
+            getRatio() + (event.key === positive ? 2 : -2),
+            minPct,
+            Math.min(MAX_PANE_RATIO, maxPct),
+          ),
+        );
       }}
       onMouseDown={startResize(isVertical ? "width" : "height")}
       sx={{
@@ -374,7 +395,8 @@ const PaneGrid = ({
         <PaneDivider
           key="rows"
           orientation="horizontal"
-          sx={{ gridRow: 2, gridColumn: grid ? "1 / 4" : 1, zIndex: 3 }}
+          // 与垂直分隔条同层级，避免四宫格中心十字处 hover 高亮跳变
+          sx={{ gridRow: 2, gridColumn: grid ? "1 / 4" : 1, zIndex: 2 }}
           getRatio={() => rowRatio}
           setRatio={(value) =>
             onSetRatios(grid ? [ratios[0], value] : [value, ratios[1]])

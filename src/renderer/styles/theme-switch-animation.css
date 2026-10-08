@@ -13,10 +13,13 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 9998;
+  z-index: var(--z-theme-switch, 1600);
   will-change: clip-path, opacity;
   opacity: 0;
   mix-blend-mode: normal;
+  /* 确保遮罩不会干扰用户交互 */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* 暗色主题遮罩 */
@@ -120,12 +123,6 @@ body.theme-switching .MuiSvgIcon-root {
 .theme-button-pulse {
   transform: translateZ(0);
   backface-visibility: hidden;
-}
-
-/* 确保遮罩不会干扰用户交互 */
-.theme-switch-overlay {
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

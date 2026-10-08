@@ -142,14 +142,8 @@ export function useTerminalLayout({
           Math.abs(rect.width - previous.width) > 0.5 ||
           Math.abs(rect.height - previous.height) > 0.5;
 
-        // Always re-apply geometry on forced sync (alternate buffer / editor).
-        // xterm can keep stale element box sizes after buffer switches even when
-        // the outer container rect did not change.
-        if ((sizeChanged || forceResizeMessage) && term.element) {
-          term.element.style.width = `${rect.width}px`;
-          term.element.style.height = `${rect.height}px`;
-        }
-
+        // 注意：不要向 term.element 写像素宽高——.xterm 的 100% !important
+        // 会覆盖非 important 内联样式（见 WebTerminal.css），几何同步交给 fit()。
         fitAddon.fit();
 
         const colsChanged = term.cols !== previous.cols;

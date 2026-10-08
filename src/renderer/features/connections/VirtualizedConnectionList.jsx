@@ -25,7 +25,11 @@ import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import { useTranslation } from "react-i18next";
-import { sidebarListItemSx } from "../../shared/ui/sidebarItemStyles";
+import {
+  sidebarListItemSx,
+  CONNECTION_LIST_BASE_INDENT_PX,
+  CONNECTION_LIST_DEPTH_INDENT_PX,
+} from "../../shared/ui/sidebarItemStyles";
 
 // Matches ConnectionManager.jsx row markers for native contextmenu retarget focus
 const CONNECTION_MANAGER_ITEM_DATA_ATTR = "data-connection-manager-item";
@@ -52,7 +56,9 @@ const ConnectionItem = memo(
     const isSelected = selectedItem?.id === item.id;
     const isGroup = item.type === "group";
     const depth = item.depth || 0;
-    const paddingLeft = 16 + depth * 20; // Indentation based on nesting level
+    // 层级缩进与非虚拟化列表共用同一口径（见 sidebarItemStyles）
+    const paddingLeft =
+      CONNECTION_LIST_BASE_INDENT_PX + depth * CONNECTION_LIST_DEPTH_INDENT_PX;
 
     const handleClick = useCallback(() => {
       if (isGroup) {
@@ -305,6 +311,8 @@ const calculateOverscan = (
 };
 
 // Main virtualized connection list component
+// 默认值与唯一调用方（ConnectionManager）及行内 minHeight:36 保持一致，
+// 避免新调用方省略 props 时行高与样式不符
 const VirtualizedConnectionList = ({
   connections = [],
   selectedItem,
@@ -313,8 +321,8 @@ const VirtualizedConnectionList = ({
   onDoubleClick,
   onItemContextMenu,
   onBlankContextMenu,
-  height = 400,
-  itemHeight = 48,
+  height = "100%",
+  itemHeight = 36,
   enableVirtualization = true,
   devicePerformance = "medium",
   enableDragDrop = false,

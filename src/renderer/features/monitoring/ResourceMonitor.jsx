@@ -28,7 +28,6 @@ import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import Memory from "@mui/icons-material/Memory"; // For Processes icon
 import {
-  SIDEBAR_TITLE_BAR_HEIGHT,
   sidebarListItemButtonSx,
   sidebarTitleIconButtonSx,
 } from "../../shared/ui/sidebarItemStyles";
@@ -445,10 +444,12 @@ const ResourceMonitorContent = memo(
       >
         <Box
           sx={{
+            // SidebarPanel 是 flex 列布局，flexGrow + minHeight 即可填满剩余空间，
+            // 无需再假设标题栏高度做 calc
             flexGrow: 1,
+            minHeight: 0,
             overflow: "auto",
             p: 1.5,
-            height: `calc(100% - ${SIDEBAR_TITLE_BAR_HEIGHT}px)`,
           }}
         >
           {loading && !error && !systemInfo ? (

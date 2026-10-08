@@ -1,4 +1,6 @@
-/* Terminal container and xterm specific styles */
+/* Terminal container and xterm specific styles
+ * 单一事实来源：运行时注入的 terminalStyles（runtime/terminalDom.js）
+ * 只保留搜索高亮等本文件未覆盖的规则，避免双源漂移。 */
 .terminal-container {
   position: relative;
   display: flex;
@@ -14,6 +16,7 @@
   width: 100% !important;
   padding: 0;
   overflow: hidden;
+  background: inherit;
   font-feature-settings:
     "liga" 1,
     "calt" 1;
@@ -29,6 +32,7 @@
 .xterm-viewport {
   overflow-y: auto;
   overflow-x: hidden;
+  background: inherit !important;
 }
 
 /* Fullscreen / alternate-buffer editors: no scrollbar gutter, no overlays. */
@@ -46,18 +50,19 @@
 }
 
 .xterm-viewport::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 5px;
+  background: transparent;
 }
 
 .xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 128, 0.4);
+  background-color: rgba(128, 128, 128, 0.4);
   border-radius: 5px;
-  transition: background 0.2s ease;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background-color 0.2s ease;
 }
 
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 128, 0.6);
+  background-color: rgba(128, 128, 128, 0.7);
 }
 
 /* 光标优化 - 平滑动画和视觉增强 */
@@ -102,16 +107,19 @@
   pointer-events: none !important;
 }
 
-.xterm-selection div {
-  background-color: rgba(100, 150, 255, 0.34) !important;
+.xterm .xterm-selection div {
+  pointer-events: none !important;
+  box-sizing: border-box !important;
+  background-color: rgba(88, 166, 255, 0.34) !important;
 }
 
-.dark-theme .xterm-selection div {
+.dark-theme .xterm .xterm-selection div {
   background-color: rgba(255, 223, 0, 0.32) !important;
 }
 
-.light-theme .xterm-selection div {
-  background-color: rgba(0, 120, 215, 0.28) !important;
+.light-theme .xterm .xterm-selection div,
+body:not(.dark-theme) .xterm .xterm-selection div {
+  background-color: rgba(9, 105, 218, 0.28) !important;
 }
 
 /* 链接样式优化 */

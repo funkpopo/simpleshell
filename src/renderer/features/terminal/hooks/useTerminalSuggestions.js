@@ -10,6 +10,11 @@ import {
   normalizeCommandSuggestionInput,
   shouldRequestCommandSuggestions,
 } from "../model/commandSuggestionState.js";
+import {
+  SUGGESTION_BOTTOM_BAR_HEIGHT,
+  SUGGESTION_ITEM_HEIGHT,
+  SUGGESTION_MAX_HEIGHT,
+} from "../model/commandSuggestionPosition.js";
 
 const waitForTerminalLayoutFrame = () =>
   new Promise((resolve) => {
@@ -121,7 +126,11 @@ export const useTerminalSuggestions = ({
       try {
         const term = termRef.current;
         const container = terminalRef.current;
-        const suggestionHeight = Math.min(suggestionCount * 28 + 28, 300);
+        const suggestionHeight = Math.min(
+          suggestionCount * SUGGESTION_ITEM_HEIGHT +
+            SUGGESTION_BOTTOM_BAR_HEIGHT,
+          SUGGESTION_MAX_HEIGHT,
+        );
         const containerRect = container.getBoundingClientRect();
         if (!isUsableRect(containerRect)) {
           setCursorPosition(null);

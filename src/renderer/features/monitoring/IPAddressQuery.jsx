@@ -39,6 +39,8 @@ const ipUtils = require("../../../shared/domain/ip");
 // In-memory LRU + TTL; persisted records are stored in config.json via UI settings.
 const CLIENT_IP_MEMORY_MAX = 64;
 const CLIENT_IP_MEMORY_TTL_MS = 10 * 60 * 1000;
+/** 地图区域弹性高度（世界地图容器与骨架屏共用） */
+const MAP_AREA_HEIGHT = "clamp(140px, 28vh, 220px)";
 const clientIpMemoryCache = new Map();
 
 function normalizeClientCacheKey(ip) {
@@ -302,8 +304,8 @@ const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
             <Skeleton variant="text" width="40%" height={20} />
             <Skeleton variant="text" width="30%" height={20} />
           </Paper>
-          <Box sx={{ mt: 2, height: "200px" }}>
-            <Skeleton variant="rounded" width="100%" height={200} />
+          <Box sx={{ mt: 2, height: MAP_AREA_HEIGHT }}>
+            <Skeleton variant="rounded" width="100%" height="100%" />
           </Box>
         </Box>
       );
@@ -426,7 +428,9 @@ const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
               mb: 1,
               borderRadius: 1,
               overflow: "hidden",
-              height: "200px",
+              // 弹性高度：侧栏偏矮时不至于把查询结果区压没
+              height: MAP_AREA_HEIGHT,
+              flexShrink: 0,
               display: "flex",
               justifyContent: "center",
               alignItems: "center",
@@ -534,7 +538,8 @@ const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
                 <ExpandMoreIcon
                   fontSize="small"
                   sx={{
-                    transform: historyOpen ? "rotate(0deg)" : "rotate(180deg)",
+                    // 与全局手风琴约定一致：收起朝下(0deg)，展开朝上(180deg)
+                    transform: historyOpen ? "rotate(180deg)" : "rotate(0deg)",
                     transition: theme.transitions.create("transform", {
                       duration: theme.transitions.duration.shortest,
                     }),

@@ -131,14 +131,16 @@ const WebTerminalSearchOverlay = ({
           }
         }}
         style={{
-          borderColor: noMatchFound ? "red" : undefined,
-          width: searchTerm ? "150px" : "200px",
+          // 宽度由 searchBarStyles 固定（200px），不再随输入跳变
+          borderColor: noMatchFound ? theme.palette.error.main : undefined,
         }}
       />
       {searchTerm && (
         <div
           style={{
-            color: noMatchFound ? "#ff6b6b" : "#aaa",
+            color: noMatchFound
+              ? theme.palette.error.main
+              : theme.palette.text.secondary,
             margin: "0 8px",
             fontSize: "12px",
             whiteSpace: "nowrap",

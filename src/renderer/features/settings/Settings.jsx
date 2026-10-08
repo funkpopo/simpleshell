@@ -77,6 +77,25 @@ const compactFieldSx = {
   mb: 1,
 };
 
+// 滑块行标签统一列宽，保证同卡片内多条 Slider 左边缘对齐
+const sliderLabelSx = { minWidth: 52, fontSize: "0.8rem", flexShrink: 0 };
+
+/** 卡片标题行：图标 + 标题 + 可选右侧操作（安全/数据同步/反馈卡片共用） */
+const SectionCardHeader = ({
+  icon: Icon = null,
+  title,
+  iconColor = "primary.main",
+  actions = null,
+}) => (
+  <Box sx={sectionTitleRowSx}>
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      {Icon ? <Icon sx={{ color: iconColor }} /> : null}
+      <Typography variant="subtitle1">{title}</Typography>
+    </Box>
+    {actions}
+  </Box>
+);
+
 const subSectionLabelSx = {
   fontSize: "0.7rem",
   fontWeight: 700,
@@ -1401,7 +1420,13 @@ const Settings = memo(({ open, onClose }) => {
         {isLoading ? (
           <SettingsSkeleton />
         ) : (
-          <Box sx={{ display: "flex", minHeight: 420, maxHeight: "65vh" }}>
+          <Box
+            sx={{
+              display: "flex",
+              minHeight: "min(420px, 100%)",
+              maxHeight: "65vh",
+            }}
+          >
             {/* Sidebar */}
             <Box
               sx={{
@@ -1739,7 +1764,7 @@ const Settings = memo(({ open, onClose }) => {
                             setDiskAlertThreshold(e.target.value)
                           }
                           inputProps={{ min: 50, max: 99 }}
-                          sx={{ width: 160 }}
+                          sx={{ flex: "1 1 140px", minWidth: 140 }}
                         />
                         <TextField
                           size="small"
@@ -1749,7 +1774,7 @@ const Settings = memo(({ open, onClose }) => {
                           onChange={(e) =>
                             setDiskAlertIntervalSeconds(Number(e.target.value))
                           }
-                          sx={{ width: 160 }}
+                          sx={{ flex: "1 1 140px", minWidth: 140 }}
                         >
                           {[30, 60, 120, 300, 600].map((seconds) => (
                             <MenuItem key={seconds} value={seconds}>
@@ -1828,13 +1853,10 @@ const Settings = memo(({ open, onClose }) => {
                           sx={{
                             display: "flex",
                             alignItems: "center",
-                            gap: 1,
+                            gap: 0.5,
                           }}
                         >
-                          <Typography
-                            variant="body2"
-                            sx={{ minWidth: 52, fontSize: "0.8rem" }}
-                          >
+                          <Typography variant="body2" sx={sliderLabelSx}>
                             {t("settings.terminalFontSizeLabel")}
                           </Typography>
                           <Slider
@@ -1861,10 +1883,7 @@ const Settings = memo(({ open, onClose }) => {
                             gap: 0.5,
                           }}
                         >
-                          <Typography
-                            variant="body2"
-                            sx={{ minWidth: 44, fontSize: "0.8rem" }}
-                          >
+                          <Typography variant="body2" sx={sliderLabelSx}>
                             {t("settings.fontWeight")}
                           </Typography>
                           <Slider
@@ -1901,10 +1920,7 @@ const Settings = memo(({ open, onClose }) => {
                             gap: 0.5,
                           }}
                         >
-                          <Typography
-                            variant="body2"
-                            sx={{ minWidth: 52, fontSize: "0.8rem" }}
-                          >
+                          <Typography variant="body2" sx={sliderLabelSx}>
                             {t("settings.terminalLineHeight")}
                           </Typography>
                           <Slider
@@ -2390,11 +2406,7 @@ const Settings = memo(({ open, onClose }) => {
               {activeTab === 3 && (
                 <Box>
                   <Box sx={sectionCardSx}>
-                    <Box sx={sectionTitleRowSx}>
-                      <Typography variant="subtitle1">
-                        {t("settings.security.title")}
-                      </Typography>
-                    </Box>
+                    <SectionCardHeader title={t("settings.security.title")} />
                     <Typography
                       variant="body2"
                       color="text.secondary"
@@ -2467,16 +2479,10 @@ const Settings = memo(({ open, onClose }) => {
               {activeTab === 4 && (
                 <Box>
                   <Box sx={{ ...sectionCardSx, mb: 1.5 }}>
-                    <Box sx={sectionTitleRowSx}>
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
-                      >
-                        <TerminalIcon sx={{ color: "primary.main" }} />
-                        <Typography variant="subtitle1">
-                          {t("settings.dataSync.sshImportTitle")}
-                        </Typography>
-                      </Box>
-                    </Box>
+                    <SectionCardHeader
+                      icon={TerminalIcon}
+                      title={t("settings.dataSync.sshImportTitle")}
+                    />
                     <Typography
                       variant="body2"
                       color="text.secondary"
@@ -2497,20 +2503,10 @@ const Settings = memo(({ open, onClose }) => {
 
                   {/* 导出加密包 */}
                   <Box sx={sectionCardSx}>
-                    <Box sx={sectionTitleRowSx}>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 1,
-                        }}
-                      >
-                        <BackupIcon sx={{ color: "primary.main" }} />
-                        <Typography variant="subtitle1">
-                          {t("settings.dataSync.export.title")}
-                        </Typography>
-                      </Box>
-                    </Box>
+                    <SectionCardHeader
+                      icon={BackupIcon}
+                      title={t("settings.dataSync.export.title")}
+                    />
                     <Typography
                       variant="body2"
                       color="text.secondary"
@@ -2575,20 +2571,10 @@ const Settings = memo(({ open, onClose }) => {
 
                   {/* 导入配置包 */}
                   <Box sx={{ ...sectionCardSx, mt: 1.5 }}>
-                    <Box sx={sectionTitleRowSx}>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 1,
-                        }}
-                      >
-                        <RestoreIcon sx={{ color: "primary.main" }} />
-                        <Typography variant="subtitle1">
-                          {t("settings.dataSync.import.title")}
-                        </Typography>
-                      </Box>
-                    </Box>
+                    <SectionCardHeader
+                      icon={RestoreIcon}
+                      title={t("settings.dataSync.import.title")}
+                    />
                     <Typography
                       variant="body2"
                       color="text.secondary"
@@ -2674,20 +2660,10 @@ const Settings = memo(({ open, onClose }) => {
 
                   {/* WebDAV 多机同步 */}
                   <Box sx={{ ...sectionCardSx, mt: 1.5 }}>
-                    <Box sx={sectionTitleRowSx}>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 1,
-                        }}
-                      >
-                        <CloudSyncIcon sx={{ color: "primary.main" }} />
-                        <Typography variant="subtitle1">
-                          {t("settings.dataSync.webdav.title")}
-                        </Typography>
-                      </Box>
-                    </Box>
+                    <SectionCardHeader
+                      icon={CloudSyncIcon}
+                      title={t("settings.dataSync.webdav.title")}
+                    />
                     <Typography
                       variant="body2"
                       color="text.secondary"
@@ -2793,37 +2769,29 @@ const Settings = memo(({ open, onClose }) => {
 
                   {/* 自动同步 */}
                   <Box sx={{ ...sectionCardSx, mt: 1.5 }}>
-                    <Box sx={sectionTitleRowSx}>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 1,
-                        }}
-                      >
-                        <CloudSyncIcon sx={{ color: "primary.main" }} />
-                        <Typography variant="subtitle1">
-                          {t("settings.dataSync.autoSync.title")}
-                        </Typography>
-                      </Box>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={autoSyncEnabled}
-                            onChange={(e) =>
-                              handleToggleAutoSync(e.target.checked)
-                            }
-                            disabled={configTransferBusy !== ""}
-                            size="small"
-                          />
-                        }
-                        label={
-                          <Typography variant="body2">
-                            {t("settings.dataSync.autoSync.enable")}
-                          </Typography>
-                        }
-                      />
-                    </Box>
+                    <SectionCardHeader
+                      icon={CloudSyncIcon}
+                      title={t("settings.dataSync.autoSync.title")}
+                      actions={
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={autoSyncEnabled}
+                              onChange={(e) =>
+                                handleToggleAutoSync(e.target.checked)
+                              }
+                              disabled={configTransferBusy !== ""}
+                              size="small"
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t("settings.dataSync.autoSync.enable")}
+                            </Typography>
+                          }
+                        />
+                      }
+                    />
                     <Typography
                       variant="body2"
                       color="text.secondary"
@@ -2940,32 +2908,25 @@ const Settings = memo(({ open, onClose }) => {
               {activeTab === 5 && (
                 <Box>
                   <Box sx={sectionCardSx}>
-                    <Box sx={sectionTitleRowSx}>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 1,
-                        }}
-                      >
-                        <BugReportIcon sx={{ color: "error.main" }} />
-                        <Typography variant="subtitle1">
-                          {t("settings.feedback.title")}
-                        </Typography>
-                      </Box>
-                      <Chip
-                        size="small"
-                        color={
-                          crashReporterStatus?.started ? "success" : "warning"
-                        }
-                        variant="outlined"
-                        label={
-                          crashReporterStatus?.started
-                            ? t("settings.feedback.localCrashCaptureOn")
-                            : t("settings.feedback.localCrashCaptureOff")
-                        }
-                      />
-                    </Box>
+                    <SectionCardHeader
+                      icon={BugReportIcon}
+                      iconColor="error.main"
+                      title={t("settings.feedback.title")}
+                      actions={
+                        <Chip
+                          size="small"
+                          color={
+                            crashReporterStatus?.started ? "success" : "warning"
+                          }
+                          variant="outlined"
+                          label={
+                            crashReporterStatus?.started
+                              ? t("settings.feedback.localCrashCaptureOn")
+                              : t("settings.feedback.localCrashCaptureOff")
+                          }
+                        />
+                      }
+                    />
                     <Typography
                       variant="body2"
                       color="text.secondary"

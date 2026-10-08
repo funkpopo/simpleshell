@@ -8,6 +8,7 @@ import Box from "@mui/material/Box";
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n/i18n";
 import errorClassification from "../../../shared/errorClassification";
+import { Z_INDEX } from "../constants/zIndex.js";
 
 const {
   ERROR_NOTIFICATION_LEVELS,
@@ -360,9 +361,10 @@ const ErrorNotification = ({ error, open, onClose }) => {
       onClose={onClose}
       anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
       sx={{
-        bottom: "8px !important",
+        // 与全局通知（bottom: 24）错开，避免两套通知互相覆盖
+        bottom: "80px !important",
         left: "8px !important",
-        zIndex: 9999, // 保持高层级确保不被遮挡
+        zIndex: Z_INDEX.snackbar,
       }}
     >
       <Alert

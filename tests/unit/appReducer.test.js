@@ -230,8 +230,7 @@ describe("侧边栏与文件管理开关", () => {
     expect(state.portForwardingOpen).toBe(true);
     state = appReducer(state, actions.setCommandHistoryOpen(true));
     expect(state.commandHistoryOpen).toBe(true);
-    state = appReducer(state, actions.setActiveSidebarMargin(48));
-    expect(state.activeSidebarMargin).toBe(48);
+    // activeSidebarMargin 已移除：侧栏显隐改为 AppShell 直接派生（见 todo.md #43）
     state = appReducer(state, actions.setLastOpenedSidebar("files"));
     expect(state.lastOpenedSidebar).toBe("files");
   });

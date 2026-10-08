@@ -4,71 +4,12 @@ export const TERMINAL_RESIZE_QUERY_REGEX = new RegExp(
   ESC_CHAR + "[[]8;[0-9]+;[0-9]+t",
 );
 
+/**
+ * 运行时注入的终端样式。
+ * 注意：容器/xterm/滚动条/选区等通用规则统一维护在 WebTerminal.css（单一事实来源），
+ * 此处仅保留 WebTerminal.css 未覆盖的搜索结果高亮规则。
+ */
 export const terminalStyles = `
-.xterm {
-  height: 100%;
-  width: 100%;
-  background: inherit;
-  overflow: hidden;
-}
-.xterm-viewport {
-  overflow-y: auto;
-  overflow-x: hidden;
-  background: inherit !important;
-}
-.xterm-viewport::-webkit-scrollbar {
-  width: 10px;
-}
-.xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-.xterm-viewport::-webkit-scrollbar-thumb {
-  background-color: rgba(128, 128, 128, 0.4);
-  border-radius: 5px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-  transition: background-color 0.2s ease;
-}
-.xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(128, 128, 128, 0.7);
-}
-.terminal-container {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  position: relative;
-}
-.terminal-container--editor .xterm-viewport {
-  overflow: hidden !important;
-}
-.terminal-container--editor .search-icon-btn,
-.terminal-container--editor .search-bar {
-  display: none !important;
-}
-
-.xterm-selection {
-  opacity: 1 !important;
-  pointer-events: none !important;
-}
-
-.xterm .xterm-selection div {
-  pointer-events: none !important;
-  box-sizing: border-box !important;
-  background-color: rgba(88, 166, 255, 0.34) !important;
-}
-
-.dark-theme .xterm .xterm-selection div {
-  background-color: rgba(255, 223, 0, 0.32) !important;
-}
-
-.light-theme .xterm .xterm-selection div,
-body:not(.dark-theme) .xterm .xterm-selection div {
-  background-color: rgba(9, 105, 218, 0.28) !important;
-}
-
 /* 搜索结果高亮 */
 .xterm-find-result-decoration,
 .xterm-find-active-result-decoration {

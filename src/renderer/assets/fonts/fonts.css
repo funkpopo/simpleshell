@@ -1,5 +1,6 @@
 /* Font Face Declarations for File Preview/Editing */
 
+/* 本地打包字体：用 block 避免 swap 交换导致终端/编辑器度量抖动 */
 /* Fira Code - Popular monospace font with programming ligatures */
 @font-face {
   font-family: "Fira Code";
@@ -9,7 +10,7 @@
     url("./FiraCode-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -20,7 +21,7 @@
     url("./FiraCode-Bold.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 /* Space Mono - Clean monospace font */
@@ -32,7 +33,7 @@
     url("./SpaceMono-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 @font-face {
@@ -43,36 +44,7 @@
     url("./SpaceMono-Bold.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
-  font-display: swap;
-}
-
-/* Font fallback cascade for better compatibility */
-.font-fira-code {
-  font-family:
-    "Fira Code", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK",
-    "WenQuanYi Micro Hei Mono", "Consolas", "Monaco", "Courier New", monospace;
-  font-variant-ligatures: common-ligatures;
-  font-feature-settings:
-    "liga" 1,
-    "calt" 1;
-}
-
-.font-space-mono {
-  font-family:
-    "Space Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK",
-    "WenQuanYi Micro Hei Mono", "Consolas", "Monaco", "Courier New", monospace;
-}
-
-.font-consolas {
-  font-family:
-    "Consolas", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK",
-    "WenQuanYi Micro Hei Mono", "Monaco", "Courier New", monospace;
-}
-
-.font-system {
-  font-family:
-    "Consolas", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK",
-    "WenQuanYi Micro Hei Mono", "Monaco", "Courier New", monospace;
+  font-display: block;
 }
 
 /* CodeMirror font customizations */
@@ -90,18 +62,4 @@
 .file-preview-viewer .cm-content {
   font-variant-ligatures: inherit;
   font-feature-settings: inherit;
-}
-
-/* Specific CodeMirror font overrides */
-.cm-editor .cm-content {
-  font-variant-ligatures: inherit;
-  font-feature-settings: inherit;
-}
-
-/* Ensure Fira Code ligatures work in CodeMirror */
-.cm-editor .cm-content.font-fira-code {
-  font-variant-ligatures: common-ligatures;
-  font-feature-settings:
-    "liga" 1,
-    "calt" 1;
 }

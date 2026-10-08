@@ -12,6 +12,10 @@ const SIDEBAR_ITEM_INSET_X = 0.75;
 
 export const SIDEBAR_TITLE_BAR_HEIGHT = 44;
 
+/** 连接列表层级缩进口径（虚拟化与非虚拟化列表共用，单位 px） */
+export const CONNECTION_LIST_BASE_INDENT_PX = 16;
+export const CONNECTION_LIST_DEPTH_INDENT_PX = 20;
+
 // 侧边栏 Paper 外壳统一样式
 export const sidebarPaperSx = (theme, { borderLeft = true } = {}) => {
   const isDark = theme.palette.mode === "dark";

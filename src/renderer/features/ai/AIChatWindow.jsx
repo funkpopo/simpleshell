@@ -251,14 +251,15 @@ const normalizeWindowSize = (size) => {
 };
 
 // 自定义浮动窗口对话框（支持动态宽高和z-index）
+// min/max 均按视口钳制，避免小窗口下 min-height 胜出导致 header 伸出视口
 const FloatingDialog = createFloatingDialog({
   right: DIALOG_RIGHT_GAP,
   bottom: DIALOG_BOTTOM_GAP,
   width: DEFAULT_WIDTH,
-  minWidth: MIN_WIDTH,
+  minWidth: `min(${MIN_WIDTH}px, calc(100vw - ${DIALOG_RIGHT_GAP * 2}px))`,
   maxWidth: `calc(100vw - ${DIALOG_RIGHT_GAP * 2}px)`,
   height: DEFAULT_HEIGHT,
-  minHeight: MIN_HEIGHT,
+  minHeight: `min(${MIN_HEIGHT}px, calc(100vh - ${DIALOG_BOTTOM_GAP + DIALOG_TOP_GAP}px))`,
   maxHeight: `calc(100vh - ${DIALOG_BOTTOM_GAP + DIALOG_TOP_GAP}px)`,
   borderRadius: DIALOG_PAPER_RADIUS,
 });

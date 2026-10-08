@@ -58,7 +58,6 @@ const ActionTypes = {
   SET_PORT_FORWARDING_OPEN: "SET_PORT_FORWARDING_OPEN",
   SET_SHORTCUT_COMMANDS_OPEN: "SET_SHORTCUT_COMMANDS_OPEN",
   SET_COMMAND_HISTORY_OPEN: "SET_COMMAND_HISTORY_OPEN",
-  SET_ACTIVE_SIDEBAR_MARGIN: "SET_ACTIVE_SIDEBAR_MARGIN",
   SET_LAST_OPENED_SIDEBAR: "SET_LAST_OPENED_SIDEBAR",
 
   // Dialog Management
@@ -124,7 +123,6 @@ export const initialState = {
   portForwardingOpen: false,
   shortcutCommandsOpen: false,
   commandHistoryOpen: false,
-  activeSidebarMargin: 0,
   lastOpenedSidebar: null,
 
   // Dialog State
@@ -576,9 +574,6 @@ export function appReducer(state = initialState, action) {
     case ActionTypes.SET_COMMAND_HISTORY_OPEN:
       return { ...state, commandHistoryOpen: action.payload };
 
-    case ActionTypes.SET_ACTIVE_SIDEBAR_MARGIN:
-      return { ...state, activeSidebarMargin: action.payload };
-
     case ActionTypes.SET_LAST_OPENED_SIDEBAR:
       return { ...state, lastOpenedSidebar: action.payload };
 
@@ -799,10 +794,6 @@ export const actions = {
   setCommandHistoryOpen: (open) => ({
     type: ActionTypes.SET_COMMAND_HISTORY_OPEN,
     payload: open,
-  }),
-  setActiveSidebarMargin: (margin) => ({
-    type: ActionTypes.SET_ACTIVE_SIDEBAR_MARGIN,
-    payload: margin,
   }),
   setLastOpenedSidebar: (sidebar) => ({
     type: ActionTypes.SET_LAST_OPENED_SIDEBAR,

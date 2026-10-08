@@ -368,13 +368,13 @@ const FileManagerContainer = memo(
           <Box
             sx={{
               flexGrow: 1,
-              overflow: "auto",
+              // flex 子项用 minHeight:0 收缩（height:0 是非常规 hack）；
+              // 滚动只保留在 FileList 一层，外层不需要 overflow:auto
+              minHeight: 0,
+              overflow: "hidden",
               marginTop: 0,
-              // 确保没有额外的边距
               display: "flex",
               flexDirection: "column",
-              height: 0,
-              // 确保flex布局正常工作
               position: "relative", // 创建新的定位上下文
             }}
             onContextMenu={handleBlankContextMenu} // 添加空白区域右键菜单

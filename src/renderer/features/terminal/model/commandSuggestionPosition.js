@@ -1,6 +1,11 @@
 const CONTAINER_PADDING = 8;
 const CURSOR_GAP = 20;
 
+/** 建议弹窗尺寸口径（CommandSuggestion.jsx 与 useTerminalSuggestions.js 共用，避免双源漂移） */
+export const SUGGESTION_ITEM_HEIGHT = 28;
+export const SUGGESTION_BOTTOM_BAR_HEIGHT = 28;
+export const SUGGESTION_MAX_HEIGHT = 280;
+
 const isFiniteNumber = (value) =>
   typeof value === "number" && Number.isFinite(value);
 

@@ -52,6 +52,8 @@ import { generateId } from "../../../shared/common";
 import { useNotification } from "../../shared/notifications/NotificationContext";
 
 const COMMAND_ITEM_HEIGHT = 48;
+// 行距 = 行内容高度 + 4px 间距（ListItem 的 mb:0.5），虚拟化与非虚拟化保持一致
+const COMMAND_ROW_PITCH = COMMAND_ITEM_HEIGHT + 4;
 
 const CommandContent = React.memo(({ cmd, dense = false }) => {
   if (!cmd) return null;
@@ -695,7 +697,7 @@ function ShortcutCommands({
         <List
           style={{ height: containerHeight, width: "100%" }}
           rowCount={filteredCommands.length}
-          rowHeight={COMMAND_ITEM_HEIGHT}
+          rowHeight={COMMAND_ROW_PITCH}
           rowProps={listItemData}
           overscanCount={10}
           rowComponent={CommandItem}

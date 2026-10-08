@@ -653,7 +653,8 @@
 /* ---- Dot navigator ---- */
 .ai-chat-dots {
   position: absolute;
-  right: 4px;
+  /* 让开右侧 6px 滚动条轨道，避免拖动滚动条时误触 */
+  right: 12px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -665,6 +666,10 @@
   background: var(--ai-surface);
   border: 1px solid var(--ai-line);
   box-shadow: var(--ai-shadow-btn);
+  /* 消息很多时限制高度并允许自身滚动，避免画出浮动窗外 */
+  max-height: 60%;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .ai-chat-dot {

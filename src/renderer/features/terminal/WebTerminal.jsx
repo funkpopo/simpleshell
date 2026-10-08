@@ -583,14 +583,12 @@ const WebTerminal = ({
         className={`terminal-container${
           inEditorMode ? " terminal-container--editor" : ""
         }`}
-        style={{ position: "relative" }}
       >
         <div
           ref={terminalRef}
           style={{
             width: "100%",
             height: "100%",
-            padding: "0 0 0 0",
           }}
         />
 

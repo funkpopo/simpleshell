@@ -42,24 +42,10 @@ body.light-theme {
   scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
 }
 
+/* track/thumb 视觉样式由全局滚动条规则统一提供，这里只覆盖尺寸变量 */
 .app-scrollbar::-webkit-scrollbar {
   width: var(--app-scrollbar-local-size);
   height: var(--app-scrollbar-local-size);
-}
-
-.app-scrollbar::-webkit-scrollbar-track {
-  background: var(--app-scrollbar-track);
-}
-
-.app-scrollbar::-webkit-scrollbar-thumb {
-  background-color: var(--app-scrollbar-thumb);
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background-clip: content-box;
-}
-
-.app-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: var(--app-scrollbar-thumb-hover);
 }
 
 .app-scrollbar.app-scrollbar-compact {

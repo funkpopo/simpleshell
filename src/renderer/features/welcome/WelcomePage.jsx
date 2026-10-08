@@ -875,7 +875,9 @@ const WelcomePage = ({
                         appearance: "none",
                         width: "100%",
                         minHeight: 66,
-                        p: 0,
+                        // 预留固定水平 padding，hover 不再改 padding（避免整行 reflow 抖动）
+                        px: 1,
+                        py: 0,
                         display: "grid",
                         gridTemplateColumns: "30px minmax(0, 1fr) auto 24px",
                         alignItems: "center",
@@ -887,12 +889,10 @@ const WelcomePage = ({
                         borderColor: "divider",
                         textAlign: "left",
                         cursor: "pointer",
-                        transition:
-                          "background-color 160ms ease, padding 160ms ease",
+                        transition: "background-color 160ms ease",
                         "&:hover": {
                           bgcolor: (currentTheme) =>
                             alpha(currentTheme.palette.text.primary, 0.055),
-                          px: 1,
                         },
                         "&:hover .connection-arrow": {
                           opacity: 1,

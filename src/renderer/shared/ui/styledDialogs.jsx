@@ -1,5 +1,6 @@
 import Dialog from "./AccessibleDialog.jsx";
 import { styled } from "@mui/material/styles";
+import { Z_INDEX } from "../constants/zIndex.js";
 
 /**
  * 共享的 styled(Dialog) 组件。
@@ -46,7 +47,7 @@ export const createFloatingDialog = ({
 }) =>
   styled(Dialog)(({ theme, customwidth, customheight, customzindex }) => ({
     pointerEvents: "none",
-    zIndex: customzindex || 1300,
+    zIndex: customzindex || Z_INDEX.modal,
     "& .MuiDialog-container": {
       pointerEvents: "none",
     },

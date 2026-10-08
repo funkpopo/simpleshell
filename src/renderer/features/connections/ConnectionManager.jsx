@@ -18,6 +18,7 @@ import {
   IconButton,
   TextField,
   Button,
+  Collapse,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -73,12 +74,25 @@ import { useTranslation } from "react-i18next";
 import { useNotification } from "../../shared/notifications/NotificationContext";
 import { ConnectionManagerSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
 import VirtualizedConnectionList from "./VirtualizedConnectionList.jsx";
-import { sidebarListItemSx } from "../../shared/ui/sidebarItemStyles";
+import {
+  sidebarListItemSx,
+  CONNECTION_LIST_DEPTH_INDENT_PX,
+} from "../../shared/ui/sidebarItemStyles";
 import SidebarPanel from "../../shared/ui/SidebarPanel.jsx";
 import SidebarSearchField from "../../shared/ui/SidebarSearchField.jsx";
 import useSidebarPanel from "../../shared/hooks/useSidebarPanel";
 import useContextMenuRetarget from "../../shared/hooks/useContextMenuRetarget";
 import { generateId } from "../../../shared/common";
+
+/** 40x40 带边框方形按钮（串口刷新/密码可见性等输入框旁操作共用） */
+const squareIconButtonSx = {
+  width: 40,
+  height: 40,
+  flexShrink: 0,
+  border: 1,
+  borderColor: "divider",
+  borderRadius: 1,
+};
 
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
@@ -995,10 +1009,9 @@ const GroupListItem = memo(function GroupListItem({
               ? alpha(theme.palette.primary.main, 0.2)
               : alpha(theme.palette.primary.main, 0.15)
             : "transparent",
-          transition:
-            "background-color 0.2s ease, max-height 0.2s ease, opacity 0.2s ease, margin 0.2s ease",
-          maxHeight: shouldShowChildren ? "none" : "0px",
-          opacity: shouldShowChildren ? 1 : 0,
+          // max-height: none 不可插值、display 瞬时切换会让过渡失效并抖动，
+          // 折叠动画交由 MUI Collapse（自动测量内容高度）处理
+          transition: "background-color 0.2s ease, margin 0.2s ease",
           overflow: "hidden",
           borderRadius: !group.expanded && isOver ? 1 : 0,
           margin: !group.expanded && isOver ? "0 8px" : 0,
@@ -1009,45 +1022,47 @@ const GroupListItem = memo(function GroupListItem({
           items={(group.items || []).map((item) => item.id)}
           strategy={verticalListSortingStrategy}
         >
-          <List
-            component="div"
-            disablePadding
-            sx={{
-              pl: 1.5,
-              display: shouldShowChildren ? "block" : "none",
-            }}
-          >
-            {group.items &&
-              group.items.map((item) => (
-                <ConnectionListItem
-                  key={item.id}
-                  theme={theme}
-                  connection={item}
-                  parentGroup={group}
-                  onOpenRowContextMenu={onOpenConnectionRowContextMenu}
-                  onOpen={onOpenConnection}
-                  dragDisabled={dragDisabled}
-                  isContextMenuTarget={
-                    contextMenuTarget?.kind === "connection" &&
-                    contextMenuTarget.connection?.id === item.id
-                  }
-                />
-              ))}
-            {(!group.items || group.items.length === 0) && (
-              <ListItem sx={{ pl: 2 }}>
-                <ListItemText
-                  primary={t("connectionManager.noConnections")}
-                  primaryTypographyProps={{
-                    variant: "caption",
-                    sx: {
-                      fontStyle: "italic",
-                      color: "text.disabled",
-                    },
-                  }}
-                />
-              </ListItem>
-            )}
-          </List>
+          <Collapse in={shouldShowChildren} timeout={200}>
+            <List
+              component="div"
+              disablePadding
+              sx={{
+                // 每层缩进与虚拟化列表口径一致（20px/层）
+                pl: CONNECTION_LIST_DEPTH_INDENT_PX / 8,
+              }}
+            >
+              {group.items &&
+                group.items.map((item) => (
+                  <ConnectionListItem
+                    key={item.id}
+                    theme={theme}
+                    connection={item}
+                    parentGroup={group}
+                    onOpenRowContextMenu={onOpenConnectionRowContextMenu}
+                    onOpen={onOpenConnection}
+                    dragDisabled={dragDisabled}
+                    isContextMenuTarget={
+                      contextMenuTarget?.kind === "connection" &&
+                      contextMenuTarget.connection?.id === item.id
+                    }
+                  />
+                ))}
+              {(!group.items || group.items.length === 0) && (
+                <ListItem sx={{ pl: 2 }}>
+                  <ListItemText
+                    primary={t("connectionManager.noConnections")}
+                    primaryTypographyProps={{
+                      variant: "caption",
+                      sx: {
+                        fontStyle: "italic",
+                        color: "text.disabled",
+                      },
+                    }}
+                  />
+                </ListItem>
+              )}
+            </List>
+          </Collapse>
         </SortableContext>
       </Box>
     </React.Fragment>
@@ -2714,9 +2729,10 @@ const ConnectionManager = memo(
           data-connection-manager-list-root="true"
           onContextMenu={handleBlankContextMenu}
           sx={{
+            // flex 布局下由 flexGrow 自然填满剩余空间，无需 calc 估算固定高度
             flexGrow: 1,
+            minHeight: 0,
             overflow: "auto",
-            height: "calc(100% - 160px)", // 调整高度以适应搜索框
           }}
         >
           {isLoading ? (
@@ -3048,14 +3064,7 @@ const ConnectionManager = memo(
                               size="small"
                               onClick={handleRefreshSerialPorts}
                               disabled={serialPortsLoading}
-                              sx={{
-                                width: 40,
-                                height: 40,
-                                flexShrink: 0,
-                                border: 1,
-                                borderColor: "divider",
-                                borderRadius: 1,
-                              }}
+                              sx={squareIconButtonSx}
                             >
                               {serialPortsLoading ? (
                                 <CircularProgress size={18} />
@@ -3372,14 +3381,7 @@ const ConnectionManager = memo(
                                 (formData.protocol === "ssh" &&
                                   formData.authType === "privateKey")
                               }
-                              sx={{
-                                width: 40,
-                                height: 40,
-                                flexShrink: 0,
-                                border: 1,
-                                borderColor: "divider",
-                                borderRadius: 1,
-                              }}
+                              sx={squareIconButtonSx}
                             >
                               {revealingPassword ? (
                                 <CircularProgress size={18} />
@@ -3616,8 +3618,13 @@ const ConnectionManager = memo(
                             borderColor: "divider",
                           }}
                         >
-                          <Box sx={{ display: "flex", gap: 1 }}>
-                            <FormControl size="small" sx={{ minWidth: 100 }}>
+                          <Box
+                            sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}
+                          >
+                            <FormControl
+                              size="small"
+                              sx={{ minWidth: 100, flexShrink: 0 }}
+                            >
                               <InputLabel>
                                 {t("connectionManager.type")}
                               </InputLabel>

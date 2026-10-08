@@ -22,6 +22,7 @@ import {
   cancelTransferWithNotice,
 } from "./state/globalTransferStore.js";
 import { formatFileSize, formatSpeed } from "../../shared/lib/formatters.js";
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 import {
   sumTransferFileCount,
   getDisplayCompletedFileCount,
@@ -415,9 +416,13 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
           position: "fixed",
           bottom: 64, // 在底部栏上方，留出足够空间
           right: 24,
-          width: isMinimized ? 280 : 360,
-          maxHeight: isMinimized ? 60 : 500,
-          zIndex: 1200, // 高于底部栏，确保可见
+          // 视口钳制：小窗口下不溢出视口
+          width: isMinimized
+            ? "min(280px, calc(100vw - 48px))"
+            : "min(360px, calc(100vw - 48px))",
+          // 最小化时需容纳标题栏(约38px)+摘要行(约33px)，60px 会裁掉摘要
+          maxHeight: isMinimized ? 72 : "min(500px, calc(100vh - 80px))",
+          zIndex: Z_INDEX.floatWindow, // 低于模态对话框
           overflow: "hidden",
           borderRadius: `${RADIUS.LG}px`,
           backgroundColor: theme.palette.background.paper,

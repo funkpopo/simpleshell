@@ -3,6 +3,7 @@ import Snackbar from "@mui/material/Snackbar";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
+import { Z_INDEX } from "../constants/zIndex.js";
 
 const NotificationContext = createContext(null);
 const DEFAULT_AUTO_HIDE_DURATION_MS = 5000;
@@ -130,7 +131,7 @@ export const NotificationProvider = ({ children }) => {
             bottom: "24px !important",
             left: "24px !important",
           }),
-          zIndex: 9999,
+          zIndex: Z_INDEX.snackbar,
         }}
       >
         <Alert

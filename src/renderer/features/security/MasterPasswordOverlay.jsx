@@ -12,6 +12,7 @@ import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import CloseIcon from "@mui/icons-material/Close";
 import { alpha } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 
 const AUTO_UNLOCK_DELAY_MS = 300;
 
@@ -81,7 +82,7 @@ const MasterPasswordOverlay = React.memo(
       <Backdrop
         open={open}
         sx={{
-          zIndex: (theme) => theme.zIndex.modal + 20,
+          zIndex: Z_INDEX.lockscreen,
           background: (theme) => {
             const start = alpha(
               theme.palette.background.default,
@@ -151,88 +152,79 @@ const MasterPasswordOverlay = React.memo(
             </IconButton>
           </Tooltip>
 
-          <Box
-            sx={{
-              width: 52,
-              height: 52,
-              borderRadius: "50%",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              bgcolor: (theme) =>
-                alpha(
-                  theme.palette.primary.main,
-                  theme.palette.mode === "dark" ? 0.2 : 0.12,
-                ),
-              color: "primary.main",
-              border: "1px solid",
-              borderColor: (theme) => alpha(theme.palette.primary.main, 0.22),
-              mb: 2,
-              position: "relative",
-              zIndex: 1,
-            }}
-          >
-            <LockOutlinedIcon />
-          </Box>
-
-          <Typography
-            variant="h6"
-            sx={{ mb: 1, position: "relative", zIndex: 1 }}
-          >
-            {loading
-              ? t("masterPassword.loadingTitle")
-              : t("masterPassword.title")}
-          </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mb: 2.5, position: "relative", zIndex: 1 }}
-          >
-            {loading
-              ? t("masterPassword.loadingDescription")
-              : t("masterPassword.description")}
-          </Typography>
-
-          {error ? (
-            <Alert
-              severity="error"
-              sx={{ mb: 2, position: "relative", zIndex: 1 }}
+          {/* 内容 wrapper 统一压到 ::before 渐变层之上，
+              各元素无需再逐个写 position/zIndex */}
+          <Box sx={{ position: "relative", zIndex: 1 }}>
+            <Box
+              sx={{
+                width: 52,
+                height: 52,
+                borderRadius: "50%",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                bgcolor: (theme) =>
+                  alpha(
+                    theme.palette.primary.main,
+                    theme.palette.mode === "dark" ? 0.2 : 0.12,
+                  ),
+                color: "primary.main",
+                border: "1px solid",
+                borderColor: (theme) => alpha(theme.palette.primary.main, 0.22),
+                mb: 2,
+              }}
             >
-              {error}
-            </Alert>
-          ) : null}
+              <LockOutlinedIcon />
+            </Box>
 
-          {loading ? null : (
-            <>
-              <TextField
-                fullWidth
-                inputRef={inputRef}
-                label={t("masterPassword.passwordLabel")}
-                type="password"
-                value={password}
-                disabled={isSubmitting}
-                sx={{ position: "relative", zIndex: 1 }}
-                onChange={(event) => setPassword(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    handleSubmit();
-                  }
-                }}
-              />
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              {loading
+                ? t("masterPassword.loadingTitle")
+                : t("masterPassword.title")}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+              {loading
+                ? t("masterPassword.loadingDescription")
+                : t("masterPassword.description")}
+            </Typography>
 
-              <Button
-                fullWidth
-                variant="contained"
-                sx={{ mt: 2.5, py: 1.1, position: "relative", zIndex: 1 }}
-                disabled={!password || isSubmitting}
-                onClick={handleSubmit}
-              >
-                {isSubmitting
-                  ? t("masterPassword.unlocking")
-                  : t("masterPassword.unlock")}
-              </Button>
-            </>
-          )}
+            {error ? (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            ) : null}
+
+            {loading ? null : (
+              <>
+                <TextField
+                  fullWidth
+                  inputRef={inputRef}
+                  label={t("masterPassword.passwordLabel")}
+                  type="password"
+                  value={password}
+                  disabled={isSubmitting}
+                  onChange={(event) => setPassword(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      handleSubmit();
+                    }
+                  }}
+                />
+
+                <Button
+                  fullWidth
+                  variant="contained"
+                  sx={{ mt: 2.5, py: 1.1 }}
+                  disabled={!password || isSubmitting}
+                  onClick={handleSubmit}
+                >
+                  {isSubmitting
+                    ? t("masterPassword.unlocking")
+                    : t("masterPassword.unlock")}
+                </Button>
+              </>
+            )}
+          </Box>
         </Paper>
       </Backdrop>
     );

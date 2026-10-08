@@ -3058,7 +3058,9 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            height: "300px",
+            // 与其他状态一致使用弹性高度，避免加载完成后容器高度跳变
+            flex: 1,
+            minHeight: 0,
           }}
         >
           <CircularProgress size={40} />
@@ -3223,16 +3225,18 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
             flexDirection: "column",
           }}
         >
-          {/* PDF内容区域 */}
+          {/* PDF内容区域：允许滚动，保证整页与放大后的内容可达 */}
           <Box
             sx={{
               flex: "1 1 auto",
-              overflow: "hidden", // 防止溢出
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "flex-start",
+              overflow: "auto",
               p: 2,
               backgroundColor: theme.palette.grey[100],
+              // 用 margin auto 居中而非 justifyContent，避免放大后左缘被裁
+              "& .react-pdf__Document": {
+                width: "fit-content",
+                margin: "0 auto",
+              },
             }}
           >
             <Document
@@ -3410,21 +3414,6 @@ const FilePreview = ({ open, onClose, file, path, tabId }) => {
           overflow: "hidden",
           width: "100%",
           maxWidth: "100%",
-          "&::-webkit-scrollbar": {
-            width: "8px",
-            height: "8px",
-          },
-          "&::-webkit-scrollbar-track": {
-            backgroundColor:
-              theme.palette.mode === "dark" ? "#2d2d2d" : "#f1f1f1",
-          },
-          "&::-webkit-scrollbar-thumb": {
-            backgroundColor: theme.palette.mode === "dark" ? "#555" : "#888",
-            borderRadius: "4px",
-          },
-          "&::-webkit-scrollbar-thumb:hover": {
-            backgroundColor: theme.palette.mode === "dark" ? "#666" : "#555",
-          },
         }}
       >
         {savingFile ? (

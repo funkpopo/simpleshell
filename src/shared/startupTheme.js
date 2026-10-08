@@ -102,12 +102,17 @@ function clearStartupThemeBootstrap(doc = document) {
   // 清除内联背景，交还给 CSS 变量 / MUI CssBaseline
   if (doc.documentElement) {
     doc.documentElement.style.removeProperty("background-color");
+    // inline color-scheme 优先级高于 :root 规则，不清除会在主题切换后残留过期值
+    doc.documentElement.style.removeProperty("color-scheme");
+    doc.documentElement.removeAttribute("data-ss-boot-theme");
   }
   doc.body.style.removeProperty("background-color");
   const appRoot = doc.getElementById("root");
   if (appRoot) {
     appRoot.style.removeProperty("background-color");
   }
+  // 启动期首屏样式节点一并移除，避免与 global.css 重复定义常驻
+  doc.getElementById("ss-startup-boot")?.remove();
 }
 
 module.exports = {

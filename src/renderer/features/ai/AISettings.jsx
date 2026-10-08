@@ -55,6 +55,7 @@ import {
   buildInlineApiKeyPayload,
 } from "./lib/aiKeyUtils.js";
 import LockIcon from "@mui/icons-material/Lock";
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 
 // 渠道类型常量 - 定义在组件外部以保持稳定引用
 const PROVIDER_TYPES = {
@@ -719,7 +720,7 @@ const AISettings = ({ open, onClose }) => {
       maxWidth="md"
       fullWidth
       sx={{
-        zIndex: (theme) => theme.zIndex.modal + 200,
+        zIndex: Z_INDEX.modalRaised,
         pointerEvents: "auto",
         "& .MuiDialog-container": {
           pointerEvents: "auto",
@@ -956,7 +957,7 @@ const AISettings = ({ open, onClose }) => {
                           label={t("aiSettings.providerType")}
                           MenuProps={{
                             sx: {
-                              zIndex: (theme) => theme.zIndex.modal + 210,
+                              zIndex: Z_INDEX.modalPopup,
                             },
                           }}
                         >
@@ -1032,7 +1033,7 @@ const AISettings = ({ open, onClose }) => {
                             }}
                             MenuProps={{
                               sx: {
-                                zIndex: (theme) => theme.zIndex.modal + 210,
+                                zIndex: Z_INDEX.modalPopup,
                               },
                             }}
                           >
@@ -1154,7 +1155,7 @@ const AISettings = ({ open, onClose }) => {
                               disabled={!proxyConfig.enabled}
                               MenuProps={{
                                 sx: {
-                                  zIndex: (theme) => theme.zIndex.modal + 210,
+                                  zIndex: Z_INDEX.modalPopup,
                                 },
                               }}
                             >
@@ -1278,7 +1279,7 @@ const AISettings = ({ open, onClose }) => {
                           label={t("aiSettings.riskLevel")}
                           MenuProps={{
                             sx: {
-                              zIndex: (theme) => theme.zIndex.modal + 210,
+                              zIndex: Z_INDEX.modalPopup,
                             },
                           }}
                         >
@@ -1556,7 +1557,7 @@ const AISettings = ({ open, onClose }) => {
         maxWidth="xs"
         fullWidth
         sx={{
-          zIndex: (theme) => theme.zIndex.modal + 220,
+          zIndex: Z_INDEX.modalPopup,
           pointerEvents: "auto",
           "& .MuiDialog-container": {
             pointerEvents: "auto",

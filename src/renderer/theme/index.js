@@ -395,6 +395,7 @@ export const createUnifiedTheme = (darkMode) =>
       MuiMenuItem: {
         styleOverrides: {
           root: {
+            fontSize: "0.875rem",
             borderRadius: RADIUS_SM,
             margin: "2px 4px",
             transition: "all 0.2s ease",
@@ -437,6 +438,20 @@ export const createUnifiedTheme = (darkMode) =>
           indicator: {
             height: 1,
             borderRadius: 0,
+          },
+        },
+      },
+
+      /* 列表项字号层级（原 typography.css 规则迁移至此，单一事实来源） */
+      MuiListItemText: {
+        styleOverrides: {
+          primary: {
+            fontSize: "0.875rem",
+            lineHeight: 1.5,
+          },
+          secondary: {
+            fontSize: "0.75rem",
+            lineHeight: 1.4,
           },
         },
       },

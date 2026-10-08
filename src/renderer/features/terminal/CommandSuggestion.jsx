@@ -15,8 +15,14 @@ import {
 import { useTheme } from "@mui/material/styles";
 import { useConditionalWindowEvent } from "../../shared/hooks/useWindowEvent.js";
 import { shouldIgnoreCommandSuggestionKeyEvent } from "./model/commandSuggestionState.js";
-import { resolveCommandSuggestionWindowPosition } from "./model/commandSuggestionPosition.js";
+import {
+  resolveCommandSuggestionWindowPosition,
+  SUGGESTION_BOTTOM_BAR_HEIGHT,
+  SUGGESTION_ITEM_HEIGHT,
+  SUGGESTION_MAX_HEIGHT,
+} from "./model/commandSuggestionPosition.js";
 import { FIRA_CODE_FONT_FAMILY } from "../../shared/lib/fonts.js";
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 
 const COMMAND_FONT = `13px ${FIRA_CODE_FONT_FAMILY}`;
 
@@ -129,8 +135,8 @@ const CommandSuggestion = ({
     const finalWidth = Math.max(minWidth, Math.min(maxWidth, suggestedWidth));
 
     // 计算更精确的高度，考虑单个项目的高度和底部提示栏
-    const itemHeight = 28; // 每个建议项的高度
-    const bottomBarHeight = 28; // 底部提示栏高度
+    const itemHeight = SUGGESTION_ITEM_HEIGHT; // 每个建议项的高度
+    const bottomBarHeight = SUGGESTION_BOTTOM_BAR_HEIGHT; // 底部提示栏高度
     const listPadding = 0; // List 组件的内边距
 
     // 计算内容高度：项目数量 * 项目高度 + 内边距
@@ -139,7 +145,7 @@ const CommandSuggestion = ({
     const totalHeight = contentHeight + bottomBarHeight;
 
     // 设置最大高度限制，但不设置最小高度，让内容自动决定
-    const maxAllowedHeight = 280;
+    const maxAllowedHeight = SUGGESTION_MAX_HEIGHT;
     const finalHeight = Math.min(totalHeight, maxAllowedHeight);
 
     // 当达到最大高度时，需要为底部文字预留空间
@@ -155,13 +161,6 @@ const CommandSuggestion = ({
       needsScrollbar: totalHeight > maxAllowedHeight,
     };
   }, [suggestions, visible]); // 依赖项包括visible
-
-  // 监听建议变化以重新计算窗口尺寸
-  useEffect(() => {
-    if (visible && suggestions.length > 0) {
-      // Recalculating dimensions when suggestions change
-    }
-  }, [suggestions, visible]);
 
   // 监听窗口大小变化（使用 useConditionalWindowEvent Hook）
   const handleResize = useCallback(() => {
@@ -369,6 +368,14 @@ const CommandSuggestion = ({
     return null;
   }
 
+  // Paper 高度会被终端剩余空间钳小，List 高度必须跟随钳制值，否则底部条目被裁且无滚动
+  const listMaxHeight = Math.max(
+    SUGGESTION_ITEM_HEIGHT,
+    windowPosition.height - SUGGESTION_BOTTOM_BAR_HEIGHT,
+  );
+  const listHeight = Math.min(windowDimensions.contentHeight, listMaxHeight);
+  const listScrollable = windowDimensions.contentHeight > listHeight;
+
   // 高亮匹配的文本
   const highlightMatch = (text, input) => {
     if (!input || !text) return text;
@@ -406,8 +413,9 @@ const CommandSuggestion = ({
         top: windowPosition.top,
         width: windowPosition.width,
         maxHeight: windowPosition.height,
-        // Raise above potential high-z overlays during tab drag previews
-        zIndex: 11000,
+        // 高于浮动窗口（zIndex.floatWindow），保证输入建议始终可见；
+        // 低于模态/锁屏/主题切换遮罩（见 shared/constants/zIndex.js）
+        zIndex: Z_INDEX.commandSuggestion,
         overflow: "hidden",
         borderRadius: 1,
         border: `1px solid ${theme.palette.divider}`,
@@ -419,32 +427,19 @@ const CommandSuggestion = ({
         "@media (prefers-reduced-motion: reduce)": {
           transition: "none",
         },
-        // 确保窗口不会被其他元素遮挡
-        "&::before": {
-          content: '""',
-          position: "absolute",
-          top: -5,
-          left: -5,
-          right: -5,
-          bottom: -5,
-          zIndex: -1,
-          backgroundColor: "transparent",
-          pointerEvents: "none",
-        },
       }}
     >
       <List
         ref={listRef}
         dense
         sx={{
-          // 使用精确的内容高度，只有在需要时才启用滚动
-          height: windowDimensions.contentHeight,
-          maxHeight: windowDimensions.contentHeight,
-          // 移除绝对最小高度限制，让内容自动决定高度，确保能完整显示一条记录
-          overflow: windowDimensions.needsScrollbar ? "auto" : "hidden", // 只有需要时才显示滚动条
+          // 高度跟随 Paper 的钳制值，只有在需要时才启用滚动
+          height: listHeight,
+          maxHeight: listHeight,
+          overflow: listScrollable ? "auto" : "hidden", // 只有需要时才显示滚动条
           padding: 0,
           // 只有在确实需要滚动时才显示滚动条样式
-          ...(windowDimensions.needsScrollbar && {
+          ...(listScrollable && {
             "&::-webkit-scrollbar": {
               width: "6px",
             },
@@ -495,23 +490,17 @@ const CommandSuggestion = ({
               primary={
                 <Typography
                   variant="body2"
+                  title={suggestion.command}
                   sx={{
                     fontFamily: FIRA_CODE_FONT_FAMILY,
                     fontSize: "12px",
                     color: theme.palette.text.primary,
                     lineHeight: 1.2,
-                    // 只有当命令很长时才使用省略号，否则显示完整文本
-                    ...(suggestion.command.length > 50
-                      ? {
-                          maxWidth: windowPosition.width - 30,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }
-                      : {
-                          wordBreak: "break-all",
-                          whiteSpace: "pre-wrap",
-                        }),
+                    // 行高固定 28px，统一单行省略（悬停 title 显示完整命令）
+                    maxWidth: windowPosition.width - 30,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {highlightMatch(suggestion.command, currentInput)}

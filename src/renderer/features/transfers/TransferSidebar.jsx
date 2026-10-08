@@ -44,6 +44,7 @@ import {
   getDisplayCompletedFileCount,
 } from "./lib/transferCounts.js";
 import { useTranslation } from "react-i18next";
+import { formatFileSize } from "../../shared/lib/formatters.js";
 import OverflowTooltipText from "../../shared/ui/OverflowTooltipText.jsx";
 import {
   sidebarTitleBarSx,
@@ -69,20 +70,16 @@ const FloatingDialog = createFloatingDialog({
   width: DEFAULT_WIDTH,
   maxWidth: "90vw",
   height: 500,
+  // 极矮窗口下保留可用下限，同时不超过 maxHeight
+  minHeight: "min(280px, 70vh)",
   maxHeight: "70vh",
   borderRadius: RADIUS.LG,
 });
 
 /**
- * 格式化文件大小
+ * 格式化文件大小（统一走共享 formatFileSize，1 位小数保持原有显示习惯）
  */
-const formatSize = (bytes) => {
-  if (!bytes || bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
-};
+const formatSize = (bytes) => formatFileSize(bytes, 1);
 
 /**
  * 格式化时间
@@ -581,9 +578,13 @@ const TransferSidebar = memo(
     }, []);
 
     // 拖拽调整宽度的处理（左侧手柄）
+    // 上限与 FloatingDialog 的 maxWidth: 90vw 对齐，避免小视口下 min/max 冲突
     const startResize = useDragResize({
       getStart: () => ({ width: windowWidth }),
-      getBounds: () => ({ minWidth: MIN_WIDTH, maxWidth: MAX_WIDTH }),
+      getBounds: () => ({
+        minWidth: Math.min(MIN_WIDTH, Math.floor(window.innerWidth * 0.9)),
+        maxWidth: Math.min(MAX_WIDTH, Math.floor(window.innerWidth * 0.9)),
+      }),
       onResize: ({ width }) => setWindowWidth(width),
       onStateChange: (mode) => setIsResizing(mode !== null),
     });

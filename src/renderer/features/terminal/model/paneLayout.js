@@ -158,7 +158,14 @@ export const getTargetPaneCount = (direction) =>
   direction === "grid" ? MAX_PANES : 2;
 
 /**
+ * 窗格比例下限/上限（百分比）。拖拽另受 MIN_PANE_SIZE_PX 像素下限约束
+ * （见 PaneGrid.jsx），小容器下以像素下限换算的百分比为准。
+ */
+export const MIN_PANE_RATIO = 15;
+export const MAX_PANE_RATIO = 85;
+
+/**
  * clamp 百分比，保证分隔条拖拽不会把窗格挤没。
  */
-export const clampRatio = (value, min = 15, max = 85) =>
+export const clampRatio = (value, min = MIN_PANE_RATIO, max = MAX_PANE_RATIO) =>
   Math.min(max, Math.max(min, value));

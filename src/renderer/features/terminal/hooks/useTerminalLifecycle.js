@@ -447,6 +447,35 @@ export function useTerminalLifecycle({
     handleMouseUpRef.current = handleMouseUp;
   });
 
+  // 字体异步加载完成后触发一次 refit：
+  // xterm 首次用回退等宽字体度量单元格，Fira Code 就绪后字符宽度可能变化，
+  // 不重新 fit 会出现网格错位直到下一次手动 resize。
+  useEffect(() => {
+    if (
+      typeof document === "undefined" ||
+      !document.fonts ||
+      typeof document.fonts.ready?.then !== "function"
+    ) {
+      return undefined;
+    }
+    let cancelled = false;
+    document.fonts.ready
+      .then(() => {
+        if (
+          !cancelled &&
+          isActiveRef.current &&
+          termRef.current &&
+          fitAddonRef.current
+        ) {
+          scheduleTerminalLayoutSyncRef.current?.("fonts-ready");
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [fitAddonRef, isActiveRef, termRef]);
+
   useEffect(() => {
     const lifecycleManager = lifecycleEventManager;
     lifecycleManager.reset();

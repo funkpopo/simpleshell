@@ -12,6 +12,8 @@ import { useTranslation } from "react-i18next";
  * 网络延迟显示组件
  * 显示聚焦会话的 SSH 延迟或 Mosh 漫游提示。
  */
+// inline 模式占位宽度：仅在指示器可见时占用，避免标签栏永久损失宽度
+const INLINE_PLACEHOLDER_MIN_WIDTH = 150;
 const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   currentTab,
   tabs,
@@ -370,9 +372,15 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   const containerStyles =
     placement === "inline"
       ? {
+          // inline 模式自带占位容器：不可见时整个组件返回 null，不占用标签栏宽度
           position: "static",
           display: "flex",
           alignItems: "center",
+          justifyContent: "flex-end",
+          flexShrink: 0,
+          minWidth: INLINE_PLACEHOLDER_MIN_WIDTH,
+          WebkitAppRegion: "no-drag",
+          ml: 0.5,
         }
       : {
           position: "absolute",
@@ -442,6 +450,9 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
                     ? "rgba(0, 0, 0, 0.9)"
                     : "rgba(255, 255, 255, 1)",
                 transform: "scale(1.05)",
+                // 贴容器右上缘定位时避免放大被 overflow 裁剪
+                transformOrigin:
+                  placement === "inline" ? "center" : "right top",
                 boxShadow: `0 2px 8px ${signalInfo.color}40`,
               },
               "& .MuiChip-icon": {

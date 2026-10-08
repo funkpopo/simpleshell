@@ -48,6 +48,8 @@ import { useNotification } from "../../shared/notifications/NotificationContext"
 import { compactContextMenuPaperSx } from "../../shared/ui/contextMenuStyles";
 
 const HISTORY_ITEM_HEIGHT = 48;
+// 行距 = 行内容高度 + 4px 间距（ListItem 的 mb:0.5），虚拟化与非虚拟化保持一致
+const HISTORY_ROW_PITCH = HISTORY_ITEM_HEIGHT + 4;
 
 const HistoryCommandContent = React.memo(({ command }) => {
   if (!command) return null;
@@ -695,10 +697,8 @@ function CommandHistory({
             </Box>
           ) : filteredHistory.length < 50 ? (
             // 对于少量数据，使用传统渲染以避免虚拟化开销
-            <Box
-              className="app-scrollbar app-scrollbar-compact"
-              sx={{ height: "100%", overflow: "visible" }}
-            >
+            // （滚动条样式由外层滚动容器提供，内层 overflow:visible 不滚动，无需重复挂类名）
+            <Box sx={{ height: "100%", overflow: "visible" }}>
               {filteredHistory.map((item, index) => (
                 <HistoryItem
                   key={`${item.command}-${item.timestamp}-${index}`}
@@ -715,7 +715,7 @@ function CommandHistory({
                 className="app-scrollbar app-scrollbar-compact"
                 style={{ height: containerHeight, width: "100%" }}
                 rowCount={filteredHistory.length}
-                rowHeight={HISTORY_ITEM_HEIGHT}
+                rowHeight={HISTORY_ROW_PITCH}
                 rowProps={listItemData}
                 overscanCount={15}
                 rowComponent={HistoryItem}

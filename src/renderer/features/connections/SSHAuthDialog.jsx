@@ -32,6 +32,12 @@ import { useTranslation } from "react-i18next";
  * SSH 认证对话框组件
  * 用于连接校验、主机指纹验证、用户名密码认证
  */
+// 三个输入框共用的圆角样式
+const authInputSx = {
+  "& .MuiOutlinedInput-root": {
+    borderRadius: 1,
+  },
+};
 const SSHAuthDialog = ({
   open,
   onClose,
@@ -379,11 +385,7 @@ const SSHAuthDialog = ({
                 </InputAdornment>
               ),
             }}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                borderRadius: 1,
-              },
-            }}
+            sx={authInputSx}
           />
         </Box>
       )}
@@ -551,11 +553,7 @@ const SSHAuthDialog = ({
                     </InputAdornment>
                   ),
                 }}
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    borderRadius: 1,
-                  },
-                }}
+                sx={authInputSx}
               />
             </Box>
           )}
@@ -577,11 +575,7 @@ const SSHAuthDialog = ({
                   onChange={(e) => setPrivateKeyPath(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder={t("sshAuth.selectKeyFile")}
-                  sx={{
-                    "& .MuiOutlinedInput-root": {
-                      borderRadius: 1,
-                    },
-                  }}
+                  sx={authInputSx}
                 />
                 <Button
                   variant="outlined"
@@ -634,8 +628,9 @@ const SSHAuthDialog = ({
       slotProps={{
         paper: {
           sx: {
-            minWidth: 400,
-            maxWidth: 500,
+            // 视口钳制：小窗口下不横向溢出
+            minWidth: "min(400px, calc(100vw - 32px))",
+            maxWidth: "min(500px, calc(100vw - 32px))",
             borderRadius: 2,
             border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
           },

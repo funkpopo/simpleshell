@@ -16,10 +16,11 @@ import { List as VirtualizedList } from "react-window";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import { formatFileSize, formatDate } from "../../../shared/lib/formatters.js";
 import { useTranslation } from "react-i18next";
-const FILE_LIST_ROW_HEIGHT = 36;
+const FILE_LIST_ROW_HEIGHT = 44;
 const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
 const FILE_LIST_OVERSCAN = 12;
-const FILE_LIST_ITEM_MIN_HEIGHT = 32;
+// 双行文本（primary 16.8 + 2 margin + secondary 13.2 ≈ 32px）+ 按钮 py:0.5(8px) ≈ 40px
+const FILE_LIST_ITEM_MIN_HEIGHT = 40;
 const FILE_LIST_TEXT_SX = {
   my: 0,
   minWidth: 0,
@@ -96,6 +97,7 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
             px: 1.5,
             py: 0.5,
             borderRadius: 1,
+            overflow: "hidden",
             transition:
               "background-color 0.15s ease-in-out, border-color 0.15s ease-in-out",
             userSelect: "none",
@@ -336,6 +338,7 @@ export default function FileList({
                     px: 1.5,
                     py: 0.5,
                     borderRadius: 1,
+                    overflow: "hidden",
                     transition:
                       "background-color 0.15s ease-in-out, border-color 0.15s ease-in-out",
                     userSelect: "none",

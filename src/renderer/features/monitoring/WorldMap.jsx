@@ -48,7 +48,7 @@ const WorldMap = ({ latitude, longitude }) => {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          height: "200px",
+          height: "100%",
         }}
       >
         <CircularProgress size={24} />
@@ -66,7 +66,7 @@ const WorldMap = ({ latitude, longitude }) => {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          height: "200px",
+          height: "100%",
         }}
       >
         <Typography variant="body2" color="error">

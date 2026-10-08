@@ -78,11 +78,11 @@ import SSHAuthDialog from "../features/connections/SSHAuthDialog.jsx";
 import MasterPasswordOverlay from "../features/security/MasterPasswordOverlay.jsx";
 // Import i18n configuration
 import { useTranslation } from "react-i18next";
-import { SIDEBAR_WIDTHS } from "../shared/constants/layout.js";
 import {
   sidebarRailButtonSx,
   sidebarRailDividerSx,
 } from "../shared/ui/sidebarItemStyles";
+import { Z_INDEX } from "../shared/constants/zIndex.js";
 import { findGroupByTab } from "../features/terminal/model/syncInputGroups";
 import { useCleanupManager } from "../shared/hooks/useAutoCleanup.js";
 import {
@@ -120,7 +120,6 @@ import {
   normalizeSidebarWidth,
 } from "./appShellUtils.js";
 export default function AppShell() {
-  const LATENCY_INFO_MIN_WIDTH = 150;
   const { t, i18n } = useTranslation();
   const eventManager = useCleanupManager(); // 使用统一的事件管理器
   const { showError, showInfo, showSuccess, showWarning } = useNotification();
@@ -209,7 +208,6 @@ export default function AppShell() {
   const portForwardingOpen = state.portForwardingOpen;
   const shortcutCommandsOpen = state.shortcutCommandsOpen;
   const commandHistoryOpen = state.commandHistoryOpen;
-  const activeSidebarMargin = state.activeSidebarMargin;
   const lastOpenedSidebar = state.lastOpenedSidebar;
   const aboutDialogOpen = state.aboutDialogOpen;
   const settingsDialogOpen = state.settingsDialogOpen;
@@ -514,6 +512,25 @@ export default function AppShell() {
     [dispatch, findFallbackSidebar, lastOpenedSidebar],
   );
 
+  // 当前实际显示的侧栏：最后打开的优先，已关闭则回退到仍打开的第一个。
+  // 布局直接由 flex 完成，这里只需派生"是否有可见侧栏"的布尔值
+  // （替代原 activeSidebarMargin 像素计算链——其数值从未被任何 CSS/定位消费）。
+  const sidebarOpenFlags = {
+    resource: resourceMonitorOpen,
+    connection: connectionManagerOpen,
+    file: fileManagerOpen,
+    shortcut: shortcutCommandsOpen,
+    history: commandHistoryOpen,
+    ipquery: ipAddressQueryOpen,
+    password: securityToolsOpen,
+    forwarding: portForwardingOpen,
+    localTerminal: localTerminalSidebarOpen,
+  };
+  const hasVisibleSidebar = Boolean(
+    (lastOpenedSidebar && sidebarOpenFlags[lastOpenedSidebar]) ||
+    findFallbackSidebar(null),
+  );
+
   // 侧边栏 toggle/close 的公共逻辑：更新开关状态、维护 lastOpenedSidebar、
   // 触发 resize 让终端适配布局（notifyResize 可关闭）。
   // 不互斥关闭：多侧栏可同时 open，后打开的以 z-index 覆盖先打开的。
@@ -657,82 +674,24 @@ export default function AppShell() {
   // 新标签页的切换现在在 handleCreateSSHConnection 中直接处理
   // 以避免竞态条件导致的重复标签页问题
 
+  // 侧边栏显隐/宽度/位置变化时通知终端重新适配布局。
+  // 多次触发覆盖 CSS 过渡期间、中期和完成后三个时机。
   React.useEffect(() => {
-    const getSidebarWidth = () => {
-      const isSidebarOpen = {
-        resource: resourceMonitorOpen,
-        connection: connectionManagerOpen,
-        file: fileManagerOpen,
-        shortcut: shortcutCommandsOpen,
-        history: commandHistoryOpen,
-        ipquery: ipAddressQueryOpen,
-        password: securityToolsOpen,
-        forwarding: portForwardingOpen,
-        localTerminal: localTerminalSidebarOpen,
-      };
-      const activeSidebar = isSidebarOpen[lastOpenedSidebar]
-        ? lastOpenedSidebar
-        : findFallbackSidebar(null);
-      if (
-        (resourceMonitorOpen && activeSidebar === "resource") ||
-        (connectionManagerOpen && activeSidebar === "connection") ||
-        (fileManagerOpen && activeSidebar === "file") ||
-        (shortcutCommandsOpen && activeSidebar === "shortcut") ||
-        (commandHistoryOpen && activeSidebar === "history") ||
-        (ipAddressQueryOpen && activeSidebar === "ipquery") ||
-        (securityToolsOpen && activeSidebar === "password") ||
-        (portForwardingOpen && activeSidebar === "forwarding") ||
-        (localTerminalSidebarOpen && activeSidebar === "localTerminal")
-      ) {
-        return sidebarWidth;
-      }
-      return 0;
-    };
-    const activeSidebarWidth = getSidebarWidth();
-    let calculatedMargin;
-    // 始终为右侧按钮栏预留空间，即使没有侧边栏开启
-    calculatedMargin = SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH;
-    if (activeSidebarWidth > 0) {
-      calculatedMargin =
-        activeSidebarWidth +
-        SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH +
-        SIDEBAR_WIDTHS.SAFETY_MARGIN;
-    }
-    dispatch(actions.setActiveSidebarMargin(calculatedMargin));
-
-    // 触发自定义事件，通知WebTerminal组件进行侧边栏变化适配
-    // 使用多次触发机制，确保在CSS过渡期间和完成后都能正确调整终端大小
-    const triggerDelays = [10, 100, 280]; // 在过渡期间、中期和完成后触发
-
-    triggerDelays.forEach((delay) => {
+    const triggerDelays = [10, 100, 280];
+    const timers = triggerDelays.map((delay) =>
       setTimeout(() => {
         window.dispatchEvent(
           new CustomEvent("sidebarChanged", {
             detail: {
-              margin: calculatedMargin,
-              sidebarWidth: activeSidebarWidth,
+              sidebarWidth: hasVisibleSidebar ? sidebarWidth : 0,
               timestamp: Date.now(),
             },
           }),
         );
-      }, delay);
-    });
-  }, [
-    resourceMonitorOpen,
-    connectionManagerOpen,
-    fileManagerOpen,
-    shortcutCommandsOpen,
-    commandHistoryOpen,
-    ipAddressQueryOpen,
-    portForwardingOpen,
-    securityToolsOpen,
-    localTerminalSidebarOpen,
-    lastOpenedSidebar,
-    sidebarPosition,
-    sidebarWidth,
-    SIDEBAR_WIDTHS,
-    findFallbackSidebar,
-  ]);
+      }, delay),
+    );
+    return () => timers.forEach((timer) => clearTimeout(timer));
+  }, [hasVisibleSidebar, sidebarPosition, sidebarWidth]);
   React.useEffect(() => {
     // 仅在主密码锁定或安全状态仍在加载时推迟；无主密码时必须立即加载 config 中的连接
     if (
@@ -2210,8 +2169,9 @@ export default function AppShell() {
     };
   }, [aiChatStatus, probeAiApiStatus]);
 
-  // 打开全局传输浮动窗口
+  // 打开全局传输浮动窗口（与传输侧栏定位重叠，互斥打开）
   const handleOpenTransferFloat = (transfer) => {
+    setTransferSidebarOpen(false);
     setTransferFloatInitialTransfer(transfer);
     setTransferFloatOpen(true);
   };
@@ -2437,8 +2397,6 @@ export default function AppShell() {
     };
   }, [activeSession, t]);
   const isFileManagerButtonDisabled = !isCurrentPanelSshConnected;
-  const hasVisibleSidebar =
-    activeSidebarMargin > SIDEBAR_WIDTHS.SIDEBAR_BUTTONS_WIDTH;
   const activeSidebarContentWidth = hasVisibleSidebar
     ? normalizeSidebarWidth(sidebarWidth)
     : 0;
@@ -2583,8 +2541,8 @@ export default function AppShell() {
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            width: "100vw",
-            height: "100vh",
+            width: "100%",
+            height: "100%",
             bgcolor: "background.default",
           }}
         >
@@ -2608,26 +2566,22 @@ export default function AppShell() {
         sx={{
           display: "flex",
           flexDirection: "column",
-          width: "100vw",
-          height: "100vh",
+          width: "100%",
+          height: "100%",
           overflow: "hidden",
         }}
       >
         <AppBar
-          position="static"
+          position="relative"
           sx={{
             width: "100%",
-            left: 0,
-            right: 0,
-            top: 0,
             bgcolor: "background.paper",
             color: "text.primary",
             boxShadow: "none",
             borderBottom: "1px solid",
             borderColor: "divider",
             // 欢迎页的 fixed 背景层（z-index 0）会盖过 static 定位的标题栏，
-            // 建立层级关系确保标题栏及其窗口控制按钮始终绘制在欢迎页背景之上
-            position: "relative",
+            // relative 定位 + zIndex 确保标题栏及窗口控制按钮绘制在其之上
             zIndex: 2,
           }}
         >
@@ -2725,7 +2679,6 @@ export default function AppShell() {
                   display: "flex",
                   alignItems: "center",
                   WebkitAppRegion: "no-drag",
-                  maxWidth: `calc(100% - ${LATENCY_INFO_MIN_WIDTH}px)`,
                   pr: 0.5,
                 }}
               >
@@ -2755,7 +2708,8 @@ export default function AppShell() {
                     "& .MuiTabs-scrollButtons": {
                       width: 24,
                       color: "text.secondary",
-                      transition: "opacity 0.2s ease",
+                      transition:
+                        "opacity 0.2s ease, width 0.2s ease, min-width 0.2s ease",
                     },
                     "& .MuiTabs-scrollButtons.Mui-disabled": {
                       opacity: 0,
@@ -2791,25 +2745,13 @@ export default function AppShell() {
                 </Tabs>
               </Box>
 
-              {/* 网络延迟指示器 */}
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "flex-end",
-                  flexShrink: 0,
-                  minWidth: LATENCY_INFO_MIN_WIDTH,
-                  WebkitAppRegion: "no-drag",
-                  ml: 0.5,
-                }}
-              >
-                <NetworkLatencyIndicator
-                  currentTab={currentTab}
-                  tabs={tabs}
-                  activeSession={activeSession}
-                  placement="inline"
-                />
-              </Box>
+              {/* 网络延迟指示器（自带占位容器，不可见时不渲染） */}
+              <NetworkLatencyIndicator
+                currentTab={currentTab}
+                tabs={tabs}
+                activeSession={activeSession}
+                placement="inline"
+              />
             </Box>
           </Box>
 
@@ -2853,6 +2795,9 @@ export default function AppShell() {
           >
             {/* 主内容区域 */}
             <Box
+              onDragOver={handleTerminalAreaDragOver}
+              onDragLeave={handleTerminalAreaDragLeave}
+              onDrop={handleTerminalAreaDrop}
               sx={{
                 flex: 1,
                 minHeight: 0,
@@ -2860,65 +2805,48 @@ export default function AppShell() {
                 p: 0,
                 display: "flex",
                 flexDirection: "column",
+                width: "100%",
+                bgcolor: "background.paper",
+                margin: 0,
+                position: "relative",
               }}
             >
-              {/* 标签页内容 */}
-              <Box
-                onDragOver={handleTerminalAreaDragOver}
-                onDragLeave={handleTerminalAreaDragLeave}
-                onDrop={handleTerminalAreaDrop}
-                sx={{
-                  flex: 1,
-                  minHeight: 0,
-                  width: "100%",
-                  bgcolor: "background.paper",
-                  borderRadius: 0,
-                  overflow: "hidden",
-                  display: "flex",
-                  flexDirection: "column",
-                  padding: 0,
-                  margin: 0,
-                  boxShadow: "none",
-                  position: "relative",
-                }}
-              >
-                {/* 拖拽标签页到终端区时的投隆区高亮 */}
-                <PaneDropOverlay />
-                {/* 欢迎页 - 使用条件渲染优化性能 */}
-                {currentTab === 0 && (
-                  <Box
-                    sx={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      height: "100%",
-                      zIndex: 1,
-                    }}
-                  >
-                    <WelcomePage
-                      connections={connections}
-                      topConnections={topConnections}
-                      onOpenConnection={handleOpenConnection}
-                      onCreateConnection={handleRequestCreateConnection}
-                      onConnectionsUpdate={handleConnectionsUpdate}
-                    />
-                  </Box>
-                )}
+              {/* 拖拽标签页到终端区时的投隆区高亮 */}
+              <PaneDropOverlay />
+              {/* 欢迎页 - 使用条件渲染优化性能 */}
+              {currentTab === 0 && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    zIndex: 1,
+                  }}
+                >
+                  <WelcomePage
+                    connections={connections}
+                    topConnections={topConnections}
+                    onOpenConnection={handleOpenConnection}
+                    onCreateConnection={handleRequestCreateConnection}
+                    onConnectionsUpdate={handleConnectionsUpdate}
+                  />
+                </Box>
+              )}
 
-                <SessionWorkspace
-                  tabs={tabs.slice(1)}
-                  layouts={splitLayouts}
-                  activeTabId={currentPanelTab?.id}
-                  onFocusPane={handleFocusPane}
-                  onClosePane={handleClosePane}
-                  onSetRatios={handleSetRatios}
-                  onPaneDragStart={handlePaneDragStart}
-                  onPaneDragOver={handlePaneDragOver}
-                  onPaneDrop={handlePaneDrop}
-                  onPaneDragEnd={handlePaneDragEnd}
-                />
-              </Box>
+              <SessionWorkspace
+                tabs={tabs.slice(1)}
+                layouts={splitLayouts}
+                activeTabId={currentPanelTab?.id}
+                onFocusPane={handleFocusPane}
+                onClosePane={handleClosePane}
+                onSetRatios={handleSetRatios}
+                onPaneDragStart={handlePaneDragStart}
+                onPaneDragOver={handlePaneDragOver}
+                onPaneDrop={handlePaneDrop}
+                onPaneDragEnd={handlePaneDragEnd}
+              />
             </Box>
 
             {/* 可切换位置的侧边栏容器 */}
@@ -2933,13 +2861,61 @@ export default function AppShell() {
                 zIndex: 90,
               }}
             >
+              {/* 拖拽手柄放在无 overflow 裁剪的外层容器中，
+                  否则 8px 手柄外移 4px 后一半被宽度动画容器裁掉 */}
+              {activeSidebarContentWidth > 0 && (
+                <Box
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label={t("sidebar.resize")}
+                  tabIndex={-1}
+                  onPointerDown={handleSidebarResizeStart}
+                  sx={(theme) => ({
+                    position: "absolute",
+                    top: 0,
+                    bottom: 0,
+                    [sidebarPosition === "left" ? "right" : "left"]: 0,
+                    width: 8,
+                    cursor: "col-resize",
+                    zIndex: 120,
+                    touchAction: "none",
+                    outline: "none",
+                    transform:
+                      sidebarPosition === "left"
+                        ? "translateX(4px)"
+                        : "translateX(-4px)",
+                    "&::after": {
+                      content: '""',
+                      position: "absolute",
+                      top: 0,
+                      bottom: 0,
+                      left: "50%",
+                      width: 2,
+                      transform: "translateX(-50%)",
+                      bgcolor: sidebarResizing ? "primary.main" : "transparent",
+                      opacity: sidebarResizing ? 0.8 : 0,
+                      transition: theme.transitions.create(
+                        ["background-color", "opacity"],
+                        {
+                          duration: theme.transitions.duration.shortest,
+                        },
+                      ),
+                    },
+                    "&:hover::after": {
+                      bgcolor: "primary.main",
+                      opacity: 0.45,
+                    },
+                  })}
+                />
+              )}
               {/* 侧边栏内容区域 - 根据是否有侧边栏打开来显示 */}
               <Box
                 sx={{
                   width: `${activeSidebarContentWidth}px`,
                   height: "100%",
                   position: "relative",
-                  willChange: "width",
+                  // 仅拖拽期间提升合成层，避免常驻 willChange 占用资源
+                  willChange: sidebarResizing ? "width" : undefined,
                   transition: (theme) =>
                     sidebarResizing
                       ? "none"
@@ -2950,53 +2926,6 @@ export default function AppShell() {
                   overflow: "hidden",
                 }}
               >
-                {activeSidebarContentWidth > 0 && (
-                  <Box
-                    role="separator"
-                    aria-orientation="vertical"
-                    aria-label={t("sidebar.resize")}
-                    tabIndex={-1}
-                    onPointerDown={handleSidebarResizeStart}
-                    sx={(theme) => ({
-                      position: "absolute",
-                      top: 0,
-                      bottom: 0,
-                      [sidebarPosition === "left" ? "right" : "left"]: 0,
-                      width: 8,
-                      cursor: "col-resize",
-                      zIndex: 120,
-                      touchAction: "none",
-                      outline: "none",
-                      transform:
-                        sidebarPosition === "left"
-                          ? "translateX(4px)"
-                          : "translateX(-4px)",
-                      "&::after": {
-                        content: '""',
-                        position: "absolute",
-                        top: 0,
-                        bottom: 0,
-                        left: "50%",
-                        width: 2,
-                        transform: "translateX(-50%)",
-                        bgcolor: sidebarResizing
-                          ? "primary.main"
-                          : "transparent",
-                        opacity: sidebarResizing ? 0.8 : 0,
-                        transition: theme.transitions.create(
-                          ["background-color", "opacity"],
-                          {
-                            duration: theme.transitions.duration.shortest,
-                          },
-                        ),
-                      },
-                      "&:hover::after": {
-                        bgcolor: "primary.main",
-                        opacity: 0.45,
-                      },
-                    })}
-                  />
-                )}
                 {/* 业务侧栏可多开：后打开的以更高 z-index 覆盖，关闭后回退到先前打开的 */}
                 <Box
                   sx={{
@@ -3403,6 +3332,8 @@ export default function AppShell() {
                       const newState = !transferSidebarOpen;
                       setTransferSidebarOpen(newState);
                       if (newState) {
+                        // 侧栏与右下浮动窗定位重叠，打开侧栏时关闭浮动窗（互斥）
+                        handleCloseTransferFloat();
                         setLastActiveFloatWindow("transfer");
                       }
                     }}
@@ -3525,7 +3456,11 @@ export default function AppShell() {
           presetInput={aiInputPreset}
           onInputPresetUsed={() => dispatch(actions.setAiInputPreset(""))}
           onExecuteCommand={handleSendCommand}
-          zIndex={lastActiveFloatWindow === "ai" ? 1310 : 1300}
+          zIndex={
+            lastActiveFloatWindow === "ai"
+              ? Z_INDEX.floatWindowActive
+              : Z_INDEX.floatWindow
+          }
           onFocus={() => setLastActiveFloatWindow("ai")}
           anchorEl={aiChatButtonRef.current}
         />
@@ -3537,7 +3472,11 @@ export default function AppShell() {
           open={transferSidebarOpen}
           onRecoveryCount={setResumableTransferCount}
           onClose={() => setTransferSidebarOpen(false)}
-          zIndex={lastActiveFloatWindow === "transfer" ? 1310 : 1300}
+          zIndex={
+            lastActiveFloatWindow === "transfer"
+              ? Z_INDEX.floatWindowActive
+              : Z_INDEX.floatWindow
+          }
           onFocus={() => setLastActiveFloatWindow("transfer")}
           anchorEl={transferSidebarButtonRef.current}
         />
@@ -3597,7 +3536,6 @@ export default function AppShell() {
       <GlobalTransferFloat
         open={transferFloatOpen}
         onClose={handleCloseTransferFloat}
-        onToggle={handleToggleTransferFloat}
         initialTransfer={transferFloatInitialTransfer}
       />
     </ThemeProvider>

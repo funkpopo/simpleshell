@@ -18,6 +18,7 @@ export default function Breadcrumbs({
         py: 0.75,
         overflow: "hidden",
         borderBottom: `1px solid ${theme.palette.divider}`,
+        position: "relative",
         zIndex: 1,
         flexShrink: 0,
         display: "flex",
