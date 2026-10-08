@@ -8,317 +8,21 @@ import {
   Tooltip,
   Tabs,
   Tab,
-  LinearProgress,
-  Chip,
 } from "@mui/material";
 import Close from "@mui/icons-material/Close";
 import Minimize from "@mui/icons-material/Minimize";
 import ExpandMore from "@mui/icons-material/ExpandMore";
 import SwapVert from "@mui/icons-material/SwapVert";
-import { useTheme, alpha } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import {
   useAllGlobalTransfers,
   cancelTransferWithNotice,
 } from "./state/globalTransferStore.js";
-import { formatFileSize, formatSpeed } from "../../shared/lib/formatters.js";
 import { Z_INDEX } from "../../shared/constants/zIndex.js";
-import {
-  sumTransferFileCount,
-  getDisplayCompletedFileCount,
-} from "./lib/transferCounts.js";
+import { sumTransferFileCount } from "./lib/transferCounts.js";
 import { RADIUS } from "../../theme";
-import {
-  getTransferIcon,
-  getStatusIcon,
-  getTransferColor,
-  getTransferStatusColor,
-  getTransferStatusChipColors,
-  getTransferStatusTextColor,
-  getProgressTrackColor,
-  getDangerHoverSx,
-  getIntegrityStatusText,
-} from "./transferStatusStyles.jsx";
-
-// 格式化剩余时间
-const formatTime = (seconds, t) => {
-  if (!seconds || seconds <= 0) return "";
-  if (seconds < 60) {
-    return t("fileManager.transfer.timeSeconds", {
-      count: Math.round(seconds),
-    });
-  }
-  if (seconds < 3600) {
-    return t("fileManager.transfer.timeMinutes", {
-      count: Math.round(seconds / 60),
-    });
-  }
-  return t("fileManager.transfer.timeHours", {
-    count: Math.round(seconds / 3600),
-  });
-};
-
-/**
- * 单个传输项组件
- */
-const TransferItem = memo(({ transfer, onCancel, onDelete }) => {
-  const theme = useTheme();
-  const { t } = useTranslation();
-  const {
-    transferId,
-    type,
-    fileName,
-    isCancelled,
-    error,
-    progress = 0,
-    transferredBytes = 0,
-    totalBytes = 0,
-    transferSpeed = 0,
-    remainingTime = 0,
-    totalFiles = 0,
-    currentFile,
-    warning = "",
-  } = transfer;
-
-  const statusText = getIntegrityStatusText(transfer, t);
-  const isCompleted = progress >= 100;
-  const hasError = !!error;
-  const hasWarning = !!warning;
-  const statusIcon = getStatusIcon(transfer, 16);
-  const chipColors = getTransferStatusChipColors(theme, transfer);
-  const statusColor = getTransferStatusColor(theme, transfer);
-  const displayFileProgress = getDisplayCompletedFileCount(transfer, {
-    multiFileUsesCurrentIndex: true,
-  });
-
-  return (
-    <Box
-      sx={{
-        m: 1,
-        p: 1.5,
-        borderRadius: 2,
-        backgroundColor:
-          theme.palette.mode === "dark"
-            ? "rgba(255,255,255,0.05)"
-            : "rgba(0,0,0,0.02)",
-        border: `1px solid ${theme.palette.divider}`,
-      }}
-    >
-      {/* 头部信息 */}
-      <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 28, // 稍微减小图标容器
-            height: 28,
-            minWidth: 28,
-            borderRadius: "50%",
-            backgroundColor: alpha(getTransferColor(theme, type), 0.15),
-            mr: 1.5,
-            flexShrink: 0,
-          }}
-        >
-          {getTransferIcon(type, { fontSize: 18 })}
-        </Box>
-
-        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-          <Typography
-            variant="subtitle2"
-            sx={{
-              fontWeight: 600,
-              fontSize: "0.85rem", // 稍微减小字体
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              color: theme.palette.text.primary,
-            }}
-          >
-            {fileName || t("fileManager.transfer.fallbackName")}
-          </Typography>
-
-          {/* 当前文件信息 */}
-          {(statusText || totalFiles > 1 || currentFile) && (
-            <>
-              {statusText && (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    fontSize: "0.75rem",
-                    color: getTransferStatusTextColor(theme, transfer),
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    display: "block",
-                  }}
-                >
-                  {statusText}
-                </Typography>
-              )}
-              {(totalFiles > 1 || currentFile) && (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    fontSize: "0.75rem",
-                    color: theme.palette.text.secondary,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    display: "block",
-                  }}
-                >
-                  {totalFiles > 1 && (
-                    <span>
-                      {t("fileManager.transfer.completedFiles", {
-                        completed: displayFileProgress,
-                        total: totalFiles,
-                      })}
-                    </span>
-                  )}
-                  {currentFile && (
-                    <span>
-                      {totalFiles > 1 ? " • " : ""}
-                      {currentFile}
-                    </span>
-                  )}
-                </Typography>
-              )}
-            </>
-          )}
-        </Box>
-
-        {/* 状态和操作按钮 */}
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          {statusIcon}
-
-          {/* 进度百分比 */}
-          <Chip
-            label={`${Math.round(progress)}%`}
-            size="small"
-            sx={{
-              height: 24,
-              fontSize: "0.75rem",
-              fontWeight: 600,
-              backgroundColor: chipColors.bgcolor,
-              color: chipColors.color,
-            }}
-          />
-
-          {/* 删除按钮（失败或取消的任务） */}
-          {(hasError || isCancelled) && (
-            <Tooltip title={t("fileManager.transfer.delete")}>
-              <IconButton
-                size="small"
-                onClick={() => onDelete(transferId)}
-                sx={{
-                  width: 28,
-                  height: 28,
-                  color: theme.palette.text.secondary,
-                  ...getDangerHoverSx(theme),
-                }}
-                aria-label={t("fileManager.transfer.delete")}
-              >
-                <Close sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-          )}
-
-          {/* 取消按钮（进行中的任务） */}
-          {!isCompleted && !isCancelled && !hasError && (
-            <Tooltip title={t("fileManager.transfer.stop")}>
-              <IconButton
-                size="small"
-                onClick={() => onCancel(transferId)}
-                sx={{
-                  width: 28,
-                  height: 28,
-                  color: theme.palette.text.secondary,
-                  ...getDangerHoverSx(theme),
-                }}
-                aria-label={t("fileManager.transfer.stop")}
-              >
-                <Close sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Box>
-      </Box>
-
-      {/* 进度条 */}
-      <Box sx={{ mb: 0.5 }}>
-        <LinearProgress
-          variant="determinate"
-          value={Math.min(progress, 100)}
-          sx={{
-            height: 6, // 减小进度条高度
-            borderRadius: 3,
-            backgroundColor: getProgressTrackColor(theme),
-            "& .MuiLinearProgress-bar": {
-              backgroundColor: statusColor,
-              borderRadius: 3,
-              transition: "transform 0.2s ease-in-out",
-            },
-          }}
-        />
-      </Box>
-
-      {/* 详细信息 */}
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <Typography
-          variant="caption"
-          sx={{
-            fontSize: "0.75rem",
-            color: theme.palette.text.secondary,
-          }}
-        >
-          {formatFileSize(transferredBytes)} / {formatFileSize(totalBytes)}
-        </Typography>
-
-        {!isCancelled && !hasError && transferSpeed > 0 && (
-          <Typography
-            variant="caption"
-            sx={{
-              fontSize: "0.75rem",
-              color: theme.palette.text.secondary,
-            }}
-          >
-            {formatSpeed(transferSpeed)}
-            {remainingTime > 0 && ` • ${formatTime(remainingTime, t)}`}
-          </Typography>
-        )}
-
-        {/* 状态文本 */}
-        {(hasError || hasWarning || isCancelled || isCompleted) && (
-          <Typography
-            variant="caption"
-            sx={{
-              fontSize: "0.75rem",
-              fontWeight: 500,
-              color: statusColor,
-            }}
-          >
-            {hasError
-              ? t("fileManager.transfer.status.failed")
-              : hasWarning
-                ? t("fileManager.transfer.status.partial")
-                : isCancelled
-                  ? t("fileManager.transfer.status.cancelled")
-                  : t("fileManager.transfer.status.completed")}
-          </Typography>
-        )}
-      </Box>
-    </Box>
-  );
-});
-
-TransferItem.displayName = "TransferItem";
+import TransferItemCard from "./components/TransferItemCard.jsx";
 
 /**
  * 全局传输进度浮动窗口
@@ -379,13 +83,12 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
     setSelectedTabId(newValue);
   };
 
-  const handleCancelTransfer = (transferId) => {
-    if (selectedTabId) {
-      const transfer = allTransfers.find(
-        (t) => t.tabId === selectedTabId && t.transferId === transferId,
-      );
+  // TransferItemCard 回调签名统一为 (transfer)
+  const handleCancelTransfer = (transfer) => {
+    const tabId = transfer?.tabId ?? selectedTabId;
+    if (tabId && transfer) {
       cancelTransferWithNotice(
-        selectedTabId,
+        tabId,
         transfer,
         t("fileManager.transfer.status.transferCancelled"),
         { resetProgress: true },
@@ -393,9 +96,10 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
     }
   };
 
-  const handleDeleteTransfer = (transferId) => {
-    if (selectedTabId && transferId) {
-      removeTransferProgress(selectedTabId, transferId);
+  const handleDeleteTransfer = (transfer) => {
+    const tabId = transfer?.tabId ?? selectedTabId;
+    if (tabId && transfer?.transferId) {
+      removeTransferProgress(tabId, transfer.transferId);
     }
   };
 
@@ -555,8 +259,9 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
               </Box>
             ) : (
               currentTransfers.map((transfer) => (
-                <TransferItem
+                <TransferItemCard
                   key={transfer.transferId}
+                  variant="float"
                   transfer={transfer}
                   onCancel={handleCancelTransfer}
                   onDelete={handleDeleteTransfer}

@@ -18,27 +18,27 @@ import {
 import { useTranslation } from "react-i18next";
 import useTransferHosts from "../../file-manager/hooks/useTransferHosts.js";
 import { sumTransferFileCount } from "../lib/transferCounts.js";
-import {
-  getTransferIcon,
-  getStatusIcon,
-  getTransferStatusChipColors,
-  getDangerHoverSx,
-  getIntegrityStatusText,
-} from "../transferStatusStyles.jsx";
+import { getTransferIcon, getDangerHoverSx } from "../transferStatusStyles.jsx";
+import { useTransferItemDerived } from "../lib/useTransferItemDerived.js";
 
 /**
- * 单个传输任务标签
+ * 单个传输任务标签（Chip 形态与卡片差异大，保留独立实现，
+ * 派生值统一走共享的 useTransferItemDerived）
  */
 const TransferTag = memo(({ transfer, onClickTag, onDelete, sshHost }) => {
   const theme = useTheme();
   const { t } = useTranslation();
-  const { type, fileName, progress, isCancelled, error } = transfer;
-  const isCompleted = progress >= 100;
-  const hasError = !!error;
-  const statusIcon = getStatusIcon(transfer, 14);
+  const { type, fileName, progress } = transfer;
+  const {
+    isCompleted,
+    hasError,
+    isCancelled,
+    statusText,
+    statusIcon,
+    chipColors,
+  } = useTransferItemDerived(theme, transfer, t, { iconSize: 14 });
   const showDelete = isCompleted || hasError || isCancelled;
-  const secondaryText = getIntegrityStatusText(transfer, t) || sshHost || "";
-  const chipColors = getTransferStatusChipColors(theme, transfer);
+  const secondaryText = statusText || sshHost || "";
   return (
     <Chip
       icon={getTransferIcon(type, {

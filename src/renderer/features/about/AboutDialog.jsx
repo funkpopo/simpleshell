@@ -23,6 +23,7 @@ import UpdateIcon from "@mui/icons-material/Update";
 import CheckIcon from "@mui/icons-material/Check";
 import CancelIcon from "@mui/icons-material/Cancel";
 import ScheduleIcon from "@mui/icons-material/Schedule";
+import { getMarkdownContentSx } from "../../shared/ui/markdownContentSx.js";
 
 const updatePanelSx = {
   mt: 1,
@@ -36,7 +37,9 @@ const updatePanelSx = {
       : "rgba(17, 24, 39, 0.03)",
 };
 
-const releaseNoteSx = {
+// 更新日志容器属性（maxHeight/border/padding/overflow）；
+// markdown 排版统一走 shared/ui/markdownContentSx.js（density: compact）
+const releaseNoteContainerSx = {
   mt: 2,
   maxHeight: 220,
   overflow: "auto",
@@ -48,115 +51,11 @@ const releaseNoteSx = {
       ? "rgba(0, 0, 0, 0.2)"
       : "rgba(17, 24, 39, 0.04)",
   p: 1.25,
-  fontSize: "0.75rem",
-  lineHeight: 1.6,
-  "& > :first-of-type": {
-    mt: 0,
-  },
-  "& > :last-child": {
-    mb: 0,
-  },
-  "& h1, & h2, & h3, & h4": {
-    mt: 0,
-    mb: 1,
-    fontWeight: 700,
-    lineHeight: 1.35,
-  },
-  "& h1": {
-    fontSize: "1rem",
-  },
-  "& h2": {
-    fontSize: "0.95rem",
-  },
-  "& h3, & h4": {
-    fontSize: "0.875rem",
-  },
-  "& p": {
-    my: 0,
-    mb: 1,
-  },
-  "& ul, & ol": {
-    mt: 0,
-    mb: 1,
-    pl: 2.5,
-  },
-  "& li + li": {
-    mt: 0.5,
-  },
-  "& blockquote": {
-    m: 0,
-    mb: 1,
-    py: 0.75,
-    px: 1.25,
-    borderLeft: "3px solid",
-    borderColor: "primary.main",
-    bgcolor: (theme) =>
-      theme.palette.mode === "dark"
-        ? "rgba(255, 255, 255, 0.04)"
-        : "rgba(25, 118, 210, 0.06)",
-    color: "text.secondary",
-  },
-  "& hr": {
-    border: 0,
-    borderTop: "1px solid",
-    borderColor: "divider",
-    my: 1.25,
-  },
-  "& code": {
-    fontFamily:
-      '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
-    fontSize: "0.85em",
-    px: 0.5,
-    py: 0.125,
-    borderRadius: 0.75,
-    bgcolor: (theme) =>
-      theme.palette.mode === "dark"
-        ? "rgba(255, 255, 255, 0.08)"
-        : "rgba(17, 24, 39, 0.08)",
-  },
-  "& pre": {
-    mt: 0,
-    mb: 1,
-    p: 1,
-    overflowX: "auto",
-    borderRadius: 1,
-    border: "1px solid",
-    borderColor: "divider",
-    bgcolor: (theme) =>
-      theme.palette.mode === "dark"
-        ? "rgba(0, 0, 0, 0.28)"
-        : "rgba(17, 24, 39, 0.06)",
-  },
-  "& pre code": {
-    display: "block",
-    p: 0,
-    bgcolor: "transparent",
-    fontSize: "0.75rem",
-  },
-  "& table": {
-    width: "100%",
-    mb: 1,
-    borderCollapse: "collapse",
-  },
-  "& th, & td": {
-    border: "1px solid",
-    borderColor: "divider",
-    p: 0.75,
-    textAlign: "left",
-    verticalAlign: "top",
-  },
-  "& th": {
-    fontWeight: 600,
-    bgcolor: (theme) =>
-      theme.palette.mode === "dark"
-        ? "rgba(255, 255, 255, 0.04)"
-        : "rgba(17, 24, 39, 0.05)",
-  },
-  "& input[type='checkbox']": {
-    pointerEvents: "none",
-    mr: 0.75,
-  },
 };
+const releaseNoteSx = [
+  releaseNoteContainerSx,
+  getMarkdownContentSx({ density: "compact" }),
+];
 
 const MAX_MARKDOWN_LINK_LENGTH = 2048;
 const ALLOWED_MARKDOWN_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);

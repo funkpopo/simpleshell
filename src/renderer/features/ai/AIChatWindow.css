@@ -333,26 +333,10 @@
   color: var(--ai-ink);
 }
 
-/* ---- Message body / markdown ---- */
-.ai-message-content {
-  font-size: 13px;
-  line-height: 1.55;
-  letter-spacing: -0.005em;
-  color: var(--ai-ink);
-}
-
-.ai-message-content > :first-child {
-  margin-top: 0 !important;
-}
-
-.ai-message-content > :last-child {
-  margin-bottom: 0 !important;
-}
-
-.ai-message-content p {
-  margin: 0.45em 0;
-}
-
+/* ---- Message body / markdown ----
+ * 基础排版（字号/标题/段落/列表/引用/代码/表格/链接）已迁移至
+ * shared/ui/markdownContentSx.js（sx 注入，单一事实来源）。
+ * 此处仅保留依赖气泡上下文的 is-user 反色覆盖（特异性高于 sx，生效）。 */
 .ai-message-bubble.is-user .ai-message-content a {
   color: inherit;
   text-decoration: underline;
@@ -914,49 +898,16 @@
   box-shadow: none !important;
 }
 
-/* ---- Inline code ---- */
-.ai-message-content code:not(.hljs) {
-  background-color: var(--ai-field);
-  padding: 0.12em 0.35em;
-  border-radius: var(--ai-radius-control);
-  font-family: "Consolas", "Monaco", "Courier New", monospace;
-  font-size: 0.88em;
-  color: var(--ai-ink);
-}
-
+/* ---- Inline code ----
+ * 基础样式已迁 shared/ui/markdownContentSx.js；此处仅保留 is-user 气泡反色覆盖 */
 .ai-message-bubble.is-user .ai-message-content code:not(.hljs) {
   background-color: color-mix(in srgb, var(--ai-ink) 8%, transparent);
   color: inherit;
 }
 
-/* ---- Code blocks ---- */
-.ai-message-content pre {
-  margin: 0.55em 0;
-  padding: 10px 12px;
-  overflow-x: auto;
-  border-radius: var(--ai-radius-card);
-  border: 1px solid var(--ai-line);
-  background: var(--ai-inset);
-  max-width: 100%;
-}
-
-.ai-message-content pre .hljs,
-.ai-message-content .hljs {
-  background: transparent;
-}
-
-.ai-message-content pre code {
-  display: block;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  font-size: 0.84em;
-  line-height: 1.45;
-  white-space: pre;
-  word-wrap: normal;
-  overflow-x: auto;
-}
-
+/* ---- Code blocks ----
+ * pre/pre code 基础样式与 hljs 背景重置已迁 markdownContentSx.js；
+ * 此处仅保留 pre 的滚动条定制 */
 .ai-message-content pre::-webkit-scrollbar {
   height: 6px;
 }
@@ -993,98 +944,8 @@
   background: rgba(255, 255, 255, 0.4);
 }
 
-/* ---- Tables ---- */
-.ai-message-content table {
-  border-collapse: collapse;
-  margin: 0.55em 0;
-  width: 100%;
-  border-radius: var(--ai-radius-control);
-  border: 1px solid var(--ai-line);
-}
-
-.ai-message-content table th,
-.ai-message-content table td {
-  border: 1px solid var(--ai-line);
-  padding: 0.4em 0.55em;
-  text-align: left;
-  white-space: normal;
-  word-wrap: break-word;
-  font-size: 12px;
-}
-
-.ai-message-content table th {
-  background-color: var(--ai-field);
-  font-weight: 600;
-}
-
-/* ---- Headings ---- */
-.ai-message-content h1,
-.ai-message-content h2,
-.ai-message-content h3,
-.ai-message-content h4,
-.ai-message-content h5,
-.ai-message-content h6 {
-  margin: 0.75em 0 0.35em;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.3;
-  color: var(--ai-ink);
-}
-
-.ai-message-content h1 {
-  font-size: 16px;
-}
-
-.ai-message-content h2 {
-  font-size: 15px;
-}
-
-.ai-message-content h3 {
-  font-size: 14px;
-}
-
-.ai-message-content h4,
-.ai-message-content h5,
-.ai-message-content h6 {
-  font-size: 13px;
-}
-
-/* ---- Blockquote ---- */
-.ai-message-content blockquote {
-  margin: 0.55em 0;
-  padding: 0.35em 0.8em;
-  border-left: 2px solid var(--ai-line-strong);
-  background-color: var(--ai-inset);
-  border-radius: 0 var(--ai-radius-control) var(--ai-radius-control) 0;
-  font-style: italic;
-  color: var(--ai-ink-2);
-}
-
-/* ---- Lists ---- */
-.ai-message-content ul,
-.ai-message-content ol {
-  margin: 0.45em 0;
-  padding-left: 1.35em;
-}
-
-.ai-message-content li {
-  margin: 0.2em 0;
-}
-
-/* ---- Links ---- */
-.ai-message-content a {
-  color: var(--color-primary-main);
-  text-decoration: none;
-  text-underline-offset: 2px;
-}
-
-.ai-message-content a:hover {
-  text-decoration: underline;
-}
-
-[data-mui-color-scheme="dark"] .ai-message-content a {
-  color: var(--color-primary-light);
-}
+/* Tables / Headings / Blockquote / Lists / Links 基础排版
+ * 已统一迁移至 shared/ui/markdownContentSx.js（sx 注入）。 */
 
 /* ---- Executable command card ---- */
 .ai-exec-command {

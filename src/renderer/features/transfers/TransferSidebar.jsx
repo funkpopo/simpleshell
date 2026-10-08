@@ -4,32 +4,17 @@ import {
   Box,
   Typography,
   IconButton,
-  LinearProgress,
-  Chip,
   Divider,
   Button,
   Tooltip,
-  Collapse,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
   Alert,
-  Menu,
-  MenuItem,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { RADIUS } from "../../theme";
 import CloseIcon from "@mui/icons-material/Close";
 import MinimizeIcon from "@mui/icons-material/Minimize";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import PauseIcon from "@mui/icons-material/Pause";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import ExpandLessIcon from "@mui/icons-material/ExpandLess";
-import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import {
   useAllGlobalTransfers,
   useTransferHistory,
@@ -38,25 +23,14 @@ import {
 } from "./state/globalTransferStore.js";
 import { createAnchoredTransition } from "../../app/lib/launchAnimation.js";
 import useDragResize from "../../shared/hooks/useDragResize.js";
-import {
-  getNormalizedTransferFileCount,
-  sumTransferFileCount,
-  getDisplayCompletedFileCount,
-} from "./lib/transferCounts.js";
+import { sumTransferFileCount } from "./lib/transferCounts.js";
 import { useTranslation } from "react-i18next";
 import { formatFileSize } from "../../shared/lib/formatters.js";
-import OverflowTooltipText from "../../shared/ui/OverflowTooltipText.jsx";
 import {
   sidebarTitleBarSx,
   sidebarTitleIconButtonSx,
 } from "../../shared/ui/sidebarItemStyles";
-import {
-  getTransferIcon,
-  getStatusIcon,
-  getDangerHoverSx,
-  getTransferStatusTextColor,
-  getIntegrityStatusText,
-} from "./transferStatusStyles.jsx";
+import TransferItemCard from "./components/TransferItemCard.jsx";
 
 // 默认和限制宽度
 const DEFAULT_WIDTH = 320;
@@ -80,368 +54,6 @@ const FloatingDialog = createFloatingDialog({
  * 格式化文件大小（统一走共享 formatFileSize，1 位小数保持原有显示习惯）
  */
 const formatSize = (bytes) => formatFileSize(bytes, 1);
-
-/**
- * 格式化时间
- */
-const formatTime = (timestamp, locale) => {
-  if (!timestamp) return "";
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString(locale || undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-};
-
-/**
- * 单个传输项组件
- */
-const TransferItem = memo(
-  ({ transfer, isActive, onCancel, onDelete, onVerify }) => {
-    const theme = useTheme();
-    const { t, i18n } = useTranslation();
-    const [expanded, setExpanded] = useState(false);
-    const [menuAnchor, setMenuAnchor] = useState(null);
-    const integrityStatus = getIntegrityStatusText(transfer, t);
-    const statusIcon = getStatusIcon(transfer);
-    const isCompleted = transfer.progress >= 100;
-    const hasError = !!transfer.error;
-    const hasWarning = !!transfer.warning;
-    const isCancelled = transfer.isCancelled;
-    const canCancel = isActive && !isCompleted && !hasError && !isCancelled;
-    const canDeleteHistory = !isActive && typeof onDelete === "function";
-
-    // 判断是否有文件列表可展开（单文件也允许展开）
-    const hasFileList = transfer.fileList && transfer.fileList.length > 0;
-    const transferFileCount = getNormalizedTransferFileCount(transfer);
-    const isMultiFile = transferFileCount > 1;
-    const canExpand = hasFileList || transferFileCount > 1;
-
-    const totalFiles = transfer.totalFiles || 0;
-    const displayCompleted = getDisplayCompletedFileCount(transfer);
-
-    return (
-      <Box
-        sx={{
-          mx: 1,
-          my: 0.5,
-          p: 1,
-          borderRadius: 1.5,
-          backgroundColor:
-            theme.palette.mode === "dark"
-              ? "rgba(255,255,255,0.05)"
-              : "rgba(0,0,0,0.03)",
-          border: `1px solid ${theme.palette.divider}`,
-        }}
-      >
-        {/* 头部：图标 + 文件名 + 时间 + 状态 */}
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <Box sx={{ flexShrink: 0 }}>{getTransferIcon(transfer.type)}</Box>
-          <OverflowTooltipText
-            variant="body2"
-            sx={{
-              flex: 1,
-              minWidth: 0,
-              fontWeight: 500,
-            }}
-            tooltipTitle={
-              transfer.fileName || t("fileManager.transfer.fallbackName")
-            }
-          >
-            {transfer.fileName || t("fileManager.transfer.fallbackName")}
-          </OverflowTooltipText>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ flexShrink: 0 }}
-          >
-            {formatTime(
-              transfer.startTime || transfer.completedTime,
-              i18n.language,
-            )}
-          </Typography>
-          {statusIcon}
-          {canCancel &&
-            transfer.transferKey &&
-            onVerify &&
-            !transfer.algorithm &&
-            !transfer.processedFiles && (
-              <>
-                <Tooltip title={t("fileManager.transfer.taskOptions")}>
-                  <IconButton
-                    size="small"
-                    aria-label={t("fileManager.transfer.taskOptions")}
-                    onClick={(event) => setMenuAnchor(event.currentTarget)}
-                  >
-                    <MoreVertIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-                <Menu
-                  anchorEl={menuAnchor}
-                  open={Boolean(menuAnchor)}
-                  onClose={() => setMenuAnchor(null)}
-                >
-                  {["sha256", "md5"].map((algorithm) => (
-                    <MenuItem
-                      key={algorithm}
-                      onClick={() => {
-                        setMenuAnchor(null);
-                        onVerify(transfer, algorithm);
-                      }}
-                    >
-                      {t("fileManager.transfer.verifyThisTask", {
-                        algorithm: algorithm.toUpperCase(),
-                      })}
-                    </MenuItem>
-                  ))}
-                </Menu>
-              </>
-            )}
-          {/* 删除历史记录按钮 */}
-          {canDeleteHistory && (
-            <Tooltip title={t("fileManager.transfer.deleteRecord")}>
-              <IconButton
-                size="small"
-                onClick={() => onDelete?.(transfer)}
-                sx={{
-                  width: 20,
-                  height: 20,
-                  p: 0,
-                  color: theme.palette.text.secondary,
-                  ...getDangerHoverSx(theme),
-                }}
-                aria-label={t("fileManager.transfer.deleteRecord")}
-              >
-                <CloseIcon sx={{ fontSize: 14 }} />
-              </IconButton>
-            </Tooltip>
-          )}
-          {/* 展开/折叠按钮 */}
-          {canExpand && (
-            <Tooltip
-              title={
-                expanded
-                  ? t("fileManager.transfer.collapseDetails")
-                  : t("fileManager.transfer.viewDetails")
-              }
-            >
-              <IconButton
-                size="small"
-                onClick={() => setExpanded(!expanded)}
-                aria-label={
-                  expanded
-                    ? t("fileManager.transfer.collapseDetails")
-                    : t("fileManager.transfer.viewDetails")
-                }
-                sx={{ width: 20, height: 20, p: 0 }}
-              >
-                {expanded ? (
-                  <ExpandLessIcon sx={{ fontSize: 16 }} />
-                ) : (
-                  <ExpandMoreIcon sx={{ fontSize: 16 }} />
-                )}
-              </IconButton>
-            </Tooltip>
-          )}
-        </Box>
-
-        {integrityStatus && (
-          <Typography
-            variant="caption"
-            sx={{
-              display: "block",
-              mt: 0.5,
-              color: getTransferStatusTextColor(theme, transfer),
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {integrityStatus}
-          </Typography>
-        )}
-
-        {transfer.error && (
-          <Alert severity="error" sx={{ mt: 1, overflowWrap: "anywhere" }}>
-            {transfer.error}
-          </Alert>
-        )}
-        {/* 进度条 - 仅活跃传输显示 */}
-        {canCancel && (
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5 }}>
-            <LinearProgress
-              variant={
-                transfer.status === "validating"
-                  ? "indeterminate"
-                  : "determinate"
-              }
-              value={transfer.progress || 0}
-              sx={{ flex: 1, height: 4, borderRadius: 2 }}
-            />
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ minWidth: 35 }}
-            >
-              {Math.round(transfer.progress || 0)}%
-            </Typography>
-          </Box>
-        )}
-
-        {/* 传输详情 + 终止按钮 */}
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            mt: 0.5,
-          }}
-        >
-          <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
-            {transfer.totalBytes > 0 && (
-              <Chip
-                label={formatSize(transfer.totalBytes)}
-                size="small"
-                variant="outlined"
-                sx={{ height: 18, fontSize: "0.65rem" }}
-              />
-            )}
-            {transfer.transferSpeed > 0 && isActive && (
-              <Chip
-                label={`${formatSize(transfer.transferSpeed)}/s`}
-                size="small"
-                variant="outlined"
-                sx={{ height: 18, fontSize: "0.65rem" }}
-              />
-            )}
-            {isMultiFile && totalFiles > 0 && (
-              <Chip
-                label={t("fileManager.transfer.completedFiles", {
-                  completed: displayCompleted,
-                  total: totalFiles,
-                })}
-                size="small"
-                variant="outlined"
-                sx={{ height: 18, fontSize: "0.65rem" }}
-              />
-            )}
-            {hasError && (
-              <Chip
-                label={t("fileManager.transfer.status.failedShort")}
-                size="small"
-                color="error"
-                sx={{ height: 18, fontSize: "0.65rem" }}
-              />
-            )}
-            {hasWarning && (
-              <Chip
-                label={t("fileManager.transfer.status.partialShort")}
-                size="small"
-                color="warning"
-                sx={{ height: 18, fontSize: "0.65rem" }}
-              />
-            )}
-            {isCancelled && (
-              <Chip
-                label={t("fileManager.transfer.status.cancelledShort")}
-                size="small"
-                color="warning"
-                sx={{ height: 18, fontSize: "0.65rem" }}
-              />
-            )}
-          </Box>
-          {canCancel && onCancel && (
-            <Tooltip title={t("fileManager.transfer.pause")}>
-              <IconButton
-                size="small"
-                onClick={() => onCancel(transfer)}
-                sx={{
-                  width: 20,
-                  height: 20,
-                  color: theme.palette.text.secondary,
-                  ...getDangerHoverSx(theme),
-                }}
-                aria-label={t("fileManager.transfer.pause")}
-              >
-                <PauseIcon sx={{ fontSize: 14 }} />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Box>
-
-        {/* 文件列表展开区域 */}
-        <Collapse in={expanded} timeout="auto" unmountOnExit>
-          <Box
-            className="app-scrollbar"
-            sx={{
-              mt: 1,
-              pt: 1,
-              borderTop: `1px dashed ${theme.palette.divider}`,
-              maxHeight: 200,
-              overflowY: "auto",
-            }}
-          >
-            {hasFileList ? (
-              <List dense disablePadding>
-                {transfer.fileList.map((file, index) => (
-                  <ListItem
-                    key={file.index ?? index}
-                    disablePadding
-                    sx={{ py: 0.25, px: 0.5 }}
-                  >
-                    <ListItemIcon sx={{ minWidth: 24 }}>
-                      {file.completed ? (
-                        <CheckCircleIcon
-                          sx={{ fontSize: 14, color: "success.main" }}
-                        />
-                      ) : (
-                        <InsertDriveFileIcon
-                          sx={{ fontSize: 14, color: "text.secondary" }}
-                        />
-                      )}
-                    </ListItemIcon>
-                    <ListItemText
-                      secondary={formatSize(file.size)}
-                      sx={{ minWidth: 0 }}
-                      primary={
-                        <OverflowTooltipText
-                          variant="caption"
-                          sx={{ fontSize: "0.7rem" }}
-                          tooltipTitle={file.name || ""}
-                        >
-                          {file.name || ""}
-                        </OverflowTooltipText>
-                      }
-                      primaryTypographyProps={{
-                        component: "div",
-                      }}
-                      secondaryTypographyProps={{
-                        variant: "caption",
-                        noWrap: true,
-                        sx: { fontSize: "0.6rem" },
-                      }}
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            ) : totalFiles > 0 ? (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ px: 1 }}
-              >
-                {t("fileManager.transfer.fileCount", { count: totalFiles })}
-              </Typography>
-            ) : null}
-          </Box>
-        </Collapse>
-      </Box>
-    );
-  },
-);
-
-TransferItem.displayName = "TransferItem";
 
 /**
  * 传输浮动窗口组件
@@ -801,8 +413,9 @@ const TransferSidebar = memo(
               </Box>
               <Box>
                 {activeTransfers.map((transfer) => (
-                  <TransferItem
+                  <TransferItemCard
                     key={`${transfer.tabId}-${transfer.transferId}`}
+                    variant="sidebar"
                     transfer={transfer}
                     isActive={true}
                     onCancel={handleCancelTransfer}
@@ -825,8 +438,9 @@ const TransferSidebar = memo(
               </Box>
               <Box>
                 {completedTransfers.map((transfer) => (
-                  <TransferItem
+                  <TransferItemCard
                     key={`${transfer.tabId}-${transfer.transferId}`}
+                    variant="sidebar"
                     transfer={transfer}
                     isActive={false}
                   />
@@ -848,8 +462,9 @@ const TransferSidebar = memo(
               </Box>
               <Box>
                 {history.map((transfer, index) => (
-                  <TransferItem
+                  <TransferItemCard
                     key={`history-${transfer.historyId ?? transfer.transferId}-${transfer.completedTime ?? index}`}
+                    variant="sidebar"
                     transfer={transfer}
                     isActive={false}
                     onDelete={() => removeHistoryItemAt(index)}

@@ -59,11 +59,14 @@ import {
 } from "./lib/aiKeyUtils.js";
 import "./AIChatWindow.css";
 import "./CodeHighlight.css";
+import { getMarkdownContentSx } from "../../shared/ui/markdownContentSx.js";
 
 const MAX_MARKDOWN_LINK_LENGTH = 2048;
 const API_ERROR_SUMMARY_MAX_LENGTH = 180;
 const ALLOWED_MARKDOWN_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
+// markdown 排版统一走共享层（AIChatWindow.css 仅保留 is-user 反色与 pre 滚动条）
+const markdownContentSx = getMarkdownContentSx({ density: "comfortable" });
 const MARKDOWN_ALLOWED_ELEMENTS = [
   "p",
   "a",
@@ -339,7 +342,9 @@ const StreamContent = ({ isStreaming, children }) => {
     <Box
       className={`ai-stream-wrap ${isStreaming ? "ai-stream-active" : "ai-stream-done"}`}
     >
-      <Box className="ai-message-content ai-stream-body">{children}</Box>
+      <Box className="ai-message-content ai-stream-body" sx={markdownContentSx}>
+        {children}
+      </Box>
     </Box>
   );
 };
@@ -1623,7 +1628,7 @@ const AIChatWindow = ({
                       ) : null}
                     </>
                   ) : (
-                    <Box className="ai-message-content">
+                    <Box className="ai-message-content" sx={markdownContentSx}>
                       <ReactMarkdown
                         components={markdownComponents}
                         remarkPlugins={MARKDOWN_REMARK_PLUGINS}
