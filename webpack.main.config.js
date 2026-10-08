@@ -46,9 +46,11 @@ module.exports = {
     __filename: false,
   },
   // 明确指定输出
+  // NOTE: @electron-forge/plugin-webpack 8.x expects the main bundle as
+  // index.cjs (package.json "main" points to .webpack/main/index.cjs).
   output: {
     path: path.join(__dirname, ".webpack", "main"),
-    filename: "[name].js",
+    filename: "[name].cjs",
   },
   // 在构建后复制资源文件
   plugins: [
