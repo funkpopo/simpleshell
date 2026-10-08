@@ -10,6 +10,11 @@ export function attachTerminalSelection(term, container) {
   const document = element?.ownerDocument;
   const window = document?.defaultView;
   if (!selection || !container || !window) return () => {};
+  // Capture on the screen element: xterm's linkifier listens there for the
+  // mouseup that activates links. Capturing on an ancestor (term.element)
+  // retargets compatibility mouse events so they bypass descendants, and
+  // Ctrl+click link activation would never fire.
+  const captureElement = term?._core?.screenElement ?? element;
 
   const listeners = [];
   const listen = (target, type, handler, options) => {
@@ -53,17 +58,18 @@ export function attachTerminalSelection(term, container) {
     }
     if (
       capturedPointer !== null &&
-      element.hasPointerCapture?.(capturedPointer)
+      captureElement.hasPointerCapture?.(capturedPointer)
     ) {
-      element.releasePointerCapture(capturedPointer);
+      captureElement.releasePointerCapture(capturedPointer);
     }
     lastMouse = null;
   };
 
   const capturePointer = () => {
-    if (pointerId === null || element.hasPointerCapture?.(pointerId)) return;
+    if (pointerId === null || captureElement.hasPointerCapture?.(pointerId))
+      return;
     try {
-      element.setPointerCapture?.(pointerId);
+      captureElement.setPointerCapture?.(pointerId);
     } catch {
       // The pointer may be temporarily outside the window or synthetic.
       // Keep the drag alive using document listeners until it returns.
@@ -119,7 +125,9 @@ export function attachTerminalSelection(term, container) {
     suspended = false;
     wheelRemainder = 0;
     rememberMouse(event);
-    // Capture on xterm so compatibility mouse events still reach its handlers.
+    // Capture on the screen element so compatibility mouse events keep
+    // reaching xterm's handlers (selection listens on the ownerDocument,
+    // the linkifier listens on the screen element itself).
     capturePointer();
   });
 
@@ -151,7 +159,7 @@ export function attachTerminalSelection(term, container) {
     if (event.pointerId === pointerId) finishDrag();
   };
   listen(document, "pointercancel", handlePointerEnd, true);
-  listen(element, "lostpointercapture", (event) => {
+  listen(captureElement, "lostpointercapture", (event) => {
     if (event.pointerId === pointerId) suspendDrag();
   });
   listen(window, "blur", suspendDrag);
