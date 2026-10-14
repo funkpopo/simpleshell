@@ -211,6 +211,9 @@ class AppInitializer {
     try {
       const commandHistory = configService.loadCommandHistory();
       commandHistoryService.initialize(commandHistory);
+      // Persist the filtered legacy history so recognized secrets do not stay
+      // in the active config until the next command or a clean shutdown.
+      configService.saveCommandHistory(commandHistoryService.exportHistory());
       logToFile(
         `Command history service initialized with ${commandHistory.length} entries`,
         "INFO",

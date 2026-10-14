@@ -1,5 +1,6 @@
 const fs = require("fs");
 const os = require("os");
+const path = require("path");
 
 const LOCAL_TERMINAL_TAB_TYPE = "local";
 
@@ -37,6 +38,51 @@ const POSIX_SHELL_CANDIDATES = Object.freeze([
 const WINDOWS_POWERSHELL_COMMANDS = new Set(["powershell.exe", "pwsh.exe"]);
 const WINDOWS_CMD_COMMANDS = new Set(["cmd.exe"]);
 const WINDOWS_WSL_COMMANDS = new Set(["wsl.exe"]);
+const POSIX_SHELL_NAMES = new Set(["sh", "bash", "zsh", "fish", "dash", "ksh"]);
+const POSIX_SHELL_DIRECTORIES = new Set([
+  "/bin",
+  "/usr/bin",
+  "/usr/local/bin",
+  "/opt/homebrew/bin",
+]);
+const POSIX_INTERACTIVE_ARGS = new Set([
+  "-l",
+  "--login",
+  "-i",
+  "--interactive",
+  "-il",
+  "-li",
+  "--noprofile",
+  "--norc",
+  "--no-config",
+]);
+
+function isAllowedPosixShell(command, trustedShell = "") {
+  if (!path.posix.isAbsolute(command) || /[\u0000-\u001f\u007f]/.test(command))
+    return false;
+  if (path.posix.normalize(command) !== command) return false;
+  return (
+    POSIX_SHELL_NAMES.has(path.posix.basename(command)) &&
+    (POSIX_SHELL_DIRECTORIES.has(path.posix.dirname(command)) ||
+      command === trustedShell)
+  );
+}
+
+function normalizePosixArgs(value) {
+  if (value === undefined) return [];
+  if (
+    !Array.isArray(value) ||
+    value.length > 8 ||
+    value.some(
+      (arg) => typeof arg !== "string" || !POSIX_INTERACTIVE_ARGS.has(arg),
+    )
+  ) {
+    throw new Error(
+      "Only interactive/login shell options are allowed for local terminals",
+    );
+  }
+  return [...value];
+}
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -88,7 +134,7 @@ function parseDistributionFromArgs(args) {
 
 function getDefaultPosixShell(env = process.env) {
   const envShell = normalizeString(env.SHELL);
-  if (envShell) {
+  if (isAllowedPosixShell(envShell, envShell)) {
     return envShell;
   }
 
@@ -168,8 +214,12 @@ function normalizeLocalTerminalConfig(localConfig = {}, options = {}) {
       args = launchArgs;
     }
   } else {
-    command = command || getDefaultPosixShell(envSource);
-    args = launchArgs;
+    const defaultShell = getDefaultPosixShell(envSource);
+    command = command || defaultShell;
+    if (!isAllowedPosixShell(command, defaultShell)) {
+      throw new Error("Unsupported local terminal shell path");
+    }
+    args = normalizePosixArgs(input.launchArgs ?? input.args);
   }
 
   const name =
@@ -179,9 +229,21 @@ function normalizeLocalTerminalConfig(localConfig = {}, options = {}) {
       : command);
 
   const cwd = normalizeString(input.cwd) || homeDirectory;
+  if (
+    platform !== "win32" &&
+    (!path.posix.isAbsolute(cwd) ||
+      cwd.length > 4096 ||
+      /[\u0000-\u001f\u007f]/.test(cwd))
+  ) {
+    throw new Error(
+      "Local terminal working directory must be an absolute path",
+    );
+  }
   const mergedEnv = {
     ...envSource,
-    ...(isPlainObject(input.env) ? input.env : {}),
+    // Renderer overrides such as BASH_ENV, ENV, LD_PRELOAD or PATH can
+    // execute code before the first prompt. Inherit the main process env.
+    ...(platform === "win32" && isPlainObject(input.env) ? input.env : {}),
   };
 
   return {
@@ -189,7 +251,7 @@ function normalizeLocalTerminalConfig(localConfig = {}, options = {}) {
     type,
     executable: command,
     executablePath: command,
-    launchArgs,
+    launchArgs: args,
     cwd,
     env: mergedEnv,
     distribution: distribution || undefined,

@@ -2405,6 +2405,33 @@ const Settings = memo(({ open, onClose }) => {
               {/* Tab 3: Security */}
               {activeTab === 3 && (
                 <Box>
+                  <Box sx={{ ...sectionCardSx, mb: 1.5 }}>
+                    <SectionCardHeader
+                      title={t("settings.historyPrivacy.title")}
+                    />
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {t("settings.historyPrivacy.description")}
+                    </Typography>
+                    <Button
+                      variant="outlined"
+                      onClick={async () => {
+                        try {
+                          const result =
+                            await window.terminalAPI.clearCommandHistory();
+                          if (!result?.success) throw new Error();
+                          showSuccess(t("commandHistory.clearAllSuccess"));
+                        } catch {
+                          showError(t("commandHistory.clearAllFailed"));
+                        }
+                      }}
+                    >
+                      {t("settings.historyPrivacy.clearCommands")}
+                    </Button>
+                  </Box>
                   <Box sx={sectionCardSx}>
                     <SectionCardHeader title={t("settings.security.title")} />
                     <Typography

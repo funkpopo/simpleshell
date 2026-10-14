@@ -571,8 +571,6 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
     rendererReadyRevealHandlers.delete(mainWindow);
   });
 
-  mainWindow.loadURL(webpackEntry);
-
   // In production, enforce a strict CSP via response headers.
   // In dev, Forge's devContentSecurityPolicy handles this.
   if (process.env.NODE_ENV !== "development") {
@@ -581,12 +579,14 @@ function createWindow({ preloadEntry, webpackEntry, onSetupIPC }) {
         responseHeaders: {
           ...details.responseHeaders,
           "Content-Security-Policy": [
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: ws: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none';",
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none';",
           ],
         },
       });
     });
   }
+
+  mainWindow.loadURL(webpackEntry);
 
   if (onSetupIPC) {
     onSetupIPC(mainWindow);

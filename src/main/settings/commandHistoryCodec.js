@@ -1,10 +1,14 @@
 const zlib = require("zlib");
+const {
+  filterCommandHistory,
+} = require("../../shared/security/commandPrivacy");
 /**
  * 压缩命令历史
  * @param {Array} history - 命令历史数组
  * @returns {Object} 压缩后的数据对象
  */
 function compressCommandHistory(history, log) {
+  history = filterCommandHistory(history);
   try {
     const jsonStr = JSON.stringify(history);
     const compressed = zlib.gzipSync(jsonStr);
@@ -45,13 +49,13 @@ function compressCommandHistory(history, log) {
 function decompressCommandHistory(data, log) {
   try {
     if (!data.compressed) {
-      return Array.isArray(data.data) ? data.data : [];
+      return filterCommandHistory(data.data);
     }
 
     const compressed = Buffer.from(data.data, "base64");
     const decompressed = zlib.gunzipSync(compressed);
     const jsonStr = decompressed.toString("utf8");
-    return JSON.parse(jsonStr);
+    return filterCommandHistory(JSON.parse(jsonStr));
   } catch (error) {
     log(
       `ConfigService: Failed to decompress command history - ${error.message}`,

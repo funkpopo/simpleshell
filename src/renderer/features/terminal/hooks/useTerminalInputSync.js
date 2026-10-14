@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { findGroupByTab } from "../model/syncInputGroups";
+import { getVisibleCommand } from "../model/promptDetection.js";
 import { useAppSelector } from "../../../app/state/AppContext.jsx";
 import {
   processCache,
@@ -76,23 +77,14 @@ export const useTerminalInputSync = ({
         return;
       }
 
-      if (input === "\b" || input === "\x7f") {
-        syncedInputBufferRef.current = syncedInputBufferRef.current.slice(
-          0,
-          -1,
-        );
-      } else {
-        syncedInputBufferRef.current += input;
-      }
-
-      const buffer = syncedInputBufferRef.current;
-      ui.setCurrentInput?.(buffer);
-
       if (suggestionRefreshTimerRef.current !== null) {
         clearTimeout(suggestionRefreshTimerRef.current);
       }
       suggestionRefreshTimerRef.current = setTimeout(() => {
         suggestionRefreshTimerRef.current = null;
+        const buffer = getVisibleCommand(termRef.current);
+        syncedInputBufferRef.current = buffer;
+        ui.setCurrentInput?.(buffer);
         if (buffer.trim()) {
           ui.getSuggestions?.(buffer);
         } else {
@@ -101,7 +93,7 @@ export const useTerminalInputSync = ({
         }
       }, SUGGESTION_REFRESH_DELAY_MS);
     },
-    [resetSyncedUiInput, suggestionUiRef],
+    [resetSyncedUiInput, suggestionUiRef, termRef],
   );
 
   useEffect(
@@ -258,8 +250,8 @@ export const useTerminalInputSync = ({
       const ui = suggestionUiRef?.current;
       if (ui) {
         if (execute === false) {
-          syncedInputBufferRef.current = command;
-          ui.setCurrentInput?.(command);
+          // The terminal output listener updates the UI after echo arrives.
+          resetSyncedUiInput();
         } else {
           syncedInputBufferRef.current = "";
           ui.setShowSuggestions?.(false);

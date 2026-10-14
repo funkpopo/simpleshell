@@ -1,7 +1,7 @@
 {
   "name": "simpleshell",
   "productName": "SimpleShell",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "A Simple Cross-Platform Electron SSH Terminal",
   "main": ".webpack/main/index.cjs",
   "scripts": {
@@ -62,6 +62,7 @@
     "eslint-plugin-react": "7.37.5",
     "fs-extra": "11.4.0",
     "globals": "14.0.0",
+    "html-webpack-plugin": "5.6.8",
     "jsdom": "30.1.0",
     "node-loader": "2.1.0",
     "prettier": "3.9.6",

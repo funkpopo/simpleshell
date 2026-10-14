@@ -15,25 +15,6 @@ const {
   IPC_REQUEST_CHANNELS,
 } = require("../../../shared/contracts/ipc/channels");
 
-// 跟踪编辑器会话状态的正则表达式
-const editorCommandRegex = /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
-const editorExitCommands = [
-  "q",
-  "quit",
-  "exit",
-  "wq",
-  "ZZ",
-  "x",
-  ":q",
-  ":wq",
-  ":x",
-  "Ctrl+X",
-];
-const editorExitRegex = new RegExp(
-  `^(${editorExitCommands.join("|").replace(/\+/g, "\\+")}|:\\w+)$`,
-  "i",
-);
-
 /**
  * 终端相关的IPC处理器
  */
@@ -281,67 +262,8 @@ class TerminalHandlers {
         }
       }
 
-      // 检测回车键并提取可能的命令
-      if (input === "\r" || input === "\n") {
-        // 可能是一个命令的结束，尝试从缓冲区获取命令
-        if (procInfo.commandBuffer && procInfo.commandBuffer.trim()) {
-          const command = procInfo.commandBuffer.trim();
-
-          // 检测是否启动了编辑器（作为备用机制，现在优先使用buffer类型检测）
-          if (!procInfo.editorMode && editorCommandRegex.test(command)) {
-            procInfo.editorMode = true;
-            procInfo.lastEditorCommand = command;
-          }
-          // 检测是否可能退出了编辑器（作为备用机制，现在优先使用buffer类型检测）
-          else if (procInfo.editorMode) {
-            // 检查是否是退出命令
-            if (editorExitRegex.test(command)) {
-              // 为某些编辑器，我们可以立即确认退出（但如果前端使用buffer类型检测，这段代码会被前端通知覆盖）
-              if (/^(q|quit|exit|:q|:quit|:wq)$/i.test(command)) {
-                procInfo.editorMode = false;
-              } else {
-                // 对于其他情况，设置一个退出检测标志，下一个命令会确认是否真的退出
-                procInfo.possibleEditorExit = true;
-              }
-            }
-            // 如果上一个命令可能是退出，且这个命令不是编辑器命令，则确认已退出
-            else if (
-              procInfo.possibleEditorExit &&
-              !editorCommandRegex.test(command)
-            ) {
-              procInfo.editorMode = false;
-              procInfo.possibleEditorExit = false;
-            }
-            // 如果收到普通shell命令且不在编辑器命令中，则退出编辑器模式
-            else if (
-              command.startsWith("$") ||
-              command.startsWith(">") ||
-              (command.includes(" ") &&
-                !/^\s*(w|write|q|quit|exit|ZZ|x|c|change|d|delete|y|yank|p|put|u|undo|r|redo|i|insert|a|append)\s*/.test(
-                  command,
-                ))
-            ) {
-              procInfo.editorMode = false;
-            }
-          }
-          // 只有不在编辑器模式下才添加到历史记录
-          else if (!procInfo.editorMode) {
-            // 修改命令记录逻辑，只记录远程命令
-            // 对于SSH会话，先标记这个命令，稍后会通过输出提取确认的远程命令
-            if (procInfo.isRemote) {
-              // 只存储到lastLocalCommand，但不添加到历史记录
-              procInfo.lastLocalCommand = command;
-            }
-            // 移除本地命令记录，不再记录非SSH会话的命令
-          }
-        }
-
-        // 清空命令缓冲区
-        procInfo.commandBuffer = "";
-      } else {
-        // 累积命令缓冲区
-        procInfo.commandBuffer += input;
-      }
+      // Input can contain non-echoed passwords. Forward it without retaining
+      // a second command buffer; editor state comes from the renderer.
 
       // 发送数据到进程
       if (procInfo.type === "ssh2") {

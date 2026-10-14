@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isPromptReadyFromTerminal } from "../model/promptDetection.js";
+import {
+  isPromptReadyFromTerminal,
+  getLogicalLineUntilCursor,
+  getVisibleCommand,
+} from "../model/promptDetection.js";
 import {
   isSuggestionTrackingContext,
   shouldResumePromptTrackingOnInput,
 } from "../model/commandSuggestionState.js";
 import { shouldChunkInputPayload } from "../runtime/terminalInput.js";
 import {
-  TERMINAL_COMMAND_LINE_REGEX,
   FULLSCREEN_COMMAND_REGEX,
   PASSWORD_PROMPT_REGEX,
   createPromptTrackingState,
   isCursorInsideWrappedInputBlock,
   clearPendingWrappedInputRefresh,
-  extractCurrentCommandInput,
 } from "../lib/terminalHelpers.js";
 
 /**
@@ -238,7 +240,8 @@ export function usePromptTracking({
       if (
         !isSuggestionTrackingContext(term, {
           inEditorMode: inEditorModeRef.current,
-        })
+        }) ||
+        !isPromptReadyFromTerminal(term)
       ) {
         return false;
       }
@@ -337,13 +340,13 @@ export function usePromptTracking({
       syncPromptTrackingFromTerminal(term);
 
       const api = suggestionApiRef.current;
-      const terminalInput = extractCurrentCommandInput(term);
-      const effectiveInput = terminalInput || currentInput;
+      const terminalInput = getVisibleCommand(term);
+      const effectiveInput = terminalInput;
       const normalizedInput = effectiveInput.trim();
 
       if (terminalInput && terminalInput !== currentInput) {
         api.setCurrentInput(terminalInput);
-      } else if (!terminalInput && currentInput && !normalizedInput) {
+      } else if (!terminalInput && currentInput) {
         api.setCurrentInput("");
       }
 
@@ -496,40 +499,28 @@ export function usePromptTracking({
         }
       };
 
-      const extractCommand = (line) => {
-        const normalizedLine =
-          typeof line === "string" ? line : line?.toString?.() || "";
-        const commandMatch = normalizedLine.match(TERMINAL_COMMAND_LINE_REGEX);
-
-        if (commandMatch && commandMatch[1] && commandMatch[1].trim() !== "") {
-          return commandMatch[1].trim();
-        }
-
-        if (currentInputBuffer.trim() !== "") {
-          return currentInputBuffer.trim();
-        }
-
-        return "";
-      };
-
       const syncPromptState = () => {
         if (inEditorMode) {
           applyPromptTrackingState({ promptReady: false });
           return;
         }
 
-        if (
-          !promptTrackingStateRef.current.commandRunning &&
-          currentInputBuffer.trim() !== ""
-        ) {
-          applyPromptTrackingState({
-            promptReady: true,
-            commandRunning: false,
-          });
-          return;
-        }
-
         syncPromptTrackingFromTerminal(term);
+        // Refresh from parsed output, never from unacknowledged input. This
+        // also keeps hidden input out of React state and suggestion IPC.
+        const visibleInput = getVisibleCommand(term);
+        if (visibleInput !== currentInputBuffer) {
+          currentInputBuffer = visibleInput;
+          setCurrentInput(visibleInput);
+          if (visibleInput) {
+            maybeReleaseSuggestionSuppression(visibleInput);
+            scheduleSuggestionRefreshOrCursor(visibleInput);
+          } else {
+            cancelInputUiRefresh();
+            setShowSuggestions(false);
+            setSuggestions([]);
+          }
+        }
       };
 
       const bufferTypeObserver = {
@@ -590,6 +581,7 @@ export function usePromptTracking({
       }
 
       const onDataDisposable = term.onData((data) => {
+        syncPromptState();
         if (
           pendingSystemShortcutRecoveryRef?.current &&
           typeof data === "string" &&
@@ -704,7 +696,7 @@ export function usePromptTracking({
             !tabCompletionUsed &&
             currentInputBuffer.length > 0
           ) {
-            currentInputBuffer = currentInputBuffer.slice(0, -1);
+            currentInputBuffer = getVisibleCommand(term);
 
             if (!inEditorMode) {
               setCurrentInput(currentInputBuffer);
@@ -780,10 +772,7 @@ export function usePromptTracking({
           setSuggestionsSuppressedUntilEnter(false);
 
           try {
-            const lastLine =
-              term.buffer.active
-                .getLine(term.buffer.active.cursorY)
-                ?.translateToString() || "";
+            const lastLine = getLogicalLineUntilCursor(term);
 
             if (PASSWORD_PROMPT_REGEX.test(lastLine.trimEnd())) {
               currentInputBuffer = "";
@@ -808,7 +797,7 @@ export function usePromptTracking({
               return;
             }
 
-            const command = extractCommand(lastLine);
+            const command = getVisibleCommand(term).trim();
 
             if (
               command &&
@@ -871,13 +860,12 @@ export function usePromptTracking({
           // no-op). Release the latch and resync from the visible line first so
           // currentInputBuffer does not stay empty forever in this tab.
           if (tabCompletionUsed && canTrackPromptInput && isPrintableInput) {
-            const liveInput = extractCurrentCommandInput(term);
-            currentInputBuffer = liveInput || currentInputBuffer;
+            currentInputBuffer = getVisibleCommand(term);
             resetTabCompletionTracking();
           }
 
           if (canTrackPromptInput && !tabCompletionUsed) {
-            currentInputBuffer += data;
+            currentInputBuffer = getVisibleCommand(term);
           }
 
           if (
@@ -944,22 +932,13 @@ export function usePromptTracking({
       const onRenderDisposable = term.onRender(() => {
         if (tabCompletionUsed && currentLineBeforeTab) {
           try {
-            const currentLine =
-              term.buffer.active
-                .getLine(term.buffer.active.cursorY)
-                ?.translateToString() || "";
+            const currentLine = getLogicalLineUntilCursor(term);
             const previousContent = currentLineBeforeTab.content;
 
             if (currentLine !== previousContent) {
-              const commandMatch = currentLine.match(
-                TERMINAL_COMMAND_LINE_REGEX,
-              );
-              if (
-                commandMatch &&
-                commandMatch[1] &&
-                commandMatch[1].trim() !== ""
-              ) {
-                currentInputBuffer = commandMatch[1].trim();
+              const visibleInput = getVisibleCommand(term);
+              if (visibleInput) {
+                currentInputBuffer = visibleInput;
 
                 if (!inEditorMode) {
                   setCurrentInput(currentInputBuffer);

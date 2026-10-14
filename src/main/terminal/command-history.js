@@ -1,3 +1,7 @@
+const {
+  isSensitiveCommand,
+  filterCommandHistory,
+} = require("../../shared/security/commandPrivacy");
 const MIN_COMMAND_HISTORY_LENGTH = 3;
 const MIN_COMMAND_SUGGESTION_QUERY_LENGTH = 1;
 
@@ -9,7 +13,7 @@ class CommandHistoryService {
   }
 
   initialize(initialHistory = []) {
-    this.history = Array.isArray(initialHistory) ? [...initialHistory] : [];
+    this.history = filterCommandHistory(initialHistory);
     this.initialized = true;
   }
 
@@ -19,6 +23,10 @@ class CommandHistoryService {
     }
 
     const trimmedCommand = command.trim();
+
+    if (isSensitiveCommand(trimmedCommand)) {
+      return false;
+    }
 
     // 只保存长度大于 2 的命令
     if (trimmedCommand.length < MIN_COMMAND_HISTORY_LENGTH) {
@@ -155,6 +163,7 @@ class CommandHistoryService {
   }
 
   incrementCommandUsage(command) {
+    if (isSensitiveCommand(command)) return false;
     const item = this.history.find((h) => h.command === command);
     if (item) {
       item.count = (item.count || 1) + 1;
@@ -166,6 +175,7 @@ class CommandHistoryService {
   }
 
   getSuggestions(input, maxResults = 10) {
+    if (isSensitiveCommand(input)) return [];
     if (!input || typeof input !== "string" || input.trim().length === 0) {
       // 如果没有输入，不返回任何建议
       return [];

@@ -43,11 +43,14 @@ const promptTrackingSource = readSource(
 );
 const preloadSource = require("./lib/preload-sources").collectPreloadSources();
 
-function createMockTerm({ type = "normal" } = {}) {
+function createMockTerm({ type = "normal", line = "$ " } = {}) {
   return {
     buffer: {
       active: {
         type,
+        cursorY: 0,
+        baseY: 0,
+        getLine: () => ({ translateToString: () => line }),
       },
     },
   };
@@ -62,6 +65,20 @@ function testSingleCharacterStartsSuggestionLookup() {
 function testPrintableInputRestoresPromptTrackingInNormalBuffer() {
   const normalTerm = createMockTerm();
   const alternateTerm = createMockTerm({ type: "alternate" });
+  assert.equal(
+    shouldResumePromptTrackingOnInput({
+      term: createMockTerm({ line: "Password: " }),
+      data: "g",
+    }),
+    false,
+  );
+  assert.equal(
+    shouldResumePromptTrackingOnInput({
+      term: createMockTerm({ line: "Challenge: " }),
+      data: "g",
+    }),
+    false,
+  );
 
   assert.equal(isSuggestionTrackingContext(normalTerm), true);
   assert.equal(isSuggestionTrackingContext(alternateTerm), false);

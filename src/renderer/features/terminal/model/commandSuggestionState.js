@@ -1,3 +1,5 @@
+const { isPromptReadyFromTerminal } = require("./promptDetection.js");
+
 const normalizeCommandSuggestionInput = (input = "") =>
   String(input ?? "").trim();
 
@@ -26,6 +28,7 @@ const shouldResumePromptTrackingOnInput = ({
   data = "",
 } = {}) =>
   isSuggestionTrackingContext(term, { inEditorMode }) &&
+  isPromptReadyFromTerminal(term) &&
   isPlainTextTerminalInput(data);
 
 const shouldDisplayCommandSuggestions = ({

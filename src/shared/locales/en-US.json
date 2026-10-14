@@ -263,7 +263,12 @@
       "transferIntegrity": "Verify transfers after completion (SHA-256)",
       "sftpFollowTerminalDirectory": "SFTP follows terminal directory",
       "sftpFollowTerminalDirectoryHelp": "Applies to all SSH sessions as soon as settings are saved. Navigate when the terminal directory changes; custom prompts may need shell path reporting.",
-      "transferIntegrityHelp": "Read remote files over SFTP to verify integrity. Large files require additional reading time; a mismatch triggers one full file retransmission."
+      "transferIntegrityHelp": "Read remote files over SFTP to verify integrity. Large files require additional reading time; a mismatch triggers one full file retransmission.",
+      "historyPrivacy": {
+        "title": "Command history privacy",
+        "description": "History records visible terminal commands and filters common sensitive arguments. Local history is compressed, not encrypted; filtering cannot recognize every secret. Unlabelled passwords recorded by older versions may need to be cleared here. IP query history can be cleared in the IP lookup panel.",
+        "clearCommands": "Clear command history"
+      }
     },
     "masterPassword": {
       "title": "Enter Master Password",
@@ -497,7 +502,8 @@
       "clearHistory": "Clear query history",
       "noHistory": "No history records",
       "myIp": "My IP",
-      "apiUnavailable": "API unavailable"
+      "apiUnavailable": "API unavailable",
+      "privacyNotice": "Queries send the target IP to third-party IP information services, which also see the public IP making the request (the proxy IP when using a proxy). IP addresses and locations are saved in local query history and can be cleared. Requests are sent only when you initiate a query."
     },
     "welcome": {
       "title": "Welcome to SimpleShell",

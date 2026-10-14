@@ -52,6 +52,7 @@ function createHarness() {
   const context = {
     ...suggestionState,
     ...require("../src/renderer/features/terminal/model/commandSuggestionCursor.js"),
+    ...require("../src/renderer/features/terminal/model/commandSuggestionPosition.js"),
     ...require("../src/renderer/features/terminal/model/promptDetection.js"),
     ...require("../src/renderer/features/terminal/model/sessionRestoreUI.js"),
     ...load(
@@ -202,6 +203,7 @@ function createHarness() {
     input: (data) => emit(terminalListeners, "Data", data),
     setLine: (text) => {
       line = text;
+      term.buffer.active.cursorX = text.length;
     },
     parseOutput: () => emit(terminalListeners, "WriteParsed"),
     changeBuffer: (type) => {
@@ -222,6 +224,8 @@ function createHarness() {
 
 async function expectSuggestions(harness, input = "g") {
   harness.input(input);
+  harness.setLine(`$ ${input}`);
+  harness.parseOutput();
   await harness.flush();
   const request = harness.requests.at(-1);
   assert.equal(
@@ -331,6 +335,8 @@ async function run() {
 
   const pending = createHarness();
   pending.input("old");
+  pending.setLine("$ old");
+  pending.parseOutput();
   pending.restore();
   await pending.flush();
   assert.equal(
@@ -342,6 +348,8 @@ async function run() {
 
   const stale = createHarness();
   stale.input("old");
+  stale.setLine("$ old");
+  stale.parseOutput();
   await stale.flush();
   stale.restore();
   stale.requests[0].resolve({
@@ -386,6 +394,8 @@ async function run() {
 
   const isolated = createHarness();
   isolated.input("g");
+  isolated.setLine("$ g");
+  isolated.parseOutput();
   isolated.restore({ tabId: "other", processId: "other-pid" });
   await isolated.flush();
   assert.equal(isolated.requests.at(-1).input, "g");

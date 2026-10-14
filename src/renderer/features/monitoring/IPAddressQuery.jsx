@@ -246,21 +246,9 @@ const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
 
   const handleClearHistory = useCallback(() => {
     setHistory([]);
+    clientIpMemoryCache.clear();
     void saveIpQueryHistoryToConfig([]).catch(() => {});
   }, []);
-
-  // 当侧边栏打开时自动查询本机IP
-  useEffect(() => {
-    if (open && !ipInfo && !loading && !error) {
-      const memHit = getClientIpMemoryCached(normalizeClientCacheKey(""));
-      if (memHit && memHit.ret === "ok") {
-        setIpInfo(memHit);
-        return;
-      }
-
-      handleQueryMyIP();
-    }
-  }, [open, ipInfo, loading, error, handleQueryMyIP]);
 
   // 处理回车键按下事件
   // Debounce Enter-triggered query to avoid duplicates
@@ -461,6 +449,13 @@ const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
           borderBottom: `1px solid ${theme.palette.divider}`,
         }}
       >
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", mb: 1 }}
+        >
+          {t("ipAddressQuery.privacyNotice")}
+        </Typography>
         <TextField
           fullWidth
           size="small"

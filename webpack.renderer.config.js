@@ -30,9 +30,7 @@ rules.push({
 
 module.exports = {
   devtool:
-    process.env.NODE_ENV === "development"
-      ? "eval-cheap-module-source-map"
-      : false,
+    process.env.NODE_ENV === "development" ? "cheap-module-source-map" : false,
   module: {
     rules,
   },

@@ -1,6 +1,9 @@
 const fs = require("fs");
 const path = require("path");
 const {
+  filterCommandHistory,
+} = require("../../shared/security/commandPrivacy");
+const {
   compressCommandHistory,
   decompressCommandHistory,
 } = require("./commandHistoryCodec");
@@ -1718,7 +1721,7 @@ class ConfigService {
               "ConfigService: Migrating old command history format to compressed format.",
               "INFO",
             );
-            return config.commandHistory;
+            return filterCommandHistory(config.commandHistory);
           }
           // 新格式（压缩对象）
           return decompressCommandHistory(

@@ -263,7 +263,12 @@
       "transferIntegrity": "传输完成后校验（SHA-256）",
       "sftpFollowTerminalDirectory": "SFTP 跟随终端目录",
       "sftpFollowTerminalDirectoryHelp": "所有 SSH 会话共用此设置，保存后立即生效。识别到终端目录变化时自动跳转；自定义提示符可能需要配置 Shell 上报路径。",
-      "transferIntegrityHelp": "通过 SFTP 读取远端文件进行完整性校验。大文件需要额外读取时间；校验不一致时整文件重传一次。"
+      "transferIntegrityHelp": "通过 SFTP 读取远端文件进行完整性校验。大文件需要额外读取时间；校验不一致时整文件重传一次。",
+      "historyPrivacy": {
+        "title": "命令历史隐私",
+        "description": "命令历史仅记录终端可见的命令，并过滤常见敏感参数。其本地存储使用压缩而非加密；过滤无法识别所有敏感信息。旧版本误记的无提示密码可能无法自动识别，可在此清空。IP 查询历史可在 IP 查询面板中清空。",
+        "clearCommands": "清空命令历史"
+      }
     },
     "masterPassword": {
       "title": "输入主密码",
@@ -495,7 +500,8 @@
       "clearHistory": "清空查询历史",
       "noHistory": "暂无历史记录",
       "myIp": "我的 IP",
-      "apiUnavailable": "API 不可用"
+      "apiUnavailable": "API 不可用",
+      "privacyNotice": "查询会将目标 IP 发送给第三方 IP 信息服务，服务也会看到请求来源的公网 IP（使用代理时为代理 IP）。IP 与地理位置会保存在本机查询历史中，可随时清空。仅手动查询时发送请求。"
     },
     "welcome": {
       "title": "欢迎使用 SimpleShell",

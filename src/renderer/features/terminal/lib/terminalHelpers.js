@@ -5,6 +5,7 @@
 import {
   TERMINAL_PROMPT_INPUT_PATTERNS,
   getLogicalLineUntilCursor,
+  PASSWORD_PROMPT_REGEX as SENSITIVE_PROMPT_REGEX,
 } from "../model/promptDetection.js";
 
 export const TERMINAL_COMMAND_LINE_REGEX =
@@ -15,8 +16,7 @@ export const FULLSCREEN_COMMAND_REGEX =
 
 // 服务端关闭回显后的密码/口令/密钥短语提示识别
 // 匹配示例：Password: / [sudo] password for root: / Enter passphrase for key '...': / 密码: / 验证码：
-export const PASSWORD_PROMPT_REGEX =
-  /(?:password|passphrase|passcode|pin|verification\s*code|密码|口令|验证码)[^:：\r\n]*[:：]\s*$/i;
+export const PASSWORD_PROMPT_REGEX = SENSITIVE_PROMPT_REGEX;
 
 export const createPromptTrackingState = () => ({
   promptReady: false,
