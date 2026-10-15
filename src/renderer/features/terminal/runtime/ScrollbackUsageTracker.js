@@ -2,9 +2,15 @@
  * 仅用于性能监控的轻量滚回统计器。
  * 不保留行内容，避免与 xterm 的 scrollback 重复占用内存。
  */
+import { DEFAULT_TERMINAL_SCROLLBACK_LINES } from "../model/terminalScrollback.js";
+
 export class ScrollbackUsageTracker {
   constructor(options = {}) {
-    this.maxLines = Math.max(1, Number(options.maxLines) || 50000);
+    // 单一来源：默认值见 model/terminalScrollback.js（与终端创建/设置项共享）
+    this.maxLines = Math.max(
+      1,
+      Number(options.maxLines) || DEFAULT_TERMINAL_SCROLLBACK_LINES,
+    );
     this.onChange =
       typeof options.onChange === "function" ? options.onChange : null;
 

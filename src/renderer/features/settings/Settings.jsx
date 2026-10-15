@@ -1,4 +1,10 @@
 import * as React from "react";
+import {
+  MAX_TERMINAL_SCROLLBACK_LINES,
+  MIN_TERMINAL_SCROLLBACK_LINES,
+  DEFAULT_TERMINAL_SCROLLBACK_LINES,
+  normalizeTerminalScrollbackLines,
+} from "../terminal/model/terminalScrollback.js";
 import { GlassDialog } from "../../shared/ui/styledDialogs.jsx";
 import { memo } from "react";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -245,8 +251,9 @@ const Settings = memo(({ open, onClose }) => {
   const [terminalFontSize, setTerminalFontSize] = React.useState(14);
   const [terminalFontWeight, setTerminalFontWeight] = React.useState(500);
   const [terminalLineHeight, setTerminalLineHeight] = React.useState(1.0);
-  const [terminalScrollbackLines, setTerminalScrollbackLines] =
-    React.useState(50000);
+  const [terminalScrollbackLines, setTerminalScrollbackLines] = React.useState(
+    DEFAULT_TERMINAL_SCROLLBACK_LINES,
+  );
   const [darkMode, setDarkMode] = React.useState(true);
   const [externalEditorEnabled, setExternalEditorEnabled] =
     React.useState(false);
@@ -358,11 +365,10 @@ const Settings = memo(({ open, onClose }) => {
                   )
                 : 1.0,
             );
-            const rawSb = Number(settings.terminalScrollbackLines);
             setTerminalScrollbackLines(
-              Number.isFinite(rawSb)
-                ? Math.min(500000, Math.max(1000, Math.floor(rawSb)))
-                : 50000,
+              normalizeTerminalScrollbackLines(
+                settings.terminalScrollbackLines,
+              ),
             );
             setDarkMode(
               settings.darkMode !== undefined ? settings.darkMode : true,
@@ -1211,9 +1217,8 @@ const Settings = memo(({ open, onClose }) => {
         Math.round((Number(terminalLineHeight) || 1.0) * 100) / 100,
       ),
     ),
-    terminalScrollbackLines: Math.min(
-      500000,
-      Math.max(1000, Math.floor(Number(terminalScrollbackLines)) || 50000),
+    terminalScrollbackLines: normalizeTerminalScrollbackLines(
+      terminalScrollbackLines,
     ),
     darkMode,
     performance: {
@@ -1961,7 +1966,11 @@ const Settings = memo(({ open, onClose }) => {
                               setTerminalScrollbackLines(v);
                             }
                           }}
-                          inputProps={{ min: 1000, max: 500000, step: 1000 }}
+                          inputProps={{
+                            min: MIN_TERMINAL_SCROLLBACK_LINES,
+                            max: MAX_TERMINAL_SCROLLBACK_LINES,
+                            step: 1000,
+                          }}
                         />
                       </Box>
                     </Box>

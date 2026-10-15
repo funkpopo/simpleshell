@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -11,6 +11,26 @@ import {
 import { TerminalPerformanceMonitor } from "../runtime/TerminalPerformanceMonitor.js";
 import { ScrollbackUsageTracker } from "../runtime/ScrollbackUsageTracker.js";
 import { RendererTerminalIOMailbox } from "../io/RendererTerminalIOMailbox.js";
+
+/**
+ * P0：终端性能监控器实例化门控。
+ * 仅在开发模式（生产构建下被 DefinePlugin 死代码消除）
+ * 或用户显式设置诊断开关（localStorage）时开启。
+ */
+function shouldEnableTerminalPerfMonitor() {
+  if (process.env.NODE_ENV === "development") {
+    return true;
+  }
+  try {
+    return (
+      typeof localStorage !== "undefined" &&
+      localStorage.getItem("simpleShell:terminalPerfMonitor") === "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
 import { shouldIgnoreCommandSuggestionKeyEvent } from "../model/commandSuggestionState.js";
 import {
   isSystemShortcutRecoveryKey,
@@ -39,6 +59,10 @@ import {
   getTerminalTheme,
   normalizeTerminalLineHeight,
 } from "../model/terminalTheme.js";
+import {
+  DEFAULT_TERMINAL_SCROLLBACK_LINES,
+  normalizeTerminalScrollbackLines,
+} from "../model/terminalScrollback.js";
 import {
   FIRA_CODE_FONT_FAMILY,
   getTerminalFontFamily,
@@ -124,7 +148,8 @@ export function useTerminalLifecycle({
   setSearchAddonVersion,
 }) {
   const { t, i18n } = useTranslation();
-  const [, setPerformanceStats] = useState(null);
+  // P0：不再为性能监控保留废弃 state（此前每 10s 的 onStats 会触发一次
+  // 无人消费的整树重渲染）。监控数据仅在开发/诊断分支内被消费。
   // Keep theme/i18n readable from the long-lived lifecycle effect without
   // putting freshly-allocated objects into the effect dependency list.
   const themeModeRef = useRef(theme.palette.mode);
@@ -164,10 +189,10 @@ export function useTerminalLifecycle({
         // setWebglRendererEnabled 已被 WebTerminal 包装：同时尊重设置项与
         // 分屏窗格数（allowWebgl）并同步 ref
         setWebglRendererEnabled(enabled);
-        const rawScroll = Number(settings.terminalScrollbackLines);
-        const terminalScrollbackLines = Number.isFinite(rawScroll)
-          ? Math.min(500000, Math.max(1000, Math.floor(rawScroll)))
-          : 50000;
+        // 单一来源：默认值与夹取范围见 model/terminalScrollback.js
+        const terminalScrollbackLines = normalizeTerminalScrollbackLines(
+          settings.terminalScrollbackLines,
+        );
         return {
           fontSize: settings.terminalFontSize || 14,
           fontFamily: getTerminalFontFamily(
@@ -187,7 +212,7 @@ export function useTerminalLifecycle({
       fontFamily: getTerminalFontFamily("Fira Code"),
       fontWeight: 500,
       lineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
-      terminalScrollbackLines: 50000,
+      terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
     };
   }, [setWebglRendererEnabled, webglRendererEnabledRef]);
 
@@ -268,18 +293,15 @@ export function useTerminalLifecycle({
       } = event.detail;
 
       if (terminalScrollbackLines !== undefined) {
-        const rawScroll = Number(terminalScrollbackLines);
-        if (Number.isFinite(rawScroll)) {
-          const scrollLines = Math.min(
-            500000,
-            Math.max(1000, Math.floor(rawScroll)),
-          );
-          if (terminalCache[sessionKey]) {
-            terminalCache[sessionKey].options.scrollback = scrollLines;
-          }
-          if (scrollbackUsageTrackerRef.current) {
-            scrollbackUsageTrackerRef.current.maxLines = scrollLines;
-          }
+        // 单一来源：与设置项/终端创建共享同一夹取函数，避免漂移
+        const scrollLines = normalizeTerminalScrollbackLines(
+          terminalScrollbackLines,
+        );
+        if (terminalCache[sessionKey]) {
+          terminalCache[sessionKey].options.scrollback = scrollLines;
+        }
+        if (scrollbackUsageTrackerRef.current) {
+          scrollbackUsageTrackerRef.current.maxLines = scrollLines;
         }
       }
 
@@ -640,7 +662,7 @@ export function useTerminalLifecycle({
           fontSize: 14,
           fontWeight: 500,
           fontWeightBold: 700,
-          scrollback: 50000,
+          scrollback: DEFAULT_TERMINAL_SCROLLBACK_LINES,
           allowTransparency: true,
           cols: 120,
           rows: 30,
@@ -663,7 +685,9 @@ export function useTerminalLifecycle({
             term.options.fontFamily = fontSettings.fontFamily;
             term.options.fontWeight = fontSettings.fontWeight;
             term.options.lineHeight = fontSettings.lineHeight;
-            const scrollLines = fontSettings.terminalScrollbackLines || 50000;
+            const scrollLines =
+              fontSettings.terminalScrollbackLines ||
+              DEFAULT_TERMINAL_SCROLLBACK_LINES;
             term.options.scrollback = scrollLines;
             if (scrollbackUsageTrackerRef.current) {
               scrollbackUsageTrackerRef.current.maxLines = scrollLines;
@@ -904,27 +928,29 @@ export function useTerminalLifecycle({
           return true;
         });
 
-        if (!performanceMonitorRef.current) {
-          let lastStatsUpdate = 0;
-          const statsUpdateInterval = 2000;
-
+        if (
+          !performanceMonitorRef.current &&
+          shouldEnableTerminalPerfMonitor()
+        ) {
+          // P0：性能监控器仅在开发模式或显式诊断开关开启时实例化。
+          // 生产构建下 DefinePlugin 将 NODE_ENV 置为 production，
+          // 本分支被死代码消除：0 interval、0 定时器、0 开销。
           performanceMonitorRef.current = new TerminalPerformanceMonitor({
             enabled: true,
             sampleRate: 100,
             maxHistorySize: 1000,
-            onStats: (stats) => {
-              const now = Date.now();
-              if (now - lastStatsUpdate >= statsUpdateInterval) {
-                lastStatsUpdate = now;
-                setPerformanceStats(stats);
-              }
-            },
           });
         }
 
-        if (!scrollbackUsageTrackerRef.current) {
+        // ScrollbackUsageTracker 仅用于向性能监控器喂数据（不保留行内容）。
+        // 监控器未实例化时一并跳过，避免生产环境每段输出做逐行字节数统计
+        // 的纯浪费 CPU（引用处处有 null guard，跳过创建是安全的）。
+        if (
+          !scrollbackUsageTrackerRef.current &&
+          performanceMonitorRef.current
+        ) {
           scrollbackUsageTrackerRef.current = new ScrollbackUsageTracker({
-            maxLines: 50000,
+            maxLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
             onChange: (info) => {
               if (performanceMonitorRef.current) {
                 performanceMonitorRef.current.recordBufferSize(info.bufferSize);
