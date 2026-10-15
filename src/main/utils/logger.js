@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const zlib = require("zlib");
+const { promisify } = require("util");
 const { getConfigPath, getLogDirectory } = require("./appPaths");
 const { escapeRegExp } = require("./textUtils");
 
@@ -33,6 +34,7 @@ let pendingFlush = false;
 let flushTimer = null;
 let flushesSinceSizeCheck = 0;
 let lastSizeCheckAt = 0;
+let isRotating = false;
 const SIZE_CHECK_FLUSH_INTERVAL = 10;
 const SIZE_CHECK_MIN_INTERVAL_MS = 5000;
 
@@ -99,7 +101,8 @@ async function flushQueue() {
     ) {
       flushesSinceSizeCheck = 0;
       lastSizeCheckAt = now;
-      checkLogFileSize();
+      // 轮转在 isFlushing 临界区内完成，与写入互斥，避免轮转 rename 期间并发 append
+      await checkLogFileSize();
     }
   } catch {
     try {
@@ -127,17 +130,28 @@ function enqueue(entry) {
   if (writeQueue.length >= size) setImmediate(() => flushQueue());
 }
 
-function checkLogFileSize() {
+async function pathExists(target) {
   try {
-    if (!logFile || !fs.existsSync(logFile)) return;
-    const stats = fs.statSync(logFile);
-    if (stats.size >= logConfig.maxFileSize) rotateLogs();
+    await fs.promises.access(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function checkLogFileSize() {
+  try {
+    if (!logFile) return;
+    const stats = await fs.promises.stat(logFile).catch(() => null);
+    if (stats && stats.size >= logConfig.maxFileSize) await rotateLogs();
   } catch {
     /* intentionally ignored */
   }
 }
 
-function rotateLogs() {
+async function rotateLogs() {
+  if (isRotating) return;
+  isRotating = true;
   try {
     if (!logFile) return;
     const logDir = path.dirname(logFile);
@@ -145,7 +159,7 @@ function rotateLogs() {
     const ext = path.extname(baseName);
     const nameWithoutExt = baseName.substring(0, baseName.length - ext.length);
 
-    cleanupOldLogs(logDir, nameWithoutExt, ext);
+    await cleanupOldLogs(logDir, nameWithoutExt, ext);
 
     for (let i = logConfig.maxFiles - 1; i > 0; i--) {
       const srcPlain = path.join(logDir, `${nameWithoutExt}.${i}${ext}`);
@@ -154,21 +168,22 @@ function rotateLogs() {
       const dstGz = path.join(logDir, `${nameWithoutExt}.${i + 1}${ext}.gz`);
 
       try {
-        if (fs.existsSync(srcGz)) {
-          if (fs.existsSync(dstGz)) fs.unlinkSync(dstGz);
-          fs.renameSync(srcGz, dstGz);
-        } else if (fs.existsSync(srcPlain)) {
+        if (await pathExists(srcGz)) {
+          if (await pathExists(dstGz)) await fs.promises.unlink(dstGz);
+          await fs.promises.rename(srcGz, dstGz);
+        } else if (await pathExists(srcPlain)) {
           if (logConfig.compressOldLogs && i + 1 > 1) {
-            if (fs.existsSync(dstGz)) fs.unlinkSync(dstGz);
-            gzipFileSync(srcPlain, dstGz);
+            if (await pathExists(dstGz)) await fs.promises.unlink(dstGz);
+            // gzip 失败时抛出，保留 srcPlain，避免误删未压缩日志
+            await gzipFileAsync(srcPlain, dstGz);
             try {
-              fs.unlinkSync(srcPlain);
+              await fs.promises.unlink(srcPlain);
             } catch {
               /* intentionally ignored */
             }
           } else {
-            if (fs.existsSync(dstPlain)) fs.unlinkSync(dstPlain);
-            fs.renameSync(srcPlain, dstPlain);
+            if (await pathExists(dstPlain)) await fs.promises.unlink(dstPlain);
+            await fs.promises.rename(srcPlain, dstPlain);
           }
         }
       } catch {
@@ -177,18 +192,20 @@ function rotateLogs() {
     }
 
     const firstRotated = path.join(logDir, `${nameWithoutExt}.1${ext}`);
-    if (fs.existsSync(firstRotated)) fs.unlinkSync(firstRotated);
-    fs.renameSync(logFile, firstRotated);
-    fs.writeFileSync(logFile, "", "utf8");
+    if (await pathExists(firstRotated)) await fs.promises.unlink(firstRotated);
+    await fs.promises.rename(logFile, firstRotated);
+    await fs.promises.writeFile(logFile, "", "utf8");
     logToFileInternal("Log rotation completed.", "INFO", true);
   } catch {
     /* intentionally ignored */
+  } finally {
+    isRotating = false;
   }
 }
 
-function cleanupOldLogs(logDir, nameWithoutExt, ext) {
+async function cleanupOldLogs(logDir, nameWithoutExt, ext) {
   try {
-    const files = fs.readdirSync(logDir);
+    const files = await fs.promises.readdir(logDir);
     const rotated = files.filter((file) => {
       const plain = file.match(
         new RegExp(
@@ -211,7 +228,7 @@ function cleanupOldLogs(logDir, nameWithoutExt, ext) {
       for (let i = logConfig.maxFiles; i < rotated.length; i++) {
         const fileToRemove = path.join(logDir, rotated[i]);
         try {
-          fs.unlinkSync(fileToRemove);
+          await fs.promises.unlink(fileToRemove);
         } catch {
           /* intentionally ignored */
         }
@@ -344,14 +361,11 @@ function extractRotationIndex(fileName, nameWithoutExt, ext) {
   return -1;
 }
 
-function gzipFileSync(srcPath, destPath) {
-  try {
-    const buf = fs.readFileSync(srcPath);
-    const gz = zlib.gzipSync(buf);
-    fs.writeFileSync(destPath, gz);
-  } catch {
-    /* intentionally ignored */
-  }
+async function gzipFileAsync(srcPath, destPath) {
+  const buf = await fs.promises.readFile(srcPath);
+  // zlib 无内置 promises API（仅 fs 有），用 util.promisify 包装回调版 gzip
+  const gz = await promisify(zlib.gzip)(buf);
+  await fs.promises.writeFile(destPath, gz);
 }
 
 function setupProcessFlushHooks() {
