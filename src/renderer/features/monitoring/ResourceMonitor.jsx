@@ -204,66 +204,9 @@ const ResourceMonitorContent = memo(
       setExpanded((prev) => ({ ...prev, [panel]: !prev[panel] }));
     };
 
-    // 获取系统信息
-    const fetchSystemInfo = useCallback(
-      async (showLoading = false) => {
-        try {
-          if (showLoading) {
-            setLoading(true);
-          }
-          setError(null);
-          if (window.terminalAPI && window.terminalAPI.getSystemInfo) {
-            const info = await window.terminalAPI.getSystemInfo(currentTabId);
-            if (info.error) {
-              setError(
-                info.message || t("resourceMonitor.errors.systemInfoFailed"),
-              );
-            } else {
-              setSystemInfo(info);
-            }
-          } else {
-            setError(t("resourceMonitor.errors.apiUnavailable"));
-          }
-        } catch (err) {
-          setError(err.message || t("resourceMonitor.errors.fetchSystemInfo"));
-        } finally {
-          if (showLoading) {
-            setLoading(false);
-          }
-        }
-      },
-      [currentTabId, t],
-    );
-
-    const fetchProcessList = useCallback(async () => {
+    /** 将指标样本追加到历史缓冲（纯状态更新，保留最近 N 分钟） */
+    const appendMetricsPoint = useCallback((sample) => {
       try {
-        setProcessError(null);
-        if (window.terminalAPI && window.terminalAPI.getProcessList) {
-          const processList =
-            await window.terminalAPI.getProcessList(currentTabId);
-          if (processList.error) {
-            setProcessError(
-              processList.message ||
-                t("resourceMonitor.errors.processListFailed"),
-            );
-          } else {
-            setProcesses(processList);
-          }
-        } else {
-          setProcessError(t("resourceMonitor.errors.apiUnavailable"));
-        }
-      } catch (err) {
-        setProcessError(
-          err.message || t("resourceMonitor.errors.fetchProcessList"),
-        );
-      }
-    }, [currentTabId, t]);
-
-    /** 拉取带速率的指标样本并追加到历史缓冲（保留最近 N 分钟） */
-    const fetchMetricsSample = useCallback(async () => {
-      try {
-        if (!window.terminalAPI?.getMetricsSample) return;
-        const sample = await window.terminalAPI.getMetricsSample(currentTabId);
         if (!sample || sample.error) return;
         const point = {
           ts: sample.ts || Date.now(),
@@ -294,7 +237,89 @@ const ResourceMonitorContent = memo(
       } catch {
         /* 采样失败静默跳过，下个周期重试 */
       }
-    }, [currentTabId]);
+    }, []);
+
+    /** 单次远程调用同时获取系统信息与指标样本（主进程合并为一次 SSH 快照，减少往返） */
+    const fetchResourceSnapshot = useCallback(
+      async (showLoading = false) => {
+        try {
+          if (showLoading) {
+            setLoading(true);
+          }
+          setError(null);
+          if (window.terminalAPI && window.terminalAPI.getResourceSnapshot) {
+            const snap =
+              await window.terminalAPI.getResourceSnapshot(currentTabId);
+            if (!snap || snap.error) {
+              setError(
+                (snap && snap.message) ||
+                  t("resourceMonitor.errors.systemInfoFailed"),
+              );
+              return;
+            }
+            const info = snap.info;
+            if (info?.error) {
+              setError(
+                info.message || t("resourceMonitor.errors.systemInfoFailed"),
+              );
+            } else if (info) {
+              setSystemInfo(info);
+            }
+            appendMetricsPoint(snap.sample);
+          } else {
+            // 旧版兜底：两次独立调用（新 API 不可用时）
+            if (window.terminalAPI && window.terminalAPI.getSystemInfo) {
+              const info = await window.terminalAPI.getSystemInfo(currentTabId);
+              if (info.error) {
+                setError(
+                  info.message || t("resourceMonitor.errors.systemInfoFailed"),
+                );
+              } else {
+                setSystemInfo(info);
+              }
+            } else {
+              setError(t("resourceMonitor.errors.apiUnavailable"));
+            }
+            if (window.terminalAPI?.getMetricsSample) {
+              const sample =
+                await window.terminalAPI.getMetricsSample(currentTabId);
+              appendMetricsPoint(sample);
+            }
+          }
+        } catch (err) {
+          setError(err.message || t("resourceMonitor.errors.fetchSystemInfo"));
+        } finally {
+          if (showLoading) {
+            setLoading(false);
+          }
+        }
+      },
+      [currentTabId, t, appendMetricsPoint],
+    );
+
+    const fetchProcessList = useCallback(async () => {
+      try {
+        setProcessError(null);
+        if (window.terminalAPI && window.terminalAPI.getProcessList) {
+          const processList =
+            await window.terminalAPI.getProcessList(currentTabId);
+          if (processList.error) {
+            setProcessError(
+              processList.message ||
+                t("resourceMonitor.errors.processListFailed"),
+            );
+          } else {
+            setProcesses(processList);
+          }
+        } else {
+          setProcessError(t("resourceMonitor.errors.apiUnavailable"));
+        }
+      } catch (err) {
+        setProcessError(
+          err.message || t("resourceMonitor.errors.fetchProcessList"),
+        );
+      }
+    }, [currentTabId, t]);
 
     const clearPollingTimers = useCallback(() => {
       if (systemInfoIntervalRef.current) {
@@ -360,8 +385,7 @@ const ResourceMonitorContent = memo(
       setMetricsHistory([]);
 
       // 打开瞬间优先拉取一次，避免内容区域空白
-      fetchSystemInfo(true);
-      fetchMetricsSample();
+      fetchResourceSnapshot(true);
 
       // 进程列表仅在面板展开时拉取和轮询，避免无意义的远程 ps 开销
       if (expanded.processes) {
@@ -369,8 +393,7 @@ const ResourceMonitorContent = memo(
       }
 
       systemInfoIntervalRef.current = setInterval(() => {
-        fetchSystemInfo(false);
-        fetchMetricsSample();
+        fetchResourceSnapshot(false);
       }, 5000);
 
       if (expanded.processes) {
@@ -384,25 +407,18 @@ const ResourceMonitorContent = memo(
       open,
       currentTabId,
       expanded.processes,
-      fetchSystemInfo,
-      fetchMetricsSample,
+      fetchResourceSnapshot,
       fetchProcessList,
       clearPollingTimers,
     ]);
 
     // 手动刷新
     const handleRefresh = useCallback(() => {
-      fetchSystemInfo(false);
-      fetchMetricsSample();
+      fetchResourceSnapshot(false);
       if (expanded.processes) {
         fetchProcessList();
       }
-    }, [
-      fetchSystemInfo,
-      fetchMetricsSample,
-      fetchProcessList,
-      expanded.processes,
-    ]);
+    }, [fetchResourceSnapshot, fetchProcessList, expanded.processes]);
 
     // 历史曲线数据（按指标拆列，null 留空）
     const chartValues = useMemo(

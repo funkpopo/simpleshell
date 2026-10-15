@@ -665,11 +665,18 @@ function getLocalHostname() {
 module.exports = {
   getLocalMetricsSample,
   getRemoteMetricsSample,
+  getWindowsRemoteMetricsSample,
   getLocalDiskUsage,
   getRemoteDiskUsage,
   getLocalHostname,
-  // 暴露给测试/复用
+  // 暴露给测试/复用（资源快照合并模块共用解析器与差分状态）
   parseDfOutput,
   parseProcStatCpu,
   parseProcMeminfo,
+  parseProcNetDev,
+  parseProcDiskstats,
+  computePerSec,
+  formatResult,
+  remoteCounterState,
+  execSshCapture,
 };

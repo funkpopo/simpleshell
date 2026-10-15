@@ -376,6 +376,26 @@ class IPCSetup {
 
     safeHandle(
       ipcMain,
+      IPC_REQUEST_CHANNELS.TERMINAL_GET_RESOURCE_SNAPSHOT,
+      this._createRemoteAwareInfoHandler({
+        getLocal: (systemInfo) =>
+          Promise.all([
+            systemInfo.getLocalSystemInfo(),
+            systemInfo.getLocalMetricsSample(),
+          ]).then(([info, sample]) => ({ info, sample })),
+        getRemote: (systemInfo, sshClient) =>
+          systemInfo.getRemoteResourceSnapshot(sshClient),
+        awaitLocal: true,
+        fallbackTarget: "local resource snapshot",
+        failureSubject: "resource snapshot",
+        getFailureMessage: () =>
+          systemInfoText("mainProcess.systemInfo.getSystemInfoFailed"),
+      }),
+      { category: "terminal" },
+    );
+
+    safeHandle(
+      ipcMain,
       IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_LIST,
       this._createRemoteAwareInfoHandler({
         getLocal: (systemInfo) => systemInfo.getProcessList(),

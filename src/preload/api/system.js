@@ -38,6 +38,18 @@ function createSystemAPI(bridge) {
       ),
 
     /**
+     * 通过 IPC_REQUEST_CHANNELS.TERMINAL_GET_RESOURCE_SNAPSHOT 请求主进程。
+     * 单次远程调用同时获取系统信息与指标样本，减少 SSH 往返。
+     * @param {ProcessId} processId
+     * @returns {Promise<unknown>}
+     */
+    getResourceSnapshot: (processId) =>
+      ipcRenderer.invoke(
+        IPC_REQUEST_CHANNELS.TERMINAL_GET_RESOURCE_SNAPSHOT,
+        processId,
+      ),
+
+    /**
      * 通过 IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_LIST 请求主进程。
      * @param {ProcessId} processId
      * @returns {Promise<unknown>}

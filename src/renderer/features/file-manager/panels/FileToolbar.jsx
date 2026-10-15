@@ -17,9 +17,9 @@ import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import SortByAlphaIcon from "@mui/icons-material/SortByAlpha";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
-import { formatLastRefreshTime } from "../../../shared/lib/formatters.js";
 import { useTranslation } from "react-i18next";
 import { getSearchFieldMotionSx } from "../../../shared/lib/searchFieldStyles";
+import LastRefreshTimeLabel from "./LastRefreshTimeLabel.jsx";
 export default function FileToolbar({
   handleHistoryBack,
   historyIndex,
@@ -147,11 +147,7 @@ export default function FileToolbar({
             textAlign: "right",
           }}
         >
-          {t("fileManager.statusBar.lastRefresh", {
-            time: formatLastRefreshTime(lastRefreshTime, {
-              t,
-            }),
-          })}
+          <LastRefreshTimeLabel lastRefreshTime={lastRefreshTime} />
         </Box>
       </Box>
 

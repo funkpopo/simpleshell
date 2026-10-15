@@ -7,6 +7,7 @@ const {
   getRemoteSystemInfo,
   getRemoteProcessList,
 } = require("./remote-system");
+const { getRemoteResourceSnapshot } = require("./resource-snapshot");
 const {
   getLocalMetricsSample,
   getRemoteMetricsSample,
@@ -29,4 +30,7 @@ module.exports = {
   getRemoteProcessList,
   getRemoteMetricsSample,
   getRemoteDiskUsage,
+
+  // 合并快照（单次远程调用同时获取系统信息与指标样本）
+  getRemoteResourceSnapshot,
 };

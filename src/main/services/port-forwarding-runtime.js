@@ -32,6 +32,10 @@ class PortForwardingRuntime extends EventEmitter {
     this.activeForwards = new Map();
     this.sessions = new Map();
     this.suppressed = new Map();
+    // networkSnapshot 短 TTL 缓存（按 raw config 对象身份键控，仅在配置带 proxy 时启用）
+    this.NETWORK_CACHE_TTL_MS = 3000;
+    this.networkCache = new WeakMap();
+    this.networkTimer = null;
     this.initialized = false;
     this.shutdown = false;
     this.native.on("event", (event) => this._nativeEvent(event));
@@ -62,6 +66,8 @@ class PortForwardingRuntime extends EventEmitter {
       void this.closeTab(tabId).catch(() => {});
     };
     this.onProxyChanged = () => {
+      // 代理变更时使 networkSnapshot 缓存失效，避免用旧结果判断网络路径
+      this.networkCache = new WeakMap();
       void this._checkNetworkPaths();
     };
     pool?.on("connectionCreated", this.onReady);
@@ -70,10 +76,7 @@ class PortForwardingRuntime extends EventEmitter {
     this.processManager.events?.on("processSet", this.onSet);
     this.processManager.events?.on("processDeleted", this.onDeleted);
     this.proxyManager?.on?.("changed", this.onProxyChanged);
-    this.networkTimer = setInterval(() => {
-      void this._checkNetworkPaths();
-    }, 10000);
-    this.networkTimer.unref?.();
+    this._syncNetworkTimer();
     for (const [id, proc] of this.processManager.getAllProcesses())
       if (["ssh2", "ssh"].includes(proc?.type))
         this._tabReady(this._tabId(id, proc));
@@ -81,6 +84,50 @@ class PortForwardingRuntime extends EventEmitter {
 
   _tabId(id, proc) {
     return String(proc?.config?.tabId || proc?.tabId || id);
+  }
+
+  // 10s 网络巡检仅在有需要检查的会话（ready 或上次巡检发现网络异常）时运行，
+  // 避免无活跃转发会话时空转 interval
+  _hasWatchableSessions() {
+    for (const session of this.sessions.values()) {
+      if (!session.closed && (session.ready || session.invalidNetwork))
+        return true;
+    }
+    return false;
+  }
+
+  _startNetworkTimer() {
+    if (this.shutdown || this.networkTimer) return;
+    this.networkTimer = setInterval(() => {
+      void this._checkNetworkPaths();
+    }, 10000);
+    this.networkTimer.unref?.();
+  }
+
+  _stopNetworkTimer() {
+    if (this.networkTimer) {
+      clearInterval(this.networkTimer);
+      this.networkTimer = null;
+    }
+  }
+
+  _syncNetworkTimer() {
+    if (this.shutdown) return;
+    if (this._hasWatchableSessions()) this._startNetworkTimer();
+    else this._stopNetworkTimer();
+  }
+
+  async _networkSnapshotCached(raw, proxyManager) {
+    if (!raw?.proxy) return networkSnapshot(raw, proxyManager);
+    const now = Date.now();
+    const cached = this.networkCache.get(raw);
+    if (cached && cached.expires > now) return cached.value;
+    const value = await networkSnapshot(raw, proxyManager);
+    this.networkCache.set(raw, {
+      value,
+      expires: now + this.NETWORK_CACHE_TTL_MS,
+    });
+    return value;
   }
 
   _findProcess(tabId) {
@@ -227,6 +274,8 @@ class PortForwardingRuntime extends EventEmitter {
       session.attempts = 0;
     }, 30000);
     session.stableTimer.unref?.();
+    // 会话 ready 后重启网络巡检（若此前因无活跃会话而停掉）
+    this._syncNetworkTimer();
     this._broadcastStatus();
   }
 
@@ -447,7 +496,7 @@ class PortForwardingRuntime extends EventEmitter {
             return;
           try {
             const { proc } = this._proc(session.tabId);
-            const network = await networkSnapshot(
+            const network = await this._networkSnapshotCached(
               proc.config,
               this.proxyManager,
             );
@@ -471,6 +520,8 @@ class PortForwardingRuntime extends EventEmitter {
       );
     } finally {
       this.checkingPaths = false;
+      // 巡检结束后同步 timer：无需要检查的会话时停掉，新会话 ready 时重启
+      this._syncNetworkTimer();
     }
   }
 
@@ -504,7 +555,7 @@ class PortForwardingRuntime extends EventEmitter {
 
   async stopAll() {
     this.shutdown = true;
-    clearInterval(this.networkTimer);
+    this._stopNetworkTimer();
     if (this.initialized) {
       this.pool?.removeListener("connectionCreated", this.onReady);
       this.pool?.removeListener("connectionReconnected", this.onReady);

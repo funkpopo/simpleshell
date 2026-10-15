@@ -94,7 +94,6 @@ import ErrorNotification from "../shared/ui/ErrorNotification.jsx";
 import GlobalTransferBar from "../features/transfers/GlobalTransferBar.jsx";
 import GlobalTransferFloat from "../features/transfers/GlobalTransferFloat.jsx";
 import TransferSidebar from "../features/transfers/TransferSidebar.jsx";
-import { applySftpTransferState } from "../features/transfers/state/globalTransferStore.js";
 import TransferSidebarButton from "../features/transfers/TransferSidebarButton.jsx";
 import { useNotification } from "../shared/notifications/NotificationContext.jsx";
 import {
@@ -106,6 +105,9 @@ import useCredentialSecurity from "./hooks/useCredentialSecurity.js";
 import useSSHAuthentication from "./hooks/useSSHAuthentication.js";
 import useReconnect from "./hooks/useReconnect.js";
 import useAppTheme from "./hooks/useAppTheme.js";
+import useTransferPanels from "./hooks/useTransferPanels.js";
+import useAIPanel from "./hooks/useAIPanel.js";
+import useTabBarScroll from "./hooks/useTabBarScroll.js";
 import {
   UPDATE_REMINDER_STORAGE_KEY,
   UPDATE_REMINDER_DELAY_MS,
@@ -442,29 +444,42 @@ export default function AppShell() {
   const localTerminalSidebarPresent = useDelayedPresence(
     localTerminalSidebarOpen,
   );
-  const [transferFloatOpen, setTransferFloatOpen] = React.useState(false);
-  const [transferFloatInitialTransfer, setTransferFloatInitialTransfer] =
-    React.useState(null);
   const sftpFollowTerminalDirectory = useSftpFollowSetting();
   // 侧边栏位置: "left" | "right"
 
-  // 传输侧边栏状态
-  const [transferSidebarOpen, setTransferSidebarOpen] = React.useState(false);
-  const [resumableTransferCount, setResumableTransferCount] = React.useState(0);
-  React.useEffect(
-    () => window.terminalAPI.onSftpTransferState(applySftpTransferState),
-    [],
-  );
-  // 最后激活的浮动窗口（用于控制z-index层叠顺序）: "ai" | "transfer"
-  const [lastActiveFloatWindow, setLastActiveFloatWindow] =
-    React.useState("ai");
-  /** AI 当前 API 是否可达（false 包含未配置/不可达） */
-  const [aiApiReachable, setAiApiReachable] = React.useState(false);
-  const aiApiProbeTokenRef = React.useRef(0);
-  const aiPanelOpen =
-    aiChatStatus === "minimized" || aiChatStatus === "visible";
-  const tabsRef = useRef(null);
-  const [hasTabOverflow, setHasTabOverflow] = React.useState(false);
+  // 传输面板（侧栏/浮动窗）与浮窗层级（progressive split → useTransferPanels）
+  const {
+    transferFloatOpen,
+    transferFloatInitialTransfer,
+    transferSidebarOpen,
+    setTransferSidebarOpen,
+    resumableTransferCount,
+    setResumableTransferCount,
+    lastActiveFloatWindow,
+    setLastActiveFloatWindow,
+    handleOpenTransferFloat,
+    handleCloseTransferFloat,
+    handleToggleTransferFloat,
+    handleToggleTransferSidebar,
+  } = useTransferPanels();
+  // AI 面板状态与可达性探测（progressive split → useAIPanel）
+  const {
+    aiPanelOpen,
+    aiApiReachable,
+    handleToggleGlobalAiChatWindow,
+    handleMinimizeGlobalAiChatWindow,
+    handleCloseGlobalAiChatWindow,
+    handleSendToAI,
+  } = useAIPanel({
+    aiChatStatus,
+    dispatch,
+    setLastActiveFloatWindow,
+  });
+  // 标签栏滚动/溢出（progressive split → useTabBarScroll）
+  const { tabsRef, hasTabOverflow } = useTabBarScroll({
+    tabCount: tabs.length,
+    currentTab,
+  });
   const dragRafRef = React.useRef(null);
   const pendingDragStateRef = React.useRef(null);
   const sidebarTooltipPlacement = "top";
@@ -571,104 +586,6 @@ export default function AppShell() {
     setSidebarWidth,
     setUiSettingsSnapshot,
   });
-  const handleTabsWheel = useCallback((event) => {
-    const scroller = event.currentTarget;
-    if (!scroller) {
-      return;
-    }
-    const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
-    if (maxScrollLeft <= 0) {
-      return;
-    }
-    const dominantDelta =
-      Math.abs(event.deltaY) > Math.abs(event.deltaX)
-        ? event.deltaY
-        : event.deltaX;
-    if (dominantDelta === 0) {
-      return;
-    }
-    scroller.scrollLeft = Math.min(
-      Math.max(scroller.scrollLeft + dominantDelta, 0),
-      maxScrollLeft,
-    );
-    event.preventDefault();
-  }, []);
-
-  // 监听 tabs 滚轮事件（需要在 scroller 元素上监听）
-  React.useEffect(() => {
-    const tabsRoot = tabsRef.current;
-    if (!tabsRoot) {
-      return undefined;
-    }
-    const scroller = tabsRoot.querySelector(".MuiTabs-scroller");
-    if (!scroller) {
-      return undefined;
-    }
-
-    // 使用 eventManager 统一管理事件监听
-    const removeListener = eventManager.addEventListener(
-      scroller,
-      "wheel",
-      handleTabsWheel,
-      {
-        passive: false,
-      },
-    );
-    return removeListener;
-  }, [handleTabsWheel, eventManager]);
-  React.useEffect(() => {
-    const tabsRoot = tabsRef.current;
-    if (!tabsRoot) {
-      return undefined;
-    }
-    const scroller = tabsRoot.querySelector(".MuiTabs-scroller");
-    if (!scroller) {
-      return undefined;
-    }
-    const checkOverflow = () => {
-      const nextHasOverflow = scroller.scrollWidth - scroller.clientWidth > 1;
-      setHasTabOverflow((prev) =>
-        prev === nextHasOverflow ? prev : nextHasOverflow,
-      );
-    };
-    checkOverflow();
-    const rafId = requestAnimationFrame(checkOverflow);
-    const resizeObserver =
-      typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(checkOverflow)
-        : null;
-    resizeObserver?.observe(scroller);
-    window.addEventListener("resize", checkOverflow);
-    return () => {
-      cancelAnimationFrame(rafId);
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", checkOverflow);
-    };
-  }, [tabs.length]);
-  const scrollActiveTabIntoView = useCallback(() => {
-    const tabsRoot = tabsRef.current;
-    if (!tabsRoot) {
-      return;
-    }
-    const scroller = tabsRoot.querySelector(".MuiTabs-scroller");
-    const selectedTab = tabsRoot.querySelector(
-      'button[role="tab"][aria-selected="true"]',
-    );
-    if (!scroller || !selectedTab) {
-      return;
-    }
-    const scrollerRect = scroller.getBoundingClientRect();
-    const tabRect = selectedTab.getBoundingClientRect();
-    const EXTRA_PADDING = 16;
-    if (tabRect.left < scrollerRect.left) {
-      scroller.scrollLeft -= scrollerRect.left - tabRect.left + EXTRA_PADDING;
-    } else if (tabRect.right > scrollerRect.right) {
-      scroller.scrollLeft += tabRect.right - scrollerRect.right + EXTRA_PADDING;
-    }
-  }, []);
-  React.useEffect(() => {
-    scrollActiveTabIntoView();
-  }, [scrollActiveTabIntoView, currentTab, tabs.length]);
 
   // 注意: 移除了自动切换到新标签页的useEffect
   // 新标签页的切换现在在 handleCreateSSHConnection 中直接处理
@@ -2083,121 +2000,6 @@ export default function AppShell() {
       "history",
     );
   };
-  const probeAiApiStatus = useCallback(async () => {
-    if (
-      !window.terminalAPI?.fetchModels ||
-      !window.terminalAPI?.loadAISettings
-    ) {
-      return;
-    }
-    const probeToken = ++aiApiProbeTokenRef.current;
-    try {
-      const settings = await window.terminalAPI.loadAISettings();
-      const current = settings?.current;
-      if (
-        !current?.apiUrl?.trim() ||
-        !current?.model?.trim() ||
-        !current?.hasApiKey
-      ) {
-        if (probeToken !== aiApiProbeTokenRef.current) return;
-        setAiApiReachable(false);
-        return;
-      }
-      const result = await window.terminalAPI.fetchModels({
-        apiConfigId: current.id || undefined,
-        url: current.apiUrl,
-        provider: current.provider || "openai",
-      });
-      if (probeToken !== aiApiProbeTokenRef.current) return;
-      if (result && Array.isArray(result.models)) {
-        setAiApiReachable(true);
-      } else {
-        setAiApiReachable(false);
-      }
-    } catch {
-      if (probeToken !== aiApiProbeTokenRef.current) return;
-      setAiApiReachable(false);
-    }
-  }, []);
-
-  // 全局AI聊天窗口处理函数
-  const handleToggleGlobalAiChatWindow = () => {
-    if (aiChatStatus === "visible") {
-      dispatch(actions.setAiChatStatus("minimized"));
-    } else {
-      dispatch(actions.setAiChatStatus("visible"));
-      setLastActiveFloatWindow("ai");
-      probeAiApiStatus();
-    }
-  };
-
-  // 最小化AI聊天窗口（保持对话内容）
-  const handleMinimizeGlobalAiChatWindow = () => {
-    dispatch(actions.setAiChatStatus("minimized"));
-  };
-
-  // 关闭AI聊天窗口（清空对话内容）
-  const handleCloseGlobalAiChatWindow = () => {
-    dispatch(actions.setAiChatStatus("closed"));
-  };
-  React.useEffect(() => {
-    if (aiChatStatus === "closed") {
-      aiApiProbeTokenRef.current += 1;
-      setAiApiReachable(false);
-    }
-  }, [aiChatStatus]);
-  React.useEffect(() => {
-    if (
-      !aiPanelOpen ||
-      !window.terminalAPI?.fetchModels ||
-      !window.terminalAPI?.loadAISettings
-    ) {
-      return undefined;
-    }
-    const safeProbe = async () => {
-      await probeAiApiStatus();
-    };
-    safeProbe();
-    const intervalId = window.setInterval(safeProbe, 30000);
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") safeProbe();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [aiChatStatus, probeAiApiStatus]);
-
-  // 打开全局传输浮动窗口（与传输侧栏定位重叠，互斥打开）
-  const handleOpenTransferFloat = (transfer) => {
-    setTransferSidebarOpen(false);
-    setTransferFloatInitialTransfer(transfer);
-    setTransferFloatOpen(true);
-  };
-
-  // 关闭全局传输浮动窗口
-  const handleCloseTransferFloat = () => {
-    setTransferFloatOpen(false);
-    setTransferFloatInitialTransfer(null);
-  };
-
-  // 切换全局传输浮动窗口
-  const handleToggleTransferFloat = (transfer) => {
-    if (transferFloatOpen) {
-      // 如果已经打开，则关闭
-      handleCloseTransferFloat();
-    } else {
-      // 如果关闭，则打开
-      handleOpenTransferFloat(transfer);
-    }
-  };
-
-  // 发送文本到AI助手
-  const handleSendToAI = (text) => {
-    dispatch(actions.setAiInputPreset(text));
-    dispatch(actions.setAiChatStatus("visible"));
-  };
 
   // 切换IP地址查询侧边栏
   const toggleIpAddressQuery = () => {
@@ -3328,15 +3130,7 @@ export default function AppShell() {
                     ref={transferSidebarButtonRef}
                     isOpen={transferSidebarOpen}
                     resumableCount={resumableTransferCount}
-                    onClick={() => {
-                      const newState = !transferSidebarOpen;
-                      setTransferSidebarOpen(newState);
-                      if (newState) {
-                        // 侧栏与右下浮动窗定位重叠，打开侧栏时关闭浮动窗（互斥）
-                        handleCloseTransferFloat();
-                        setLastActiveFloatWindow("transfer");
-                      }
-                    }}
+                    onClick={handleToggleTransferSidebar}
                     tooltipPlacement={sidebarTooltipPlacement}
                   />
                 }

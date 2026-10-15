@@ -52,8 +52,6 @@ export default function useFileNav({
 
   const [lastRefreshTime, setLastRefreshTime] = useState(null);
 
-  const [, forceUpdate] = useState(0);
-
   const directoryCacheRef = useRef(new Map());
 
   const currentPathRef = useRef(currentPath);
@@ -1539,18 +1537,6 @@ export default function useFileNav({
     }
   }, [error]);
 
-  useEffect(() => {
-    if (!open) return;
-
-    // 设置定时器,每60秒触发一次更新
-    const intervalId = setInterval(() => {
-      forceUpdate((prev) => prev + 1);
-    }, 60000);
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [open]);
   return {
     selectionResetKey,
     currentPath,

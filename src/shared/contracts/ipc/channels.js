@@ -454,6 +454,12 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     args([{}]),
   ),
   defineRequest(
+    "TERMINAL_GET_RESOURCE_SNAPSHOT",
+    "terminal:getResourceSnapshot",
+    "terminal",
+    args([{}]),
+  ),
+  defineRequest(
     "TERMINAL_GET_PROCESS_LIST",
     "terminal:getProcessList",
     "terminal",
