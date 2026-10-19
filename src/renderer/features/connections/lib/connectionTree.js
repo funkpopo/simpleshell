@@ -127,6 +127,89 @@ const cloneConnectionNode = (node) => {
 
 export const cloneConnectionList = (list = []) => list.map(cloneConnectionNode);
 
+/**
+ * 创建连接树对象身份稳定器。
+ *
+ * dedupe/sort 每次都会重建节点对象，导致 React.memo 的列表行 props 身份
+ * 全部失效、分组展开/收起时整棵列表重渲染。稳定器按与
+ * areConnectionListsEqual 相同的版本口径（getConnectionVersion），
+ * 在内容未变化时复用上一次的对象身份（分组还会递归比对子项身份），
+ * 使未受影响的行在 memo 比对时直接跳过重渲染。
+ */
+export const createConnectionStabilizer = () => {
+  const cache = new Map();
+
+  return function stabilize(items) {
+    if (!Array.isArray(items)) {
+      return items;
+    }
+
+    const seen = new Set();
+
+    const walk = (list) => {
+      const next = new Array(list.length);
+
+      for (let index = 0; index < list.length; index += 1) {
+        const item = list[index];
+
+        if (!item || typeof item !== "object") {
+          next[index] = item;
+          continue;
+        }
+
+        const isGroup = item.type === "group";
+        let childItems = null;
+
+        if (isGroup && Array.isArray(item.items)) {
+          childItems = walk(item.items);
+        }
+
+        const version = getConnectionVersion(item);
+        const key = `${item.type || "unknown"}:${item.id ?? ""}`;
+        seen.add(key);
+
+        const cached = cache.get(key);
+        const childrenUnchanged =
+          !isGroup ||
+          !Array.isArray(item.items) ||
+          (cached !== undefined &&
+            Array.isArray(cached.item?.items) &&
+            cached.item.items.length === childItems.length &&
+            cached.item.items.every(
+              (child, childIndex) => child === childItems[childIndex],
+            ));
+
+        if (cached !== undefined && cached.version === version && childrenUnchanged) {
+          next[index] = cached.item;
+          continue;
+        }
+
+        const stable =
+          isGroup && Array.isArray(item.items)
+            ? { ...item, items: childItems }
+            : item;
+        cache.set(key, { version, item: stable });
+        next[index] = stable;
+      }
+
+      // 始终返回 next：元素已替换为稳定身份，父节点的子项比对按元素逐一进行，
+      // 不依赖数组自身身份
+      return next;
+    };
+
+    const result = walk(items);
+
+    // 清理已删除节点，避免缓存随增删无限增长
+    for (const key of cache.keys()) {
+      if (!seen.has(key)) {
+        cache.delete(key);
+      }
+    }
+
+    return result;
+  };
+};
+
 export const dedupeConnectionsById = (list = []) => {
   if (!Array.isArray(list) || list.length === 0) {
     return [];

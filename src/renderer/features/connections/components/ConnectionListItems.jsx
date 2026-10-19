@@ -388,7 +388,7 @@ export const GroupListItem = memo(function GroupListItem({
           items={(group.items || []).map((item) => item.id)}
           strategy={verticalListSortingStrategy}
         >
-          <Collapse in={shouldShowChildren} timeout={200}>
+          <Collapse in={shouldShowChildren} timeout={200} unmountOnExit>
             <List component="div" disablePadding sx={viewStyles.listSx}>
               {group.items &&
                 group.items.map((item) => (

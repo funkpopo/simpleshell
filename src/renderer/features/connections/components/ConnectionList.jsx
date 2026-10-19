@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo, useRef } from "react";
 import { Box, List, ListItem, ListItemText } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
 import {
@@ -22,6 +22,7 @@ import { ConnectionManagerSkeleton } from "../../../shared/ui/SkeletonLoader.jsx
 import VirtualizedConnectionList from "../VirtualizedConnectionList.jsx";
 import {
   cloneConnectionList,
+  createConnectionStabilizer,
   dedupeConnectionsById,
   ROOT_CONTAINER_ID,
   getGroupContainerId,
@@ -48,6 +49,12 @@ function ConnectionList({
 }) {
   const theme = useTheme();
   const { t } = useTranslation();
+  // 对象身份稳定器：内容未变的节点跨次计算复用同一身份，
+  // 使分组展开/收起时 memo 过的行可以跳过重渲染
+  const stabilizerRef = useRef(null);
+  if (stabilizerRef.current === null) {
+    stabilizerRef.current = createConnectionStabilizer();
+  }
   const filteredItems = useMemo(() => {
     let items;
     if (!searchQuery) {
@@ -91,7 +98,7 @@ function ConnectionList({
       return item;
     });
 
-    return sortedItems;
+    return stabilizerRef.current(sortedItems);
   }, [connections, searchQuery]);
   const visibleItemCount = useMemo(
     () => countVisibleItems(filteredItems),
