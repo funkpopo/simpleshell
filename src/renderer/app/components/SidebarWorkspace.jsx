@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   useAppStore,
   useAppDispatch,
-  useAppSelector,
+  useShellSelector,
 } from "../state/AppContext.jsx";
 import { actions } from "../state/appReducer.js";
 import Box from "@mui/material/Box";
@@ -58,7 +58,7 @@ export default function SidebarWorkspace({
   const appStore = useAppStore();
   const eventManager = useCleanupManager();
   const { t } = useTranslation();
-  const state = useAppSelector(
+  const state = useShellSelector(
     (state) => ({
       connectionManagerOpen: state.connectionManagerOpen,
       resourceMonitorOpen: state.resourceMonitorOpen,

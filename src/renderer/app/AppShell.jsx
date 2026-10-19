@@ -10,7 +10,7 @@ import {
   useAppDispatch,
   useTerminalSelector,
   useReconnectSelector,
-  useAppSelector,
+  useShellSelector,
 } from "./state/AppContext.jsx";
 import { actions } from "./state/appReducer.js";
 import AppBar from "@mui/material/AppBar";
@@ -71,7 +71,7 @@ export default function AppShell() {
   const { t, i18n } = useTranslation();
   const eventManager = useCleanupManager(); // 使用统一的事件管理器
 
-  const state = useAppSelector(selectShellLayout, shallowEqual);
+  const state = useShellSelector(selectShellLayout, shallowEqual);
   const appStore = useAppStore();
   const dispatch = useAppDispatch();
 

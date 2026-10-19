@@ -1,6 +1,6 @@
 import { Z_INDEX } from "../../shared/constants/zIndex.js";
 import { useSftpFollowSetting } from "../../features/file-manager/hooks/useSftpFollowSetting.js";
-import { useAppDispatch, useAppSelector } from "../state/AppContext.jsx";
+import { useAppDispatch, useShellSelector } from "../state/AppContext.jsx";
 import { actions } from "../state/appReducer.js";
 import Box from "@mui/material/Box";
 import {
@@ -55,7 +55,7 @@ export default function SidebarPanels({
     securityToolsOpen,
     portForwardingOpen,
     lastOpenedSidebar,
-  } = useAppSelector(
+  } = useShellSelector(
     (state) => ({
       connectionManagerOpen: state.connectionManagerOpen,
       shortcutCommandsOpen: state.shortcutCommandsOpen,

@@ -3,7 +3,7 @@ import TerminalWorkspace from "../features/terminal/components/TerminalWorkspace
 import AIChatWorkspace from "../features/ai/AIChatWorkspace.jsx";
 import { WebTerminalWithSuspense as WebTerminal } from "./LazyComponents.jsx";
 import {
-  useAppSelector,
+  useShellSelector,
   useTerminalSelector,
   useReconnectSelector,
   useDragSelector,
@@ -24,7 +24,7 @@ const equalSessions = (left, right) =>
   left.every((session, index) => shallowEqual(session, right[index]));
 
 function useLiveTerminalSessions(includeDetails = false) {
-  const layout = useAppSelector(selectSessionLayout, shallowEqual);
+  const layout = useShellSelector(selectSessionLayout, shallowEqual);
   const keys = useMemo(
     () => getLiveSessionKeys(layout.tabs, layout.splitLayouts),
     [layout],

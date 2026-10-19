@@ -10,7 +10,7 @@ import { useTerminalSearch } from "./hooks/useTerminalSearch.js";
 import { useTerminalSuggestions } from "./hooks/useTerminalSuggestions.js";
 import { useTerminalInputSync } from "./hooks/useTerminalInputSync.js";
 import { shouldDisplayCommandSuggestions } from "./model/commandSuggestionState.js";
-import { useAppSelector } from "../../app/state/AppContext.jsx";
+import { useShellSelector } from "../../app/state/AppContext.jsx";
 import { getParentTabId } from "./model/paneLayout.js";
 import { findGroupByTab } from "./model/syncInputGroups";
 import CommandSuggestion from "./CommandSuggestion";
@@ -98,9 +98,9 @@ const WebTerminal = ({
     (state) => state.splitLayouts[getParentTabId(sessionKey, state.panes)],
     [sessionKey],
   );
-  const paneLayout = useAppSelector(paneLayoutSelector);
+  const paneLayout = useShellSelector(paneLayoutSelector);
   const syncGroupsSelector = useCallback((state) => state.syncGroups, []);
-  const syncGroups = useAppSelector(syncGroupsSelector);
+  const syncGroups = useShellSelector(syncGroupsSelector);
   const currentSyncGroup = findGroupByTab(syncGroups, sessionKey);
 
   // 窗格菜单动作经 CustomEvent 报递给 app.jsx（避免把 dispatch 拉进终端组件）

@@ -25,7 +25,7 @@ import {
 } from "../../shared/ui/sidebarItemStyles";
 import TransferSidebarButton from "../../features/transfers/TransferSidebarButton.jsx";
 import { intentPreloadProps } from "../appShellUtils.js";
-import { useAppSelector } from "../state/AppContext.jsx";
+import { useShellSelector } from "../state/AppContext.jsx";
 
 export default function SidebarRail({
   sidebarPosition,
@@ -66,7 +66,7 @@ export default function SidebarRail({
     securityToolsOpen,
     portForwardingOpen,
     aiChatStatus,
-  } = useAppSelector(
+  } = useShellSelector(
     (state) => ({
       connectionManagerOpen: state.connectionManagerOpen,
       shortcutCommandsOpen: state.shortcutCommandsOpen,

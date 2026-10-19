@@ -52,7 +52,9 @@ shell across startup, theme changes and lock events with feature bodies stubbed.
 
 `AppProvider` provides stable stores. `useSyncExternalStore` compares selected
 snapshots before scheduling renders; `useAppSelector` no longer reads a changing
-Context value. Selectors default to `Object.is`; object/array projections must
+Context value. Shell views use `useShellSelector`, so terminal output/refresh and
+drag updates do not even evaluate their selectors. The full-domain
+`useShellState` hook has been removed. Selectors default to `Object.is`; object/array projections must
 provide an equality function such as `shallowEqual`. The selector cache is local
 to each render so selector changes and concurrent rendering do not share a
 mutable snapshot cache.
@@ -77,7 +79,7 @@ Opening sidebars or dialogs does not render the shell's welcome/workspace body.
 The complete `useAppState` hook remains for compatibility, with no current
 production consumers; new consumers should use selectors or domain hooks.
 
-`appContext.test.js` covers domain isolation, object selectors, selector/equality
+`appContext.test.js` covers domain isolation (including selector evaluation), object selectors, selector/equality
 changes, provider isolation and atomic cross-domain publication.
 `sessionSubscriptions.test.js` measures renders of the actual connected views
 with feature bodies stubbed, and checks countdown isolation and cleanup.

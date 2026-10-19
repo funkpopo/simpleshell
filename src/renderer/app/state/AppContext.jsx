@@ -54,8 +54,8 @@ export function useAppSelector(selector, isEqual = Object.is) {
   return useStoreSelector(useAppStore(), selector, isEqual);
 }
 
-export function useShellState() {
-  return useStoreSelector(useAppStore().shell, identity);
+export function useShellSelector(selector, isEqual = Object.is) {
+  return useStoreSelector(useAppStore().shell, selector, isEqual);
 }
 
 export function useDragSelector(selector, isEqual = Object.is) {
@@ -78,5 +78,5 @@ export function useReconnectSelector(selector, isEqual = Object.is) {
 }
 
 export function useTheme() {
-  return useAppSelector(selectTheme, shallowEqual);
+  return useShellSelector(selectTheme, shallowEqual);
 }

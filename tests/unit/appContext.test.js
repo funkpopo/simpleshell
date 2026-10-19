@@ -7,7 +7,7 @@ import {
   useAppDispatch,
   useAppStore,
   useAppSelector,
-  useShellState,
+  useShellSelector,
   useDragSelector,
   useTerminalSelector,
   useTheme,
@@ -49,7 +49,7 @@ it("isolates drag, terminal, reconnect, theme and dispatch subscribers in Strict
     return null;
   }
   const readers = {
-    shell: useShellState,
+    shell: () => useShellSelector((state) => state.currentTab),
     theme: useTheme,
     tabs: () => useAppSelector((state) => state.tabs),
     drag: () => useDragSelector((state) => state.dragOverTabIndex),
@@ -141,6 +141,45 @@ it("supports object selectors, selector changes and equality changes without sta
   expect(selection).toEqual({ config: 2 });
   await render("b", shallowEqual);
   expect(selection).toEqual({ config: 4 });
+});
+
+it("does not evaluate shell selectors for terminal and drag updates", async () => {
+  let store;
+  let selection;
+  let renders = 0;
+  const selectTabs = vi.fn((state) => ({ tabs: state.tabs }));
+  function Probe() {
+    store = useAppStore();
+    selection = useShellSelector(selectTabs, shallowEqual);
+    renders++;
+    return null;
+  }
+  await act(() =>
+    root.render(createElement(AppProvider, null, createElement(Probe))),
+  );
+  const initialRenders = renders;
+  const initialSelection = selection;
+  selectTabs.mockClear();
+  for (let index = 0; index < 10; index++) {
+    await act(() => {
+      store.dispatch(actions.setDragOverTab(index));
+      store.dispatch(actions.setTerminalInstances({ "a-refresh": index }));
+    });
+  }
+  expect(selectTabs).not.toHaveBeenCalled();
+  expect(renders).toBe(initialRenders);
+  await act(() => store.dispatch(actions.setSettingsDialogOpen(true)));
+  expect(selectTabs).toHaveBeenCalled();
+  expect(selection).toBe(initialSelection);
+  expect(renders).toBe(initialRenders);
+  const tabs = [...selection.tabs, { id: "a", type: "ssh", label: "A" }];
+  await act(() => store.dispatch(actions.setTabs(tabs)));
+  expect(selection.tabs).toBe(tabs);
+  expect(renders).toBeGreaterThan(initialRenders);
+  const calls = selectTabs.mock.calls.length;
+  await act(() => root.render(null));
+  store.dispatch(actions.setTabs([]));
+  expect(selectTabs).toHaveBeenCalledTimes(calls);
 });
 
 it("publishes coherent cross-domain snapshots and unsubscribes domain listeners", () => {

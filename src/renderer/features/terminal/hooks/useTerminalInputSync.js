@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { findGroupByTab } from "../model/syncInputGroups";
 import { getVisibleCommand } from "../model/promptDetection.js";
-import { useAppSelector } from "../../../app/state/AppContext.jsx";
+import { useShellSelector } from "../../../app/state/AppContext.jsx";
 import {
   processCache,
   registerTerminalRef,
@@ -29,7 +29,7 @@ export const useTerminalInputSync = ({
   eventManager,
   suggestionUiRef,
 }) => {
-  const syncGroups = useAppSelector(selectSyncGroups);
+  const syncGroups = useShellSelector(selectSyncGroups);
 
   // 并发输入仲裁：记录本端最近一次本地输入时间
   const lastLocalInputAtRef = useRef(0);

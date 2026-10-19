@@ -1,7 +1,7 @@
 import useAppNotifications from "../hooks/useAppNotifications.js";
 import * as React from "react";
 import { useCallback } from "react";
-import { useAppDispatch, useAppSelector } from "../state/AppContext.jsx";
+import { useAppDispatch, useShellSelector } from "../state/AppContext.jsx";
 import {
   AboutDialogWithSuspense as AboutDialog,
   FirstRunDialogWithSuspense as FirstRunDialog,
@@ -37,7 +37,7 @@ export default function DialogsLayer({
   const dispatch = useAppDispatch();
   const { showSuccess } = useNotification();
   const { t } = useTranslation();
-  const { aboutDialogOpen, settingsDialogOpen, connections } = useAppSelector(
+  const { aboutDialogOpen, settingsDialogOpen, connections } = useShellSelector(
     (state) => ({
       aboutDialogOpen: state.aboutDialogOpen,
       settingsDialogOpen: state.settingsDialogOpen,

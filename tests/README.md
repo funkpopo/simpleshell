@@ -31,6 +31,9 @@ Suites run sequentially to keep ports, process patches and fixture profiles isol
 `npm run test:all` runs lint, all unit tests and all integration tests. The latter
 includes a minified renderer build and checks that PDF, CodeMirror and xterm stay
 out of startup chunks. Its asset report is saved to
-`.cache/integration/production-renderer/bundle-report.json`. Renderer logs and
+`.cache/integration/production-renderer/bundle-report.json`, with initial/async
+JavaScript byte totals and per-chunk sizes. The build check also verifies chunk
+minification and the PDF worker emitted by Webpack's asset/resource rule into
+the configured output directory. Renderer logs and
 light/dark AI screenshots are saved alongside their compiled fixtures under
 `.cache/integration/`.

@@ -64,10 +64,49 @@ it("builds the minified production renderer and keeps feature libraries out of s
       /node_modules[\\/]react-pdf[\\/]/.test(resource),
     ),
   ).toBe(true);
+  const javascript = [...stats.compilation.chunks].flatMap((chunk) =>
+    [...chunk.files]
+      .filter((file) => file.endsWith(".js"))
+      .map((file) => {
+        const asset = stats.compilation.getAsset(file);
+        expect(asset.info.minimized, `${file} must be minified`).toBe(true);
+        return {
+          file,
+          initial: chunk.canBeInitial(),
+          bytes: asset.source.size(),
+        };
+      }),
+  );
+  // The asset/resource rule must emit the worker into the selected output.
+  // No afterEmit copy should overwrite it or write to a hard-coded Forge path.
+  const worker = stats.compilation.getAsset("pdf.worker.min.mjs");
+  expect(worker.info.sourceFilename.replaceAll("\\", "/")).toBe(
+    "node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
+  );
+  expect((await fs.stat(path.join(output, worker.name))).size).toBe(
+    worker.source.size(),
+  );
+  const report = stats.toJson({
+    all: false,
+    assets: true,
+    chunks: true,
+    warnings: true,
+  });
   await fs.writeFile(
     path.join(output, "bundle-report.json"),
     JSON.stringify(
-      stats.toJson({ all: false, assets: true, chunks: true, warnings: true }),
+      {
+        summary: {
+          initialJavaScriptBytes: javascript
+            .filter((asset) => asset.initial)
+            .reduce((total, asset) => total + asset.bytes, 0),
+          asyncJavaScriptBytes: javascript
+            .filter((asset) => !asset.initial)
+            .reduce((total, asset) => total + asset.bytes, 0),
+          javascript,
+        },
+        ...report,
+      },
       null,
       2,
     ),

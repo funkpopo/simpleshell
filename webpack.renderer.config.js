@@ -19,7 +19,6 @@ const rules = baseRules.filter((rule) => {
   return true;
 });
 const path = require("path");
-const fs = require("fs");
 const reactTransitionGroupContextPath =
   require.resolve("react-transition-group/esm/TransitionGroupContext.js");
 
@@ -101,37 +100,4 @@ module.exports = {
       config: [__filename],
     },
   },
-  plugins: [
-    {
-      apply: (compiler) => {
-        compiler.hooks.afterEmit.tap("CopyPdfWorker", () => {
-          const outputDir = path.join(
-            __dirname,
-            ".webpack",
-            "renderer",
-            "main_window",
-          );
-          if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir, { recursive: true });
-          }
-
-          const pdfjsDistPath = path.join(
-            __dirname,
-            "node_modules",
-            "pdfjs-dist",
-            "build",
-          );
-          const workerSrcPath = path.join(pdfjsDistPath, "pdf.worker.min.mjs");
-          const workerDestPath = path.join(outputDir, "pdf.worker.min.mjs");
-
-          if (fs.existsSync(workerSrcPath)) {
-            fs.copyFileSync(workerSrcPath, workerDestPath);
-            console.log(`Copied PDF worker to: ${workerDestPath}`);
-          } else {
-            console.warn(`PDF worker file not found at: ${workerSrcPath}`);
-          }
-        });
-      },
-    },
-  ],
 };
