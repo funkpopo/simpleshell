@@ -4,6 +4,12 @@ import path from "node:path";
 import { runRendererFixture } from "../helpers/runRendererFixture.js";
 
 describe("Electron renderer integration", () => {
+  it("keeps native history keys in WebTerminal and restores suggestion selection after editing", () =>
+    runRendererFixture({
+      name: "terminal-history",
+      entry: "terminal-history-renderer.jsx",
+      main: "terminal-history-electron.js",
+    }));
   it("keeps the AI surface styled in both themes without global CSS overrides", () =>
     runRendererFixture({
       name: "theme",

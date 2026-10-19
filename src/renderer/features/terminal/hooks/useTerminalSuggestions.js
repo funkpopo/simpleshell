@@ -55,6 +55,7 @@ export const useTerminalSuggestions = ({
   const suppressionContextRef = useRef({ input: "", timestamp: 0 });
   const suggestionsSuppressedRef = useRef(false);
   const suggestionsHiddenByEscRef = useRef(false);
+  const historyNavigationRef = useRef(false);
   const suggestionSelectedRef = useRef(false);
   const getSuggestionsRef = useRef(null);
   const suggestionRequestIdRef = useRef(0);
@@ -66,6 +67,19 @@ export const useTerminalSuggestions = ({
     }
     setShowSuggestionsState(value);
   }, []);
+
+  const setHistoryNavigationActive = useCallback(
+    (active) => {
+      historyNavigationRef.current = Boolean(active);
+      if (active) {
+        // Invalidate in-flight IPC/layout work before a recalled line can
+        // produce a popup that captures the next history key.
+        setShowSuggestions(false);
+        setSuggestions([]);
+      }
+    },
+    [setShowSuggestions],
+  );
 
   const setCurrentInput = useCallback((value) => {
     const nextValue =
@@ -224,6 +238,7 @@ export const useTerminalSuggestions = ({
         input.trim() === "" ||
         inEditorModeRef.current ||
         isCommandExecutingRef.current ||
+        historyNavigationRef.current ||
         suggestionsHiddenByEscRef.current ||
         suggestionsSuppressedRef.current
       ) {
@@ -461,6 +476,8 @@ export const useTerminalSuggestions = ({
     suppressionContextRef,
     suggestionsSuppressedRef,
     suggestionsHiddenByEscRef,
+    historyNavigationRef,
+    setHistoryNavigationActive,
     suggestionSelectedRef,
     getSuggestions,
     getSuggestionsRef,

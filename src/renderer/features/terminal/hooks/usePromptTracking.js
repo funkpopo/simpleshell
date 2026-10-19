@@ -7,6 +7,8 @@ import {
 import {
   isSuggestionTrackingContext,
   shouldResumePromptTrackingOnInput,
+  isHistoryNavigationInput,
+  shouldResumeSuggestionsAfterHistory,
 } from "../model/commandSuggestionState.js";
 import { shouldChunkInputPayload } from "../runtime/terminalInput.js";
 import {
@@ -223,6 +225,7 @@ export function usePromptTracking({
 
   const resetPromptTracking = useCallback(() => {
     cancelInputUiRefresh();
+    suggestionApiRef.current.setHistoryNavigationActive?.(false);
     promptTrackingStateRef.current = createPromptTrackingState();
     pendingCommandBoundaryRef.current = {
       command: "",
@@ -369,6 +372,7 @@ export function usePromptTracking({
           promptReady &&
           normalizedInput &&
           !inEditorModeRef.current &&
+          !api.historyNavigationRef?.current &&
           !api.suggestionsHiddenByEscRef.current &&
           !api.suggestionsSuppressedRef.current &&
           !isCommandExecutingRef.current
@@ -423,6 +427,8 @@ export function usePromptTracking({
         suggestionsSuppressedRef,
         suggestionsHiddenByEscRef,
         suggestionSelectedRef,
+        historyNavigationRef,
+        setHistoryNavigationActive,
       } = suggestionApiRef.current;
 
       let currentInputBuffer = "";
@@ -448,6 +454,7 @@ export function usePromptTracking({
       // Reconnect reuses these listeners. Reset their local state along with
       // the hook state so input from the old shell cannot suppress new hints.
       const resetCommandDetection = () => {
+        setHistoryNavigationActive?.(false);
         currentInputBuffer = "";
         isEscapeSequence = false;
         resetTabCompletionTracking();
@@ -485,6 +492,7 @@ export function usePromptTracking({
       // 未被 ESC 隐藏/抑制且无命令执行时请求建议刷新，否则仅刷新光标
       const scheduleSuggestionRefreshOrCursor = (inputBuffer) => {
         if (
+          !historyNavigationRef?.current &&
           !suggestionsHiddenByEscRef.current &&
           !suggestionsSuppressedRef.current &&
           !isCommandExecutingRef.current
@@ -525,6 +533,7 @@ export function usePromptTracking({
 
       const bufferTypeObserver = {
         handleBufferTypeChange: (type) => {
+          setHistoryNavigationActive?.(false);
           if (type === "alternate") {
             inEditorMode = true;
             isEscapeSequence = false;
@@ -581,6 +590,13 @@ export function usePromptTracking({
       }
 
       const onDataDisposable = term.onData((data) => {
+        if (isHistoryNavigationInput(data)) {
+          cancelInputUiRefresh();
+          resetTabCompletionTracking();
+          setHistoryNavigationActive?.(true);
+        } else if (shouldResumeSuggestionsAfterHistory(data)) {
+          setHistoryNavigationActive?.(false);
+        }
         syncPromptState();
         if (
           pendingSystemShortcutRecoveryRef?.current &&

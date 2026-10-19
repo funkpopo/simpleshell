@@ -6,6 +6,33 @@ const normalizeCommandSuggestionInput = (input = "") =>
 const shouldRequestCommandSuggestions = (input = "") =>
   normalizeCommandSuggestionInput(input).length >= 1;
 
+// xterm emits CSI in normal cursor mode and SS3 in application cursor mode.
+const isHistoryNavigationInput = (data = "") =>
+  typeof data === "string" && /^\u001b(?:\[[0-9;]*|O)[AB]$/.test(data);
+
+const HISTORY_EDITING_INPUTS = new Set([
+  "\b",
+  "\x7f",
+  "\x03",
+  "\r",
+  "\n",
+  "\t",
+  "\x15",
+  "\x17",
+  "\x0b",
+  "\x04",
+  "\x14",
+  "\x19",
+  "\x1b[3~",
+]);
+
+const shouldResumeSuggestionsAfterHistory = (data = "") =>
+  typeof data === "string" &&
+  data.length > 0 &&
+  (!/[\u0000-\u001f\u007f]/.test(data) ||
+    HISTORY_EDITING_INPUTS.has(data) ||
+    data.includes("\u001b[200~"));
+
 const isSuggestionTrackingContext = (term, { inEditorMode = false } = {}) => {
   if (!term || inEditorMode) {
     return false;
@@ -64,6 +91,8 @@ const shouldIgnoreCommandSuggestionKeyEvent = (event = {}) =>
 module.exports = {
   normalizeCommandSuggestionInput,
   shouldRequestCommandSuggestions,
+  isHistoryNavigationInput,
+  shouldResumeSuggestionsAfterHistory,
   isSuggestionTrackingContext,
   shouldResumePromptTrackingOnInput,
   shouldDisplayCommandSuggestions,

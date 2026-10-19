@@ -278,6 +278,8 @@ const WebTerminal = ({
     suggestionsSuppressedRef,
     suggestionsHiddenByEscRef,
     suggestionSelectedRef,
+    historyNavigationRef,
+    setHistoryNavigationActive,
     getSuggestions,
     getSuggestionsRef,
     updateCursorPosition,
@@ -302,6 +304,7 @@ const WebTerminal = ({
       setCurrentInput,
       setSuggestionsHiddenByEsc,
       setSuggestionsSuppressedUntilEnter,
+      setHistoryNavigationActive,
       // 供同步输入分组在成员端刷新补全弹层（避免补全与输入行脱节）
       getSuggestions,
     };
@@ -311,6 +314,7 @@ const WebTerminal = ({
     setCurrentInput,
     setSuggestionsHiddenByEsc,
     setSuggestionsSuppressedUntilEnter,
+    setHistoryNavigationActive,
     getSuggestions,
   ]);
 
@@ -324,6 +328,8 @@ const WebTerminal = ({
     suggestionsSuppressedRef,
     suggestionsHiddenByEscRef,
     suggestionSelectedRef,
+    historyNavigationRef,
+    setHistoryNavigationActive,
     getSuggestions,
     getSuggestionsRef,
     updateCursorPosition,

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
 import { findGroupByTab } from "../model/syncInputGroups";
 import { getVisibleCommand } from "../model/promptDetection.js";
+import {
+  isHistoryNavigationInput,
+  shouldResumeSuggestionsAfterHistory,
+} from "../model/commandSuggestionState.js";
 import { useShellSelector } from "../../../app/state/AppContext.jsx";
 import {
   processCache,
@@ -57,6 +61,16 @@ export const useTerminalInputSync = ({
       const ui = suggestionUiRef?.current;
       if (!ui || typeof input !== "string" || input.length === 0) {
         return;
+      }
+
+      if (isHistoryNavigationInput(input)) {
+        if (suggestionRefreshTimerRef.current !== null) {
+          clearTimeout(suggestionRefreshTimerRef.current);
+          suggestionRefreshTimerRef.current = null;
+        }
+        ui.setHistoryNavigationActive?.(true);
+      } else if (shouldResumeSuggestionsAfterHistory(input)) {
+        ui.setHistoryNavigationActive?.(false);
       }
 
       // 粘贴包裹标记 / 回车 / Ctrl+C / Tab / Esc：与源端 onData 的处理对齐，
@@ -239,6 +253,7 @@ export const useTerminalInputSync = ({
       }
 
       const commandToSend = execute === false ? command : `${command}\r`;
+      suggestionUiRef?.current?.setHistoryNavigationActive?.(false);
 
       // 保留外部输入通道标记，供 onData 的防重放识别使用（契约不变）
       termRef.current._externalInputChannel = { payload: commandToSend };

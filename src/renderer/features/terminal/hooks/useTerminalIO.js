@@ -350,6 +350,7 @@ export function useTerminalIO({
 
       const suggestionUi = suggestionUiRef?.current;
       if (suggestionUi) {
+        suggestionUi.setHistoryNavigationActive?.(false);
         suggestionUi.setShowSuggestions?.(false);
         suggestionUi.setSuggestions?.([]);
         suggestionUi.setCurrentInput?.("");
