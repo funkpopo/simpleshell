@@ -9,6 +9,7 @@ import {
 } from "../../src/renderer/app/state/AppContext.jsx";
 import { actions } from "../../src/renderer/app/state/appReducer.js";
 import AppShell from "../../src/renderer/app/AppShell.jsx";
+import { deferred } from "../helpers/reactHarness.js";
 
 const { translate, notifications, language, welcomeRender } = vi.hoisted(
   () => ({
@@ -84,6 +85,41 @@ vi.mock("../../src/renderer/features/transfers/TransferSidebar.jsx", () => ({
   default: () => null,
 }));
 
+it("subscribes to authentication during appearance loading and cleans up once", async () => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const settings = deferred();
+  const cleanup = vi.fn();
+  window.terminalAPI = {
+    loadUISettings: vi.fn(() => settings.promise),
+    getCredentialSecurityStatus: vi.fn(async () => ({
+      status: { requiresUnlock: false },
+    })),
+    loadConnections: vi.fn(async () => []),
+    getTopConnections: vi.fn(async () => []),
+    onSSHAuthRequest: vi.fn(() => cleanup),
+    onSftpTransferState: vi.fn(() => () => {}),
+  };
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(createElement(AppProvider, null, createElement(AppShell))),
+    );
+    expect(window.terminalAPI.onSSHAuthRequest).toHaveBeenCalledOnce();
+    expect(host.querySelector('[data-testid="welcome"]')).toBeNull();
+    await act(async () =>
+      settings.resolve({ darkMode: false, onboarding: { completed: true } }),
+    );
+    expect(host.querySelector('[data-testid="welcome"]')).not.toBeNull();
+    expect(window.terminalAPI.onSSHAuthRequest).toHaveBeenCalledOnce();
+  } finally {
+    await act(() => root.unmount());
+    host.remove();
+  }
+  expect(cleanup).toHaveBeenCalledOnce();
+});
+
 it("renders AppShell across startup, theme changes and credential lock events", async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   window.terminalAPI = {
@@ -122,6 +158,21 @@ it("renders AppShell across startup, theme changes and credential lock events", 
     );
     expect(host.querySelector('[data-testid="welcome"]')).not.toBeNull();
     const initialRenders = welcomeRender.mock.calls.length;
+    // Dialogs and sidebar composition subscribe at their own boundaries.
+    await act(() => {
+      store.dispatch(actions.setAboutDialogOpen(true));
+      store.dispatch(actions.setSettingsDialogOpen(true));
+      store.dispatch(actions.setConnectionManagerOpen(true));
+      store.dispatch(actions.setResourceMonitorOpen(true));
+    });
+    expect(welcomeRender).toHaveBeenCalledTimes(initialRenders);
+    await act(() => {
+      store.dispatch(actions.setAboutDialogOpen(false));
+      store.dispatch(actions.setSettingsDialogOpen(false));
+      store.dispatch(actions.setConnectionManagerOpen(false));
+      store.dispatch(actions.setResourceMonitorOpen(false));
+    });
+    expect(welcomeRender).toHaveBeenCalledTimes(initialRenders);
     for (let index = 0; index < 5; index++) {
       await act(() => {
         store.dispatch(actions.setDraggedTab(1));

@@ -55,9 +55,10 @@ const configServiceSource =
   readSource("src/main/settings/configService.js") +
   "\n" +
   readSource("src/main/settings/configSchemas.js");
-const settingsSource = readSource(
-  "src/renderer/features/settings/Settings.jsx",
-);
+const settingsSource =
+  require("./lib/renderer-sources.js").collectDirectorySources(
+    "src/renderer/features/settings",
+  );
 const globalCssSource = readSource("src/renderer/styles/global.css");
 const fileManagerSource =
   require("./lib/renderer-sources.js").collectFileManagerSources();
@@ -74,9 +75,17 @@ const preloadSource = require("./lib/preload-sources").collectPreloadSources();
 const commandSuggestionSource = readSource(
   "src/renderer/features/terminal/CommandSuggestion.jsx",
 );
-const connectionManagerSource = readSource(
-  "src/renderer/features/connections/ConnectionManager.jsx",
-);
+const connectionManagerSource = [
+  "ConnectionManager.jsx",
+  "components/ConnectionList.jsx",
+  "components/ConnectionListItems.jsx",
+  "components/ConnectionEditorDialog.jsx",
+  "hooks/useConnectionEditor.js",
+  "lib/connectionTree.js",
+  "lib/connectionForm.js",
+]
+  .map((file) => readSource(`src/renderer/features/connections/${file}`))
+  .join("\n");
 const customTabSource = readSource("src/renderer/app/components/CustomTab.jsx");
 
 function testStartupAndWindowLifecycle() {

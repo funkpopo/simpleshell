@@ -228,14 +228,11 @@ async function run() {
   );
   assert.doesNotMatch(listSource, /setExpandedGroups/);
   assert.match(listSource, /const expandedGroups = useMemo/);
-  const managerSource = fs.readFileSync(
-    path.join(root, "src/renderer/features/connections/ConnectionManager.jsx"),
-    "utf8",
-  );
-  const toggleSource = managerSource.slice(
-    managerSource.indexOf("const handleToggleGroup"),
-    managerSource.indexOf("const handleAddConnection"),
-  );
+  const toggleSource =
+    require("./lib/renderer-sources.js").readRendererCallback(
+      "src/renderer/features/connections/ConnectionManager.jsx",
+      "handleToggleGroup",
+    );
   assert.doesNotMatch(toggleSource, /saveConnections/);
   console.log(
     "PASS folder expansion uses controlled state and avoids duplicate persistence",

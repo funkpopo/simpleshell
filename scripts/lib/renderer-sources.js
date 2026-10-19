@@ -50,6 +50,7 @@ function readRendererCallback(relativePath, name) {
 }
 
 module.exports = {
+  collectDirectorySources,
   collectAppSources,
   collectFileManagerSources,
   readRendererCallback,

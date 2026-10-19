@@ -45,6 +45,22 @@ permission and preview models to their views. The container passes these models
 without unpacking their draft fields, and the preview dependency remains lazy.
 Confirmation remains a separate interaction shared by operations and transfers.
 
+`FilePreview.jsx` routes a captured session/path/file identity to lazy
+`previews/TextPreview`, `MediaPreview` or `PdfPreview` components. Text preview
+owns its draft, save and unsaved-close behavior; focused editor, snapshot and
+context-menu hooks keep their own effects and cleanup. Snapshot comparisons
+load `DiffPreview` only when selected, with `SnapshotPanel` retaining version
+selection and restore actions. Font, file-type and diff helpers are separate.
+Only `PdfPreview` imports react-pdf, its styles and the PDF worker. Images and
+PDFs share a binary read/cache hook; late responses release their cache even
+after unmount, and normal close/unmount releases it once. Changing the captured
+target remounts the preview so drafts and responses cannot cross sessions.
+
+`tests/unit/filePreview.test.js` mounts these boundaries with editor/PDF engines
+stubbed and covers lazy mode selection, save/close failures, baseline snapshots,
+comparison/restoration, binary cache lifetime and PDF controls. The existing
+Electron checks exercise the real SFTP container.
+
 `../transfers/components/TransferProgress.jsx` renders the existing global progress bar. Its
 placement remains in AppShell, so hiding or unmounting the file sidebar does not
 remove transfers. `useTransferActions` provides task commands and an on-demand

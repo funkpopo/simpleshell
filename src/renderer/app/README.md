@@ -1,8 +1,28 @@
 # Application composition
 
 `src/renderer/main.jsx` owns the React root, application providers and global error boundary.
-`AppShell.jsx` owns layout, session actions, sidebar composition and application
-menus. Focused hooks own their state, subscriptions and cleanup:
+`AppShell.jsx` owns the window layout and connects focused session commands.
+It selects only tabs, pane layouts, connections and menu state. Sidebar and
+dialog state is subscribed by their own containers:
+
+- `components/SidebarWorkspace.jsx` owns sidebar commands, local terminal
+  creation, file navigation history and AI events. `SidebarRail.jsx` reads its
+  button flags, and `SidebarPanels.jsx` owns delayed feature presence, SFTP
+  directory-follow settings and the sidebar views. Transfer state stays above
+  these containers in `useTransferPanels`, so closing a sidebar keeps transfers.
+- `components/DialogsLayer.jsx` owns onboarding, authentication challenges,
+  notifications and the settings/about dialog subscriptions. It stays mounted
+  during theme loading so early authentication requests are retained.
+
+Focused hooks own their state, subscriptions and cleanup:
+
+- `useSessionTabs`: connection creation, tab changes, refresh, teardown and
+  command dispatch. `useSessionDragDrop`: tab adoption/reordering, pane actions,
+  drag frames and event cleanup. Both read the existing store/ref snapshots and
+  preserve atomic reducer transitions.
+- `useShellConnections`: connection loading, change subscriptions and recent
+  connection/config synchronization. `useShellMenus`: native menu commands and
+  update reminders. `useShellNotices`: disk alerts and sync-group notifications.
 
 - `useReconnect`: IPC listeners, live-session filtering and pause/resume commands.
   It writes to the provider-scoped reconnect store without subscribing AppShell.
@@ -53,6 +73,7 @@ focused session's configuration, process ID and connection status, because these
 drive the sidebars. Updating these focused-session details still legitimately
 renders the shell. Background sessions and reconnect progress do not. Callbacks
 read current store snapshots so handlers do not need broad render subscriptions.
+Opening sidebars or dialogs does not render the shell's welcome/workspace body.
 The complete `useAppState` hook remains for compatibility, with no current
 production consumers; new consumers should use selectors or domain hooks.
 
