@@ -21,8 +21,11 @@ const {
   showPrimaryWindow,
 } = require("./bootstrap");
 const aiWorkerManager = require("./native/aiWorkerManager");
-const { createWindow } = require("./window/windowManager");
-const setupIPC = require("./ipc/setupIPC");
+const {
+  createWindow,
+  getPrimaryWindow,
+  safeSendToRenderer,
+} = require("./window/windowManager");
 const { buildErrorEvent } = require("./utils/errorResponse");
 const { sleep } = require("../shared/common");
 
@@ -111,10 +114,6 @@ process.on("uncaughtException", (error) => {
     error,
   });
 
-  const {
-    getPrimaryWindow,
-    safeSendToRenderer,
-  } = require("./window/windowManager");
   const mainWindow = getPrimaryWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     safeSendToRenderer(
@@ -144,10 +143,6 @@ process.on("unhandledRejection", (reason) => {
     error,
   });
 
-  const {
-    getPrimaryWindow,
-    safeSendToRenderer,
-  } = require("./window/windowManager");
   const mainWindow = getPrimaryWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     safeSendToRenderer(
@@ -169,7 +164,8 @@ function createMainWindow() {
   const mainWindow = createWindow({
     preloadEntry: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
     webpackEntry: MAIN_WINDOW_WEBPACK_ENTRY,
-    onSetupIPC: setupIPC,
+    onSetupIPC: (mainWindow) =>
+      ipcSetup.initializeLocalTerminalHandlers(mainWindow),
   });
   attachDesktopWindowIntegration(mainWindow);
   installSystemMenu();

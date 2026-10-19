@@ -1,3 +1,5 @@
+import { aiClassName } from "./lib/aiClassName.js";
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 import React, {
   useState,
   useEffect,
@@ -57,7 +59,7 @@ import {
   hasConfiguredApiKey,
   buildInlineApiKeyPayload,
 } from "./lib/aiKeyUtils.js";
-import "./AIChatWindow.css";
+
 import "./CodeHighlight.css";
 import { getMarkdownContentSx } from "../../shared/ui/markdownContentSx.js";
 
@@ -65,7 +67,7 @@ const MAX_MARKDOWN_LINK_LENGTH = 2048;
 const API_ERROR_SUMMARY_MAX_LENGTH = 180;
 const ALLOWED_MARKDOWN_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
-// markdown 排版统一走共享层（AIChatWindow.css 仅保留 is-user 反色与 pre 滚动条）
+// markdown 排版统一走共享层（AIChatWindow.module.css 仅保留 is-user 反色与 pre 滚动条）
 const markdownContentSx = getMarkdownContentSx({ density: "comfortable" });
 const MARKDOWN_ALLOWED_ELEMENTS = [
   "p",
@@ -269,7 +271,7 @@ const FloatingDialog = createFloatingDialog({
 
 const ThinkSparkIcon = () => (
   <svg
-    className="ai-think-spark"
+    className={aiClassName("ai-think-spark")}
     width="16"
     height="16"
     viewBox="0 0 24 24"
@@ -287,10 +289,12 @@ const ThinkContent = ({ content, isExpanded, onToggle, isStreaming }) => {
   const { t } = useTranslation();
   return (
     <Box
-      className={`ai-think-block${isStreaming ? " is-streaming" : ""}${isExpanded ? " is-expanded" : ""}`}
+      className={aiClassName(
+        `ai-think-block${isStreaming ? " is-streaming" : ""}${isExpanded ? " is-expanded" : ""}`,
+      )}
     >
       <Box
-        className="ai-think-toggle"
+        className={aiClassName("ai-think-toggle")}
         onClick={onToggle}
         role="button"
         tabIndex={0}
@@ -303,31 +307,33 @@ const ThinkContent = ({ content, isExpanded, onToggle, isStreaming }) => {
           }
         }}
       >
-        <span className="ai-think-spark-wrap" aria-hidden="true">
+        <span className={aiClassName("ai-think-spark-wrap")} aria-hidden="true">
           <ThinkSparkIcon />
         </span>
         <Typography
           component="span"
-          className="ai-think-label"
+          className={aiClassName("ai-think-label")}
           variant="caption"
         >
           {t("ai.thinkingProcess")}
         </Typography>
         {isStreaming && (
-          <span className="ai-think-dots" aria-hidden="true">
+          <span className={aiClassName("ai-think-dots")} aria-hidden="true">
             <i />
             <i />
             <i />
           </span>
         )}
         <ExpandMoreIcon
-          className={`ai-think-caret${isExpanded ? " is-open" : ""}`}
+          className={aiClassName(
+            `ai-think-caret${isExpanded ? " is-open" : ""}`,
+          )}
           fontSize="small"
         />
       </Box>
       <Collapse in={isExpanded}>
-        <Box className="ai-think-trace">
-          <Typography className="ai-think-body" variant="body2">
+        <Box className={aiClassName("ai-think-trace")}>
+          <Typography className={aiClassName("ai-think-body")} variant="body2">
             {content}
           </Typography>
         </Box>
@@ -340,9 +346,14 @@ const ThinkContent = ({ content, isExpanded, onToggle, isStreaming }) => {
 const StreamContent = ({ isStreaming, children }) => {
   return (
     <Box
-      className={`ai-stream-wrap ${isStreaming ? "ai-stream-active" : "ai-stream-done"}`}
+      className={aiClassName(
+        `ai-stream-wrap ${isStreaming ? "ai-stream-active" : "ai-stream-done"}`,
+      )}
     >
-      <Box className="ai-message-content ai-stream-body" sx={markdownContentSx}>
+      <Box
+        className={aiClassName("ai-message-content ai-stream-body")}
+        sx={markdownContentSx}
+      >
         {children}
       </Box>
     </Box>
@@ -1238,7 +1249,7 @@ const AIChatWindow = ({
     return currentApi.model || currentApi.name || t("ai.selectModel");
   }, [currentApi, t]);
 
-  const apiMenuZIndex = (Number(zIndex) || 1300) + 20;
+  const apiMenuZIndex = (Number(zIndex) || Z_INDEX.modal) + Z_INDEX.popupOffset;
   const showModelChip = Boolean(currentApi) || availableApis.length > 0;
 
   return (
@@ -1255,7 +1266,7 @@ const AIChatWindow = ({
       onMouseDown={onFocus}
       slotProps={{
         paper: {
-          className: "ai-chat-paper",
+          className: aiClassName("ai-chat-paper"),
         },
       }}
       {...createAnchoredTransition(anchorEl)}
@@ -1270,7 +1281,7 @@ const AIChatWindow = ({
           width: 14,
           height: 14,
           cursor: "nwse-resize",
-          zIndex: 3,
+          zIndex: Z_INDEX.resizeCorner,
           borderRadius: "8px 0 0 0",
           "&::after": {
             content: '""',
@@ -1300,7 +1311,7 @@ const AIChatWindow = ({
           right: 0,
           height: 8,
           cursor: "ns-resize",
-          zIndex: 2,
+          zIndex: Z_INDEX.control,
           "&::after": {
             content: '""',
             position: "absolute",
@@ -1333,7 +1344,7 @@ const AIChatWindow = ({
           bottom: 0,
           width: 8,
           cursor: "ew-resize",
-          zIndex: 2,
+          zIndex: Z_INDEX.control,
           "&::after": {
             content: '""',
             position: "absolute",
@@ -1358,7 +1369,7 @@ const AIChatWindow = ({
         }}
       />
       <DialogTitle
-        className="ai-chat-header"
+        className={aiClassName("ai-chat-header")}
         sx={{
           display: "flex",
           alignItems: "center",
@@ -1371,14 +1382,18 @@ const AIChatWindow = ({
             <IconButton
               size="small"
               onClick={onMinimize}
-              className="ai-chat-header-btn"
+              className={aiClassName("ai-chat-header-btn")}
               aria-label={t("aiAssistant.minimize")}
             >
               <AIIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Box sx={{ minWidth: 0 }}>
-            <Typography className="ai-chat-title" variant="h6" noWrap>
+            <Typography
+              className={aiClassName("ai-chat-title")}
+              variant="h6"
+              noWrap
+            >
               {t("ai.title")}
             </Typography>
             {connectionInfo && (
@@ -1399,14 +1414,22 @@ const AIChatWindow = ({
             <Tooltip title={t("ai.switchModel")}>
               <Chip
                 label={
-                  <Box component="span" className="ai-chat-model-chip-content">
-                    <Box component="span" className="ai-chat-model-chip-text">
+                  <Box
+                    component="span"
+                    className={aiClassName("ai-chat-model-chip-content")}
+                  >
+                    <Box
+                      component="span"
+                      className={aiClassName("ai-chat-model-chip-text")}
+                    >
                       {modelChipLabel}
                     </Box>
                     <ExpandMoreIcon
-                      className={`ai-chat-model-chip-caret${
-                        apiMenuAnchor ? " ai-chat-model-chip-caret-open" : ""
-                      }`}
+                      className={aiClassName(
+                        `ai-chat-model-chip-caret${
+                          apiMenuAnchor ? " ai-chat-model-chip-caret-open" : ""
+                        }`,
+                      )}
                       aria-hidden
                     />
                   </Box>
@@ -1415,7 +1438,7 @@ const AIChatWindow = ({
                 clickable
                 onClick={handleOpenApiMenu}
                 onMouseDown={(event) => event.stopPropagation()}
-                className="ai-chat-model-chip"
+                className={aiClassName("ai-chat-model-chip")}
                 aria-label={t("ai.switchModel")}
                 aria-haspopup="menu"
                 aria-expanded={Boolean(apiMenuAnchor)}
@@ -1433,7 +1456,7 @@ const AIChatWindow = ({
             transformOrigin={{ vertical: "top", horizontal: "right" }}
             slotProps={{
               paper: {
-                className: "ai-chat-model-menu",
+                className: aiClassName("ai-chat-model-menu"),
                 sx: {
                   borderRadius: "var(--radius-md)",
                   mt: 0.5,
@@ -1504,7 +1527,7 @@ const AIChatWindow = ({
             <IconButton
               size="small"
               onClick={handleClearChat}
-              className="ai-chat-header-btn"
+              className={aiClassName("ai-chat-header-btn")}
               aria-label={t("ai.clearChat")}
             >
               <DeleteIcon fontSize="small" />
@@ -1514,7 +1537,7 @@ const AIChatWindow = ({
             <IconButton
               size="small"
               onClick={onMinimize}
-              className="ai-chat-header-btn"
+              className={aiClassName("ai-chat-header-btn")}
               aria-label={t("aiAssistant.minimize")}
             >
               <MinimizeIcon fontSize="small" />
@@ -1524,7 +1547,7 @@ const AIChatWindow = ({
             <IconButton
               size="small"
               onClick={handleClose}
-              className="ai-chat-header-btn ai-chat-close-btn"
+              className={aiClassName("ai-chat-header-btn ai-chat-close-btn")}
               aria-label={t("aiAssistant.close")}
             >
               <CloseIcon fontSize="small" />
@@ -1532,17 +1555,20 @@ const AIChatWindow = ({
           </Tooltip>
         </Box>
       </DialogTitle>
-      <DialogContent className="ai-chat-content">
+      <DialogContent className={aiClassName("ai-chat-content")}>
         {/* 消息列表 */}
-        <Box ref={messagesContainerRef} className="ai-chat-messages">
+        <Box
+          ref={messagesContainerRef}
+          className={aiClassName("ai-chat-messages")}
+        >
           {messages.length === 0 && (
-            <Box className="ai-chat-empty">
+            <Box className={aiClassName("ai-chat-empty")}>
               {!currentApi ||
               !currentApi.apiUrl ||
               !hasConfiguredApiKey(currentApi) ||
               !currentApi.model ? (
                 <>
-                  <Typography className="ai-chat-empty-title">
+                  <Typography className={aiClassName("ai-chat-empty-title")}>
                     {t("ai.noApiConfigured")}
                   </Typography>
                   <Button
@@ -1550,17 +1576,17 @@ const AIChatWindow = ({
                     size="small"
                     startIcon={<SettingsIcon />}
                     onClick={() => setSettingsOpen(true)}
-                    className="ai-chat-empty-action"
+                    className={aiClassName("ai-chat-empty-action")}
                   >
                     {t("ai.settings")}
                   </Button>
                 </>
               ) : (
                 <>
-                  <Typography className="ai-chat-empty-title">
+                  <Typography className={aiClassName("ai-chat-empty-title")}>
                     {t("ai.startConversation")}
                   </Typography>
-                  <Typography className="ai-chat-empty-hint">
+                  <Typography className={aiClassName("ai-chat-empty-hint")}>
                     {t("ai.inputPlaceholder")}
                   </Typography>
                 </>
@@ -1596,14 +1622,18 @@ const AIChatWindow = ({
             return (
               <Box
                 key={message.id}
-                className={`ai-message-row ${isUserMessage ? "is-user" : "is-assistant"}`}
+                className={aiClassName(
+                  `ai-message-row ${isUserMessage ? "is-user" : "is-assistant"}`,
+                )}
                 ref={(el) => {
                   if (el) messageRefsMap.current[message.id] = el;
                 }}
               >
                 <Paper
                   elevation={0}
-                  className={`ai-message-bubble ${isUserMessage ? "is-user" : "is-assistant"}${isStreaming ? " is-streaming" : ""}`}
+                  className={aiClassName(
+                    `ai-message-bubble ${isUserMessage ? "is-user" : "is-assistant"}${isStreaming ? " is-streaming" : ""}`,
+                  )}
                 >
                   {message.role === "assistant" ? (
                     <>
@@ -1628,7 +1658,10 @@ const AIChatWindow = ({
                       ) : null}
                     </>
                   ) : (
-                    <Box className="ai-message-content" sx={markdownContentSx}>
+                    <Box
+                      className={aiClassName("ai-message-content")}
+                      sx={markdownContentSx}
+                    >
                       <ReactMarkdown
                         components={markdownComponents}
                         remarkPlugins={MARKDOWN_REMARK_PLUGINS}
@@ -1642,7 +1675,7 @@ const AIChatWindow = ({
                     </Box>
                   )}
                 </Paper>
-                <Box className="ai-message-actions">
+                <Box className={aiClassName("ai-message-actions")}>
                   {isUserMessage && (
                     <>
                       <Tooltip title={t("ai.editMessage")}>
@@ -1651,7 +1684,7 @@ const AIChatWindow = ({
                             size="small"
                             onClick={() => handleEditMessage(message)}
                             disabled={messageActionsDisabled}
-                            className="ai-message-action"
+                            className={aiClassName("ai-message-action")}
                             aria-label={t("ai.editMessage")}
                           >
                             <EditIcon />
@@ -1664,7 +1697,7 @@ const AIChatWindow = ({
                             size="small"
                             onClick={() => handleRetryMessage(message)}
                             disabled={messageActionsDisabled}
-                            className="ai-message-action"
+                            className={aiClassName("ai-message-action")}
                             aria-label={t("ai.retryMessage")}
                           >
                             <ReplayIcon />
@@ -1677,7 +1710,7 @@ const AIChatWindow = ({
                     <IconButton
                       size="small"
                       onClick={() => handleCopyMessage(message.content)}
-                      className="ai-message-action"
+                      className={aiClassName("ai-message-action")}
                       aria-label={t("ai.copyMessage")}
                     >
                       <ContentCopyIcon />
@@ -1692,11 +1725,13 @@ const AIChatWindow = ({
 
         {/* 点状导航 - 消息快速跳转 */}
         {messages.length > 1 && (
-          <Box className="ai-chat-dots">
+          <Box className={aiClassName("ai-chat-dots")}>
             {messages.map((message) => (
               <Box
                 key={message.id}
-                className={`ai-chat-dot ${message.role === "user" ? "is-user" : "is-assistant"}`}
+                className={aiClassName(
+                  `ai-chat-dot ${message.role === "user" ? "is-user" : "is-assistant"}`,
+                )}
                 onClick={() => scrollToMessage(message.id)}
                 title={
                   message.role === "user"
@@ -1713,7 +1748,7 @@ const AIChatWindow = ({
         {error && (
           <Alert
             severity="error"
-            className="ai-chat-error"
+            className={aiClassName("ai-chat-error")}
             onClose={() => setError("")}
           >
             {error}
@@ -1721,9 +1756,9 @@ const AIChatWindow = ({
         )}
 
         {/* 输入区域 */}
-        <Box className="ai-chat-footer">
+        <Box className={aiClassName("ai-chat-footer")}>
           <Box
-            className="ai-chat-composer"
+            className={aiClassName("ai-chat-composer")}
             onClick={() => inputRef.current?.focus()}
           >
             <TextField
@@ -1748,18 +1783,22 @@ const AIChatWindow = ({
                 minWidth: 0,
               }}
             />
-            <Box className="ai-chat-composer-toolbar">
+            <Box className={aiClassName("ai-chat-composer-toolbar")}>
               <Box
-                className={`ai-chat-options ${
-                  showThinking ? "is-thinking-enabled" : "is-thinking-disabled"
-                }`}
+                className={aiClassName(
+                  `ai-chat-options ${
+                    showThinking
+                      ? "is-thinking-enabled"
+                      : "is-thinking-disabled"
+                  }`,
+                )}
               >
                 <FormControlLabel
-                  className="ai-thinking-control"
+                  className={aiClassName("ai-thinking-control")}
                   control={
                     <Switch
                       size="small"
-                      className="ai-thinking-switch"
+                      className={aiClassName("ai-thinking-switch")}
                       checked={showThinking}
                       onChange={(e) => setShowThinking(e.target.checked)}
                     />
@@ -1773,7 +1812,7 @@ const AIChatWindow = ({
                     size="small"
                     onClick={handleAbortRequest}
                     aria-label={t("ai.stopGenerating")}
-                    className="ai-chat-send-btn is-stop"
+                    className={aiClassName("ai-chat-send-btn is-stop")}
                   >
                     <StopIcon />
                   </IconButton>
@@ -1793,7 +1832,7 @@ const AIChatWindow = ({
                         !currentApi.model
                       }
                       aria-label={t("ai.sendMessage")}
-                      className="ai-chat-send-btn"
+                      className={aiClassName("ai-chat-send-btn")}
                     >
                       <ArrowUpwardIcon />
                     </IconButton>

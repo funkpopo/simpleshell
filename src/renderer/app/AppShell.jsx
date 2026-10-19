@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../shared/constants/zIndex.js";
 import AppMenu from "./components/AppMenu.jsx";
 import SessionContextMenu from "./components/SessionContextMenu.jsx";
 import * as React from "react";
@@ -426,7 +427,7 @@ export default function AppShell() {
               borderBottom: "1px solid",
               borderColor: "divider",
 
-              zIndex: 2,
+              zIndex: Z_INDEX.control,
             }}
           >
             <Box
@@ -664,7 +665,7 @@ export default function AppShell() {
                       left: 0,
                       width: "100%",
                       height: "100%",
-                      zIndex: 1,
+                      zIndex: Z_INDEX.raised,
                     }}
                   >
                     <WelcomePage

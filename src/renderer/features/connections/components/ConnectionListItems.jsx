@@ -181,15 +181,9 @@ export const ConnectionListItem = memo(function ConnectionListItem({
         tabIndex={0}
         onClick={() => onOpen(connection)}
         dense
-        sx={{
-          flexGrow: 1,
-          py: 0.5,
-          "&:hover": {
-            backgroundColor: "transparent",
-          },
-        }}
+        sx={viewStyles.listItemButtonSx}
       >
-        <ListItemIcon sx={{ minWidth: 28, ml: -0.5 }}>
+        <ListItemIcon sx={viewStyles.listItemIconSx}>
           {getProtocolIcon()}
         </ListItemIcon>
         <ListItemText
@@ -221,20 +215,7 @@ export const ConnectionListItem = memo(function ConnectionListItem({
             variant: "caption",
             color: "text.secondary",
           }}
-          sx={{
-            my: 0,
-            ".MuiTypography-root": {
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              "& > span": {
-                display: "block",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              },
-            },
-          }}
+          sx={viewStyles.listItemTextSx}
         />
       </ListItemButton>
     </ListItem>
@@ -350,15 +331,9 @@ export const GroupListItem = memo(function GroupListItem({
           {...{ [CONNECTION_MANAGER_ROW_DATA_ATTR]: "true" }}
           tabIndex={0}
           onClick={() => onToggle(group.id)}
-          sx={{
-            py: 0.5,
-            flexGrow: 1,
-            "&:hover": {
-              backgroundColor: "transparent",
-            },
-          }}
+          sx={viewStyles.listItemButtonSx2}
         >
-          <ListItemIcon sx={{ minWidth: 28, ml: -0.5 }}>
+          <ListItemIcon sx={viewStyles.listItemIconSx}>
             {group.expanded ? (
               <FolderOpenIcon fontSize="small" />
             ) : (
@@ -373,7 +348,7 @@ export const GroupListItem = memo(function GroupListItem({
               margin: 0,
               fontSize: "0.85rem",
             }}
-            sx={{ my: 0 }}
+            sx={viewStyles.listItemTextSx2}
           />
         </ListItemButton>
       </ListItem>
@@ -414,14 +389,7 @@ export const GroupListItem = memo(function GroupListItem({
           strategy={verticalListSortingStrategy}
         >
           <Collapse in={shouldShowChildren} timeout={200}>
-            <List
-              component="div"
-              disablePadding
-              sx={{
-                // 每层缩进与虚拟化列表口径一致（20px/层）
-                pl: CONNECTION_LIST_DEPTH_INDENT_PX / 8,
-              }}
-            >
+            <List component="div" disablePadding sx={viewStyles.listSx}>
               {group.items &&
                 group.items.map((item) => (
                   <ConnectionListItem
@@ -439,7 +407,7 @@ export const GroupListItem = memo(function GroupListItem({
                   />
                 ))}
               {(!group.items || group.items.length === 0) && (
-                <ListItem sx={{ pl: 2 }}>
+                <ListItem sx={viewStyles.listItemSx}>
                   <ListItemText
                     primary={t("connectionManager.noConnections")}
                     primaryTypographyProps={{
@@ -459,3 +427,42 @@ export const GroupListItem = memo(function GroupListItem({
     </React.Fragment>
   );
 });
+
+// Stable declarations shared by row renders. Dynamic styles stay with their owner.
+const viewStyles = {
+  listItemButtonSx: {
+    flexGrow: 1,
+    py: 0.5,
+    "&:hover": {
+      backgroundColor: "transparent",
+    },
+  },
+  listItemIconSx: { minWidth: 28, ml: -0.5 },
+  listItemTextSx: {
+    my: 0,
+    ".MuiTypography-root": {
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      "& > span": {
+        display: "block",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      },
+    },
+  },
+  listItemButtonSx2: {
+    py: 0.5,
+    flexGrow: 1,
+    "&:hover": {
+      backgroundColor: "transparent",
+    },
+  },
+  listItemTextSx2: { my: 0 },
+  listSx: {
+    // 每层缩进与虚拟化列表口径一致（20px/层）
+    pl: CONNECTION_LIST_DEPTH_INDENT_PX / 8,
+  },
+  listItemSx: { pl: 2 },
+};

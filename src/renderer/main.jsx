@@ -1,3 +1,4 @@
+import { installThemeVariables } from "../shared/themeTokens.js";
 import { memo } from "react";
 import "./i18n/i18n";
 import { createRoot } from "react-dom/client";
@@ -18,6 +19,7 @@ function App() {
 }
 const MemoizedApp = memo(App);
 MemoizedApp.displayName = "App";
+installThemeVariables(document);
 const root = createRoot(document.getElementById("root"));
 root.render(
   <GlobalErrorBoundary>

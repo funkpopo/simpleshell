@@ -35,11 +35,6 @@ class ConnectionManager {
     this.moshConnectionPool.cleanup();
   }
 
-  async getSftpSession(tabId) {
-    void tabId;
-    return { success: true, native: true };
-  }
-
   syncConnectionConfigs(
     previousConnections,
     connections,
@@ -93,19 +88,6 @@ class ConnectionManager {
       }
     }
     pool.emit("savedConnectionsChanged", { previousConnections, connections });
-  }
-
-  async closeSftpSession(tabId) {
-    void tabId;
-  }
-
-  enqueueSftpOperation(tabId, operation, options = {}) {
-    void tabId;
-    void options;
-    if (typeof operation === "function") {
-      return Promise.resolve().then(operation);
-    }
-    return Promise.resolve({ success: true, queued: false, native: true });
   }
 
   getTopConnections(count) {

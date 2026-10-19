@@ -1088,6 +1088,8 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     { dynamic: true },
   ),
 
+  // Deprecated metadata/queue compatibility channels. Native commands own
+  // their sessions and scheduling; these do not create or close SFTP sessions.
   defineRequest(
     "SFTP_GET_SESSION",
     "getSftpSession",

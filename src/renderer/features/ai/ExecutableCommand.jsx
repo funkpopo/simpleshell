@@ -1,3 +1,4 @@
+import { aiClassName } from "./lib/aiClassName.js";
 /**
  * 可执行命令组件
  * 显示AI回复中的命令块，带有风险等级标识和执行按钮
@@ -173,7 +174,7 @@ const ExecutableCommand = memo(
     return (
       <>
         <Box
-          className="ai-exec-command"
+          className={aiClassName("ai-exec-command")}
           sx={{
             display: "flex",
             alignItems: "stretch",

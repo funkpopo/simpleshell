@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 import React, { memo, useCallback } from "react";
 import { Box, Button, Typography } from "@mui/material";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
@@ -164,7 +165,7 @@ const WelcomePage = ({
         color: "text.primary",
         "& .welcome-background": {
           position: "fixed",
-          zIndex: 0,
+          zIndex: Z_INDEX.base,
           pointerEvents: "none",
           userSelect: "none",
           contain: "layout style",
@@ -285,7 +286,7 @@ const WelcomePage = ({
         },
         "& .welcome-planet__rays": {
           position: "absolute",
-          zIndex: -2,
+          zIndex: Z_INDEX.backgroundDecoration,
           width: "72%",
           height: "66%",
           left: "-52%",
@@ -312,7 +313,7 @@ const WelcomePage = ({
           "&::before": {
             content: '""',
             position: "absolute",
-            zIndex: 0,
+            zIndex: Z_INDEX.base,
             inset: 0,
             borderRadius: "inherit",
             background:
@@ -322,7 +323,7 @@ const WelcomePage = ({
           "&::after": {
             content: '""',
             position: "absolute",
-            zIndex: 2,
+            zIndex: Z_INDEX.control,
             inset: 0,
             borderRadius: "inherit",
             background:
@@ -333,7 +334,7 @@ const WelcomePage = ({
         },
         "& .welcome-planet__day-mesh": {
           position: "absolute",
-          zIndex: 1,
+          zIndex: Z_INDEX.raised,
           inset: 0,
           width: "100%",
           height: "100%",
@@ -352,7 +353,7 @@ const WelcomePage = ({
         },
         "& .welcome-planet__day-signals": {
           position: "absolute",
-          zIndex: 4,
+          zIndex: Z_INDEX.paneHeader,
           inset: 0,
           width: "100%",
           height: "100%",
@@ -403,7 +404,7 @@ const WelcomePage = ({
         },
         "& .welcome-planet__day-node": {
           position: "absolute",
-          zIndex: 3,
+          zIndex: Z_INDEX.resizeCorner,
           left: "var(--node-x)",
           top: "var(--node-y)",
           width: 6,
@@ -694,7 +695,7 @@ const WelcomePage = ({
       <Box
         sx={{
           position: "relative",
-          zIndex: 1,
+          zIndex: Z_INDEX.raised,
           width: "100%",
           maxWidth: 1040,
           minHeight: "100%",

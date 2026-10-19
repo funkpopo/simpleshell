@@ -1,3 +1,4 @@
+const { getThemeTokens, installThemeVariables } = require("./themeTokens");
 /**
  * 启动期主题常量与解析。
  * 主进程 BrowserWindow、preload 首屏 DOM、渲染进程 React 初始状态共用，
@@ -5,8 +6,8 @@
  */
 
 const STARTUP_BACKGROUND = Object.freeze({
-  dark: "#121212",
-  light: "#e8eaed",
+  dark: getThemeTokens(true)["--color-bg-default"],
+  light: getThemeTokens(false)["--color-bg-default"],
 });
 
 /** Electron additionalArguments / process.argv 中的主题开关前缀 */
@@ -66,6 +67,7 @@ function applyStartupThemeToDocument(theme, doc = document) {
     return;
   }
 
+  installThemeVariables(doc);
   const { darkMode, backgroundColor } = theme;
   const root = doc.documentElement;
   if (root) {

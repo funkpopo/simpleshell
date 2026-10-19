@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { v4: uuidv4 } = require("uuid");
+const { randomUUID } = require("node:crypto");
 const { getTempDirectory } = require("./appPaths");
 const runtimeFileLifecycle = require("./runtimeFileLifecycle");
 
@@ -77,7 +77,7 @@ class FileCache {
   generateCacheFileName(originalFileName) {
     const ext = path.extname(originalFileName);
     const baseName = path.basename(originalFileName, ext);
-    return `${baseName}_${uuidv4()}${ext}`;
+    return `${baseName}_${randomUUID()}${ext}`;
   }
 
   async cacheFile(originalFileName, data, tabId) {

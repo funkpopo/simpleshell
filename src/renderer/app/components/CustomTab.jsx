@@ -1,4 +1,5 @@
 import React, { memo, useCallback } from "react";
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 import PropTypes from "prop-types";
 import { Box, Tab, Tooltip } from "@mui/material";
 import { alpha } from "@mui/material/styles";
@@ -134,7 +135,7 @@ const CustomTab = memo((props) => {
           position: absolute;
           left: -9999px;
           top: -9999px;
-          z-index: 99999;
+          z-index: ${Z_INDEX.dragGhost};
           white-space: nowrap;
           max-width: 220px;
           overflow: hidden;
@@ -147,7 +148,7 @@ const CustomTab = memo((props) => {
           align-items: center;
           gap: 6px;
           position: relative;
-          z-index: 1;
+          z-index: ${Z_INDEX.raised};
           min-width: 0;
         `;
 
@@ -211,15 +212,7 @@ const CustomTab = memo((props) => {
         onDrop={handleDropMerged}
         onDragEnd={onDragEnd}
         label={
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              position: "relative",
-              minWidth: 0,
-              width: "100%",
-            }}
-          >
+          <Box sx={viewStyles.boxSx}>
             {/* 分组圆点与编号 */}
             {group && (
               <Tooltip
@@ -316,26 +309,9 @@ const CustomTab = memo((props) => {
                 className="tab-close-icon"
                 onClick={handleCloseClick}
                 aria-hidden="true"
-                sx={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 20,
-                  height: 20,
-                  borderRadius: "3px",
-                  opacity: 0,
-                  flexShrink: 0,
-                  transition:
-                    "opacity 0.2s ease, color 0.2s ease, background-color 0.2s ease",
-                  "&:hover": {
-                    color: "error.main",
-                    opacity: 1,
-                    backgroundColor: (theme) =>
-                      alpha(theme.palette.error.main, 0.12),
-                  },
-                }}
+                sx={viewStyles.boxSx2}
               >
-                <CloseIcon sx={{ width: 15, height: 15 }} />
+                <CloseIcon sx={viewStyles.closeIconSx} />
               </Box>
             )}
           </Box>
@@ -401,7 +377,7 @@ const CustomTab = memo((props) => {
             backgroundColor: (theme) => alpha(theme.palette.text.primary, 0.1),
             boxShadow: "none",
             filter: "none",
-            zIndex: 2,
+            zIndex: Z_INDEX.control,
             ...(dragInsertPosition === "before" && {
               "&::before": {
                 content: '""',
@@ -411,7 +387,7 @@ const CustomTab = memo((props) => {
                 bottom: "18%",
                 width: 2,
                 borderRadius: 0,
-                zIndex: 1002,
+                zIndex: Z_INDEX.tabDropIndicator,
                 backgroundColor: "text.primary",
                 animation: "indicatorGlassIn 0.2s ease-out forwards",
               },
@@ -425,7 +401,7 @@ const CustomTab = memo((props) => {
                 bottom: "18%",
                 width: 2,
                 borderRadius: 0,
-                zIndex: 1002,
+                zIndex: Z_INDEX.tabDropIndicator,
                 backgroundColor: "text.primary",
                 animation: "indicatorGlassIn 0.2s ease-out forwards",
               },
@@ -439,7 +415,7 @@ const CustomTab = memo((props) => {
                 borderRadius: 3,
                 border: "1.5px dashed",
                 borderColor: "text.primary",
-                zIndex: 1002,
+                zIndex: Z_INDEX.tabDropIndicator,
                 animation: "indicatorGlassIn 0.2s ease-out forwards",
               },
             }),
@@ -507,3 +483,32 @@ CustomTab.propTypes = {
 };
 
 export default CustomTab;
+
+// Stable declarations shared by row renders. Dynamic styles stay with their owner.
+const viewStyles = {
+  boxSx: {
+    display: "flex",
+    alignItems: "center",
+    position: "relative",
+    minWidth: 0,
+    width: "100%",
+  },
+  boxSx2: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 20,
+    height: 20,
+    borderRadius: "3px",
+    opacity: 0,
+    flexShrink: 0,
+    transition:
+      "opacity 0.2s ease, color 0.2s ease, background-color 0.2s ease",
+    "&:hover": {
+      color: "error.main",
+      opacity: 1,
+      backgroundColor: (theme) => alpha(theme.palette.error.main, 0.12),
+    },
+  },
+  closeIconSx: { width: 15, height: 15 },
+};

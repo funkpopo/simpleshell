@@ -220,8 +220,8 @@ class OutputProcessor {
   processTerminalOutput(processId, output) {
     try {
       // 获取进程管理器实例
-      const processManager = require("./process-manager");
-      const procInfo = processManager.getProcessInfo(processId);
+      const terminalProcessAdapter = require("./terminalProcessAdapter");
+      const procInfo = terminalProcessAdapter.getProcessInfo(processId);
 
       if (!procInfo) {
         return this.applySyntaxHighlighting(output); // 如果没有进程信息，也尝试高亮
@@ -356,14 +356,14 @@ class OutputProcessor {
   }
 
   isEditorMode(processId) {
-    const processManager = require("./process-manager");
-    const procInfo = processManager.getProcessInfo(processId);
+    const terminalProcessAdapter = require("./terminalProcessAdapter");
+    const procInfo = terminalProcessAdapter.getProcessInfo(processId);
     return procInfo ? procInfo.editorMode : false;
   }
 
   getLastExtractedCommand(processId) {
-    const processManager = require("./process-manager");
-    const procInfo = processManager.getProcessInfo(processId);
+    const terminalProcessAdapter = require("./terminalProcessAdapter");
+    const procInfo = terminalProcessAdapter.getProcessInfo(processId);
     return procInfo ? procInfo.lastExtractedCommand : null;
   }
 

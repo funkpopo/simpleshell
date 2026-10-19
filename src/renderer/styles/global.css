@@ -83,7 +83,7 @@ button,
 
 .simple-shell-tab .tab-label-text {
   position: relative;
-  z-index: 2;
+  z-index: var(--z-control);
   mix-blend-mode: normal;
   filter: none;
 }

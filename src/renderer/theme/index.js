@@ -1,30 +1,31 @@
+import { getThemeTokens, getThemePalette } from "../../shared/themeTokens.js";
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 import { createElement, forwardRef } from "react";
 import Grow from "@mui/material/Grow";
 import Slide from "@mui/material/Slide";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { createTheme } from "@mui/material/styles";
+import { createTheme, alpha as colorAlpha } from "@mui/material/styles";
 
 const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
 const PRESS_TRANSITION =
   "transform 120ms cubic-bezier(0.2, 0, 0, 1), border-color 160ms ease, background-color 160ms ease, color 160ms ease";
 
-const RADIUS_SM = 3;
-const RADIUS_MD = 6;
-const RADIUS_LG = 10;
+const RADIUS_SM = Number.parseInt(getThemeTokens(false)["--radius-sm"], 10);
+const RADIUS_MD = Number.parseInt(getThemeTokens(false)["--radius-md"], 10);
+const RADIUS_LG = Number.parseInt(getThemeTokens(false)["--radius-lg"], 10);
 
 export const RADIUS = { SM: RADIUS_SM, MD: RADIUS_MD, LG: RADIUS_LG };
 
-const primaryColor = (darkMode) => (darkMode ? "#f1f2ef" : "#151719");
-const primaryAlpha = (darkMode, alpha) =>
-  darkMode ? `rgba(241, 242, 239, ${alpha})` : `rgba(21, 23, 25, ${alpha})`;
+const primaryColor = (darkMode) =>
+  getThemeTokens(darkMode)["--color-primary-main"];
+const primaryAlpha = (darkMode, opacity) =>
+  colorAlpha(primaryColor(darkMode), opacity);
 
-const hoverBg = (darkMode) =>
-  darkMode ? "rgba(241,242,239,0.07)" : "rgba(21,23,25,0.055)";
+const hoverBg = (darkMode) => getThemeTokens(darkMode)["--color-hover"];
 const selectedBg = (darkMode) => primaryAlpha(darkMode, 0.1);
 const selectedHoverBg = (darkMode) => primaryAlpha(darkMode, 0.14);
 
-const borderClr = (darkMode) =>
-  darkMode ? "rgba(241,242,239,0.16)" : "rgba(16,18,20,0.16)";
+const borderClr = (darkMode) => getThemeTokens(darkMode)["--color-border"];
 
 const DialogGrowTransition = forwardRef(
   function DialogGrowTransition(props, ref) {
@@ -51,33 +52,13 @@ const SnackbarSlideTransition = forwardRef(
 
 export const createUnifiedTheme = (darkMode) =>
   createTheme({
+    zIndex: {
+      modal: Z_INDEX.modal,
+      snackbar: Z_INDEX.snackbar,
+      tooltip: Z_INDEX.modalPopup,
+    },
     palette: {
-      mode: darkMode ? "dark" : "light",
-      primary: {
-        main: primaryColor(darkMode),
-        light: darkMode ? "#ffffff" : "#34383c",
-        dark: darkMode ? "#c7cac6" : "#050607",
-        contrastText: darkMode ? "#08090a" : "#ffffff",
-      },
-      secondary: {
-        main: darkMode ? "#9ca2a7" : "#60676e",
-        light: darkMode ? "#bcc1c5" : "#7b838b",
-        dark: darkMode ? "#737a80" : "#43494f",
-      },
-      background: {
-        default: darkMode ? "#08090a" : "#f1f1ee",
-        paper: darkMode ? "#0d0f11" : "#f8f8f5",
-      },
-      text: {
-        primary: darkMode ? "#f1f2ef" : "#151719",
-        secondary: darkMode ? "#959ba0" : "#62676c",
-        disabled: darkMode ? "#555b60" : "#999da1",
-      },
-      divider: darkMode ? "rgba(241,242,239,0.09)" : "rgba(16,18,20,0.10)",
-      success: { main: darkMode ? "#65b98b" : "#247a52" },
-      warning: { main: darkMode ? "#d4a253" : "#9a6418" },
-      error: { main: darkMode ? "#e06a63" : "#b53630" },
-      info: { main: darkMode ? "#74a8c8" : "#356c91" },
+      ...getThemePalette(darkMode),
       action: {
         hover: hoverBg(darkMode),
         selected: selectedBg(darkMode),
@@ -265,8 +246,8 @@ export const createUnifiedTheme = (darkMode) =>
             backgroundImage: "none",
             border: `1px solid ${borderClr(darkMode)}`,
             boxShadow: darkMode
-              ? "0 20px 64px rgba(0,0,0,0.62)"
-              : "0 18px 56px rgba(11,13,15,0.16)",
+              ? getThemeTokens(true)["--float-shadow"]
+              : getThemeTokens(false)["--float-shadow"],
             transformOrigin: "center top",
             willChange: "transform, opacity",
           },
@@ -369,7 +350,7 @@ export const createUnifiedTheme = (darkMode) =>
             backgroundColor: darkMode
               ? "rgba(241,242,239,0.96)"
               : "rgba(21,23,25,0.96)",
-            color: darkMode ? "#08090a" : "#ffffff",
+            color: getThemeTokens(darkMode)["--color-primary-contrast"],
             border: `1px solid ${borderClr(!darkMode)}`,
             boxShadow: "none",
           },

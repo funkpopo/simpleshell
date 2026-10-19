@@ -13,15 +13,17 @@
     "package": "npm run prepare:native-services && node scripts/run-forge-release.js package",
     "make": "npm run prepare:native-services && npm run prepare:winstaller-vendor && node scripts/run-forge-release.js make",
     "publish": "npm run prepare:native-services && npm run prepare:winstaller-vendor && node scripts/run-forge-release.js publish",
-    "check": "node scripts/run-checks.js",
-    "check:i18n": "node scripts/check-i18n.js",
-    "check:a11y": "node scripts/check-accessibility.js",
+    "check": "npm run lint && npm run test:unit",
+    "check:i18n": "vitest run tests/unit/i18n.test.js",
+    "check:a11y": "vitest run tests/unit/accessibility.test.js",
     "test:unit": "vitest run",
-    "lint": "eslint src scripts tests/unit vitest.config.mjs webpack.main.config.js webpack.renderer.config.js webpack.preload.config.js webpack.rules.js forge.config.js eslint.config.js",
+    "lint": "eslint src scripts tests vitest.config.mjs vitest.integration.config.mjs webpack.main.config.js webpack.renderer.config.js webpack.preload.config.js webpack.rules.js forge.config.js eslint.config.js",
     "format:check": "prettier --check .",
-    "test": "npm run check && npm run test:unit",
+    "test": "vitest run",
     "release:check": "node scripts/release-check.js",
-    "release:checksums": "node scripts/generate-checksums.js out"
+    "release:checksums": "node scripts/generate-checksums.js out",
+    "test:integration": "vitest run --config vitest.integration.config.mjs",
+    "test:all": "npm run check && npm run test:integration"
   },
   "keywords": [],
   "author": {
@@ -51,7 +53,6 @@
     "@vercel/webpack-asset-relocator-loader": "1.10.0",
     "asn1": "0.2.6",
     "babel-loader": "10.1.1",
-    "babel-plugin-import": "1.13.8",
     "baseline-browser-mapping": "2.10.43",
     "css-loader": "7.1.4",
     "electron": "40.4.1",
@@ -119,7 +120,6 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-i18next": "17.0.11",
-    "react-icons": "5.7.0",
     "react-markdown": "10.1.0",
     "react-pdf": "10.4.1",
     "react-resizable": "4.0.2",
@@ -132,8 +132,7 @@
     "socks-proxy-agent": "10.1.0",
     "ssh2": "1.17.0",
     "systeminformation": "5.33.1",
-    "telnet-client": "2.2.14",
-    "uuid": "8.3.2"
+    "telnet-client": "2.2.14"
   },
   "allowScripts": {
     "@serialport/bindings-cpp@13.0.0": true

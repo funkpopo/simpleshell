@@ -1,6 +1,5 @@
 const fileSnapshotStore = require("../../utils/fileSnapshotStore");
 const nativeSftpClient = require("../../native/nativeSftpClient");
-const connectionManager = require("../../connection/connectionManager");
 const {
   IPC_REQUEST_CHANNELS,
 } = require("../../../shared/contracts/ipc/channels");
@@ -65,26 +64,28 @@ class SftpHandlers {
     ];
   }
 
+  /** @deprecated Backend metadata only. Native file commands acquire their own session. */
   async getSftpSession(event, tabId) {
     void event;
-    // 复用 connectionManager 中的兼容存根（native 后端固定返回值）
-    const base = await connectionManager.getSftpSession(tabId);
     return {
-      success: base.success,
+      success: true,
       session: {
         tabId,
         backend: "rust-sidecar",
-        native: base.native,
+        native: true,
       },
     };
   }
 
+  /** @deprecated Native file commands are scheduled by their owning service. */
   async enqueueSftpOperation(event, tabId, operation) {
     void event;
-    // 复用 connectionManager 中的兼容存根（IPC 传入的 operation 不会是函数）
-    return connectionManager.enqueueSftpOperation(tabId, operation);
+    void tabId;
+    void operation;
+    return { success: true, queued: false, native: true };
   }
 
+  /** @deprecated There is no renderer-managed SFTP queue. */
   async processSftpQueue(event, tabId) {
     void event;
     void tabId;

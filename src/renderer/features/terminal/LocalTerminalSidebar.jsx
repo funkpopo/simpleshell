@@ -22,14 +22,8 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import { RiTerminalBoxLine } from "react-icons/ri";
-import {
-  VscTerminalLinux,
-  VscTerminalUbuntu,
-  VscTerminalDebian,
-} from "react-icons/vsc";
-import { GrArchlinux } from "react-icons/gr";
-import { SiAlpinelinux } from "react-icons/si";
+import TerminalIcon from "@mui/icons-material/Terminal";
+import ComputerIcon from "@mui/icons-material/Computer";
 import { useTranslation } from "react-i18next";
 import useAutoCleanup from "../../shared/hooks/useAutoCleanup";
 import {
@@ -45,24 +39,11 @@ const AUTO_REFRESH_COOLDOWN_MS = 2000;
 
 // 终端类型图标映射
 const getTerminalIcon = (terminal) => {
-  const { type, distribution } = terminal;
-
-  // WSL 系统类型检测
-  if (type === "wsl" && distribution) {
-    const distName = distribution.toLowerCase();
-    if (distName.includes("ubuntu")) return <VscTerminalUbuntu size={20} />;
-    if (distName.includes("debian")) return <VscTerminalDebian size={20} />;
-    if (distName.includes("arch")) return <GrArchlinux size={20} />;
-    if (distName.includes("alpine")) return <SiAlpinelinux size={20} />;
-    return <VscTerminalLinux size={20} />;
-  }
-
-  // 其他终端类型
-  const iconMap = {
-    wsl: <VscTerminalLinux size={20} />,
-  };
-
-  return iconMap[type] || <RiTerminalBoxLine size={20} />;
+  return terminal.type === "wsl" ? (
+    <ComputerIcon fontSize="small" />
+  ) : (
+    <TerminalIcon fontSize="small" />
+  );
 };
 
 const LocalTerminalSidebar = ({

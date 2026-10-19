@@ -2,7 +2,7 @@ const CONTAINER_PADDING = 8;
 const CURSOR_GAP = 20;
 
 /** 建议弹窗尺寸口径（CommandSuggestion.jsx 与 useTerminalSuggestions.js 共用，避免双源漂移）。
- *  注意：本文件被 scripts/check-webterminal-reconnect-ui.js 以 require() 导入，
+ *  注意：本文件被 tests/unit/terminalSuggestionLayout.test.js 以 require() 导入，
  *  必须保持 CommonJS（module.exports），不要改用 ESM export。 */
 const SUGGESTION_ITEM_HEIGHT = 28;
 const SUGGESTION_BOTTOM_BAR_HEIGHT = 28;

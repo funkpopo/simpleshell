@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../shared/constants/zIndex.js";
 import Box from "@mui/material/Box";
 import { useDragSelector } from "./state/AppContext.jsx";
 
@@ -50,7 +51,7 @@ export default function PaneDropOverlay() {
               key={zone}
               sx={{
                 position: "absolute",
-                zIndex: 1300,
+                zIndex: Z_INDEX.paneDropOverlay,
                 pointerEvents: "none",
                 border: "2px dashed",
                 borderColor:

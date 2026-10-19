@@ -618,7 +618,7 @@ export default function SidebarWorkspace({
           display: "flex",
           flexShrink: 0,
           flexDirection: sidebarPosition === "left" ? "row-reverse" : "row",
-          zIndex: 90,
+          zIndex: Z_INDEX.sidebar,
         }}
       >
         {/* 拖拽手柄放在无 overflow 裁剪的外层容器中，
@@ -637,7 +637,7 @@ export default function SidebarWorkspace({
               [sidebarPosition === "left" ? "right" : "left"]: 0,
               width: 8,
               cursor: "col-resize",
-              zIndex: 120,
+              zIndex: Z_INDEX.sidebarResize,
               touchAction: "none",
               outline: "none",
               transform:

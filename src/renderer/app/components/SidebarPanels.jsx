@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 import { useSftpFollowSetting } from "../../features/file-manager/hooks/useSftpFollowSetting.js";
 import { useAppDispatch, useAppSelector } from "../state/AppContext.jsx";
 import { actions } from "../state/appReducer.js";
@@ -102,7 +103,10 @@ export default function SidebarPanels({
           position: "absolute",
           top: 0,
           left: 0,
-          zIndex: lastOpenedSidebar === "resource" ? 101 : 98,
+          zIndex:
+            lastOpenedSidebar === "resource"
+              ? Z_INDEX.sidebarActive
+              : Z_INDEX.sidebarResource,
           width: "100%",
           height: "100%",
           display: "flex",
@@ -124,7 +128,10 @@ export default function SidebarPanels({
           position: "absolute",
           top: 0,
           left: 0,
-          zIndex: lastOpenedSidebar === "connection" ? 101 : 99,
+          zIndex:
+            lastOpenedSidebar === "connection"
+              ? Z_INDEX.sidebarActive
+              : Z_INDEX.sidebarConnection,
           width: "100%",
           height: "100%",
           display: "flex",
@@ -151,7 +158,10 @@ export default function SidebarPanels({
           position: "absolute",
           top: 0,
           left: 0,
-          zIndex: lastOpenedSidebar === "file" ? 103 : 96,
+          zIndex:
+            lastOpenedSidebar === "file"
+              ? Z_INDEX.sidebarFileActive
+              : Z_INDEX.sidebarFile,
           width: "100%",
           height: "100%",
           display: "flex",
@@ -180,7 +190,10 @@ export default function SidebarPanels({
           position: "absolute",
           top: 0,
           left: 0,
-          zIndex: lastOpenedSidebar === "shortcut" ? 104 : 95,
+          zIndex:
+            lastOpenedSidebar === "shortcut"
+              ? Z_INDEX.sidebarShortcutActive
+              : Z_INDEX.sidebarShortcut,
           width: "100%",
           height: "100%",
           display: "flex",
@@ -201,7 +214,10 @@ export default function SidebarPanels({
           position: "absolute",
           top: 0,
           left: 0,
-          zIndex: lastOpenedSidebar === "history" ? 105 : 94,
+          zIndex:
+            lastOpenedSidebar === "history"
+              ? Z_INDEX.sidebarHistoryActive
+              : Z_INDEX.sidebarHistory,
           width: "100%",
           height: "100%",
           display: "flex",
@@ -222,7 +238,10 @@ export default function SidebarPanels({
           position: "absolute",
           top: 0,
           left: 0,
-          zIndex: lastOpenedSidebar === "ipquery" ? 106 : 93,
+          zIndex:
+            lastOpenedSidebar === "ipquery"
+              ? Z_INDEX.sidebarIpQueryActive
+              : Z_INDEX.sidebarIpQuery,
           width: "100%",
           height: "100%",
           display: "flex",
@@ -242,7 +261,10 @@ export default function SidebarPanels({
           position: "absolute",
           top: 0,
           left: 0,
-          zIndex: lastOpenedSidebar === "password" ? 107 : 92,
+          zIndex:
+            lastOpenedSidebar === "password"
+              ? Z_INDEX.sidebarSecurityActive
+              : Z_INDEX.sidebarSecurity,
           width: "100%",
           height: "100%",
           display: "flex",
@@ -265,7 +287,10 @@ export default function SidebarPanels({
           position: "absolute",
           top: 0,
           left: 0,
-          zIndex: lastOpenedSidebar === "forwarding" ? 107 : 92,
+          zIndex:
+            lastOpenedSidebar === "forwarding"
+              ? Z_INDEX.sidebarSecurityActive
+              : Z_INDEX.sidebarSecurity,
           width: "100%",
           height: "100%",
           display: "flex",
@@ -292,7 +317,10 @@ export default function SidebarPanels({
           position: "absolute",
           top: 0,
           left: 0,
-          zIndex: lastOpenedSidebar === "localTerminal" ? 108 : 91,
+          zIndex:
+            lastOpenedSidebar === "localTerminal"
+              ? Z_INDEX.sidebarLocalTerminalActive
+              : Z_INDEX.sidebarLocalTerminal,
           width: "100%",
           height: "100%",
           display: "flex",

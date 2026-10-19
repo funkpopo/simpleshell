@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../../../shared/constants/zIndex.js";
 const ESC_CHAR = String.fromCharCode(27);
 
 export const TERMINAL_RESIZE_QUERY_REGEX = new RegExp(
@@ -74,7 +75,7 @@ body:not(.light-theme) .search-bar {
   position: absolute;
   top: 8px;
   right: 15px;
-  z-index: 10;
+  z-index: ${Z_INDEX.terminalCursor};
   display: flex;
   background: linear-gradient(to bottom, rgba(30, 30, 30, 0.95), rgba(20, 20, 20, 0.95));
   border: 1px solid rgba(88, 166, 255, 0.3);
@@ -96,7 +97,7 @@ body:not(.light-theme) .search-bar:focus-within {
   position: absolute;
   top: 8px;
   right: 15px;
-  z-index: 10;
+  z-index: ${Z_INDEX.terminalCursor};
   display: flex;
   background: linear-gradient(to bottom, rgba(248, 249, 250, 0.95), rgba(240, 242, 245, 0.95));
   border: 1px solid rgba(88, 166, 255, 0.4);
@@ -203,7 +204,7 @@ body:not(.light-theme) .search-icon-btn {
   position: absolute;
   top: 8px;
   right: 15px;
-  z-index: 9;
+  z-index: ${Z_INDEX.terminalSelection};
   border-radius: 6px;
   transition:
     background-color 0.12s ease,
@@ -229,7 +230,7 @@ body:not(.light-theme) .search-icon-btn:hover {
   position: absolute;
   top: 8px;
   right: 15px;
-  z-index: 9;
+  z-index: ${Z_INDEX.terminalSelection};
   border-radius: 6px;
   transition:
     background-color 0.12s ease,

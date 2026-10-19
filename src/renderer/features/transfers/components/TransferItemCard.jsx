@@ -167,7 +167,7 @@ const TransferItemCard = memo(
           }}
         >
           {isSidebar ? (
-            <Box sx={{ flexShrink: 0 }}>{getTransferIcon(type)}</Box>
+            <Box sx={viewStyles.boxSx}>{getTransferIcon(type)}</Box>
           ) : (
             <Box
               sx={{
@@ -190,13 +190,13 @@ const TransferItemCard = memo(
           {isSidebar ? (
             <OverflowTooltipText
               variant="body2"
-              sx={{ flex: 1, minWidth: 0, fontWeight: 500 }}
+              sx={viewStyles.overflowTooltipTextSx}
               tooltipTitle={fileName || t("fileManager.transfer.fallbackName")}
             >
               {fileName || t("fileManager.transfer.fallbackName")}
             </OverflowTooltipText>
           ) : (
-            <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+            <Box sx={viewStyles.boxSx2}>
               <Typography
                 variant="subtitle2"
                 sx={{
@@ -260,7 +260,7 @@ const TransferItemCard = memo(
             <Typography
               variant="caption"
               color="text.secondary"
-              sx={{ flexShrink: 0 }}
+              sx={viewStyles.boxSx}
             >
               {formatTimestamp(
                 transfer.startTime || transfer.completedTime,
@@ -278,7 +278,7 @@ const TransferItemCard = memo(
                 <TransferDeleteButton
                   transfer={transfer}
                   onDelete={onDelete}
-                  sx={{ p: 0 }}
+                  sx={viewStyles.transferDeleteButtonSx}
                 />
               )}
               {canExpand && (
@@ -290,7 +290,7 @@ const TransferItemCard = memo(
             </>
           ) : (
             /* 浮窗头部动作区：statusIcon → 百分比 Chip → 删除 → 终止 */
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Box sx={viewStyles.boxSx3}>
               {statusIcon}
               <Chip
                 label={`${Math.round(progress)}%`}
@@ -344,7 +344,7 @@ const TransferItemCard = memo(
 
         {/* 侧栏：错误 Alert */}
         {isSidebar && transfer.error && (
-          <Alert severity="error" sx={{ mt: 1, overflowWrap: "anywhere" }}>
+          <Alert severity="error" sx={viewStyles.alertSx}>
             {transfer.error}
           </Alert>
         )}
@@ -356,7 +356,7 @@ const TransferItemCard = memo(
               transfer={transfer}
               size="sm"
               showPercent
-              sx={{ mt: 0.5 }}
+              sx={viewStyles.transferItemProgressSx}
             />
           )
         ) : (
@@ -364,27 +364,20 @@ const TransferItemCard = memo(
             transfer={transfer}
             size="md"
             barColor={statusColor}
-            sx={{ mb: 0.5 }}
+            sx={viewStyles.transferItemProgressSx2}
           />
         )}
 
         {/* 侧栏：详情 Chips + 暂停按钮 */}
         {isSidebar && (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              mt: 0.5,
-            }}
-          >
-            <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+          <Box sx={viewStyles.boxSx4}>
+            <Box sx={viewStyles.boxSx5}>
               {totalBytes > 0 && (
                 <Chip
                   label={formatFileSize(totalBytes, 1)}
                   size="small"
                   variant="outlined"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
+                  sx={viewStyles.chipSx}
                 />
               )}
               {transferSpeed > 0 && isActive && (
@@ -392,7 +385,7 @@ const TransferItemCard = memo(
                   label={`${formatFileSize(transferSpeed, 1)}/s`}
                   size="small"
                   variant="outlined"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
+                  sx={viewStyles.chipSx}
                 />
               )}
               {isMultiFile && totalFiles > 0 && (
@@ -403,7 +396,7 @@ const TransferItemCard = memo(
                   })}
                   size="small"
                   variant="outlined"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
+                  sx={viewStyles.chipSx}
                 />
               )}
               {hasError && (
@@ -411,7 +404,7 @@ const TransferItemCard = memo(
                   label={t("fileManager.transfer.status.failedShort")}
                   size="small"
                   color="error"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
+                  sx={viewStyles.chipSx}
                 />
               )}
               {hasWarning && (
@@ -419,7 +412,7 @@ const TransferItemCard = memo(
                   label={t("fileManager.transfer.status.partialShort")}
                   size="small"
                   color="warning"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
+                  sx={viewStyles.chipSx}
                 />
               )}
               {isCancelled && (
@@ -427,7 +420,7 @@ const TransferItemCard = memo(
                   label={t("fileManager.transfer.status.cancelledShort")}
                   size="small"
                   color="warning"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
+                  sx={viewStyles.chipSx}
                 />
               )}
             </Box>
@@ -443,13 +436,7 @@ const TransferItemCard = memo(
 
         {/* 浮窗：字节/速度/最终状态详情行 */}
         {!isSidebar && (
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
+          <Box sx={viewStyles.boxSx6}>
             <Typography
               variant="caption"
               sx={{
@@ -514,26 +501,24 @@ const TransferItemCard = memo(
                     <ListItem
                       key={file.index ?? index}
                       disablePadding
-                      sx={{ py: 0.25, px: 0.5 }}
+                      sx={viewStyles.listItemSx}
                     >
-                      <ListItemIcon sx={{ minWidth: 24 }}>
+                      <ListItemIcon sx={viewStyles.listItemIconSx}>
                         {file.completed ? (
-                          <CheckCircleIcon
-                            sx={{ fontSize: 14, color: "success.main" }}
-                          />
+                          <CheckCircleIcon sx={viewStyles.checkCircleIconSx} />
                         ) : (
                           <InsertDriveFileIcon
-                            sx={{ fontSize: 14, color: "text.secondary" }}
+                            sx={viewStyles.insertDriveFileIconSx}
                           />
                         )}
                       </ListItemIcon>
                       <ListItemText
                         secondary={formatFileSize(file.size, 1)}
-                        sx={{ minWidth: 0 }}
+                        sx={viewStyles.listItemTextSx}
                         primary={
                           <OverflowTooltipText
                             variant="caption"
-                            sx={{ fontSize: "0.7rem" }}
+                            sx={viewStyles.overflowTooltipTextSx2}
                             tooltipTitle={file.name || ""}
                           >
                             {file.name || ""}
@@ -555,7 +540,7 @@ const TransferItemCard = memo(
                 <Typography
                   variant="caption"
                   color="text.secondary"
-                  sx={{ px: 1 }}
+                  sx={viewStyles.typographySx}
                 >
                   {t("fileManager.transfer.fileCount", { count: totalFiles })}
                 </Typography>
@@ -571,3 +556,35 @@ const TransferItemCard = memo(
 TransferItemCard.displayName = "TransferItemCard";
 
 export default TransferItemCard;
+
+// Stable declarations shared by row renders. Dynamic styles stay with their owner.
+const viewStyles = {
+  boxSx: { flexShrink: 0 },
+  overflowTooltipTextSx: { flex: 1, minWidth: 0, fontWeight: 500 },
+  boxSx2: { flexGrow: 1, minWidth: 0 },
+  transferDeleteButtonSx: { p: 0 },
+  boxSx3: { display: "flex", alignItems: "center", gap: 1 },
+  alertSx: { mt: 1, overflowWrap: "anywhere" },
+  transferItemProgressSx: { mt: 0.5 },
+  transferItemProgressSx2: { mb: 0.5 },
+  boxSx4: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    mt: 0.5,
+  },
+  boxSx5: { display: "flex", gap: 0.5, flexWrap: "wrap" },
+  chipSx: { height: 18, fontSize: "0.65rem" },
+  boxSx6: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  listItemSx: { py: 0.25, px: 0.5 },
+  listItemIconSx: { minWidth: 24 },
+  checkCircleIconSx: { fontSize: 14, color: "success.main" },
+  insertDriveFileIconSx: { fontSize: 14, color: "text.secondary" },
+  listItemTextSx: { minWidth: 0 },
+  overflowTooltipTextSx2: { fontSize: "0.7rem" },
+  typographySx: { px: 1 },
+};

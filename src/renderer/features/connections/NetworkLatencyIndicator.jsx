@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 import React, { memo, useEffect, useState, useCallback, useRef } from "react";
 import { Box, Chip, Tooltip, Typography, useTheme, Fade } from "@mui/material";
 import SignalWifi4BarIcon from "@mui/icons-material/SignalWifi4Bar";
@@ -386,7 +387,7 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
           position: "absolute",
           top: 8,
           right: 8,
-          zIndex: 1000,
+          zIndex: Z_INDEX.latencyTooltip,
         };
 
   const tooltipPlacement = placement === "inline" ? "top" : "top-end";

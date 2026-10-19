@@ -139,7 +139,7 @@ const MasterPasswordOverlay = React.memo(
                 position: "absolute",
                 top: 10,
                 right: 10,
-                zIndex: 2,
+                zIndex: Z_INDEX.control,
                 color: "text.secondary",
                 bgcolor: (theme) => alpha(theme.palette.background.paper, 0.45),
                 "&:hover": {
@@ -154,7 +154,7 @@ const MasterPasswordOverlay = React.memo(
 
           {/* 内容 wrapper 统一压到 ::before 渐变层之上，
               各元素无需再逐个写 position/zIndex */}
-          <Box sx={{ position: "relative", zIndex: 1 }}>
+          <Box sx={{ position: "relative", zIndex: Z_INDEX.raised }}>
             <Box
               sx={{
                 width: 52,

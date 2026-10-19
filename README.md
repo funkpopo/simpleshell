@@ -112,7 +112,7 @@ If you prefer to build from source, follow the development instructions below.
 
 ## **Development**
 
-Scripted behavior checks for Serial/Mosh, SSH agent forwarding, native SFTP, port forwarding, and ZMODEM live in `scripts/check-*.js` and run via `npm run check`.
+Vitest suites under `tests/unit` cover contracts, architecture boundaries and application behavior. `tests/integration` covers Electron rendering, production bundles and real Rust services. All verification runs locally: `npm run check` runs lint and unit tests; `npm run test:integration` runs the native/Electron suites.
 
 ### **Prerequisites**
 
@@ -154,11 +154,20 @@ This will:
 # Format code with Prettier
 npm run format
 
-# Run all check scripts and unit tests
+# Run unit, contract and architecture tests
 npm test
 
 # Run only Node unit tests
 npm run test:unit
+
+# Compile the native host for local integration tests
+cargo build --locked --manifest-path native-services/desktop-host/Cargo.toml
+
+# Run Electron, native service and production bundle integration tests
+npm run test:integration
+
+# Run all local checks and integration tests
+npm run test:all
 
 # Lint application code, scripts and unit tests
 npm run lint
@@ -204,8 +213,8 @@ simpleshell/
 │   ├── renderer/            # React UI, terminal views and browser helpers
 │   └── shared/              # Contracts, pure cross-runtime logic and locales
 ├── native-services/         # Rust native-services crate
-├── tests/                   # Unit and composition tests
-├── scripts/                 # Build, release and integration checks
+├── tests/                   # Unit, contract and integration suites, helpers and fixtures
+├── scripts/                 # Build and release tools
 ├── forge.config.js
 └── webpack.*.config.js
 ```

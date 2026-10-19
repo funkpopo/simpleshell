@@ -25,7 +25,19 @@ const reactTransitionGroupContextPath =
 
 rules.push({
   test: /\.css$/,
-  use: [{ loader: "style-loader" }, { loader: "css-loader" }],
+  use: [
+    { loader: "style-loader" },
+    {
+      loader: "css-loader",
+      options: {
+        modules: {
+          auto: true,
+          namedExport: false,
+          exportLocalsConvention: "as-is",
+        },
+      },
+    },
+  ],
 });
 
 module.exports = {

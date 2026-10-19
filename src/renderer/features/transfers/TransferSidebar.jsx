@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 import React, { memo, useMemo, useCallback, useState, useEffect } from "react";
 import { createFloatingDialog } from "../../shared/ui/styledDialogs.jsx";
 import {
@@ -226,7 +227,7 @@ const TransferSidebar = memo(
             bottom: 0,
             width: 8,
             cursor: "ew-resize",
-            zIndex: 1,
+            zIndex: Z_INDEX.raised,
             "&:hover": {
               backgroundColor: "primary.main",
               opacity: 0.3,

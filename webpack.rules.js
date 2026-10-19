@@ -62,18 +62,6 @@ module.exports = [
             },
           ],
         ],
-        plugins: [
-          // 配置 Material-UI 图标按需导入
-          [
-            "import",
-            {
-              libraryName: "@mui/icons-material",
-              libraryDirectory: "",
-              camel2DashComponentName: false,
-            },
-            "core",
-          ],
-        ],
         // 解决大文件优化警告
         compact: false,
         // 启用缓存提升构建性能

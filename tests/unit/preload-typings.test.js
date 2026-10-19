@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { collectPreloadSources } from "../../scripts/lib/preload-sources.js";
+import { collectPreloadSources } from "../helpers/preload-sources.js";
 import {
   inspectPreload,
   getPreloadTypeDiagnostics,
-} from "../../scripts/check-preload-typings.js";
+} from "../helpers/preloadAnalysis.js";
 
 const source = collectPreloadSources();
 

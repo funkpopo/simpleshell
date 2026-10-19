@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../../../shared/constants/zIndex.js";
 import React, { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import Box from "@mui/material/Box";
@@ -30,7 +31,7 @@ export default function WebTerminalConnectionNotice({
         position: "absolute",
         left: 8,
         bottom: 8,
-        zIndex: 1200,
+        zIndex: Z_INDEX.terminalNotice,
         display: "flex",
         alignItems: "center",
         gap: 1,

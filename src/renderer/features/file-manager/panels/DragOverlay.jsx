@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../../../shared/constants/zIndex.js";
 import { Box, Paper, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { darken, lighten } from "@mui/material/styles";
@@ -32,7 +33,7 @@ export default function DragOverlay({ isDragging, selectedFile, currentPath }) {
         p: 1.5,
         boxSizing: "border-box",
         containerType: "size",
-        zIndex: 1500,
+        zIndex: Z_INDEX.fileDropOverlay,
         pointerEvents: "none",
       }}
     >

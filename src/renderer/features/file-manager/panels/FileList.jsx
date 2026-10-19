@@ -62,28 +62,21 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
   onActivate,
   theme,
 }) {
+  const rowStyle = useMemo(
+    () => ({ ...style, boxSizing: "border-box", padding: "2px 4px" }),
+    [style],
+  );
   const row = rows[index];
   if (!row) return null;
   const { file, secondaryText } = row;
   const isSelected = isFileSelected(file);
   return (
-    <div
-      style={{
-        ...style,
-        boxSizing: "border-box",
-        padding: "2px 4px",
-      }}
-    >
+    <div style={rowStyle}>
       <ListItem
         disablePadding
         disableGutters
         onContextMenu={(e) => onContextMenu(e, file, index)}
-        sx={{
-          py: 0,
-          my: 0,
-          minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
-          height: FILE_LIST_ITEM_MIN_HEIGHT,
-        }}
+        sx={viewStyles.listItemSx}
       >
         <ListItemButton
           data-file-item="true"
@@ -113,25 +106,11 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
             },
           }}
         >
-          <ListItemIcon
-            sx={{
-              minWidth: 24,
-              mr: 0.75,
-            }}
-          >
+          <ListItemIcon sx={viewStyles.listItemIconSx}>
             {file.isDirectory ? (
-              <FolderIcon
-                color="primary"
-                sx={{
-                  fontSize: 20,
-                }}
-              />
+              <FolderIcon color="primary" sx={viewStyles.folderIconSx} />
             ) : (
-              <InsertDriveFileIcon
-                sx={{
-                  fontSize: 20,
-                }}
-              />
+              <InsertDriveFileIcon sx={viewStyles.folderIconSx} />
             )}
           </ListItemIcon>
           <ListItemText
@@ -197,32 +176,14 @@ export default function FileList({
   }, [displayFiles, t]);
   if (loading) {
     return (
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "100%",
-          width: "100%",
-        }}
-      >
+      <Box sx={viewStyles.boxSx}>
         <CircularProgress size={24} />
       </Box>
     );
   }
   if (error) {
     return (
-      <Box
-        sx={{
-          padding: 2,
-          color: "error.main",
-          height: "100%",
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
+      <Box sx={viewStyles.boxSx2}>
         <Typography variant="body2">{error}</Typography>
       </Box>
     );
@@ -233,11 +194,7 @@ export default function FileList({
     if (!searchTerm && (isChunking || listToken)) {
       return (
         <Box
-          sx={{
-            height: "100%",
-            width: "100%",
-            padding: 1,
-          }}
+          sx={viewStyles.boxSx3}
           onContextMenu={handleBlankContextMenu}
           onClick={handleBlankClick}
         >
@@ -247,14 +204,7 @@ export default function FileList({
     }
     return (
       <Box
-        sx={{
-          height: "100%",
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 2,
-        }}
+        sx={viewStyles.boxSx4}
         onContextMenu={handleBlankContextMenu}
         onClick={handleBlankClick}
       >
@@ -271,21 +221,14 @@ export default function FileList({
   return (
     <Box
       className="app-scrollbar"
-      sx={{
-        height: "100%",
-        width: "100%",
-        overflow: "auto",
-      }}
+      sx={viewStyles.boxSx5}
       onContextMenu={handleBlankContextMenu}
       onClick={handleBlankClick}
     >
       {shouldVirtualize ? (
         <VirtualizedList
           className="file-manager-virtualized-list"
-          style={{
-            height: "100%",
-            width: "100%",
-          }}
+          style={viewStyles.virtualizedListStyle}
           rowCount={displayFileRows.length}
           rowHeight={FILE_LIST_ROW_HEIGHT}
           rowProps={{
@@ -300,14 +243,7 @@ export default function FileList({
           rowComponent={VirtualizedFileRow}
         />
       ) : (
-        <List
-          dense
-          disablePadding
-          sx={{
-            py: 0.5,
-            px: 0.5,
-          }}
-        >
+        <List dense disablePadding sx={viewStyles.listSx}>
           {displayFileRows.map(({ file, index, secondaryText }) => {
             const isSelected = isFileSelected(file);
             return (
@@ -316,15 +252,7 @@ export default function FileList({
                 disablePadding
                 disableGutters
                 onContextMenu={(e) => handleContextMenu(e, file, index)}
-                sx={{
-                  py: 0,
-                  my: 0,
-                  minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
-                  height: FILE_LIST_ITEM_MIN_HEIGHT,
-                  "&:not(:last-child)": {
-                    mb: 0.5,
-                  },
-                }}
+                sx={viewStyles.listItemSx2}
               >
                 <ListItemButton
                   data-file-item="true"
@@ -357,25 +285,14 @@ export default function FileList({
                     },
                   }}
                 >
-                  <ListItemIcon
-                    sx={{
-                      minWidth: 24,
-                      mr: 0.75,
-                    }}
-                  >
+                  <ListItemIcon sx={viewStyles.listItemIconSx2}>
                     {file.isDirectory ? (
                       <FolderIcon
                         color="primary"
-                        sx={{
-                          fontSize: 20,
-                        }}
+                        sx={viewStyles.folderIconSx2}
                       />
                     ) : (
-                      <InsertDriveFileIcon
-                        sx={{
-                          fontSize: 20,
-                        }}
-                      />
+                      <InsertDriveFileIcon sx={viewStyles.folderIconSx2} />
                     )}
                   </ListItemIcon>
                   <ListItemText
@@ -405,3 +322,78 @@ export default function FileList({
     </Box>
   );
 }
+
+// Stable declarations shared by row renders. Dynamic styles stay with their owner.
+const viewStyles = {
+  listItemSx: {
+    py: 0,
+    my: 0,
+    minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
+    height: FILE_LIST_ITEM_MIN_HEIGHT,
+  },
+  listItemIconSx: {
+    minWidth: 24,
+    mr: 0.75,
+  },
+  folderIconSx: {
+    fontSize: 20,
+  },
+  boxSx: {
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    height: "100%",
+    width: "100%",
+  },
+  boxSx2: {
+    padding: 2,
+    color: "error.main",
+    height: "100%",
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  boxSx3: {
+    height: "100%",
+    width: "100%",
+    padding: 1,
+  },
+  boxSx4: {
+    height: "100%",
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 2,
+  },
+  boxSx5: {
+    height: "100%",
+    width: "100%",
+    overflow: "auto",
+  },
+  virtualizedListStyle: {
+    height: "100%",
+    width: "100%",
+  },
+  listSx: {
+    py: 0.5,
+    px: 0.5,
+  },
+  listItemSx2: {
+    py: 0,
+    my: 0,
+    minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
+    height: FILE_LIST_ITEM_MIN_HEIGHT,
+    "&:not(:last-child)": {
+      mb: 0.5,
+    },
+  },
+  listItemIconSx2: {
+    minWidth: 24,
+    mr: 0.75,
+  },
+  folderIconSx2: {
+    fontSize: 20,
+  },
+};

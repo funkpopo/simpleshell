@@ -4,7 +4,7 @@ import { Z_INDEX } from "../constants/zIndex.js";
 
 /**
  * 共享的 styled(Dialog) 组件。
- * Dialog 一律经 AccessibleDialog 导入（见 scripts/check-accessibility.js 规则）。
+ * Dialog 一律经 AccessibleDialog 导入（见 tests/unit/accessibility.test.js 规则）。
  */
 
 /**

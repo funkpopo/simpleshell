@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../../shared/constants/zIndex.js";
 import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
@@ -90,7 +91,7 @@ export default function SidebarRail({
         py: 1.25,
         gap: "var(--sidebar-rail-item-gap, 4px)",
         borderRadius: 0,
-        zIndex: 110,
+        zIndex: Z_INDEX.sidebarRail,
         flexShrink: 0,
         bgcolor: "background.paper",
         borderLeft:

@@ -1,0 +1,1023 @@
+import { describe, it } from "vitest";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import _path from "node:path";
+const require = createRequire(import.meta.url);
+const _repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+
+describe("window-native-feel", () => {
+  const assert = require("node:assert/strict");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const babel = require("@babel/core");
+
+  const repoRoot = _path.resolve(_repoRoot, "");
+
+  function readSource(relativePath) {
+    return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+  }
+
+  function assertContains(source, pattern, message) {
+    assert.match(source, pattern, message);
+  }
+
+  function assertNotContains(source, pattern, message) {
+    assert.doesNotMatch(source, pattern, message);
+  }
+
+  function assertBefore(source, earlierPattern, laterPattern, message) {
+    const earlier = source.match(earlierPattern);
+    assert.ok(earlier, `${message}: missing earlier pattern`);
+
+    const later = source.match(laterPattern);
+    assert.ok(later, `${message}: missing later pattern`);
+
+    assert.ok(earlier.index < later.index, message);
+  }
+
+  function getFunctionSource(source, name) {
+    const ast = babel.parseSync(source, { configFile: false, babelrc: false });
+    let functionSource;
+    const visit = ({ node }) => {
+      if ((node.id?.name || node.key?.name) === name) {
+        functionSource = source.slice(node.start, node.end);
+      }
+    };
+    babel.traverse(ast, { ClassMethod: visit, FunctionDeclaration: visit });
+    assert.ok(functionSource, `Missing function: ${name}`);
+    return functionSource;
+  }
+
+  const windowManagerSource = readSource("src/main/window/windowManager.js");
+  const appSource =
+    require("../helpers/renderer-sources.js").collectAppSources();
+  const mainSource = readSource("src/main/index.js");
+  const desktopIntegrationSource = readSource(
+    "src/main/bootstrap/desktopIntegration.js",
+  );
+  const appIndexSource = readSource("src/main/bootstrap/index.js");
+  const appCleanupSource = readSource("src/main/bootstrap/appCleanup.js");
+  const settingsHandlersSource = readSource(
+    "src/main/ipc/handlers/settingsHandlers.js",
+  );
+  const configServiceSource =
+    require("../helpers/renderer-sources.js").collectDirectorySources(
+      "src/main/settings",
+    );
+  const settingsSource =
+    require("../helpers/renderer-sources.js").collectDirectorySources(
+      "src/renderer/features/settings",
+    );
+  const globalCssSource = readSource("src/renderer/styles/global.css");
+  const fileManagerSource =
+    require("../helpers/renderer-sources.js").collectFileManagerSources();
+  const fileHandlersSource = readSource(
+    "src/main/ipc/handlers/fileHandlers.js",
+  );
+  const filemanagementServiceSource =
+    require("../helpers/renderer-sources.js").collectDirectorySources(
+      "src/main/file-transfer",
+    );
+  const nativeSftpClientSource = readSource(
+    "src/main/native/nativeSftpClient.js",
+  );
+  const ipcTraceSource = readSource("src/main/ipc/ipcTrace.js");
+  const preloadSource =
+    require("../helpers/preload-sources").collectPreloadSources();
+  const commandSuggestionSource = readSource(
+    "src/renderer/features/terminal/CommandSuggestion.jsx",
+  );
+  const connectionManagerSource = [
+    "ConnectionManager.jsx",
+    "components/ConnectionList.jsx",
+    "components/ConnectionListItems.jsx",
+    "components/ConnectionEditorDialog.jsx",
+    "hooks/useConnectionEditor.js",
+    "lib/connectionTree.js",
+    "lib/connectionForm.js",
+  ]
+    .map((file) => readSource(`src/renderer/features/connections/${file}`))
+    .join("\n");
+  const customTabSource = readSource(
+    "src/renderer/app/components/CustomTab.jsx",
+  );
+
+  function testStartupAndWindowLifecycle() {
+    assertContains(
+      windowManagerSource,
+      /show:\s*false/,
+      "Main BrowserWindow must start hidden to avoid empty-frame startup flicker.",
+    );
+
+    assertContains(
+      windowManagerSource,
+      /backgroundColor/,
+      "Main BrowserWindow must set a startup background color that matches the saved theme.",
+    );
+
+    assertContains(
+      windowManagerSource,
+      /ready-to-show/,
+      "Main BrowserWindow must wait for ready-to-show before becoming visible.",
+    );
+
+    assertContains(
+      windowManagerSource,
+      /additionalArguments/,
+      "Main BrowserWindow must pass startup theme via additionalArguments for preload boot paint.",
+    );
+
+    assertContains(
+      windowManagerSource,
+      /notifyPrimaryWindowRendererReady|rendererReady/,
+      "Main BrowserWindow must gate first show on renderer-ready to avoid theme flash.",
+    );
+
+    assertContains(
+      windowManagerSource,
+      /RENDERER_READY_FALLBACK_MS|revealFallbackTimer/,
+      "Main BrowserWindow must fall back to show if renderer-ready never arrives.",
+    );
+
+    const {
+      getStartupBackgroundColor,
+    } = require("../../src/shared/startupTheme.js");
+    const { getThemePalette } = require("../../src/shared/themeTokens.js");
+    for (const mode of [false, true])
+      assert.equal(
+        getStartupBackgroundColor(mode),
+        getThemePalette(mode).background.default,
+      );
+
+    const indexHtmlSource = readSource("src/renderer/index.html");
+    assertContains(
+      indexHtmlSource,
+      /ss-startup-boot|#121212/,
+      "index.html must inline a boot background to avoid white flash before CSS loads.",
+    );
+
+    const preloadSourceForBoot =
+      require("../helpers/preload-sources").collectPreloadSources();
+    assertContains(
+      preloadSourceForBoot,
+      /applyStartupThemeToDocument|simpleshellBoot/,
+      "Preload must apply startup theme to the DOM before renderer scripts run.",
+    );
+    assertContains(
+      preloadSourceForBoot,
+      /WINDOW_NOTIFY_READY|notifyWindowReady/,
+      "Preload must expose notifyWindowReady for first-paint reveal.",
+    );
+
+    assertContains(
+      appSource,
+      /notifyWindowReady/,
+      "Renderer must notify main process when the themed first paint is ready.",
+    );
+
+    assertContains(
+      appSource,
+      /ss-bootstrapping/,
+      "Renderer must clear the startup bootstrap class after theme load.",
+    );
+
+    assertContains(
+      windowManagerSource,
+      /windowBounds/,
+      "Main BrowserWindow must persist and restore window bounds.",
+    );
+
+    assertContains(
+      appSource,
+      /event\.detail\s*===\s*2/,
+      "Top bar should handle double-click maximize/restore for frameless Windows behavior.",
+    );
+
+    assertContains(
+      mainSource,
+      /installDesktopIntegration\(\)/,
+      "Main process must install desktop integration during app startup.",
+    );
+
+    assertContains(
+      mainSource,
+      /attachDesktopWindowIntegration\(mainWindow\)/,
+      "Created BrowserWindow instances must receive native desktop window integration.",
+    );
+
+    assertContains(
+      mainSource,
+      /app\.on\("activate"[\s\S]*showPrimaryWindow\(\{\s*createWindow:\s*createMainWindow\s*\}\)/,
+      "macOS activate must delegate to primary-window restoration instead of creating a duplicate.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /function showPrimaryWindow[\s\S]*mainWindow\.isMinimized\(\)[\s\S]*mainWindow\.restore\(\)[\s\S]*mainWindow\.show\(\)[\s\S]*mainWindow\.focus\(\)/,
+      "Primary-window restoration must restore, show, and focus the existing window.",
+    );
+
+    assertContains(
+      mainSource,
+      /app\.on\("second-instance"[\s\S]*handleSecondInstance\(commandLine,\s*\{\s*createWindow:\s*createMainWindow\s*\}\)/,
+      "Second-instance launches must focus the existing app and route system-opened local files.",
+    );
+
+    assertContains(
+      mainSource,
+      /app\.on\("open-file"[\s\S]*event\.preventDefault\(\)[\s\S]*handleSystemOpenFiles\(\[filePath\],\s*\{\s*createWindow:\s*createMainWindow\s*\}\)/,
+      "macOS Dock/Finder file-open events must be handled by the native shell.",
+    );
+
+    assertNotContains(
+      mainSource,
+      /app\.on\("before-quit",\s*async/,
+      "before-quit must synchronously prevent the default quit before async cleanup begins.",
+    );
+
+    assertContains(
+      mainSource,
+      /app\.on\("before-quit",\s*\(event\)\s*=>[\s\S]*beforeCleanup:\s*\(\)\s*=>\s*aiWorkerManager\.terminateAIWorker\(\)/,
+      "App quit must terminate the AI worker inside the controlled cleanup lifecycle.",
+    );
+
+    assertContains(
+      appCleanupSource,
+      /event\.preventDefault\(\)[\s\S]*await beforeCleanup\(\)[\s\S]*await this\.performCleanup\(ipcSetup\)[\s\S]*this\.app\.quit\(\)/,
+      "App cleanup must block quit, run caller cleanup, release app resources, then quit.",
+    );
+  }
+
+  function testDesktopIntegrationIsNativeAndExplicit() {
+    assertContains(
+      appIndexSource,
+      /attachDesktopWindowIntegration/,
+      "App module must export desktop window integration.",
+    );
+
+    assertContains(
+      appIndexSource,
+      /installDesktopIntegration/,
+      "App module must export desktop integration installer.",
+    );
+
+    assertContains(
+      appIndexSource,
+      /handleSecondInstance/,
+      "App module must export second-instance desktop handling.",
+    );
+
+    assertContains(
+      appIndexSource,
+      /handleSystemOpenFiles/,
+      "App module must export system local-file open handling.",
+    );
+
+    assertContains(
+      appIndexSource,
+      /showPrimaryWindow/,
+      "App module must export primary-window restoration.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /DEFAULT_DESKTOP_INTEGRATION[\s\S]*trayEnabled:\s*false/,
+      "Tray icon must be disabled by default and enabled only by user choice.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /DEFAULT_DESKTOP_INTEGRATION[\s\S]*closeToTray:\s*false/,
+      "Close-to-tray must be disabled by default.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /if\s*\(\s*tray\s*\|\|\s*!desktopIntegrationSettings\.trayEnabled\s*\)/,
+      "Tray creation must be guarded by the user trayEnabled setting.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /desktopIntegrationSettings\.trayEnabled\s*&&\s*desktopIntegrationSettings\.closeToTray\s*&&\s*!isQuitting/,
+      "Close-to-tray must require trayEnabled, closeToTray, and a non-quitting lifecycle.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /throw new Error\(`Tray icon is not available:/,
+      "Tray setup must fail explicitly when the required tray icon is missing.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /new Tray\(image\.resize\(\{\s*width:\s*16,\s*height:\s*16\s*\}\)\)/,
+      "Tray creation must use an Electron Tray with a real native image.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /mainWindow\.setMinimumSize\(\s*800,\s*560\s*\)/,
+      "Main window must have a native minimum size floor.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /webContents\.on\("context-menu"/,
+      "Renderer text context menus must be handled by the native shell.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /Menu\.buildFromTemplate\([\s\S]*role:\s*"copy"[\s\S]*role:\s*"paste"[\s\S]*role:\s*"selectAll"/,
+      "Native context menu must use Electron menu roles for standard editing commands.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /app\.setAppUserModelId\(APP_USER_MODEL_ID\)/,
+      "Windows app user model id must be registered for taskbar identity.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /app\.dock\.show\(\)/,
+      "macOS Dock identity must be kept visible for normal desktop app behavior.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /app\.on\("will-quit"[\s\S]*destroyTray\(\)/,
+      "Tray resources must be destroyed when the app quits.",
+    );
+
+    assertContains(
+      settingsHandlersSource,
+      /applyDesktopIntegrationSettings\(settings\?\.desktopIntegration \|\| \{\}\)/,
+      "Saving UI settings must immediately apply desktop integration changes.",
+    );
+
+    assertContains(
+      configServiceSource,
+      /desktopIntegration:\s*\{[\s\S]*trayEnabled:\s*\{\s*type:\s*"boolean",\s*default:\s*false\s*\}[\s\S]*closeToTray:\s*\{\s*type:\s*"boolean",\s*default:\s*false\s*\}/,
+      "Desktop integration config schema must include trayEnabled and closeToTray defaults.",
+    );
+
+    assertNotContains(
+      settingsSource,
+      /nativeContextMenu|fileDropValidation|respectReducedMotion/,
+      "Native context menu, drop validation, and reduced-motion compliance must not be user-disableable alternate behavior.",
+    );
+  }
+
+  function testSystemOpenFilesAreNativeAndExplicit() {
+    assertContains(
+      desktopIntegrationSource,
+      /const pendingOpenFiles = \[\]/,
+      "System-opened local files must be queued until the renderer is ready.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /function normalizeLocalOpenFilePath[\s\S]*fs\.existsSync\(resolvedPath\)/,
+      "System-opened paths must be resolved and verified by the main process.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /resolvedPath === path\.resolve\(process\.execPath\)/,
+      "Second-instance command lines must not treat the app executable as a user-opened file.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /Notification\.isSupported\(\)[\s\S]*new Notification/,
+      "System-opened local files must surface through the OS notification center.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /safeSendToRenderer\("app:open-files"/,
+      "Validated system-opened local files must be sent to the renderer through a declared event.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /webContents\.once\("did-finish-load",\s*flushPendingOpenFiles\)/,
+      "Queued system-opened local files must flush after the renderer finishes loading.",
+    );
+
+    assertContains(
+      desktopIntegrationSource,
+      /extractLocalOpenFilePaths\(commandLine\)/,
+      "Second-instance handling must extract verified local file paths.",
+    );
+
+    assertContains(
+      preloadSource,
+      /onOpenFiles:\s*\(callback\)[\s\S]*ipcRenderer\.on\(IPC_EVENT_CHANNELS\.APP_OPEN_FILES/,
+      "Preload must expose system-opened local files to the renderer.",
+    );
+
+    assertContains(
+      appSource,
+      /handleDesktopOpenFiles[\s\S]*t\("app\.openFilesReceived"/,
+      "Renderer must visibly acknowledge system-opened local file requests.",
+    );
+  }
+
+  function testReducedMotionIsGlobal() {
+    assertContains(
+      globalCssSource,
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)/,
+      "Global CSS must honor prefers-reduced-motion.",
+    );
+
+    assertContains(
+      globalCssSource,
+      /animation-duration:\s*0\.01ms\s*!important/,
+      "Reduced motion mode must effectively disable animations.",
+    );
+
+    assertContains(
+      globalCssSource,
+      /transition-duration:\s*0\.01ms\s*!important/,
+      "Reduced motion mode must effectively disable transitions.",
+    );
+
+    assertContains(
+      globalCssSource,
+      /scroll-behavior:\s*auto\s*!important/,
+      "Reduced motion mode must disable smooth scrolling.",
+    );
+  }
+
+  function testDragAndDropUsesNativeValidatedLocalPaths() {
+    const dragDropSource =
+      require("../helpers/renderer-sources.js").readRendererCallback(
+        "src/renderer/features/file-manager/hooks/useDragDrop.js",
+        "handleDrop",
+      );
+    const dragUploadSource =
+      require("../helpers/renderer-sources.js").readRendererCallback(
+        "src/renderer/features/file-manager/hooks/useTransferTasks.js",
+        "handleDroppedItems",
+      );
+    const uploadTransferSource =
+      require("../helpers/renderer-sources.js").readRendererCallback(
+        "src/renderer/features/file-manager/hooks/useTransferTasks.js",
+        "runUploadTransfer",
+      );
+    const downloadSource =
+      require("../helpers/renderer-sources.js").readRendererCallback(
+        "src/renderer/features/file-manager/hooks/useTransferTasks.js",
+        "handleDownload",
+      );
+    const downloadFolderSource =
+      require("../helpers/renderer-sources.js").readRendererCallback(
+        "src/renderer/features/file-manager/hooks/useTransferTasks.js",
+        "handleDownloadFolder",
+      );
+
+    assertContains(
+      preloadSource,
+      /validateDroppedItems:\s*\(items\)\s*=>\s*ipcRenderer\.invoke\(\s*IPC_REQUEST_CHANNELS\.FILE_VALIDATE_DROPPED_ITEMS,\s*items,?\s*\)/,
+      "Preload must expose local drop validation through IPC.",
+    );
+
+    assertContains(
+      preloadSource,
+      /checkDroppedUploadConflicts:\s*\(tabId,\s*targetFolder,\s*uploadData\)\s*=>\s*ipcRenderer\.invoke\(\s*IPC_REQUEST_CHANNELS\.FILE_CHECK_DROPPED_UPLOAD_CONFLICTS/,
+      "Preload must expose remote overwrite preflight through IPC.",
+    );
+
+    assertContains(
+      preloadSource,
+      /getPathForFile:\s*\(file\)\s*=>[\s\S]*webUtils\.getPathForFile\(file\)/,
+      "Preload must expose Electron webUtils.getPathForFile for native file drops.",
+    );
+
+    assertContains(
+      fileHandlersSource,
+      /channel:\s*IPC_REQUEST_CHANNELS\.FILE_VALIDATE_DROPPED_ITEMS/,
+      "Main process must register validateDroppedItems.",
+    );
+
+    assertContains(
+      fileHandlersSource,
+      /channel:\s*IPC_REQUEST_CHANNELS\.FILE_CHECK_DROPPED_UPLOAD_CONFLICTS/,
+      "Main process must register checkDroppedUploadConflicts.",
+    );
+
+    assertContains(
+      fileHandlersSource,
+      /fs\.statSync\(resolvedPath\)[\s\S]*fs\.accessSync\(resolvedPath,\s*fs\.constants\.R_OK\)/,
+      "Dropped local items must be stat'ed and read-checked in the main process.",
+    );
+
+    assertContains(
+      fileHandlersSource,
+      /stats\.isDirectory\(\)/,
+      "Drop validation must distinguish local folders.",
+    );
+
+    assertContains(
+      fileHandlersSource,
+      /expectsDirectory\s*=\s*item\?\.isDirectory === true/,
+      "Drop validation must verify renderer-declared directory items against local filesystem stats.",
+    );
+
+    assertContains(
+      fileHandlersSource,
+      /fs\.readdirSync\(resolvedPath\)/,
+      "Drop validation must require dropped local folders to be enumerable.",
+    );
+
+    assertContains(
+      fileHandlersSource,
+      /reason:\s*"missing-local-path"/,
+      "Drop validation must reject items without a verifiable native local path.",
+    );
+
+    assertContains(
+      fileHandlersSource,
+      /"permission-denied"/,
+      "Drop validation must identify unreadable permission failures.",
+    );
+
+    assertContains(
+      dragDropSource,
+      /item\.kind === "string"/,
+      "Renderer drop handler must reject remote paths, text, and browser virtual strings.",
+    );
+
+    assertContains(
+      dragDropSource,
+      /item\.webkitGetAsEntry\?\.\(\)/,
+      "Renderer drop handler must use native file-system entries for file and folder drops.",
+    );
+
+    assertContains(
+      dragDropSource,
+      /Array\.from\(e\.dataTransfer\.files \|\| \[\]\)/,
+      "Renderer drop handler must read native File objects only to resolve Electron-backed local paths.",
+    );
+
+    assertContains(
+      dragDropSource,
+      /getDroppedFileLocalPath\(nativeFile\)/,
+      "Dropped files must be converted to native local paths before upload.",
+    );
+
+    assertContains(
+      dragDropSource,
+      /nativeFiles\.length !== itemsArray\.length/,
+      "Renderer drop handler must reject drops that cannot pair every entry with a native File object.",
+    );
+
+    assertContains(
+      dragDropSource,
+      /nativePathByName\.get\(entryName\)/,
+      "Renderer drop handler must bind each top-level entry to a matching native local path by name.",
+    );
+
+    assertContains(
+      dragDropSource,
+      /duplicateNativeNames\.size > 0/,
+      "Renderer drop handler must reject ambiguous duplicate top-level native item names.",
+    );
+
+    assertNotContains(
+      dragDropSource,
+      /getAsFile|file\.path/,
+      "Renderer drop handler must not use browser File.path or DataTransferItem.getAsFile path sources.",
+    );
+
+    assertContains(
+      dragUploadSource,
+      /window\.terminalAPI\.validateDroppedItems/,
+      "Dropped items must be validated by the main process before upload.",
+    );
+
+    assertContains(
+      dragUploadSource,
+      /window\.terminalAPI\.checkDroppedUploadConflicts/,
+      "Dropped uploads must check remote overwrite conflicts before transfer.",
+    );
+
+    assertBefore(
+      dragUploadSource,
+      /const transferId = addTransferProgress\(/,
+      /await window\.terminalAPI\.validateDroppedItems/,
+      "Drag upload must create a transfer entry before main-process validation.",
+    );
+
+    assertBefore(
+      dragUploadSource,
+      /const transferId = addTransferProgress\(/,
+      /await window\.terminalAPI\.checkDroppedUploadConflicts/,
+      "Drag upload must keep the sidebar transfer icon active during remote conflict probing.",
+    );
+
+    assertContains(
+      dragUploadSource,
+      /fileManager\.transfer\.status\.preparingUpload/,
+      "Drag upload must show a preparing upload transfer status immediately.",
+    );
+
+    assertContains(
+      dragUploadSource,
+      /fileManager\.transfer\.status\.uploading/,
+      "Drag upload must switch the transfer entry to uploading once progress begins.",
+    );
+
+    assertContains(
+      uploadTransferSource,
+      /window\.terminalAPI\?\.uploadFolder[\s\S]*window\.terminalAPI\?\.uploadFile/,
+      "Manual upload must route through the terminal upload IPC APIs.",
+    );
+
+    assertBefore(
+      uploadTransferSource,
+      /activeUploadTransferId = addTransferProgress\(/,
+      /await api\(tabId, targetPath/,
+      "Manual upload must create a transfer entry before invoking upload IPC.",
+    );
+
+    assertContains(
+      uploadTransferSource,
+      /fileManager\.transfer\.status\.preparingUpload/,
+      "Manual upload must show a preparing upload transfer status immediately.",
+    );
+
+    assertBefore(
+      downloadSource,
+      /const transferId = addTransferProgress\(/,
+      /await window\.terminalAPI\.downloadFile\(/,
+      "Single file download must create a transfer entry before invoking download IPC.",
+    );
+
+    assertBefore(
+      downloadSource,
+      /batchTransferId = addTransferProgress\(/,
+      /await window\.terminalAPI\.downloadFiles\(/,
+      "Batch file download must create a transfer entry before invoking download IPC.",
+    );
+
+    assertBefore(
+      downloadFolderSource,
+      /const transferId = addTransferProgress\(/,
+      /await window\.terminalAPI\.downloadFolder\(/,
+      "Folder download must create a transfer entry before invoking download IPC.",
+    );
+
+    assertContains(
+      downloadSource,
+      /fileManager\.transfer\.status\.waitingForSaveLocation/,
+      "Single file download must show an immediate waiting-for-save-location state.",
+    );
+
+    assertContains(
+      downloadSource,
+      /fileManager\.transfer\.status\.waitingForTargetFolder/,
+      "Batch file download must show an immediate waiting-for-target-folder state.",
+    );
+
+    assertContains(
+      downloadFolderSource,
+      /fileManager\.transfer\.status\.waitingForTargetFolder/,
+      "Folder download must show an immediate waiting-for-target-folder state.",
+    );
+
+    assertNotContains(
+      fileManagerSource,
+      /window\.dialogAPI\.showMessageBox/,
+      "Remote overwrite confirmation must use the project-styled renderer dialog.",
+    );
+
+    assertContains(
+      fileManagerSource,
+      /const showConfirmDialog = useCallback\(/,
+      "FileManager must provide an async project-styled confirmation dialog.",
+    );
+
+    assertContains(
+      fileManagerSource,
+      /confirmDialogResolveRef/,
+      "Async confirmation dialogs must resolve the caller after user choice.",
+    );
+
+    assertContains(
+      dragUploadSource,
+      /await confirmDroppedUploadConflicts\(/,
+      "Dropped uploads must await the project-styled overwrite confirmation.",
+    );
+
+    assertNotContains(
+      dragUploadSource,
+      /arrayBuffer|getAsFile|file\.path|chunks|isChunked/,
+      "Drag upload must not use renderer memory buffers, browser file.path, or chunk payloads.",
+    );
+
+    assertContains(
+      filemanagementServiceSource,
+      /mainProcess\.transfer\.errors\.uploadEntryMissingLocalPath/,
+      "Upload service must require validated local paths for upload entries.",
+    );
+
+    assertContains(
+      filemanagementServiceSource,
+      /if\s*\(!fileData\.localPath\)[\s\S]*拖放文件缺少可验证的本地路径/,
+      "Dropped upload service must reject files without localPath.",
+    );
+
+    assertContains(
+      filemanagementServiceSource,
+      /const resolvedLocalPath = path\.resolve\(fileData\.localPath\)[\s\S]*await fsp\.stat\(resolvedLocalPath\)[\s\S]*await fsp\.access\(resolvedLocalPath,\s*fs\.constants\.R_OK\)[\s\S]*stats\.isFile\(\)/,
+      "Dropped upload service must stat, read-check, and require regular local files.",
+    );
+
+    assertContains(
+      filemanagementServiceSource,
+      /if\s*\(!folderData\.localPath\)[\s\S]*拖放文件夹缺少可验证的本地路径/,
+      "Dropped upload service must reject folders without localPath.",
+    );
+
+    assertContains(
+      filemanagementServiceSource,
+      /const resolvedLocalPath = path\.resolve\(folderData\.localPath\)[\s\S]*await fsp\.stat\(resolvedLocalPath\)[\s\S]*await fsp\.access\(resolvedLocalPath,\s*fs\.constants\.R_OK\)[\s\S]*stats\.isDirectory\(\)[\s\S]*await fsp\.readdir\(resolvedLocalPath\)/,
+      "Dropped upload service must stat, read-check, require, and enumerate local folders.",
+    );
+
+    assertContains(
+      filemanagementServiceSource,
+      /requestedRemoteDirectories/,
+      "Upload service must accept validated directory creation requests for folder drops.",
+    );
+
+    assertContains(
+      filemanagementServiceSource,
+      /if\s*\(tasks\.length === 0\)/,
+      "Upload service must complete directory-only drops without creating file upload tasks.",
+    );
+
+    assertContains(
+      filemanagementServiceSource,
+      /const\s*\{\s*SESSION_CONFIG,\s*TRANSFER_CONFIG\s*\}\s*=\s*require\("\.\/sftpConfig"\)/,
+      "Upload service concurrency must use the centralized SFTP transfer limits.",
+    );
+
+    assertContains(
+      filemanagementServiceSource,
+      /TRANSFER_CONFIG\?\.PARALLEL_FILES_UPLOAD/,
+      "Upload service must cap upload task concurrency with PARALLEL_FILES_UPLOAD.",
+    );
+
+    assertContains(
+      filemanagementServiceSource,
+      /SESSION_CONFIG\?\.MAX_SESSIONS_PER_TAB/,
+      "Upload service must cap upload task concurrency with MAX_SESSIONS_PER_TAB.",
+    );
+
+    assertContains(
+      filemanagementServiceSource,
+      /directoryMode:\s*true,\s*\n\s*direction:\s*"upload",/,
+      "Dropped folder uploads must select upload-specific transfer concurrency.",
+    );
+
+    assertContains(
+      fileHandlersSource,
+      /normalizeDroppedFolderRelativePath\(folderData\)/,
+      "Remote overwrite preflight must use structured folder descriptors.",
+    );
+
+    assertNotContains(
+      filemanagementServiceSource,
+      /_extractDroppedFileBuffer|upload-buffer|fileData\.data|fileData\.chunks|Buffer\.concat\(chunks\)/,
+      "Dropped upload service must not keep renderer-buffer upload paths.",
+    );
+  }
+
+  function testDroppedUploadBatchPreflight() {
+    const preflightSource = getFunctionSource(
+      fileHandlersSource,
+      "checkDroppedUploadConflicts",
+    );
+    const batchSource = getFunctionSource(
+      nativeSftpClientSource,
+      "getFilePermissionsBatch",
+    );
+    assertContains(
+      preflightSource,
+      /await nativeSftpClient\.getFilePermissionsBatch\(\s*tabId,\s*dedupedCandidates\.map\(\(candidate\) => candidate\.remotePath\)/,
+      "Remote overwrite preflight must batch the deduplicated remote candidate paths.",
+    );
+    assertContains(
+      preflightSource,
+      /else if \(result\.errorCode !== "NATIVE_SFTP_NOT_FOUND"\)\s*\{\s*nativeSftpClient\.requireNativeSuccess\(result\)/,
+      "Remote overwrite preflight must propagate every failure except explicit not-found results.",
+    );
+    assertContains(
+      batchSource,
+      /return requireNativeSuccess\(\s*await invokeNativeRequest\(\s*tabId,\s*\{ operation: "getFilePermissionsBatch", paths \}/,
+      "The native batch client must propagate request-level failures before inspecting individual paths.",
+    );
+
+    // Missing paths are per-item results inside a successful batch response;
+    // they no longer need the old per-request expectedFailure logging override.
+    const nativeSource = readSource(
+      "native-services/desktop-host/src/sidecars/file_management/mod.rs",
+    );
+    const batchStart = nativeSource.indexOf(
+      "SftpOperation::GetFilePermissionsBatch => {",
+    );
+    const batchEnd = nativeSource.indexOf("SftpOperation::", batchStart + 1);
+    assert.ok(
+      batchStart >= 0 && batchEnd > batchStart,
+      "Missing native batch branch",
+    );
+    const nativeBatchSource = nativeSource.slice(batchStart, batchEnd);
+    assertContains(
+      nativeBatchSource,
+      /"success": false,[\s\S]*"errorCode": classification\.error_code/,
+      "Native permission batches must preserve structured errors for each failed path.",
+    );
+    assertContains(
+      nativeBatchSource,
+      /Ok\(json!\(\{ "success": true, "results": results \}\)\)/,
+      "Completed permission batches must return per-path results without logging missing paths as request failures.",
+    );
+  }
+
+  function testNativeSftpExpectedFailureLogging() {
+    assertContains(
+      nativeSftpClientSource,
+      /function isExpectedNativeFailure\(value,\s*options = \{\}\)/,
+      "Native SFTP client must support caller-declared expected failures.",
+    );
+
+    assertContains(
+      nativeSftpClientSource,
+      /options\.expectedFailure\(value\) === true/,
+      "Native SFTP expected-failure predicates must decide from the native result payload.",
+    );
+
+    assertContains(
+      nativeSftpClientSource,
+      /normalizeLogLevel\(\s*options\.expectedFailureLevel,\s*"DEBUG"\s*,?\s*\)/,
+      "Native SFTP expected failures must default to DEBUG logging.",
+    );
+
+    assertContains(
+      nativeSftpClientSource,
+      /const status = expectedFailure \? "expected error" : "error"/,
+      "Native SFTP logs must distinguish expected probing results from real errors.",
+    );
+  }
+
+  function testIpcTraceLogPolicy() {
+    assertContains(
+      ipcTraceSource,
+      /"terminal:startSSH":\s*2000/,
+      "startSSH must use a channel-specific slow IPC threshold.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /startDirectoryWatch:\s*1000/,
+      "Directory watch startup must use a channel-specific slow IPC threshold.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /checkDroppedUploadConflicts:\s*5000/,
+      "Dropped upload conflict checks must allow multi-path probing before logging as slow.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /uploadDroppedFiles:\s*5000/,
+      "Dropped uploads must allow transfer setup work before logging as slow.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /uploadFile:\s*5000/,
+      "Manual file uploads must use a transfer-aware slow IPC threshold.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /uploadFolder:\s*5000/,
+      "Manual folder uploads must use a transfer-aware slow IPC threshold.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /downloadFile:\s*5000/,
+      "Single file downloads must use a transfer-aware slow IPC threshold.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /downloadFiles:\s*5000/,
+      "Batch downloads must use a transfer-aware slow IPC threshold.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /downloadFolder:\s*5000/,
+      "Folder downloads must use a transfer-aware slow IPC threshold.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /createFolder:\s*1000/,
+      "createFolder must use a channel-specific slow IPC threshold.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /moveFile:\s*1000/,
+      "moveFile must use a channel-specific slow IPC threshold.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /deleteFile:\s*1000/,
+      "deleteFile must use a channel-specific slow IPC threshold.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /const failed = outcome\.success === false/,
+      "IPC trace log level must distinguish failed outcomes from slow successful outcomes.",
+    );
+
+    assertContains(
+      ipcTraceSource,
+      /failed\s*\?\s*"WARN"\s*:\s*durationMs >= trace\.slowThresholdMs\s*\?\s*"INFO"\s*:\s*"DEBUG"/,
+      "Successful slow IPC traces must log at INFO while WARN remains reserved for failures.",
+    );
+  }
+
+  function testNativeListAndScrollConventions() {
+    assertContains(
+      commandSuggestionSource,
+      /scrollIntoView\([\s\S]*behavior:\s*"auto"/,
+      "Command suggestion selection must not use smooth-scroll behavior.",
+    );
+
+    assertNotContains(
+      commandSuggestionSource,
+      /behavior:\s*"smooth"/,
+      "Command suggestion selection must not use smooth-scroll behavior.",
+    );
+
+    assertNotContains(
+      commandSuggestionSource,
+      /cursor:\s*"pointer"/,
+      "Command suggestion rows must keep the native list-row cursor.",
+    );
+
+    assertNotContains(
+      readSource("src/renderer/features/file-manager/panels/FileList.jsx"),
+      /cursor:\s*"pointer"/,
+      "File list rows must keep the native list-row cursor.",
+    );
+
+    assertNotContains(
+      customTabSource,
+      /cursor:\s*"pointer"/,
+      "Tab drag hover rows must keep the native cursor.",
+    );
+
+    assertNotContains(
+      `${commandSuggestionSource}\n${fileManagerSource}\n${connectionManagerSource}`,
+      /transition:\s*"all\b/,
+      "Native-feel UI surfaces must use explicit transition properties instead of transition: all.",
+    );
+  }
+
+  it("startup and window lifecycle", testStartupAndWindowLifecycle);
+  it(
+    "desktop integration is native and explicit",
+    testDesktopIntegrationIsNativeAndExplicit,
+  );
+  it(
+    "system-opened local files are native and explicit",
+    testSystemOpenFilesAreNativeAndExplicit,
+  );
+  it("global reduced motion", testReducedMotionIsGlobal);
+  it(
+    "drag and drop uses native validated local paths",
+    testDragAndDropUsesNativeValidatedLocalPaths,
+  );
+  it("dropped upload batch preflight", testDroppedUploadBatchPreflight);
+  it(
+    "native sftp expected failure logging",
+    testNativeSftpExpectedFailureLogging,
+  );
+  it("ipc trace log policy", testIpcTraceLogPolicy);
+  it("native list and scroll conventions", testNativeListAndScrollConventions);
+});

@@ -129,22 +129,14 @@ const ConnectionItem = memo(
           >
             {/* Drag handle for reordering */}
             {dragHandleProps && (
-              <Box
-                {...dragHandleProps}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  mr: 1,
-                  cursor: "grab",
-                  opacity: 0.6,
-                  "&:hover": { opacity: 1 },
-                }}
-              >
+              <Box {...dragHandleProps} sx={viewStyles.boxSx}>
                 <DragIndicatorIcon fontSize="small" />
               </Box>
             )}
 
-            <ListItemIcon sx={{ minWidth: 30 }}>{itemIcon}</ListItemIcon>
+            <ListItemIcon sx={viewStyles.listItemIconSx}>
+              {itemIcon}
+            </ListItemIcon>
 
             <ListItemText
               primary={
@@ -161,12 +153,7 @@ const ConnectionItem = memo(
                     <Typography
                       variant="caption"
                       color="text.secondary"
-                      sx={{
-                        px: 0.5,
-                        py: 0.25,
-                        borderRadius: 1,
-                        bgcolor: "action.hover",
-                      }}
+                      sx={viewStyles.typographySx}
                     >
                       {item.status}
                     </Typography>
@@ -462,7 +449,7 @@ const VirtualizedConnectionList = ({
         }}
       >
         <Box>
-          <ComputerIcon sx={{ fontSize: 48, mb: 1, opacity: 0.5 }} />
+          <ComputerIcon sx={viewStyles.computerIconSx} />
           <Typography variant="body2">
             {searchTerm
               ? t("connectionManager.noMatchingConnections")
@@ -537,3 +524,23 @@ const VirtualizedConnectionList = ({
 };
 
 export default memo(VirtualizedConnectionList);
+
+// Stable declarations shared by row renders. Dynamic styles stay with their owner.
+const viewStyles = {
+  boxSx: {
+    display: "flex",
+    alignItems: "center",
+    mr: 1,
+    cursor: "grab",
+    opacity: 0.6,
+    "&:hover": { opacity: 1 },
+  },
+  listItemIconSx: { minWidth: 30 },
+  typographySx: {
+    px: 0.5,
+    py: 0.25,
+    borderRadius: 1,
+    bgcolor: "action.hover",
+  },
+  computerIconSx: { fontSize: 48, mb: 1, opacity: 0.5 },
+};

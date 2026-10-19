@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../../../shared/constants/zIndex.js";
 import { Box, TextField, InputAdornment } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import FolderIcon from "@mui/icons-material/Folder";
@@ -19,7 +20,7 @@ export default function Breadcrumbs({
         overflow: "hidden",
         borderBottom: `1px solid ${theme.palette.divider}`,
         position: "relative",
-        zIndex: 1,
+        zIndex: Z_INDEX.raised,
         flexShrink: 0,
         display: "flex",
         alignItems: "center",

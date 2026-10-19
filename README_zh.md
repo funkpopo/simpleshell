@@ -152,11 +152,20 @@ npm run start
 # 使用 Prettier 格式化代码
 npm run format
 
-# 运行全部检查脚本和单元测试
+# 运行单元测试、契约测试与架构检查
 npm test
 
 # 仅运行 Node 单元测试
 npm run test:unit
+
+# 编译本地集成测试所需的 Rust 原生服务
+cargo build --locked --manifest-path native-services/desktop-host/Cargo.toml
+
+# 运行 Electron、原生服务与生产构建集成测试
+npm run test:integration
+
+# 运行全部本地检查与集成测试
+npm run test:all
 
 # 检查应用代码、脚本和单元测试的代码规范
 npm run lint
@@ -201,8 +210,8 @@ simpleshell/
 │   ├── renderer/            # React UI, terminal views and browser helpers
 │   └── shared/              # Contracts, pure cross-runtime logic and locales
 ├── native-services/         # Rust native-services crate
-├── tests/                   # Unit and composition tests
-├── scripts/                 # Build, release and integration checks
+├── tests/                   # 单元/契约/集成测试、辅助函数与测试页面
+├── scripts/                 # 构建与发布工具
 ├── forge.config.js
 └── webpack.*.config.js
 ```

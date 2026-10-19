@@ -1,4 +1,15 @@
-# 文件传输完整性基线（Phase 0 冻结）
+# 文件传输服务边界
+
+`filemanagementService.js` 保留公开命令、传输注册表和生命周期状态，组合
+`domains/` 中的任务注册/取消、进度事件、进程池与运行指标、远端目录扫描、
+续传恢复、批任务、单文件/多文件/目录下载、上传执行和上传来源选择模块。
+每个模块接收明确命名的状态和命令，传输身份、缓存、任务队列不重复存储。
+底层网络操作仍通过原生 SFTP 服务执行，现有调用接口保持一致。
+
+`tests/integration/sftpRecovery.test.js` 使用真实本地 SSH/SFTP 服务验证
+中断、重试、续传、校验、目录操作和取消；`npm run test:integration` 统一运行。
+
+## 文件传输完整性基线（Phase 0 冻结）
 
 > 来源：`transferIntegrity.js` → `resumableTransfer.js` 调用链核对，日期 2026-09-22。
 
@@ -32,10 +43,10 @@
 
 ## 错误分类汇总
 
-| 错误                                  | errorKind          | retryable |
-| ------------------------------------- | ------------------ | --------- |
-| 不支持的算法                           | validation         | false     |
-| 非法区间/非普通文件                    | （无，普通 Error） | -         |
-| 源文件被截断                           | （无，普通 Error） | -         |
-| 源文件变化                             | source-changed     | false     |
-| 双端摘要不一致                         | integrity-mismatch | false     |
+| 错误                | errorKind          | retryable |
+| ------------------- | ------------------ | --------- |
+| 不支持的算法        | validation         | false     |
+| 非法区间/非普通文件 | （无，普通 Error） | -         |
+| 源文件被截断        | （无，普通 Error） | -         |
+| 源文件变化          | source-changed     | false     |
+| 双端摘要不一致      | integrity-mismatch | false     |

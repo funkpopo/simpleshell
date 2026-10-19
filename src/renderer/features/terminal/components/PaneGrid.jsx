@@ -1,3 +1,4 @@
+import { Z_INDEX } from "../../../shared/constants/zIndex.js";
 import React, { useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import Box from "@mui/material/Box";
@@ -84,19 +85,7 @@ const Pane = ({
             WebkitAppRegion: "no-drag",
           }}
         >
-          <Typography
-            variant="caption"
-            sx={{
-              flex: 1,
-              minWidth: 0,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              color: "text.secondary",
-              fontSize: "0.7rem",
-              lineHeight: 1,
-            }}
-          >
+          <Typography variant="caption" sx={viewStyles.typographySx}>
             {label}
           </Typography>
           {showCloseButton ? (
@@ -109,43 +98,17 @@ const Pane = ({
                   e.stopPropagation();
                   onClosePane?.(paneId);
                 }}
-                sx={{ p: 0.25 }}
+                sx={viewStyles.iconButtonSx}
               >
-                <CloseIcon sx={{ fontSize: 13 }} />
+                <CloseIcon sx={viewStyles.closeIconSx} />
               </IconButton>
             </Tooltip>
           ) : null}
         </Box>
       ) : null}
-      <Box sx={{ flex: 1, minHeight: 0, position: "relative" }}>{children}</Box>
-      {focused && showHeader ? (
-        <Box
-          sx={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 2,
-            bgcolor: "primary.main",
-            zIndex: 4,
-            pointerEvents: "none",
-          }}
-        />
-      ) : null}
-      {isPaneDragOver ? (
-        <Box
-          sx={{
-            position: "absolute",
-            inset: 0,
-            border: "2px dashed",
-            borderColor: "primary.main",
-            bgcolor: "action.focus",
-            opacity: 0.35,
-            pointerEvents: "none",
-            zIndex: 5,
-          }}
-        />
-      ) : null}
+      <Box sx={viewStyles.boxSx}>{children}</Box>
+      {focused && showHeader ? <Box sx={viewStyles.boxSx2} /> : null}
+      {isPaneDragOver ? <Box sx={viewStyles.boxSx3} /> : null}
     </Box>
   );
 };
@@ -385,7 +348,7 @@ const PaneGrid = ({
           sx={{
             gridColumn: 2,
             gridRow: grid && paneCount === 4 ? "1 / 4" : 1,
-            zIndex: 2,
+            zIndex: Z_INDEX.control,
           }}
           getRatio={() => columnRatio}
           setRatio={(value) => onSetRatios([value, ratios[1]])}
@@ -396,7 +359,11 @@ const PaneGrid = ({
           key="rows"
           orientation="horizontal"
           // 与垂直分隔条同层级，避免四宫格中心十字处 hover 高亮跳变
-          sx={{ gridRow: 2, gridColumn: grid ? "1 / 4" : 1, zIndex: 2 }}
+          sx={{
+            gridRow: 2,
+            gridColumn: grid ? "1 / 4" : 1,
+            zIndex: Z_INDEX.control,
+          }}
           getRatio={() => rowRatio}
           setRatio={(value) =>
             onSetRatios(grid ? [ratios[0], value] : [value, ratios[1]])
@@ -438,3 +405,40 @@ PaneGrid.defaultProps = {
 
 // React.memo：布局/焦点不变时不重排（终端内容自行管理重绘）
 export default React.memo(PaneGrid);
+
+// Stable declarations shared by row renders. Dynamic styles stay with their owner.
+const viewStyles = {
+  typographySx: {
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    color: "text.secondary",
+    fontSize: "0.7rem",
+    lineHeight: 1,
+  },
+  iconButtonSx: { p: 0.25 },
+  closeIconSx: { fontSize: 13 },
+  boxSx: { flex: 1, minHeight: 0, position: "relative" },
+  boxSx2: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    bgcolor: "primary.main",
+    zIndex: Z_INDEX.paneHeader,
+    pointerEvents: "none",
+  },
+  boxSx3: {
+    position: "absolute",
+    inset: 0,
+    border: "2px dashed",
+    borderColor: "primary.main",
+    bgcolor: "action.focus",
+    opacity: 0.35,
+    pointerEvents: "none",
+    zIndex: Z_INDEX.paneControl,
+  },
+};
