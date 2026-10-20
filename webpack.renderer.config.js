@@ -46,6 +46,9 @@ module.exports = {
     rules,
   },
   resolve: {
+    // The isolated renderer has no Node globals. Packages such as vfile must
+    // resolve their browser implementation even with an electron-renderer target.
+    conditionNames: ["browser", "webpack", "import", "require", "default"],
     alias: {
       "react-transition-group/TransitionGroupContext$":
         reactTransitionGroupContextPath,

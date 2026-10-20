@@ -386,6 +386,8 @@ const AIChatWindow = ({
   const [abortController, setAbortController] = useState(null);
   const [apiMenuAnchor, setApiMenuAnchor] = useState(null);
   const [availableApis, setAvailableApis] = useState([]);
+  // 首次展开前恢复配置和窗口尺寸，避免先显示默认布局再跳变。
+  const [initialSettingsLoaded, setInitialSettingsLoaded] = useState(false);
   const [windowWidth, setWindowWidth] = useState(DEFAULT_WIDTH);
   const [windowHeight, setWindowHeight] = useState(DEFAULT_HEIGHT);
   const [isResizing, setIsResizing] = useState(null);
@@ -540,6 +542,8 @@ const AIChatWindow = ({
       }
     } catch (err) {
       console.error("Failed to load API settings:", err);
+    } finally {
+      setInitialSettingsLoaded(true);
     }
   };
 
@@ -547,13 +551,17 @@ const AIChatWindow = ({
   useEffect(() => {
     if (windowState === "visible") {
       loadApiSettings();
-      // 延迟聚焦以确保 DOM 已渲染
-      const timer = setTimeout(() => inputRef.current?.focus(), 100);
-      return () => clearTimeout(timer);
+      return;
     }
     setApiMenuAnchor(null);
     setSettingsOpen(false);
   }, [windowState]);
+
+  useEffect(() => {
+    if (windowState !== "visible" || !initialSettingsLoaded) return;
+    const timer = setTimeout(() => inputRef.current?.focus(), 100);
+    return () => clearTimeout(timer);
+  }, [initialSettingsLoaded, windowState]);
 
   // 处理预设输入
   useEffect(() => {
@@ -1254,7 +1262,7 @@ const AIChatWindow = ({
 
   return (
     <FloatingDialog
-      open={windowState === "visible"}
+      open={windowState === "visible" && initialSettingsLoaded}
       hideBackdrop
       disableEnforceFocus
       disableAutoFocus
@@ -1377,7 +1385,9 @@ const AIChatWindow = ({
           gap: 1,
         }}
       >
-        <Box display="flex" alignItems="center" gap={0.75} minWidth={0}>
+        <Box
+          sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0 }}
+        >
           <Tooltip title={t("aiAssistant.minimize")}>
             <IconButton
               size="small"
@@ -1409,7 +1419,14 @@ const AIChatWindow = ({
             )}
           </Box>
         </Box>
-        <Box display="flex" alignItems="center" gap={0.35} flexShrink={0}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 0.35,
+            flexShrink: 0,
+          }}
+        >
           {showModelChip && (
             <Tooltip title={t("ai.switchModel")}>
               <Chip
@@ -1559,7 +1576,7 @@ const AIChatWindow = ({
         {/* 消息列表 */}
         <Box
           ref={messagesContainerRef}
-          className={aiClassName("ai-chat-messages")}
+          className={`${aiClassName("ai-chat-messages")} app-scrollbar app-scrollbar-compact`}
         >
           {messages.length === 0 && (
             <Box className={aiClassName("ai-chat-empty")}>

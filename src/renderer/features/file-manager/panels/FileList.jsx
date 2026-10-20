@@ -52,6 +52,15 @@ const FILE_LIST_SECONDARY_TEXT_SX = {
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
 };
+const formatSecondaryText = (file, t) => {
+  if (!file) return "";
+  const date = file.modifyTime
+    ? formatDate(new Date(file.modifyTime), { t })
+    : "";
+  const size =
+    file.size && !file.isDirectory ? formatFileSize(file.size, { t }) : "";
+  return [date, size].filter(Boolean).join(" · ");
+};
 const VirtualizedFileRow = memo(function VirtualizedFileRow({
   index,
   style,
@@ -62,13 +71,14 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
   onActivate,
   theme,
 }) {
+  const { t } = useTranslation();
   const rowStyle = useMemo(
     () => ({ ...style, boxSizing: "border-box", padding: "2px 4px" }),
     [style],
   );
-  const row = rows[index];
-  if (!row) return null;
-  const { file, secondaryText } = row;
+  const file = rows[index];
+  const secondaryText = useMemo(() => formatSecondaryText(file, t), [file, t]);
+  if (!file) return null;
   const isSelected = isFileSelected(file);
   return (
     <div style={rowStyle}>
@@ -152,28 +162,6 @@ export default function FileList({
 }) {
   const theme = useTheme();
   const { t } = useTranslation();
-  const displayFileRows = useMemo(() => {
-    return displayFiles.map((file, index) => {
-      const formattedDate = file?.modifyTime
-        ? formatDate(new Date(file.modifyTime), {
-            t,
-          })
-        : "";
-      const formattedSize =
-        file?.size && !file?.isDirectory
-          ? formatFileSize(file.size, {
-              t,
-            })
-          : "";
-      return {
-        file,
-        index,
-        secondaryText: [formattedDate, formattedSize]
-          .filter(Boolean)
-          .join(" · "),
-      };
-    });
-  }, [displayFiles, t]);
   if (loading) {
     return (
       <Box sx={viewStyles.boxSx}>
@@ -188,7 +176,7 @@ export default function FileList({
       </Box>
     );
   }
-  if (!displayFileRows || displayFileRows.length === 0) {
+  if (!displayFiles || displayFiles.length === 0) {
     // chunked/nonBlocking 目录加载：首批数据可能为空，但仍在持续接收分片
     // 这时应该显示加载动画，而不是“当前目录为空”
     if (!searchTerm && (isChunking || listToken)) {
@@ -217,7 +205,7 @@ export default function FileList({
     );
   }
   const shouldVirtualize =
-    displayFileRows.length >= FILE_LIST_VIRTUALIZATION_THRESHOLD;
+    displayFiles.length >= FILE_LIST_VIRTUALIZATION_THRESHOLD;
   return (
     <Box
       className="app-scrollbar"
@@ -227,12 +215,12 @@ export default function FileList({
     >
       {shouldVirtualize ? (
         <VirtualizedList
-          className="file-manager-virtualized-list"
+          className="file-manager-virtualized-list app-scrollbar"
           style={viewStyles.virtualizedListStyle}
-          rowCount={displayFileRows.length}
+          rowCount={displayFiles.length}
           rowHeight={FILE_LIST_ROW_HEIGHT}
           rowProps={{
-            rows: displayFileRows,
+            rows: displayFiles,
             isFileSelected,
             onContextMenu: handleContextMenu,
             onSelect: handleFileSelect,
@@ -244,7 +232,8 @@ export default function FileList({
         />
       ) : (
         <List dense disablePadding sx={viewStyles.listSx}>
-          {displayFileRows.map(({ file, index, secondaryText }) => {
+          {displayFiles.map((file, index) => {
+            const secondaryText = formatSecondaryText(file, t);
             const isSelected = isFileSelected(file);
             return (
               <ListItem

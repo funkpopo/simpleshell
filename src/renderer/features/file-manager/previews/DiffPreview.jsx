@@ -148,18 +148,6 @@ export default function DiffPreview({
     added: 0,
     removed: 0,
   };
-  const scrollbarTrackColor =
-    theme.palette.mode === "dark"
-      ? alpha(theme.palette.common.white, 0.06)
-      : alpha(theme.palette.common.black, 0.05);
-  const scrollbarThumbColor =
-    theme.palette.mode === "dark"
-      ? alpha(theme.palette.common.white, 0.18)
-      : alpha(theme.palette.text.secondary, 0.24);
-  const scrollbarThumbHoverColor =
-    theme.palette.mode === "dark"
-      ? alpha(theme.palette.primary.light, 0.4)
-      : alpha(theme.palette.primary.main, 0.36);
   const fontFamily = getFontFamily(globalEditorFont);
   const vscodeGreenBackground =
     theme.palette.mode === "dark"
@@ -207,23 +195,6 @@ export default function DiffPreview({
     ".cm-scroller": {
       overflowX: "hidden",
       overflowY: "auto",
-      scrollbarWidth: "thin",
-      scrollbarColor: `${scrollbarThumbColor} ${scrollbarTrackColor}`,
-      "&::-webkit-scrollbar": {
-        width: "10px",
-        height: "0px",
-      },
-      "&::-webkit-scrollbar-track": {
-        backgroundColor: scrollbarTrackColor,
-        borderRadius: "999px",
-      },
-      "&::-webkit-scrollbar-thumb": {
-        backgroundColor: scrollbarThumbColor,
-        borderRadius: "999px",
-      },
-      "&::-webkit-scrollbar-thumb:hover": {
-        backgroundColor: scrollbarThumbHoverColor,
-      },
     },
     ".cm-content": {
       fontFamily: `${fontFamily} !important`,

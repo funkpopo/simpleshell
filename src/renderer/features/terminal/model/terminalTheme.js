@@ -48,6 +48,20 @@ export const getTerminalTheme = (mode = "dark") => {
       ? "rgba(79, 126, 255, 0.43)"
       : "rgba(212, 253, 62, 0.49)",
     selectionForeground: undefined,
+    // xterm generates its own slider rules on creation and every theme update.
+    // Match scrollbar.css explicitly instead of deriving them from foreground.
+    scrollbarSliderBackground: isLight
+      ? "rgba(96, 96, 96, 0.3)"
+      : "rgba(180, 180, 180, 0.34)",
+    scrollbarSliderHoverBackground: isLight
+      ? "rgba(96, 96, 96, 0.48)"
+      : "rgba(200, 200, 200, 0.55)",
+    scrollbarSliderActiveBackground: isLight
+      ? "rgba(96, 96, 96, 0.64)"
+      : "rgba(216, 216, 216, 0.68)",
+    // The ruler shares the scrollbar track; a permanent edge looks like a gap
+    // between the terminal and the sidebar even while the scrollbar is hidden.
+    overviewRulerBorder: "transparent",
     // ANSI颜色 - 现代化配色方案（参考GitHub/VSCode主题）
     black: isLight ? "#24292f" : "#484f58",
     red: isLight ? "#cf222e" : "#ff7b72",

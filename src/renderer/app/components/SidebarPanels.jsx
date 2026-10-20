@@ -16,6 +16,7 @@ import {
 } from "../LazyComponents.jsx";
 import { shallowEqual } from "../state/subscriptionStore.js";
 import { useDelayedPresence } from "../appShellUtils.js";
+import { useCallback } from "react";
 
 export default function SidebarPanels({
   resourceMonitorOpen,
@@ -79,6 +80,18 @@ export default function SidebarPanels({
     localTerminalSidebarOpen,
   );
   const sftpFollowTerminalDirectory = useSftpFollowSetting();
+  const consumeCreateConnectionSignal = useCallback(
+    () => setCreateConnectionSignal(0),
+    [setCreateConnectionSignal],
+  );
+  const closeSecurityTools = useCallback(() => {
+    dispatch(actions.setSecurityToolsOpen(false));
+    setFallbackSidebarAfterClose("password");
+  }, [dispatch, setFallbackSidebarAfterClose]);
+  const closePortForwarding = useCallback(() => {
+    dispatch(actions.setPortForwardingOpen(false));
+    setFallbackSidebarAfterClose("forwarding");
+  }, [dispatch, setFallbackSidebarAfterClose]);
   return (
     <Box
       sx={{
@@ -145,9 +158,7 @@ export default function SidebarPanels({
             onConnectionsUpdate={handleConnectionsUpdate}
             onOpenConnection={handleOpenConnection}
             createConnectionSignal={createConnectionSignal}
-            onCreateConnectionSignalConsumed={() =>
-              setCreateConnectionSignal(0)
-            }
+            onCreateConnectionSignalConsumed={consumeCreateConnectionSignal}
             sessionContext={sidebarSessionContext}
           />
         )}
@@ -273,10 +284,7 @@ export default function SidebarPanels({
         {securityToolsPresent && (
           <SecurityTools
             open={securityToolsOpen}
-            onClose={() => {
-              dispatch(actions.setSecurityToolsOpen(false));
-              setFallbackSidebarAfterClose("password");
-            }}
+            onClose={closeSecurityTools}
             sessionContext={sidebarSessionContext}
           />
         )}
@@ -303,10 +311,7 @@ export default function SidebarPanels({
               activeSession?.type === "ssh" ? activeSessionKey : null
             }
             activeSessionConnected={activeSession?.status?.isConnected === true}
-            onClose={() => {
-              dispatch(actions.setPortForwardingOpen(false));
-              setFallbackSidebarAfterClose("forwarding");
-            }}
+            onClose={closePortForwarding}
             sessionContext={sidebarSessionContext}
           />
         )}

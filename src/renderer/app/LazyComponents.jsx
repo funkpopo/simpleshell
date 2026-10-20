@@ -42,11 +42,12 @@ const createLazyComponent = (
     const fallbackMessage = getFallbackMessage(t);
     const componentName = getComponentName(t);
 
-    const fallback = SkeletonComponent ? (
-      <SkeletonComponent {...props} loadingLabel={fallbackMessage} />
-    ) : (
-      <LoadingFallback message={fallbackMessage} />
-    );
+    const fallback =
+      SkeletonComponent === null ? null : SkeletonComponent ? (
+        <SkeletonComponent {...props} loadingLabel={fallbackMessage} />
+      ) : (
+        <LoadingFallback message={fallbackMessage} />
+      );
 
     return (
       <ErrorBoundary componentName={componentName}>
@@ -165,6 +166,8 @@ export const AIChatWindowWithSuspense = createLazyComponent(
   () => import("../features/ai/AIChatWindow.jsx"),
   (t) => t("common.skeleton.aiChat"),
   (t) => t("common.componentNames.aiAssistant"),
+  // 浮窗通过 Portal 显示，加载阶段也不能在工作区的 flex 布局中占位。
+  null,
 );
 
 export const FirstRunDialogWithSuspense = createLazyComponent(

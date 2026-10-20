@@ -4,21 +4,25 @@
   --app-scrollbar-track: transparent;
   --app-scrollbar-thumb: rgba(112, 112, 112, 0.38);
   --app-scrollbar-thumb-hover: rgba(112, 112, 112, 0.58);
+  --app-scrollbar-thumb-active: rgba(112, 112, 112, 0.72);
 }
 
-body.dark-theme {
-  --app-scrollbar-thumb: rgba(180, 180, 180, 0.34);
-  --app-scrollbar-thumb-hover: rgba(200, 200, 200, 0.55);
-}
-
-body.light-theme {
+/* Keep every state neutral gray, including when the theme accent is blue. */
+.light-theme {
   --app-scrollbar-thumb: rgba(96, 96, 96, 0.3);
   --app-scrollbar-thumb-hover: rgba(96, 96, 96, 0.48);
+  --app-scrollbar-thumb-active: rgba(96, 96, 96, 0.64);
+}
+
+.dark-theme {
+  --app-scrollbar-thumb: rgba(180, 180, 180, 0.34);
+  --app-scrollbar-thumb-hover: rgba(200, 200, 200, 0.55);
+  --app-scrollbar-thumb-active: rgba(216, 216, 216, 0.68);
 }
 
 ::-webkit-scrollbar {
-  width: var(--app-scrollbar-size);
-  height: var(--app-scrollbar-size);
+  width: var(--app-scrollbar-local-size, var(--app-scrollbar-size));
+  height: var(--app-scrollbar-local-size, var(--app-scrollbar-size));
 }
 
 ::-webkit-scrollbar-track {
@@ -36,18 +40,73 @@ body.light-theme {
   background-color: var(--app-scrollbar-thumb-hover);
 }
 
-.app-scrollbar {
-  --app-scrollbar-local-size: var(--app-scrollbar-size);
-  scrollbar-width: thin;
-  scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--app-scrollbar-thumb-active);
 }
 
-/* track/thumb 视觉样式由全局滚动条规则统一提供，这里只覆盖尺寸变量 */
-.app-scrollbar::-webkit-scrollbar {
-  width: var(--app-scrollbar-local-size);
-  height: var(--app-scrollbar-local-size);
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--app-scrollbar-track);
+}
+
+/* Chromium ignores the WebKit thumb/track skin when the standard properties
+ * are non-auto. Keep those properties as a fallback for other engines only. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
+  }
+}
+
+.app-scrollbar {
+  --app-scrollbar-local-size: var(--app-scrollbar-size);
 }
 
 .app-scrollbar.app-scrollbar-compact {
   --app-scrollbar-local-size: 6px;
+}
+
+/* xterm draws its own scrollbar. Use the same skin and outrank its generated
+ * theme rules without changing its scrolling or selection behavior. */
+.xterm .xterm-decoration-overview-ruler {
+  /* A custom scrollbar width also enables xterm's optional overview canvas.
+   * Keep a single scrollbar at the pane edge. xterm sets display inline when
+   * switching buffers, so this must also cover returning from an editor. */
+  display: none !important;
+}
+
+.xterm .xterm-scrollable-element > .xterm-scrollbar.xterm-vertical {
+  background: var(--app-scrollbar-track);
+}
+
+.xterm
+  .xterm-scrollable-element
+  > .xterm-scrollbar.xterm-vertical
+  > .xterm-slider {
+  background: var(--app-scrollbar-thumb);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  box-sizing: border-box;
+}
+
+.xterm
+  .xterm-scrollable-element
+  > .xterm-scrollbar.xterm-vertical
+  > .xterm-slider:hover {
+  background-color: var(--app-scrollbar-thumb-hover);
+  background-clip: content-box;
+}
+
+.xterm
+  .xterm-scrollable-element
+  > .xterm-scrollbar.xterm-vertical
+  > .xterm-slider.xterm-active {
+  background-color: var(--app-scrollbar-thumb-active);
+  background-clip: content-box;
 }

@@ -5,7 +5,6 @@ import {
   Box,
   Typography,
   IconButton,
-  Divider,
   Button,
   Tooltip,
   Alert,
@@ -32,6 +31,7 @@ import {
   sidebarTitleIconButtonSx,
 } from "../../shared/ui/sidebarItemStyles";
 import TransferItemCard from "./components/TransferItemCard.jsx";
+import WindowedSidebarList from "../../shared/ui/WindowedSidebarList.jsx";
 
 // 默认和限制宽度
 const DEFAULT_WIDTH = 320;
@@ -173,6 +173,54 @@ const TransferSidebar = memo(
       [history],
     );
 
+    const transferRows = useMemo(() => {
+      const rows = [];
+      const addSection = (type, transfers, label) => {
+        if (!transfers.length) return;
+        rows.push({ type: "heading", key: `heading-${type}`, label });
+        transfers.forEach((transfer, index) =>
+          rows.push({
+            type,
+            transfer,
+            index,
+            key: `${type}-${transfer.historyId ?? transfer.id ?? `${transfer.tabId}-${transfer.transferId}`}`,
+          }),
+        );
+      };
+      addSection(
+        "resumable",
+        resumable,
+        t("fileManager.transfer.resumableTasks", { count: resumable.length }),
+      );
+      addSection(
+        "active",
+        activeTransfers,
+        t("fileManager.transfer.activeSection", { count: activeFileCount }),
+      );
+      addSection(
+        "completed",
+        completedTransfers,
+        t("fileManager.transfer.completedSection", {
+          count: completedFileCount,
+        }),
+      );
+      addSection(
+        "history",
+        history,
+        t("fileManager.transfer.historySection", { count: historyFileCount }),
+      );
+      return rows;
+    }, [
+      resumable,
+      activeTransfers,
+      completedTransfers,
+      history,
+      activeFileCount,
+      completedFileCount,
+      historyFileCount,
+      t,
+    ]);
+
     // 取消传输
     const handleCancelTransfer = useCallback(
       (transfer) => {
@@ -308,6 +356,9 @@ const TransferSidebar = memo(
           className="app-scrollbar"
           sx={{
             flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
             overflowY: "auto",
             overflowX: "hidden",
           }}
@@ -318,184 +369,142 @@ const TransferSidebar = memo(
               {resumeError}
             </Alert>
           )}
-          {resumable.length > 0 && (
-            <Box sx={{ p: 1 }}>
-              <Typography variant="subtitle2">
-                {t("fileManager.transfer.resumableTasks", {
-                  count: resumable.length,
-                })}
-              </Typography>
-              {resumable.map((task) => (
-                <Box
-                  key={task.id}
-                  sx={{
-                    my: 1,
-                    p: 1,
-                    border: 1,
-                    borderColor: "divider",
-                    borderRadius: 1,
-                  }}
-                >
-                  <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
-                    {task.fileName}
-                  </Typography>
-                  <Typography variant="caption" display="block">
-                    {task.username}@{task.host} · {formatSize(task.totalBytes)}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    display="block"
-                    sx={{ overflowWrap: "anywhere" }}
-                  >
-                    {task.direction === "download"
-                      ? task.localPath
-                      : task.remotePath}
-                  </Typography>
-                  {!task.tabId && (
-                    <Typography variant="caption" color="warning.main">
-                      {t("fileManager.transfer.connectToResume")}
+          <WindowedSidebarList
+            items={transferRows}
+            className="transfer-virtualized-list app-scrollbar"
+            estimatedRowHeight={128}
+            getItemKey={(row) => row.key}
+            renderItem={(row) => {
+              if (row.type === "heading") {
+                return (
+                  <Box sx={{ px: 2, py: 1, bgcolor: "action.hover" }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {row.label}
                     </Typography>
-                  )}
-                  {task.error && (
-                    <Typography variant="caption" color="error.main">
-                      {task.error}
-                    </Typography>
-                  )}
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                    <Button
-                      size="small"
-                      disabled={
-                        !task.tabId || !!task.error || busyIds.has(task.id)
-                      }
-                      onClick={() => recoveryAction(task, "resume")}
-                    >
-                      {t("fileManager.transfer.resume")}
-                    </Button>
-                    <Button
-                      size="small"
-                      disabled={!task.tabId || busyIds.has(task.id)}
-                      onClick={() => recoveryAction(task, "restart")}
-                    >
-                      {t("fileManager.transfer.restart")}
-                    </Button>
-                    <Button
-                      size="small"
-                      disabled={
-                        !task.tabId || !!task.error || busyIds.has(task.id)
-                      }
-                      onClick={() => recoveryAction(task, "resume", "sha256")}
-                    >
-                      {t("fileManager.transfer.resumeAndVerify")}
-                    </Button>
-                    <Button
-                      size="small"
-                      color="error"
-                      disabled={
-                        (task.direction === "upload" && !task.tabId) ||
-                        busyIds.has(task.id)
-                      }
-                      onClick={() => recoveryAction(task, "discard")}
-                    >
-                      {t("fileManager.transfer.cleanRetained")}
-                    </Button>
                   </Box>
-                </Box>
-              ))}
-            </Box>
-          )}
-          {activeTransfers.length > 0 && (
-            <>
-              <Box sx={{ px: 2, py: 1, bgcolor: "action.hover" }}>
-                <Typography variant="caption" color="text.secondary">
-                  {t("fileManager.transfer.activeSection", {
-                    count: activeFileCount,
-                  })}
-                </Typography>
-              </Box>
-              <Box>
-                {activeTransfers.map((transfer) => (
-                  <TransferItemCard
-                    key={`${transfer.tabId}-${transfer.transferId}`}
-                    variant="sidebar"
-                    transfer={transfer}
-                    isActive={true}
-                    onCancel={handleCancelTransfer}
-                    onVerify={handleVerify}
-                  />
-                ))}
-              </Box>
-            </>
-          )}
-
-          {/* 已完成传输（当前会话） */}
-          {completedTransfers.length > 0 && (
-            <>
-              <Box sx={{ px: 2, py: 1, bgcolor: "action.hover" }}>
-                <Typography variant="caption" color="text.secondary">
-                  {t("fileManager.transfer.completedSection", {
-                    count: completedFileCount,
-                  })}
-                </Typography>
-              </Box>
-              <Box>
-                {completedTransfers.map((transfer) => (
-                  <TransferItemCard
-                    key={`${transfer.tabId}-${transfer.transferId}`}
-                    variant="sidebar"
-                    transfer={transfer}
-                    isActive={false}
-                  />
-                ))}
-              </Box>
-            </>
-          )}
-
-          {/* 历史记录 */}
-          {history.length > 0 && (
-            <>
-              <Divider />
-              <Box sx={{ px: 2, py: 1, bgcolor: "action.hover" }}>
-                <Typography variant="caption" color="text.secondary">
-                  {t("fileManager.transfer.historySection", {
-                    count: historyFileCount,
-                  })}
-                </Typography>
-              </Box>
-              <Box>
-                {history.map((transfer, index) => (
-                  <TransferItemCard
-                    key={`history-${transfer.historyId ?? transfer.transferId}-${transfer.completedTime ?? index}`}
-                    variant="sidebar"
-                    transfer={transfer}
-                    isActive={false}
-                    onDelete={() => removeHistoryItemAt(index)}
-                  />
-                ))}
-              </Box>
-            </>
-          )}
+                );
+              }
+              if (row.type === "resumable") {
+                const task = row.transfer;
+                return (
+                  <Box
+                    key={task.id}
+                    sx={{
+                      my: 1,
+                      p: 1,
+                      border: 1,
+                      borderColor: "divider",
+                      borderRadius: 1,
+                    }}
+                  >
+                    <Typography
+                      variant="body2"
+                      sx={{ overflowWrap: "anywhere" }}
+                    >
+                      {task.fileName}
+                    </Typography>
+                    <Typography variant="caption" display="block">
+                      {task.username}@{task.host} ·{" "}
+                      {formatSize(task.totalBytes)}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      display="block"
+                      sx={{ overflowWrap: "anywhere" }}
+                    >
+                      {task.direction === "download"
+                        ? task.localPath
+                        : task.remotePath}
+                    </Typography>
+                    {!task.tabId && (
+                      <Typography variant="caption" color="warning.main">
+                        {t("fileManager.transfer.connectToResume")}
+                      </Typography>
+                    )}
+                    {task.error && (
+                      <Typography variant="caption" color="error.main">
+                        {task.error}
+                      </Typography>
+                    )}
+                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                      <Button
+                        size="small"
+                        disabled={
+                          !task.tabId || !!task.error || busyIds.has(task.id)
+                        }
+                        onClick={() => recoveryAction(task, "resume")}
+                      >
+                        {t("fileManager.transfer.resume")}
+                      </Button>
+                      <Button
+                        size="small"
+                        disabled={!task.tabId || busyIds.has(task.id)}
+                        onClick={() => recoveryAction(task, "restart")}
+                      >
+                        {t("fileManager.transfer.restart")}
+                      </Button>
+                      <Button
+                        size="small"
+                        disabled={
+                          !task.tabId || !!task.error || busyIds.has(task.id)
+                        }
+                        onClick={() => recoveryAction(task, "resume", "sha256")}
+                      >
+                        {t("fileManager.transfer.resumeAndVerify")}
+                      </Button>
+                      <Button
+                        size="small"
+                        color="error"
+                        disabled={
+                          (task.direction === "upload" && !task.tabId) ||
+                          busyIds.has(task.id)
+                        }
+                        onClick={() => recoveryAction(task, "discard")}
+                      >
+                        {t("fileManager.transfer.cleanRetained")}
+                      </Button>
+                    </Box>
+                  </Box>
+                );
+              }
+              return (
+                <TransferItemCard
+                  variant="sidebar"
+                  transfer={row.transfer}
+                  isActive={row.type === "active"}
+                  onCancel={
+                    row.type === "active" ? handleCancelTransfer : undefined
+                  }
+                  onVerify={row.type === "active" ? handleVerify : undefined}
+                  onDelete={
+                    row.type === "history"
+                      ? () => removeHistoryItemAt(row.index)
+                      : undefined
+                  }
+                />
+              );
+            }}
+          />
 
           {/* 空状态 */}
-          {activeTransfers.length === 0 &&
-            completedTransfers.length === 0 &&
-            history.length === 0 && (
-              <Box
-                sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: "100%",
-                  color: "text.secondary",
-                  p: 4,
-                }}
-              >
-                <SwapVertIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
-                <Typography variant="body2">
-                  {t("fileManager.transfer.noTransfers")}
-                </Typography>
-              </Box>
-            )}
+          {transferRows.length === 0 && (
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                color: "text.secondary",
+                p: 4,
+              }}
+            >
+              <SwapVertIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
+              <Typography variant="body2">
+                {t("fileManager.transfer.noTransfers")}
+              </Typography>
+            </Box>
+          )}
         </Box>
       </FloatingDialog>
     );

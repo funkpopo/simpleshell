@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
+const fileNameCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
 /** Owns search, sorting and selection; exposes selection commands instead of individual setters. */
 export default function useFileSelection({
   files,
@@ -174,10 +179,7 @@ export default function useFileSelection({
         return bTime - aTime;
       }
       if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-      return (a.name || "").localeCompare(b.name || "", undefined, {
-        numeric: true,
-        sensitivity: "base",
-      });
+      return fileNameCollator.compare(a.name || "", b.name || "");
     });
   }, [files, searchTerm, sortMode, isChunking]);
 

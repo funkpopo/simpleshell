@@ -160,15 +160,21 @@ export default function SidebarWorkspace({
       shortcutCommandsOpen,
     ],
   );
+  const sidebarCloseStateRef = useRef(null);
+  sidebarCloseStateRef.current = { findFallbackSidebar, lastOpenedSidebar };
+  // Keep panel callbacks stable while still closing against the latest stack.
+  // Otherwise every rail click re-renders all the covered list panels.
   const setFallbackSidebarAfterClose = React.useCallback(
     (closingSidebar) => {
+      const { findFallbackSidebar, lastOpenedSidebar } =
+        sidebarCloseStateRef.current;
       if (lastOpenedSidebar === closingSidebar) {
         dispatch(
           actions.setLastOpenedSidebar(findFallbackSidebar(closingSidebar)),
         );
       }
     },
-    [dispatch, findFallbackSidebar, lastOpenedSidebar],
+    [dispatch],
   );
   const sidebarOpenFlags = {
     resource: resourceMonitorOpen,
@@ -315,20 +321,23 @@ export default function SidebarWorkspace({
     }
     notifyTerminalResize();
   };
-  const handleCloseFileManager = () => {
+  const handleCloseFileManager = useCallback(() => {
     const panelTab = activeSession;
     runSidebarClose((open) => {
       if (panelTab) {
         dispatch(actions.setFileManagerOpenForTab(panelTab.parentTabId, open));
       }
     }, "file");
-  };
-  const updateFileManagerPath = (tabId, path) => {
-    if (tabId && path) {
-      if (liveSessionKeysRef.current.has(tabId))
-        dispatch(actions.updateFileManagerPath(tabId, path));
-    }
-  };
+  }, [activeSession, dispatch, runSidebarClose]);
+  const updateFileManagerPath = useCallback(
+    (tabId, path) => {
+      if (tabId && path) {
+        if (liveSessionKeysRef.current.has(tabId))
+          dispatch(actions.updateFileManagerPath(tabId, path));
+      }
+    },
+    [dispatch],
+  );
   const updateFileManagerHistory = useCallback((tabId, navigationState) => {
     if (!tabId || !navigationState || !liveSessionKeysRef.current.has(tabId)) {
       return;
@@ -359,12 +368,12 @@ export default function SidebarWorkspace({
       "shortcut",
     );
   };
-  const handleCloseShortcutCommands = () => {
+  const handleCloseShortcutCommands = useCallback(() => {
     runSidebarClose(
       (open) => dispatch(actions.setShortcutCommandsOpen(open)),
       "shortcut",
     );
-  };
+  }, [dispatch, runSidebarClose]);
   const toggleCommandHistory = () => {
     runSidebarToggle(
       commandHistoryOpen,
@@ -372,12 +381,12 @@ export default function SidebarWorkspace({
       "history",
     );
   };
-  const handleCloseCommandHistory = () => {
+  const handleCloseCommandHistory = useCallback(() => {
     runSidebarClose(
       (open) => dispatch(actions.setCommandHistoryOpen(open)),
       "history",
     );
-  };
+  }, [dispatch, runSidebarClose]);
   const toggleIpAddressQuery = () => {
     runSidebarToggle(
       ipAddressQueryOpen,
@@ -385,12 +394,12 @@ export default function SidebarWorkspace({
       "ipquery",
     );
   };
-  const handleCloseIpAddressQuery = () => {
+  const handleCloseIpAddressQuery = useCallback(() => {
     runSidebarClose(
       (open) => dispatch(actions.setIpAddressQueryOpen(open)),
       "ipquery",
     );
-  };
+  }, [dispatch, runSidebarClose]);
   const toggleSecurityTools = () => {
     runSidebarToggle(
       securityToolsOpen,
@@ -418,9 +427,9 @@ export default function SidebarWorkspace({
       "localTerminal",
     );
   };
-  const handleCloseLocalTerminalSidebar = () => {
+  const handleCloseLocalTerminalSidebar = useCallback(() => {
     runSidebarClose(setLocalTerminalSidebarOpen, "localTerminal");
-  };
+  }, [runSidebarClose]);
   const handleLaunchLocalTerminal = useCallback(
     async (terminalConfig) => {
       if (!terminalConfig) {
@@ -652,7 +661,9 @@ export default function SidebarWorkspace({
                 left: "50%",
                 width: 2,
                 transform: "translateX(-50%)",
-                bgcolor: sidebarResizing ? "primary.main" : "transparent",
+                bgcolor: sidebarResizing
+                  ? "var(--app-scrollbar-thumb-active)"
+                  : "transparent",
                 opacity: sidebarResizing ? 0.8 : 0,
                 transition: theme.transitions.create(
                   ["background-color", "opacity"],
@@ -662,7 +673,7 @@ export default function SidebarWorkspace({
                 ),
               },
               "&:hover::after": {
-                bgcolor: "primary.main",
+                bgcolor: "var(--app-scrollbar-thumb-hover)",
                 opacity: 0.45,
               },
             })}

@@ -459,6 +459,7 @@ const ResourceMonitorContent = memo(
         }
       >
         <Box
+          className="app-scrollbar"
           sx={{
             // SidebarPanel 是 flex 列布局，flexGrow + minHeight 即可填满剩余空间，
             // 无需再假设标题栏高度做 calc

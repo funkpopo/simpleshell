@@ -23,10 +23,6 @@ export const terminalStyles = `
     box-shadow 0.12s ease !important;
 }
 
-.xterm-decoration-overview-ruler {
-  border-radius: 999px !important;
-}
-
 /* 深色主题下的搜索高亮：使用偏冷色，避免压住浅色终端文字 */
 .dark-theme .xterm-find-result-decoration,
 body:not(.light-theme) .xterm-find-result-decoration {
@@ -42,11 +38,6 @@ body:not(.light-theme) .xterm-find-active-result-decoration {
     inset 0 0 0 2px rgba(18, 58, 102, 0.12) !important;
 }
 
-.dark-theme .xterm-decoration-overview-ruler,
-body:not(.light-theme) .xterm-decoration-overview-ruler {
-  background: rgba(124, 184, 255, 0.78) !important;
-}
-
 /* 浅色主题下的搜索高亮：使用更轻的冷色，减少对深色文字的覆盖 */
 .light-theme .xterm-find-result-decoration,
 body:not(.dark-theme) .xterm-find-result-decoration {
@@ -60,11 +51,6 @@ body:not(.dark-theme) .xterm-find-active-result-decoration {
   box-shadow:
     inset 0 0 0 1px rgba(28, 88, 166, 0.38),
     inset 0 0 0 2px rgba(214, 232, 255, 0.52) !important;
-}
-
-.light-theme .xterm-decoration-overview-ruler,
-body:not(.dark-theme) .xterm-decoration-overview-ruler {
-  background: rgba(72, 136, 214, 0.7) !important;
 }
 `;
 

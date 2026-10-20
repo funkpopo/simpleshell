@@ -499,7 +499,7 @@ const VirtualizedConnectionList = ({
       {actualHeight > 0 && (
         <List
           listRef={listRef}
-          className="react-window-list"
+          className="react-window-list app-scrollbar"
           style={{ height: actualHeight, width: "100%" }}
           rowCount={flattenedItems.length}
           rowHeight={itemHeight}

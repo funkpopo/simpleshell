@@ -29,6 +29,7 @@ import StopIcon from "@mui/icons-material/Stop";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { useTranslation } from "react-i18next";
 import SidebarPanel from "../../shared/ui/SidebarPanel.jsx";
+import WindowedSidebarList from "../../shared/ui/WindowedSidebarList.jsx";
 
 const EMPTY_FORM = {
   id: null,
@@ -349,6 +350,7 @@ const PortForwardingDialog = ({
       }
     >
       <Box
+        className="app-scrollbar"
         sx={{
           flex: 1,
           minHeight: 0,
@@ -440,128 +442,135 @@ const PortForwardingDialog = ({
             {t("portForwarding.empty")}
           </Typography>
         ) : (
-          rules.map((rule) => {
-            const running = runtimeStatus[rule.id]?.status === "running";
-            return (
-              <Box
-                key={rule.id}
-                role="group"
-                aria-label={rule.name || buildRuleSummary(rule)}
-                sx={{
-                  minWidth: 0,
-                  flexShrink: 0,
-                  border: 1,
-                  borderColor: "divider",
-                  borderRadius: 1,
-                  p: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 0.5,
-                }}
-              >
+          <WindowedSidebarList
+            items={rules}
+            className="port-forwarding-virtualized-list app-scrollbar"
+            estimatedRowHeight={116}
+            getItemKey={(rule) => rule.id}
+            renderItem={(rule) => {
+              const running = runtimeStatus[rule.id]?.status === "running";
+              return (
                 <Box
+                  key={rule.id}
+                  role="group"
+                  aria-label={rule.name || buildRuleSummary(rule)}
                   sx={{
+                    minWidth: 0,
+                    flexShrink: 0,
+                    border: 1,
+                    borderColor: "divider",
+                    borderRadius: 1,
+                    p: 1,
                     display: "flex",
-                    alignItems: "flex-start",
+                    flexDirection: "column",
                     gap: 0.5,
+                    mb: rules.length >= 30 ? 1 : 0,
                   }}
                 >
-                  <Typography
-                    variant="body2"
+                  <Box
                     sx={{
-                      flex: 1,
-                      minWidth: 0,
-                      fontWeight: 500,
-                      overflowWrap: "anywhere",
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 0.5,
                     }}
-                    title={rule.name || buildRuleSummary(rule)}
                   >
-                    {rule.name || buildRuleSummary(rule)}
-                  </Typography>
-                  {renderStatusChip(rule)}
-                </Box>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ fontFamily: "monospace", overflowWrap: "anywhere" }}
-                >
-                  {buildRuleSummary(rule)}
-                </Typography>
-                {runtimeStatus[rule.id]?.error ? (
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontWeight: 500,
+                        overflowWrap: "anywhere",
+                      }}
+                      title={rule.name || buildRuleSummary(rule)}
+                    >
+                      {rule.name || buildRuleSummary(rule)}
+                    </Typography>
+                    {renderStatusChip(rule)}
+                  </Box>
                   <Typography
                     variant="caption"
-                    color="error"
-                    sx={{ overflowWrap: "anywhere" }}
+                    color="text.secondary"
+                    sx={{ fontFamily: "monospace", overflowWrap: "anywhere" }}
                   >
-                    {runtimeStatus[rule.id].error}
+                    {buildRuleSummary(rule)}
                   </Typography>
-                ) : null}
-                <Stack
-                  direction="row"
-                  spacing={0.5}
-                  sx={{ alignItems: "center" }}
-                >
-                  <Tooltip
-                    title={
-                      running
-                        ? t("portForwarding.stop")
-                        : t("portForwarding.start")
-                    }
+                  {runtimeStatus[rule.id]?.error ? (
+                    <Typography
+                      variant="caption"
+                      color="error"
+                      sx={{ overflowWrap: "anywhere" }}
+                    >
+                      {runtimeStatus[rule.id].error}
+                    </Typography>
+                  ) : null}
+                  <Stack
+                    direction="row"
+                    spacing={0.5}
+                    sx={{ alignItems: "center" }}
                   >
-                    <span>
+                    <Tooltip
+                      title={
+                        running
+                          ? t("portForwarding.stop")
+                          : t("portForwarding.start")
+                      }
+                    >
+                      <span>
+                        <IconButton
+                          size="small"
+                          color={running ? "default" : "primary"}
+                          disabled={
+                            Boolean(busyRules[rule.id]) ||
+                            (!running && !selectedTabId)
+                          }
+                          onClick={() => handleToggleRule(rule)}
+                          aria-label={
+                            running
+                              ? t("portForwarding.stop")
+                              : t("portForwarding.start")
+                          }
+                        >
+                          {busyRules[rule.id] === "toggle" ? (
+                            <CircularProgress size={16} />
+                          ) : running ? (
+                            <StopIcon fontSize="small" />
+                          ) : (
+                            <PlayArrowIcon fontSize="small" />
+                          )}
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title={t("portForwarding.edit")}>
                       <IconButton
                         size="small"
-                        color={running ? "default" : "primary"}
-                        disabled={
-                          Boolean(busyRules[rule.id]) ||
-                          (!running && !selectedTabId)
-                        }
-                        onClick={() => handleToggleRule(rule)}
-                        aria-label={
-                          running
-                            ? t("portForwarding.stop")
-                            : t("portForwarding.start")
-                        }
+                        disabled={Boolean(busyRules[rule.id])}
+                        onClick={() => handleOpenEdit(rule)}
+                        aria-label={t("portForwarding.edit")}
                       >
-                        {busyRules[rule.id] === "toggle" ? (
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title={t("portForwarding.delete")}>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        disabled={Boolean(busyRules[rule.id])}
+                        onClick={() => handleDeleteRule(rule)}
+                        aria-label={t("portForwarding.delete")}
+                      >
+                        {busyRules[rule.id] === "delete" ? (
                           <CircularProgress size={16} />
-                        ) : running ? (
-                          <StopIcon fontSize="small" />
                         ) : (
-                          <PlayArrowIcon fontSize="small" />
+                          <DeleteIcon fontSize="small" />
                         )}
                       </IconButton>
-                    </span>
-                  </Tooltip>
-                  <Tooltip title={t("portForwarding.edit")}>
-                    <IconButton
-                      size="small"
-                      disabled={Boolean(busyRules[rule.id])}
-                      onClick={() => handleOpenEdit(rule)}
-                      aria-label={t("portForwarding.edit")}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title={t("portForwarding.delete")}>
-                    <IconButton
-                      size="small"
-                      color="error"
-                      disabled={Boolean(busyRules[rule.id])}
-                      onClick={() => handleDeleteRule(rule)}
-                      aria-label={t("portForwarding.delete")}
-                    >
-                      {busyRules[rule.id] === "delete" ? (
-                        <CircularProgress size={16} />
-                      ) : (
-                        <DeleteIcon fontSize="small" />
-                      )}
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
-              </Box>
-            );
-          })
+                    </Tooltip>
+                  </Stack>
+                </Box>
+              );
+            }}
+          />
         )}
 
         {sessions.length === 0 ? (

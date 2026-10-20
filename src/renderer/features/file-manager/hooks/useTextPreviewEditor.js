@@ -330,18 +330,6 @@ export default function useTextPreviewEditor({
       nextExtensions.push(oneDark);
     }
 
-    const scrollbarTrackColor =
-      theme.palette.mode === "dark"
-        ? alpha(theme.palette.common.white, 0.06)
-        : alpha(theme.palette.common.black, 0.05);
-    const scrollbarThumbColor =
-      theme.palette.mode === "dark"
-        ? alpha(theme.palette.common.white, 0.18)
-        : alpha(theme.palette.text.secondary, 0.24);
-    const scrollbarThumbHoverColor =
-      theme.palette.mode === "dark"
-        ? alpha(theme.palette.primary.light, 0.4)
-        : alpha(theme.palette.primary.main, 0.36);
     const fontFamily = getFontFamily(globalEditorFont);
     const editorSurfaceColor =
       theme.palette.mode === "dark"
@@ -406,28 +394,6 @@ export default function useTextPreviewEditor({
           overflowX: "hidden",
           overflowY: "auto",
           backgroundColor: editorSurfaceColor,
-          scrollbarWidth: "thin",
-          scrollbarColor: `${scrollbarThumbColor} ${scrollbarTrackColor}`,
-          "&::-webkit-scrollbar": {
-            width: "10px",
-            height: "0px",
-          },
-          "&::-webkit-scrollbar-track": {
-            backgroundColor: scrollbarTrackColor,
-            borderRadius: "999px",
-          },
-          "&::-webkit-scrollbar-thumb": {
-            backgroundColor: scrollbarThumbColor,
-            borderRadius: "999px",
-            border: `2px solid ${
-              theme.palette.mode === "dark"
-                ? alpha(theme.palette.background.default, 0.55)
-                : alpha(theme.palette.background.paper, 0.9)
-            }`,
-          },
-          "&::-webkit-scrollbar-thumb:hover": {
-            backgroundColor: scrollbarThumbHoverColor,
-          },
         },
         ".cm-content": {
           fontFamily: `${fontFamily} !important`,

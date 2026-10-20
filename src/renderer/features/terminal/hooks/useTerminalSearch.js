@@ -9,11 +9,6 @@ const EMPTY_SEARCH_RESULTS = {
   current: 0,
 };
 
-const SEARCH_DECORATIONS = Object.freeze({
-  matchOverviewRuler: "#7CB8FF",
-  activeMatchColorOverviewRuler: "#FFB020",
-});
-
 const DEFAULT_SEARCH_OPTIONS = Object.freeze({
   caseSensitive: false,
   regex: false,
@@ -59,13 +54,18 @@ export const useTerminalSearch = ({
     };
   }, [caseSensitive, useRegex, wholeWord]);
 
-  const getSearchOptions = useCallback(
-    () => ({
+  const getSearchOptions = useCallback(() => {
+    const theme = termRef.current?.options?.theme;
+    return {
       ...searchOptionsRef.current,
-      decorations: SEARCH_DECORATIONS,
-    }),
-    [],
-  );
+      decorations: {
+        matchOverviewRuler:
+          theme?.scrollbarSliderBackground || "rgba(112, 112, 112, 0.38)",
+        activeMatchColorOverviewRuler:
+          theme?.scrollbarSliderActiveBackground || "rgba(112, 112, 112, 0.72)",
+      },
+    };
+  }, [termRef]);
 
   const clearSearchState = useCallback(
     ({ clearSelection = false } = {}) => {

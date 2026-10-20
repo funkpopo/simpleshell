@@ -431,6 +431,7 @@ const CommandSuggestion = ({
     >
       <List
         ref={listRef}
+        className="app-scrollbar app-scrollbar-compact"
         dense
         sx={{
           // 高度跟随 Paper 的钳制值，只有在需要时才启用滚动
@@ -438,19 +439,6 @@ const CommandSuggestion = ({
           maxHeight: listHeight,
           overflow: listScrollable ? "auto" : "hidden", // 只有需要时才显示滚动条
           padding: 0,
-          // 只有在确实需要滚动时才显示滚动条样式
-          ...(listScrollable && {
-            "&::-webkit-scrollbar": {
-              width: "6px",
-            },
-            "&::-webkit-scrollbar-track": {
-              backgroundColor: "transparent",
-            },
-            "&::-webkit-scrollbar-thumb": {
-              backgroundColor: theme.palette.divider,
-              borderRadius: "3px",
-            },
-          }),
         }}
       >
         {suggestions.map((suggestion, index) => (

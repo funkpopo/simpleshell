@@ -663,6 +663,16 @@ export function useTerminalLifecycle({
           fontWeight: 500,
           fontWeightBold: 700,
           scrollback: DEFAULT_TERMINAL_SCROLLBACK_LINES,
+          scrollbar: {
+            width:
+              Number.parseInt(
+                getComputedStyle(document.documentElement).getPropertyValue(
+                  "--app-scrollbar-size",
+                ),
+                10,
+              ) || 8,
+            showArrows: false,
+          },
           allowTransparency: true,
           cols: 120,
           rows: 30,

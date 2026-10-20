@@ -221,23 +221,6 @@
   scroll-behavior: smooth;
 }
 
-.ai-chat-messages.ai-chat-messages.ai-chat-messages::-webkit-scrollbar {
-  width: 6px;
-}
-
-.ai-chat-messages.ai-chat-messages.ai-chat-messages::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.ai-chat-messages.ai-chat-messages.ai-chat-messages::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--color-text-secondary) 35%, transparent);
-  border-radius: 999px;
-}
-
-.ai-chat-messages.ai-chat-messages.ai-chat-messages::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-text-secondary) 55%, transparent);
-}
-
 /* ---- Empty state ---- */
 .ai-chat-empty.ai-chat-empty.ai-chat-empty {
   flex: 1;
@@ -672,7 +655,6 @@
   /* 消息很多时限制高度并允许自身滚动，避免画出浮动窗外 */
   max-height: 60%;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .ai-chat-dot.ai-chat-dot.ai-chat-dot {
@@ -935,49 +917,6 @@
   code:not(:global(.hljs)) {
   background-color: color-mix(in srgb, var(--ai-ink) 8%, transparent);
   color: inherit;
-}
-
-/* ---- Code blocks ----
- * pre/pre code 基础样式与 hljs 背景重置已迁 markdownContentSx.js；
- * 此处仅保留 pre 的滚动条定制 */
-.ai-message-content.ai-message-content.ai-message-content
-  pre::-webkit-scrollbar {
-  height: 6px;
-}
-
-.ai-message-content.ai-message-content.ai-message-content
-  pre::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.06);
-  border-radius: 4px;
-}
-
-.ai-message-content.ai-message-content.ai-message-content
-  pre::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.22);
-  border-radius: 4px;
-}
-
-[data-mui-color-scheme="dark"]
-  .ai-message-content.ai-message-content.ai-message-content
-  pre::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-[data-mui-color-scheme="dark"]
-  .ai-message-content.ai-message-content.ai-message-content
-  pre::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.22);
-}
-
-.ai-message-content.ai-message-content.ai-message-content
-  pre::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.4);
-}
-
-[data-mui-color-scheme="dark"]
-  .ai-message-content.ai-message-content.ai-message-content
-  pre::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.4);
 }
 
 /* Tables / Headings / Blockquote / Lists / Links 基础排版

@@ -3,7 +3,6 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import Collapse from "@mui/material/Collapse";
-import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
@@ -13,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import OverflowTooltipText from "../../../shared/ui/OverflowTooltipText.jsx";
+import WindowedSidebarList from "../../../shared/ui/WindowedSidebarList.jsx";
 import { formatFileSize, formatSpeed } from "../../../shared/lib/formatters.js";
 import {
   getDisplayCompletedFileCount,
@@ -496,46 +496,60 @@ const TransferItemCard = memo(
               }}
             >
               {hasFileList ? (
-                <List dense disablePadding>
-                  {transfer.fileList.map((file, index) => (
-                    <ListItem
-                      key={file.index ?? index}
-                      disablePadding
-                      sx={viewStyles.listItemSx}
-                    >
-                      <ListItemIcon sx={viewStyles.listItemIconSx}>
-                        {file.completed ? (
-                          <CheckCircleIcon sx={viewStyles.checkCircleIconSx} />
-                        ) : (
-                          <InsertDriveFileIcon
-                            sx={viewStyles.insertDriveFileIconSx}
-                          />
-                        )}
-                      </ListItemIcon>
-                      <ListItemText
-                        secondary={formatFileSize(file.size, 1)}
-                        sx={viewStyles.listItemTextSx}
-                        primary={
-                          <OverflowTooltipText
-                            variant="caption"
-                            sx={viewStyles.overflowTooltipTextSx2}
-                            tooltipTitle={file.name || ""}
-                          >
-                            {file.name || ""}
-                          </OverflowTooltipText>
-                        }
-                        primaryTypographyProps={{
-                          component: "div",
-                        }}
-                        secondaryTypographyProps={{
-                          variant: "caption",
-                          noWrap: true,
-                          sx: { fontSize: "0.6rem" },
-                        }}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
+                <Box
+                  sx={{
+                    height: transfer.fileList.length >= 30 ? 180 : undefined,
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <WindowedSidebarList
+                    items={transfer.fileList}
+                    className="transfer-files-virtualized-list app-scrollbar"
+                    estimatedRowHeight={36}
+                    getItemKey={(file, index) => file.index ?? index}
+                    renderItem={(file, index) => (
+                      <ListItem
+                        key={file.index ?? index}
+                        disablePadding
+                        sx={viewStyles.listItemSx}
+                      >
+                        <ListItemIcon sx={viewStyles.listItemIconSx}>
+                          {file.completed ? (
+                            <CheckCircleIcon
+                              sx={viewStyles.checkCircleIconSx}
+                            />
+                          ) : (
+                            <InsertDriveFileIcon
+                              sx={viewStyles.insertDriveFileIconSx}
+                            />
+                          )}
+                        </ListItemIcon>
+                        <ListItemText
+                          secondary={formatFileSize(file.size, 1)}
+                          sx={viewStyles.listItemTextSx}
+                          primary={
+                            <OverflowTooltipText
+                              variant="caption"
+                              sx={viewStyles.overflowTooltipTextSx2}
+                              tooltipTitle={file.name || ""}
+                            >
+                              {file.name || ""}
+                            </OverflowTooltipText>
+                          }
+                          primaryTypographyProps={{
+                            component: "div",
+                          }}
+                          secondaryTypographyProps={{
+                            variant: "caption",
+                            noWrap: true,
+                            sx: { fontSize: "0.6rem" },
+                          }}
+                        />
+                      </ListItem>
+                    )}
+                  />
+                </Box>
               ) : totalFiles > 0 ? (
                 <Typography
                   variant="caption"
