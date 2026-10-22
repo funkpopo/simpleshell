@@ -61,6 +61,12 @@ const normalizePromptLine = (value = "") =>
     .replace(/\u00a0/g, " ")
     .replace(/\s+$/g, "");
 
+// Prompt recognition is an input aid, not a history reader. A program can
+// produce a single logical line spanning the entire scrollback (base64, JSON,
+// progress output). Never walk that history on every write, key or repaint.
+const MAX_PROMPT_ROWS = 32;
+const MAX_PROMPT_CHARS = 4096;
+
 const getLogicalLineUntilCursor = (term) => {
   const buffer = term?.buffer?.active;
   if (!buffer) {
@@ -78,16 +84,21 @@ const getLogicalLineUntilCursor = (term) => {
     if (!currentLine?.isWrapped) {
       break;
     }
+    if (cursorY - startY >= MAX_PROMPT_ROWS - 1) return "";
     startY -= 1;
   }
 
   const parts = [];
+  let length = 0;
   for (let lineIndex = startY; lineIndex <= cursorY; lineIndex += 1) {
     const line = buffer.getLine(lineIndex);
     if (!line) {
       continue;
     }
-    parts.push(line.translateToString(true));
+    const text = line.translateToString(true);
+    length += text.length;
+    if (length > MAX_PROMPT_CHARS) return "";
+    parts.push(text);
   }
 
   return normalizePromptLine(parts.join(""));

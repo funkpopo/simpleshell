@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { SearchAddon } from "@xterm/addon-search";
+import { TerminalSearchAddon as SearchAddon } from "../runtime/TerminalSearchAddon.js";
 import { useTranslation } from "react-i18next";
 import {
   debounce,
@@ -824,6 +824,12 @@ export function useTerminalLifecycle({
               if (!current || !current.isWrapped) {
                 break;
               }
+              // Auto-linking must not read an entire scrollback-sized logical
+              // line on mouse movement. This only bounds detection, not output.
+              if (targetLineIndex - blockStart >= 128) {
+                callback([]);
+                return;
+              }
               blockStart -= 1;
             }
 
@@ -834,6 +840,10 @@ export function useTerminalLifecycle({
               if (!next || !next.isWrapped) {
                 searchingWrappedLines = false;
                 continue;
+              }
+              if (blockEnd - blockStart >= 128) {
+                callback([]);
+                return;
               }
               blockEnd += 1;
             }
@@ -857,6 +867,10 @@ export function useTerminalLifecycle({
                 endOffset: offset + text.length,
               });
               offset += text.length;
+              if (offset > 16384) {
+                callback([]);
+                return;
+              }
             }
 
             const fullText = segments.map((seg) => seg.text).join("");

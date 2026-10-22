@@ -29,7 +29,8 @@ export const isCursorInsideWrappedInputBlock = (term) => {
     return false;
   }
 
-  const currentLine = buffer.getLine(buffer.cursorY);
+  const cursorLine = (buffer.baseY || 0) + buffer.cursorY;
+  const currentLine = buffer.getLine(cursorLine);
   if (currentLine?.isWrapped) {
     return true;
   }
@@ -38,7 +39,7 @@ export const isCursorInsideWrappedInputBlock = (term) => {
     return false;
   }
 
-  const previousLine = buffer.getLine(buffer.cursorY - 1);
+  const previousLine = buffer.getLine(cursorLine - 1);
   return previousLine?.isWrapped === true;
 };
 
@@ -65,7 +66,7 @@ export const extractCurrentCommandInput = (term) => {
 
   const currentLine =
     term.buffer?.active
-      ?.getLine(term.buffer.active.cursorY)
+      ?.getLine((term.buffer.active.baseY || 0) + term.buffer.active.cursorY)
       ?.translateToString() || "";
   const fallbackMatch = currentLine.match(TERMINAL_COMMAND_LINE_REGEX);
   return fallbackMatch?.[1] || "";

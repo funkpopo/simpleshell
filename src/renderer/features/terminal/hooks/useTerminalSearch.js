@@ -1,8 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  collectTerminalSearchMatches,
-  findSelectedTerminalSearchMatchIndex,
-} from "../model/searchResults.js";
 
 const EMPTY_SEARCH_RESULTS = {
   count: 0,
@@ -89,49 +85,8 @@ export const useTerminalSearch = ({
     [searchAddonRef, termRef],
   );
 
-  const refreshSearchState = useCallback(
-    (term = searchTermRef.current) => {
-      const terminal = termRef.current;
-      if (!term || !terminal) {
-        setSearchResults(EMPTY_SEARCH_RESULTS);
-        setNoMatchFound(false);
-        return {
-          matches: [],
-          currentIndex: -1,
-        };
-      }
-
-      const matches = collectTerminalSearchMatches(
-        terminal,
-        term,
-        searchOptionsRef.current,
-      );
-      const currentIndex = findSelectedTerminalSearchMatchIndex(
-        terminal,
-        matches,
-      );
-
-      setSearchResults((prev) => ({
-        count: matches.length,
-        current:
-          currentIndex >= 0
-            ? currentIndex + 1
-            : matches.length > 0
-              ? Math.min(Math.max(prev.current || 1, 1), matches.length)
-              : 0,
-      }));
-      setNoMatchFound(matches.length === 0);
-
-      return {
-        matches,
-        currentIndex,
-      };
-    },
-    [termRef],
-  );
-
   const runSearch = useCallback(
-    (direction = "next", options = {}) => {
+    async (direction = "next", options = {}) => {
       const searchAddon = searchAddonRef.current;
       const term = searchTermRef.current;
 
@@ -141,7 +96,6 @@ export const useTerminalSearch = ({
       }
 
       if (!searchAddon) {
-        refreshSearchState(term);
         return false;
       }
 
@@ -150,12 +104,9 @@ export const useTerminalSearch = ({
           ...getSearchOptions(),
           incremental: direction === "next" && options.incremental === true,
         };
-        const found =
-          direction === "previous"
-            ? searchAddon.findPrevious(term, searchOptions)
-            : searchAddon.findNext(term, searchOptions);
-
-        refreshSearchState(term);
+        const found = await (direction === "previous"
+          ? searchAddon.findPrevious(term, searchOptions)
+          : searchAddon.findNext(term, searchOptions));
         return found;
       } catch {
         setSearchResults(EMPTY_SEARCH_RESULTS);
@@ -163,7 +114,7 @@ export const useTerminalSearch = ({
         return false;
       }
     },
-    [clearSearchState, getSearchOptions, refreshSearchState, searchAddonRef],
+    [clearSearchState, getSearchOptions, searchAddonRef],
   );
 
   const handleSearch = useCallback(() => runSearch("next"), [runSearch]);
@@ -209,12 +160,20 @@ export const useTerminalSearch = ({
       return;
     }
 
-    runSearch("next", { incremental: true });
+    searchAddonRef.current?.clearDecorations?.();
+    setSearchResults(EMPTY_SEARCH_RESULTS);
+    setNoMatchFound(false);
+    // Let a typing burst settle before starting a scan of a large history.
+    const timer = setTimeout(() => {
+      runSearch("next", { incremental: true });
+    }, 120);
+    return () => clearTimeout(timer);
   }, [
     caseSensitive,
     clearSearchState,
     runSearch,
     searchAddonVersion,
+    searchAddonRef,
     searchTerm,
     useRegex,
     wholeWord,
@@ -222,20 +181,23 @@ export const useTerminalSearch = ({
 
   useEffect(() => {
     const searchAddon = searchAddonRef.current;
-    if (!searchAddon?.onAfterSearch) {
+    if (!searchAddon?.onDidChangeResults) {
       return undefined;
     }
 
-    const disposable = searchAddon.onAfterSearch(() => {
-      refreshSearchState(searchTermRef.current);
-    });
+    const disposable = searchAddon.onDidChangeResults(
+      ({ resultCount, resultIndex }) => {
+        setSearchResults({ count: resultCount, current: resultIndex + 1 });
+        setNoMatchFound(Boolean(searchTermRef.current) && resultCount === 0);
+      },
+    );
 
     return () => {
       if (typeof disposable?.dispose === "function") {
         disposable.dispose();
       }
     };
-  }, [refreshSearchState, searchAddonRef, searchAddonVersion]);
+  }, [searchAddonRef, searchAddonVersion]);
 
   return {
     showSearchBar,

@@ -16,6 +16,7 @@ function createTerminalOutput(
   return new (class TerminalOutput {
     constructor() {
       this.dependencies = dependencies;
+      this._flowControlTargets = new WeakMap();
     }
     _emitProcessOutput(processId, output) {
       if (this.dependencies.terminalIOMailboxManager) {
@@ -146,9 +147,30 @@ function createTerminalOutput(
         ? this.dependencies.childProcesses.get(tabId)
         : null;
 
-      return (
-        procInfo?.stream || tabProcInfo?.stream || procInfo?.process || null
-      );
+      const target =
+        procInfo?.stream || tabProcInfo?.stream || procInfo?.process || null;
+      if (
+        !target?.stderr ||
+        typeof target.stderr.pause !== "function" ||
+        typeof target.stderr.resume !== "function"
+      )
+        return target;
+
+      // ssh2 gives stderr its own Readable. Both readers share the channel's
+      // SSH window, so apply terminal backpressure to both together.
+      if (!this._flowControlTargets.has(target)) {
+        this._flowControlTargets.set(target, {
+          pause: () => {
+            target.pause();
+            target.stderr.pause();
+          },
+          resume: () => {
+            target.resume();
+            target.stderr.resume();
+          },
+        });
+      }
+      return this._flowControlTargets.get(target);
     }
     _applyMailboxResize(processId, tabId, cols, rows) {
       const procInfo = this.dependencies.childProcesses.get(processId);
@@ -474,6 +496,7 @@ function createTerminalOutput(
         // 清理事件监听器，防止内存泄漏
         stream.removeListener("data", dataHandler);
         stream.removeListener("extended data", extendedDataHandler);
+        stream.stderr?.removeListener?.("data", extendedDataHandler);
         stream.removeListener("close", closeHandler);
 
         const mainWindow = this.dependencies._getMainWindow();
@@ -584,7 +607,11 @@ function createTerminalOutput(
 
       // 注册事件监听器
       stream.on("data", dataHandler);
-      stream.on("extended data", extendedDataHandler);
+      if (stream.stderr && typeof stream.stderr.on === "function") {
+        stream.stderr.on("data", extendedDataHandler);
+      } else {
+        stream.on("extended data", extendedDataHandler);
+      }
       stream.on("close", closeHandler);
     }
     _createProcessInfo(client, connectionInfo, config, type) {

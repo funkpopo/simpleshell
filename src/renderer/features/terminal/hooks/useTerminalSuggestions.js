@@ -401,7 +401,10 @@ export const useTerminalSuggestions = ({
 
         const currentLine =
           termRef.current.buffer.active
-            .getLine(termRef.current.buffer.active.cursorY)
+            .getLine(
+              (termRef.current.buffer.active.baseY || 0) +
+                termRef.current.buffer.active.cursorY,
+            )
             ?.translateToString() || "";
         const commandMatch = currentLine.match(
           /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.*)$/,

@@ -7,18 +7,41 @@ import { DEFAULT_TERMINAL_SCROLLBACK_LINES } from "../model/terminalScrollback.j
 export class ScrollbackUsageTracker {
   constructor(options = {}) {
     // 单一来源：默认值见 model/terminalScrollback.js（与终端创建/设置项共享）
-    this.maxLines = Math.max(
+    this._maxLines = Math.max(
       1,
-      Number(options.maxLines) || DEFAULT_TERMINAL_SCROLLBACK_LINES,
+      Math.floor(Number(options.maxLines)) || DEFAULT_TERMINAL_SCROLLBACK_LINES,
     );
     this.onChange =
       typeof options.onChange === "function" ? options.onChange : null;
 
     this.lineByteQueue = [];
+    this.lineByteHead = 0;
     this.totalLineBytes = 0;
     this.partialLineBytes = 0;
     this.textEncoder =
       typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
+  }
+
+  get maxLines() {
+    return this._maxLines;
+  }
+
+  set maxLines(value) {
+    const next = Math.max(1, Math.floor(Number(value)) || this._maxLines);
+    if (next === this._maxLines) return;
+    const retained = [];
+    const count = this.lineByteQueue.length;
+    const start = Math.max(0, count - next);
+    let total = 0;
+    for (let i = start; i < count; i++) {
+      const bytes = this.lineByteQueue[(this.lineByteHead + i) % count];
+      retained.push(bytes);
+      total += bytes;
+    }
+    this._maxLines = next;
+    this.lineByteQueue = retained;
+    this.lineByteHead = 0;
+    this.totalLineBytes = total;
   }
 
   addData(data) {
@@ -64,12 +87,14 @@ export class ScrollbackUsageTracker {
 
   pushLine(lineBytes) {
     const normalized = Math.max(0, Math.floor(Number(lineBytes)) || 0);
-    this.lineByteQueue.push(normalized);
-    this.totalLineBytes += normalized;
-
-    while (this.lineByteQueue.length > this.maxLines) {
-      this.totalLineBytes -= this.lineByteQueue.shift() || 0;
+    if (this.lineByteQueue.length === this.maxLines) {
+      this.totalLineBytes -= this.lineByteQueue[this.lineByteHead];
+      this.lineByteQueue[this.lineByteHead] = normalized;
+      this.lineByteHead = (this.lineByteHead + 1) % this.maxLines;
+    } else {
+      this.lineByteQueue.push(normalized);
     }
+    this.totalLineBytes += normalized;
   }
 
   getByteLength(value) {
@@ -115,6 +140,7 @@ export class ScrollbackUsageTracker {
 
   clear() {
     this.lineByteQueue = [];
+    this.lineByteHead = 0;
     this.totalLineBytes = 0;
     this.partialLineBytes = 0;
     this.emitChange();

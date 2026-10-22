@@ -17,6 +17,7 @@ export function useTerminalLayout({
   scheduleTerminalRedrawRef,
 }) {
   const layoutSyncFrameRef = useRef(null);
+  const columnResizeTimerRef = useRef(null);
   const pendingLayoutSyncReasonRef = useRef(null);
   const scheduleTerminalLayoutSyncRef = useRef(() => {});
   const lastLayoutGeometryRef = useRef({
@@ -205,6 +206,25 @@ export function useTerminalLayout({
 
   const scheduleTerminalLayoutSync = useCallback(
     (reason = "layout", options = {}) => {
+      if (columnResizeTimerRef.current !== null) {
+        clearTimeout(columnResizeTimerRef.current);
+        columnResizeTimerRef.current = null;
+      }
+      if (
+        !options.immediate &&
+        !options.settled &&
+        ["resize", "container-resize", "sidebar"].includes(reason) &&
+        termRef.current?.buffer?.normal?.length >= 10000
+      ) {
+        // Changing columns reflows every retained line in xterm. During a
+        // window/sidebar drag, fit once after geometry settles instead of
+        // reflowing a large history on every animation frame.
+        columnResizeTimerRef.current = setTimeout(() => {
+          columnResizeTimerRef.current = null;
+          scheduleTerminalLayoutSync(reason, { settled: true });
+        }, 100);
+        return;
+      }
       pendingLayoutSyncReasonRef.current = reason;
 
       if (layoutSyncFrameRef.current !== null && !options.immediate) {
@@ -229,7 +249,7 @@ export function useTerminalLayout({
 
       layoutSyncFrameRef.current = requestAnimationFrame(run);
     },
-    [syncTerminalLayoutNow],
+    [syncTerminalLayoutNow, termRef],
   );
 
   useEffect(() => {
@@ -249,6 +269,10 @@ export function useTerminalLayout({
   );
 
   const cancelLayoutSync = useCallback(() => {
+    if (columnResizeTimerRef.current !== null) {
+      clearTimeout(columnResizeTimerRef.current);
+      columnResizeTimerRef.current = null;
+    }
     if (layoutSyncFrameRef.current !== null) {
       if (typeof cancelAnimationFrame === "function") {
         cancelAnimationFrame(layoutSyncFrameRef.current);

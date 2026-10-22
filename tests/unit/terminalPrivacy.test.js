@@ -88,6 +88,7 @@ async function setup(initialLine = "$ ", baseY = 0) {
   );
   return {
     term,
+    handlers,
     suggestionApi,
     sendInputToProcess,
     enqueueInputToProcess,
@@ -103,6 +104,18 @@ async function setup(initialLine = "$ ", baseY = 0) {
 }
 
 describe("terminal history privacy", () => {
+  it("reads prompt state once per parsed output batch instead of per line or repaint", async () => {
+    const h = await setup();
+    const reads = vi.spyOn(h.term.buffer.active, "getLine");
+    await act(() => {
+      for (let i = 0; i < 2000; i++) h.handlers.LineFeed();
+      for (let i = 0; i < 10; i++) h.handlers.Render();
+    });
+    expect(reads).not.toHaveBeenCalled();
+    await h.output("$ git status");
+    expect(reads.mock.calls.length).toBeLessThanOrEqual(8);
+    expect(h.suggestionApi.setCurrentInput).toHaveBeenCalledWith("git status");
+  });
   it.each([
     "Password: ",
     "[sudo] password for root: ",

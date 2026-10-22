@@ -22,12 +22,21 @@ const splitTerminalWriteChunks = (data) => {
   }
 
   const chunks = [];
-  for (
-    let index = 0;
-    index < dataStr.length;
-    index += MAX_TERMINAL_WRITE_CHARS
-  ) {
-    chunks.push(dataStr.slice(index, index + MAX_TERMINAL_WRITE_CHARS));
+  for (let index = 0; index < dataStr.length;) {
+    let end = Math.min(index + MAX_TERMINAL_WRITE_CHARS, dataStr.length);
+    const before = dataStr.charCodeAt(end - 1);
+    const after = dataStr.charCodeAt(end);
+    // Keep surrogate pairs together. Encoding two halves separately produces
+    // replacement characters and over-counts the UTF-8 bytes in output ACKs.
+    if (
+      before >= 0xd800 &&
+      before <= 0xdbff &&
+      after >= 0xdc00 &&
+      after <= 0xdfff
+    )
+      end--;
+    chunks.push(dataStr.slice(index, end));
+    index = end;
   }
   return chunks;
 };

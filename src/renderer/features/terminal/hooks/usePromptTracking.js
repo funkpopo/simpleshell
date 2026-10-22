@@ -743,7 +743,10 @@ export function usePromptTracking({
               y: term.buffer.active.cursorY,
               content:
                 term.buffer.active
-                  .getLine(term.buffer.active.cursorY)
+                  .getLine(
+                    (term.buffer.active.baseY || 0) +
+                      term.buffer.active.cursorY,
+                  )
                   ?.translateToString() || "",
             };
 
@@ -932,7 +935,8 @@ export function usePromptTracking({
             }
           }
 
-          syncPromptState();
+          // onWriteParsed reads the final cursor line once for a whole batch.
+          // Reading it on every LF multiplies prompt/React work by output size.
         } catch {
           // ignore
         }
@@ -988,8 +992,6 @@ export function usePromptTracking({
             resetTabCompletionTracking();
           }
         }
-
-        syncPromptState();
       });
 
       if (
@@ -1000,7 +1002,6 @@ export function usePromptTracking({
       }
 
       const onWriteParsedDisposable = term.onWriteParsed(() => {
-        scheduleTerminalRedrawRef.current(term);
         syncPromptState();
       });
 

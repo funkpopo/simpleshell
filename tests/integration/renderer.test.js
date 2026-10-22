@@ -4,6 +4,12 @@ import path from "node:path";
 import { runRendererFixture } from "../helpers/runRendererFixture.js";
 
 describe("Electron renderer integration", () => {
+  it("keeps 500,000 history lines searchable and interactive in DOM and WebGL renderers", () =>
+    runRendererFixture({
+      name: "terminal-scrollback",
+      entry: "terminal-scrollback-renderer.jsx",
+      main: "terminal-scrollback-electron.js",
+    }));
   it("keeps native history keys in WebTerminal and restores suggestion selection after editing", () =>
     runRendererFixture({
       name: "terminal-history",

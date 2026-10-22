@@ -27,7 +27,6 @@ export class TerminalWriteQueue {
     this.queuedChunks = [];
     this.queuedBytes = 0;
     this.dispatchTimer = null;
-    this.dispatchTimerType = null;
 
     this.stats = {
       totalEnqueued: 0,
@@ -89,20 +88,11 @@ export class TerminalWriteQueue {
    * @param {number} intervalMs - 调度间隔（ms）
    */
   scheduleDispatch(intervalMs) {
-    if (intervalMs <= 16 && typeof requestAnimationFrame === "function") {
-      this.dispatchTimerType = "raf";
-      this.dispatchTimer = requestAnimationFrame(() => {
-        this.dispatchTimer = null;
-        this.dispatchTimerType = null;
-        this.drain();
-      });
-      return;
-    }
-
-    this.dispatchTimerType = "timeout";
+    // Parsing/ACKs must not wait for painting. Chromium can suspend or heavily
+    // throttle animation frames in hidden/occluded windows and inactive panes,
+    // turning a tiny echo into a second-long delay (or a backpressure stall).
     this.dispatchTimer = setTimeout(() => {
       this.dispatchTimer = null;
-      this.dispatchTimerType = null;
       this.drain();
     }, intervalMs);
   }
@@ -113,17 +103,9 @@ export class TerminalWriteQueue {
   cancelDispatchTimer() {
     if (this.dispatchTimer === null) return;
 
-    if (
-      this.dispatchTimerType === "raf" &&
-      typeof cancelAnimationFrame === "function"
-    ) {
-      cancelAnimationFrame(this.dispatchTimer);
-    } else if (this.dispatchTimerType === "timeout") {
-      clearTimeout(this.dispatchTimer);
-    }
+    clearTimeout(this.dispatchTimer);
 
     this.dispatchTimer = null;
-    this.dispatchTimerType = null;
   }
 
   /**

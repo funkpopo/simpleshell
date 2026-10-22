@@ -44,70 +44,11 @@ const buildRegex = (term, options) => {
   }
 };
 
-const findNextMatchIndex = (searchText, term, options, fromIndex = 0) => {
-  if (!term || !searchText) {
-    return -1;
-  }
-
-  if (options.regex) {
-    const regex = buildRegex(term, options);
-    if (!regex) {
-      return -1;
-    }
-    regex.lastIndex = Math.max(0, fromIndex);
-    const match = regex.exec(searchText);
-    if (!match || match[0] === "") {
-      return -1;
-    }
-    if (
-      options.wholeWord &&
-      !isWholeWordMatch(searchText, match.index, match[0].length)
-    ) {
-      return findNextMatchIndex(
-        searchText,
-        term,
-        options,
-        match.index + Math.max(1, match[0].length),
-      );
-    }
-    return match.index;
-  }
-
-  const haystack = options.caseSensitive
-    ? searchText
-    : searchText.toLowerCase();
-  const needle = options.caseSensitive ? term : term.toLowerCase();
-  let index = haystack.indexOf(needle, fromIndex);
-  while (index !== -1) {
-    if (
-      !options.wholeWord ||
-      isWholeWordMatch(searchText, index, needle.length)
-    ) {
-      return index;
-    }
-    index = haystack.indexOf(needle, index + 1);
-  }
-  return -1;
-};
-
-const getMatchLength = (searchText, term, options, matchIndex) => {
-  if (options.regex) {
-    const regex = buildRegex(term, options);
-    if (!regex) {
-      return 0;
-    }
-    regex.lastIndex = matchIndex;
-    const match = regex.exec(searchText);
-    if (!match || match.index !== matchIndex) {
-      return 0;
-    }
-    return match[0].length;
-  }
-
-  return term.length;
-};
-
-const translateBufferLineToStringWithWrap = (buffer, startRow, trimRight) => {
+const translateBufferLineToStringWithWrap = function* (
+  buffer,
+  startRow,
+  trimRight,
+) {
   const strings = [];
   const lineOffsets = [0];
   let row = startRow;
@@ -131,6 +72,8 @@ const translateBufferLineToStringWithWrap = (buffer, startRow, trimRight) => {
     }
 
     strings.push(text);
+    // Yield even inside a very long wrapped logical line.
+    yield null;
 
     if (!lineWrapsToNext) {
       break;
@@ -192,53 +135,57 @@ const getSearchableBufferLength = (term, buffer) => {
   return Math.max(0, Math.min(limit, buffer.length));
 };
 
-const collectTerminalSearchMatches = (term, rawTerm, options = {}) => {
+const scanTerminalSearchMatches = function* (term, rawTerm, options = {}) {
   const buffer = term?.buffer?.active;
   if (!buffer) {
-    return [];
+    return;
   }
 
   const searchOptions = normalizeSearchOptions(options);
   const searchTerm = typeof rawTerm === "string" ? rawTerm : "";
   if (!searchTerm) {
-    return [];
+    return;
   }
 
   // Invalid regex should yield no matches (matches SearchAddon behavior).
-  if (searchOptions.regex && !buildRegex(searchTerm, searchOptions)) {
-    return [];
+  const regex = buildRegex(searchTerm, searchOptions);
+  if (!regex) {
+    return;
   }
 
   const terminalCols = Number.isFinite(term?.cols) ? term.cols : 0;
   const searchableBufferLength = getSearchableBufferLength(term, buffer);
-  const matches = [];
 
   for (let row = 0; row < searchableBufferLength; row += 1) {
     const line = buffer.getLine(row);
+    yield null;
     if (!line) {
       continue;
     }
 
-    if (line.isWrapped) {
+    if (row > 0 && line.isWrapped) {
       continue;
     }
 
     const { text, lineCount, lineOffsets } =
-      translateBufferLineToStringWithWrap(buffer, row, true);
+      yield* translateBufferLineToStringWithWrap(buffer, row, true);
 
-    let resultIndex = findNextMatchIndex(text, searchTerm, searchOptions, 0);
-    while (resultIndex !== -1) {
-      const matchLength = getMatchLength(
-        text,
-        searchTerm,
-        searchOptions,
-        resultIndex,
-      );
-      if (matchLength <= 0) {
-        break;
+    regex.lastIndex = 0;
+    let result;
+    let startRowOffset = 0;
+    while ((result = regex.exec(text)) !== null) {
+      yield null;
+      const resultIndex = result.index;
+      const matchLength = result[0].length;
+      if (!matchLength) {
+        regex.lastIndex++;
+        continue;
       }
-
-      let startRowOffset = 0;
+      if (
+        searchOptions.wholeWord &&
+        !isWholeWordMatch(text, resultIndex, matchLength)
+      )
+        continue;
       while (
         startRowOffset < lineOffsets.length - 1 &&
         resultIndex >= lineOffsets[startRowOffset + 1]
@@ -268,7 +215,7 @@ const collectTerminalSearchMatches = (term, rawTerm, options = {}) => {
         endColOffset,
       );
 
-      matches.push({
+      yield {
         term: rawTerm,
         row: row + startRowOffset,
         col: startCol,
@@ -276,19 +223,18 @@ const collectTerminalSearchMatches = (term, rawTerm, options = {}) => {
           endCol -
           startCol +
           terminalCols * Math.max(0, endRowOffset - startRowOffset),
-      });
-
-      resultIndex = findNextMatchIndex(
-        text,
-        searchTerm,
-        searchOptions,
-        resultIndex + Math.max(1, matchLength),
-      );
+      };
     }
 
     row += lineCount - 1;
   }
+};
 
+const collectTerminalSearchMatches = (term, rawTerm, options = {}) => {
+  const matches = [];
+  for (const match of scanTerminalSearchMatches(term, rawTerm, options)) {
+    if (match) matches.push(match);
+  }
   return matches;
 };
 
@@ -333,6 +279,7 @@ const findSelectedTerminalSearchMatchIndex = (term, matches = []) => {
 };
 
 module.exports = {
+  scanTerminalSearchMatches,
   collectTerminalSearchMatches,
   findSelectedTerminalSearchMatchIndex,
 };
