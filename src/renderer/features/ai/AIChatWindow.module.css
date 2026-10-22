@@ -204,6 +204,7 @@
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   padding: 0;
   overflow: hidden;
   position: relative;
@@ -212,6 +213,7 @@
 .ai-chat-messages.ai-chat-messages.ai-chat-messages {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;
@@ -269,6 +271,8 @@
 .ai-message-row.ai-message-row.ai-message-row {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  box-sizing: border-box;
   animation: ai-msg-enter 0.4s var(--ai-ease) both;
 }
 
@@ -299,6 +303,10 @@
 /* ---- Message bubble ---- */
 .ai-message-bubble.ai-message-bubble.ai-message-bubble:global(.MuiPaper-root) {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
   word-break: break-word;
   background-color: transparent;
   background-image: none;
@@ -314,6 +322,7 @@
 }
 
 .ai-message-bubble.ai-message-bubble.ai-message-bubble.is-assistant {
+  width: 100%;
   padding: 0;
   border-radius: 0;
   background-color: transparent;
@@ -324,7 +333,84 @@
 /* ---- Message body / markdown ----
  * 基础排版（字号/标题/段落/列表/引用/代码/表格/链接）已迁移至
  * shared/ui/markdownContentSx.js（sx 注入，单一事实来源）。
- * 此处仅保留依赖气泡上下文的 is-user 反色覆盖（特异性高于 sx，生效）。 */
+ * 此处负责浮窗宽度约束、复制控件及 is-user 反色覆盖。 */
+.ai-message-content.ai-message-content.ai-message-content {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Keep wide content inside its own scroll area, leaving copy controls visible. */
+.ai-code-block.ai-code-block.ai-code-block {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0.55em 0;
+  border: 1px solid var(--ai-line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--ai-inset);
+}
+
+.ai-code-toolbar.ai-code-toolbar.ai-code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--ai-line);
+  color: var(--ai-ink-3);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.ai-code-block.ai-code-block.ai-code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-sizing: border-box;
+}
+
+.ai-code-block.ai-code-block.ai-code-block pre code {
+  padding: 0;
+  background: transparent;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.ai-copy-command.ai-copy-command.ai-copy-command {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  border-radius: 6px;
+  font-size: 15px;
+  color: var(--ai-ink-3);
+}
+
+.ai-copy-command.ai-copy-command.ai-copy-command:hover {
+  color: var(--ai-ink);
+  background: var(--ai-hover);
+}
+
+.ai-inline-code.ai-inline-code.ai-inline-code .ai-copy-command {
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  font-size: 12px;
+  vertical-align: text-bottom;
+}
+
+.ai-markdown-table.ai-markdown-table.ai-markdown-table {
+  max-width: 100%;
+  margin: 0.55em 0;
+  overflow-x: auto;
+}
+
+.ai-markdown-table.ai-markdown-table.ai-markdown-table table {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+}
+
 .ai-message-bubble.ai-message-bubble.ai-message-bubble.is-user
   .ai-message-content
   a {
@@ -337,6 +423,8 @@
 /* Streaming body: keep the answer steady while only the live tail moves. */
 .ai-stream-wrap.ai-stream-wrap.ai-stream-wrap {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* New block / paragraph appears with blur → sharp fade */
@@ -412,6 +500,7 @@
   padding: 4px 6px;
   width: fit-content;
   max-width: 100%;
+  box-sizing: border-box;
   border-radius: var(--ai-radius-control);
   background: transparent;
   border: none;

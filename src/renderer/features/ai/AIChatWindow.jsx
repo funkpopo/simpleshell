@@ -44,6 +44,11 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import AIIcon from "./AIIcon";
 import AISettings from "./AISettings";
 import ExecutableCommand from "./ExecutableCommand";
+import {
+  MarkdownCodeBlock,
+  MarkdownInlineCode,
+  MarkdownTable,
+} from "./MarkdownCode.jsx";
 import { useTranslation } from "react-i18next";
 import { RADIUS } from "../../theme";
 import ReactMarkdown from "react-markdown";
@@ -67,7 +72,7 @@ const MAX_MARKDOWN_LINK_LENGTH = 2048;
 const API_ERROR_SUMMARY_MAX_LENGTH = 180;
 const ALLOWED_MARKDOWN_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
-// markdown 排版统一走共享层（AIChatWindow.module.css 仅保留 is-user 反色与 pre 滚动条）
+// Markdown 基础排版共用共享层；浮窗宽度约束和复制控件样式留在 CSS 模块。
 const markdownContentSx = getMarkdownContentSx({ density: "comfortable" });
 const MARKDOWN_ALLOWED_ELEMENTS = [
   "p",
@@ -1073,6 +1078,9 @@ const AIChatWindow = ({
 
   const markdownComponents = useMemo(
     () => ({
+      pre: MarkdownCodeBlock,
+      code: MarkdownInlineCode,
+      table: MarkdownTable,
       a: ({ href, children }) => {
         const safeHref = normalizeSafeMarkdownHref(href);
 

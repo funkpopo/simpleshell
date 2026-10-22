@@ -933,6 +933,8 @@
       "startConversation": "开始对话，提出你的问题",
       "thinkingProcess": "思考中",
       "copyMessage": "复制消息",
+      "copyCode": "复制代码",
+      "copyFailed": "复制失败，请重试",
       "editMessage": "编辑消息",
       "retryMessage": "重试消息",
       "clearChat": "清空对话",

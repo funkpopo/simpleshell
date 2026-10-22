@@ -16,7 +16,7 @@ describe("Electron renderer integration", () => {
       entry: "terminal-history-renderer.jsx",
       main: "terminal-history-electron.js",
     }));
-  it("keeps the AI surface styled in both themes without global CSS overrides", () =>
+  it("keeps AI messages contained and commands copyable at narrow widths in both themes", () =>
     runRendererFixture({
       name: "theme",
       entry: "theme-renderer.jsx",

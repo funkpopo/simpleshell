@@ -4,6 +4,10 @@ const fs = require("node:fs/promises");
 const output = process.argv[2];
 app.setPath("userData", path.join(output, "electron-profile"));
 let window;
+ipcMain.handle("theme-resize", (_event, width) => {
+  window.setContentSize(width, 900);
+  return window.getContentSize()[0];
+});
 ipcMain.handle("theme-capture", async (_event, name) => {
   if (!["light", "dark"].includes(name)) throw new Error("Invalid theme");
   await window.webContents.capturePage();

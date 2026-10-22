@@ -938,6 +938,8 @@
       "startConversation": "Start a conversation, ask your question",
       "thinkingProcess": "Thinking",
       "copyMessage": "Copy message",
+      "copyCode": "Copy code",
+      "copyFailed": "Copy failed, please try again",
       "editMessage": "Edit message",
       "retryMessage": "Retry message",
       "clearChat": "Clear chat",

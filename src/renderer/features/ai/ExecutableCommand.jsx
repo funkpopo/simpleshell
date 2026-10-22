@@ -19,13 +19,13 @@ import {
   Alert,
 } from "@mui/material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import ErrorIcon from "@mui/icons-material/Error";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import InfoIcon from "@mui/icons-material/Info";
 import { useTranslation } from "react-i18next";
 import { RISK_LEVELS, requiresConfirmation } from "./lib/aiSystemPrompt";
+import CopyCommandButton from "./CopyCommandButton.jsx";
 
 /**
  * 获取风险等级对应的图标
@@ -139,7 +139,6 @@ const ExecutableCommand = memo(
   ({ command, risk, onExecute, onCopy, disabled = false }) => {
     const { t } = useTranslation();
     const [confirmOpen, setConfirmOpen] = useState(false);
-    const [copied, setCopied] = useState(false);
 
     const riskLabel = getRiskLevelText(t, risk.name);
 
@@ -160,17 +159,6 @@ const ExecutableCommand = memo(
       if (!disabled) onExecute?.(command);
     };
 
-    const handleCopy = async () => {
-      try {
-        await window.clipboardAPI.writeText(command);
-        setCopied(true);
-        onCopy?.(command);
-        setTimeout(() => setCopied(false), 2000);
-      } catch (err) {
-        console.error("Failed to copy command:", err);
-      }
-    };
-
     return (
       <>
         <Box
@@ -182,6 +170,8 @@ const ExecutableCommand = memo(
             border: "1px solid",
             borderColor: "divider",
             borderRadius: "10px",
+            minWidth: 0,
+            maxWidth: "100%",
             overflow: "hidden",
             my: 1,
             transition: "border-color 0.15s ease",
@@ -235,16 +225,7 @@ const ExecutableCommand = memo(
                 }}
               />
               <Box sx={{ display: "flex", gap: 0.5 }}>
-                <Tooltip title={copied ? t("ai.copied") : t("ai.copyCommand")}>
-                  <IconButton
-                    size="small"
-                    onClick={handleCopy}
-                    sx={{ p: 0.5 }}
-                    aria-label={copied ? t("ai.copied") : t("ai.copyCommand")}
-                  >
-                    <ContentCopyIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                <CopyCommandButton content={command} onCopy={onCopy} />
                 <Tooltip title={t("ai.executeCommand")}>
                   <span>
                     <IconButton
