@@ -24,6 +24,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import CancelIcon from "@mui/icons-material/Cancel";
 import ScheduleIcon from "@mui/icons-material/Schedule";
 import { getMarkdownContentSx } from "../../shared/ui/markdownContentSx.js";
+import { normalizeSafeMarkdownHref } from "../../shared/lib/markdownLinks.js";
 
 const updatePanelSx = {
   mt: 1,
@@ -57,8 +58,6 @@ const releaseNoteSx = [
   getMarkdownContentSx({ density: "compact" }),
 ];
 
-const MAX_MARKDOWN_LINK_LENGTH = 2048;
-const ALLOWED_MARKDOWN_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const RELEASE_NOTE_ALLOWED_ELEMENTS = [
   "h1",
   "h2",
@@ -103,31 +102,6 @@ const formatDateTime = (value, locale) => {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-};
-
-const normalizeSafeMarkdownHref = (href) => {
-  if (typeof href !== "string") {
-    return null;
-  }
-
-  const trimmedHref = href.trim();
-  if (!trimmedHref || trimmedHref.length > MAX_MARKDOWN_LINK_LENGTH) {
-    return null;
-  }
-
-  let urlObj;
-  try {
-    urlObj = new URL(trimmedHref);
-  } catch {
-    return null;
-  }
-
-  const protocol = urlObj.protocol.toLowerCase();
-  if (!ALLOWED_MARKDOWN_LINK_PROTOCOLS.has(protocol)) {
-    return null;
-  }
-
-  return urlObj.toString();
 };
 
 const UPDATE_BUSY_STATUSES = new Set(["checking", "downloading", "installing"]);

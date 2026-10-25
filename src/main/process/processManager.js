@@ -102,6 +102,24 @@ function getAllProcesses() {
 }
 
 /**
+ * 按会话记录去重的迭代：processId 与 tabId 可能指向同一记录，
+ * 整体清理时每个会话只处理一次（避免重复释放连接引用）。
+ * @returns {Array<[any, any]>}
+ */
+function getUniqueProcessEntries() {
+  const seen = new Set();
+  const result = [];
+  for (const [id, proc] of childProcesses.entries()) {
+    if (proc && typeof proc === "object") {
+      if (seen.has(proc)) continue;
+      seen.add(proc);
+    }
+    result.push([id, proc]);
+  }
+  return result;
+}
+
+/**
  * 获取进程映射表
  * @returns {Map}
  */
@@ -255,7 +273,7 @@ function cleanupProcess(processId, options = {}) {
 function cleanupAllProcesses(options = {}) {
   const { onSftpCleanup, onTransferCleanup, onConnectionRelease } = options;
 
-  for (const [id, proc] of childProcesses.entries()) {
+  for (const [id, proc] of getUniqueProcessEntries()) {
     try {
       // 调用SFTP清理回调
       if (onSftpCleanup) {
@@ -295,6 +313,7 @@ module.exports = {
   setProcess,
   deleteProcess,
   getAllProcesses,
+  getUniqueProcessEntries,
   getProcessMap,
   clearAllProcesses,
   getProcessCount,

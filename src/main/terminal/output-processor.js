@@ -1,4 +1,5 @@
 const { logToFile } = require("../utils/logger");
+const processManager = require("../process/processManager");
 const highlightRuleConfigs = require("../../shared/domain/highlight-configs"); // New import
 
 // 添加ANSI颜色代码
@@ -218,9 +219,7 @@ class OutputProcessor {
 
   processTerminalOutput(processId, output) {
     try {
-      // 获取进程管理器实例
-      const terminalProcessAdapter = require("./terminalProcessAdapter");
-      const procInfo = terminalProcessAdapter.getProcessInfo(processId);
+      const procInfo = processManager.getProcess(processId);
 
       if (procInfo) {
         // 编辑器检测在原始输出上执行，而不是高亮后的输出。
@@ -253,8 +252,7 @@ class OutputProcessor {
   }
 
   isEditorMode(processId) {
-    const terminalProcessAdapter = require("./terminalProcessAdapter");
-    const procInfo = terminalProcessAdapter.getProcessInfo(processId);
+    const procInfo = processManager.getProcess(processId);
     return procInfo ? procInfo.editorMode : false;
   }
 

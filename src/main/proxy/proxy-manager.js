@@ -37,6 +37,10 @@ class ProxyManager extends EventEmitter {
 
   /**
    * 加载默认代理配置
+   *
+   * 界面中的“使用系统默认代理配置”（proxy.useDefault）语义为系统代理；
+   * config 中手工写入的 defaultProxyConfig 仅作为兼容旧版本的覆盖项保留，
+   * 应用内没有写入入口。
    */
   loadDefaultProxyConfig() {
     try {
@@ -50,30 +54,6 @@ class ProxyManager extends EventEmitter {
         `Failed to load default proxy config: ${error.message}`,
         "ERROR",
       );
-    }
-  }
-
-  /**
-   * 保存默认代理配置
-   * @param {object} proxyConfig - 代理配置
-   */
-  saveDefaultProxyConfig(proxyConfig) {
-    try {
-      if (this.isValidProxyConfig(proxyConfig)) {
-        this.defaultProxyConfig = proxyConfig;
-        configService.set("defaultProxyConfig", proxyConfig);
-        this.emit("changed");
-        logToFile("Default proxy config saved", "INFO");
-        return true;
-      } else {
-        throw new Error("Invalid proxy configuration");
-      }
-    } catch (error) {
-      logToFile(
-        `Failed to save default proxy config: ${error.message}`,
-        "ERROR",
-      );
-      return false;
     }
   }
 
@@ -243,36 +223,6 @@ class ProxyManager extends EventEmitter {
       this._systemProxyByHost.set(hostKey, null);
       return null;
     }
-  }
-
-  /**
-   * 异步确保系统代理已检测（支持 Electron 的 PAC/系统代理规则）
-   * @returns {Promise<object|null>}
-   */
-  async ensureSystemProxyConfig() {
-    // 已有缓存
-    if (
-      this.systemProxyConfig &&
-      this.isValidProxyConfig(this.systemProxyConfig)
-    ) {
-      return this.systemProxyConfig;
-    }
-
-    // 先同步检测环境变量（快速路径）
-    try {
-      this.detectSystemProxy();
-      if (
-        this.systemProxyConfig &&
-        this.isValidProxyConfig(this.systemProxyConfig)
-      ) {
-        return this.systemProxyConfig;
-      }
-    } catch {
-      // ignore
-    }
-
-    // 对于 Electron/PAC，代理可能按目标主机变化；这里不再设置全局 systemProxyConfig
-    return null;
   }
 
   /**
@@ -820,40 +770,6 @@ class ProxyManager extends EventEmitter {
         proxyConfig.type.toLowerCase(),
       )
     );
-  }
-
-  /**
-   * 获取代理配置状态
-   * @returns {object} 代理配置状态
-   */
-  getProxyStatus() {
-    return {
-      initialized: this.initialized,
-      hasDefaultProxy: !!this.defaultProxyConfig,
-      hasSystemProxy: !!this.systemProxyConfig,
-      defaultProxy: this.defaultProxyConfig
-        ? {
-            type: this.defaultProxyConfig.type,
-            host: this.defaultProxyConfig.host,
-            port: this.defaultProxyConfig.port,
-            hasAuth: !!(
-              this.defaultProxyConfig.username &&
-              this.defaultProxyConfig.password
-            ),
-          }
-        : null,
-      systemProxy: this.systemProxyConfig
-        ? {
-            type: this.systemProxyConfig.type,
-            host: this.systemProxyConfig.host,
-            port: this.systemProxyConfig.port,
-            source: this.systemProxyConfig.source,
-            hasAuth: !!(
-              this.systemProxyConfig.username && this.systemProxyConfig.password
-            ),
-          }
-        : null,
-    };
   }
 
   /**

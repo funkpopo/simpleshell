@@ -26,7 +26,6 @@ import {
   MenuItem,
   Chip,
   Divider,
-  Collapse,
   FormControlLabel,
   Switch,
   Button,
@@ -67,10 +66,13 @@ import {
 
 import "./CodeHighlight.css";
 import { getMarkdownContentSx } from "../../shared/ui/markdownContentSx.js";
+import { normalizeSafeMarkdownHref } from "../../shared/lib/markdownLinks.js";
+import {
+  createApiResponseError,
+  formatBriefApiError,
+} from "./lib/aiApiErrors.js";
+import { StreamContent, ThinkContent } from "./AIMessageParts.jsx";
 
-const MAX_MARKDOWN_LINK_LENGTH = 2048;
-const API_ERROR_SUMMARY_MAX_LENGTH = 180;
-const ALLOWED_MARKDOWN_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 // Markdown 基础排版共用共享层；浮窗宽度约束和复制控件样式留在 CSS 模块。
 const markdownContentSx = getMarkdownContentSx({ density: "comfortable" });
@@ -101,133 +103,6 @@ const MARKDOWN_ALLOWED_ELEMENTS = [
   "th",
   "td",
 ];
-
-const pickApiErrorMessage = (errorLike, fallback) => {
-  if (typeof errorLike === "string") {
-    return errorLike;
-  }
-
-  if (!errorLike || typeof errorLike !== "object") {
-    return fallback;
-  }
-
-  return (
-    errorLike.message ||
-    errorLike.error ||
-    errorLike.technicalMessage ||
-    errorLike.statusText ||
-    errorLike.raw?.message ||
-    errorLike.raw?.error ||
-    fallback
-  );
-};
-
-const getApiErrorStatusCode = (errorLike) => {
-  if (!errorLike || typeof errorLike !== "object") {
-    const match = String(errorLike || "").match(/\b([45]\d{2})\b/);
-    return match ? Number(match[1]) : null;
-  }
-
-  const candidates = [
-    errorLike.statusCode,
-    errorLike.status,
-    errorLike.raw?.statusCode,
-    errorLike.raw?.status,
-    errorLike.error?.statusCode,
-    errorLike.error?.status,
-  ];
-
-  for (const candidate of candidates) {
-    const statusCode = Number(candidate);
-    if (statusCode >= 400 && statusCode <= 599) {
-      return statusCode;
-    }
-  }
-
-  const text = [
-    errorLike.message,
-    errorLike.error,
-    errorLike.technicalMessage,
-    errorLike.raw?.message,
-    errorLike.raw?.error,
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const match = text.match(/\b([45]\d{2})\b/);
-  return match ? Number(match[1]) : null;
-};
-
-const compactApiErrorMessage = (message) => {
-  const compact = String(message || "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (compact.length <= API_ERROR_SUMMARY_MAX_LENGTH) {
-    return compact;
-  }
-
-  return `${compact.slice(0, API_ERROR_SUMMARY_MAX_LENGTH - 3)}...`;
-};
-
-const stripStatusPrefix = (message, statusCode) =>
-  message
-    .replace(
-      new RegExp(
-        `^\\s*API\\s*(?:请求失败|request failed)?\\s*:?\\s*${statusCode}\\s*:?\\s*`,
-        "i",
-      ),
-      "",
-    )
-    .replace(new RegExp(`^\\s*${statusCode}\\s*:?\\s*`, "i"), "")
-    .trim();
-
-const formatBriefApiError = (errorLike, fallback) => {
-  const statusCode = getApiErrorStatusCode(errorLike);
-  const message = compactApiErrorMessage(
-    pickApiErrorMessage(errorLike, fallback),
-  );
-
-  if (!statusCode) {
-    return message || fallback;
-  }
-
-  return `API ${statusCode}: ${stripStatusPrefix(message, statusCode) || fallback}`;
-};
-
-const createApiResponseError = (response, fallback) => {
-  const error = new Error(pickApiErrorMessage(response, fallback));
-  const statusCode = getApiErrorStatusCode(response);
-  if (statusCode) {
-    error.statusCode = statusCode;
-  }
-  error.raw = response;
-  return error;
-};
-
-const normalizeSafeMarkdownHref = (href) => {
-  if (typeof href !== "string") {
-    return null;
-  }
-
-  const trimmedHref = href.trim();
-  if (!trimmedHref || trimmedHref.length > MAX_MARKDOWN_LINK_LENGTH) {
-    return null;
-  }
-
-  let urlObj;
-  try {
-    urlObj = new URL(trimmedHref);
-  } catch {
-    return null;
-  }
-
-  const protocol = urlObj.protocol.toLowerCase();
-  if (!ALLOWED_MARKDOWN_LINK_PROTOCOLS.has(protocol)) {
-    return null;
-  }
-
-  return urlObj.toString();
-};
 
 const DIALOG_RIGHT_GAP = 50;
 const DIALOG_BOTTOM_GAP = 20;
@@ -273,97 +148,6 @@ const FloatingDialog = createFloatingDialog({
   maxHeight: `calc(100vh - ${DIALOG_BOTTOM_GAP + DIALOG_TOP_GAP}px)`,
   borderRadius: DIALOG_PAPER_RADIUS,
 });
-
-const ThinkSparkIcon = () => (
-  <svg
-    className={aiClassName("ai-think-spark")}
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    aria-hidden="true"
-  >
-    <path
-      d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"
-      fill="currentColor"
-    />
-  </svg>
-);
-
-// 思考内容组件
-const ThinkContent = ({ content, isExpanded, onToggle, isStreaming }) => {
-  const { t } = useTranslation();
-  return (
-    <Box
-      className={aiClassName(
-        `ai-think-block${isStreaming ? " is-streaming" : ""}${isExpanded ? " is-expanded" : ""}`,
-      )}
-    >
-      <Box
-        className={aiClassName("ai-think-toggle")}
-        onClick={onToggle}
-        role="button"
-        tabIndex={0}
-        aria-expanded={isExpanded}
-        aria-live="polite"
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onToggle();
-          }
-        }}
-      >
-        <span className={aiClassName("ai-think-spark-wrap")} aria-hidden="true">
-          <ThinkSparkIcon />
-        </span>
-        <Typography
-          component="span"
-          className={aiClassName("ai-think-label")}
-          variant="caption"
-        >
-          {t("ai.thinkingProcess")}
-        </Typography>
-        {isStreaming && (
-          <span className={aiClassName("ai-think-dots")} aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-        )}
-        <ExpandMoreIcon
-          className={aiClassName(
-            `ai-think-caret${isExpanded ? " is-open" : ""}`,
-          )}
-          fontSize="small"
-        />
-      </Box>
-      <Collapse in={isExpanded}>
-        <Box className={aiClassName("ai-think-trace")}>
-          <Typography className={aiClassName("ai-think-body")} variant="body2">
-            {content}
-          </Typography>
-        </Box>
-      </Collapse>
-    </Box>
-  );
-};
-
-/** 流式输出包装：稳定正文，只让最新尾部的细线光标保持呼吸。 */
-const StreamContent = ({ isStreaming, children }) => {
-  return (
-    <Box
-      className={aiClassName(
-        `ai-stream-wrap ${isStreaming ? "ai-stream-active" : "ai-stream-done"}`,
-      )}
-    >
-      <Box
-        className={aiClassName("ai-message-content ai-stream-body")}
-        sx={markdownContentSx}
-      >
-        {children}
-      </Box>
-    </Box>
-  );
-};
 
 const AIChatWindow = ({
   windowState,

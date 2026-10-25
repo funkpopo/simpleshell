@@ -489,8 +489,9 @@ class SSHHandlers {
       type,
     );
     this.childProcesses.set(processId, procInfo);
+    // tabId 是同一会话记录的别名：共享对象，避免两份副本状态（stream/ready/editorMode）分叉
     if (config.tabId) {
-      this.childProcesses.set(config.tabId, { ...procInfo });
+      this.childProcesses.set(config.tabId, procInfo);
     }
     this._configureProcessMailbox(processId, config);
     return procInfo;

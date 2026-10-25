@@ -166,7 +166,7 @@ class AppCleanup {
    * 清理所有进程
    */
   async cleanupAllProcesses() {
-    for (const [id, proc] of processManager.getAllProcesses()) {
+    for (const [id, proc] of processManager.getUniqueProcessEntries()) {
       try {
         await this.cleanupProcessSftp(id, proc);
         this.releaseSSHConnection(proc);
@@ -206,8 +206,8 @@ class AppCleanup {
     const moshPool = connectionManager.moshConnectionPool;
     const reconnectManager = sshPool?.reconnectionManager;
     const allProcesses =
-      typeof processManager.getAllProcesses === "function"
-        ? processManager.getAllProcesses()
+      typeof processManager.getUniqueProcessEntries === "function"
+        ? processManager.getUniqueProcessEntries()
         : [];
 
     return {
