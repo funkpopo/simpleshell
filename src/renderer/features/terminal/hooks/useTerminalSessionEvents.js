@@ -24,7 +24,6 @@ export function useTerminalSessionEvents({
   resetPromptTracking,
   syncPromptTrackingFromTerminal,
   updateCursorPosition,
-  setContentUpdated,
   setShowSuggestions,
   setSuggestions,
   setCurrentInput,
@@ -168,7 +167,6 @@ export function useTerminalSessionEvents({
         scheduleTerminalRedraw(termRef.current);
         updateCursorPosition();
       }
-      setContentUpdated(true);
       syncGeometry();
       focusTerminal();
       [60, 180, 320].forEach((delay) => {
@@ -207,7 +205,6 @@ export function useTerminalSessionEvents({
     resetPromptTracking,
     scheduleTerminalLayoutSyncRef,
     scheduleTerminalRedraw,
-    setContentUpdated,
     setCurrentInput,
     setShowSuggestions,
     setSuggestions,
@@ -226,7 +223,6 @@ export function useTerminalSessionEvents({
   useEffect(() => {
     const handleTabChanged = (event) => {
       if (event.detail && event.detail.tabId === sessionKey) {
-        setContentUpdated(true);
         scheduleTerminalLayoutSyncRef.current(
           event.detail.forceRefresh ? "tab-force-refresh" : "tab-activated",
           { immediate: event.detail.forceRefresh },
@@ -241,7 +237,6 @@ export function useTerminalSessionEvents({
         fitAddonRef.current &&
         termRef.current
       ) {
-        setContentUpdated(true);
         scheduleTerminalLayoutSyncRef.current(
           `terminal-resize:${layoutType || "default"}`,
         );
@@ -255,7 +250,6 @@ export function useTerminalSessionEvents({
         fitAddonRef.current &&
         termRef.current
       ) {
-        setContentUpdated(true);
         scheduleTerminalLayoutSyncRef.current(
           `terminal-force-refresh:${layoutType || "default"}`,
           { immediate: true },
@@ -287,7 +281,6 @@ export function useTerminalSessionEvents({
     eventManager,
     fitAddonRef,
     scheduleTerminalLayoutSyncRef,
-    setContentUpdated,
     sessionKey,
     terminalRef,
     termRef,

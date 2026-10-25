@@ -11,6 +11,14 @@ const normalizePositiveNumber = (value, fallback) => {
   return Math.floor(numericValue);
 };
 
+const normalizeNonNegativeNumber = (value, fallback) => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return fallback;
+  }
+  return Math.floor(numericValue);
+};
+
 export class TerminalWriteQueue {
   constructor(options = {}) {
     this.config = {
@@ -18,7 +26,8 @@ export class TerminalWriteQueue {
         options.dispatchThresholdBytes,
         4096,
       ),
-      dispatchIntervalMs: normalizePositiveNumber(
+      // 0 drains on a microtask (coalesces synchronous enqueues only).
+      dispatchIntervalMs: normalizeNonNegativeNumber(
         options.dispatchIntervalMs,
         8,
       ),
@@ -91,6 +100,16 @@ export class TerminalWriteQueue {
     // Parsing/ACKs must not wait for painting. Chromium can suspend or heavily
     // throttle animation frames in hidden/occluded windows and inactive panes,
     // turning a tiny echo into a second-long delay (or a backpressure stall).
+    if (intervalMs <= 0 && typeof queueMicrotask === "function") {
+      const token = { microtask: true };
+      this.dispatchTimer = token;
+      queueMicrotask(() => {
+        if (this.dispatchTimer !== token) return;
+        this.dispatchTimer = null;
+        this.drain();
+      });
+      return;
+    }
     this.dispatchTimer = setTimeout(() => {
       this.dispatchTimer = null;
       this.drain();
@@ -103,7 +122,9 @@ export class TerminalWriteQueue {
   cancelDispatchTimer() {
     if (this.dispatchTimer === null) return;
 
-    clearTimeout(this.dispatchTimer);
+    if (this.dispatchTimer.microtask !== true) {
+      clearTimeout(this.dispatchTimer);
+    }
 
     this.dispatchTimer = null;
   }

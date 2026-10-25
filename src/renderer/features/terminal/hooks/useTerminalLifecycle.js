@@ -99,12 +99,6 @@ export function useTerminalLifecycle({
   webglRendererEnabledRef,
   setWebglRendererEnabled,
   isActiveRef,
-  contentUpdated,
-  setContentUpdated,
-  contentUpdatedRef,
-  contentUpdateFrameRef,
-  contentUpdateFrameTypeRef,
-  markTerminalContentUpdated,
   lifecycleEventManager,
   eventManager,
   tryEnableWebglRenderer,
@@ -396,27 +390,13 @@ export function useTerminalLifecycle({
       clearPendingWrappedInputRefresh(term);
       syncPromptTrackingFromTerminal(term);
 
+      // Only a remote window-size request (CSI 8;rows;cols t) needs us to push
+      // the real geometry back. Clear-screen/cursor-home sequences are emitted
+      // on every TUI frame (top/htop/vim/watch); forcing fit + full refresh +
+      // resize IPC for each of them caused stutter and flicker. Alternate
+      // screen enter/exit is handled by onBufferChange in prompt tracking.
       const handleProcessOutput = (data) => {
-        if (!data) {
-          return;
-        }
-
-        const dataStr = typeof data === "string" ? data : data.toString();
-
-        if (
-          dataStr.includes("\u001b[2J") ||
-          dataStr.includes("\u001b[H") ||
-          dataStr.includes("\u001b[s") ||
-          dataStr.includes("\u001b[u") ||
-          dataStr.includes("\u001b[J") ||
-          /(^|\s)(top|htop|vi|vim|nano|less|more|tail -f|watch)(\s|$)/.test(
-            dataStr,
-          ) ||
-          dataStr.includes("\u001b[?1049h") ||
-          dataStr.includes("\u001b[?1049l") ||
-          TERMINAL_RESIZE_QUERY_REGEX.test(dataStr)
-        ) {
-          setContentUpdated(true);
+        if (data && TERMINAL_RESIZE_QUERY_REGEX.test(data)) {
           scheduleTerminalLayoutSyncRef.current(
             "terminal-control-sequence-force",
           );
@@ -439,7 +419,6 @@ export function useTerminalLifecycle({
       clearInputQueue,
       resetPromptTracking,
       scheduleTerminalLayoutSyncRef,
-      setContentUpdated,
       syncPromptTrackingFromTerminal,
       sessionKey,
       terminalIOMailboxRef,
@@ -539,18 +518,21 @@ export function useTerminalLifecycle({
         if (scrollbackUsageTrackerRef.current) {
           scrollbackUsageTrackerRef.current.addData(data);
         }
-        markTerminalContentUpdated();
       };
       const writeCompleteHandler = ({ data, duration }) => {
         if (performanceMonitorRef.current) {
           performanceMonitorRef.current.recordWrite(data.length, duration);
         }
+        // xterm already repaints the rows a write touched. Only the wrapped
+        // input erase case needs an explicit full-viewport refresh.
         const forceRefresh = shouldForceTerminalViewportRefresh(
           term,
           inEditorModeRef.current,
         );
         clearPendingWrappedInputRefresh(term);
-        scheduleTerminalRedrawRef.current(term, { force: forceRefresh });
+        if (forceRefresh) {
+          scheduleTerminalRedrawRef.current(term, { force: true });
+        }
       };
 
       if (!terminalIOMailboxRef.current) {
@@ -646,10 +628,7 @@ export function useTerminalLifecycle({
             existingProcessId,
             false,
             terminalDisposables,
-            {
-              pendingSystemShortcutRecoveryRef,
-              setContentUpdated,
-            },
+            { pendingSystemShortcutRecoveryRef },
           );
         }
       } else {
@@ -1198,10 +1177,7 @@ export function useTerminalLifecycle({
                     processId,
                     false,
                     terminalDisposables,
-                    {
-                      pendingSystemShortcutRecoveryRef,
-                      setContentUpdated,
-                    },
+                    { pendingSystemShortcutRecoveryRef },
                   );
 
                   scheduleTerminalLayoutSyncRef.current("connection-ready");
@@ -1691,31 +1667,6 @@ export function useTerminalLifecycle({
 
       scheduleTerminalLayoutSyncRef.current("initial", { immediate: true });
 
-      const ensureTerminalSizeOnVisibilityChange = () => {
-        if (terminalRef.current) {
-          const isVisible = isElementVisible(terminalRef.current);
-
-          if (
-            isVisible &&
-            termRef.current &&
-            fitAddonRef.current &&
-            contentUpdated
-          ) {
-            lifecycleManager.setTimeout(() => {
-              scheduleTerminalLayoutSyncRef.current("content-visible");
-              setContentUpdated(false);
-            }, 10);
-          }
-        }
-      };
-
-      lifecycleManager.setInterval(() => {
-        if (contentUpdatedRef.current) {
-          contentUpdatedRef.current = false;
-          ensureTerminalSizeOnVisibilityChange();
-        }
-      }, 1000);
-
       lifecycleManager.addObserver(resizeObserver);
 
       lifecycleManager.addCleanup(() => {
@@ -1748,19 +1699,6 @@ export function useTerminalLifecycle({
           unregisterTerminalIOMailbox(sessionKey, terminalIOMailboxRef.current);
           terminalIOMailboxRef.current.destroy();
           terminalIOMailboxRef.current = null;
-        }
-
-        if (contentUpdateFrameRef.current !== null) {
-          if (
-            contentUpdateFrameTypeRef.current === "raf" &&
-            typeof cancelAnimationFrame === "function"
-          ) {
-            cancelAnimationFrame(contentUpdateFrameRef.current);
-          } else {
-            clearTimeout(contentUpdateFrameRef.current);
-          }
-          contentUpdateFrameRef.current = null;
-          contentUpdateFrameTypeRef.current = null;
         }
 
         terminalDisposables.forEach((disposable) => {
@@ -1802,7 +1740,6 @@ export function useTerminalLifecycle({
     hasMeaningfulLayoutGeometryChange,
     isTerminalContainerVisible,
     recoverTerminalAfterActivation,
-    markTerminalContentUpdated,
   ]);
 
   // Theme updates

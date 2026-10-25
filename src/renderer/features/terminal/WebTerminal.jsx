@@ -19,13 +19,21 @@ import WebTerminalContextMenu from "./components/WebTerminalContextMenu.jsx";
 import WebTerminalConnectionNotice from "./components/WebTerminalConnectionNotice.jsx";
 import { areWebTerminalPropsEqual } from "./lib/terminalHelpers.js";
 import { useTerminalIO } from "./hooks/useTerminalIO.js";
-import { useTerminalLayout } from "./hooks/useTerminalLayout.js";
+import {
+  isTerminalContainerElementVisible,
+  useTerminalLayout,
+} from "./hooks/useTerminalLayout.js";
 import { usePromptTracking } from "./hooks/usePromptTracking.js";
 import { useTerminalClipboard } from "./hooks/useTerminalClipboard.js";
 import { useTerminalContextMenu } from "./hooks/useTerminalContextMenu.js";
 import { useTerminalLifecycle } from "./hooks/useTerminalLifecycle.js";
 import { useTerminalSessionEvents } from "./hooks/useTerminalSessionEvents.js";
 import useZmodemTransfer from "./hooks/useZmodemTransfer.js";
+
+// A tab hidden by switching keeps its WebGL renderer for a while, so quick
+// back-and-forth switching does not rebuild the GL context and glyph atlas
+// (visible as a flash of blank / DOM-rendered content) on every switch.
+const HIDDEN_WEBGL_RELEASE_DELAY_MS = 15000;
 
 const WebTerminal = ({
   tabId,
@@ -64,22 +72,15 @@ const WebTerminal = ({
   const lastExecutedCommandTimeRef = useRef(0);
   const lastExecutedCommandRef = useRef("");
 
-  const [contentUpdated, setContentUpdated] = useState(false);
-  const contentUpdatedStateRef = useRef(false);
-  const contentUpdateFrameRef = useRef(null);
-  const contentUpdateFrameTypeRef = useRef(null);
-  const contentUpdatedRef = useRef(false);
   const [webglRendererEnabled, setWebglRendererEnabled] = useState(
     allowWebgl !== false,
   );
   const [searchAddonVersion, setSearchAddonVersion] = useState(0);
 
+  // allowWebgl with a delayed release for hidden tabs (see effect below).
+  const [webglAllowed, setWebglAllowed] = useState(allowWebgl !== false);
   const allowWebglRef = useRef(allowWebgl !== false);
   const webglPreferenceRef = useRef(true);
-
-  useEffect(() => {
-    allowWebglRef.current = allowWebgl !== false;
-  }, [allowWebgl]);
 
   // 统一的 WebGL 开关写入口：设置项与窗格数量两个条件同时满足才启用
   const applyWebglRendererEnabled = useCallback((enabled) => {
@@ -111,10 +112,6 @@ const WebTerminal = ({
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
-
-  useEffect(() => {
-    contentUpdatedStateRef.current = contentUpdated;
-  }, [contentUpdated]);
 
   useEffect(() => {
     let active = true;
@@ -155,6 +152,7 @@ const WebTerminal = ({
 
   // 窗格数量变化（allowWebgl 翻转）时立即切换渲染器
   useEffect(() => {
+    allowWebglRef.current = webglAllowed;
     const enabled = webglPreferenceRef.current && allowWebglRef.current;
     webglRendererEnabledRef.current = enabled;
     setWebglRendererEnabled(enabled);
@@ -169,7 +167,28 @@ const WebTerminal = ({
       disableWebglRenderer(termRef.current);
     }
     return undefined;
-  }, [allowWebgl, tryEnableWebglRenderer, disableWebglRenderer]);
+  }, [webglAllowed, tryEnableWebglRenderer, disableWebglRenderer]);
+
+  // Visible panes must release WebGL immediately (context budget for >2
+  // panes); a tab that was merely switched away keeps it for a grace period.
+  useEffect(() => {
+    if (allowWebgl !== false) {
+      setWebglAllowed(true);
+      return undefined;
+    }
+    if (
+      terminalRef.current &&
+      !isTerminalContainerElementVisible(terminalRef.current)
+    ) {
+      const timer = setTimeout(
+        () => setWebglAllowed(false),
+        HIDDEN_WEBGL_RELEASE_DELAY_MS,
+      );
+      return () => clearTimeout(timer);
+    }
+    setWebglAllowed(false);
+    return undefined;
+  }, [allowWebgl]);
 
   useEffect(() => {
     scheduleTerminalRedrawRef.current = scheduleTerminalRedraw;
@@ -234,35 +253,6 @@ const WebTerminal = ({
     termRef.current?.clear();
     broadcastTerminalActionToGroup("clear");
   }, [broadcastTerminalActionToGroup, termRef]);
-
-  const markTerminalContentUpdated = useCallback(() => {
-    contentUpdatedRef.current = true;
-    if (
-      contentUpdatedStateRef.current ||
-      contentUpdateFrameRef.current !== null
-    ) {
-      return;
-    }
-    if (typeof requestAnimationFrame === "function") {
-      contentUpdateFrameTypeRef.current = "raf";
-      contentUpdateFrameRef.current = requestAnimationFrame(() => {
-        contentUpdateFrameRef.current = null;
-        contentUpdateFrameTypeRef.current = null;
-        if (!contentUpdatedStateRef.current) {
-          setContentUpdated(true);
-        }
-      });
-      return;
-    }
-    contentUpdateFrameTypeRef.current = "timeout";
-    contentUpdateFrameRef.current = setTimeout(() => {
-      contentUpdateFrameRef.current = null;
-      contentUpdateFrameTypeRef.current = null;
-      if (!contentUpdatedStateRef.current) {
-        setContentUpdated(true);
-      }
-    }, 16);
-  }, []);
 
   const {
     suggestions,
@@ -388,6 +378,14 @@ const WebTerminal = ({
       }
       try {
         attachTerminalToContainer(termRef.current);
+        // WebGL was dropped after a context loss; retry now that we are shown.
+        if (
+          termRef.current.__webglNeedsRestore &&
+          !termRef.current.__webglEnabled &&
+          webglRendererEnabledRef.current
+        ) {
+          tryEnableWebglRenderer(termRef.current);
+        }
         if (resize) {
           scheduleTerminalLayoutSyncRef.current("activation");
         }
@@ -401,7 +399,11 @@ const WebTerminal = ({
         return false;
       }
     },
-    [attachTerminalToContainer, scheduleTerminalLayoutSyncRef],
+    [
+      attachTerminalToContainer,
+      scheduleTerminalLayoutSyncRef,
+      tryEnableWebglRenderer,
+    ],
   );
 
   const {
@@ -483,12 +485,6 @@ const WebTerminal = ({
     webglRendererEnabledRef,
     setWebglRendererEnabled: applyWebglRendererEnabled,
     isActiveRef,
-    contentUpdated,
-    setContentUpdated,
-    contentUpdatedRef,
-    contentUpdateFrameRef,
-    contentUpdateFrameTypeRef,
-    markTerminalContentUpdated,
     lifecycleEventManager,
     eventManager,
     tryEnableWebglRenderer,
@@ -550,7 +546,6 @@ const WebTerminal = ({
     resetPromptTracking,
     syncPromptTrackingFromTerminal,
     updateCursorPosition,
-    setContentUpdated,
     setShowSuggestions,
     setSuggestions,
     setCurrentInput,
@@ -569,11 +564,6 @@ const WebTerminal = ({
       cancelInputQueueDrain();
     };
   }, [cancelInputQueueDrain, resetRenderState]);
-
-  useEffect(() => {
-    if (!contentUpdated || !termRef.current) return;
-    scheduleTerminalRedraw(termRef.current);
-  }, [contentUpdated, scheduleTerminalRedraw]);
 
   return (
     <Box

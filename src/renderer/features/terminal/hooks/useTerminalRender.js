@@ -13,6 +13,7 @@ export const useTerminalRender = ({
 }) => {
   const terminalRedrawFrameRef = useRef(null);
   const lastTerminalRedrawRef = useRef(0);
+  const pendingForcedRedrawRef = useRef(false);
 
   const detachWebglCanvasHandlers = useCallback((termInstance) => {
     const handlers = termInstance?.__webglHandlers;
@@ -103,8 +104,10 @@ export const useTerminalRender = ({
 
         const webglAddon = new WebglAddon();
         webglAddon.onContextLoss(() => {
+          // A lost context renders nothing. Dispose so xterm falls back to the
+          // DOM renderer; activation/settings re-enable WebGL later.
+          disableWebglRenderer(termInstance);
           termInstance.__webglNeedsRestore = true;
-          termInstance.__webglEnabled = false;
         });
 
         termInstance.loadAddon(webglAddon);
@@ -174,21 +177,24 @@ export const useTerminalRender = ({
         return;
       }
 
-      const forceRefresh = options.force === true;
-      const minIntervalMs = forceRefresh ? 0 : 16;
-
-      if (termInstance.__webglEnabled && !forceRefresh) {
+      if (termInstance.__webglEnabled && options.force !== true) {
         return;
       }
+
+      // A pending forced refresh must survive a later non-forced request,
+      // otherwise the 16ms throttle can silently drop it.
+      const forceRefresh =
+        options.force === true || pendingForcedRedrawRef.current;
+      const minIntervalMs = forceRefresh ? 0 : 16;
 
       const now = Date.now();
       const timeSinceLastRefresh = now - lastTerminalRedrawRef.current;
 
-      if (
-        terminalRedrawFrameRef.current &&
-        typeof cancelAnimationFrame === "function"
-      ) {
-        cancelAnimationFrame(terminalRedrawFrameRef.current);
+      if (terminalRedrawFrameRef.current) {
+        if (typeof cancelAnimationFrame === "function") {
+          cancelAnimationFrame(terminalRedrawFrameRef.current);
+        }
+        terminalRedrawFrameRef.current = null;
       }
 
       if (typeof requestAnimationFrame !== "function") {
@@ -203,12 +209,14 @@ export const useTerminalRender = ({
 
           lastTerminalRedrawRef.current = now;
         }
-        terminalRedrawFrameRef.current = null;
+        pendingForcedRedrawRef.current = false;
         return;
       }
 
+      pendingForcedRedrawRef.current = forceRefresh;
       terminalRedrawFrameRef.current = requestAnimationFrame(() => {
         terminalRedrawFrameRef.current = null;
+        pendingForcedRedrawRef.current = false;
         const currentTime = Date.now();
         if (currentTime - lastTerminalRedrawRef.current >= minIntervalMs) {
           const startTime = performance.now();
@@ -234,6 +242,7 @@ export const useTerminalRender = ({
       cancelAnimationFrame(terminalRedrawFrameRef.current);
     }
     terminalRedrawFrameRef.current = null;
+    pendingForcedRedrawRef.current = false;
   }, []);
 
   useEffect(() => {

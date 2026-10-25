@@ -30,6 +30,16 @@ const waitForTerminalLayoutFrame = () =>
 
 const COMMAND_SUGGESTION_LIMIT = 10;
 
+const isSameCursorPosition = (a, b) =>
+  a === b ||
+  (Boolean(a) &&
+    Boolean(b) &&
+    a.x === b.x &&
+    a.y === b.y &&
+    a.cursorHeight === b.cursorHeight &&
+    a.cursorBottom === b.cursorBottom &&
+    a.showAbove === b.showAbove);
+
 export const useTerminalSuggestions = ({
   sessionKey,
   termRef,
@@ -43,7 +53,14 @@ export const useTerminalSuggestions = ({
 }) => {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestionsState] = useState(false);
-  const [cursorPosition, setCursorPosition] = useState(null);
+  const [cursorPosition, setCursorPositionState] = useState(null);
+  // Cursor measurement runs on every input flush and activation pass; keep the
+  // previous object when nothing moved so WebTerminal does not re-render.
+  const setCursorPosition = useCallback((nextPosition) => {
+    setCursorPositionState((previous) =>
+      isSameCursorPosition(previous, nextPosition) ? previous : nextPosition,
+    );
+  }, []);
   const [currentInput, setCurrentInputState] = useState("");
   const [suggestionsHiddenByEsc, setSuggestionsHiddenByEscState] =
     useState(false);
@@ -226,7 +243,7 @@ export const useTerminalSuggestions = ({
         return null;
       }
     },
-    [suggestions?.length, termRef, terminalRef],
+    [setCursorPosition, suggestions?.length, termRef, terminalRef],
   );
 
   const getSuggestions = useCallback(
