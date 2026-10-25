@@ -166,6 +166,7 @@ export const getConnectionSyncSignature = (connection) =>
     port: Number(connection?.port) || 0,
     username: connection?.username || "",
     password: connection?.password || "",
+    credentialRevision: connection?.credentialRevision || "",
     authType: connection?.authType || "",
     privateKeyPath: connection?.privateKeyPath || "",
     passphrase: connection?.passphrase || "",

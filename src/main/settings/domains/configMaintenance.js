@@ -16,6 +16,10 @@ function createConfigMaintenance(dependencies, { compressCommandHistory }) {
           delete result.passphrase;
           delete result.privateKey;
           delete result.privateKeyPath;
+          if (result.proxy && typeof result.proxy === "object") {
+            result.proxy = { ...result.proxy };
+            delete result.proxy.password;
+          }
         }
         if (result.type === "group") {
           result.items = this._stripSensitiveConnectionFields(

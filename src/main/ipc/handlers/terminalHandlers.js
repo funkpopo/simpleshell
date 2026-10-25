@@ -52,11 +52,6 @@ class TerminalHandlers {
         handler: this.selectKeyFile.bind(this),
       },
       {
-        channel: IPC_REQUEST_CHANNELS.TERMINAL_COMMAND,
-        category: "terminal",
-        handler: this.executeCommand.bind(this),
-      },
-      {
         channel: IPC_REQUEST_CHANNELS.TERMINAL_RESIZE,
         category: "terminal",
         handler: this.resizeTerminal.bind(this),
@@ -501,20 +496,6 @@ class TerminalHandlers {
       return { success: true, path: result.filePaths[0] };
     }
     return { success: false, canceled: true };
-  }
-
-  /**
-   * 执行简单命令
-   */
-  async executeCommand(command) {
-    // 简单内部命令处理（纯同步分支，异常交给 wrapIpcHandler）
-    if (command === "date") {
-      return { output: new Date().toString() };
-    }
-    if (command.startsWith("echo ")) {
-      return { output: command.substring(5) };
-    }
-    return { output: `Command not recognized: ${command}` };
   }
 
   /**

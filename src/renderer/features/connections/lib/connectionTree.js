@@ -38,6 +38,7 @@ const getConnectionVersion = (connection) => {
         connection.proxy.port ?? "",
         connection.proxy.username || "",
         connection.proxy.password || "",
+        connection.proxy.hasPassword ? "1" : "0",
         connection.proxy.useDefault ? "1" : "0",
       ].join("|")
     : "";
@@ -55,6 +56,8 @@ const getConnectionVersion = (connection) => {
     connection.agentForward ? "1" : "0",
     connection.os || "",
     connection.password || "",
+    connection.hasPassword ? "1" : "0",
+    connection.credentialRevision || "",
     proxySignature,
   ].join("|");
 };
@@ -179,7 +182,11 @@ export const createConnectionStabilizer = () => {
               (child, childIndex) => child === childItems[childIndex],
             ));
 
-        if (cached !== undefined && cached.version === version && childrenUnchanged) {
+        if (
+          cached !== undefined &&
+          cached.version === version &&
+          childrenUnchanged
+        ) {
           next[index] = cached.item;
           continue;
         }

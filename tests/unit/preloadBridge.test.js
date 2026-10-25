@@ -82,8 +82,8 @@ it("assembles the public APIs and isolates batched terminal output by session", 
           .length,
       0,
     ),
-    // 236 = 全量 API 方法数（含 terminal:getResourceSnapshot 合并快照）
-  ).toBe(236);
+    // 234 = 全量 API 方法数（含 terminal:getResourceSnapshot 合并快照）
+  ).toBe(234);
   const first = vi.fn();
   const second = vi.fn();
   const observer = vi.fn();

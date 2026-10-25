@@ -134,15 +134,6 @@ function createTerminalAPI(bridge) {
       removeAllManagedTerminalMailboxListeners(channel);
     },
 
-    // 发送命令到主进程处理 (用于模拟终端)
-    /**
-     * 通过 IPC_REQUEST_CHANNELS.TERMINAL_COMMAND 请求主进程。
-     * @param {string} command
-     * @returns {Promise<unknown>}
-     */
-    sendCommand: (command) =>
-      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_COMMAND, command),
-
     // 终端进程管理
     /**
      * 通过终端 IPC 邮箱发送输入；同步返回是否接受发送。
@@ -433,15 +424,6 @@ function createTerminalAPI(bridge) {
 
       removeAllManagedProcessOutputListeners(channel);
     },
-
-    // 简单命令执行
-    /**
-     * 通过 IPC_REQUEST_CHANNELS.TERMINAL_COMMAND 请求主进程。
-     * @param {string} command
-     * @returns {Promise<unknown>}
-     */
-    executeCommand: (command) =>
-      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_COMMAND, command),
 
     // 终端大小调整
     /**

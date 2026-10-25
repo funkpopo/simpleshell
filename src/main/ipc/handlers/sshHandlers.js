@@ -13,6 +13,10 @@ const {
 } = require("../../terminal/oscSafeOutput");
 const configService = require("../../settings/configService");
 const { indexConnections } = require("../../../shared/connectionConfigSync");
+const {
+  hydrateConnectionSecrets,
+  redactConnectionSecrets,
+} = require("../../settings/connectionSecrets");
 const filemanagementService = require("../../file-transfer/filemanagementService");
 const {
   DEFAULT_SSH_RETRY_CONFIG,
@@ -342,8 +346,18 @@ class SSHHandlers {
     return this._connectionCredentials._validateTestSSHConfig(...args);
   }
 
-  testSSHConnection(...args) {
-    return this._connectionCredentials.testSSHConnection(...args);
+  testSSHConnection(event, sshConfig) {
+    return this._connectionCredentials.testSSHConnection(
+      event,
+      this._hydrateRendererConfig(sshConfig),
+    );
+  }
+
+  /**
+   * 渲染进程只持有被清空的已保存密钥，进入连接流程前在主进程补齐。
+   */
+  _hydrateRendererConfig(config) {
+    return hydrateConnectionSecrets(config, configService);
   }
 
   updateConnectionCredentials(...args) {
@@ -435,7 +449,7 @@ class SSHHandlers {
       const lastConnections = this.connectionManager.getLastConnections(5);
       broadcastToAllWindows(
         IPC_EVENT_CHANNELS.TOP_CONNECTIONS_CHANGED,
-        lastConnections,
+        redactConnectionSecrets(lastConnections),
       );
     } catch {
       // ignore broadcast errors
@@ -498,8 +512,11 @@ class SSHHandlers {
     return this._sshSessions._assertSSHReachableBeforeAuth(...args);
   }
 
-  startSSH(...args) {
-    return this._sshSessions.startSSH(...args);
+  startSSH(event, sshConfig) {
+    return this._sshSessions.startSSH(
+      event,
+      this._hydrateRendererConfig(sshConfig),
+    );
   }
 
   _startSSH(...args) {
@@ -514,8 +531,11 @@ class SSHHandlers {
     return this._sshSessions._waitForSSHReady(...args);
   }
 
-  startTelnet(...args) {
-    return this._protocolSessions.startTelnet(...args);
+  startTelnet(event, telnetConfig) {
+    return this._protocolSessions.startTelnet(
+      event,
+      this._hydrateRendererConfig(telnetConfig),
+    );
   }
 
   listSerialPorts(...args) {

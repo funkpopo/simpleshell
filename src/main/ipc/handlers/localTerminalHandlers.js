@@ -52,6 +52,10 @@ class LocalTerminalHandlers {
     this.registerHandlers();
   }
 
+  setMainWindow(mainWindow) {
+    this.mainWindow = mainWindow;
+  }
+
   _sendStatus(payload) {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) {
       return;

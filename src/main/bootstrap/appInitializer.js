@@ -8,7 +8,6 @@ const fileSnapshotStore = require("../utils/fileSnapshotStore");
 const runtimeFileLifecycle = require("../utils/runtimeFileLifecycle");
 const connectionManager = require("../connection/connectionManager");
 const commandHistoryService = require("../terminal/command-history");
-const processManager = require("../process/processManager");
 const { safeSendToRenderer } = require("../window/windowManager");
 const updateService = require("../update/updateService");
 const { migrateLegacyConfigIfNeeded } = require("../utils/appPaths");
@@ -65,25 +64,6 @@ class AppInitializer {
     const logSettings = configService.loadLogSettings();
     updateLogConfig(logSettings);
     logToFile("Config service initialized", "INFO");
-  }
-
-  /**
-   * 初始化SFTP核心模块
-   */
-  initializeSftpCore() {
-    void processManager;
-    logToFile("Native SFTP backend initialized", "INFO");
-  }
-
-  /**
-   * 初始化SFTP传输模块
-   */
-  initializeSftpTransfer(dialog, shell) {
-    void dialog;
-    void shell;
-    void processManager;
-    void safeSendToRenderer;
-    logToFile("Native transfer pipeline initialized", "INFO");
   }
 
   /**
@@ -244,7 +224,7 @@ class AppInitializer {
   /**
    * 执行所有初始化
    */
-  async initialize(dialog, shell) {
+  async initialize(shell) {
     // 日志/配置初始化前先迁移旧版 exe 旁 config，避免首启读空配置
     try {
       migrateLegacyConfigIfNeeded(this.app);
@@ -255,8 +235,6 @@ class AppInitializer {
     this.initializeLogger();
     await this.configureSessionProxy();
     this.initializeConfigService();
-    this.initializeSftpCore();
-    this.initializeSftpTransfer(dialog, shell);
     this.initializeExternalEditorManager(shell);
     this.initializeFileCache();
     await this.initializeRuntimeFileLifecycle();

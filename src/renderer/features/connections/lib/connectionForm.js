@@ -115,6 +115,15 @@ export const buildConnectionPayloadFromForm = ({
     };
   }
 
+  // 已保存的代理密码只存在于主进程；未修改时以 hasPassword 标记请求主进程沿用
+  const shouldPreserveProxyPassword =
+    dialogMode === "edit" &&
+    selectedItem?.type === "connection" &&
+    formData.proxyPasswordTouched !== true;
+  const savedProxyHasPassword =
+    selectedItem?.proxy?.hasPassword === true ||
+    Boolean(selectedItem?.proxy?.password);
+
   return {
     id:
       id ||
@@ -150,12 +159,12 @@ export const buildConnectionPayloadFromForm = ({
           host: String(formData.proxyHost || "").trim(),
           port: parsePortValue(formData.proxyPort, 8080),
           username: formData.proxyUsername || undefined,
-          password:
-            dialogMode === "edit" &&
-            selectedItem?.type === "connection" &&
-            formData.proxyPasswordTouched !== true
-              ? selectedItem?.proxy?.password || undefined
-              : formData.proxyPassword || undefined,
+          password: shouldPreserveProxyPassword
+            ? selectedItem?.proxy?.password || undefined
+            : formData.proxyPassword || undefined,
+          ...(shouldPreserveProxyPassword && savedProxyHasPassword
+            ? { hasPassword: true }
+            : {}),
           useDefault: formData.proxyUseDefault,
         }
       : null,

@@ -2,7 +2,7 @@
  * SimpleShell 主入口文件
  * 仅包含应用生命周期事件和模块初始化
  */
-const { app, dialog, shell } = require("electron");
+const { app, shell } = require("electron");
 const { logToFile } = require("./utils/logger");
 const {
   initializeCrashReporter,
@@ -40,6 +40,9 @@ bootstrapHardwareAcceleration(app);
 
 // 单实例锁
 const gotTheLock = app.requestSingleInstanceLock();
+// app.quit() 是异步的：非主实例 / Squirrel 安装事件必须跳过后续初始化，
+// 否则仍会注册 whenReady 并创建窗口、启动服务。
+let shouldStartApplication = gotTheLock;
 
 if (!gotTheLock) {
   app.quit();
@@ -51,6 +54,7 @@ if (!gotTheLock) {
 
 // 处理Squirrel启动
 if (require("electron-squirrel-startup")) {
+  shouldStartApplication = false;
   const updateService = require("./update/updateService");
   let cleanupStarted = false;
   let cleanupCompleted = false;
@@ -172,51 +176,57 @@ function createMainWindow() {
   return mainWindow;
 }
 
-// 应用准备就绪
-app.whenReady().then(async () => {
-  // 初始化应用
-  appInitializer = new AppInitializer(app);
-  await appInitializer.initialize(dialog, shell);
-  installDesktopIntegration();
+function registerApplicationLifecycle() {
+  // 应用准备就绪
+  app.whenReady().then(async () => {
+    // 初始化应用
+    appInitializer = new AppInitializer(app);
+    await appInitializer.initialize(shell);
+    installDesktopIntegration();
 
-  // 初始化IPC（在窗口创建前）
-  ipcSetup.initializeBeforeWindow();
+    // 初始化IPC（在窗口创建前）
+    ipcSetup.initializeBeforeWindow();
 
-  // 创建窗口
-  createMainWindow();
+    // 创建窗口
+    createMainWindow();
 
-  // 创建AI Worker
-  aiWorkerManager.createAIWorker();
+    // 创建AI Worker
+    aiWorkerManager.createAIWorker();
 
-  logToFile("Application ready and window created", "INFO");
-});
+    logToFile("Application ready and window created", "INFO");
+  });
 
-// 应用退出前清理
-appCleanup = new AppCleanup(app);
-app.on("before-quit", (event) => {
-  void appCleanup
-    .handleBeforeQuit(event, ipcSetup, {
-      beforeCleanup: () => aiWorkerManager.terminateAIWorker(),
-    })
-    .catch((error) => {
-      logToFile(`App quit cleanup failed: ${error.message}`, "ERROR");
+  // 应用退出前清理
+  appCleanup = new AppCleanup(app);
+  app.on("before-quit", (event) => {
+    void appCleanup
+      .handleBeforeQuit(event, ipcSetup, {
+        beforeCleanup: () => aiWorkerManager.terminateAIWorker(),
+      })
+      .catch((error) => {
+        logToFile(`App quit cleanup failed: ${error.message}`, "ERROR");
+        app.quit();
+      });
+  });
+
+  // 关闭所有窗口时退出应用（macOS除外）
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
       app.quit();
-    });
-});
+    }
+  });
 
-// 关闭所有窗口时退出应用（macOS除外）
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
+  // macOS激活应用
+  app.on("activate", () => {
+    showPrimaryWindow({ createWindow: createMainWindow });
+  });
 
-// macOS激活应用
-app.on("activate", () => {
-  showPrimaryWindow({ createWindow: createMainWindow });
-});
+  app.on("open-file", (event, filePath) => {
+    event.preventDefault();
+    handleSystemOpenFiles([filePath], { createWindow: createMainWindow });
+  });
+}
 
-app.on("open-file", (event, filePath) => {
-  event.preventDefault();
-  handleSystemOpenFiles([filePath], { createWindow: createMainWindow });
-});
+if (shouldStartApplication) {
+  registerApplicationLifecycle();
+}

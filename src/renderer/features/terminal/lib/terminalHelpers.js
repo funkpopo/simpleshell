@@ -96,6 +96,7 @@ export const getTerminalConfigSignature = (config) => {
     config.authType || "",
     config.privateKeyPath || "",
     config.password || "",
+    config.credentialRevision || "",
     config.passphrase || "",
     config.agentPath || "",
     config.agentForward ? "1" : "0",

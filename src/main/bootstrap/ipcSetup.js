@@ -20,7 +20,6 @@ const AppHandlers = require("../ipc/handlers/appHandlers");
 const DialogHandlers = require("../ipc/handlers/dialogHandlers");
 const WindowHandlers = require("../ipc/handlers/windowHandlers");
 const SSHHandlers = require("../ipc/handlers/sshHandlers");
-const ProxyHandlers = require("../ipc/handlers/proxyHandlers");
 const TerminalHandlers = require("../ipc/handlers/terminalHandlers");
 const AIHandlers = require("../ipc/handlers/aiHandlers");
 const FileHandlers = require("../ipc/handlers/fileHandlers");
@@ -36,6 +35,7 @@ const PortForwardingHandlers = require("../ipc/handlers/portForwardingHandlers")
 const ConfigTransferHandlers = require("../ipc/handlers/configTransferHandlers");
 const TerminalIOMailboxManager = require("../terminal/terminalIOMailboxManager");
 const configService = require("../settings/configService");
+const { redactConnectionSecrets } = require("../settings/connectionSecrets");
 const processManager = require("../process/processManager");
 const diskAlertService = require("../services/diskAlertService");
 const connectionManager = require("../connection/connectionManager");
@@ -51,7 +51,6 @@ const CRITICAL_HANDLER_MODULES = [
   { HandlersClass: AppHandlers, successLog: "App handlers registered" },
   { HandlersClass: DialogHandlers, successLog: "Dialog handlers registered" },
   { HandlersClass: WindowHandlers, successLog: "Window handlers registered" },
-  { HandlersClass: ProxyHandlers, successLog: "Proxy handlers registered" },
 ];
 
 // 纯样板处理器模块（new Class → getHandlers().forEach(safeHandle) → 日志）
@@ -314,7 +313,7 @@ class IPCSetup {
       ipcMain,
       IPC_REQUEST_CHANNELS.TERMINAL_LOAD_CONNECTIONS,
       async () => {
-        return configService.loadConnections();
+        return redactConnectionSecrets(configService.loadConnections());
       },
       { category: "terminal" },
     );
@@ -334,7 +333,7 @@ class IPCSetup {
       IPC_REQUEST_CHANNELS.TERMINAL_LOAD_TOP_CONNECTIONS,
       async () => {
         try {
-          return configService.loadLastConnections();
+          return redactConnectionSecrets(configService.loadLastConnections());
         } catch {
           return [];
         }
@@ -415,6 +414,12 @@ class IPCSetup {
    * 初始化本地终端处理器
    */
   initializeLocalTerminalHandlers(mainWindow) {
+    // ipcMain.handle 不允许重复注册：窗口重建（macOS activate）时只更新目标窗口
+    if (this.localTerminalHandlers) {
+      this.localTerminalHandlers.setMainWindow(mainWindow);
+      logToFile("Local terminal handlers attached to new window", "INFO");
+      return;
+    }
     try {
       this.localTerminalHandlers = new LocalTerminalHandlers(
         mainWindow,

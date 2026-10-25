@@ -148,7 +148,8 @@ export default function useConnectionEditor({
         item.protocol === "serial"
           ? null
           : item.port || (item.protocol === "telnet" ? 23 : 22);
-      const hasSavedPassword = Boolean(item.password);
+      const hasSavedPassword =
+        item.hasPassword === true || Boolean(item.password);
       setFormData({
         name: item.name,
         host: item.host,

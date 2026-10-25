@@ -41,7 +41,7 @@ describe("preload AST contract checks", () => {
         "ipcRenderer",
         "  .invoke(IPC_REQUEST_CHANNELS.TERMINAL_SAVE_CONNECTIONS,",
         '["a", ...items, { name: `host-${name}`, extra: fn(1, 2) }]);',
-        "ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_COMMAND,",
+        "ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_DELETE_API_CONFIG,",
         "  command /* commas, braces } and parentheses ) */);",
       ].join("\n"),
     );
@@ -51,8 +51,8 @@ describe("preload AST contract checks", () => {
 
   it("缺参、多参和不存在的静态通道都会报错", () => {
     const result = inspectPreload(`
-      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_COMMAND);
-      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_COMMAND, command, extra);
+      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_DELETE_API_CONFIG);
+      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_DELETE_API_CONFIG, command, extra);
       ipcRenderer.invoke(IPC_REQUEST_CHANNELS.DOES_NOT_EXIST);
     `);
     expect(result.problems).toHaveLength(3);
@@ -115,7 +115,7 @@ describe("preload AST contract checks", () => {
 
   it("不能确定展开实参数量时明确报错，动态通道单独计数", () => {
     const result = inspectPreload(`
-      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.TERMINAL_COMMAND, ...args);
+      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.AI_DELETE_API_CONFIG, ...args);
       ipcRenderer.invoke(channel, payload);
     `);
     expect(result.problems).toHaveLength(1);

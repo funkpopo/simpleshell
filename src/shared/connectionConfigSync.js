@@ -4,6 +4,8 @@ const CONNECTION_FIELDS = [
   "port",
   "username",
   "password",
+  "hasPassword",
+  "credentialRevision",
   "authType",
   "privateKeyPath",
   "passphrase",
@@ -55,6 +57,15 @@ function mergeSavedConnectionConfig(current, previous, next) {
       continue;
     if (merged === current) merged = { ...current };
     merged[field] = next[field];
+  }
+  // 渲染进程拿到的已保存密码为空，仅凭 credentialRevision 感知变更：
+  // 清空会话内旧密码，下次连接由主进程按 id 补齐新密码。
+  if (
+    merged !== current &&
+    merged.credentialRevision !== current.credentialRevision &&
+    !next.password
+  ) {
+    merged.password = "";
   }
   if (
     merged !== current &&

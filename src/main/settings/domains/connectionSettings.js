@@ -1,3 +1,6 @@
+// 与 utils/crypto.js 的密文版本前缀保持一致（ssv2 / ssv3s / ssv3m）
+const ENCRYPTED_PAYLOAD_PATTERN = /^ssv(?:2|3s|3m):/;
+
 /** ConnectionSettings: explicit dependencies supplied by the service facade. */
 function createConnectionSettings(dependencies) {
   return new (class ConnectionSettings {
@@ -43,6 +46,19 @@ function createConnectionSettings(dependencies) {
           }
           delete result._passwordAlreadyEncrypted;
           delete result._preservePassword;
+          delete result.hasPassword;
+          delete result.credentialRevision;
+          if (item.proxy && typeof item.proxy === "object") {
+            const proxy = { ...item.proxy };
+            if (proxy._passwordAlreadyEncrypted !== true && proxy.password) {
+              proxy.password = this.dependencies.crypto.encryptText(
+                proxy.password,
+              );
+            }
+            delete proxy._passwordAlreadyEncrypted;
+            delete proxy.hasPassword;
+            result.proxy = proxy;
+          }
           if (item.privateKeyPath) {
             result.privateKeyPath = this.dependencies.crypto.encryptText(
               item.privateKeyPath,
@@ -54,6 +70,42 @@ function createConnectionSettings(dependencies) {
         }
         return result;
       });
+    }
+    _isStoredCiphertext(value) {
+      if (ENCRYPTED_PAYLOAD_PATTERN.test(value)) {
+        return true;
+      }
+      try {
+        const decrypted = this.dependencies.crypto.decryptText(value);
+        return decrypted !== null && decrypted !== undefined;
+      } catch {
+        return false;
+      }
+    }
+    _decryptProxyPassword(value, storeLocked) {
+      if (typeof value !== "string" || !value) {
+        return value || "";
+      }
+      let decrypted = null;
+      try {
+        decrypted = this.dependencies.crypto.decryptText(value);
+      } catch {
+        decrypted = null;
+      }
+      if (decrypted !== null && decrypted !== undefined) {
+        return decrypted;
+      }
+      // 旧版本以明文保存代理密码；下次保存时会被加密
+      if (!ENCRYPTED_PAYLOAD_PATTERN.test(value)) {
+        return value;
+      }
+      if (!storeLocked) {
+        this.dependencies._log(
+          "ConfigService: Failed to decrypt proxy password.",
+          "WARN",
+        );
+      }
+      return "";
     }
     _processConnectionsForLoad(items) {
       if (!this.dependencies.crypto || !this.dependencies.crypto.decryptText) {
@@ -112,6 +164,15 @@ function createConnectionSettings(dependencies) {
               result.privateKeyPath = "";
             }
           }
+          if (item.proxy && typeof item.proxy === "object") {
+            result.proxy = {
+              ...item.proxy,
+              password: this._decryptProxyPassword(
+                item.proxy.password,
+                storeLocked,
+              ),
+            };
+          }
         }
         if (item.type === "group" && Array.isArray(item.items)) {
           result.items = this._processConnectionsForLoad(item.items);
@@ -151,11 +212,30 @@ function createConnectionSettings(dependencies) {
           const result = { ...entry };
           if (result.type === "connection") {
             const existing = result.id ? existingById.get(result.id) : null;
-            if (result._preservePassword === true && existing) {
+            // 渲染进程只持有被清空的密钥（hasPassword 标记），保存时沿用磁盘上的密文
+            const preservePassword =
+              result._preservePassword === true ||
+              (result.hasPassword === true && !result.password);
+            if (preservePassword && existing) {
               result.password = existing.password || "";
               result._passwordAlreadyEncrypted = true;
             }
             delete result._preservePassword;
+            if (
+              result.proxy &&
+              typeof result.proxy === "object" &&
+              result.proxy.hasPassword === true &&
+              !result.proxy.password &&
+              existing?.proxy?.password
+            ) {
+              result.proxy = {
+                ...result.proxy,
+                password: existing.proxy.password,
+                _passwordAlreadyEncrypted: this._isStoredCiphertext(
+                  existing.proxy.password,
+                ),
+              };
+            }
           }
 
           if (result.type === "group" && Array.isArray(result.items)) {

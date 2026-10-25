@@ -390,12 +390,6 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     { permission: "filesystem" },
   ),
   defineRequest(
-    "TERMINAL_COMMAND",
-    "terminal:command",
-    "terminal",
-    args([stringArg()]),
-  ),
-  defineRequest(
     "TERMINAL_RESIZE",
     "terminal:resize",
     "terminal",
@@ -1485,26 +1479,6 @@ const IPC_CHANNEL_DEFINITIONS = Object.freeze([
     args([objectArg()]),
   ),
 
-  defineRequest(
-    "PROXY_GET_DEFAULT_CONFIG",
-    "proxy:getDefaultConfig",
-    "proxy",
-    NO_ARGS_SCHEMA,
-  ),
-  defineRequest(
-    "PROXY_SAVE_DEFAULT_CONFIG",
-    "proxy:saveDefaultConfig",
-    "proxy",
-    args([objectArg()]),
-  ),
-  defineRequest(
-    "PROXY_GET_SYSTEM_CONFIG",
-    "proxy:getSystemConfig",
-    "proxy",
-    NO_ARGS_SCHEMA,
-  ),
-
-  defineRequest("PROXY_GET_STATUS", "proxy:getStatus", "proxy", NO_ARGS_SCHEMA),
   defineRequest(
     "PF_GET_RULES",
     "port-forward:getRules",
