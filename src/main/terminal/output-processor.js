@@ -1,5 +1,4 @@
 const { logToFile } = require("../utils/logger");
-const { sanitizeCommandForLog } = require("../utils/log-sanitizer");
 const highlightRuleConfigs = require("../../shared/domain/highlight-configs"); // New import
 
 // 添加ANSI颜色代码
@@ -223,41 +222,26 @@ class OutputProcessor {
       const terminalProcessAdapter = require("./terminalProcessAdapter");
       const procInfo = terminalProcessAdapter.getProcessInfo(processId);
 
-      if (!procInfo) {
-        return this.applySyntaxHighlighting(output); // 如果没有进程信息，也尝试高亮
+      if (procInfo) {
+        // 编辑器检测在原始输出上执行，而不是高亮后的输出。
+        // 仅在状态变化时记录日志：输出中常见 more/cat 等词，大量输出时
+        // 每段都写日志会持续占用主进程。
+        const wasEditorMode = procInfo.editorMode;
+        if (this.editorCommandRegex.test(output)) {
+          procInfo.editorMode = true;
+        }
+        if (procInfo.editorMode && this.editorExitRegex.test(output.trim())) {
+          procInfo.editorMode = false;
+        }
+        if (procInfo.editorMode !== wasEditorMode) {
+          logToFile(
+            `Editor mode ${procInfo.editorMode ? "activated" : "deactivated"} for process ${processId}`,
+            "INFO",
+          );
+        }
       }
 
-      let processedOutput = output;
-
-      // 检测编辑器命令 - 这部分逻辑应该在原始输出上执行，而不是高亮后的输出
-      if (this.editorCommandRegex.test(output)) {
-        // 使用原始 output
-        procInfo.editorMode = true;
-        logToFile(`Editor mode activated for process ${processId}`, "INFO");
-      }
-
-      // 检测编辑器退出 - 这部分逻辑也应该在原始输出上执行
-      if (procInfo.editorMode && this.editorExitRegex.test(output.trim())) {
-        // 使用原始 output
-        procInfo.editorMode = false;
-        logToFile(`Editor mode deactivated for process ${processId}`, "INFO");
-      }
-
-      if (procInfo.isRemote) {
-        // 对于远程输出，高亮应该在 processRemoteOutput 内部或之后完成
-        // 但 processRemoteOutput 返回的是原始 output，并且在内部处理 buffer
-        // 为了简化，我们先在高亮前获取远程处理结果
-        // 注意：processRemoteOutput 修改 procInfo.outputBuffer 并返回原始 output，
-        // 这意味着它主要用于副作用（如命令提取）。实际发送到前端的内容仍是原始 output。
-        // 因此，对 `output` 进行高亮是正确的。
-        this.processRemoteOutput(processId, output, procInfo); // 这个方法主要更新procInfo, 返回值是原始output
-        processedOutput = this.applySyntaxHighlighting(output); // 所以我们高亮原始output
-      } else {
-        // 对于本地输出，直接高亮
-        processedOutput = this.applySyntaxHighlighting(output);
-      }
-
-      return processedOutput;
+      return this.applySyntaxHighlighting(output);
     } catch (error) {
       logToFile(
         `Error processing terminal output for process ${processId}: ${error.message}`,
@@ -268,103 +252,10 @@ class OutputProcessor {
     }
   }
 
-  processRemoteOutput(processId, output, procInfo) {
-    // 将当前输出追加到输出缓冲区
-    procInfo.outputBuffer += output;
-
-    // 按行分割输出
-    const lines = procInfo.outputBuffer.split(/\r?\n/);
-
-    // 保留最后一行（可能不完整）为新的输出缓冲区
-    procInfo.outputBuffer = lines.pop() || "";
-
-    // 将完整的行添加到最近输出行
-    procInfo.lastOutputLines = [...procInfo.lastOutputLines, ...lines];
-
-    // 限制保存的行数，防止内存过度使用
-    if (procInfo.lastOutputLines.length > 50) {
-      procInfo.lastOutputLines = procInfo.lastOutputLines.slice(-50);
-    }
-
-    // 远程命令提取逻辑
-    this.extractRemoteCommands(processId, procInfo);
-
-    return output;
-  }
-
-  extractRemoteCommands(processId, procInfo) {
-    // 寻找命令提示符模式，然后提取命令
-    const commandPromptRegex = [
-      /^.*?[$#>]\s+([^$#>\r\n]+)$/, // 通用提示符后跟命令
-      /^.*?@.*?:.*?[$#>]\s+([^$#>\r\n]+)$/, // 带用户名和主机名的提示符后跟命令
-      /^.*?:.*?[$#>]\s+([^$#>\r\n]+)$/, // 路径提示符后跟命令
-    ];
-
-    // 检查最近几行是否存在命令执行模式
-    // 1. 一行是命令输入 (提示符 + 命令)
-    // 2. 下面几行是命令输出
-    // 3. 最后一行是新的提示符
-    if (procInfo.lastOutputLines.length >= 2) {
-      for (let i = 0; i < procInfo.lastOutputLines.length - 1; i++) {
-        const currentLine = procInfo.lastOutputLines[i];
-
-        // 尝试每个正则表达式来匹配命令
-        for (const regex of commandPromptRegex) {
-          const match = currentLine.match(regex);
-          if (match && match[1] && match[1].trim() !== "") {
-            const command = match[1].trim();
-
-            // 跳过明显不是命令的情况
-            if (command.startsWith("\x1b") || command.length < 2) {
-              continue;
-            }
-
-            // 检测下一行是否是新的提示符，表示命令已执行完毕
-            let nextLineIsPrompt = false;
-            for (let j = i + 1; j < procInfo.lastOutputLines.length; j++) {
-              const nextLine = procInfo.lastOutputLines[j];
-              if (commandPromptRegex.some((r) => r.test(nextLine))) {
-                nextLineIsPrompt = true;
-                // 只有当命令不同且不重复时才记录
-                if (command !== procInfo.lastExtractedCommand) {
-                  // 添加时间戳记录，用于防止短时间内重复触发
-                  const now = Date.now();
-                  if (
-                    !procInfo.lastExtractedTime ||
-                    now - procInfo.lastExtractedTime > 500
-                  ) {
-                    procInfo.lastExtractedCommand = command;
-                    procInfo.lastExtractedTime = now;
-                    logToFile(
-                      `Extracted remote command: ${sanitizeCommandForLog(command)}`,
-                      "INFO",
-                    );
-                  }
-                }
-
-                // 清理已处理的行
-                procInfo.lastOutputLines.splice(0, i + 1);
-                break;
-              }
-            }
-
-            if (nextLineIsPrompt) break;
-          }
-        }
-      }
-    }
-  }
-
   isEditorMode(processId) {
     const terminalProcessAdapter = require("./terminalProcessAdapter");
     const procInfo = terminalProcessAdapter.getProcessInfo(processId);
     return procInfo ? procInfo.editorMode : false;
-  }
-
-  getLastExtractedCommand(processId) {
-    const terminalProcessAdapter = require("./terminalProcessAdapter");
-    const procInfo = terminalProcessAdapter.getProcessInfo(processId);
-    return procInfo ? procInfo.lastExtractedCommand : null;
   }
 
   collectHighlightCandidates(text) {
@@ -483,20 +374,35 @@ class OutputProcessor {
       return a.start - b.start;
     });
 
+    // selected 始终按 start 有序且互不重叠，二分定位后只需检查相邻两个区间。
+    // 日志类输出每段可有上千个候选，逐个比较全部已选区间是 O(n²)，
+    // 会在主进程上阻塞大量输出。
     const selected = [];
 
     for (const candidate of sorted) {
-      const hasOverlap = selected.some(
-        (existing) =>
-          candidate.start < existing.end && existing.start < candidate.end,
-      );
-
-      if (!hasOverlap) {
-        selected.push(candidate);
+      let low = 0;
+      let high = selected.length;
+      while (low < high) {
+        const mid = (low + high) >>> 1;
+        if (selected[mid].start < candidate.start) {
+          low = mid + 1;
+        } else {
+          high = mid;
+        }
       }
+
+      const previous = selected[low - 1];
+      const next = selected[low];
+      if (
+        (previous && previous.end > candidate.start) ||
+        (next && next.start < candidate.end)
+      ) {
+        continue;
+      }
+
+      selected.splice(low, 0, candidate);
     }
 
-    selected.sort((a, b) => a.start - b.start);
     return selected;
   }
 

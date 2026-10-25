@@ -86,6 +86,50 @@ async function run() {
     await until(() => ackBytes === outputBytes, "output did not drain");
   };
   const metrics = {};
+  // Sustained output paced like the main mailbox: ~16 KiB messages, paused
+  // while 512 KiB are unacknowledged. `write()` waits for each batch's ACK, so
+  // it measures latency; this measures parse/render throughput. Frame rate is
+  // not measured: the fixture window is hidden and its frames are throttled.
+  const streamOutput = async (mode, totalBytes) => {
+    const lines = [];
+    for (let i = 0; i < 128; i++) {
+      lines.push(
+        `\r\n\x1b[90m2026-10-25 12:00:${String(i % 60).padStart(2, "0")}\x1b[0m INFO [worker-${i % 8}] GET /api/v1/items/${i} from \x1b[96m192.168.1.${i}:5${i}\x1b[0m status=\x1b[93m200\x1b[0m 中文 payload`,
+      );
+    }
+    const chunk = lines.join("");
+    const chunkBytes = new TextEncoder().encode(chunk).length;
+    let lastTick = performance.now();
+    let maxGap = 0;
+    const heartbeat = setInterval(() => {
+      const now = performance.now();
+      maxGap = Math.max(maxGap, now - lastTick);
+      lastTick = now;
+    }, 8);
+    await ipcRenderer.invoke("scrollback-profile-start");
+    const startedAt = performance.now();
+    try {
+      for (let sent = 0; sent < totalBytes;) {
+        while (outputBytes - ackBytes < 512 * 1024 && sent < totalBytes) {
+          outputBytes += chunkBytes;
+          output({ type: "output", data: chunk });
+          sent += chunkBytes;
+        }
+        await delay(1);
+      }
+      await until(() => ackBytes === outputBytes, "stream did not drain");
+    } finally {
+      clearInterval(heartbeat);
+    }
+    const seconds = (performance.now() - startedAt) / 1000;
+    await ipcRenderer.invoke("scrollback-profile-stop", `${mode}-stream`);
+    metrics[`${mode}StreamMBps`] = totalBytes / 1048576 / seconds;
+    metrics[`${mode}StreamMaxGapMs`] = maxGap;
+    assert(maxGap < 250, `${mode}: output stream stalled for ${maxGap}ms`);
+  };
+  // Runs before the 50,000-line fill so later history assertions still see
+  // only the deterministic rows.
+  await streamOutput("dom", 32 * 1048576);
   metrics.resizes = [];
   const resize = term.resize.bind(term);
   term.resize = (cols, rows) => {
@@ -189,6 +233,15 @@ async function run() {
       .startsWith("row-509999"),
     "latest history was lost",
   );
+  // xterm keeps every retained row as a cols-wide typed array, so history
+  // memory scales with capacity × columns rather than with the text written.
+  let historyCellBytes = 0;
+  const historyLines = term._core.buffer.lines;
+  for (let i = 0; i < historyLines.length; i++) {
+    historyCellBytes += historyLines.get(i)._data.byteLength;
+  }
+  metrics.history500kCellMB = historyCellBytes / 1048576;
+  metrics.history500kCols = term.cols;
 
   const checkInteractions = async (mode) => {
     await ipcRenderer.invoke("scrollback-profile-start");
@@ -298,6 +351,7 @@ async function run() {
   metrics.rendererSwitchMs = performance.now() - switchStarted;
   assert(term.__webglEnabled, "WebGL did not initialize");
   await checkInteractions("webgl");
+  await streamOutput("webgl", 32 * 1048576);
 
   started = performance.now();
   await append(510000, 10000);

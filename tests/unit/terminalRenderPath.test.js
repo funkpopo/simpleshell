@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { renderHook } from "../helpers/reactHarness.js";
 import { TerminalWriteQueue } from "../../src/renderer/features/terminal/runtime/TerminalWriteQueue.js";
+import { ScrollbackUsageTracker } from "../../src/renderer/features/terminal/runtime/ScrollbackUsageTracker.js";
 import {
   RendererTerminalIOMailbox,
   getUtf8ByteLength,
@@ -31,6 +32,33 @@ describe("terminal output path", () => {
     ]) {
       expect(getUtf8ByteLength(sample)).toBe(Buffer.byteLength(sample));
     }
+  });
+
+  it("measures a range without slicing, keeping pairs inside the range", () => {
+    const sample = "a中😀b";
+    for (let start = 0; start <= sample.length; start++) {
+      for (let end = start; end <= sample.length; end++) {
+        expect(getUtf8ByteLength(sample, start, end)).toBe(
+          Buffer.byteLength(sample.slice(start, end)),
+        );
+      }
+    }
+  });
+
+  it("tracks diagnostic history bytes per line without re-encoding", () => {
+    const tracker = new ScrollbackUsageTracker({ maxLines: 100 });
+    const chunks = [
+      "row 中文\r\nemoji 😀\n\ud83d",
+      "\ude00 split\rtail ",
+      "end",
+    ];
+    for (const chunk of chunks) tracker.addData(chunk);
+    expect(tracker.getLineCount()).toBe(4);
+    // A pair split across chunks is two lone surrogates, as when the
+    // renderer previously encoded each chunk separately.
+    expect(tracker.getBufferSize()).toBe(
+      chunks.reduce((total, chunk) => total + Buffer.byteLength(chunk), 0),
+    );
   });
 
   it("drains synchronous enqueues once on a microtask without timers", async () => {

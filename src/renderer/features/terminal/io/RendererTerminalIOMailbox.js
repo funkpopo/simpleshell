@@ -14,16 +14,17 @@ const normalizeGeometry = (cols, rows) => ({
 // UTF-8 length without allocating an encoded copy of every output chunk.
 // Lone surrogates count as U+FFFD (3 bytes), matching TextEncoder and the
 // main process' Buffer.byteLength() so output ACKs stay exact.
-export const getUtf8ByteLength = (value) => {
+// `start`/`end` measure value.slice(start, end) without slicing.
+export const getUtf8ByteLength = (value, start = 0, end = value.length) => {
   let bytes = 0;
-  for (let index = 0; index < value.length; index++) {
+  for (let index = start; index < end; index++) {
     const code = value.charCodeAt(index);
     if (code < 0x80) {
       bytes += 1;
     } else if (code < 0x800) {
       bytes += 2;
     } else if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
+      const next = index + 1 < end ? value.charCodeAt(index + 1) : NaN;
       if (next >= 0xdc00 && next <= 0xdfff) {
         bytes += 4;
         index++;

@@ -111,8 +111,6 @@ class TerminalProcessAdapter {
         ready: connectionInfo.ready,
         editorMode: false,
         commandBuffer: "",
-        lastOutputLines: [],
-        outputBuffer: "",
         isRemote: true,
         connectionKey: connectionInfo.key, // 存储连接键用于释放
         connectionInfo: connectionInfo, // 存储完整连接信息

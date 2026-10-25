@@ -624,8 +624,6 @@ function createTerminalOutput(
         ready: connectionInfo.ready,
         editorMode: false,
         commandBuffer: "",
-        lastOutputLines: [],
-        outputBuffer: "",
         isRemote: true,
       };
     }

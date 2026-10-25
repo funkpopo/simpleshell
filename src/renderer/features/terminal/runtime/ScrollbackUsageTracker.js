@@ -3,6 +3,7 @@
  * 不保留行内容，避免与 xterm 的 scrollback 重复占用内存。
  */
 import { DEFAULT_TERMINAL_SCROLLBACK_LINES } from "../model/terminalScrollback.js";
+import { getUtf8ByteLength } from "../io/RendererTerminalIOMailbox.js";
 
 export class ScrollbackUsageTracker {
   constructor(options = {}) {
@@ -18,8 +19,6 @@ export class ScrollbackUsageTracker {
     this.lineByteHead = 0;
     this.totalLineBytes = 0;
     this.partialLineBytes = 0;
-    this.textEncoder =
-      typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
   }
 
   get maxLines() {
@@ -54,6 +53,8 @@ export class ScrollbackUsageTracker {
       return;
     }
 
+    // Count in place: slicing and encoding every line allocated two copies
+    // per output line and dominated the diagnostic build's output path.
     let segmentStart = 0;
     for (let i = 0; i < text.length; i++) {
       const charCode = text.charCodeAt(i);
@@ -62,12 +63,10 @@ export class ScrollbackUsageTracker {
       }
 
       const isCrlf = charCode === 13 && text.charCodeAt(i + 1) === 10;
-      const segment = text.slice(segmentStart, i);
-      const lineEnding = isCrlf ? "\r\n" : text[i];
       const lineBytes =
         this.partialLineBytes +
-        this.getByteLength(segment) +
-        this.getByteLength(lineEnding);
+        getUtf8ByteLength(text, segmentStart, i) +
+        (isCrlf ? 2 : 1);
 
       this.pushLine(lineBytes);
       this.partialLineBytes = 0;
@@ -79,7 +78,7 @@ export class ScrollbackUsageTracker {
     }
 
     if (segmentStart < text.length) {
-      this.partialLineBytes += this.getByteLength(text.slice(segmentStart));
+      this.partialLineBytes += getUtf8ByteLength(text, segmentStart);
     }
 
     this.emitChange();
@@ -95,22 +94,6 @@ export class ScrollbackUsageTracker {
       this.lineByteQueue.push(normalized);
     }
     this.totalLineBytes += normalized;
-  }
-
-  getByteLength(value) {
-    if (!value) {
-      return 0;
-    }
-
-    if (this.textEncoder) {
-      return this.textEncoder.encode(value).length;
-    }
-
-    try {
-      return new Blob([value]).size;
-    } catch {
-      return String(value).length;
-    }
   }
 
   getLineCount() {

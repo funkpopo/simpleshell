@@ -49,7 +49,9 @@ output, link detection, and disposal. Run it on its own with:
 npx vitest run --config vitest.integration.config.mjs tests/integration/renderer.test.js -t "500,000"
 ```
 
-The fixture saves `metrics.json`, `dom.cpuprofile`, `webgl.cpuprofile`, and
+The fixture saves `metrics.json`, `dom.cpuprofile`, `webgl.cpuprofile`,
+`dom-stream.cpuprofile`, `webgl-stream.cpuprofile` (sustained output paced by
+ACK backpressure), and
 `electron.log` in `.cache/integration/terminal-scrollback/`. The CPU profiles can
 be opened in Chromium DevTools. Search heartbeat gaps and input echo latency
 are checked independently of total search time; a full-history scan may take
