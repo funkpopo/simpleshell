@@ -247,11 +247,8 @@ class TerminalIOMailboxManager {
     }
 
     for (const item of pending) {
-      if (item.trackBackpressure) {
-        const payloadBytes = this._countOutputPayloadBytes(item.payload);
-        if (payloadBytes > 0) {
-          mailbox.pendingAckBytes += payloadBytes;
-        }
+      if (item.trackBackpressure && item.bytes > 0) {
+        mailbox.pendingAckBytes += item.bytes;
       }
     }
     this._updateFlowControl(mailbox);
@@ -269,11 +266,12 @@ class TerminalIOMailboxManager {
   }
 
   _enqueueBatchedOutput(mailbox, payload, trackBackpressure) {
-    mailbox.outputBatch.push({ payload, trackBackpressure });
-    const addition = trackBackpressure
+    // 字节数只计算一次：入队累计与 flush 后的 ACK 统计共用
+    const bytes = trackBackpressure
       ? this._countOutputPayloadBytes(payload)
       : 0;
-    mailbox.outputBatchBytes += addition;
+    mailbox.outputBatch.push({ payload, trackBackpressure, bytes });
+    mailbox.outputBatchBytes += bytes;
 
     if (
       mailbox.outputBatchBytes >=

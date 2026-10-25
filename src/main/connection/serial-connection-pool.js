@@ -7,7 +7,8 @@
  */
 
 const BaseConnectionPool = require("./base-connection-pool");
-const { SerialPort } = require("serialport");
+// serialport 含原生绑定，冷启动加载可达数百毫秒；仅在真正打开串口时加载
+const loadSerialPort = () => require("serialport").SerialPort;
 const {
   classifyConnectionFailure,
 } = require("../../shared/connectionErrorAdvice");
@@ -143,6 +144,7 @@ class SerialConnectionPool extends BaseConnectionPool {
       const openOptions = buildSerialOpenOptions(options);
 
       try {
+        const SerialPort = loadSerialPort();
         port = new SerialPort(openOptions);
       } catch (err) {
         reject(this._handleSerialError(err, options, connectionKey));

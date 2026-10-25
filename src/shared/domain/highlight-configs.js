@@ -26,6 +26,8 @@ const HIGHLIGHT_COLORS = {
 module.exports = [
   {
     id: "ipv4",
+    // 预筛：需要 "." 与数字
+    requires: { anyChar: ".", digit: true },
     type: "regex",
     name: "IPv4 Address",
     enabled: true,
@@ -36,6 +38,8 @@ module.exports = [
   },
   {
     id: "ipv6",
+    // 预筛：所有分支都包含 "::" 或连续 6 组 "h{1,4}:"
+    requires: { ipv6Shape: true },
     type: "regex",
     name: "IPv6 Address",
     enabled: true,
@@ -50,6 +54,8 @@ module.exports = [
   // 时间戳匹配
   {
     id: "timeStamp",
+    // 预筛：需要 ":" 或 "-" 与数字
+    requires: { anyChar: ":-", digit: true },
     type: "regex",
     name: "Timestamp Pattern",
     enabled: true,
@@ -75,6 +81,8 @@ module.exports = [
   // 超链接高亮
   {
     id: "hyperlink",
+    // 预筛："://" 或 "www." 必含 ":" 或 "."
+    requires: { anyChar: ":." },
     type: "regex",
     name: "Hyperlink Pattern",
     enabled: true,
@@ -86,6 +94,8 @@ module.exports = [
   // MAC 地址高亮
   {
     id: "macAddress",
+    // 预筛：连续 5 组 "hh:" / "hh-"
+    requires: { macShape: true },
     type: "regex",
     name: "MAC Address Pattern",
     enabled: true,
@@ -96,6 +106,8 @@ module.exports = [
   // 状态码高亮
   {
     id: "statusCode",
+    // 预筛：状态码必含数字
+    requires: { digit: true },
     type: "regex",
     name: "Status Code Pattern",
     enabled: true,
@@ -107,6 +119,8 @@ module.exports = [
   // 访问日志状态码补充（例如 Nginx/Apache）
   {
     id: "accessLogStatusCode",
+    // 预筛：需要 '"' 与数字
+    requires: { anyChar: '"', digit: true },
     type: "regex",
     name: "Access Log Status Code",
     enabled: true,
@@ -115,9 +129,25 @@ module.exports = [
     style: `color: ${HIGHLIGHT_COLORS.statusCode}; font-weight: bold;`,
     groupIndex: 1,
   },
+  // UUID 高亮：须排在 dockerId / gitCommit 之前，否则末段 12 位与首段 8 位
+  // 十六进制会被这两条通用规则拆开着色，UUID 无法整体高亮
+  {
+    id: "uuid",
+    // 预筛：8 个连续十六进制字符后紧跟 "-"
+    requires: { hexRunBeforeDash: 8 },
+    type: "regex",
+    name: "UUID Pattern",
+    enabled: true,
+    pattern:
+      "\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\\b",
+    flags: "g",
+    style: `color: ${HIGHLIGHT_COLORS.uuid};`,
+  },
   // Docker ID 高亮
   {
     id: "dockerId",
+    // 预筛：至少 12 个连续十六进制字符
+    requires: { hexRun: 12 },
     type: "regex",
     name: "Docker ID Pattern",
     enabled: true,
@@ -128,6 +158,8 @@ module.exports = [
   // sha256 摘要补充（保留前缀仅高亮摘要体）
   {
     id: "sha256Digest",
+    // 预筛：64 个连续十六进制字符
+    requires: { hexRun: 64 },
     type: "regex",
     name: "SHA256 Digest",
     enabled: true,
@@ -139,6 +171,8 @@ module.exports = [
   // Unix 路径高亮，使用捕获组避免吞掉前缀字符
   {
     id: "unixFilePath",
+    // 预筛：路径以 "~"、"." 或 "/" 开头
+    requires: { anyChar: "~./" },
     type: "regex",
     name: "Unix File Path",
     enabled: true,
@@ -150,6 +184,8 @@ module.exports = [
   // Windows 路径高亮
   {
     id: "windowsFilePath",
+    // 预筛：需要反斜杠
+    requires: { anyChar: "\\" },
     type: "regex",
     name: "Windows File Path",
     enabled: true,
@@ -161,6 +197,8 @@ module.exports = [
   // 环境变量赋值（行首）
   {
     id: "envAssignmentLineStart",
+    // 预筛：区分大小写，"=" 前一字符必为 [A-Z0-9_]
+    requires: { upperAssign: true },
     type: "regex",
     name: "Environment Assignment (line start)",
     enabled: true,
@@ -172,6 +210,8 @@ module.exports = [
   // 环境变量赋值（行内）
   {
     id: "envAssignmentInline",
+    // 预筛：区分大小写，"=" 前一字符必为 [A-Z0-9_]
+    requires: { upperAssign: true },
     type: "regex",
     name: "Environment Assignment (inline)",
     enabled: true,
@@ -184,6 +224,8 @@ module.exports = [
   // 环境变量引用补充（例如 $PATH、${HOME}）
   {
     id: "envVariableReference",
+    // 预筛：需要 "$"
+    requires: { anyChar: "$" },
     type: "regex",
     name: "Environment Variable Reference",
     enabled: true,
@@ -196,6 +238,8 @@ module.exports = [
   // 常见端口与监听描述
   {
     id: "portNumbers",
+    // 预筛：端口号必含数字
+    requires: { digit: true },
     type: "regex",
     name: "Port Numbers",
     enabled: true,
@@ -208,6 +252,8 @@ module.exports = [
   // 进程 ID / PID 捕获
   {
     id: "processId",
+    // 预筛：PID 必含数字
+    requires: { digit: true },
     type: "regex",
     name: "Process Identifier",
     enabled: true,
@@ -216,20 +262,11 @@ module.exports = [
     style: `color: ${HIGHLIGHT_COLORS.processId}; font-weight: bold;`,
     groupIndex: 1,
   },
-  // UUID 高亮
-  {
-    id: "uuid",
-    type: "regex",
-    name: "UUID Pattern",
-    enabled: true,
-    pattern:
-      "\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\\b",
-    flags: "g",
-    style: `color: ${HIGHLIGHT_COLORS.uuid};`,
-  },
   // Git 提交哈希
   {
     id: "gitCommit",
+    // 预筛：至少 7 个连续十六进制字符
+    requires: { hexRun: 7 },
     type: "regex",
     name: "Git Commit Hash",
     enabled: true,

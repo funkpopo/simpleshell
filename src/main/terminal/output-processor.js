@@ -93,9 +93,242 @@ const ensureGlobalRegexFlags = (flags = "") => {
 
 const OSC_SEQUENCE_REGEX = /\u001b\][^]*?(?:\u0007|\u001b\\)/g;
 const ANSI_SEQUENCE_REGEX = /\u001b(?:\[[0-9;?]*[ -/]*[@-~]|[@-Z\\-_])/g;
-const ANSI_SGR_SEQUENCE_REGEX = /^\u001b\[([0-9;]*)m$/;
 const STYLE_CLEAR_CODES = new Set([0, 22, 23, 24, 25, 27, 28, 29, 39, 49, 59]);
+const SAFE_DIGIT_ACCUMULATION = 15;
+
+/**
+ * 解析 SGR 序列（ESC [ 数字/分号 m）后的样式状态，不分配中间数组。
+ * 语义与 split(";").map(Number).filter(isFinite) 一致：空字段为 0，溢出字段忽略；
+ * 任一有效参数不属于清除类即视为样式生效。非 SGR 序列返回 null（状态不变）。
+ * @param {string} sequence
+ * @returns {boolean|null}
+ */
+const resolveSgrStyleActive = (sequence) => {
+  const lastIndex = sequence.length - 1;
+  if (
+    lastIndex < 2 ||
+    sequence.charCodeAt(1) !== 91 ||
+    sequence.charCodeAt(lastIndex) !== 109
+  ) {
+    return null;
+  }
+
+  let active = false;
+  let value = 0;
+  let fieldStart = 2;
+  for (let index = 2; index <= lastIndex; index += 1) {
+    // 结尾的 "m" 视为最后一个字段的分隔符
+    const code = index === lastIndex ? 59 : sequence.charCodeAt(index);
+    if (code >= 48 && code <= 57) {
+      value = value * 10 + (code - 48);
+      continue;
+    }
+    if (code !== 59) {
+      return null;
+    }
+    if (index - fieldStart > SAFE_DIGIT_ACCUMULATION) {
+      // 超长字段按 Number() 取值，保证与原实现的溢出判定完全一致
+      value = Number(sequence.slice(fieldStart, index));
+    }
+    if (Number.isFinite(value) && !STYLE_CLEAR_CODES.has(value)) {
+      active = true;
+    }
+    value = 0;
+    fieldStart = index + 1;
+  }
+  return active;
+};
 const HOST_HEX_SUFFIX_REGEX = /(@[A-Za-z0-9_.-]+)-([0-9a-f]{6,16})(?=[:#\s])/gi;
+
+// 规则预筛（requires）：多数规则在普通输出中很少命中，却要在每个位置尝试匹配；
+// ANSI 序列之间的大量短片段也会让每条规则都执行一次。单次字符扫描计算各规则的
+// 必要条件（十六进制串形态、是否出现某些字符），不满足时跳过正则，结果与直接匹配一致。
+// 预筛可引用的字符；不在表内的字符会让该条件失效（规则照常执行），保证安全
+const TRACKED_CHARS = '.:-"~/\\=$';
+const CHAR_BIT = new Uint16Array(128);
+for (let index = 0; index < TRACKED_CHARS.length; index += 1) {
+  CHAR_BIT[TRACKED_CHARS.charCodeAt(index)] = 1 << index;
+}
+const DIGIT_BIT = 1 << TRACKED_CHARS.length;
+const NON_WHITESPACE_REGEX = /\S/;
+
+// 字符分类表：一次查表决定分支，普通字母/空白走最短路径
+const CLASS_OTHER = 0;
+const CLASS_HEX_LETTER = 1;
+const CLASS_DIGIT = 2;
+const CLASS_COLON = 3;
+const CLASS_DASH = 4;
+const CLASS_TRACKED = 5;
+const CHAR_CLASS = new Uint8Array(128);
+for (const ch of "abcdefABCDEF") {
+  CHAR_CLASS[ch.charCodeAt(0)] = CLASS_HEX_LETTER;
+}
+for (const ch of "0123456789") {
+  CHAR_CLASS[ch.charCodeAt(0)] = CLASS_DIGIT;
+}
+for (let index = 0; index < TRACKED_CHARS.length; index += 1) {
+  CHAR_CLASS[TRACKED_CHARS.charCodeAt(index)] = CLASS_TRACKED;
+}
+CHAR_CLASS[58] = CLASS_COLON;
+CHAR_CLASS[45] = CLASS_DASH;
+const EQUALS = 61;
+const UNDERSCORE = 95;
+
+const scanRuleFeatures = (text) => {
+  let run = 0;
+  let maxHexRun = 0;
+  let maxHexRunBeforeDash = 0;
+  let charMask = 0;
+  // 连续 "h{1,4}:" 组数；首组的十六进制可以是更长串的后缀
+  let groupChain = 0;
+  let maxGroupChain = 0;
+  // 连续 "hh[:-]" 组数（MAC 地址）；首组同样可以是更长串的后缀
+  let macChain = 0;
+  let maxMacChain = 0;
+  let hasDoubleColon = false;
+  let hasUpperAssign = false;
+  let previousWasColon = false;
+  const length = text.length;
+
+  for (let index = 0; index < length; index += 1) {
+    const code = text.charCodeAt(index);
+    const charClass = code < 128 ? CHAR_CLASS[code] : CLASS_OTHER;
+    if (charClass === CLASS_HEX_LETTER) {
+      run += 1;
+      previousWasColon = false;
+      continue;
+    }
+    if (charClass === CLASS_DIGIT) {
+      charMask |= DIGIT_BIT;
+      run += 1;
+      previousWasColon = false;
+      continue;
+    }
+
+    if (run > maxHexRun) {
+      maxHexRun = run;
+    }
+
+    if (charClass === CLASS_COLON || charClass === CLASS_DASH) {
+      charMask |= CHAR_BIT[code];
+      if (run >= 2) {
+        macChain = run === 2 && macChain > 0 ? macChain + 1 : 1;
+        if (macChain > maxMacChain) {
+          maxMacChain = macChain;
+        }
+      } else {
+        macChain = 0;
+      }
+
+      if (charClass === CLASS_COLON) {
+        if (previousWasColon) {
+          hasDoubleColon = true;
+        }
+        if (run > 0) {
+          groupChain = run <= 4 && groupChain > 0 ? groupChain + 1 : 1;
+          if (groupChain > maxGroupChain) {
+            maxGroupChain = groupChain;
+          }
+        } else {
+          groupChain = 0;
+        }
+        previousWasColon = true;
+      } else {
+        if (run > maxHexRunBeforeDash) {
+          maxHexRunBeforeDash = run;
+        }
+        groupChain = 0;
+        previousWasColon = false;
+      }
+    } else {
+      if (charClass === CLASS_TRACKED) {
+        charMask |= CHAR_BIT[code];
+        if (code === EQUALS && !hasUpperAssign && index > 0) {
+          // 环境变量赋值 [A-Z_][A-Z0-9_]*= ：只在遇到 "=" 时回看一个字符
+          const previous = text.charCodeAt(index - 1);
+          hasUpperAssign =
+            (previous >= 65 && previous <= 90) ||
+            (previous >= 48 && previous <= 57) ||
+            previous === UNDERSCORE;
+        }
+      }
+      macChain = 0;
+      groupChain = 0;
+      previousWasColon = false;
+    }
+    run = 0;
+  }
+
+  if (run > maxHexRun) {
+    maxHexRun = run;
+  }
+
+  return {
+    maxHexRun,
+    maxHexRunBeforeDash,
+    charMask,
+    ipv6Shape: hasDoubleColon || maxGroupChain >= 6,
+    macShape: maxMacChain >= 5,
+    upperAssign: hasUpperAssign,
+  };
+};
+
+const toCharMask = (chars) => {
+  if (typeof chars !== "string" || !chars) {
+    return 0;
+  }
+  let mask = 0;
+  for (let index = 0; index < chars.length; index += 1) {
+    const code = chars.charCodeAt(index);
+    const bit = code < 128 ? CHAR_BIT[code] : 0;
+    if (!bit) {
+      // 未跟踪的字符无法判断，放弃此条件
+      return 0;
+    }
+    mask |= bit;
+  }
+  return mask;
+};
+
+/**
+ * 预编译 requires：
+ * - hexRun / hexRunBeforeDash：最长十六进制串（其后紧跟 "-"）长度下限
+ * - ipv6Shape / macShape：地址形态
+ * - upperAssign：出现 "=" 且其前一字符为 [A-Z0-9_]（区分大小写的环境变量赋值）
+ * - anyChar：至少出现其中一个字符；digit：至少出现一个数字
+ */
+const compileRuleRequirements = (requires) => {
+  if (!requires || typeof requires !== "object") {
+    return null;
+  }
+  const compiled = {
+    hexRun: Number(requires.hexRun) || 0,
+    hexRunBeforeDash: Number(requires.hexRunBeforeDash) || 0,
+    ipv6Shape: requires.ipv6Shape === true,
+    macShape: requires.macShape === true,
+    upperAssign: requires.upperAssign === true,
+    anyCharMask: toCharMask(requires.anyChar),
+    digit: requires.digit === true,
+  };
+  const hasCondition =
+    compiled.hexRun ||
+    compiled.hexRunBeforeDash ||
+    compiled.ipv6Shape ||
+    compiled.macShape ||
+    compiled.upperAssign ||
+    compiled.anyCharMask ||
+    compiled.digit;
+  return hasCondition ? compiled : null;
+};
+
+const meetsRuleRequirements = (requires, features) =>
+  features.maxHexRun >= requires.hexRun &&
+  features.maxHexRunBeforeDash >= requires.hexRunBeforeDash &&
+  (!requires.ipv6Shape || features.ipv6Shape) &&
+  (!requires.macShape || features.macShape) &&
+  (!requires.upperAssign || features.upperAssign) &&
+  (!requires.anyCharMask || (features.charMask & requires.anyCharMask) !== 0) &&
+  (!requires.digit || (features.charMask & DIGIT_BIT) !== 0);
 
 const parseStyleToFormat = (style) => {
   let ansiColor = ANSI_COLORS.reset;
@@ -209,6 +442,7 @@ class OutputProcessor {
           Number.isInteger(rule.groupIndex) && rule.groupIndex > 0
             ? rule.groupIndex
             : null,
+        requires: compileRuleRequirements(rule.requires),
         priority,
         order: index,
       };
@@ -262,8 +496,15 @@ class OutputProcessor {
     }
 
     const candidates = [];
+    let features = null;
 
     for (const rule of this.compiledHighlightRules) {
+      if (rule.requires) {
+        features ??= scanRuleFeatures(text);
+        if (!meetsRuleRequirements(rule.requires, features)) {
+          continue;
+        }
+      }
       try {
         rule.regex.lastIndex = 0;
 
@@ -354,6 +595,42 @@ class OutputProcessor {
       return [];
     }
 
+    // 只有相互重叠的候选才需要按优先级取舍；互不重叠的区间簇彼此独立。
+    // 候选按规则依次收集、规则内按起点有序，TimSort 按起点排序接近线性；
+    // 孤立候选直接保留，只对重叠簇执行优先级贪心，结果与全局贪心一致。
+    const byStart = [...candidates].sort((a, b) => a.start - b.start);
+    const selected = [];
+    let cluster = [byStart[0]];
+    let clusterEnd = byStart[0].end;
+    const flushCluster = () => {
+      if (cluster.length === 1) {
+        selected.push(cluster[0]);
+        return;
+      }
+      for (const range of this.selectGreedyHighlightRanges(cluster)) {
+        selected.push(range);
+      }
+    };
+
+    for (let index = 1; index < byStart.length; index += 1) {
+      const candidate = byStart[index];
+      if (candidate.start < clusterEnd) {
+        cluster.push(candidate);
+        if (candidate.end > clusterEnd) {
+          clusterEnd = candidate.end;
+        }
+        continue;
+      }
+      flushCluster();
+      cluster = [candidate];
+      clusterEnd = candidate.end;
+    }
+    flushCluster();
+
+    return selected;
+  }
+
+  selectGreedyHighlightRanges(candidates) {
     const sorted = [...candidates].sort((a, b) => {
       if (a.priority !== b.priority) {
         return b.priority - a.priority;
@@ -435,7 +712,8 @@ class OutputProcessor {
   }
 
   highlightPlainTextSegment(text) {
-    if (!text) {
+    // 纯空白片段（ANSI 序列之间的空格、换行）不可能命中任何规则
+    if (!text || !NON_WHITESPACE_REGEX.test(text)) {
       return text;
     }
 
@@ -476,26 +754,9 @@ class OutputProcessor {
       const ansiSequence = match[0];
       segments.push(ansiSequence);
 
-      const sgrMatch = ansiSequence.match(ANSI_SGR_SEQUENCE_REGEX);
-      if (sgrMatch) {
-        const rawCodes = sgrMatch[1];
-        if (!rawCodes) {
-          ansiStyleActive = false;
-        } else {
-          const codes = rawCodes
-            .split(";")
-            .map((code) => Number(code))
-            .filter(Number.isFinite);
-
-          if (
-            !codes.length ||
-            codes.every((code) => STYLE_CLEAR_CODES.has(code))
-          ) {
-            ansiStyleActive = false;
-          } else {
-            ansiStyleActive = true;
-          }
-        }
+      const sgrStyleActive = resolveSgrStyleActive(ansiSequence);
+      if (sgrStyleActive !== null) {
+        ansiStyleActive = sgrStyleActive;
       }
 
       lastIndex = ANSI_SEQUENCE_REGEX.lastIndex;
