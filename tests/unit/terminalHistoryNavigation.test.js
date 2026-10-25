@@ -258,6 +258,51 @@ describe("terminal history navigation", () => {
     },
   );
 
+  it("does not reopen suggestions while a picked suggestion is echoed", async () => {
+    const h = await setup();
+    await h.input("g");
+    await h.output("g");
+    await h.flush();
+    expect(h.api.showSuggestions).toBe(true);
+    await act(() =>
+      h.api.handleSuggestionSelect({ command: "g --suggested", count: 1 }),
+    );
+    // The shell may echo the inserted command in several chunks.
+    await h.output("g --sug");
+    await h.output("g --suggested");
+    await h.input(" ");
+    await h.output("g --suggested ");
+    await h.flush();
+    expect(h.api.showSuggestions).toBe(false);
+    expect(window.terminalAPI.getCommandSuggestions).toHaveBeenCalledOnce();
+    await h.input("-");
+    await h.output("g --suggested -");
+    await h.flush();
+    expect(h.api.showSuggestions).toBe(true);
+    expect(window.terminalAPI.getCommandSuggestions).toHaveBeenLastCalledWith(
+      "g --suggested -",
+      10,
+    );
+  });
+
+  it("releases the picked-suggestion latch when the line is reset", async () => {
+    const h = await setup();
+    await act(() =>
+      h.api.handleSuggestionSelect({ command: "git status", count: 1 }),
+    );
+    await h.output("git status");
+    await h.input("\x03");
+    await h.output("");
+    await h.input("g");
+    await h.output("g");
+    await h.flush();
+    expect(h.api.showSuggestions).toBe(true);
+    expect(window.terminalAPI.getCommandSuggestions).toHaveBeenLastCalledWith(
+      "g",
+      10,
+    );
+  });
+
   it("suppresses history suggestions for synchronized input and resumes on editing", async () => {
     const h = await setup();
     await h.sync("\x1b[A");

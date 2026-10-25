@@ -4,6 +4,7 @@ import React, {
   useRef,
   useMemo,
   useCallback,
+  memo,
 } from "react";
 import {
   Box,
@@ -16,8 +17,6 @@ import {
   ListItemText,
   Tooltip,
   CircularProgress,
-  Alert,
-  Skeleton,
   Chip,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -27,11 +26,17 @@ import ComputerIcon from "@mui/icons-material/Computer";
 import { useTranslation } from "react-i18next";
 import useAutoCleanup from "../../shared/hooks/useAutoCleanup";
 import {
+  SIDEBAR_ROW_GAP_PX,
+  sidebarFooterSx,
+  sidebarListAreaSx,
   sidebarListItemButtonSx,
+  sidebarSectionSx,
   sidebarTitleIconButtonSx,
 } from "../../shared/ui/sidebarItemStyles";
 import SidebarPanel from "../../shared/ui/SidebarPanel.jsx";
 import SidebarSearchField from "../../shared/ui/SidebarSearchField.jsx";
+import SidebarEmptyState from "../../shared/ui/SidebarEmptyState.jsx";
+import { SidebarListSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
 import useSidebarPanel from "../../shared/hooks/useSidebarPanel";
 import { useNotification } from "../../shared/notifications/NotificationContext";
 
@@ -45,6 +50,141 @@ const getTerminalIcon = (terminal) => {
     <TerminalIcon fontSize="small" />
   );
 };
+
+const STATUS_COLOR_MAP = {
+  running: "success",
+  stopped: "default",
+  unknown: "warning",
+};
+
+const TERMINAL_ROW_SX = { mb: `${SIDEBAR_ROW_GAP_PX}px`, flexShrink: 0 };
+const TERMINAL_ICON_SLOT_SX = { minWidth: 40 };
+const TERMINAL_SECONDARY_SX = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 0.25,
+};
+const TERMINAL_CHIP_SX = {
+  ml: "auto",
+  height: 18,
+  "& .MuiChip-label": {
+    px: 0.75,
+    fontSize: "0.6875rem",
+  },
+};
+
+// 终端项：模块级 memo 组件，身份稳定，刷新检测结果时不会整列表重挂载
+const TerminalItem = memo(function TerminalItem({ terminal, onLaunch }) {
+  const theme = useTheme();
+  const { t } = useTranslation();
+  const isWSLTerminal = terminal.type === "wsl";
+  const availableDistributions = Array.isArray(terminal.availableDistributions)
+    ? terminal.availableDistributions
+    : [];
+  const runningCount = availableDistributions.filter(
+    (dist) =>
+      (dist.runtimeState || dist.state || "").toLowerCase() === "running",
+  ).length;
+  const runtimeState =
+    terminal.runtimeStatus?.state ||
+    (runningCount > 0
+      ? "running"
+      : availableDistributions.length > 0
+        ? "stopped"
+        : "unknown");
+
+  const statusLabelMap = {
+    running: t("localTerminal.statusRunning"),
+    stopped: t("localTerminal.statusStopped"),
+    unknown: t("localTerminal.statusUnknown"),
+  };
+
+  const secondaryLines = [];
+  if (terminal.description) {
+    secondaryLines.push(
+      <Typography key="description" variant="caption" color="text.secondary">
+        {terminal.description}
+      </Typography>,
+    );
+  }
+
+  if (isWSLTerminal) {
+    secondaryLines.push(
+      <Typography key="wsl-status" variant="caption" color="text.secondary">
+        {t("localTerminal.wslRunningSummary", {
+          running: terminal.runtimeStatus?.runningCount ?? runningCount,
+          total:
+            terminal.runtimeStatus?.totalCount ?? availableDistributions.length,
+        })}
+      </Typography>,
+    );
+  }
+
+  return (
+    <ListItem disablePadding sx={TERMINAL_ROW_SX}>
+      <ListItemButton
+        onClick={() => onLaunch(terminal)}
+        sx={{
+          ...sidebarListItemButtonSx(theme),
+          minHeight: 52,
+          py: 0.75,
+          pr: 2,
+        }}
+      >
+        <ListItemIcon sx={TERMINAL_ICON_SLOT_SX}>
+          <Box
+            sx={{
+              width: 32,
+              height: 32,
+              borderRadius: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: theme.palette.background.paper,
+              border: `1px solid ${theme.palette.divider}`,
+            }}
+          >
+            {getTerminalIcon(terminal)}
+          </Box>
+        </ListItemIcon>
+
+        <ListItemText
+          sx={{ my: 0, minWidth: 0 }}
+          primary={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Typography
+                variant="body2"
+                noWrap
+                sx={{ fontWeight: 500, fontSize: "0.875rem" }}
+              >
+                {terminal.name}
+              </Typography>
+              {isWSLTerminal && (
+                <Chip
+                  size="small"
+                  color={STATUS_COLOR_MAP[runtimeState] || "default"}
+                  variant={runtimeState === "running" ? "filled" : "outlined"}
+                  label={
+                    statusLabelMap[runtimeState] ||
+                    t("localTerminal.statusUnknown")
+                  }
+                  sx={TERMINAL_CHIP_SX}
+                />
+              )}
+            </Box>
+          }
+          secondary={
+            secondaryLines.length > 0 ? (
+              <Box component="span" sx={TERMINAL_SECONDARY_SX}>
+                {secondaryLines}
+              </Box>
+            ) : null
+          }
+        />
+      </ListItemButton>
+    </ListItem>
+  );
+});
 
 const LocalTerminalSidebar = ({
   open,
@@ -297,186 +437,8 @@ const LocalTerminalSidebar = ({
     }
   }, []);
 
-  // 终端项组件
-  const TerminalItem = useCallback(
-    ({ terminal }) => {
-      const isWSLTerminal = terminal.type === "wsl";
-      const availableDistributions = Array.isArray(
-        terminal.availableDistributions,
-      )
-        ? terminal.availableDistributions
-        : [];
-      const runningCount = availableDistributions.filter(
-        (dist) =>
-          (dist.runtimeState || dist.state || "").toLowerCase() === "running",
-      ).length;
-      const runtimeState =
-        terminal.runtimeStatus?.state ||
-        (runningCount > 0
-          ? "running"
-          : availableDistributions.length > 0
-            ? "stopped"
-            : "unknown");
-
-      const statusLabelMap = {
-        running: t("localTerminal.statusRunning"),
-        stopped: t("localTerminal.statusStopped"),
-        unknown: t("localTerminal.statusUnknown"),
-      };
-      const statusColorMap = {
-        running: "success",
-        stopped: "default",
-        unknown: "warning",
-      };
-
-      const secondaryLines = [];
-      if (terminal.description) {
-        secondaryLines.push(
-          <Typography
-            key="description"
-            variant="caption"
-            color="text.secondary"
-          >
-            {terminal.description}
-          </Typography>,
-        );
-      }
-
-      if (isWSLTerminal) {
-        secondaryLines.push(
-          <Typography key="wsl-status" variant="caption" color="text.secondary">
-            {t("localTerminal.wslRunningSummary", {
-              running: terminal.runtimeStatus?.runningCount ?? runningCount,
-              total:
-                terminal.runtimeStatus?.totalCount ??
-                availableDistributions.length,
-            })}
-          </Typography>,
-        );
-      }
-
-      return (
-        <ListItem disablePadding sx={{ mb: 0.5 }}>
-          <ListItemButton
-            onClick={() => handleLaunchTerminal(terminal)}
-            sx={{
-              ...sidebarListItemButtonSx(theme),
-              minHeight: 48,
-              py: 1,
-              pr: 2,
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 40 }}>
-              <Box
-                sx={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 1,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: theme.palette.background.paper,
-                  border: `1px solid ${theme.palette.divider}`,
-                }}
-              >
-                {getTerminalIcon(terminal)}
-              </Box>
-            </ListItemIcon>
-
-            <ListItemText
-              primary={
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Typography
-                    variant="body2"
-                    sx={{ fontWeight: 500, fontSize: "0.875rem" }}
-                  >
-                    {terminal.name}
-                  </Typography>
-                  {isWSLTerminal && (
-                    <Chip
-                      size="small"
-                      color={statusColorMap[runtimeState] || "default"}
-                      variant={
-                        runtimeState === "running" ? "filled" : "outlined"
-                      }
-                      label={
-                        statusLabelMap[runtimeState] ||
-                        t("localTerminal.statusUnknown")
-                      }
-                      sx={{
-                        ml: "auto",
-                        height: 18,
-                        "& .MuiChip-label": {
-                          px: 0.75,
-                          fontSize: "0.6875rem",
-                        },
-                      }}
-                    />
-                  )}
-                </Box>
-              }
-              secondary={
-                secondaryLines.length > 0 ? (
-                  <Box
-                    sx={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 0.25,
-                    }}
-                  >
-                    {secondaryLines}
-                  </Box>
-                ) : null
-              }
-            />
-          </ListItemButton>
-        </ListItem>
-      );
-    },
-    [theme, handleLaunchTerminal, t],
-  );
-
-  // 骨架屏：与终端项布局一致
-  const TerminalItemSkeleton = useCallback(() => {
-    return (
-      <ListItem disablePadding sx={{ mb: 0.5 }}>
-        <ListItemButton
-          sx={{
-            ...sidebarListItemButtonSx(theme),
-            minHeight: 48,
-            py: 1,
-            pr: 2,
-          }}
-        >
-          <ListItemIcon sx={{ minWidth: 40 }}>
-            <Box
-              sx={{
-                width: 32,
-                height: 32,
-                borderRadius: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: theme.palette.background.paper,
-                border: `1px solid ${theme.palette.divider}`,
-              }}
-            >
-              <Skeleton variant="circular" width={20} height={20} />
-            </Box>
-          </ListItemIcon>
-
-          <ListItemText
-            primary={
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Skeleton variant="text" width="60%" height={16} />
-              </Box>
-            }
-            secondary={<Skeleton variant="text" width="40%" height={12} />}
-          />
-        </ListItemButton>
-      </ListItem>
-    );
-  }, [theme]);
+  // 仅首次检测显示骨架；手动/自动刷新期间保留现有列表与搜索框，避免布局跳变
+  const showSkeleton = isDetecting && !hasInitialDetection;
 
   return (
     <SidebarPanel
@@ -492,94 +454,72 @@ const LocalTerminalSidebar = ({
       actionsSx={{ display: "flex", alignItems: "center", gap: 1 }}
       actions={
         <Tooltip title={t("localTerminal.refresh")}>
-          <IconButton
-            size="small"
-            onClick={() => detectTerminals(true, { silent: false })}
-            disabled={isDetecting}
-            sx={sidebarTitleIconButtonSx}
-
-            aria-label={t("localTerminal.refresh")}
-          >
-            {isDetecting ? (
-              <CircularProgress size={16} />
-            ) : (
-              <RefreshIcon fontSize="small" />
-            )}
-          </IconButton>
+          {/* 禁用的按钮不派发鼠标事件，外包 span 让 Tooltip 仍可响应 */}
+          <span>
+            <IconButton
+              size="small"
+              onClick={() => detectTerminals(true, { silent: false })}
+              disabled={isDetecting}
+              sx={sidebarTitleIconButtonSx}
+              aria-label={t("localTerminal.refresh")}
+            >
+              {isDetecting ? (
+                <CircularProgress size={16} />
+              ) : (
+                <RefreshIcon fontSize="small" />
+              )}
+            </IconButton>
+          </span>
         </Tooltip>
       }
     >
       {/* 搜索框 */}
-      <Box sx={{ p: 2, pb: 1 }}>
-        {isDetecting ? (
-          <Skeleton
-            variant="rectangular"
-            width="100%"
-            height={36}
-            sx={{ borderRadius: "var(--radius-sm, 6px)" }}
-          />
-        ) : (
-          <SidebarSearchField
-            inputRef={searchInputRef}
-            placeholder={t("localTerminal.searchPlaceholder")}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onClear={clearSearch}
-          />
-        )}
+      <Box sx={sidebarSectionSx(theme)}>
+        <SidebarSearchField
+          inputRef={searchInputRef}
+          placeholder={t("localTerminal.searchPlaceholder")}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onClear={clearSearch}
+        />
       </Box>
 
       {/* 可用终端列表 */}
-      <Box
-        sx={{
-          flexGrow: 1,
-          overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        <Box sx={{ px: 2, pb: 1 }}>
-          {isDetecting ? (
-            <Skeleton variant="text" width={150} height={20} />
-          ) : (
-            <Typography
-              variant="subtitle2"
-              color="text.secondary"
-              sx={{ fontWeight: 500 }}
-            >
-              {t("localTerminal.availableTerminals")} (
-              {filteredTerminals.length})
-            </Typography>
-          )}
-        </Box>
-
-        <Box sx={{ px: 2, flex: 1, overflow: "auto" }}>
-          {isDetecting ? (
-            <List disablePadding>
-              {Array.from({ length: 6 }).map((_, index) => (
-                <TerminalItemSkeleton key={`skeleton-${index}`} />
-              ))}
-            </List>
-          ) : filteredTerminals.length > 0 ? (
-            <List disablePadding>
-              {filteredTerminals.map((terminal, index) => (
-                <TerminalItem
-                  key={terminal.id || terminal.type || `terminal-${index}`}
-                  terminal={terminal}
-                />
-              ))}
-            </List>
-          ) : (
-            // 只有在初始检测完成后才显示提示信息
-            hasInitialDetection && (
-              <Alert severity="info" sx={{ mt: 1 }}>
-                {searchQuery
+      <Box className="app-scrollbar" sx={sidebarListAreaSx}>
+        {showSkeleton ? (
+          <SidebarListSkeleton variant="localTerminal" />
+        ) : filteredTerminals.length > 0 ? (
+          <List disablePadding>
+            {filteredTerminals.map((terminal, index) => (
+              <TerminalItem
+                key={terminal.id || terminal.type || `terminal-${index}`}
+                terminal={terminal}
+                onLaunch={handleLaunchTerminal}
+              />
+            ))}
+          </List>
+        ) : (
+          // 只有在初始检测完成后才显示提示信息
+          hasInitialDetection && (
+            <SidebarEmptyState
+              icon={<TerminalIcon />}
+              message={
+                searchQuery
                   ? t("localTerminal.noSearchResults")
-                  : t("localTerminal.noTerminals")}
-              </Alert>
-            )
-          )}
-        </Box>
+                  : t("localTerminal.noTerminals")
+              }
+            />
+          )
+        )}
+      </Box>
+
+      {/* 状态栏 */}
+      <Box sx={sidebarFooterSx(theme)}>
+        <Typography variant="caption" color="text.secondary" noWrap>
+          {showSkeleton
+            ? t("common.loading")
+            : `${t("localTerminal.availableTerminals")} (${filteredTerminals.length})`}
+        </Typography>
       </Box>
     </SidebarPanel>
   );

@@ -11,6 +11,32 @@ const normalizeGeometry = (cols, rows) => ({
   rows: Math.max(1, Math.floor(Number(rows) || 1)),
 });
 
+// UTF-8 length without allocating an encoded copy of every output chunk.
+// Lone surrogates count as U+FFFD (3 bytes), matching TextEncoder and the
+// main process' Buffer.byteLength() so output ACKs stay exact.
+export const getUtf8ByteLength = (value) => {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4;
+        index++;
+      } else {
+        bytes += 3;
+      }
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+};
+
 const splitTerminalWriteChunks = (data) => {
   if (!data) {
     return [];
@@ -50,8 +76,6 @@ export class RendererTerminalIOMailbox {
     this.onOutput = options.onOutput || null;
     this.onWriteComplete = options.onWriteComplete || null;
     this.onQueueOutput = options.onQueueOutput || null;
-    this.textEncoder =
-      typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
 
     this.pendingAckBytes = 0;
     this.pendingAckProcessId = null;
@@ -67,7 +91,10 @@ export class RendererTerminalIOMailbox {
 
     this.writeQueue = new TerminalWriteQueue({
       dispatchThresholdBytes: TERMINAL_IO_DEFAULTS.outputDispatchThresholdBytes,
-      dispatchIntervalMs: TERMINAL_IO_DEFAULTS.outputDispatchIntervalMs,
+      // The main process already batches output for outputDispatchIntervalMs.
+      // Draining on a microtask still coalesces one IPC batch into a single
+      // xterm write, without stacking a second timer onto every echo.
+      dispatchIntervalMs: 0,
       onDrain: (data) => {
         this.handleDrain(data);
       },
@@ -173,15 +200,7 @@ export class RendererTerminalIOMailbox {
       return 0;
     }
 
-    if (this.textEncoder) {
-      return this.textEncoder.encode(data).length;
-    }
-
-    try {
-      return new Blob([data]).size;
-    } catch {
-      return data.length;
-    }
+    return getUtf8ByteLength(data);
   }
 
   handleDrain(data) {
@@ -479,7 +498,6 @@ export class RendererTerminalIOMailbox {
     this.onOutput = null;
     this.onQueueOutput = null;
     this.onWriteComplete = null;
-    this.textEncoder = null;
     this.term = null;
   }
 }

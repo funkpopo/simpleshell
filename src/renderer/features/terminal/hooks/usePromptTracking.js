@@ -408,7 +408,7 @@ export function usePromptTracking({
       processId,
       isRemoteInput = false,
       disposables = [],
-      { pendingSystemShortcutRecoveryRef, setContentUpdated } = {},
+      { pendingSystemShortcutRecoveryRef } = {},
     ) => {
       console.debug(
         `[setupCommandDetection] Starting for processId=${processId}, isRemoteInput=${isRemoteInput}, disposables.length=${disposables.length}`,
@@ -628,10 +628,9 @@ export function usePromptTracking({
           (data === "\b" || data === "\x7f" || data === "\x03") &&
           isCursorInsideWrappedInputBlock(term)
         ) {
+          // The echo's write-complete handler performs the forced refresh.
           term.__pendingWrappedInputRefresh = true;
         }
-
-        scheduleTerminalRedraw(term);
 
         // External command channel (group quick-command dispatch). The
         // dispatcher delivers the payload straight to the PTY via IPC, so it
@@ -856,7 +855,6 @@ export function usePromptTracking({
             };
 
             if (FULLSCREEN_COMMAND_REGEX.test(lastLine)) {
-              setContentUpdated?.(true);
               scheduleTerminalLayoutSyncRef.current("fullscreen-command-force");
             }
           } catch {
@@ -1025,7 +1023,6 @@ export function usePromptTracking({
       resumePromptTrackingForSuggestionInput,
       scheduleInputUiRefresh,
       scheduleTerminalLayoutSyncRef,
-      scheduleTerminalRedraw,
       scheduleTerminalRedrawRef,
       sendInputToProcess,
       setEditorModeState,

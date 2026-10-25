@@ -4,23 +4,27 @@ import {
   Typography,
   ListItemIcon,
   ListItemText,
-  CircularProgress,
+  List,
+  ListItem,
+  ListItemButton,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
 import { alpha } from "@mui/material/styles";
 import { FileManagerSkeleton } from "../../../shared/ui/SkeletonLoader.jsx";
 import FolderIcon from "@mui/icons-material/Folder";
 import OverflowTooltipText from "../../../shared/ui/OverflowTooltipText.jsx";
-import { List, ListItem, ListItemButton } from "@mui/material";
 import { List as VirtualizedList } from "react-window";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import { formatFileSize, formatDate } from "../../../shared/lib/formatters.js";
 import { useTranslation } from "react-i18next";
-const FILE_LIST_ROW_HEIGHT = 44;
-const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
-const FILE_LIST_OVERSCAN = 12;
+import useStableCallback from "../../../shared/hooks/useStableCallback.js";
+import { SIDEBAR_ROW_GAP_PX } from "../../../shared/ui/sidebarItemStyles";
+
 // 双行文本（primary 16.8 + 2 margin + secondary 13.2 ≈ 32px）+ 按钮 py:0.5(8px) ≈ 40px
 const FILE_LIST_ITEM_MIN_HEIGHT = 40;
+// 虚拟化行距 = 行高 + 行间距（行容器上下各 2px），与非虚拟化列表的 mb 保持一致
+const FILE_LIST_ROW_HEIGHT = FILE_LIST_ITEM_MIN_HEIGHT + SIDEBAR_ROW_GAP_PX;
+const FILE_LIST_VIRTUALIZATION_THRESHOLD = 200;
+const FILE_LIST_OVERSCAN = 12;
 const FILE_LIST_TEXT_SX = {
   my: 0,
   minWidth: 0,
@@ -52,6 +56,28 @@ const FILE_LIST_SECONDARY_TEXT_SX = {
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
 };
+// 选中/悬停配色通过主题回调取值：样式对象全局唯一，行渲染不再逐行拼装
+const FILE_ROW_BUTTON_SX = {
+  minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
+  height: FILE_LIST_ITEM_MIN_HEIGHT,
+  px: 1.5,
+  py: 0.5,
+  borderRadius: 1,
+  overflow: "hidden",
+  transition:
+    "background-color 0.15s ease-in-out, border-color 0.15s ease-in-out",
+  userSelect: "none",
+  cursor: "default",
+  "&.Mui-selected": {
+    backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.12),
+    "&:hover": {
+      backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.18),
+    },
+  },
+  "&:hover": {
+    backgroundColor: "action.hover",
+  },
+};
 const formatSecondaryText = (file, t) => {
   if (!file) return "";
   const date = file.modifyTime
@@ -61,6 +87,67 @@ const formatSecondaryText = (file, t) => {
     file.size && !file.isDirectory ? formatFileSize(file.size, { t }) : "";
   return [date, size].filter(Boolean).join(" · ");
 };
+
+/**
+ * 文件行：虚拟化与非虚拟化列表共用。只接收标量与稳定回调，
+ * 选中状态变化时只有选中/取消选中的行重渲染。
+ */
+const FileRow = memo(function FileRow({
+  file,
+  index,
+  selected,
+  sx,
+  onContextMenu,
+  onSelect,
+  onActivate,
+}) {
+  const { t } = useTranslation();
+  const secondaryText = useMemo(() => formatSecondaryText(file, t), [file, t]);
+  return (
+    <ListItem
+      disablePadding
+      disableGutters
+      onContextMenu={(e) => onContextMenu(e, file, index)}
+      sx={sx}
+    >
+      <ListItemButton
+        data-file-item="true"
+        onClick={(e) => onSelect(file, index, e)}
+        onDoubleClick={() => onActivate(file)}
+        dense
+        selected={selected}
+        sx={FILE_ROW_BUTTON_SX}
+      >
+        <ListItemIcon sx={viewStyles.listItemIconSx}>
+          {file.isDirectory ? (
+            <FolderIcon color="primary" sx={viewStyles.fileIconSx} />
+          ) : (
+            <InsertDriveFileIcon sx={viewStyles.fileIconSx} />
+          )}
+        </ListItemIcon>
+        <ListItemText
+          disableTypography
+          primary={
+            <OverflowTooltipText
+              variant="body2"
+              sx={FILE_LIST_NAME_SX}
+              tooltipTitle={file.name || ""}
+            >
+              {file.name || ""}
+            </OverflowTooltipText>
+          }
+          secondary={
+            <Box component="span" sx={FILE_LIST_SECONDARY_TEXT_SX}>
+              {secondaryText}
+            </Box>
+          }
+          sx={FILE_LIST_TEXT_SX}
+        />
+      </ListItemButton>
+    </ListItem>
+  );
+});
+
 const VirtualizedFileRow = memo(function VirtualizedFileRow({
   index,
   style,
@@ -69,83 +156,28 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
   onContextMenu,
   onSelect,
   onActivate,
-  theme,
 }) {
-  const { t } = useTranslation();
   const rowStyle = useMemo(
     () => ({ ...style, boxSizing: "border-box", padding: "2px 4px" }),
     [style],
   );
   const file = rows[index];
-  const secondaryText = useMemo(() => formatSecondaryText(file, t), [file, t]);
   if (!file) return null;
-  const isSelected = isFileSelected(file);
   return (
     <div style={rowStyle}>
-      <ListItem
-        disablePadding
-        disableGutters
-        onContextMenu={(e) => onContextMenu(e, file, index)}
-        sx={viewStyles.listItemSx}
-      >
-        <ListItemButton
-          data-file-item="true"
-          onClick={(e) => onSelect(file, index, e)}
-          onDoubleClick={() => onActivate(file)}
-          dense
-          selected={isSelected}
-          sx={{
-            minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
-            height: FILE_LIST_ITEM_MIN_HEIGHT,
-            px: 1.5,
-            py: 0.5,
-            borderRadius: 1,
-            overflow: "hidden",
-            transition:
-              "background-color 0.15s ease-in-out, border-color 0.15s ease-in-out",
-            userSelect: "none",
-            cursor: "default",
-            "&.Mui-selected": {
-              backgroundColor: alpha(theme.palette.primary.main, 0.12),
-              "&:hover": {
-                backgroundColor: alpha(theme.palette.primary.main, 0.18),
-              },
-            },
-            "&:hover": {
-              backgroundColor: theme.palette.action.hover,
-            },
-          }}
-        >
-          <ListItemIcon sx={viewStyles.listItemIconSx}>
-            {file.isDirectory ? (
-              <FolderIcon color="primary" sx={viewStyles.folderIconSx} />
-            ) : (
-              <InsertDriveFileIcon sx={viewStyles.folderIconSx} />
-            )}
-          </ListItemIcon>
-          <ListItemText
-            disableTypography
-            primary={
-              <OverflowTooltipText
-                variant="body2"
-                sx={FILE_LIST_NAME_SX}
-                tooltipTitle={file.name || ""}
-              >
-                {file.name || ""}
-              </OverflowTooltipText>
-            }
-            secondary={
-              <Box component="span" sx={FILE_LIST_SECONDARY_TEXT_SX}>
-                {secondaryText}
-              </Box>
-            }
-            sx={FILE_LIST_TEXT_SX}
-          />
-        </ListItemButton>
-      </ListItem>
+      <FileRow
+        file={file}
+        index={index}
+        selected={isFileSelected(file)}
+        sx={viewStyles.virtualizedItemSx}
+        onContextMenu={onContextMenu}
+        onSelect={onSelect}
+        onActivate={onActivate}
+      />
     </div>
   );
 });
+
 export default function FileList({
   displayFiles,
   loading,
@@ -160,18 +192,18 @@ export default function FileList({
   handleFileSelect,
   handleFileActivate,
 }) {
-  const theme = useTheme();
   const { t } = useTranslation();
+  // 上游处理函数每次渲染都会重建；转成稳定引用后行组件的 memo 才能生效
+  const onContextMenu = useStableCallback(handleContextMenu);
+  const onSelect = useStableCallback(handleFileSelect);
+  const onActivate = useStableCallback(handleFileActivate);
+
   if (loading) {
-    return (
-      <Box sx={viewStyles.boxSx}>
-        <CircularProgress size={24} />
-      </Box>
-    );
+    return <FileManagerSkeleton />;
   }
   if (error) {
     return (
-      <Box sx={viewStyles.boxSx2}>
+      <Box sx={viewStyles.errorSx}>
         <Typography variant="body2">{error}</Typography>
       </Box>
     );
@@ -182,7 +214,7 @@ export default function FileList({
     if (!searchTerm && (isChunking || listToken)) {
       return (
         <Box
-          sx={viewStyles.boxSx3}
+          sx={viewStyles.fillSx}
           onContextMenu={handleBlankContextMenu}
           onClick={handleBlankClick}
         >
@@ -192,7 +224,7 @@ export default function FileList({
     }
     return (
       <Box
-        sx={viewStyles.boxSx4}
+        sx={viewStyles.emptySx}
         onContextMenu={handleBlankContextMenu}
         onClick={handleBlankClick}
       >
@@ -209,7 +241,7 @@ export default function FileList({
   return (
     <Box
       className="app-scrollbar"
-      sx={viewStyles.boxSx5}
+      sx={viewStyles.scrollSx}
       onContextMenu={handleBlankContextMenu}
       onClick={handleBlankClick}
     >
@@ -222,90 +254,27 @@ export default function FileList({
           rowProps={{
             rows: displayFiles,
             isFileSelected,
-            onContextMenu: handleContextMenu,
-            onSelect: handleFileSelect,
-            onActivate: handleFileActivate,
-            theme,
+            onContextMenu,
+            onSelect,
+            onActivate,
           }}
           overscanCount={FILE_LIST_OVERSCAN}
           rowComponent={VirtualizedFileRow}
         />
       ) : (
         <List dense disablePadding sx={viewStyles.listSx}>
-          {displayFiles.map((file, index) => {
-            const secondaryText = formatSecondaryText(file, t);
-            const isSelected = isFileSelected(file);
-            return (
-              <ListItem
-                key={`${file.name}-${file.modifyTime ?? index}`}
-                disablePadding
-                disableGutters
-                onContextMenu={(e) => handleContextMenu(e, file, index)}
-                sx={viewStyles.listItemSx2}
-              >
-                <ListItemButton
-                  data-file-item="true"
-                  onClick={(e) => handleFileSelect(file, index, e)}
-                  onDoubleClick={() => handleFileActivate(file)}
-                  dense
-                  selected={isSelected}
-                  sx={{
-                    minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
-                    height: FILE_LIST_ITEM_MIN_HEIGHT,
-                    px: 1.5,
-                    py: 0.5,
-                    borderRadius: 1,
-                    overflow: "hidden",
-                    transition:
-                      "background-color 0.15s ease-in-out, border-color 0.15s ease-in-out",
-                    userSelect: "none",
-                    cursor: "default",
-                    "&.Mui-selected": {
-                      backgroundColor: alpha(theme.palette.primary.main, 0.12),
-                      "&:hover": {
-                        backgroundColor: alpha(
-                          theme.palette.primary.main,
-                          0.18,
-                        ),
-                      },
-                    },
-                    "&:hover": {
-                      backgroundColor: theme.palette.action.hover,
-                    },
-                  }}
-                >
-                  <ListItemIcon sx={viewStyles.listItemIconSx2}>
-                    {file.isDirectory ? (
-                      <FolderIcon
-                        color="primary"
-                        sx={viewStyles.folderIconSx2}
-                      />
-                    ) : (
-                      <InsertDriveFileIcon sx={viewStyles.folderIconSx2} />
-                    )}
-                  </ListItemIcon>
-                  <ListItemText
-                    disableTypography
-                    primary={
-                      <OverflowTooltipText
-                        variant="body2"
-                        sx={FILE_LIST_NAME_SX}
-                        tooltipTitle={file.name || ""}
-                      >
-                        {file.name || ""}
-                      </OverflowTooltipText>
-                    }
-                    secondary={
-                      <Box component="span" sx={FILE_LIST_SECONDARY_TEXT_SX}>
-                        {secondaryText}
-                      </Box>
-                    }
-                    sx={FILE_LIST_TEXT_SX}
-                  />
-                </ListItemButton>
-              </ListItem>
-            );
-          })}
+          {displayFiles.map((file, index) => (
+            <FileRow
+              key={`${file.name}-${file.modifyTime ?? index}`}
+              file={file}
+              index={index}
+              selected={isFileSelected(file)}
+              sx={viewStyles.listItemSx}
+              onContextMenu={onContextMenu}
+              onSelect={onSelect}
+              onActivate={onActivate}
+            />
+          ))}
         </List>
       )}
     </Box>
@@ -314,27 +283,29 @@ export default function FileList({
 
 // Stable declarations shared by row renders. Dynamic styles stay with their owner.
 const viewStyles = {
-  listItemSx: {
+  virtualizedItemSx: {
     py: 0,
     my: 0,
     minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
     height: FILE_LIST_ITEM_MIN_HEIGHT,
   },
+  listItemSx: {
+    py: 0,
+    my: 0,
+    minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
+    height: FILE_LIST_ITEM_MIN_HEIGHT,
+    "&:not(:last-child)": {
+      mb: `${SIDEBAR_ROW_GAP_PX}px`,
+    },
+  },
   listItemIconSx: {
     minWidth: 24,
     mr: 0.75,
   },
-  folderIconSx: {
+  fileIconSx: {
     fontSize: 20,
   },
-  boxSx: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    height: "100%",
-    width: "100%",
-  },
-  boxSx2: {
+  errorSx: {
     padding: 2,
     color: "error.main",
     height: "100%",
@@ -343,12 +314,11 @@ const viewStyles = {
     alignItems: "center",
     justifyContent: "center",
   },
-  boxSx3: {
+  fillSx: {
     height: "100%",
     width: "100%",
-    padding: 1,
   },
-  boxSx4: {
+  emptySx: {
     height: "100%",
     width: "100%",
     display: "flex",
@@ -356,7 +326,7 @@ const viewStyles = {
     justifyContent: "center",
     padding: 2,
   },
-  boxSx5: {
+  scrollSx: {
     height: "100%",
     width: "100%",
     overflow: "auto",
@@ -368,21 +338,5 @@ const viewStyles = {
   listSx: {
     py: 0.5,
     px: 0.5,
-  },
-  listItemSx2: {
-    py: 0,
-    my: 0,
-    minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
-    height: FILE_LIST_ITEM_MIN_HEIGHT,
-    "&:not(:last-child)": {
-      mb: 0.5,
-    },
-  },
-  listItemIconSx2: {
-    minWidth: 24,
-    mr: 0.75,
-  },
-  folderIconSx2: {
-    fontSize: 20,
   },
 };

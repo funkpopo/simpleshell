@@ -1,6 +1,6 @@
 import { memo, useRef } from "react";
 import useAutoCleanup from "../../shared/hooks/useAutoCleanup";
-import { Box, Paper, Typography, CircularProgress } from "@mui/material";
+import { Box, Paper } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { FileManagerSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
 import { useTranslation } from "react-i18next";
@@ -380,29 +380,11 @@ const FileManagerContainer = memo(
             onContextMenu={handleBlankContextMenu} // 添加空白区域右键菜单
           >
             {connectionLoading ? (
-              <Box
-                sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  height: "100%",
-                  width: "100%",
-                  gap: 1.5,
-                  px: 2,
-                }}
-              >
-                <CircularProgress size={24} />
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{
-                    textAlign: "center",
-                  }}
-                >
-                  {connectionLoadingMessage || t("fileManager.loading")}
-                </Typography>
-              </Box>
+              // 建立连接阶段与目录加载使用同一骨架，并在顶部显示连接进度文案，
+              // 连接完成后列表原位填充而不是从居中转圈切换为列表
+              <FileManagerSkeleton
+                message={connectionLoadingMessage || t("fileManager.loading")}
+              />
             ) : loading ? (
               <FileManagerSkeleton />
             ) : (

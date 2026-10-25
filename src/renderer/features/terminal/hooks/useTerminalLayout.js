@@ -6,6 +6,46 @@ import {
 } from "../runtime/terminalSessionStore.js";
 
 /**
+ * Whether a terminal container is actually rendered (not display:none,
+ * visibility:hidden or aria-hidden) and has a non-empty box.
+ */
+export const isTerminalContainerElementVisible = (container) => {
+  if (!container || typeof window === "undefined") {
+    return false;
+  }
+
+  // Runs on every layout sync / ResizeObserver tick. checkVisibility() covers
+  // display:none ancestors and inherited visibility in one style query,
+  // instead of forcing getComputedStyle() on every ancestor.
+  if (typeof container.checkVisibility === "function") {
+    if (
+      !container.checkVisibility({ visibilityProperty: true }) ||
+      container.closest('[aria-hidden="true"]')
+    ) {
+      return false;
+    }
+    const rect = container.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  let current = container;
+  while (current) {
+    const style = window.getComputedStyle(current);
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      current.getAttribute("aria-hidden") === "true"
+    ) {
+      return false;
+    }
+    current = current.parentElement;
+  }
+
+  const rect = container.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+};
+
+/**
  * Terminal attach / focus / fit / layout-sync scheduling.
  */
 export function useTerminalLayout({
@@ -94,27 +134,7 @@ export function useTerminalLayout({
     return false;
   }, [attachTerminalToContainer, isActiveRef, terminalRef, termRef]);
 
-  const isTerminalContainerVisible = useCallback((container) => {
-    if (!container || typeof window === "undefined") {
-      return false;
-    }
-
-    let current = container;
-    while (current) {
-      const style = window.getComputedStyle(current);
-      if (
-        style.display === "none" ||
-        style.visibility === "hidden" ||
-        current.getAttribute("aria-hidden") === "true"
-      ) {
-        return false;
-      }
-      current = current.parentElement;
-    }
-
-    const rect = container.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
-  }, []);
+  const isTerminalContainerVisible = isTerminalContainerElementVisible;
 
   const syncTerminalLayoutNow = useCallback(
     (reason = "layout") => {

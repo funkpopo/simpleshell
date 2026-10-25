@@ -546,6 +546,13 @@
         "wholeWord": "Whole word",
         "regex": "Regular expression"
       },
+      "suggestion": {
+        "label": "Command suggestions",
+        "navigate": "select",
+        "accept": "insert",
+        "remove": "delete",
+        "close": "close"
+      },
       "runtime": {
         "connecting": "Connecting to {{host}}...",
         "reconnecting": "Reconnecting to {{host}} ...",

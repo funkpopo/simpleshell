@@ -55,45 +55,48 @@ const SidebarSearchField = forwardRef(function SidebarSearchField(
       variant="outlined"
       size="small"
       fullWidth
-      InputProps={{
-        startAdornment: (
-          <InputAdornment position="start">
-            <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
-          </InputAdornment>
-        ),
-        endAdornment: (
-          <InputAdornment position="end" sx={{ gap: 0.25 }}>
-            {hasValue ? (
-              <Tooltip title={t("common.clearSearch")}>
-                <IconButton
-                  size="small"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={handleClear}
-                  edge="end"
-                  aria-label={t("common.clearSearch")}
-                  sx={{ p: 0.35 }}
+      // MUI v9 移除了 InputProps，输入框装饰必须经由 slotProps.input 传入
+      slotProps={{
+        input: {
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
+            </InputAdornment>
+          ),
+          endAdornment: (
+            <InputAdornment position="end" sx={{ gap: 0.25 }}>
+              {hasValue ? (
+                <Tooltip title={t("common.clearSearch")}>
+                  <IconButton
+                    size="small"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={handleClear}
+                    edge="end"
+                    aria-label={t("common.clearSearch")}
+                    sx={{ p: 0.35 }}
+                  >
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              ) : showShortcutHint ? (
+                <Typography
+                  component="span"
+                  variant="caption"
+                  sx={{
+                    color: "text.disabled",
+                    fontSize: "0.65rem",
+                    lineHeight: 1,
+                    px: 0.5,
+                    userSelect: "none",
+                    whiteSpace: "nowrap",
+                  }}
                 >
-                  <ClearIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            ) : showShortcutHint ? (
-              <Typography
-                component="span"
-                variant="caption"
-                sx={{
-                  color: "text.disabled",
-                  fontSize: "0.65rem",
-                  lineHeight: 1,
-                  px: 0.5,
-                  userSelect: "none",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {shortcutHint}
-              </Typography>
-            ) : null}
-          </InputAdornment>
-        ),
+                  {shortcutHint}
+                </Typography>
+              ) : null}
+            </InputAdornment>
+          ),
+        },
       }}
       sx={[
         getSearchFieldMotionSx(theme, {

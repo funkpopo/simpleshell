@@ -2,11 +2,6 @@
  * Do NOT override .xterm-viewport font-size/line-height: that desyncs FitAddon
  * measurements from the canvas renderer and clips fullscreen editors. */
 
-/* 改进文本渲染质量 */
-.xterm {
-  text-shadow: 0 0 1px rgba(0, 0, 0, 0.05);
-}
-
 /* 优化选择文本的可读性（Chromium 内核，无需 -moz- 前缀） */
 .xterm ::selection {
   background-color: rgba(88, 166, 255, 0.3);

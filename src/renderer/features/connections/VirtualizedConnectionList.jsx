@@ -1,305 +1,121 @@
-import React, {
-  memo,
-  useMemo,
-  useCallback,
-  useRef,
-  useState,
-  useEffect,
-} from "react";
-import useAutoCleanup from "../../shared/hooks/useAutoCleanup";
+import React, { memo, useMemo, useCallback } from "react";
 import { List } from "react-window";
-import {
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Box,
-  Typography,
-  useTheme,
-  IconButton,
-  Tooltip,
-} from "@mui/material";
+import { Box, ListItem, useTheme } from "@mui/material";
 import ComputerIcon from "@mui/icons-material/Computer";
-import FolderIcon from "@mui/icons-material/Folder";
-import FolderOpenIcon from "@mui/icons-material/FolderOpen";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import { useTranslation } from "react-i18next";
 import {
-  sidebarListItemSx,
-  CONNECTION_LIST_BASE_INDENT_PX,
+  CONNECTION_GROUP_ROW_HEIGHT,
   CONNECTION_LIST_DEPTH_INDENT_PX,
+  CONNECTION_ROW_HEIGHT,
 } from "../../shared/ui/sidebarItemStyles";
+import SidebarEmptyState from "../../shared/ui/SidebarEmptyState.jsx";
+import {
+  ConnectionDragHandle,
+  ConnectionRowButton,
+  GroupRowButton,
+  focusConnectionRow,
+  getConnectionRowSx,
+} from "./components/ConnectionListItems.jsx";
 
-// Matches ConnectionManager.jsx row markers for native contextmenu retarget focus
-const CONNECTION_MANAGER_ITEM_DATA_ATTR = "data-connection-manager-item";
+const LIST_STYLE = { flex: "1 1 0", minHeight: 0, width: "100%" };
+const ROOT_SX = {
+  height: "100%",
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
+};
+const OVERSCAN_COUNT = 8;
 
-const ConnectionItem = memo(
-  ({
-    index,
-    style,
-    flattenedItems,
-    selectedItem,
-    onToggleGroup,
-    onSelectConnection,
-    onDoubleClick,
-    dragHandleProps,
-    isDragging,
-    onItemContextMenu,
-  }) => {
-    const theme = useTheme();
-    const { t } = useTranslation();
+// 行视觉与可拖拽列表（ConnectionListItems）完全共用，只是不挂载 dnd-kit：
+// 连接数越过虚拟化阈值时，列表外观不发生切换。
+const ConnectionItem = memo(function ConnectionItem({
+  index,
+  style,
+  flattenedItems,
+  selectedItem,
+  onToggleGroup,
+  onSelectConnection,
+  onDoubleClick,
+  onItemContextMenu,
+}) {
+  const theme = useTheme();
+  const item = flattenedItems[index];
+  if (!item) return null;
 
-    const item = flattenedItems[index];
-    if (!item) return null;
+  const isGroup = item.type === "group";
+  const depth = item.depth || 0;
 
-    const isSelected = selectedItem?.id === item.id;
-    const isGroup = item.type === "group";
-    const depth = item.depth || 0;
-    // 层级缩进与非虚拟化列表共用同一口径（见 sidebarItemStyles）
-    const paddingLeft =
-      CONNECTION_LIST_BASE_INDENT_PX + depth * CONNECTION_LIST_DEPTH_INDENT_PX;
+  const handleRowContextMenu = (event) => {
+    if (!onItemContextMenu) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    focusConnectionRow(event);
+    onItemContextMenu(event, item, item.parentGroup || null);
+  };
 
-    const handleClick = useCallback(() => {
-      if (isGroup) {
-        onToggleGroup(item.id);
-      } else {
-        onSelectConnection(item);
-      }
-    }, [item, isGroup, onToggleGroup, onSelectConnection]);
-
-    const handleDoubleClick = useCallback(() => {
-      if (onDoubleClick) {
-        onDoubleClick(item);
-      }
-    }, [item, onDoubleClick]);
-
-    const handleRowContextMenu = useCallback(
-      (event) => {
-        if (!onItemContextMenu) {
-          return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        try {
-          const focusTarget =
-            event.currentTarget?.querySelector?.(
-              `[${CONNECTION_MANAGER_ITEM_DATA_ATTR}="true"]`,
-            ) || event.currentTarget;
-          focusTarget?.focus?.();
-        } catch (_) {
-          // ignore
-        }
-        onItemContextMenu(event, item, item.parentGroup || null);
-      },
-      [item, onItemContextMenu],
-    );
-
-    const itemIcon = useMemo(() => {
-      if (isGroup) {
-        return item.expanded ? (
-          <FolderOpenIcon color="primary" />
-        ) : (
-          <FolderIcon color="primary" />
-        );
-      }
-      return <ComputerIcon color={item.connected ? "success" : "disabled"} />;
-    }, [isGroup, item.expanded, item.connected]);
-
-    return (
-      <div style={style}>
+  return (
+    <div style={style}>
+      <Box sx={{ pl: `${depth * CONNECTION_LIST_DEPTH_INDENT_PX}px` }}>
         <ListItem
           disablePadding
           onContextMenu={handleRowContextMenu}
-          sx={{
-            ...sidebarListItemSx(theme, isSelected),
-            opacity: isDragging ? 0.5 : 1,
-          }}
+          sx={getConnectionRowSx(theme, {
+            isGroup,
+            nested: depth > 0,
+            selected: selectedItem?.id === item.id,
+          })}
         >
-          <ListItemButton
-            {...{ [CONNECTION_MANAGER_ITEM_DATA_ATTR]: "true" }}
-            tabIndex={0}
-            onClick={handleClick}
-            onDoubleClick={handleDoubleClick}
-            sx={{
-              pl: `${paddingLeft}px`,
-              minHeight: 36,
-              "&:hover": { backgroundColor: "transparent" },
-            }}
-          >
-            {/* Drag handle for reordering */}
-            {dragHandleProps && (
-              <Box {...dragHandleProps} sx={viewStyles.boxSx}>
-                <DragIndicatorIcon fontSize="small" />
-              </Box>
-            )}
-
-            <ListItemIcon sx={viewStyles.listItemIconSx}>
-              {itemIcon}
-            </ListItemIcon>
-
-            <ListItemText
-              primary={
-                <Box display="flex" alignItems="center" gap={1}>
-                  <Typography
-                    variant="body2"
-                    color={isSelected ? "primary" : "text.primary"}
-                    fontWeight={isSelected ? "medium" : "normal"}
-                    noWrap
-                  >
-                    {item.name}
-                  </Typography>
-                  {item.status && (
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={viewStyles.typographySx}
-                    >
-                      {item.status}
-                    </Typography>
-                  )}
-                </Box>
-              }
-              secondary={
-                !isGroup && item.host ? (
-                  <Typography variant="caption" color="text.secondary" noWrap>
-                    {item.username}@{item.host}:{item.port || 22}
-                  </Typography>
-                ) : (
-                  isGroup && (
-                    <Typography variant="caption" color="text.secondary">
-                      {item.items?.length || 0} connections
-                    </Typography>
-                  )
-                )
+          <ConnectionDragHandle dragDisabled />
+          {isGroup ? (
+            <GroupRowButton
+              group={item}
+              onClick={() => onToggleGroup(item.id)}
+            />
+          ) : (
+            <ConnectionRowButton
+              connection={item}
+              onClick={() => onSelectConnection(item)}
+              onDoubleClick={
+                onDoubleClick ? () => onDoubleClick(item) : undefined
               }
             />
-
-            {isGroup && (
-              <Tooltip
-                title={
-                  item.expanded ? t("common.collapse") : t("common.expand")
-                }
-              >
-                <IconButton
-                  size="small"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onToggleGroup(item.id);
-                  }}
-                  aria-label={
-                    item.expanded ? t("common.collapse") : t("common.expand")
-                  }
-                  sx={{
-                    transform: item.expanded
-                      ? "rotate(180deg)"
-                      : "rotate(0deg)",
-                    transition: theme.transitions.create("transform"),
-                  }}
-                >
-                  <ExpandMoreIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            )}
-          </ListItemButton>
+          )}
         </ListItem>
-      </div>
-    );
-  },
-);
+      </Box>
+    </div>
+  );
+});
 
 ConnectionItem.displayName = "ConnectionItem";
 
-// Flatten hierarchical connection data for virtualization
-const flattenConnections = (
-  connections,
-  expandedGroups = new Set(),
-  parentGroup = null,
-  depth = 0,
-) => {
+// 展开的分组把子项摊平到同一列表中，并记录层级与所属分组
+const flattenConnections = (connections, parentGroup = null, depth = 0) => {
   const flattened = [];
 
   connections.forEach((item) => {
-    // Add the current item
     flattened.push({
       ...item,
       depth,
       parentGroup,
     });
 
-    // If it's an expanded group, add its children
-    if (
-      item.type === "group" &&
-      item.expanded &&
-      expandedGroups.has(item.id) &&
-      item.items
-    ) {
-      const children = flattenConnections(
-        item.items,
-        expandedGroups,
-        item,
-        depth + 1,
-      );
-      flattened.push(...children);
+    if (item.type === "group" && item.expanded && item.items) {
+      flattened.push(...flattenConnections(item.items, item, depth + 1));
     }
   });
 
   return flattened;
 };
 
-const collectExpandedGroups = (connections, expanded = new Set()) => {
-  connections.forEach((item) => {
-    if (item?.type === "group") {
-      if (item.expanded) {
-        expanded.add(item.id);
-      }
-      if (Array.isArray(item.items) && item.items.length > 0) {
-        collectExpandedGroups(item.items, expanded);
-      }
-    }
-  });
-  return expanded;
-};
+const getRowHeight = (index, { flattenedItems }) =>
+  flattenedItems[index]?.type === "group"
+    ? CONNECTION_GROUP_ROW_HEIGHT
+    : CONNECTION_ROW_HEIGHT;
 
-// Calculate dynamic overscan based on list characteristics
-const calculateOverscan = (
-  itemCount,
-  hasGroups,
-  devicePerformance = "medium",
-) => {
-  const baseOverscan = 10;
-
-  // Adjust for list size
-  let sizeMultiplier = 1;
-  if (itemCount > 500) {
-    sizeMultiplier = 0.8;
-  } else if (itemCount > 200) {
-    sizeMultiplier = 0.9;
-  } else if (itemCount < 50) {
-    sizeMultiplier = 1.3;
-  }
-
-  // Adjust for complexity (groups require more overscan)
-  const complexityMultiplier = hasGroups ? 1.2 : 1;
-
-  // Device performance adjustment
-  const performanceMultipliers = {
-    low: 0.7,
-    medium: 1,
-    high: 1.4,
-  };
-
-  return Math.floor(
-    baseOverscan *
-      sizeMultiplier *
-      complexityMultiplier *
-      (performanceMultipliers[devicePerformance] || 1),
-  );
-};
-
-// Main virtualized connection list component
-// 默认值与唯一调用方（ConnectionManager）及行内 minHeight:36 保持一致，
-// 避免新调用方省略 props 时行高与样式不符
+// 大量连接（超过 CONNECTION_LIST_VIRTUALIZATION_THRESHOLD）时使用的窗口化列表。
+// 过滤、排序由调用方完成；这里只负责摊平与按类型给出固定行高。
 const VirtualizedConnectionList = ({
   connections = [],
   selectedItem,
@@ -308,45 +124,11 @@ const VirtualizedConnectionList = ({
   onDoubleClick,
   onItemContextMenu,
   onBlankContextMenu,
-  height = "100%",
-  itemHeight = 36,
-  enableVirtualization = true,
-  devicePerformance = "medium",
-  enableDragDrop = false,
-  searchTerm = "",
   emptyMessage,
   className,
 }) => {
   const { t } = useTranslation();
-  const { addResizeObserver } = useAutoCleanup();
-  const containerRef = useRef(null);
-  const listRef = useRef(null);
-  const [containerHeight, setContainerHeight] = useState(400);
-  const expandedGroups = useMemo(
-    () => collectExpandedGroups(connections),
-    [connections],
-  );
 
-  // Dynamic height calculation
-  useEffect(() => {
-    const updateHeight = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        if (rect.height > 0) {
-          setContainerHeight(rect.height);
-        }
-      }
-    };
-
-    updateHeight();
-    // addResizeObserver 返回资源ID，我们不需要在 useEffect 中返回它
-    if (containerRef.current) {
-      addResizeObserver(updateHeight, containerRef.current);
-    }
-    // useEffect 不应该返回 addResizeObserver 的返回值
-  }, [addResizeObserver]);
-
-  // Track expanded groups
   const handleToggleGroup = useCallback(
     (groupId) => {
       onToggleGroup?.(groupId);
@@ -354,62 +136,12 @@ const VirtualizedConnectionList = ({
     [onToggleGroup],
   );
 
-  // Filter connections based on search term
-  const filteredConnections = useMemo(() => {
-    if (!searchTerm.trim()) {
-      return connections;
-    }
+  const flattenedItems = useMemo(
+    () => flattenConnections(connections),
+    [connections],
+  );
 
-    const searchLower = searchTerm.toLowerCase();
-    const filterRecursive = (items) => {
-      return items
-        .map((item) => {
-          if (item.type === "group") {
-            const filteredItems = item.items ? filterRecursive(item.items) : [];
-            // Include group if it has matching children or matches itself
-            if (
-              filteredItems.length > 0 ||
-              item.name.toLowerCase().includes(searchLower)
-            ) {
-              return { ...item, items: filteredItems };
-            }
-            return null;
-          }
-
-          // For connections, check name, host, username
-          const matches =
-            item.name.toLowerCase().includes(searchLower) ||
-            item.host?.toLowerCase().includes(searchLower) ||
-            item.username?.toLowerCase().includes(searchLower);
-          return matches ? item : null;
-        })
-        .filter(Boolean);
-    };
-
-    return filterRecursive(connections);
-  }, [connections, searchTerm]);
-
-  // Flatten the hierarchical structure for virtualization
-  const flattenedItems = useMemo(() => {
-    return flattenConnections(filteredConnections, expandedGroups);
-  }, [filteredConnections, expandedGroups]);
-
-  // Check if we have groups (affects overscan calculation)
-  const hasGroups = useMemo(() => {
-    return flattenedItems.some((item) => item.type === "group");
-  }, [flattenedItems]);
-
-  // Calculate dynamic overscan
-  const dynamicOverscan = useMemo(() => {
-    return calculateOverscan(
-      flattenedItems.length,
-      hasGroups,
-      devicePerformance,
-    );
-  }, [flattenedItems.length, hasGroups, devicePerformance]);
-
-  // Prepare data for virtualized items
-  const itemData = useMemo(
+  const rowProps = useMemo(
     () => ({
       flattenedItems,
       selectedItem,
@@ -417,8 +149,6 @@ const VirtualizedConnectionList = ({
       onSelectConnection,
       onDoubleClick,
       onItemContextMenu,
-      dragHandleProps: enableDragDrop ? { "data-drag-handle": true } : null,
-      isDragging: false,
     }),
     [
       flattenedItems,
@@ -427,120 +157,37 @@ const VirtualizedConnectionList = ({
       onSelectConnection,
       onDoubleClick,
       onItemContextMenu,
-      enableDragDrop,
     ],
   );
 
-  // Empty state
   if (flattenedItems.length === 0) {
     return (
       <Box
-        ref={containerRef}
         className={className}
         onContextMenu={onBlankContextMenu}
-        sx={{
-          height: height === "100%" ? "100%" : height,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "text.secondary",
-          textAlign: "center",
-          p: 3,
-        }}
+        sx={ROOT_SX}
       >
-        <Box>
-          <ComputerIcon sx={viewStyles.computerIconSx} />
-          <Typography variant="body2">
-            {searchTerm
-              ? t("connectionManager.noMatchingConnections")
-              : emptyMessage || t("connectionManager.noConnections")}
-          </Typography>
-        </Box>
-      </Box>
-    );
-  }
-
-  const actualHeight = height === "100%" ? containerHeight : height;
-
-  // For small lists, use traditional rendering to avoid virtualization overhead
-  if (!enableVirtualization || flattenedItems.length < 30) {
-    return (
-      <Box
-        ref={containerRef}
-        className={["app-scrollbar", className].filter(Boolean).join(" ")}
-        onContextMenu={onBlankContextMenu}
-        sx={{
-          height: height === "100%" ? "100%" : height,
-          overflow: "auto",
-        }}
-      >
-        {flattenedItems.map((item, index) => (
-          <ConnectionItem
-            key={`${item.id}-${item.type}-${index}`}
-            index={index}
-            style={{ height: itemHeight }}
-            {...itemData}
-          />
-        ))}
-      </Box>
-    );
-  }
-
-  // Virtualized rendering for large lists
-  return (
-    <Box
-      ref={containerRef}
-      className={["app-scrollbar", className].filter(Boolean).join(" ")}
-      onContextMenu={onBlankContextMenu}
-      sx={{
-        height: height === "100%" ? "100%" : height,
-      }}
-    >
-      {actualHeight > 0 && (
-        <List
-          listRef={listRef}
-          className="react-window-list app-scrollbar"
-          style={{ height: actualHeight, width: "100%" }}
-          rowCount={flattenedItems.length}
-          rowHeight={itemHeight}
-          rowProps={itemData}
-          overscanCount={dynamicOverscan}
-          rowComponent={ConnectionItem}
-          onRowsRendered={(visibleRows, allRows) => {
-            // Performance monitoring in development
-            if (
-              typeof window !== "undefined" &&
-              window.location?.hostname === "localhost"
-            ) {
-              console.debug(
-                `虚拟化连接列表渲染: ${allRows.startIndex}-${allRows.stopIndex} / ${flattenedItems.length}`,
-              );
-            }
-          }}
+        <SidebarEmptyState
+          icon={<ComputerIcon />}
+          message={emptyMessage || t("connectionManager.noConnections")}
         />
-      )}
+      </Box>
+    );
+  }
+
+  return (
+    <Box className={className} onContextMenu={onBlankContextMenu} sx={ROOT_SX}>
+      <List
+        className="react-window-list app-scrollbar"
+        style={LIST_STYLE}
+        rowCount={flattenedItems.length}
+        rowHeight={getRowHeight}
+        rowProps={rowProps}
+        overscanCount={OVERSCAN_COUNT}
+        rowComponent={ConnectionItem}
+      />
     </Box>
   );
 };
 
 export default memo(VirtualizedConnectionList);
-
-// Stable declarations shared by row renders. Dynamic styles stay with their owner.
-const viewStyles = {
-  boxSx: {
-    display: "flex",
-    alignItems: "center",
-    mr: 1,
-    cursor: "grab",
-    opacity: 0.6,
-    "&:hover": { opacity: 1 },
-  },
-  listItemIconSx: { minWidth: 30 },
-  typographySx: {
-    px: 0.5,
-    py: 0.25,
-    borderRadius: 1,
-    bgcolor: "action.hover",
-  },
-  computerIconSx: { fontSize: 48, mb: 1, opacity: 0.5 },
-};

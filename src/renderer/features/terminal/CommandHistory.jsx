@@ -4,15 +4,13 @@ import React, {
   useRef,
   useMemo,
   useCallback,
+  useDeferredValue,
 } from "react";
 import Dialog from "../../shared/ui/AccessibleDialog.jsx";
-import { List } from "react-window";
 import {
   Box,
   Typography,
   IconButton,
-  ListItem,
-  ListItemButton,
   ListItemIcon,
   ListItemText,
   TextField,
@@ -23,7 +21,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  CircularProgress,
   Checkbox,
   Tooltip,
 } from "@mui/material";
@@ -37,195 +34,98 @@ import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SelectAllIcon from "@mui/icons-material/SelectAll";
 import { useTranslation } from "react-i18next";
 import {
-  getSidebarItemSelectedBg,
-  sidebarListItemButtonSx,
+  SIDEBAR_COMMAND_ROW_PITCH,
+  sidebarFooterSx,
+  sidebarListAreaSx,
+  sidebarSectionSx,
 } from "../../shared/ui/sidebarItemStyles";
 import SidebarPanel from "../../shared/ui/SidebarPanel.jsx";
 import SidebarSearchField from "../../shared/ui/SidebarSearchField.jsx";
+import SidebarCommandRow, {
+  SidebarCommandText,
+  sidebarRowActionSx,
+} from "../../shared/ui/SidebarCommandRow.jsx";
+import SidebarEmptyState from "../../shared/ui/SidebarEmptyState.jsx";
+import WindowedSidebarList from "../../shared/ui/WindowedSidebarList.jsx";
+import { SidebarListSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
 import useSidebarPanel from "../../shared/hooks/useSidebarPanel";
 import useContextMenuRetarget from "../../shared/hooks/useContextMenuRetarget";
 import { useNotification } from "../../shared/notifications/NotificationContext";
 import { compactContextMenuPaperSx } from "../../shared/ui/contextMenuStyles";
 
-const HISTORY_ITEM_HEIGHT = 48;
-// 行距 = 行内容高度 + 4px 间距（ListItem 的 mb:0.5），虚拟化与非虚拟化保持一致
-const HISTORY_ROW_PITCH = HISTORY_ITEM_HEIGHT + 4;
+const getHistoryItemKey = (item, index) =>
+  `${item.command}-${item.timestamp}-${index}`;
 
-const HistoryCommandContent = React.memo(({ command }) => {
-  if (!command) return null;
+// 行组件只接收标量与稳定回调：选中、右键目标等状态变化时仅受影响的行重渲染
+const HistoryItem = React.memo(function HistoryItem({
+  item,
+  index,
+  selectMode,
+  checked,
+  highlighted,
+  onToggleSelect,
+  onSend,
+  onCopy,
+  onMenuOpen,
+}) {
+  const { t } = useTranslation();
 
   return (
-    <Typography
-      variant="body2"
-      component="div"
-      sx={{
-        color: "text.primary",
-        fontFamily:
-          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-        fontSize: "0.82rem",
-        fontWeight: 500,
-        lineHeight: 1.35,
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-      }}
+    <SidebarCommandRow
+      selected={highlighted}
+      data-command-history-item="true"
+      data-command-history-index={index}
+      onContextMenu={(event) => onMenuOpen(event, item)}
+      onClick={() =>
+        selectMode ? onToggleSelect(item.command) : onSend(item.command)
+      }
+      checkbox={
+        selectMode ? (
+          <Checkbox
+            checked={checked}
+            onChange={() => onToggleSelect(item.command)}
+            onClick={(event) => event.stopPropagation()}
+            size="small"
+          />
+        ) : null
+      }
+      actions={
+        selectMode ? null : (
+          <>
+            <Tooltip title={t("commandHistory.sendCommand")}>
+              <IconButton
+                size="small"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSend(item.command);
+                }}
+                aria-label={t("commandHistory.sendCommand")}
+                sx={sidebarRowActionSx.primary}
+              >
+                <SendIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={t("commandHistory.copyCommand")}>
+              <IconButton
+                size="small"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void onCopy(item.command);
+                }}
+                aria-label={t("commandHistory.copyCommand")}
+                sx={sidebarRowActionSx.secondary}
+              >
+                <ContentCopyIcon />
+              </IconButton>
+            </Tooltip>
+          </>
+        )
+      }
     >
-      {command}
-    </Typography>
+      <SidebarCommandText command={item.command} />
+    </SidebarCommandRow>
   );
 });
-
-HistoryCommandContent.displayName = "HistoryCommandContent";
-
-// 虚拟化历史记录项组件
-const HistoryItem = React.memo(
-  ({
-    index,
-    style,
-    filteredHistory,
-    selectMode,
-    selectedCommands,
-    contextMenuTargetCommand,
-    toggleCommandSelection,
-    handleSendCommand,
-    handleCopyCommand,
-    handleMenuOpen,
-  }) => {
-    const theme = useTheme();
-    const { t } = useTranslation();
-    const item = filteredHistory[index];
-    if (!item) return null;
-    const isContextMenuTarget =
-      !selectMode &&
-      contextMenuTargetCommand &&
-      contextMenuTargetCommand.command === item.command &&
-      contextMenuTargetCommand.timestamp === item.timestamp;
-    const isHighlighted =
-      (selectMode && selectedCommands.has(item.command)) || isContextMenuTarget;
-
-    return (
-      <div style={{ ...style, width: "100%" }}>
-        <ListItem
-          disablePadding
-          sx={{
-            display: "flex",
-            mb: 0.5,
-            borderRadius: 1,
-            overflow: "hidden",
-            minHeight: HISTORY_ITEM_HEIGHT,
-            width: "100%",
-            boxSizing: "border-box",
-          }}
-        >
-          <ListItemButton
-            disableGutters
-            data-command-history-item="true"
-            data-command-history-index={index}
-            onContextMenu={(event) => handleMenuOpen(event, item)}
-            onClick={() =>
-              selectMode
-                ? toggleCommandSelection(item.command)
-                : handleSendCommand(item.command)
-            }
-            sx={{
-              pl: selectMode ? 0.5 : 1,
-              pr: selectMode ? 1 : 6.75,
-              minHeight: HISTORY_ITEM_HEIGHT,
-              borderRadius: 1,
-              position: "relative",
-              py: 0.55,
-              width: "100%",
-              maxWidth: "100%",
-              flex: 1,
-              alignSelf: "stretch",
-              boxSizing: "border-box",
-              ...sidebarListItemButtonSx(theme, isHighlighted),
-              backgroundColor: isHighlighted
-                ? getSidebarItemSelectedBg(theme)
-                : "transparent",
-            }}
-          >
-            {selectMode && (
-              <ListItemIcon sx={{ minWidth: 36 }}>
-                <Checkbox
-                  checked={selectedCommands.has(item.command)}
-                  onChange={() => toggleCommandSelection(item.command)}
-                  size="small"
-                />
-              </ListItemIcon>
-            )}
-
-            <ListItemText
-              sx={{
-                flex: 1,
-                minWidth: 0,
-                mr: 0,
-              }}
-              primary={<HistoryCommandContent command={item.command} />}
-            />
-            {!selectMode && (
-              <Box
-                sx={{
-                  display: "flex",
-                  gap: 0.25,
-                  position: "absolute",
-                  right: 2,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  flexShrink: 0,
-                }}
-              >
-                <Tooltip title={t("commandHistory.sendCommand")}>
-                  <IconButton
-                    size="small"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleSendCommand(item.command);
-                    }}
-                    aria-label={t("commandHistory.sendCommand")}
-                    sx={{
-                      width: 26,
-                      height: 26,
-                      color: "primary.main",
-                      bgcolor: "transparent",
-                      "&:hover": {
-                        bgcolor: "action.hover",
-                      },
-                    }}
-                  >
-                    <SendIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title={t("commandHistory.copyCommand")}>
-                  <IconButton
-                    size="small"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void handleCopyCommand(item.command);
-                    }}
-                    aria-label={t("commandHistory.copyCommand")}
-                    sx={{
-                      width: 26,
-                      height: 26,
-                      color: "text.secondary",
-                      bgcolor: "transparent",
-                      "&:hover": {
-                        color: "text.primary",
-                        bgcolor: "action.hover",
-                      },
-                    }}
-                  >
-                    <ContentCopyIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-            )}
-          </ListItemButton>
-        </ListItem>
-      </div>
-    );
-  },
-);
 
 function CommandHistory({
   open,
@@ -243,11 +143,10 @@ function CommandHistory({
   const [selectMode, setSelectMode] = useState(false);
   const sidebarRootRef = useRef(null);
 
-  const { containerRef, containerHeight } = useSidebarPanel({
+  useSidebarPanel({
     open,
     rootRef: sidebarRootRef,
     searchInputRef,
-    measureHeight: true,
   });
 
   // 对话框状态
@@ -270,7 +169,7 @@ function CommandHistory({
     }
   }, [open]);
 
-  // 加载历史记录
+  // 加载历史记录（已有数据时列表保持可见，仅首次加载显示骨架）
   const loadHistory = async () => {
     setLoading(true);
     try {
@@ -319,16 +218,17 @@ function CommandHistory({
     setSearchTerm(event.target.value);
   }, []);
 
-  // 获取过滤后的历史记录
+  // 获取过滤后的历史记录；过滤使用延迟值，海量历史下输入仍保持流畅
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const filteredHistory = useMemo(() => {
-    if (!searchTerm.trim()) {
+    if (!deferredSearchTerm.trim()) {
       return history;
     }
-    const searchTermLower = searchTerm.toLowerCase();
+    const searchTermLower = deferredSearchTerm.toLowerCase();
     return history.filter((item) =>
       item.command.toLowerCase().includes(searchTermLower),
     );
-  }, [history, searchTerm]);
+  }, [history, deferredSearchTerm]);
 
   // 处理菜单打开
   const handleMenuOpen = useCallback(
@@ -433,29 +333,26 @@ function CommandHistory({
     [handleMenuClose, showNotification, t],
   );
 
-  // 虚拟化列表的数据
-  const listItemData = useMemo(
-    () => ({
-      filteredHistory,
-      selectMode,
-      selectedCommands,
-      contextMenuTargetCommand: menuTargetCommand,
-      toggleCommandSelection,
-      handleSendCommand,
-      handleCopyCommand,
-      handleMenuOpen,
-    }),
-    [
-      filteredHistory,
-      selectMode,
-      selectedCommands,
-      toggleCommandSelection,
-      handleSendCommand,
-      handleCopyCommand,
-      handleMenuOpen,
-      menuTargetCommand,
-    ],
-  );
+  const renderHistoryItem = (item, index) => {
+    const checked = selectMode && selectedCommands.has(item.command);
+    const isContextMenuTarget =
+      !selectMode &&
+      menuTargetCommand?.command === item.command &&
+      menuTargetCommand?.timestamp === item.timestamp;
+    return (
+      <HistoryItem
+        item={item}
+        index={index}
+        selectMode={selectMode}
+        checked={checked}
+        highlighted={checked || isContextMenuTarget}
+        onToggleSelect={toggleCommandSelection}
+        onSend={handleSendCommand}
+        onCopy={handleCopyCommand}
+        onMenuOpen={handleMenuOpen}
+      />
+    );
+  };
 
   // 编辑命令
   const handleEditCommand = (historyItem) => {
@@ -611,14 +508,14 @@ function CommandHistory({
         sessionContext={sessionContext}
       >
         {/* 搜索栏和工具栏 */}
-        <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}` }}>
+        <Box sx={sidebarSectionSx(theme)}>
           <SidebarSearchField
             inputRef={searchInputRef}
             placeholder={t("commandHistory.search")}
             value={searchTerm}
             onChange={handleSearchChange}
             onClear={() => setSearchTerm("")}
-            sx={{ mb: 2 }}
+            sx={{ mb: 1 }}
           />
 
           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
@@ -671,77 +568,41 @@ function CommandHistory({
           </Box>
         </Box>
 
-        {/* 历史记录列表 */}
+        {/* 历史记录列表：少量数据直接渲染，大量数据窗口化 */}
         <Box
-          ref={containerRef}
           className="app-scrollbar app-scrollbar-compact"
-          sx={{
-            flex: 1,
-            overflow: "auto",
-            bgcolor:
-              theme.palette.mode === "dark" ? "background.paper" : "grey.50",
-          }}
+          sx={sidebarListAreaSx}
         >
-          {loading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-              <CircularProgress />
-            </Box>
+          {loading && history.length === 0 ? (
+            <SidebarListSkeleton variant="history" />
           ) : filteredHistory.length === 0 ? (
-            <Box sx={{ p: 4, textAlign: "center", color: "text.secondary" }}>
-              <HistoryIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
-              <Typography>
-                {searchTerm
+            <SidebarEmptyState
+              icon={<HistoryIcon />}
+              message={
+                deferredSearchTerm
                   ? t("commandHistory.noCommandsFound")
-                  : t("commandHistory.noCommands")}
-              </Typography>
-            </Box>
-          ) : filteredHistory.length < 50 ? (
-            // 对于少量数据，使用传统渲染以避免虚拟化开销
-            // （滚动条样式由外层滚动容器提供，内层 overflow:visible 不滚动，无需重复挂类名）
-            <Box sx={{ height: "100%", overflow: "visible" }}>
-              {filteredHistory.map((item, index) => (
-                <HistoryItem
-                  key={`${item.command}-${item.timestamp}-${index}`}
-                  index={index}
-                  style={{ height: HISTORY_ITEM_HEIGHT }}
-                  {...listItemData}
-                />
-              ))}
-            </Box>
+                  : t("commandHistory.noCommands")
+              }
+            />
           ) : (
-            // 对于大量数据，使用虚拟化渲染
-            containerHeight > 0 && (
-              <List
-                className="app-scrollbar app-scrollbar-compact"
-                style={{ height: containerHeight, width: "100%" }}
-                rowCount={filteredHistory.length}
-                rowHeight={HISTORY_ROW_PITCH}
-                rowProps={listItemData}
-                overscanCount={15}
-                rowComponent={HistoryItem}
-              />
-            )
+            <WindowedSidebarList
+              items={filteredHistory}
+              className="app-scrollbar-compact"
+              rowHeight={SIDEBAR_COMMAND_ROW_PITCH}
+              overscanCount={10}
+              getItemKey={getHistoryItemKey}
+              renderItem={renderHistoryItem}
+            />
           )}
         </Box>
 
         {/* 状态栏 */}
-        <Box
-          sx={{
-            p: 1,
-            borderTop: `1px solid ${theme.palette.divider}`,
-            bgcolor: "background.default",
-          }}
-        >
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            align="center"
-            display="block"
-          >
+        <Box sx={sidebarFooterSx(theme)}>
+          <Typography variant="caption" color="text.secondary" noWrap>
             {t("commandHistory.totalCommands", {
               count: filteredHistory.length,
             })}
-            {searchTerm &&
+            {deferredSearchTerm &&
               t("commandHistory.totalWithSearch", { total: history.length })}
           </Typography>
         </Box>

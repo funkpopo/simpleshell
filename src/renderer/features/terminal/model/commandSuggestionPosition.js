@@ -1,12 +1,30 @@
 const CONTAINER_PADDING = 8;
-const CURSOR_GAP = 20;
+// 弹窗与光标行之间的间距：只留一条细缝，紧贴输入行但绝不覆盖它
+const CURSOR_GAP = 4;
 
 /** 建议弹窗尺寸口径（CommandSuggestion.jsx 与 useTerminalSuggestions.js 共用，避免双源漂移）。
  *  注意：本文件被 tests/unit/terminalSuggestionLayout.test.js 以 require() 导入，
  *  必须保持 CommonJS（module.exports），不要改用 ESM export。 */
 const SUGGESTION_ITEM_HEIGHT = 28;
-const SUGGESTION_BOTTOM_BAR_HEIGHT = 28;
+const SUGGESTION_BOTTOM_BAR_HEIGHT = 24;
+// Paper 上下 1px 边框，计入总高度，否则最后一行会被裁掉 2px
+const SUGGESTION_FRAME_BORDER = 2;
 const SUGGESTION_MAX_HEIGHT = 280;
+// 至少能完整显示一行建议，否则宁可不显示，避免出现残缺的细条
+const SUGGESTION_MIN_HEIGHT = SUGGESTION_ITEM_HEIGHT + SUGGESTION_FRAME_BORDER;
+// 偏好方向只要还能舒适地显示 3 行就保持不变，避免随条目数变化上下跳动
+const SUGGESTION_COMFORT_HEIGHT =
+  SUGGESTION_ITEM_HEIGHT * 3 +
+  SUGGESTION_BOTTOM_BAR_HEIGHT +
+  SUGGESTION_FRAME_BORDER;
+
+const getSuggestionWindowHeight = (count = 0) =>
+  Math.min(
+    Math.max(0, count) * SUGGESTION_ITEM_HEIGHT +
+      SUGGESTION_BOTTOM_BAR_HEIGHT +
+      SUGGESTION_FRAME_BORDER,
+    SUGGESTION_MAX_HEIGHT,
+  );
 
 const isFiniteNumber = (value) =>
   typeof value === "number" && Number.isFinite(value);
@@ -17,6 +35,7 @@ const resolveCommandSuggestionWindowPosition = ({
   terminalRect = null,
   windowWidth = 0,
   windowHeight = 0,
+  preferAbove = null,
 } = {}) => {
   if (!position || !terminalRect) {
     return null;
@@ -55,93 +74,62 @@ const resolveCommandSuggestionWindowPosition = ({
     return null;
   }
 
-  const viewportWidth = windowWidth;
-  const viewportHeight = windowHeight;
   const suggestionWidth = Math.max(1, windowDimensions.width);
   const suggestionHeight = Math.max(1, windowDimensions.height);
 
-  let left = position.x;
-  let top = position.y;
-
   const bounds = {
-    left: Math.max(0, terminalRect.left),
-    top: Math.max(0, terminalRect.top),
-    right: Math.min(viewportWidth, terminalRect.right),
-    bottom: Math.min(viewportHeight, terminalRect.bottom),
+    left: Math.max(0, terminalRect.left) + CONTAINER_PADDING,
+    top: Math.max(0, terminalRect.top) + CONTAINER_PADDING,
+    right: Math.min(windowWidth, terminalRect.right) - CONTAINER_PADDING,
+    bottom: Math.min(windowHeight, terminalRect.bottom) - CONTAINER_PADDING,
   };
 
   if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
     return null;
   }
 
-  const cursorBottom = position.cursorBottom;
+  const cursorTop = position.y;
+  const cursorBottom = Math.max(cursorTop, position.cursorBottom);
 
+  // 两侧可用空间都已扣除容器内边距，按此尺寸摆放后不会再触发二次钳制，
+  // 因此弹窗永远不会被挤回光标所在行上方/下方而遮住正在输入的命令。
   const spaceBelow = Math.max(0, bounds.bottom - cursorBottom - CURSOR_GAP);
-  const spaceAbove = Math.max(0, top - bounds.top - CURSOR_GAP);
+  const spaceAbove = Math.max(0, cursorTop - bounds.top - CURSOR_GAP);
 
-  let showAbove = Boolean(position?.showAbove);
-  const belowFits = spaceBelow >= Math.min(suggestionHeight, 120);
-  const aboveFits = spaceAbove >= Math.min(suggestionHeight, 120);
+  const preferredAbove =
+    typeof preferAbove === "boolean"
+      ? preferAbove
+      : Boolean(position.showAbove);
+  const preferredSpace = preferredAbove ? spaceAbove : spaceBelow;
+  const otherSpace = preferredAbove ? spaceBelow : spaceAbove;
 
-  if (!belowFits && !aboveFits) {
-    showAbove = spaceAbove > spaceBelow;
-  } else if (showAbove && !aboveFits && belowFits) {
-    showAbove = false;
-  } else if (!showAbove && !belowFits && aboveFits) {
-    showAbove = true;
-  }
-
-  const containerWidthAvailable = Math.max(
-    50,
-    bounds.right - bounds.left - CONTAINER_PADDING * 2,
-  );
-  const containerHeightAvailable = Math.max(
-    40,
-    bounds.bottom - bounds.top - CONTAINER_PADDING * 2,
-  );
-  const sideSpace = showAbove ? spaceAbove : spaceBelow;
-
-  const width = Math.min(suggestionWidth, containerWidthAvailable);
-  let height = Math.min(suggestionHeight, containerHeightAvailable, sideSpace);
-  if (!isFiniteNumber(height) || height <= 0) {
-    height = Math.min(suggestionHeight, containerHeightAvailable);
-  }
-
-  const maxLeftWithin = bounds.right - width - CONTAINER_PADDING;
-  const minLeftWithin = bounds.left + CONTAINER_PADDING;
-  if (left > maxLeftWithin) {
-    left = Math.max(minLeftWithin, maxLeftWithin);
-  }
-  if (left < minLeftWithin) {
-    left = minLeftWithin;
-  }
-
-  if (showAbove) {
-    top = top - height - CURSOR_GAP;
+  let showAbove;
+  if (preferredSpace >= suggestionHeight) {
+    showAbove = preferredAbove;
+  } else if (otherSpace >= suggestionHeight) {
+    showAbove = !preferredAbove;
+  } else if (
+    preferredSpace >= Math.min(suggestionHeight, SUGGESTION_COMFORT_HEIGHT)
+  ) {
+    showAbove = preferredAbove;
   } else {
-    top = cursorBottom + CURSOR_GAP;
+    showAbove = spaceAbove > spaceBelow;
   }
 
-  const maxTopWithin = bounds.bottom - height - CONTAINER_PADDING;
-  const minTopWithin = bounds.top + CONTAINER_PADDING;
-
-  if (top > maxTopWithin) {
-    if (!showAbove && isFiniteNumber(position?.y)) {
-      const flippedTop = position.y - height - CURSOR_GAP;
-      top = Math.max(minTopWithin, Math.min(flippedTop, maxTopWithin));
-    } else {
-      top = Math.max(minTopWithin, maxTopWithin);
-    }
+  const sideSpace = showAbove ? spaceAbove : spaceBelow;
+  const height = Math.min(suggestionHeight, sideSpace);
+  if (height < Math.min(suggestionHeight, SUGGESTION_MIN_HEIGHT)) {
+    return null;
   }
 
-  if (top < minTopWithin) {
-    if (showAbove && isFiniteNumber(position?.y)) {
-      const flippedTop = cursorBottom + CURSOR_GAP;
-      top = Math.max(minTopWithin, Math.min(flippedTop, maxTopWithin));
-    } else {
-      top = minTopWithin;
-    }
-  }
+  const width = Math.min(suggestionWidth, bounds.right - bounds.left);
+  const anchorX = isFiniteNumber(position.anchorX)
+    ? position.anchorX
+    : position.x;
+  const left = Math.max(bounds.left, Math.min(anchorX, bounds.right - width));
+  const top = showAbove
+    ? cursorTop - CURSOR_GAP - height
+    : cursorBottom + CURSOR_GAP;
 
   return { left, top, width, height, showAbove };
 };
@@ -149,6 +137,9 @@ const resolveCommandSuggestionWindowPosition = ({
 module.exports = {
   SUGGESTION_ITEM_HEIGHT,
   SUGGESTION_BOTTOM_BAR_HEIGHT,
+  SUGGESTION_FRAME_BORDER,
   SUGGESTION_MAX_HEIGHT,
+  CURSOR_GAP,
+  getSuggestionWindowHeight,
   resolveCommandSuggestionWindowPosition,
 };
