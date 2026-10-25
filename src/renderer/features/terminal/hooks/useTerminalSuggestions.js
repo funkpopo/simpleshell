@@ -7,14 +7,11 @@ import {
   isUsableRect,
 } from "../model/commandSuggestionCursor.js";
 import {
+  isCursorAtInputEnd,
   normalizeCommandSuggestionInput,
   shouldRequestCommandSuggestions,
 } from "../model/commandSuggestionState.js";
-import {
-  SUGGESTION_BOTTOM_BAR_HEIGHT,
-  SUGGESTION_ITEM_HEIGHT,
-  SUGGESTION_MAX_HEIGHT,
-} from "../model/commandSuggestionPosition.js";
+import { getSuggestionWindowHeight } from "../model/commandSuggestionPosition.js";
 
 const waitForTerminalLayoutFrame = () =>
   new Promise((resolve) => {
@@ -74,6 +71,8 @@ export const useTerminalSuggestions = ({
   const suggestionsHiddenByEscRef = useRef(false);
   const historyNavigationRef = useRef(false);
   const suggestionSelectedRef = useRef(false);
+  // 刚选中的建议命令：其回显（及其前缀）不应再次弹出建议，直到输入偏离它
+  const selectionEchoRef = useRef("");
   const getSuggestionsRef = useRef(null);
   const suggestionRequestIdRef = useRef(0);
   const currentInputRef = useRef("");
@@ -135,6 +134,9 @@ export const useTerminalSuggestions = ({
     suggestionsSuppressedRef.current = nextValue;
     if (nextValue) {
       suggestionRequestIdRef.current += 1;
+    } else {
+      // 回车 / Ctrl+C / Tab / 清空输入等重置路径都会解除抑制，选中回显锁随之失效
+      selectionEchoRef.current = "";
     }
     setSuggestionsSuppressedUntilEnterState(nextValue);
   }, []);
@@ -157,11 +159,18 @@ export const useTerminalSuggestions = ({
       try {
         const term = termRef.current;
         const container = terminalRef.current;
-        const suggestionHeight = Math.min(
-          suggestionCount * SUGGESTION_ITEM_HEIGHT +
-            SUGGESTION_BOTTOM_BAR_HEIGHT,
-          SUGGESTION_MAX_HEIGHT,
-        );
+        const activeBuffer = term.buffer?.active;
+        // 用户向上滚动查看历史输出时光标行已不在视口内，弹窗无处锚定，先隐藏；
+        // 滚回底部后 onScroll 会重新计算位置并恢复显示
+        if (
+          Number.isFinite(activeBuffer?.viewportY) &&
+          Number.isFinite(activeBuffer?.baseY) &&
+          activeBuffer.viewportY < activeBuffer.baseY
+        ) {
+          setCursorPosition(null);
+          return null;
+        }
+        const suggestionHeight = getSuggestionWindowHeight(suggestionCount);
         const containerRect = container.getBoundingClientRect();
         if (!isUsableRect(containerRect)) {
           setCursorPosition(null);
@@ -271,6 +280,22 @@ export const useTerminalSuggestions = ({
         return;
       }
 
+      const selectedCommand = selectionEchoRef.current;
+      if (selectedCommand) {
+        if (selectedCommand.startsWith(trimmedInput)) {
+          setSuggestions([]);
+          setShowSuggestions(false);
+          return;
+        }
+        selectionEchoRef.current = "";
+      }
+
+      if (!isCursorAtInputEnd(termRef.current)) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+
       if (
         lastExecutedCommandRef.current &&
         trimmedInput === lastExecutedCommandRef.current &&
@@ -352,6 +377,7 @@ export const useTerminalSuggestions = ({
       isCommandExecutingRef,
       lastExecutedCommandRef,
       lastExecutedCommandTimeRef,
+      termRef,
       updateCursorPosition,
       setShowSuggestions,
     ],
@@ -369,15 +395,25 @@ export const useTerminalSuggestions = ({
     if (terminalRef.current) {
       observer?.observe(terminalRef.current);
     }
+    const term = termRef.current;
+    const scrollSubscription =
+      typeof term?.onScroll === "function"
+        ? term.onScroll(refreshPosition)
+        : null;
     window.addEventListener("resize", refreshPosition);
-    window.addEventListener("positionUpdate", refreshPosition);
     refreshPosition();
     return () => {
       observer?.disconnect();
+      scrollSubscription?.dispose?.();
       window.removeEventListener("resize", refreshPosition);
-      window.removeEventListener("positionUpdate", refreshPosition);
     };
-  }, [showSuggestions, suggestions.length, terminalRef, updateCursorPosition]);
+  }, [
+    showSuggestions,
+    suggestions.length,
+    termRef,
+    terminalRef,
+    updateCursorPosition,
+  ]);
 
   useEffect(() => {
     getSuggestionsRef.current = getSuggestions;
@@ -415,6 +451,9 @@ export const useTerminalSuggestions = ({
 
       try {
         suggestionSelectedRef.current = suggestion.command;
+        selectionEchoRef.current = normalizeCommandSuggestionInput(
+          suggestion.command,
+        );
 
         const currentLine =
           termRef.current.buffer.active
@@ -442,6 +481,7 @@ export const useTerminalSuggestions = ({
         setCurrentInput(suggestion.command);
         setShowSuggestions(false);
         setSuggestions([]);
+        termRef.current.focus?.();
       } catch {
         setShowSuggestions(false);
       }

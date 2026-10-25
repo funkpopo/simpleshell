@@ -329,10 +329,12 @@ const RandomPasswordGenerator = ({ open, onClose, sessionContext = null }) => {
                 size="small"
                 multiline
                 maxRows={6}
-                InputProps={{
-                  readOnly: true,
-                  sx: {
-                    wordBreak: "break-all",
+                slotProps={{
+                  input: {
+                    readOnly: true,
+                    sx: {
+                      wordBreak: "break-all",
+                    },
                   },
                 }}
                 sx={{ mb: 1 }}
@@ -527,9 +529,7 @@ const RandomPasswordGenerator = ({ open, onClose, sessionContext = null }) => {
                   maxRows={3}
                   fullWidth
                   size="small"
-                  InputProps={{
-                    readOnly: true,
-                  }}
+                  slotProps={{ input: { readOnly: true } }}
                   sx={{ mb: 1.5 }}
                 />
 
@@ -595,9 +595,7 @@ const RandomPasswordGenerator = ({ open, onClose, sessionContext = null }) => {
                   maxRows={6}
                   fullWidth
                   size="small"
-                  InputProps={{
-                    readOnly: true,
-                  }}
+                  slotProps={{ input: { readOnly: true } }}
                   sx={{ mb: 1 }}
                 />
 

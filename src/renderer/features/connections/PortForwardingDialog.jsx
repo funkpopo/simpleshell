@@ -27,9 +27,12 @@ import EditIcon from "@mui/icons-material/EditOutlined";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import { useTranslation } from "react-i18next";
 import SidebarPanel from "../../shared/ui/SidebarPanel.jsx";
 import WindowedSidebarList from "../../shared/ui/WindowedSidebarList.jsx";
+import SidebarEmptyState from "../../shared/ui/SidebarEmptyState.jsx";
+import { ForwardingRulesSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
 
 const EMPTY_FORM = {
   id: null,
@@ -430,17 +433,12 @@ const PortForwardingDialog = ({
         <Divider />
 
         {loading && rules.length === 0 ? (
-          <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
-            <CircularProgress size={22} />
-          </Box>
+          <ForwardingRulesSkeleton />
         ) : rules.length === 0 ? (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ textAlign: "center", py: 3 }}
-          >
-            {t("portForwarding.empty")}
-          </Typography>
+          <SidebarEmptyState
+            icon={<SwapHorizIcon />}
+            message={t("portForwarding.empty")}
+          />
         ) : (
           <WindowedSidebarList
             items={rules}

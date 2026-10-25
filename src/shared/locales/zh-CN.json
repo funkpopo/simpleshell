@@ -544,6 +544,13 @@
         "wholeWord": "全词匹配",
         "regex": "正则表达式"
       },
+      "suggestion": {
+        "label": "命令建议",
+        "navigate": "选择",
+        "accept": "填入",
+        "remove": "删除",
+        "close": "关闭"
+      },
       "runtime": {
         "connecting": "正在连接到 {{host}}...",
         "reconnecting": "正在重新连接到 {{host}} ...",

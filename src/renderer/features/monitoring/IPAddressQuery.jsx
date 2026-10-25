@@ -20,7 +20,6 @@ import { useTheme } from "@mui/material/styles";
 import Grid from "@mui/material/Grid";
 import { useTranslation } from "react-i18next";
 import WorldMap from "./WorldMap";
-import Skeleton from "@mui/material/Skeleton";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
@@ -31,6 +30,7 @@ import Collapse from "@mui/material/Collapse";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { sidebarListItemButtonSx } from "../../shared/ui/sidebarItemStyles";
 import SidebarPanel from "../../shared/ui/SidebarPanel.jsx";
+import { IpQueryResultSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
 import { debounce } from "../../shared/lib/performance.js";
 // Common IP utilities (supports IPv4/IPv6 + private detection)
 // Use require for reliable CJS interop in both renderer and main bundles
@@ -279,24 +279,7 @@ const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
   // 渲染查询结果
   const renderResult = () => {
     if (loading) {
-      return (
-        <Box sx={{ p: 2 }}>
-          <Skeleton variant="text" width={120} height={28} />
-          <Paper elevation={2} sx={{ p: 2, borderRadius: 1, mb: 2 }}>
-            <Skeleton variant="text" width="60%" height={22} />
-            <Skeleton variant="text" width="40%" height={22} />
-          </Paper>
-          <Skeleton variant="text" width={120} height={28} />
-          <Paper elevation={2} sx={{ p: 2, borderRadius: 1 }}>
-            <Skeleton variant="text" width="50%" height={20} />
-            <Skeleton variant="text" width="40%" height={20} />
-            <Skeleton variant="text" width="30%" height={20} />
-          </Paper>
-          <Box sx={{ mt: 2, height: MAP_AREA_HEIGHT }}>
-            <Skeleton variant="rounded" width="100%" height="100%" />
-          </Box>
-        </Box>
-      );
+      return <IpQueryResultSkeleton mapHeight={MAP_AREA_HEIGHT} />;
     }
 
     if (error) {

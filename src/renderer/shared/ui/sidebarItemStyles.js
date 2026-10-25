@@ -12,9 +12,64 @@ const SIDEBAR_ITEM_INSET_X = 0.75;
 
 export const SIDEBAR_TITLE_BAR_HEIGHT = 44;
 
+/** 列表行之间的统一间距（px）：行容器高度 = 行内容高度 + 该间距 */
+export const SIDEBAR_ROW_GAP_PX = 4;
+
 /** 连接列表层级缩进口径（虚拟化与非虚拟化列表共用，单位 px） */
-export const CONNECTION_LIST_BASE_INDENT_PX = 16;
 export const CONNECTION_LIST_DEPTH_INDENT_PX = 20;
+/** 连接行（名称 + user@host 双行）与分组行的固定高度，虚拟化行高与之一致 */
+export const CONNECTION_ROW_HEIGHT = 44;
+export const CONNECTION_GROUP_ROW_HEIGHT = 32;
+/** 命令类列表（历史命令、快捷命令）行内容高度与行距 */
+export const SIDEBAR_COMMAND_ROW_HEIGHT = 48;
+export const SIDEBAR_COMMAND_ROW_PITCH =
+  SIDEBAR_COMMAND_ROW_HEIGHT + SIDEBAR_ROW_GAP_PX;
+
+/**
+ * 标题栏下方的工具条（搜索框、按钮组、筛选等）。
+ * 所有侧栏共用同一内边距与分隔线，骨架屏也按此尺寸占位。
+ */
+export const sidebarSectionSx = (theme) => ({
+  p: 1,
+  flexShrink: 0,
+  borderBottom: `1px solid ${theme.palette.divider}`,
+});
+
+/**
+ * 列表区：占满剩余高度并负责滚动。虚拟化列表以 flex 填充该区域，
+ * 因此不需要额外测量容器高度。
+ */
+export const sidebarListAreaSx = {
+  flex: "1 1 0",
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
+  overflowX: "hidden",
+  overflowY: "auto",
+  py: 0.5,
+};
+
+/** 表单/卡片类内容区：与列表区同样占满剩余高度，但使用更宽松的内边距 */
+export const sidebarContentAreaSx = {
+  flex: "1 1 0",
+  minHeight: 0,
+  minWidth: 0,
+  overflowX: "hidden",
+  overflowY: "auto",
+  p: 1.5,
+};
+
+/** 底部状态栏（计数、加载状态） */
+export const sidebarFooterSx = (theme) => ({
+  px: 1.25,
+  py: 0.5,
+  minHeight: 30,
+  flexShrink: 0,
+  display: "flex",
+  alignItems: "center",
+  gap: 1,
+  borderTop: `1px solid ${theme.palette.divider}`,
+});
 
 // 侧边栏 Paper 外壳统一样式
 export const sidebarPaperSx = (theme, { borderLeft = true } = {}) => {

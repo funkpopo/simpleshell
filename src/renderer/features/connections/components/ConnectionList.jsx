@@ -1,5 +1,6 @@
-import { memo, useCallback, useMemo, useRef } from "react";
-import { Box, List, ListItem, ListItemText } from "@mui/material";
+import { memo, useCallback, useDeferredValue, useMemo, useRef } from "react";
+import { Box, List } from "@mui/material";
+import ComputerIcon from "@mui/icons-material/Computer";
 import { useTheme, alpha } from "@mui/material/styles";
 import {
   DndContext,
@@ -18,7 +19,8 @@ import {
 } from "@dnd-kit/sortable";
 
 import { useTranslation } from "react-i18next";
-import { ConnectionManagerSkeleton } from "../../../shared/ui/SkeletonLoader.jsx";
+import { SidebarListSkeleton } from "../../../shared/ui/SkeletonLoader.jsx";
+import SidebarEmptyState from "../../../shared/ui/SidebarEmptyState.jsx";
 import VirtualizedConnectionList from "../VirtualizedConnectionList.jsx";
 import {
   cloneConnectionList,
@@ -55,12 +57,14 @@ function ConnectionList({
   if (stabilizerRef.current === null) {
     stabilizerRef.current = createConnectionStabilizer();
   }
+  // 过滤使用延迟值：连接很多时输入框保持即时响应，列表在空闲时跟上
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const filteredItems = useMemo(() => {
     let items;
-    if (!searchQuery) {
+    if (!deferredSearchQuery) {
       items = connections;
     } else {
-      const lowercasedQuery = searchQuery.toLowerCase();
+      const lowercasedQuery = deferredSearchQuery.toLowerCase();
       items = connections.reduce((acc, item) => {
         if (item.type === "group") {
           const isGroupNameMatch = item.name
@@ -99,7 +103,7 @@ function ConnectionList({
     });
 
     return stabilizerRef.current(sortedItems);
-  }, [connections, searchQuery]);
+  }, [connections, deferredSearchQuery]);
   const visibleItemCount = useMemo(
     () => countVisibleItems(filteredItems),
     [filteredItems],
@@ -419,9 +423,9 @@ function ConnectionList({
       }}
     >
       {isLoading ? (
-        <List dense sx={{ p: 1 }}>
-          <ConnectionManagerSkeleton />
-        </List>
+        <Box sx={{ py: 0.5 }}>
+          <SidebarListSkeleton variant="connection" />
+        </Box>
       ) : useVirtualizedConnectionList ? (
         <VirtualizedConnectionList
           className="connection-manager-virtualized-list"
@@ -435,12 +439,8 @@ function ConnectionList({
           }
           onToggleGroup={handleToggleGroup}
           onSelectConnection={handleOpenConnection}
-          onDoubleClick={handleOpenConnection}
           onItemContextMenu={handleVirtualizedItemContextMenu}
           onBlankContextMenu={handleBlankContextMenu}
-          height="100%"
-          itemHeight={36}
-          enableVirtualization
           emptyMessage={t("connectionManager.noConnections")}
         />
       ) : (
@@ -453,8 +453,9 @@ function ConnectionList({
             dense
             ref={setRootDroppableRef}
             sx={{
-              p: 1,
+              py: 0.5,
               minHeight: "100%",
+              boxSizing: "border-box",
               backgroundColor: isRootDraggingOver
                 ? theme.palette.mode === "dark"
                   ? alpha(theme.palette.primary.main, 0.2)
@@ -466,19 +467,14 @@ function ConnectionList({
             <>
               {connectionsList}
               {filteredItems.length === 0 && (
-                <ListItem>
-                  <ListItemText
-                    primary={t("connectionManager.noConnections")}
-                    primaryTypographyProps={{
-                      variant: "body2",
-                      sx: {
-                        fontStyle: "italic",
-                        color: "text.secondary",
-                        textAlign: "center",
-                      },
-                    }}
-                  />
-                </ListItem>
+                <SidebarEmptyState
+                  icon={<ComputerIcon />}
+                  message={
+                    deferredSearchQuery
+                      ? t("connectionManager.noMatchingConnections")
+                      : t("connectionManager.noConnections")
+                  }
+                />
               )}
             </>
           </List>

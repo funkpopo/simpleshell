@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useRef } from "react";
+import React, { memo } from "react";
 import {
   Box,
   List,
@@ -7,7 +7,6 @@ import {
   ListItemIcon,
   ListItemButton,
   Collapse,
-  Tooltip,
 } from "@mui/material";
 import ComputerIcon from "@mui/icons-material/Computer";
 import UsbIcon from "@mui/icons-material/Usb";
@@ -24,7 +23,10 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { alpha } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
+import OverflowTooltipText from "../../../shared/ui/OverflowTooltipText.jsx";
 import {
+  CONNECTION_GROUP_ROW_HEIGHT,
+  CONNECTION_ROW_HEIGHT,
   sidebarListItemSx,
   CONNECTION_LIST_DEPTH_INDENT_PX,
 } from "../../../shared/ui/sidebarItemStyles";
@@ -33,6 +35,173 @@ import {
   getGroupContainerId,
   CONNECTION_MANAGER_ROW_DATA_ATTR,
 } from "../lib/connectionTree.js";
+
+/* ------------------------------------------------------------------------ */
+/* 行视觉（可拖拽列表与虚拟化列表共用）                                     */
+/* ------------------------------------------------------------------------ */
+
+const PROTOCOL_ICON_COLORS = {
+  telnet: "warning.main",
+  serial: "info.main",
+  mosh: "success.main",
+};
+
+export const ConnectionProtocolIcon = memo(function ConnectionProtocolIcon({
+  protocol,
+}) {
+  const sx = PROTOCOL_ICON_COLORS[protocol]
+    ? { color: PROTOCOL_ICON_COLORS[protocol] }
+    : undefined;
+  if (protocol === "serial") {
+    return <UsbIcon fontSize="small" sx={sx} />;
+  }
+  if (protocol === "mosh") {
+    return <NetworkPingIcon fontSize="small" sx={sx} />;
+  }
+  return <ComputerIcon fontSize="small" sx={sx} />;
+});
+
+export const getConnectionSecondaryText = (connection) =>
+  connection.username
+    ? `${connection.username}@${connection.host}`
+    : connection.host;
+
+/** 拖拽柄占位：禁用拖拽（搜索中、虚拟化列表）时保留同样的列宽，行内容不位移 */
+export const ConnectionDragHandle = React.forwardRef(
+  function ConnectionDragHandle({ dragDisabled, ...handleProps }, ref) {
+    return (
+      <Box
+        ref={ref}
+        {...handleProps}
+        sx={
+          dragDisabled
+            ? viewStyles.dragHandleDisabledSx
+            : viewStyles.dragHandleSx
+        }
+      >
+        <DragIndicatorIcon fontSize="small" />
+      </Box>
+    );
+  },
+);
+
+/** 连接行主体：协议图标 + 名称 / user@host，超长时悬停显示完整内容 */
+export const ConnectionRowButton = memo(function ConnectionRowButton({
+  connection,
+  onClick,
+  onDoubleClick,
+}) {
+  const primaryContent = connection.name || connection.host;
+  const secondaryText = getConnectionSecondaryText(connection);
+  return (
+    <ListItemButton
+      {...{ [CONNECTION_MANAGER_ROW_DATA_ATTR]: "true" }}
+      tabIndex={0}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      dense
+      sx={viewStyles.listItemButtonSx}
+    >
+      <ListItemIcon sx={viewStyles.listItemIconSx}>
+        <ConnectionProtocolIcon protocol={connection.protocol} />
+      </ListItemIcon>
+      <ListItemText
+        disableTypography
+        sx={viewStyles.listItemTextSx}
+        primary={
+          <OverflowTooltipText
+            variant="body2"
+            sx={viewStyles.primaryTextSx}
+            tooltipProps={viewStyles.tooltipProps}
+          >
+            {primaryContent}
+          </OverflowTooltipText>
+        }
+        secondary={
+          <OverflowTooltipText
+            variant="caption"
+            color="text.secondary"
+            sx={viewStyles.secondaryTextSx}
+            tooltipProps={viewStyles.tooltipProps}
+          >
+            {secondaryText}
+          </OverflowTooltipText>
+        }
+      />
+    </ListItemButton>
+  );
+});
+
+/** 分组行主体：文件夹图标（随展开状态切换）+ 分组名 */
+export const GroupRowButton = memo(function GroupRowButton({ group, onClick }) {
+  return (
+    <ListItemButton
+      {...{ [CONNECTION_MANAGER_ROW_DATA_ATTR]: "true" }}
+      tabIndex={0}
+      aria-expanded={Boolean(group.expanded)}
+      onClick={onClick}
+      sx={viewStyles.groupButtonSx}
+    >
+      <ListItemIcon sx={viewStyles.listItemIconSx}>
+        {group.expanded ? (
+          <FolderOpenIcon fontSize="small" />
+        ) : (
+          <FolderIcon fontSize="small" />
+        )}
+      </ListItemIcon>
+      <ListItemText
+        disableTypography
+        sx={viewStyles.listItemTextSx}
+        primary={
+          <OverflowTooltipText
+            variant="body2"
+            sx={viewStyles.primaryTextSx}
+            tooltipProps={viewStyles.tooltipProps}
+          >
+            {group.name}
+          </OverflowTooltipText>
+        }
+      />
+    </ListItemButton>
+  );
+});
+
+/** 行容器样式：连接行与分组行的高度、左内边距、选中/拖拽态 */
+export const getConnectionRowSx = (
+  theme,
+  { isGroup = false, nested = false, selected = false, dragging = false } = {},
+) => ({
+  pl: nested ? 1.5 : 0.5,
+  minHeight: isGroup ? CONNECTION_GROUP_ROW_HEIGHT : CONNECTION_ROW_HEIGHT,
+  flexShrink: 0,
+  ...sidebarListItemSx(theme, selected),
+  ...(dragging
+    ? {
+        background:
+          theme.palette.mode === "dark"
+            ? theme.palette.grey[700]
+            : theme.palette.grey[200],
+        boxShadow: theme.shadows[4],
+      }
+    : {}),
+});
+
+// 右键时先把焦点移到行按钮，再打开菜单（与原生列表行为一致）
+export const focusConnectionRow = (event) => {
+  try {
+    const focusTarget =
+      event.currentTarget?.querySelector?.(
+        `[${CONNECTION_MANAGER_ROW_DATA_ATTR}="true"]`,
+      ) || event.currentTarget;
+    focusTarget?.focus?.();
+  } catch (_) {
+    // ignore
+  }
+};
+
+/* ------------------------------------------------------------------------ */
+/* 可拖拽列表项                                                             */
+/* ------------------------------------------------------------------------ */
 
 export const ConnectionListItem = memo(function ConnectionListItem({
   theme,
@@ -46,11 +215,6 @@ export const ConnectionListItem = memo(function ConnectionListItem({
   const containerId = parentGroup
     ? getGroupContainerId(parentGroup.id)
     : ROOT_CONTAINER_ID;
-
-  const primaryRef = useRef(null);
-  const secondaryRef = useRef(null);
-  const [isPrimaryTruncated, setIsPrimaryTruncated] = useState(false);
-  const [isSecondaryTruncated, setIsSecondaryTruncated] = useState(false);
 
   const {
     attributes,
@@ -75,149 +239,33 @@ export const ConnectionListItem = memo(function ConnectionListItem({
     transition,
   };
 
-  const getProtocolIcon = () => {
-    if (connection.protocol === "telnet") {
-      return (
-        <ComputerIcon
-          fontSize="small"
-          sx={{ color: theme.palette.warning.main }}
-        />
-      );
-    }
-    if (connection.protocol === "serial") {
-      return (
-        <UsbIcon fontSize="small" sx={{ color: theme.palette.info.main }} />
-      );
-    }
-    if (connection.protocol === "mosh") {
-      return (
-        <NetworkPingIcon
-          fontSize="small"
-          sx={{ color: theme.palette.success.main }}
-        />
-      );
-    }
-    return <ComputerIcon fontSize="small" />;
-  };
-
-  const secondaryText = connection.username
-    ? `${connection.username}@${connection.host}`
-    : connection.host;
-
-  const primaryContent = connection.name || connection.host;
-
-  useEffect(() => {
-    const checkTruncation = () => {
-      if (primaryRef.current) {
-        setIsPrimaryTruncated(
-          primaryRef.current.scrollWidth > primaryRef.current.clientWidth,
-        );
-      }
-      if (secondaryRef.current) {
-        setIsSecondaryTruncated(
-          secondaryRef.current.scrollWidth > secondaryRef.current.clientWidth,
-        );
-      }
-    };
-    checkTruncation();
-  }, [primaryContent, secondaryText]);
-
   return (
     <ListItem
       ref={setNodeRef}
       style={style}
       disablePadding
-      sx={{
-        pl: parentGroup ? 1.5 : 0.5,
-        minHeight: "32px",
-        ...sidebarListItemSx(theme, isContextMenuTarget),
-        ...(isDragging
-          ? {
-              background:
-                theme.palette.mode === "dark"
-                  ? theme.palette.grey[700]
-                  : theme.palette.grey[200],
-              boxShadow: theme.shadows[4],
-            }
-          : {}),
-      }}
+      sx={getConnectionRowSx(theme, {
+        nested: Boolean(parentGroup),
+        selected: isContextMenuTarget,
+        dragging: isDragging,
+      })}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        try {
-          const focusTarget =
-            e.currentTarget?.querySelector?.(
-              `[${CONNECTION_MANAGER_ROW_DATA_ATTR}="true"]`,
-            ) || e.currentTarget;
-          focusTarget?.focus?.();
-        } catch (_) {
-          // ignore
-        }
+        focusConnectionRow(e);
         onOpenRowContextMenu?.(e, connection, parentGroup);
       }}
     >
-      <Box
+      <ConnectionDragHandle
         ref={setActivatorNodeRef}
+        dragDisabled={dragDisabled}
         {...listeners}
         {...attributes}
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          cursor: dragDisabled ? "default" : "grab",
-          "&:active": {
-            cursor: dragDisabled ? "default" : "grabbing",
-          },
-          minWidth: 20,
-          justifyContent: "center",
-          mr: 0.25,
-          pointerEvents: dragDisabled ? "none" : "auto",
-          color: "text.secondary",
-        }}
-      >
-        <DragIndicatorIcon fontSize="small" />
-      </Box>
-      <ListItemButton
-        {...{ [CONNECTION_MANAGER_ROW_DATA_ATTR]: "true" }}
-        tabIndex={0}
+      />
+      <ConnectionRowButton
+        connection={connection}
         onClick={() => onOpen(connection)}
-        dense
-        sx={viewStyles.listItemButtonSx}
-      >
-        <ListItemIcon sx={viewStyles.listItemIconSx}>
-          {getProtocolIcon()}
-        </ListItemIcon>
-        <ListItemText
-          primary={
-            <Tooltip
-              title={primaryContent}
-              placement="top"
-              disableHoverListener={!isPrimaryTruncated}
-            >
-              <span ref={primaryRef}>{primaryContent}</span>
-            </Tooltip>
-          }
-          primaryTypographyProps={{
-            variant: "body2",
-            fontWeight: "medium",
-            margin: 0,
-            fontSize: "0.85rem",
-          }}
-          secondary={
-            <Tooltip
-              title={secondaryText}
-              placement="top"
-              disableHoverListener={!isSecondaryTruncated}
-            >
-              <span ref={secondaryRef}>{secondaryText}</span>
-            </Tooltip>
-          }
-          secondaryTypographyProps={{
-            variant: "caption",
-            color: "text.secondary",
-          }}
-          sx={viewStyles.listItemTextSx}
-        />
-      </ListItemButton>
+      />
     </ListItem>
   );
 });
@@ -278,79 +326,25 @@ export const GroupListItem = memo(function GroupListItem({
         disablePadding
         ref={setNodeRef}
         style={style}
-        sx={{
-          pl: 0.5,
-          minHeight: "32px",
-          ...sidebarListItemSx(theme, isContextMenuTarget),
-          ...(isDragging
-            ? {
-                background:
-                  theme.palette.mode === "dark"
-                    ? theme.palette.grey[700]
-                    : theme.palette.grey[200],
-                boxShadow: theme.shadows[4],
-              }
-            : {}),
-        }}
+        sx={getConnectionRowSx(theme, {
+          isGroup: true,
+          selected: isContextMenuTarget,
+          dragging: isDragging,
+        })}
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          try {
-            const focusTarget =
-              e.currentTarget?.querySelector?.(
-                `[${CONNECTION_MANAGER_ROW_DATA_ATTR}="true"]`,
-              ) || e.currentTarget;
-            focusTarget?.focus?.();
-          } catch (_) {
-            // ignore
-          }
+          focusConnectionRow(e);
           onOpenGroupRowContextMenu?.(e, group);
         }}
       >
-        <Box
+        <ConnectionDragHandle
           ref={setActivatorNodeRef}
+          dragDisabled={dragDisabled}
           {...listeners}
           {...attributes}
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            cursor: dragDisabled ? "default" : "grab",
-            "&:active": {
-              cursor: dragDisabled ? "default" : "grabbing",
-            },
-            minWidth: 20,
-            justifyContent: "center",
-            mr: 0.25,
-            pointerEvents: dragDisabled ? "none" : "auto",
-            color: "text.secondary",
-          }}
-        >
-          <DragIndicatorIcon fontSize="small" />
-        </Box>
-        <ListItemButton
-          {...{ [CONNECTION_MANAGER_ROW_DATA_ATTR]: "true" }}
-          tabIndex={0}
-          onClick={() => onToggle(group.id)}
-          sx={viewStyles.listItemButtonSx2}
-        >
-          <ListItemIcon sx={viewStyles.listItemIconSx}>
-            {group.expanded ? (
-              <FolderOpenIcon fontSize="small" />
-            ) : (
-              <FolderIcon fontSize="small" />
-            )}
-          </ListItemIcon>
-          <ListItemText
-            primary={group.name}
-            primaryTypographyProps={{
-              variant: "body2",
-              fontWeight: "medium",
-              margin: 0,
-              fontSize: "0.85rem",
-            }}
-            sx={viewStyles.listItemTextSx2}
-          />
-        </ListItemButton>
+        />
+        <GroupRowButton group={group} onClick={() => onToggle(group.id)} />
       </ListItem>
 
       <Box
@@ -428,38 +422,55 @@ export const GroupListItem = memo(function GroupListItem({
   );
 });
 
-// Stable declarations shared by row renders. Dynamic styles stay with their owner.
+/// Stable declarations shared by row renders. Dynamic styles stay with their owner.
+const DRAG_HANDLE_BASE_SX = {
+  display: "flex",
+  alignItems: "center",
+  minWidth: 20,
+  justifyContent: "center",
+  mr: 0.25,
+  color: "text.secondary",
+};
+
 const viewStyles = {
+  dragHandleSx: {
+    ...DRAG_HANDLE_BASE_SX,
+    cursor: "grab",
+    "&:active": { cursor: "grabbing" },
+  },
+  dragHandleDisabledSx: {
+    ...DRAG_HANDLE_BASE_SX,
+    cursor: "default",
+    pointerEvents: "none",
+  },
   listItemButtonSx: {
     flexGrow: 1,
+    minWidth: 0,
     py: 0.5,
+    "&:hover": {
+      backgroundColor: "transparent",
+    },
+  },
+  groupButtonSx: {
+    py: 0.5,
+    flexGrow: 1,
+    minWidth: 0,
     "&:hover": {
       backgroundColor: "transparent",
     },
   },
   listItemIconSx: { minWidth: 28, ml: -0.5 },
-  listItemTextSx: {
-    my: 0,
-    ".MuiTypography-root": {
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      "& > span": {
-        display: "block",
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-      },
-    },
+  listItemTextSx: { my: 0, minWidth: 0 },
+  // 双行合计 ≤ 36px，保证 44px 固定行高（虚拟化）下不被裁切
+  primaryTextSx: {
+    fontWeight: 500,
+    fontSize: "0.85rem",
+    lineHeight: 1.35,
   },
-  listItemButtonSx2: {
-    py: 0.5,
-    flexGrow: 1,
-    "&:hover": {
-      backgroundColor: "transparent",
-    },
+  secondaryTextSx: {
+    lineHeight: 1.4,
   },
-  listItemTextSx2: { my: 0 },
+  tooltipProps: { placement: "top" },
   listSx: {
     // 每层缩进与虚拟化列表口径一致（20px/层）
     pl: CONNECTION_LIST_DEPTH_INDENT_PX / 8,

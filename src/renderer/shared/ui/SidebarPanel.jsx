@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
@@ -186,12 +186,15 @@ function SidebarPanel({
   const resolvedElevation =
     elevation !== undefined ? elevation : theme.palette.mode === "dark" ? 1 : 0;
 
-  // 滑入/滑出期间开启 willChange，结束后清除
+  // 滑入/滑出期间开启 willChange，结束后清除。仅在 open 真正变化时开启：
+  // 以打开状态挂载时没有位移过渡，也就不会收到 transitionend，若在挂载时
+  // 开启会让合成层一直驻留。渲染期比较上一次的 open，省去一次额外提交。
   const [animating, setAnimating] = useState(false);
-
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
     setAnimating(true);
-  }, [open]);
+  }
 
   const handleTransitionEnd = (event) => {
     if (event.propertyName !== "transform") return;

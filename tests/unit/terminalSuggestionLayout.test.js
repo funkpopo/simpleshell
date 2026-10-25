@@ -245,8 +245,10 @@ describe("suggestion-lifecycle", () => {
         ),
         "utf8",
       );
+      // 展开状态完全由受控的 group.expanded 派生，列表内不得持有本地展开状态
       assert.doesNotMatch(listSource, /setExpandedGroups/);
-      assert.match(listSource, /const expandedGroups = useMemo/);
+      assert.doesNotMatch(listSource, /useState/);
+      assert.match(listSource, /item\.type === "group" && item\.expanded/);
       const toggleSource =
         require("../helpers/renderer-sources.js").readRendererCallback(
           "src/renderer/features/connections/ConnectionManager.jsx",

@@ -1,5 +1,5 @@
 const DEFAULT_CURSOR_HEIGHT = 18;
-const DEFAULT_GAP = 20;
+const DEFAULT_GAP = 4;
 
 const isFiniteNumber = (value) =>
   typeof value === "number" && Number.isFinite(value);

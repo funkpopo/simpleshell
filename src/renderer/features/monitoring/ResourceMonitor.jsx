@@ -32,6 +32,7 @@ import {
   sidebarTitleIconButtonSx,
 } from "../../shared/ui/sidebarItemStyles";
 import SidebarPanel from "../../shared/ui/SidebarPanel.jsx";
+import { ResourceMonitorSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
 import MetricHistoryChart from "./MetricHistoryChart.jsx";
 
 /** 指标历史长度：5 秒采样间隔下约 10 分钟 */
@@ -446,15 +447,18 @@ const ResourceMonitorContent = memo(
         sessionContext={sessionContext}
         actions={
           <Tooltip title={t("common.refresh")} placement="top">
-            <IconButton
-              size="small"
-              onClick={handleRefresh}
-              disabled={loading}
-              sx={sidebarTitleIconButtonSx}
-              aria-label={t("common.refresh")}
-            >
-              <RefreshIcon fontSize="small" />
-            </IconButton>
+            {/* 禁用的按钮不派发鼠标事件，外包 span 让 Tooltip 仍可响应 */}
+            <span>
+              <IconButton
+                size="small"
+                onClick={handleRefresh}
+                disabled={loading}
+                sx={sidebarTitleIconButtonSx}
+                aria-label={t("common.refresh")}
+              >
+                <RefreshIcon fontSize="small" />
+              </IconButton>
+            </span>
           </Tooltip>
         }
       >
@@ -470,23 +474,8 @@ const ResourceMonitorContent = memo(
           }}
         >
           {loading && !error && !systemInfo ? (
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                width: "100%",
-                gap: 1.5,
-                py: 4,
-              }}
-            >
-              <CircularProgress size={24} />
-              <Typography variant="body2" color="text.secondary" align="center">
-                {t("resourceMonitor.loading")}
-              </Typography>
-            </Box>
+            // 骨架与已加载的卡片布局一致（同样的卡片表面、标题行高度与间距）
+            <ResourceMonitorSkeleton />
           ) : null}
 
           {error ? (
