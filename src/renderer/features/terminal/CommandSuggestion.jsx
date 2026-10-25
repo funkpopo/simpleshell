@@ -21,9 +21,9 @@ import {
 } from "./model/commandSuggestionState.js";
 import {
   getSuggestionWindowHeight,
+  resolveCommandSuggestionFrameLayout,
   resolveCommandSuggestionWindowPosition,
   SUGGESTION_BOTTOM_BAR_HEIGHT,
-  SUGGESTION_FRAME_BORDER,
   SUGGESTION_ITEM_HEIGHT,
 } from "./model/commandSuggestionPosition.js";
 import { FIRA_CODE_FONT_FAMILY } from "../../shared/lib/fonts.js";
@@ -367,17 +367,11 @@ const CommandSuggestion = ({
   }
 
   const { showAbove } = windowPosition;
-  const innerHeight = windowPosition.height - SUGGESTION_FRAME_BORDER;
-  // 空间不足时优先保证建议条目可见，收起提示栏
-  const showFooter =
-    innerHeight >= SUGGESTION_ITEM_HEIGHT * 2 + SUGGESTION_BOTTOM_BAR_HEIGHT;
-  const contentHeight = items.length * SUGGESTION_ITEM_HEIGHT;
-  const listMaxHeight = Math.max(
-    SUGGESTION_ITEM_HEIGHT,
-    innerHeight - (showFooter ? SUGGESTION_BOTTOM_BAR_HEIGHT : 0),
-  );
-  const listHeight = Math.min(contentHeight, listMaxHeight);
-  const listScrollable = contentHeight > listHeight;
+  const frame = resolveCommandSuggestionFrameLayout({
+    windowPosition,
+    itemCount: items.length,
+  });
+  const { listHeight, listScrollable, showFooter } = frame;
   const hasSelection = selectedIndex >= 0 && selectedIndex < items.length;
   const matchText = String(currentInput || "").trim();
 
@@ -424,9 +418,9 @@ const CommandSuggestion = ({
       sx={{
         position: "fixed",
         left: windowPosition.left,
-        top: windowPosition.top,
+        top: frame.top,
         width: windowPosition.width,
-        maxHeight: windowPosition.height,
+        height: frame.height,
         boxSizing: "border-box",
         display: "flex",
         // 弹窗在光标上方时整体镜像：最佳匹配贴近光标，提示栏位于远端

@@ -134,6 +134,44 @@ const resolveCommandSuggestionWindowPosition = ({
   return { left, top, width, height, showAbove };
 };
 
+/**
+ * 在已分配的窗口区域内排布列表与提示栏，并返回实际渲染高度。
+ * 提示栏是否显示只取决于剩余空间（不取决于条目数量），且贴近光标的一边
+ * 始终按实际高度对齐：弹窗在上方时底边固定在光标上方 CURSOR_GAP 处，
+ * 内容比分配区域矮时也不会在弹窗与输入行之间留下空隙。
+ */
+const resolveCommandSuggestionFrameLayout = ({
+  windowPosition,
+  itemCount = 0,
+} = {}) => {
+  const innerHeight = windowPosition.height - SUGGESTION_FRAME_BORDER;
+  const contentHeight = Math.max(0, itemCount) * SUGGESTION_ITEM_HEIGHT;
+  // 空间不足时优先保证建议条目可见（至少两行，或全部条目），其次才是提示栏
+  const showFooter =
+    innerHeight - SUGGESTION_BOTTOM_BAR_HEIGHT >=
+    Math.min(contentHeight, SUGGESTION_ITEM_HEIGHT * 2);
+  const listMaxHeight = Math.max(
+    SUGGESTION_ITEM_HEIGHT,
+    innerHeight - (showFooter ? SUGGESTION_BOTTOM_BAR_HEIGHT : 0),
+  );
+  const listHeight = Math.min(contentHeight, listMaxHeight);
+  const height =
+    listHeight +
+    (showFooter ? SUGGESTION_BOTTOM_BAR_HEIGHT : 0) +
+    SUGGESTION_FRAME_BORDER;
+  const top = windowPosition.showAbove
+    ? windowPosition.top + windowPosition.height - height
+    : windowPosition.top;
+
+  return {
+    top,
+    height,
+    listHeight,
+    listScrollable: contentHeight > listHeight,
+    showFooter,
+  };
+};
+
 module.exports = {
   SUGGESTION_ITEM_HEIGHT,
   SUGGESTION_BOTTOM_BAR_HEIGHT,
@@ -142,4 +180,5 @@ module.exports = {
   CURSOR_GAP,
   getSuggestionWindowHeight,
   resolveCommandSuggestionWindowPosition,
+  resolveCommandSuggestionFrameLayout,
 };

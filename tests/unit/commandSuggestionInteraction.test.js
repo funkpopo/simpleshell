@@ -9,6 +9,7 @@ const {
 const {
   CURSOR_GAP,
   getSuggestionWindowHeight,
+  resolveCommandSuggestionFrameLayout,
   resolveCommandSuggestionWindowPosition,
 } = require("../../src/renderer/features/terminal/model/commandSuggestionPosition.js");
 
@@ -43,6 +44,42 @@ describe("command suggestion placement", () => {
         expect(placement.top + placement.height).toBeLessThanOrEqual(592);
       }
     }
+  });
+
+  it("keeps the rendered frame flush with the cursor row for any list size", () => {
+    for (let count = 1; count <= 10; count++) {
+      for (let cursorY = 0; cursorY <= 582; cursorY += 6) {
+        const windowPosition = resolve({
+          cursorY,
+          height: getSuggestionWindowHeight(count),
+        });
+        if (!windowPosition) continue;
+        const frame = resolveCommandSuggestionFrameLayout({
+          windowPosition,
+          itemCount: count,
+        });
+        expect(frame.height).toBeLessThanOrEqual(windowPosition.height);
+        if (windowPosition.showAbove) {
+          expect(frame.top + frame.height).toBe(cursorY - CURSOR_GAP);
+        } else {
+          expect(frame.top).toBe(cursorY + 18 + CURSOR_GAP);
+        }
+      }
+    }
+  });
+
+  it("shows the hint bar for a single suggestion when there is room", () => {
+    const windowPosition = resolve({
+      cursorY: 400,
+      height: getSuggestionWindowHeight(1),
+      preferAbove: true,
+    });
+    const frame = resolveCommandSuggestionFrameLayout({
+      windowPosition,
+      itemCount: 1,
+    });
+    expect(frame.showFooter).toBe(true);
+    expect(frame.height).toBe(windowPosition.height);
   });
 
   it("sits directly below the cursor when there is room", () => {
