@@ -9,7 +9,10 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(import.meta.url);
 
 it("builds the minified production renderer and keeps feature libraries out of startup", async () => {
-  const base = require("../../webpack.renderer.config.js");
+  const base = require("../../webpack.renderer.config.js")(
+    {},
+    { mode: "production" },
+  );
   const output = path.join(root, ".cache/integration/production-renderer");
   const compiler = webpack({
     ...base,

@@ -38,8 +38,6 @@ const WORKER_UNPACK_DIRS = [
   ".webpack\\main\\conpty_console_list_agent.js",
   ".webpack/main/utils.js",
   ".webpack\\main\\utils.js",
-  "src/main/workers",
-  "src\\main\\workers",
 ];
 const NATIVE_SERVICES_BASENAME =
   process.platform === "win32"
@@ -51,13 +49,6 @@ const LINUX_ICON_PATH = path.join(
   "src/renderer/assets/SimpleShell.png",
 );
 const WEBPACK_DIR = path.resolve(__dirname, ".webpack");
-const PACKAGED_SCRIPT_NAMES_TO_REMOVE = new Set([
-  "run-checks.js",
-  "release-check.js",
-  "generate-checksums.js",
-  "prepare-native-services.js",
-  "run-forge-release.js",
-]);
 const NODE_PTY_PREBUILD_DIRS_BY_TARGET = {
   "darwin-arm64": new Set(["darwin-arm64"]),
   "darwin-x64": new Set(["darwin-x64"]),
@@ -188,72 +179,30 @@ class WindowsSafeWebpackPlugin extends WebpackPlugin {
 }
 
 const parsePort = (rawValue, fallback) => {
-  if (!rawValue) {
-    return fallback;
-  }
-
   const parsed = Number.parseInt(rawValue, 10);
-
-  if (!Number.isInteger(parsed) || parsed < MIN_PORT || parsed > MAX_PORT) {
-    return fallback;
-  }
-
-  return parsed;
+  return Number.isInteger(parsed) && parsed >= MIN_PORT && parsed <= MAX_PORT
+    ? parsed
+    : fallback;
 };
 
 const isPortAvailable = (port) =>
   new Promise((resolve) => {
     const tester = net.createServer();
     tester.unref();
-
-    tester.once("error", () => {
-      resolve(false);
-    });
-
-    tester.once("listening", () => {
-      tester.once("close", () => resolve(true));
-      tester.close();
-    });
-
+    tester.once("error", () => resolve(false));
+    tester.once("listening", () => tester.close(() => resolve(true)));
     // Don't bind only to 127.0.0.1: Forge's logger binds to all interfaces (often `:::PORT`),
     // and a port can be "free" on 127.0.0.1 but already taken on ::/0.0.0.0.
     tester.listen({ port, exclusive: true });
   });
 
-const findAvailablePort = async (preferredPorts, fallbackStart) => {
-  const checked = new Set();
-
-  for (const candidate of preferredPorts) {
-    if (
-      !Number.isInteger(candidate) ||
-      candidate < MIN_PORT ||
-      candidate > MAX_PORT
-    ) {
-      continue;
-    }
-
-    if (checked.has(candidate)) {
-      continue;
-    }
-
-    checked.add(candidate);
-
-    if (await isPortAvailable(candidate)) {
-      return candidate;
-    }
+// Forge uses fixed ports; take the first free one so a second dev instance or
+// an integration run does not fail with EADDRINUSE.
+const findAvailablePort = async (preferred, excluded) => {
+  for (let port = preferred; port <= MAX_PORT; port += 1) {
+    if (port !== excluded && (await isPortAvailable(port))) return port;
   }
-
-  let port = Math.min(Math.max(fallbackStart, MIN_PORT), MAX_PORT);
-
-  while (port <= MAX_PORT) {
-    if (!checked.has(port) && (await isPortAvailable(port))) {
-      return port;
-    }
-
-    port += 1;
-  }
-
-  throw new Error("Unable to locate a free TCP port in the 1024-65535 range");
+  throw new Error(`Unable to locate a free TCP port from ${preferred}`);
 };
 
 const keepOnlyRequiredLocalePaks = async (buildPath) => {
@@ -286,30 +235,10 @@ const keepOnlyRequiredLocalePaks = async (buildPath) => {
 const cleanupLocalesHook = ({ buildPath }) =>
   keepOnlyRequiredLocalePaks(buildPath);
 
-const shouldRemovePackagedScript = (entry) =>
-  entry.isFile() &&
-  (entry.name.startsWith("check-") ||
-    PACKAGED_SCRIPT_NAMES_TO_REMOVE.has(entry.name));
-
-const cleanupPackagedDevelopmentFiles = async (buildPath) => {
-  const scriptsDir = path.join(buildPath, "scripts");
+// The webpack plugin packages only `.webpack/` and package.json, so the only
+// development leftover is the scripts block in the packaged manifest.
+const stripPackagedScripts = async (buildPath) => {
   const packageJsonPath = path.join(buildPath, "package.json");
-
-  try {
-    const scriptEntries = await fs.readdir(scriptsDir, { withFileTypes: true });
-    await Promise.all(
-      scriptEntries
-        .filter(shouldRemovePackagedScript)
-        .map((entry) =>
-          fs.rm(path.join(scriptsDir, entry.name), { force: true }),
-        ),
-    );
-  } catch (error) {
-    if (error && error.code !== "ENOENT") {
-      throw error;
-    }
-  }
-
   let packageJson;
   try {
     packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf8"));
@@ -409,7 +338,7 @@ const cleanupPackagedDevelopmentFilesHook = async ({
   platform,
 }) => {
   await Promise.all([
-    cleanupPackagedDevelopmentFiles(buildPath),
+    stripPackagedScripts(buildPath),
     cleanupPackagedNodePtyPrebuilds(buildPath, platform, arch),
     removePackagedSourceMaps(buildPath),
   ]);
@@ -471,49 +400,12 @@ const buildMacNotarizeConfig = (macSignConfig) => {
 };
 
 module.exports = async () => {
-  const devPortPreference = parsePort(
-    process.env.WEBPACK_DEV_PORT,
-    DEFAULT_DEV_SERVER_PORT,
-  );
-  const loggerPortPreference = parsePort(
-    process.env.WEBPACK_LOGGER_PORT,
-    DEFAULT_LOGGER_PORT,
-  );
-
   const devServerPort = await findAvailablePort(
-    [devPortPreference],
-    devPortPreference,
+    parsePort(process.env.WEBPACK_DEV_PORT, DEFAULT_DEV_SERVER_PORT),
   );
-
-  const loggerCandidates = [];
-
-  const addLoggerCandidate = (value) => {
-    if (
-      Number.isInteger(value) &&
-      value >= MIN_PORT &&
-      value <= MAX_PORT &&
-      value !== devServerPort &&
-      !loggerCandidates.includes(value)
-    ) {
-      loggerCandidates.push(value);
-    }
-  };
-
-  addLoggerCandidate(loggerPortPreference);
-  addLoggerCandidate(DEFAULT_LOGGER_PORT);
-  addLoggerCandidate(devServerPort + 1);
-
-  if (loggerPortPreference === devServerPort) {
-    addLoggerCandidate(loggerPortPreference + 1);
-  }
-
-  if (loggerCandidates.length === 0) {
-    addLoggerCandidate(DEFAULT_LOGGER_PORT + 1);
-  }
-
   const loggerPort = await findAvailablePort(
-    loggerCandidates,
-    Math.max(devServerPort + 1, DEFAULT_LOGGER_PORT),
+    parsePort(process.env.WEBPACK_LOGGER_PORT, DEFAULT_LOGGER_PORT),
+    devServerPort,
   );
   const macSignConfig = buildMacSignConfig();
   const macNotarizeConfig = buildMacNotarizeConfig(macSignConfig);

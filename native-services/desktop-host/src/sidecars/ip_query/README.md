@@ -53,5 +53,5 @@ sidecar 失败时回退到保留的 JS 实现（`SIMPLESHELL_IPQUERY_BACKEND=js`
 
 - `IPQUERY_TEST_ORIGIN`：将供应商 URL 重写到本地 HTTP fixture
   （保留路径，附加 `__provider={name}` 查询参数），供
-  `scripts/check-ip-query-sidecar.js` 在无公共 API 依赖下验证 transform、
+  `tests/integration/fileSidecars.test.js` 在无公共 API 依赖下验证 transform、
   竞速、缓存与取消。

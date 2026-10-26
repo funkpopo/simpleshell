@@ -69,7 +69,7 @@ with bounded concurrency. Uploads have no file-count cap. Dragged upload
 conflict detection uses this operation and treats only missing paths as clear
 destinations; other errors stop the conflict check before upload.
 
-Rebuild/stage the native host with `npm run prepare:native-services` before
+Rebuild/stage the native host with `node scripts/prepare-native-services.js` before
 using a renderer/main-process version that sends this operation. `npm start`
 already performs that preparation. An explicitly configured
 `SIMPLESHELL_NATIVE_SERVICES_PATH` must point to an updated binary.

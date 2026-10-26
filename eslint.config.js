@@ -6,6 +6,7 @@ const reactPlugin = require("eslint-plugin-react");
 module.exports = [
   {
     ignores: [
+      ".cache/**",
       ".webpack/**",
       ".webpack_cache/**",
       "config-backups/**",
@@ -17,7 +18,7 @@ module.exports = [
       "node_modules/**",
       "out/**",
       "temp/**",
-      "native-services/**/target/**",
+      "native-services/**",
     ],
   },
   js.configs.recommended,
@@ -94,7 +95,6 @@ module.exports = [
     files: [
       "src/preload/**/*.js",
       "src/shared/startupTheme.js",
-      "scripts/fixtures/*renderer*.{js,jsx}",
       "tests/**/*.{js,jsx}",
     ],
     languageOptions: { globals: { ...globals.browser } },

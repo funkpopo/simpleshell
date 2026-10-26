@@ -7,9 +7,7 @@
 负责本模块的进程管理与协议桥接。
 
 `port-forward-prototype` 是同一实现的验证变体（`serve(true)`）：监听地址限定
-回环（`127.0.0.1` / `::1`）、会话上限 4，供
-`scripts/check-port-forwarding-sidecar.js` 与
-`scripts/verify-port-forwarding-openssh.js` 使用。
+回环（`127.0.0.1` / `::1`）、会话上限 4，供集成测试使用。
 
 ## 协议（NDJSON，`schemaVersion: 1`，单行 ≤ 256 KiB）
 
@@ -61,8 +59,7 @@
   不匹配即 `HOST_KEY_MISMATCH`，指纹由 JS 侧既有信任来源下发。
 - 算法：现代默认之上追加终端既有兼容集（5 种旧 MAC、2 种 AES-GCM 名称、
   CBC/3DES、DSA、GEX 等），仅影响转发协商，不改变其他 sidecar 策略。
-  互操作矩阵见 `scripts/check-port-forwarding-algorithms.js` 及真实 OpenSSH
-  验证（`scripts/verify-port-forwarding-openssh.js`）。
+  互操作矩阵见 `tests/integration/portForwardingSessions.test.js`。
 - 资源上限：会话数（原型 4 / 正式 32）、每会话并发流 32（超限丢弃新
   连接）、身份墓碑 4096、会话命令队列 16；父进程停止读取时 stdout 写入
   2s 超时后退出，不遗留转发资源。
@@ -74,8 +71,7 @@
 
 ## 契约检查
 
-`scripts/check-port-forwarding-sidecar.js`（原型进程 + 回环 SSH/TCP）、
-`check-port-forwarding-client.js`、`check-port-forwarding-service.js`、
-`check-port-forwarding-algorithms.js`、`check-port-forwarding-delete.js`、
-`check-port-forwarding-ipc.js`、`check-port-forwarding-renderer.js` 与
-`benchmark-port-forwarding.js`（同机吞吐对照，结果为本地工件，不随仓库归档）。
+`tests/integration/portForwardingSidecar.test.js`（原型进程 + 回环 SSH/TCP）、
+`tests/integration/portForwardingSessions.test.js`（客户端、服务、算法矩阵、
+删除与 IPC）、`tests/unit/portForwardingProtocol.test.js` 与
+`tests/unit/portForwardingDialog.test.js`（渲染层）。

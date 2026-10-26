@@ -16,12 +16,13 @@ export async function runRendererFixture({
   main,
   production = false,
 }) {
-  const base = require("../../webpack.renderer.config.js");
+  const mode = production ? "production" : "development";
+  const base = require("../../webpack.renderer.config.js")({}, { mode });
   const output = path.join(root, ".cache", "integration", name);
   await fs.mkdir(output, { recursive: true });
   const compiler = webpack({
     ...base,
-    mode: production ? "production" : "development",
+    mode,
     devtool: false,
     target: "electron-renderer",
     entry: { fixture: path.join(root, "tests/fixtures", entry) },

@@ -22,7 +22,7 @@ Events: `ready`, `result`, `streamChunk`, `streamEnd`, and `error`.
 
 `stdout` is protocol-only. Secrets must never be emitted to stdout, stderr,
 or command-line arguments. The automated contract lives in
-`scripts/check-ai-sidecar.js`.
+`tests/integration/aiSidecar.test.js`.
 
 ## Operational limits
 

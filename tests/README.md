@@ -7,13 +7,12 @@ Helpers live in `helpers/`; executable renderer/protocol fixtures live in
 
 ```sh
 npm test
-npm run check
-npm run check:i18n
-npm run check:a11y
+npm run lint
+npx vitest run tests/unit/i18n.test.js   # a single suite
 ```
 
-`npm test` / `npm run test:unit` run `unit/**/*.test.js`. `npm run check` also runs
-ESLint. These checks do not require a built native host or a desktop session.
+`npm test` runs `unit/**/*.test.js`. These checks do not require a built native
+host or a desktop session.
 
 Build the native host before running the integration suite:
 
@@ -28,8 +27,7 @@ Missing prerequisites fail the relevant tests. Native tests run real loopback
 SSH/SFTP servers and close their sessions; Electron fixtures run in hidden windows.
 Suites run sequentially to keep ports, process patches and fixture profiles isolated.
 
-`npm run test:all` runs lint, all unit tests and all integration tests. The latter
-includes a minified renderer build and checks that PDF, CodeMirror and xterm stay
+The integration suite includes a minified renderer build and checks that PDF, CodeMirror and xterm stay
 out of startup chunks. Its asset report is saved to
 `.cache/integration/production-renderer/bundle-report.json`, with initial/async
 JavaScript byte totals and per-chunk sizes. The build check also verifies chunk

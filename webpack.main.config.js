@@ -19,11 +19,30 @@ const copyFileIfExists = (srcFile, destFile) => {
   fs.copyFileSync(srcFile, destFile);
 };
 
-module.exports = {
-  devtool:
-    process.env.NODE_ENV === "development"
-      ? "eval-cheap-module-source-map"
-      : false,
+// Native-module rules apply to the main bundle only: the asset relocator injects
+// a `__dirname` runtime that breaks the sandboxed renderer and preload.
+const nativeModuleRules = [
+  {
+    // We're specifying native_modules in the test because the asset relocator loader generates a
+    // "fake" .node file which is really a cjs file.
+    test: /native_modules[/\\].+\.node$/,
+    use: "node-loader",
+  },
+  {
+    test: /[/\\]node_modules[/\\].+\.(m?js|node)$/,
+    exclude: /[/\\]node_modules[/\\]pdfjs-dist[/\\]/,
+    parser: { amd: false },
+    use: {
+      loader: "@vercel/webpack-asset-relocator-loader",
+      options: {
+        outputAssetBase: "native_modules",
+      },
+    },
+  },
+];
+
+module.exports = (_env, { mode }) => ({
+  devtool: mode === "development" ? "eval-cheap-module-source-map" : false,
   entry: {
     index: "./src/main/index.js",
     "workers/sftp-transfer-worker":
@@ -38,7 +57,7 @@ module.exports = {
     },
   },
   module: {
-    rules: require("./webpack.rules"),
+    rules: [...nativeModuleRules, ...require("./webpack.rules")(mode)],
   },
   // 确保worker可以正确解析
   node: {
@@ -136,4 +155,4 @@ module.exports = {
       },
     },
   ],
-};
+});

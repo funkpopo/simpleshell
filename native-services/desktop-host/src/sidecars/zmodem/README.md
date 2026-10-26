@@ -47,7 +47,7 @@ P3.9 起为唯一后端：真实 SSH 下 `rz`/`sz` 手工互操作验证通过�
 
 ## 互操作
 
-- `scripts/check-zmodem-sidecar.js`：两个 `zmodem-serve` 实例字节回环互驱
+- `tests/integration/fileSidecars.test.js`：两个 `zmodem-serve` 实例字节回环互驱
   （对端发送由手工构造的 ZRINIT 帧触发，模拟 rz 启动序列），覆盖下载/上传
   摘要、取消、跨块透传与 native 编排层端到端。
 - 独立实现互操作：真实 `lrzsz` 双向传输、多文件、中文/空格文件名、CRC 重传

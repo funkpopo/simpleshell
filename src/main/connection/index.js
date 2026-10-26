@@ -5,13 +5,13 @@
  * 使用方式：
  * ```javascript
  * // 使用SSH连接池单例
- * const { sshConnectionPool } = require('./core/connection');
+ * const { sshConnectionPool } = require('../connection');
  *
  * // 使用Telnet连接池单例
- * const { telnetConnectionPool } = require('./core/connection');
+ * const { telnetConnectionPool } = require('../connection');
  * ```
  *
- * 注意：连接池的初始化/清理统一由 modules/connection 的 ConnectionManager 负责，
+ * 注意：连接池的初始化/清理统一由 ./connectionManager 负责，
  * 需要扩展连接池类时直接 require 对应的实现文件（如 ./base-connection-pool）。
  */
 

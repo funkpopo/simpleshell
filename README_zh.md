@@ -88,13 +88,13 @@ SimpleShell 是一款现代化、功能丰富的 SSH 终端应用，结合了 El
 ### **Linux 一键安装**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/main/scripts/install-linux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/master/scripts/install-linux.sh | sh
 ```
 
 安装指定版本：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/main/scripts/install-linux.sh | SIMPLESHELL_VERSION=0.4.39 sh
+curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/master/scripts/install-linux.sh | SIMPLESHELL_VERSION=0.4.39 sh
 ```
 
 脚本会自动识别 Debian/Ubuntu 的 `.deb` 和 Fedora/RHEL/openSUSE 的 `.rpm`，并从 GitHub Releases 下载对应架构的最新安装包。
@@ -149,39 +149,20 @@ npm run start
 ### **可用脚本**
 
 ```bash
-# 使用 Prettier 格式化代码
-npm run format
-
-# 运行单元测试、契约测试与架构检查
-npm test
-
-# 仅运行 Node 单元测试
-npm run test:unit
-
-# 编译本地集成测试所需的 Rust 原生服务
-cargo build --locked --manifest-path native-services/desktop-host/Cargo.toml
-
-# 运行 Electron、原生服务与生产构建集成测试
-npm run test:integration
-
-# 运行全部本地检查与集成测试
-npm run test:all
-
-# 检查应用代码、脚本和单元测试的代码规范
-npm run lint
-
-# 为当前平台打包应用
-npm run package
-
-# 构建可分发的安装包
-npm run make
-
-# 发布应用（需要配置）
-npm run publish
+npm start                 # 按需构建原生服务后，以 Forge 开发模式启动
+npm run lint              # 对整个仓库运行 ESLint
+npm test                  # 单元、契约与架构测试（Vitest）
+npm run test:integration  # Electron、原生服务与生产构建集成测试
+npm run format            # Prettier 格式化
+npm run package           # 为当前平台打包应用
+npm run make              # 构建可分发的安装包
 ```
 
+集成测试需要先编译原生服务：
+`cargo build --locked --manifest-path native-services/desktop-host/Cargo.toml`。
+
 Preload 契约使用 JSDoc 和 `src/shared/contracts/preload.d.ts` 中的共享类型声明。
-`npm run check` 通过 TypeScript 解析暴露的方法和 IPC 调用，再根据
+`npm test` 通过 TypeScript 解析暴露的方法和 IPC 调用，再根据
 `tsconfig.preload.json` 检查全部 `src/preload/**/*.js` 模块的实现与注释是否一致，
 并开启完整的 `strict` 检查（包括 `noImplicitAny` 和 `strictFunctionTypes`）。
 编辑器通过 `src/preload/tsconfig.json` 继承同一套配置。
@@ -211,7 +192,7 @@ simpleshell/
 │   └── shared/              # Contracts, pure cross-runtime logic and locales
 ├── native-services/         # Rust native-services crate
 ├── tests/                   # 单元/契约/集成测试、辅助函数与测试页面
-├── scripts/                 # 构建与发布工具
+├── scripts/                 # 原生服务预构建、安装与 postinstall 辅助脚本
 ├── forge.config.js
 └── webpack.*.config.js
 ```
@@ -231,7 +212,7 @@ simpleshell/
 ### **终端与 SSH**
 
 - **[xterm.js](https://xtermjs.org/)** 6.1.0-beta.167 - 终端模拟器 + 常用 Addon
-  - `@xterm/addon-fit`, `@xterm/addon-search`, `@xterm/addon-web-links`, `@xterm/addon-image`, `@xterm/addon-webgl`
+  - `@xterm/addon-fit`, `@xterm/addon-webgl`
 - **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - SSH/SFTP 客户端
 - **[node-pty](https://github.com/microsoft/node-pty)** 1.2.0-beta.11 - 伪终端支持
 - **[telnet-client](https://www.npmjs.com/package/telnet-client)** 2.2.13 - Telnet 客户端
@@ -243,7 +224,6 @@ simpleshell/
 ### **编辑、预览与渲染**
 
 - **CodeMirror 6**（`@codemirror/*`、`@uiw/react-codemirror`）- 语法高亮与编辑器
-- **highlight.js** - 额外的代码高亮
 - **react-markdown** + `remark-gfm` - Markdown 渲染
 - **react-pdf** - PDF 预览
 - **DND kit**（`@dnd-kit/*`）- 拖放交互
@@ -254,7 +234,7 @@ simpleshell/
 - **react-simple-maps** - 世界地图可视化
 - **systeminformation** - 系统信息采集
 - 代理支持：`http-proxy-agent`、`https-proxy-agent`、`socks-proxy-agent`
-- 性能辅助：`react-window`、`react-window-infinite-loader`
+- 性能辅助：`react-window`
 
 ## **连接架构**
 

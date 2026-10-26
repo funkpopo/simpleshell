@@ -1,22 +1,6 @@
-module.exports = [
-  // Add support for native node modules
-  {
-    // We're specifying native_modules in the test because the asset relocator loader generates a
-    // "fake" .node file which is really a cjs file.
-    test: /native_modules[/\\].+\.node$/,
-    use: "node-loader",
-  },
-  {
-    test: /[/\\]node_modules[/\\].+\.(m?js|node)$/,
-    exclude: /[/\\]node_modules[/\\]pdfjs-dist[/\\]/,
-    parser: { amd: false },
-    use: {
-      loader: "@vercel/webpack-asset-relocator-loader",
-      options: {
-        outputAssetBase: "native_modules",
-      },
-    },
-  },
+// Rules shared by the main and renderer bundles. Forge passes `mode`
+// ("development" | "production") to every webpack config factory.
+module.exports = (mode) => [
   // 特殊处理 pdfjs-dist 的 ES 模块，避免 asset-relocator-loader 错误
   {
     test: /[/\\]node_modules[/\\]pdfjs-dist[/\\].+\.mjs$/,
@@ -58,7 +42,7 @@ module.exports = [
             "@babel/preset-react",
             {
               runtime: "automatic",
-              development: process.env.NODE_ENV === "development",
+              development: mode === "development",
             },
           ],
         ],
@@ -67,8 +51,7 @@ module.exports = [
         // 启用缓存提升构建性能
         cacheDirectory: true,
         cacheCompression: false,
-        // 配置环境变量
-        envName: process.env.NODE_ENV || "development",
+        envName: mode,
       },
     },
   },

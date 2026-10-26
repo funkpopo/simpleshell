@@ -88,13 +88,13 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 ### **Linux One-line Install**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/main/scripts/install-linux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/master/scripts/install-linux.sh | sh
 ```
 
 Install a specific version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/main/scripts/install-linux.sh | SIMPLESHELL_VERSION=0.4.39 sh
+curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/master/scripts/install-linux.sh | SIMPLESHELL_VERSION=0.4.39 sh
 ```
 
 The script detects Debian/Ubuntu `.deb` and Fedora/RHEL/openSUSE `.rpm` systems, then downloads the matching latest package for the current CPU architecture from GitHub Releases.
@@ -112,7 +112,7 @@ If you prefer to build from source, follow the development instructions below.
 
 ## **Development**
 
-Vitest suites under `tests/unit` cover contracts, architecture boundaries and application behavior. `tests/integration` covers Electron rendering, production bundles and real Rust services. All verification runs locally: `npm run check` runs lint and unit tests; `npm run test:integration` runs the native/Electron suites.
+Vitest suites under `tests/unit` cover contracts, architecture boundaries and application behavior. `tests/integration` covers Electron rendering, production bundles and real Rust services. All verification runs locally: `npm run lint` and `npm test` run lint and unit tests; `npm run test:integration` runs the native/Electron suites.
 
 ### **Prerequisites**
 
@@ -151,39 +151,20 @@ This will:
 ### **Available Scripts**
 
 ```bash
-# Format code with Prettier
-npm run format
-
-# Run unit, contract and architecture tests
-npm test
-
-# Run only Node unit tests
-npm run test:unit
-
-# Compile the native host for local integration tests
-cargo build --locked --manifest-path native-services/desktop-host/Cargo.toml
-
-# Run Electron, native service and production bundle integration tests
-npm run test:integration
-
-# Run all local checks and integration tests
-npm run test:all
-
-# Lint application code, scripts and unit tests
-npm run lint
-
-# Package application for current platform
-npm run package
-
-# Build distributable installers
-npm run make
-
-# Publish application (requires configuration)
-npm run publish
+npm start                 # Build/stage the native host if needed, then run Forge dev mode
+npm run lint              # ESLint for the whole repository
+npm test                  # Unit, contract and architecture tests (Vitest)
+npm run test:integration  # Electron, native service and production bundle tests
+npm run format            # Prettier
+npm run package           # Package the app for the current platform
+npm run make              # Build distributable installers
 ```
 
+Integration tests need a compiled native host:
+`cargo build --locked --manifest-path native-services/desktop-host/Cargo.toml`.
+
 Preload contracts use JSDoc and shared declarations in `src/shared/contracts/preload.d.ts`.
-`npm run check` parses exposed methods and IPC calls with TypeScript, then checks
+`npm test` parses exposed methods and IPC calls with TypeScript, then checks
 all `src/preload/**/*.js` modules against their annotations using
 `tsconfig.preload.json`, with full `strict` checking enabled (including
 `noImplicitAny` and `strictFunctionTypes`). The editor-discoverable
@@ -214,7 +195,7 @@ simpleshell/
 │   └── shared/              # Contracts, pure cross-runtime logic and locales
 ├── native-services/         # Rust native-services crate
 ├── tests/                   # Unit, contract and integration suites, helpers and fixtures
-├── scripts/                 # Build and release tools
+├── scripts/                 # Native host staging, install and postinstall helpers
 ├── forge.config.js
 └── webpack.*.config.js
 ```
@@ -234,7 +215,7 @@ Source is organized by runtime. Area-specific conventions live in README files n
 ### **Terminal & SSH**
 
 - **[xterm.js](https://xtermjs.org/)** 6.1.0-beta.167 - Terminal emulator + add-ons
-  - `@xterm/addon-fit`, `@xterm/addon-search`, `@xterm/addon-web-links`, `@xterm/addon-image`, `@xterm/addon-webgl`
+  - `@xterm/addon-fit`, `@xterm/addon-webgl`
 - **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - SSH/SFTP client
 - **[node-pty](https://github.com/microsoft/node-pty)** 1.2.0-beta.11 - Pseudo terminal support
 - **[telnet-client](https://www.npmjs.com/package/telnet-client)** 2.2.13 - Telnet client
@@ -246,7 +227,6 @@ Source is organized by runtime. Area-specific conventions live in README files n
 ### **Editing, Preview & Rendering**
 
 - **CodeMirror 6** (`@codemirror/*`, `@uiw/react-codemirror`) - Syntax highlighting and editors
-- **highlight.js** - Additional code highlighting
 - **react-markdown** + `remark-gfm` - Markdown rendering
 - **react-pdf** - PDF preview
 - **DND kit** (`@dnd-kit/*`) - Drag-and-drop interactions
@@ -257,7 +237,7 @@ Source is organized by runtime. Area-specific conventions live in README files n
 - **react-simple-maps** - World map visualization
 - **systeminformation** - System info collection
 - Proxy support: `http-proxy-agent`, `https-proxy-agent`, `socks-proxy-agent`
-- Performance helpers: `react-window`, `react-window-infinite-loader`
+- Performance helpers: `react-window`
 
 ## **Connection Architecture**
 
