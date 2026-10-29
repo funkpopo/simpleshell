@@ -7,6 +7,7 @@ function createMultiFileDownload(
     buildTransferDisplayName,
     path,
     IPC_EVENT_CHANNELS,
+    createLocalPathAllocator,
     _buildFileTaskKey,
     _buildChunkSegments,
   },
@@ -103,6 +104,7 @@ function createMultiFileDownload(
         const taskTransferredBytes = new Map();
         const fileStateMap = new Map();
         const tasks = [];
+        const localPathAllocator = createLocalPathAllocator();
         for (let index = 0; index < files.length; index += 1) {
           this.dependencies._throwIfTransferCancelled(transferKey);
           const file = files[index];
@@ -110,7 +112,10 @@ function createMultiFileDownload(
             file?.remotePath || "",
           );
           const fileName = file?.fileName || path.posix.basename(remotePath);
-          const localPath = path.join(targetDir, fileName);
+          const localPath = path.join(
+            targetDir,
+            ...localPathAllocator.resolveSegments(fileName),
+          );
           const knownSize = Number.isFinite(file?.size) ? file.size : 0;
           const fileTaskKey = _buildFileTaskKey(
             "download",

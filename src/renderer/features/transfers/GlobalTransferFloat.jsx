@@ -12,11 +12,13 @@ import {
 import Close from "@mui/icons-material/Close";
 import Minimize from "@mui/icons-material/Minimize";
 import ExpandMore from "@mui/icons-material/ExpandMore";
+import ExpandLess from "@mui/icons-material/ExpandLess";
 import SwapVert from "@mui/icons-material/SwapVert";
 import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import {
   useAllGlobalTransfers,
+  useTransferHistory,
   cancelTransferWithNotice,
 } from "./state/globalTransferStore.js";
 import { Z_INDEX } from "../../shared/constants/zIndex.js";
@@ -24,16 +26,22 @@ import { sumTransferFileCount } from "./lib/transferCounts.js";
 import { RADIUS } from "../../theme";
 import TransferItemCard from "./components/TransferItemCard.jsx";
 
+/** 浮窗「最近完成」区最多展示的历史记录数 */
+const RECENT_HISTORY_LIMIT = 20;
+
 /**
  * 全局传输进度浮动窗口
- * 以全局浮动窗口形式显示所有传输任务的详细进度
+ * 以全局浮动窗口形式显示所有传输任务的详细进度；
+ * 任务结束后进入「最近完成」区，仍可在小窗内查看其文件清单
  */
 const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const { allTransfers, removeTransferProgress } = useAllGlobalTransfers();
+  const { history, removeHistoryItemById } = useTransferHistory();
   const [isMinimized, setIsMinimized] = useState(false);
   const [selectedTabId, setSelectedTabId] = useState(null);
+  const [recentExpanded, setRecentExpanded] = useState(true);
 
   // 按tabId分组传输任务
   const transfersByTab = React.useMemo(() => {
@@ -68,12 +76,12 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
     }
   }, [open]);
 
-  // 如果没有传输任务,自动关闭窗口
+  // 既无传输任务也无可查看的完成记录时，自动关闭窗口
   useEffect(() => {
-    if (open && allTransfers.length === 0) {
+    if (open && allTransfers.length === 0 && history.length === 0) {
       onClose();
     }
-  }, [open, allTransfers.length, onClose]);
+  }, [open, allTransfers.length, history.length, onClose]);
 
   const handleMinimizeToggle = () => {
     setIsMinimized(!isMinimized);
@@ -103,6 +111,10 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
     }
   };
 
+  const handleDeleteHistory = (transfer) => {
+    removeHistoryItemById(transfer?.historyId);
+  };
+
   if (!open) {
     return null;
   }
@@ -111,6 +123,16 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
   const currentTransfers = selectedTabId
     ? transfersByTab.get(selectedTabId) || []
     : [];
+  // 多标签页时最近完成记录跟随当前标签页筛选
+  const showTabBar = transfersByTab.size > 1;
+  const recentTransfers = (
+    showTabBar
+      ? history.filter((item) => item.tabId === selectedTabId)
+      : history
+  ).slice(0, RECENT_HISTORY_LIMIT);
+  const activeTaskCount = allTransfers.filter(
+    (item) => item.progress < 100 && !item.isCancelled && !item.error,
+  ).length;
 
   return (
     <Fade in={open}>
@@ -201,7 +223,7 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
         </Box>
 
         {/* Tab切换栏（如果有多个tab） */}
-        {!isMinimized && transfersByTab.size > 1 && (
+        {!isMinimized && showTabBar && (
           <Box
             sx={{
               borderBottom: `1px solid ${theme.palette.divider}`,
@@ -251,7 +273,7 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
             }}
           >
             {/* 直接渲染传输项列表，不使用TransferProgressFloat的外层容器 */}
-            {currentTransfers.length === 0 ? (
+            {currentTransfers.length === 0 && recentTransfers.length === 0 ? (
               <Box sx={{ p: 3, textAlign: "center" }}>
                 <Typography variant="body2" color="text.secondary">
                   {t("fileManager.transfer.noTransfers")}
@@ -268,6 +290,57 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
                 />
               ))
             )}
+
+            {/* 最近完成：已结束的任务（含多文件任务的文件清单） */}
+            {recentTransfers.length > 0 && (
+              <>
+                <Box
+                  component="button"
+                  type="button"
+                  onClick={() => setRecentExpanded((value) => !value)}
+                  aria-expanded={recentExpanded}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    width: "100%",
+                    px: 1.5,
+                    py: 0.75,
+                    border: 0,
+                    borderTop:
+                      currentTransfers.length > 0
+                        ? `1px solid ${theme.palette.divider}`
+                        : 0,
+                    backgroundColor: "transparent",
+                    color: theme.palette.text.secondary,
+                    cursor: "pointer",
+                    font: "inherit",
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    "&:hover": { color: theme.palette.text.primary },
+                  }}
+                >
+                  {t("fileManager.transfer.recentSection", {
+                    count: recentTransfers.length,
+                  })}
+                  {recentExpanded ? (
+                    <ExpandLess sx={{ fontSize: 16 }} />
+                  ) : (
+                    <ExpandMore sx={{ fontSize: 16 }} />
+                  )}
+                </Box>
+                {recentExpanded &&
+                  recentTransfers.map((transfer) => (
+                    <TransferItemCard
+                      key={transfer.historyId}
+                      variant="float"
+                      transfer={transfer}
+                      isActive={false}
+                      onDelete={handleDeleteHistory}
+                    />
+                  ))}
+              </>
+            )}
           </Box>
         )}
 
@@ -276,7 +349,7 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
           <Box sx={{ px: 2, py: 1 }}>
             <Typography variant="caption" color="text.secondary">
               {t("fileManager.transfer.taskCount", {
-                count: allTransfers.length,
+                count: activeTaskCount,
               })}
             </Typography>
           </Box>

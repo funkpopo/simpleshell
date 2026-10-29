@@ -1,3 +1,6 @@
+// 逐文件进度仅为有限规模的批次维护，避免超大目录的首包列表过大
+const MAX_TRACKED_FILE_ITEMS = 10000;
+
 /** TransferProgress: explicit dependencies supplied by the service facade. */
 function createTransferProgress(
   dependencies,
@@ -29,6 +32,87 @@ function createTransferProgress(
         transfer.preparationCompleted + Math.max(0, steps || 0),
       );
       return transfer;
+    }
+    /**
+     * 登记批次内的文件清单（index 为批次内稳定序号）。
+     * 首次推送发送完整列表，之后只推送发生变化的条目。
+     */
+    _setTransferFileItems(transferKey, items) {
+      const transfer = this.dependencies._getTransfer(transferKey);
+      if (!transfer) return;
+      if (
+        !Array.isArray(items) ||
+        items.length === 0 ||
+        items.length > MAX_TRACKED_FILE_ITEMS
+      ) {
+        transfer.fileItems = null;
+        return;
+      }
+      transfer.fileItems = new Map(
+        items.map((item) => [
+          item.index,
+          {
+            index: item.index,
+            name: item.name || "",
+            size: Math.max(0, Number(item.size) || 0),
+            transferredBytes: 0,
+            status: "pending",
+            error: "",
+            finishedAt: 0,
+          },
+        ]),
+      );
+      transfer.fileItemsReset = true;
+      transfer.dirtyFileItems = new Set();
+    }
+    _updateTransferFileItem(
+      transferKey,
+      index,
+      { status, bytesDelta = 0, error } = {},
+    ) {
+      const transfer = this.dependencies._getTransfer(transferKey);
+      const item = transfer?.fileItems?.get(index);
+      if (!item) return;
+
+      if (bytesDelta) {
+        const next = item.transferredBytes + bytesDelta;
+        item.transferredBytes =
+          item.size > 0
+            ? Math.min(item.size, Math.max(0, next))
+            : Math.max(0, next);
+      }
+      if (status) {
+        item.status = status;
+        if (status === "completed") {
+          item.transferredBytes = Math.max(item.transferredBytes, item.size);
+        }
+        if (status === "completed" || status === "failed") {
+          item.finishedAt = Date.now();
+        }
+      }
+      if (error) item.error = String(error);
+      transfer.dirtyFileItems.add(index);
+    }
+    _takeFileItemsPayload(transfer) {
+      if (!transfer.fileItems) return null;
+      if (transfer.fileItemsReset) {
+        transfer.fileItemsReset = false;
+        transfer.dirtyFileItems.clear();
+        return {
+          fileList: Array.from(transfer.fileItems.values(), (item) => ({
+            ...item,
+          })),
+          fileListReset: true,
+        };
+      }
+      if (transfer.dirtyFileItems.size === 0) return null;
+      const fileUpdates = [];
+      for (const index of transfer.dirtyFileItems) {
+        const item = transfer.fileItems.get(index);
+        if (item) fileUpdates.push({ ...item });
+      }
+      transfer.dirtyFileItems.clear();
+      return { fileUpdates };
     }
     _getTransferDisplayName(transfer, fallback = "") {
       const fallbackName = normalizeTransferName(fallback);
@@ -151,10 +235,12 @@ function createTransferProgress(
 
       const finalChannel = channel || transfer.progressChannel;
       this.dependencies._safeSend(transfer.sender, finalChannel, payload);
+      // 逐文件状态只走全局传输状态通道，避免在进度回调通道上重复发送
+      const fileItemsPayload = this._takeFileItemsPayload(transfer);
       this.dependencies._safeSend(
         transfer.sender,
         IPC_EVENT_CHANNELS.SFTP_TRANSFER_STATE,
-        payload,
+        fileItemsPayload ? { ...payload, ...fileItemsPayload } : payload,
       );
     }
   })();

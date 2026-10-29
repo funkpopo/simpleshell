@@ -7,7 +7,8 @@ function createFolderDownload(
     path,
     IPC_EVENT_CHANNELS,
     fsp,
-    toPosixPath,
+    sanitizeLocalPathSegment,
+    createLocalPathAllocator,
     _buildFileTaskKey,
     _buildChunkSegments,
   },
@@ -48,7 +49,17 @@ function createFolderDownload(
         }
 
         const targetRootDir = filePaths[0];
-        const localFolderPath = path.join(targetRootDir, folderName);
+        const localFolderPath = path.join(
+          targetRootDir,
+          sanitizeLocalPathSegment(folderName),
+        );
+        // 远程名可能含本地非法字符或仅大小写不同，统一映射为安全且不冲突的本地路径
+        const localPathAllocator = createLocalPathAllocator();
+        const resolveLocalPath = (relativePath) =>
+          path.join(
+            localFolderPath,
+            ...localPathAllocator.resolveSegments(relativePath),
+          );
         transferKey = this.dependencies._generateTransferKey(
           tabId,
           "download-folder",
@@ -104,11 +115,7 @@ function createFolderDownload(
 
         for (const relativeDir of tree.directories) {
           this.dependencies._throwIfTransferCancelled(transferKey);
-          const localDirPath = path.join(
-            localFolderPath,
-            toPosixPath(relativeDir),
-          );
-          await fsp.mkdir(localDirPath, { recursive: true });
+          await fsp.mkdir(resolveLocalPath(relativeDir), { recursive: true });
         }
 
         const counters = { completed: 0, failed: 0 };
@@ -120,10 +127,7 @@ function createFolderDownload(
         for (let index = 0; index < tree.files.length; index += 1) {
           this.dependencies._throwIfTransferCancelled(transferKey);
           const file = tree.files[index];
-          const localPath = path.join(
-            localFolderPath,
-            toPosixPath(file.relativePath),
-          );
+          const localPath = resolveLocalPath(file.relativePath);
           const remotePath = this.dependencies._normalizeRemotePath(
             file.remotePath,
           );

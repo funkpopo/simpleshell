@@ -38,8 +38,10 @@ const {
 const { validateAlgorithm } = require("./transferIntegrity");
 const {
   buildCancelledError,
-  toPosixPath,
   normalizeDroppedTransferRelativePath,
+  normalizeRemoteTransferPath,
+  sanitizeLocalPathSegment,
+  createLocalPathAllocator,
 } = require("./transferShared");
 const { normalizeErrorMessage } = require("../utils/errorResponse");
 const {
@@ -170,7 +172,7 @@ class FilemanagementService {
         ],
         fields: [],
       }),
-      { toPosixPath, path, transferText, nativeSftpClient },
+      { normalizeRemoteTransferPath, path, transferText, nativeSftpClient },
     );
     this._transferRecovery = createTransferRecovery(
       serviceDependencies(this, {
@@ -211,6 +213,8 @@ class FilemanagementService {
           "_recordCancelLatency",
           "_finalizeTransfer",
           "_throwIfTransferCancelled",
+          "_setTransferFileItems",
+          "_updateTransferFileItem",
           "_log",
         ],
         fields: [],
@@ -252,6 +256,7 @@ class FilemanagementService {
         IPC_EVENT_CHANNELS,
         isCancelledError,
         normalizeErrorMessage,
+        sanitizeLocalPathSegment,
       },
     );
     this._multiFileDownload = createMultiFileDownload(
@@ -285,6 +290,7 @@ class FilemanagementService {
         buildTransferDisplayName,
         path,
         IPC_EVENT_CHANNELS,
+        createLocalPathAllocator,
         _buildFileTaskKey,
         _buildChunkSegments,
       },
@@ -321,7 +327,8 @@ class FilemanagementService {
         path,
         IPC_EVENT_CHANNELS,
         fsp,
-        toPosixPath,
+        sanitizeLocalPathSegment,
+        createLocalPathAllocator,
         _buildFileTaskKey,
         _buildChunkSegments,
       },
@@ -540,6 +547,14 @@ class FilemanagementService {
 
   _getTransferDisplayName(...args) {
     return this._transferProgress._getTransferDisplayName(...args);
+  }
+
+  _setTransferFileItems(...args) {
+    return this._transferProgress._setTransferFileItems(...args);
+  }
+
+  _updateTransferFileItem(...args) {
+    return this._transferProgress._updateTransferFileItem(...args);
   }
 
   _emitTransferProgress(...args) {

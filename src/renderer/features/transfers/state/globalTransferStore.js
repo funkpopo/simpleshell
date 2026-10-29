@@ -346,13 +346,52 @@ const isTransferEqual = (a, b) => {
     a.error === b.error &&
     a.warning === b.warning &&
     a.isCompleted === b.isCompleted &&
+    a.fileList === b.fileList &&
     a.tabId === b.tabId
   );
+};
+
+// 文件清单 → index 到数组下标的映射；增量合并时复制数组但下标不变，映射可复用
+const fileListPositions = new WeakMap();
+
+const getFileListPositions = (fileList) => {
+  let positions = fileListPositions.get(fileList);
+  if (!positions) {
+    positions = new Map(fileList.map((item, position) => [item.index, position]));
+    fileListPositions.set(fileList, positions);
+  }
+  return positions;
+};
+
+/**
+ * 主进程首包推送完整清单（fileListReset），之后只推送变化条目（fileUpdates）。
+ * 返回新数组以便快照比较感知变化；无变化时返回原引用。
+ */
+const mergeTransferFileList = (previous, payload) => {
+  if (payload.fileListReset && Array.isArray(payload.fileList)) {
+    return [...payload.fileList].sort((a, b) => a.index - b.index);
+  }
+  const updates = payload.fileUpdates;
+  if (!previous || !Array.isArray(updates) || updates.length === 0) {
+    return previous;
+  }
+  const positions = getFileListPositions(previous);
+  const next = previous.slice();
+  for (const update of updates) {
+    const position = positions.get(update.index);
+    if (position !== undefined) next[position] = update;
+  }
+  fileListPositions.set(next, positions);
+  return next;
 };
 
 export const applySftpTransferState = (payload) => {
   const { tabId, transferKey } = payload;
   if (!tabId || !transferKey) return;
+  const fileList = mergeTransferFileList(
+    sftpStates.get(transferKey)?.fileList,
+    payload,
+  );
   const state = {
     status: payload.status,
     algorithm: payload.algorithm,
@@ -368,6 +407,7 @@ export const applySftpTransferState = (payload) => {
     transferSpeed: payload.transferSpeed,
     ...(payload.error ? { error: payload.error } : {}),
     ...(payload.status === "paused" ? { isCancelled: true } : {}),
+    ...(fileList ? { fileList } : {}),
   };
   sftpStates.set(transferKey, state);
   const existing = getTransfersInternal(tabId).find(

@@ -345,10 +345,6 @@ function createFileUpload(
           }
 
           counters.completed += 1;
-          const state = this.dependencies._getTransfer(transferKey);
-          if (state) {
-            state.processedFiles += 1;
-          }
           this.dependencies._emitTransferProgress(transferKey, {
             force: true,
             fileName: displayName || fileState.fileLabel,

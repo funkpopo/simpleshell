@@ -27,6 +27,26 @@ function createTransferBatch(
           tasks.map((task) => [taskMetaMap.get(task.taskId).fileTaskKey, task]),
         ).values(),
       ];
+      // 分块任务按文件汇总大小，登记逐文件进度清单
+      const fileSizes = new Map();
+      for (const task of tasks) {
+        const { fileTaskKey } = taskMetaMap.get(task.taskId);
+        fileSizes.set(
+          fileTaskKey,
+          (fileSizes.get(fileTaskKey) || 0) + (Number(task.totalBytes) || 0),
+        );
+      }
+      this.dependencies._setTransferFileItems(
+        transferKey,
+        files.map((task) => {
+          const meta = taskMetaMap.get(task.taskId);
+          return {
+            index: meta.index,
+            name: getTaskLabel(meta),
+            size: fileSizes.get(meta.fileTaskKey) || 0,
+          };
+        }),
+      );
       let next = 0;
       const concurrency = _chooseConcurrency(
         files.length,
@@ -43,6 +63,9 @@ function createTransferBatch(
           const meta = taskMetaMap.get(task.taskId);
           const file = fileStateMap.get(meta.fileTaskKey);
           const state = this.dependencies._getTransfer(transferKey);
+          this.dependencies._updateTransferFileItem(transferKey, meta.index, {
+            status: "transferring",
+          });
           try {
             await this.dependencies._runResumableFile({
               tabId,
@@ -55,18 +78,30 @@ function createTransferBatch(
               fileName: getTaskLabel(meta),
               onBytes: (delta) => {
                 state.transferredBytes += delta;
+                this.dependencies._updateTransferFileItem(
+                  transferKey,
+                  meta.index,
+                  { bytesDelta: delta },
+                );
                 emitTaskProgress(meta);
               },
             });
             file.committed = true;
+            // 已处理文件数在文件落盘时即计入（分块文件不再等到收尾阶段），
+            // 保证界面上的「已完成 x/y」单调递增
+            state.processedFiles += 1;
             if (file.chunked) file.completedSegments = file.totalSegments;
-            else {
-              counters.completed += 1;
-              state.processedFiles += 1;
-            }
+            else counters.completed += 1;
+            this.dependencies._updateTransferFileItem(transferKey, meta.index, {
+              status: "completed",
+            });
             emitTaskProgress(meta, true);
           } catch (error) {
             if (this.dependencies._isTransferCancelled(transferKey)) break;
+            this.dependencies._updateTransferFileItem(transferKey, meta.index, {
+              status: "failed",
+              error: error?.message,
+            });
             file.failed = true;
             counters.failed += 1;
             errors.push({
@@ -135,12 +170,6 @@ function createTransferBatch(
             throw new Error("Transfer was not committed");
           chunkTempCleanup.delete(fileState.tempPath);
           counters.completed += 1;
-
-          const state = this.dependencies._getTransfer(transferKey);
-          if (state) {
-            state.processedFiles += 1;
-          }
-
           emitFileMerged(fileState);
         } catch (renameError) {
           fileState.failed = true;

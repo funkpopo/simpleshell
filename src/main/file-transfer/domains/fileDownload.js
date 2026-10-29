@@ -13,6 +13,7 @@ function createFileDownload(
     IPC_EVENT_CHANNELS,
     isCancelledError,
     normalizeErrorMessage,
+    sanitizeLocalPathSegment,
   },
 ) {
   return new (class FileDownload {
@@ -80,7 +81,9 @@ function createFileDownload(
         const defaultName = path.posix.basename(normalizedRemotePath);
         const defaultTargetPath = path.join(
           this._resolveDownloadBasePath(tabId),
-          defaultName || "downloaded-file",
+          defaultName
+            ? sanitizeLocalPathSegment(defaultName)
+            : "downloaded-file",
         );
 
         const dialogWindow = this._resolveDialogWindow();

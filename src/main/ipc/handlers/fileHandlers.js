@@ -13,6 +13,7 @@ const {
 const {
   toPosixPath,
   normalizeDroppedTransferRelativePath,
+  normalizeRemoteTransferPath,
 } = require("../../file-transfer/transferShared");
 const {
   t: translateLocale,
@@ -26,15 +27,7 @@ const {
 const fileText = (key, params = {}) =>
   translateLocale(key, { lng: getUiLanguage(configService), ...params });
 
-const normalizeDroppedRemotePath = (remotePath) => {
-  const raw = String(remotePath ?? "").trim();
-  if (!raw || raw === "~") return ".";
-
-  const normalized = toPosixPath(raw);
-  if (normalized === "~") return ".";
-  if (normalized.startsWith("~/")) return `./${normalized.slice(2)}`;
-  return normalized;
-};
+const normalizeDroppedRemotePath = normalizeRemoteTransferPath;
 
 const joinDroppedRemotePath = (basePath, childPath) => {
   const base = normalizeDroppedRemotePath(basePath);
@@ -638,12 +631,15 @@ class FileHandlers {
     const rejected = [];
 
     for (const item of sourceItems) {
+      // 首尾空格是合法文件名字符，名称与本地路径都不能 trim
       const name =
         typeof item?.name === "string" && item.name.trim()
-          ? item.name.trim()
+          ? item.name
           : path.basename(String(item?.localPath || ""));
       const localPath =
-        typeof item?.localPath === "string" ? item.localPath.trim() : "";
+        typeof item?.localPath === "string" && item.localPath.trim()
+          ? item.localPath
+          : "";
       const relativePath = normalizeDroppedRelativePath(item?.relativePath);
 
       if (!relativePath) {

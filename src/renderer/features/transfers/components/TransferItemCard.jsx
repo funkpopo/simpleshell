@@ -1,26 +1,25 @@
 import { memo, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import Collapse from "@mui/material/Collapse";
-import ListItem from "@mui/material/ListItem";
-import ListItemIcon from "@mui/material/ListItemIcon";
-import ListItemText from "@mui/material/ListItemText";
 import Typography from "@mui/material/Typography";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import OverflowTooltipText from "../../../shared/ui/OverflowTooltipText.jsx";
-import WindowedSidebarList from "../../../shared/ui/WindowedSidebarList.jsx";
 import { formatFileSize, formatSpeed } from "../../../shared/lib/formatters.js";
 import {
   getDisplayCompletedFileCount,
   getNormalizedTransferFileCount,
+  getTransferFileListStats,
 } from "../lib/transferCounts.js";
 import { getTransferColor, getTransferIcon } from "../transferStatusStyles.jsx";
 import { useTransferItemDerived } from "../lib/useTransferItemDerived.js";
 import TransferItemProgress from "./TransferItemProgress.jsx";
+import { TransferActiveFiles, TransferFileList } from "./TransferFileList.jsx";
 import {
   TransferCancelButton,
   TransferDeleteButton,
@@ -64,7 +63,8 @@ const formatTimestamp = (timestamp, locale) => {
  * - "sidebar"：侧栏可展开卡片——时间戳、校验菜单、删除历史、展开文件列表、
  *   错误 Alert、状态 Chips、暂停按钮；isActive 区分活跃/历史（仅活跃可暂停/校验）
  * - "float"：浮窗详情卡片——圆形图标容器、百分比 Chip、删除/终止按钮、
- *   字节/速度/剩余时间详情行
+ *   字节/速度/剩余时间详情行；多文件任务逐文件显示进度（100% 后自动收起），
+ *   并可展开完整文件清单。isActive=false 表示浮窗中的历史记录（可删除）
  *
  * 回调签名统一为 (transfer) / (transfer, algorithm)。
  */
@@ -109,18 +109,31 @@ const TransferItemCard = memo(
     // 侧栏仅活跃任务可取消/校验；浮窗不做活跃区分
     const canCancel = isSidebar ? isActive && canCancelBase : canCancelBase;
     const canDeleteHistory = isSidebar && !isActive && onDelete;
-    // 浮窗：失败或取消的任务可删除记录
-    const canDeleteFloat = !isSidebar && (hasError || isCancelled);
+    // 浮窗：失败、取消的任务以及历史记录可删除
+    const canDeleteFloat =
+      !isSidebar && (hasError || isCancelled || (!isActive && !!onDelete));
+    const isFinished = isCompleted || hasError || isCancelled;
 
     const totalFiles = transfer.totalFiles || 0;
     const transferFileCount = getNormalizedTransferFileCount(transfer);
     const isMultiFile = transferFileCount > 1;
-    const hasFileList = transfer.fileList && transfer.fileList.length > 0;
+    const fileList = Array.isArray(transfer.fileList)
+      ? transfer.fileList
+      : null;
+    const hasFileList = !!fileList && fileList.length > 0;
     const canExpand = isSidebar && (hasFileList || transferFileCount > 1);
     const displayCompleted = getDisplayCompletedFileCount(transfer);
-    const displayFileProgress = getDisplayCompletedFileCount(transfer, {
-      multiFileUsesCurrentIndex: true,
-    });
+    const failedFileCount = getTransferFileListStats(transfer)?.failed || 0;
+    // 浮窗多文件：文件数只在计数行出现一次，当前文件由逐文件进度行展示；
+    // 清单到达前（扫描/建目录阶段）仍显示准备状态文本
+    const showFloatStatusText =
+      !!statusText && (!isMultiFile || (!hasFileList && !isFinished));
+    const showFloatCurrentFile =
+      !isMultiFile &&
+      !!currentFile &&
+      currentFile !== fileName &&
+      currentFile !== statusText;
+    const canToggleFileList = !isSidebar && isMultiFile && hasFileList;
 
     const showVerifyMenu =
       isSidebar &&
@@ -210,7 +223,7 @@ const TransferItemCard = memo(
               >
                 {fileName || t("fileManager.transfer.fallbackName")}
               </Typography>
-              {statusText && (
+              {showFloatStatusText && (
                 <Typography
                   variant="caption"
                   sx={{
@@ -225,7 +238,7 @@ const TransferItemCard = memo(
                   {statusText}
                 </Typography>
               )}
-              {(totalFiles > 1 || currentFile) && (
+              {(isMultiFile || showFloatCurrentFile) && (
                 <Typography
                   variant="caption"
                   sx={{
@@ -237,19 +250,26 @@ const TransferItemCard = memo(
                     display: "block",
                   }}
                 >
-                  {totalFiles > 1 && (
-                    <span>
+                  {isMultiFile ? (
+                    <>
                       {t("fileManager.transfer.completedFiles", {
-                        completed: displayFileProgress,
-                        total: totalFiles,
+                        completed: displayCompleted,
+                        total: totalFiles || transferFileCount,
                       })}
-                    </span>
-                  )}
-                  {currentFile && (
-                    <span>
-                      {totalFiles > 1 ? " • " : ""}
-                      {currentFile}
-                    </span>
+                      {failedFileCount > 0 && (
+                        <Box
+                          component="span"
+                          sx={{ color: theme.palette.error.main }}
+                        >
+                          {" • "}
+                          {t("fileManager.transfer.failedFiles", {
+                            count: failedFileCount,
+                          })}
+                        </Box>
+                      )}
+                    </>
+                  ) : (
+                    currentFile
                   )}
                 </Typography>
               )}
@@ -307,7 +327,7 @@ const TransferItemCard = memo(
                 <TransferDeleteButton
                   transfer={transfer}
                   onDelete={onDelete}
-                  variant="delete"
+                  variant={isActive ? "delete" : "record"}
                   size={28}
                   iconSize={16}
                 />
@@ -366,6 +386,13 @@ const TransferItemCard = memo(
             barColor={statusColor}
             sx={viewStyles.transferItemProgressSx2}
           />
+        )}
+
+        {/* 浮窗多文件：逐文件进度（任务结束后整体收起） */}
+        {!isSidebar && isMultiFile && hasFileList && (
+          <Collapse in={!isFinished} timeout={300} unmountOnExit>
+            <TransferActiveFiles fileList={fileList} barColor={statusColor} />
+          </Collapse>
         )}
 
         {/* 侧栏：详情 Chips + 暂停按钮 */}
@@ -482,74 +509,55 @@ const TransferItemCard = memo(
           </Box>
         )}
 
+        {/* 浮窗：完整文件清单（传输中与完成后均可查看） */}
+        {canToggleFileList && (
+          <>
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => setExpanded(!expanded)}
+              endIcon={
+                expanded ? (
+                  <ExpandLessIcon sx={{ fontSize: 16 }} />
+                ) : (
+                  <ExpandMoreIcon sx={{ fontSize: 16 }} />
+                )
+              }
+              aria-expanded={expanded}
+              sx={viewStyles.fileListToggleSx}
+            >
+              {expanded
+                ? t("fileManager.transfer.hideFileList")
+                : t("fileManager.transfer.viewFileList", {
+                    count: fileList.length,
+                  })}
+            </Button>
+            <Collapse in={expanded} timeout="auto" unmountOnExit>
+              <Box sx={viewStyles.fileListSx}>
+                <TransferFileList
+                  fileList={fileList}
+                  transferCancelled={isCancelled}
+                />
+              </Box>
+            </Collapse>
+          </>
+        )}
+
         {/* 侧栏：文件列表展开区域 */}
         {isSidebar && canExpand && (
           <Collapse in={expanded} timeout="auto" unmountOnExit>
             <Box
-              className="app-scrollbar"
               sx={{
                 mt: 1,
                 pt: 1,
                 borderTop: `1px dashed ${theme.palette.divider}`,
-                maxHeight: 200,
-                overflowY: "auto",
               }}
             >
               {hasFileList ? (
-                <Box
-                  sx={{
-                    height: transfer.fileList.length >= 30 ? 180 : undefined,
-                    display: "flex",
-                    flexDirection: "column",
-                  }}
-                >
-                  <WindowedSidebarList
-                    items={transfer.fileList}
-                    className="transfer-files-virtualized-list app-scrollbar"
-                    estimatedRowHeight={36}
-                    getItemKey={(file, index) => file.index ?? index}
-                    renderItem={(file, index) => (
-                      <ListItem
-                        key={file.index ?? index}
-                        disablePadding
-                        sx={viewStyles.listItemSx}
-                      >
-                        <ListItemIcon sx={viewStyles.listItemIconSx}>
-                          {file.completed ? (
-                            <CheckCircleIcon
-                              sx={viewStyles.checkCircleIconSx}
-                            />
-                          ) : (
-                            <InsertDriveFileIcon
-                              sx={viewStyles.insertDriveFileIconSx}
-                            />
-                          )}
-                        </ListItemIcon>
-                        <ListItemText
-                          secondary={formatFileSize(file.size, 1)}
-                          sx={viewStyles.listItemTextSx}
-                          primary={
-                            <OverflowTooltipText
-                              variant="caption"
-                              sx={viewStyles.overflowTooltipTextSx2}
-                              tooltipTitle={file.name || ""}
-                            >
-                              {file.name || ""}
-                            </OverflowTooltipText>
-                          }
-                          primaryTypographyProps={{
-                            component: "div",
-                          }}
-                          secondaryTypographyProps={{
-                            variant: "caption",
-                            noWrap: true,
-                            sx: { fontSize: "0.6rem" },
-                          }}
-                        />
-                      </ListItem>
-                    )}
-                  />
-                </Box>
+                <TransferFileList
+                  fileList={fileList}
+                  transferCancelled={isCancelled}
+                />
               ) : totalFiles > 0 ? (
                 <Typography
                   variant="caption"
@@ -594,11 +602,18 @@ const viewStyles = {
     justifyContent: "space-between",
     alignItems: "center",
   },
-  listItemSx: { py: 0.25, px: 0.5 },
-  listItemIconSx: { minWidth: 24 },
-  checkCircleIconSx: { fontSize: 14, color: "success.main" },
-  insertDriveFileIconSx: { fontSize: 14, color: "text.secondary" },
-  listItemTextSx: { minWidth: 0 },
-  overflowTooltipTextSx2: { fontSize: "0.7rem" },
   typographySx: { px: 1 },
+  fileListToggleSx: {
+    mt: 0.5,
+    px: 0.5,
+    minWidth: 0,
+    fontSize: "0.72rem",
+    textTransform: "none",
+  },
+  fileListSx: {
+    mt: 0.5,
+    pt: 0.5,
+    borderTop: "1px dashed",
+    borderColor: "divider",
+  },
 };

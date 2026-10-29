@@ -290,7 +290,6 @@ export default function useTransferTasks({
           processedFiles: 0,
           totalFiles: 1,
           transferKey: "",
-          fileList: null,
         });
 
         // 使用progressCallback处理进度更新;两个 API 的回调签名不同,先解包成同一结构
@@ -307,7 +306,6 @@ export default function useTransferTasks({
                 processedFiles: args[7],
                 totalFiles: args[8],
                 transferKey: args[9],
-                fileList: args[10],
               }
             : {
                 progress: args[0],
@@ -321,7 +319,6 @@ export default function useTransferTasks({
                 processedFiles: args[7],
                 totalFiles: args[8],
                 transferKey: args[9],
-                fileList: args[10],
               };
           const normalized = normalizeTransferProgress(raw);
           const update = {
@@ -329,7 +326,6 @@ export default function useTransferTasks({
             fileName: raw.fileName || t("fileManager.messages.preparingUpload"),
             statusText: t("fileManager.transfer.status.uploading"),
             currentFile: raw.currentFile || "",
-            fileList: raw.fileList || null,
           };
           if (!activeUploadTransferId) {
             activeUploadTransferId = addTransferProgress({
@@ -345,10 +341,8 @@ export default function useTransferTasks({
         if (isUserCancellationError(result)) {
           markUploadCancelled();
         } else if (result?.success) {
-          // 标记传输完成,完成后延迟移除
+          // 标记传输完成,完成后延迟移除；保留原显示名，完成状态由状态文本体现
           markTransferCompleted(activeUploadTransferId, {
-            fileName:
-              result.message || t("fileManager.messages.uploadComplete"),
             statusText: t("fileManager.transfer.status.completed"),
             currentFile: "",
             ...(isFolder
@@ -531,7 +525,6 @@ export default function useTransferTasks({
         processedFiles: 0,
         totalFiles: Math.max(1, entries?.length || 1),
         transferKey: "",
-        fileList: null,
       });
       let didRefresh = false;
       const droppedItems = [];
@@ -754,7 +747,6 @@ export default function useTransferTasks({
             totalFiles,
             transferKey,
             operationComplete,
-            fileList,
           ) => {
             if (transferCancelled) {
               return;
@@ -775,7 +767,6 @@ export default function useTransferTasks({
               statusText: t("fileManager.transfer.status.uploading"),
               currentFile: fileName || "",
               isCompleted: operationComplete === true,
-              fileList: fileList || null,
             });
           },
         );
@@ -787,8 +778,6 @@ export default function useTransferTasks({
           });
         } else if (result?.success) {
           markTransferCompleted(transferId, {
-            fileName:
-              result.message || t("fileManager.messages.uploadComplete"),
             statusText: t("fileManager.transfer.status.completed"),
             currentFile: "",
             isCompleted: true,
@@ -1063,7 +1052,7 @@ export default function useTransferTasks({
                 processedFiles,
                 transferKey,
               }),
-              fileName: fileName || batchDisplayName,
+              fileName: batchDisplayName,
               statusText: buildBatchDownloadStatusText({
                 processedFiles,
                 totalFiles,
@@ -1123,16 +1112,8 @@ export default function useTransferTasks({
             result.completed || filesToDownload.length,
           );
           markTransferCompleted(batchTransferId, {
-            fileName: t("fileManager.messages.batchDownloadCompleteTitle", {
-              count: completedCount,
-            }),
-            statusText: t(
-              "fileManager.messages.batchDownloadCompletedSummary",
-              {
-                completed: completedCount,
-                total: filesToDownload.length,
-              },
-            ),
+            fileName: batchDisplayName,
+            statusText: t("fileManager.transfer.status.completed"),
             currentFile: "",
             processedFiles: completedCount,
             totalFiles: filesToDownload.length,

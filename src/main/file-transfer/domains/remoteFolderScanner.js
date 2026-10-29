@@ -1,26 +1,22 @@
 /** RemoteFolderScanner: explicit dependencies supplied by the service facade. */
 function createRemoteFolderScanner(
   dependencies,
-  { toPosixPath, path, transferText, nativeSftpClient },
+  { normalizeRemoteTransferPath, path, transferText, nativeSftpClient },
 ) {
   return new (class RemoteFolderScanner {
     constructor() {
       this.dependencies = dependencies;
     }
+    // 远程路径为 POSIX：反斜杠、首尾空格都是合法文件名字符，不做转换
     _normalizeRemotePath(remotePath) {
-      const raw = String(remotePath ?? "").trim();
-      if (!raw || raw === "~") return ".";
-
-      const normalized = toPosixPath(raw);
-      if (normalized === "~") return ".";
-      if (normalized.startsWith("~/")) return `./${normalized.slice(2)}`;
-      return normalized;
+      return normalizeRemoteTransferPath(remotePath);
     }
+    // childName 由调用方保证为 "/" 分隔的相对路径
     _joinRemotePath(basePath, childName) {
       const base = this._normalizeRemotePath(basePath);
       if (!childName) return base;
-      if (base === ".") return toPosixPath(childName);
-      return path.posix.join(base, toPosixPath(childName));
+      if (base === ".") return childName;
+      return path.posix.join(base, childName);
     }
     async _ensureRemoteDirectories(
       tabId,
@@ -141,15 +137,15 @@ function createRemoteFolderScanner(
         maxBytesHit: result?.maxBytesHit === true,
         files: rawFiles.map((file) => ({
           remotePath: this._normalizeRemotePath(file?.remotePath || ""),
-          relativePath: toPosixPath(file?.relativePath || ""),
+          relativePath: String(file?.relativePath || ""),
           fileName:
             file?.fileName ||
             path.posix.basename(
-              toPosixPath(file?.relativePath || file?.remotePath || ""),
+              String(file?.relativePath || file?.remotePath || ""),
             ),
           size: Number.isFinite(file?.size) ? file.size : 0,
         })),
-        directories: rawDirectories.map((entry) => toPosixPath(entry || "")),
+        directories: rawDirectories.map((entry) => String(entry || "")),
         errors: Array.isArray(result?.errors) ? result.errors : [],
         totalBytes: Number.isFinite(result?.totalBytes)
           ? result.totalBytes
