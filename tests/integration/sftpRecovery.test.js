@@ -232,22 +232,29 @@ describe("sftp-resume", () => {
         }
 
         await check(
-          "parallel segments: a failed segment retries without replaying completed segments",
+          "parallel segments: a dropped connection retries only unfinished segments",
           async () => {
-            let disconnected = false;
+            // Segments share one SSH connection, so dropping it interrupts
+            // every segment in flight; completed segments must not replay.
+            let completedAtDrop = null;
+            let context;
             server.control.before = async (operation, client) => {
               if (
-                !disconnected &&
+                !completedAtDrop &&
                 operation.name === "READ" &&
                 operation.path === "/source.bin" &&
                 operation.offset >= 1024 * 1024 &&
                 operation.offset < 2 * 1024 * 1024
               ) {
-                disconnected = true;
+                completedAtDrop = new Set(
+                  context.runner.manifest.segments.flatMap((segment, index) =>
+                    segment.done ? [index] : [],
+                  ),
+                );
                 client.end();
               }
             };
-            const context = run({
+            context = run({
               direction: "download",
               localPath: path.join(root, "chunks.bin"),
               remotePath: "/source.bin",
@@ -256,12 +263,23 @@ describe("sftp-resume", () => {
             });
             const logStart = runtime.logs.length;
             const result = await context.runner.run();
-            assert.ok(disconnected && result.verified);
-            const retries = runtime.logs
+            assert.ok(completedAtDrop && result.verified);
+            const retried = runtime.logs
               .slice(logStart)
-              .filter((line) => /SFTP .* segment=.*attempt=2/.test(line));
-            assert.equal(retries.length, 1);
-            assert.match(retries[0], /segment=1 /);
+              .map((line) => /SFTP .* segment=(\d+) attempt=(\d+)/.exec(line))
+              .filter((match) => match && Number(match[2]) > 1)
+              .map((match) => ({
+                segment: Number(match[1]),
+                attempt: Number(match[2]),
+              }));
+            assert.ok(retried.some(({ segment }) => segment === 1));
+            for (const { segment, attempt } of retried) {
+              assert.equal(attempt, 2, `segment ${segment} needed one retry`);
+              assert.ok(
+                !completedAtDrop.has(segment),
+                `completed segment ${segment} was replayed`,
+              );
+            }
             assert.deepEqual(
               await fsp.readFile(context.record.localPath),
               data,

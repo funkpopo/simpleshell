@@ -1,10 +1,17 @@
 # 文件传输服务边界
 
 `filemanagementService.js` 保留公开命令、传输注册表和生命周期状态，组合
-`domains/` 中的任务注册/取消、进度事件、进程池与运行指标、远端目录扫描、
+`domains/` 中的任务注册/取消、进度事件、传输调度与运行指标、远端目录扫描、
 续传恢复、批任务、单文件/多文件/目录下载、上传执行和上传来源选择模块。
 每个模块接收明确命名的状态和命令，传输身份、缓存、任务队列不重复存储。
-底层网络操作仍通过原生 SFTP 服务执行，现有调用接口保持一致。
+底层网络操作通过 `simpleshell-core` 的 SFTP 服务执行。
+
+`transferScheduler.js` 只负责调度：队列、每个传输的并发上限、重试与取消。
+同一主机与凭据的所有传输共享 core 中的一条 SSH 连接（`ssh-hub`）；每个
+并发槽位保留一个 `sftp-session`（即该连接上的一个 SFTP channel），供该槽位
+后续任务复用。任务失败或取消时关闭其槽位会话，重试使用新 channel；传输结束
+时关闭全部槽位会话。连接断开时，正在使用该连接的会话自行结束，客户端在下一次
+请求时建立新会话。
 
 `tests/integration/sftpRecovery.test.js` 使用真实本地 SSH/SFTP 服务验证
 中断、重试、续传、校验、目录操作和取消；`npm run test:integration` 统一运行。
@@ -32,7 +39,7 @@
   （`Promise.allSettled`，任一失败抛出该错误）。
 - 返回结构：`{ algorithm, localHash, remoteHash, verified }`。
 - 摘要不一致：抛 `errorKind: "integrity-mismatch"`、`retryable: false`，消息含双端摘要。
-- 取消：`signal` 同时终止本地读取与远端子进程（`onSpawn` 后 `child.kill()`）。
+- 取消：`signal` 同时终止本地读取与远端请求（`onSpawn` 后 `child.kill()` 结束对应 core 流）。
 
 ### `resumableTransfer.js` 依赖点
 

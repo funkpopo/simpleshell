@@ -3,7 +3,7 @@ function createTransferRuntime(
   dependencies,
   {
     EVENT_LOOP_LAG_INTERVAL_MS,
-    TransferProcessPool,
+    TransferScheduler,
     transferText,
     buildEmptyTransferPoolStats,
     normalizeErrorMessage,
@@ -43,40 +43,40 @@ function createTransferRuntime(
         this.dependencies.eventLoopLagTimer = null;
       }
     }
-    _clearTransferProcessPoolIdleTimer() {
-      if (this.dependencies.transferProcessPoolIdleTimer) {
-        clearTimeout(this.dependencies.transferProcessPoolIdleTimer);
-        this.dependencies.transferProcessPoolIdleTimer = null;
+    _clearTransferSchedulerIdleTimer() {
+      if (this.dependencies.transferSchedulerIdleTimer) {
+        clearTimeout(this.dependencies.transferSchedulerIdleTimer);
+        this.dependencies.transferSchedulerIdleTimer = null;
       }
     }
-    _ensureTransferProcessPool() {
-      this._clearTransferProcessPoolIdleTimer();
+    _ensureTransferScheduler() {
+      this._clearTransferSchedulerIdleTimer();
 
       const currentStats =
-        this.dependencies.transferProcessPool?.getRuntimeStats?.();
-      if (!this.dependencies.transferProcessPool || currentStats?.shutdown) {
-        this.dependencies.transferProcessPool = new TransferProcessPool({
+        this.dependencies.transferScheduler?.getRuntimeStats?.();
+      if (!this.dependencies.transferScheduler || currentStats?.shutdown) {
+        this.dependencies.transferScheduler = new TransferScheduler({
           translate: transferText,
         });
         this.dependencies._log("Transfer process pool initialized", "INFO");
       }
 
-      return this.dependencies.transferProcessPool;
+      return this.dependencies.transferScheduler;
     }
-    _scheduleTransferProcessPoolIdleShutdown() {
-      this._clearTransferProcessPoolIdleTimer();
+    _scheduleTransferSchedulerIdleShutdown() {
+      this._clearTransferSchedulerIdleTimer();
 
       if (
-        !this.dependencies.transferProcessPool ||
+        !this.dependencies.transferScheduler ||
         this.dependencies.activeTransfers.size > 0
       ) {
         return;
       }
 
-      this.dependencies.transferProcessPoolIdleTimer = setTimeout(() => {
-        this.dependencies.transferProcessPoolIdleTimer = null;
+      this.dependencies.transferSchedulerIdleTimer = setTimeout(() => {
+        this.dependencies.transferSchedulerIdleTimer = null;
 
-        const pool = this.dependencies.transferProcessPool;
+        const pool = this.dependencies.transferScheduler;
         if (!pool || this.dependencies.activeTransfers.size > 0) {
           return;
         }
@@ -90,15 +90,15 @@ function createTransferRuntime(
           (poolStats.activeTransfers || 0) > 0;
 
         if (hasPendingWork) {
-          this._scheduleTransferProcessPoolIdleShutdown();
+          this._scheduleTransferSchedulerIdleShutdown();
           return;
         }
 
-        if (this.dependencies.transferProcessPool !== pool) {
+        if (this.dependencies.transferScheduler !== pool) {
           return;
         }
 
-        this.dependencies.transferProcessPool = null;
+        this.dependencies.transferScheduler = null;
 
         pool
           .shutdown()
@@ -117,10 +117,10 @@ function createTransferRuntime(
       }, TRANSFER_POOL_IDLE_SHUTDOWN_MS);
 
       if (
-        typeof this.dependencies.transferProcessPoolIdleTimer.unref ===
+        typeof this.dependencies.transferSchedulerIdleTimer.unref ===
         "function"
       ) {
-        this.dependencies.transferProcessPoolIdleTimer.unref();
+        this.dependencies.transferSchedulerIdleTimer.unref();
       }
     }
     _recordTransferMetrics({
@@ -192,11 +192,11 @@ function createTransferRuntime(
           avgMs: lag.samples > 0 ? lag.totalMs / lag.samples : 0,
           samples: lag.samples,
         },
-        pool: this.dependencies.transferProcessPool
-          ? this.dependencies.transferProcessPool.getRuntimeStats()
+        pool: this.dependencies.transferScheduler
+          ? this.dependencies.transferScheduler.getRuntimeStats()
           : buildEmptyTransferPoolStats(),
         poolIdleShutdownScheduled: Boolean(
-          this.dependencies.transferProcessPoolIdleTimer,
+          this.dependencies.transferSchedulerIdleTimer,
         ),
       };
     }

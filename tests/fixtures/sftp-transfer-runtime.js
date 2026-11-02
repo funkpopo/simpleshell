@@ -22,7 +22,7 @@ function loadTransferRuntime() {
         options.onSpawn?.(child);
       },
     });
-  const Pool = require("../../src/main/file-transfer/transferProcessPool");
+  const Pool = require("../../src/main/file-transfer/transferScheduler");
   const Runner = require("../../src/main/file-transfer/resumableTransfer");
   const resume = require("../../src/main/file-transfer/transferResume");
   const integrity = require("../../src/main/file-transfer/transferIntegrity");

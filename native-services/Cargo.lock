@@ -2436,10 +2436,10 @@ dependencies = [
  "md-5",
  "netutil",
  "openssh-sftp-client",
- "russh",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "ssh-hub",
  "tokio",
 ]
 
@@ -2540,6 +2540,7 @@ dependencies = [
  "futures-util",
  "serde_json",
  "sftp",
+ "ssh-hub",
  "tokio",
  "tokio-util",
  "zmodem",
@@ -2620,6 +2621,17 @@ dependencies = [
  "bytes",
  "pem-rfc7468 0.7.0",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "ssh-hub"
+version = "0.5.7"
+dependencies = [
+ "netutil",
+ "russh",
+ "serde",
+ "sha2 0.10.9",
+ "tokio",
 ]
 
 [[package]]

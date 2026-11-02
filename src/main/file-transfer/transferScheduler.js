@@ -18,7 +18,12 @@ const { sleep } = require("../../shared/common");
 
 const DEFAULT_MAX_QUEUE_SIZE = 20000;
 
-class TransferProcessPool {
+/**
+ * Queues transfer tasks and runs them with per-transfer concurrency, retry and
+ * cancellation. The bytes move in `simpleshell-core`: every task is one
+ * request on its slot's SFTP session, a channel on the shared SSH connection.
+ */
+class TransferScheduler {
   constructor(options = {}) {
     this.translate =
       typeof options.translate === "function"
@@ -49,6 +54,9 @@ class TransferProcessPool {
     this.transferConcurrencyLimits = new Map();
     this.transferRunningCounts = new Map();
     this.transferCancelled = new Set();
+    // Concurrency slots per transfer. Each slot keeps one SFTP session (an
+    // SFTP channel on the shared hub connection) for consecutive tasks.
+    this.transferSlots = new Map();
     this.targetWorkerCount = 0;
 
     this._dispatching = false;
@@ -57,7 +65,7 @@ class TransferProcessPool {
 
   _log(message, level = "INFO") {
     if (typeof logToFile === "function") {
-      logToFile(`[TransferProcessPool] ${message}`, level);
+      logToFile(`[TransferScheduler] ${message}`, level);
     }
   }
 
@@ -175,7 +183,6 @@ class TransferProcessPool {
       tabId: entry.tabId,
       attempt: entry.attempt || 0,
       timestamp: Date.now(),
-      workerPid: entry.sidecarPid || null,
       deltaBytes: Math.max(0, Number(payload?.deltaBytes) || 0),
       transferredBytes: Math.max(0, Number(payload?.transferredBytes) || 0),
       totalBytes: Number.isFinite(entry.taskPayload.totalBytes)
@@ -209,7 +216,6 @@ class TransferProcessPool {
       tabId: entry.tabId,
       attempt: 0,
       timestamp: Date.now(),
-      workerPid: entry.sidecarPid || null,
       transferredBytes: Math.max(
         0,
         Number(result?.transferredBytes || result?.totalBytes) || 0,
@@ -246,7 +252,6 @@ class TransferProcessPool {
       tabId: entry.tabId,
       attempt: Number.isFinite(entry?.attempt) ? entry.attempt : 0,
       timestamp: Date.now(),
-      workerPid: entry.sidecarPid || null,
       direction: entry.taskPayload.direction,
       fileName: entry.taskPayload.fileName || "",
       currentFile:
@@ -279,9 +284,41 @@ class TransferProcessPool {
     };
   }
 
+  _sessionKey(transferKey, slot) {
+    return `transfer:${transferKey}:${slot}`;
+  }
+
+  _claimSlot(entry) {
+    let slots = this.transferSlots.get(entry.transferKey);
+    if (!slots) {
+      slots = { busy: new Set(), opened: new Set() };
+      this.transferSlots.set(entry.transferKey, slots);
+    }
+    let slot = 0;
+    while (slots.busy.has(slot)) slot += 1;
+    slots.busy.add(slot);
+    slots.opened.add(slot);
+    entry.slot = slot;
+    entry.sessionKey = this._sessionKey(entry.transferKey, slot);
+  }
+
+  _releaseSlot(entry) {
+    this.transferSlots.get(entry.transferKey)?.busy.delete(entry.slot);
+  }
+
+  _closeTransferSessions(transferKey) {
+    const slots = this.transferSlots.get(transferKey);
+    if (!slots) return;
+    this.transferSlots.delete(transferKey);
+    for (const slot of slots.opened) {
+      closeNativeSession(this._sessionKey(transferKey, slot));
+    }
+  }
+
   _markTaskRunning(entry) {
     const running = this.transferRunningCounts.get(entry.transferKey) || 0;
     this.transferRunningCounts.set(entry.transferKey, running + 1);
+    this._claimSlot(entry);
     entry.status = "running";
     entry.startedAt = Date.now();
     this.runningTasks.set(entry.taskKey, entry);
@@ -298,10 +335,12 @@ class TransferProcessPool {
     }
 
     entry.status = "finished";
+    this._releaseSlot(entry);
     this.runningTasks.delete(entry.taskKey);
   }
 
-  _releaseTaskChild(entry, reason = null) {
+  /** Cancels the in-flight request by ending the slot's session stream. */
+  _stopTaskStream(entry, reason = null) {
     if (!entry) return;
     entry.cancelReason =
       reason || this.translate("mainProcess.transfer.errors.cancelledByUser");
@@ -311,7 +350,7 @@ class TransferProcessPool {
       entry.child.kill();
     } catch (error) {
       this._log(
-        `Failed to stop sidecar for ${entry.taskKey}: ${normalizeErrorMessage(error)}`,
+        `Failed to stop transfer stream for ${entry.taskKey}: ${normalizeErrorMessage(error)}`,
         "WARN",
       );
     } finally {
@@ -383,16 +422,15 @@ class TransferProcessPool {
       entry.sshConfig,
       request,
       {
-        sessionKey: `transfer:${entry.taskKey}`,
+        sessionKey: entry.sessionKey,
         onSpawn: (child) => {
           entry.child = child;
-          entry.sidecarPid = child?.pid || null;
           if (
             this._isShutdown ||
             this.transferCancelled.has(entry.transferKey) ||
             entry.cancelRequested
           ) {
-            this._releaseTaskChild(
+            this._stopTaskStream(
               entry,
               entry.cancelReason ||
                 this.translate("mainProcess.transfer.errors.cancelledByUser"),
@@ -405,7 +443,7 @@ class TransferProcessPool {
             this.transferCancelled.has(entry.transferKey) ||
             entry.cancelRequested
           ) {
-            this._releaseTaskChild(
+            this._stopTaskStream(
               entry,
               entry.cancelReason ||
                 this.translate("mainProcess.transfer.errors.cancelledByUser"),
@@ -528,8 +566,9 @@ class TransferProcessPool {
             `Transfer task ${entry.taskKey} retryable failure (attempt ${attempt}/${maxAttempts}), wait ${delayMs}ms: ${normalizeErrorMessage(error)}`,
             "WARN",
           );
+          // Retry on a fresh SFTP channel; the failed one may be unusable.
           entry.child = null;
-          closeNativeSession(`transfer:${entry.taskKey}`);
+          closeNativeSession(entry.sessionKey);
           await sleep(delayMs);
         }
       }
@@ -564,10 +603,11 @@ class TransferProcessPool {
                 raw: error?.raw || error,
                 worker: "native-sidecar",
               });
+      // A failed or cancelled task leaves its channel in an unknown state.
+      closeNativeSession(entry.sessionKey);
       this._rejectTask(entry.taskKey, normalizedError);
     } finally {
       entry.child = null;
-      closeNativeSession(`transfer:${entry.taskKey}`);
       void this._dispatchLoop();
     }
   }
@@ -617,6 +657,7 @@ class TransferProcessPool {
 
   _clearTransferState(transferKey) {
     if (!transferKey) return;
+    this._closeTransferSessions(transferKey);
     this.transferConcurrencyLimits.delete(transferKey);
     this.transferRunningCounts.delete(transferKey);
     this.transferCancelled.delete(transferKey);
@@ -706,7 +747,8 @@ class TransferProcessPool {
           createdAt: Date.now(),
           startedAt: 0,
           child: null,
-          sidecarPid: null,
+          slot: null,
+          sessionKey: null,
           cancelRequested: false,
           cancelReason: null,
         };
@@ -795,7 +837,7 @@ class TransferProcessPool {
         "mainProcess.transfer.errors.cancelledByUser",
       );
       runningNotified += 1;
-      this._releaseTaskChild(entry, entry.cancelReason);
+      this._stopTaskStream(entry, entry.cancelReason);
     }
 
     return {
@@ -832,7 +874,7 @@ class TransferProcessPool {
       entry.cancelReason = this.translate(
         "mainProcess.transfer.errors.poolShutdown",
       );
-      this._releaseTaskChild(entry, entry.cancelReason);
+      this._stopTaskStream(entry, entry.cancelReason);
       this._rejectTask(
         taskKey,
         this._createTaskRuntimeError(
@@ -848,6 +890,9 @@ class TransferProcessPool {
     this.taskQueue = [];
     this.pendingTasks.clear();
     this.runningTasks.clear();
+    for (const transferKey of [...this.transferSlots.keys()]) {
+      this._closeTransferSessions(transferKey);
+    }
   }
 
   getRuntimeStats() {
@@ -866,4 +911,4 @@ class TransferProcessPool {
   }
 }
 
-module.exports = TransferProcessPool;
+module.exports = TransferScheduler;

@@ -40,7 +40,7 @@ function createTransferRegistry(
       totalFiles = 1,
       metadata = {},
     }) {
-      this.dependencies._clearTransferProcessPoolIdleTimer();
+      this.dependencies._clearTransferSchedulerIdleTimer();
 
       const state = {
         transferKey,
@@ -151,15 +151,15 @@ function createTransferRegistry(
       });
       this.dependencies.activeTransfers.delete(transferKey);
       if (
-        this.dependencies.transferProcessPool &&
-        typeof this.dependencies.transferProcessPool._clearTransferState ===
+        this.dependencies.transferScheduler &&
+        typeof this.dependencies.transferScheduler._clearTransferState ===
           "function"
       ) {
-        this.dependencies.transferProcessPool._clearTransferState(transferKey);
+        this.dependencies.transferScheduler._clearTransferState(transferKey);
       }
 
       if (this.dependencies.activeTransfers.size === 0) {
-        this.dependencies._scheduleTransferProcessPoolIdleShutdown();
+        this.dependencies._scheduleTransferSchedulerIdleShutdown();
       }
     }
     async cancelTransfer(event, tabId, transferKey) {
@@ -182,8 +182,8 @@ function createTransferRegistry(
       transfer.cancelled = true;
       transfer.abortController.abort(buildCancelledError());
       transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
-      if (this.dependencies.transferProcessPool) {
-        this.dependencies.transferProcessPool.cancelTransfer(transferKey);
+      if (this.dependencies.transferScheduler) {
+        this.dependencies.transferScheduler.cancelTransfer(transferKey);
       }
       this._destroyTransferStreams(
         transferKey,
@@ -219,8 +219,8 @@ function createTransferRegistry(
         transfer.cancelled = true;
         transfer.abortController.abort(buildCancelledError());
         transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
-        if (this.dependencies.transferProcessPool) {
-          this.dependencies.transferProcessPool.cancelTransfer(transferKey);
+        if (this.dependencies.transferScheduler) {
+          this.dependencies.transferScheduler.cancelTransfer(transferKey);
         }
         this._destroyTransferStreams(
           transferKey,

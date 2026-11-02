@@ -28,7 +28,7 @@ const nativeSftpClient = require("../native/nativeSftpClient");
 const { logToFile } = require("../utils/logger");
 const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
 const connectionManager = require("../connection/connectionManager");
-const TransferProcessPool = require("./transferProcessPool");
+const TransferScheduler = require("./transferScheduler");
 const ResumableTransfer = require("./resumableTransfer");
 const {
   TransferResumeStore,
@@ -110,15 +110,15 @@ class FilemanagementService {
         fields: [
           "eventLoopLagTimer",
           "transferMetrics",
-          "transferProcessPoolIdleTimer",
-          "transferProcessPool",
+          "transferSchedulerIdleTimer",
+          "transferScheduler",
           "activeTransfers",
           "transferEngineMode",
         ],
       }),
       {
         EVENT_LOOP_LAG_INTERVAL_MS,
-        TransferProcessPool,
+        TransferScheduler,
         transferText,
         buildEmptyTransferPoolStats,
         normalizeErrorMessage,
@@ -128,16 +128,16 @@ class FilemanagementService {
     this._transferRegistry = createTransferRegistry(
       serviceDependencies(this, {
         methods: [
-          "_clearTransferProcessPoolIdleTimer",
+          "_clearTransferSchedulerIdleTimer",
           "_recordCancelLatency",
           "_emitTransferProgress",
-          "_scheduleTransferProcessPoolIdleShutdown",
+          "_scheduleTransferSchedulerIdleShutdown",
           "_getTransferDisplayName",
         ],
         fields: [
           "transferEngineMode",
           "activeTransfers",
-          "transferProcessPool",
+          "transferScheduler",
         ],
       }),
       {
@@ -184,7 +184,7 @@ class FilemanagementService {
           "_registerTransfer",
           "_finalizeTransfer",
           "_throwIfTransferCancelled",
-          "_ensureTransferProcessPool",
+          "_ensureTransferScheduler",
           "_log",
         ],
         fields: ["resumeStore", "activeTransfers"],
@@ -399,11 +399,11 @@ class FilemanagementService {
     );
     this.transferEngineMode = TRANSFER_ENGINE_MODE;
     this.activeTransfers = new Map();
-    this.transferProcessPool = null;
+    this.transferScheduler = null;
     this.resumeStore = new TransferResumeStore(
       path.join(app.getPath("userData"), "transfer-recovery"),
     );
-    this.transferProcessPoolIdleTimer = null;
+    this.transferSchedulerIdleTimer = null;
     this.transferMetrics = {
       startedAt: Date.now(),
       successfulTransfers: 0,
@@ -439,16 +439,16 @@ class FilemanagementService {
     return this._transferRuntime._stopEventLoopLagMonitor(...args);
   }
 
-  _clearTransferProcessPoolIdleTimer(...args) {
-    return this._transferRuntime._clearTransferProcessPoolIdleTimer(...args);
+  _clearTransferSchedulerIdleTimer(...args) {
+    return this._transferRuntime._clearTransferSchedulerIdleTimer(...args);
   }
 
-  _ensureTransferProcessPool(...args) {
-    return this._transferRuntime._ensureTransferProcessPool(...args);
+  _ensureTransferScheduler(...args) {
+    return this._transferRuntime._ensureTransferScheduler(...args);
   }
 
-  _scheduleTransferProcessPoolIdleShutdown(...args) {
-    return this._transferRuntime._scheduleTransferProcessPoolIdleShutdown(
+  _scheduleTransferSchedulerIdleShutdown(...args) {
+    return this._transferRuntime._scheduleTransferSchedulerIdleShutdown(
       ...args,
     );
   }
@@ -658,15 +658,15 @@ class FilemanagementService {
   }
 
   cleanup() {
-    this._clearTransferProcessPoolIdleTimer();
+    this._clearTransferSchedulerIdleTimer();
     this._stopEventLoopLagMonitor();
     for (const [transferKey, transfer] of this.activeTransfers.entries()) {
       try {
         transfer.cancelled = true;
         transfer.abortController.abort(buildCancelledError());
         transfer.cancelRequestedAt = transfer.cancelRequestedAt || Date.now();
-        if (this.transferProcessPool) {
-          this.transferProcessPool.cancelTransfer(transferKey);
+        if (this.transferScheduler) {
+          this.transferScheduler.cancelTransfer(transferKey);
         }
         this._destroyTransferStreams(
           transferKey,
@@ -694,9 +694,9 @@ class FilemanagementService {
       });
       this.activeTransfers.delete(transferKey);
     }
-    if (this.transferProcessPool) {
-      const pool = this.transferProcessPool;
-      this.transferProcessPool = null;
+    if (this.transferScheduler) {
+      const pool = this.transferScheduler;
+      this.transferScheduler = null;
       pool.shutdown().catch((error) => {
         this._log(
           `Transfer process pool shutdown failed: ${normalizeErrorMessage(error)}`,

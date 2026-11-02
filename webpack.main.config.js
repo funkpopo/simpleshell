@@ -45,8 +45,6 @@ module.exports = (_env, { mode }) => ({
   devtool: mode === "development" ? "eval-cheap-module-source-map" : false,
   entry: {
     index: "./src/main/index.js",
-    "workers/sftp-transfer-worker":
-      "./src/main/workers/sftp-transfer-worker.js",
   },
   resolve: {
     // Make optional native deps safe for bundling/package.

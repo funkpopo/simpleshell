@@ -52,6 +52,9 @@ async fn main() {
         other => Err(format!("unsupported command: {other}")),
     };
 
+    // Shared SSH connections end with a proper disconnect, not a reset.
+    ssh_hub::global().shutdown().await;
+
     if let Err(error) = result {
         // An empty error means the failure was already reported on stdout.
         if !error.is_empty() {

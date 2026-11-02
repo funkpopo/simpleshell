@@ -9,6 +9,7 @@ native-services/
 ├── crates/
 │   ├── core-protocol/      # frame codec, control messages, service I/O context
 │   ├── netutil/            # TCP / HTTP CONNECT / SOCKS proxy tunnels
+│   ├── ssh-hub/            # shared SSH connections (leases, idle reclaim)
 │   ├── sftp/               # sftp-request|session|watch, scan-folder, checksum-file
 │   ├── forward/            # port-forward-serve (-L / -R / SOCKS5)
 │   ├── zmodem/             # zmodem-serve
@@ -16,8 +17,18 @@ native-services/
 └── vendor/russh/           # patched russh (own lockfile, outside the workspace)
 ```
 
-Service crates depend on `core-protocol` and `netutil` only; they never import
-each other. `core` is the only crate that knows every service.
+Service crates depend on `core-protocol`, `netutil` and `ssh-hub` only; they
+never import each other. `core` is the only crate that knows every service.
+
+## Shared SSH connections
+
+`ssh-hub` keeps one russh connection per identity (target, credentials, pinned
+host key, proxy). Services lease it and open channels: every SFTP session is
+an SFTP channel on the shared connection, so tabs and transfers to the same
+host perform one handshake. Concurrent acquires share that handshake; a
+connection whose last lease ends is closed after an idle timeout (30 s,
+`SIMPLESHELL_HUB_IDLE_MS`); a dead connection is replaced on the next acquire,
+and SFTP sessions on it end so clients reopen them.
 
 ## Running
 

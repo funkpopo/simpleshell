@@ -11,6 +11,7 @@ publish = false
 [workspace.dependencies]
 core-protocol = { path = "crates/core-protocol" }
 netutil = { path = "crates/netutil" }
+ssh-hub = { path = "crates/ssh-hub" }
 sftp = { path = "crates/sftp" }
 forward = { path = "crates/forward" }
 zmodem = { path = "crates/zmodem" }

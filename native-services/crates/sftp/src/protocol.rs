@@ -1,6 +1,6 @@
 use crate::errors::*;
 use core_protocol::service;
-use netutil::{NetworkPath, ProxyConfig};
+use netutil::NetworkPath;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
@@ -13,15 +13,8 @@ pub(crate) const SIDECAR_PROCESS_TYPE: &str = "native-sidecar";
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SshConnectionConfig {
-    pub(crate) host: String,
-    pub(crate) port: Option<u16>,
-    pub(crate) username: String,
-    pub(crate) password: Option<String>,
-    pub(crate) private_key: Option<String>,
-    pub(crate) passphrase: Option<String>,
-    pub(crate) expected_host_fingerprint: Option<String>,
-    pub(crate) proxy: Option<ProxyConfig>,
-    pub(crate) proxy_required: Option<bool>,
+    #[serde(flatten)]
+    pub(crate) ssh: ssh_hub::ConnectConfig,
     pub(crate) network_path: Option<NetworkPath>,
 }
 

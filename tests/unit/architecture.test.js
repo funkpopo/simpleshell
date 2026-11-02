@@ -546,9 +546,8 @@ describe("sftp-native-boundary", () => {
     function main() {
       const guardedModules = [
         "src/main/native/nativeSftpClient.js",
-        "src/main/workers/sftp-transfer-worker.js",
         "src/main/file-transfer/filemanagementService.js",
-        "src/main/file-transfer/transferProcessPool.js",
+        "src/main/file-transfer/transferScheduler.js",
         "src/main/file-transfer/resumableTransfer.js",
         "src/main/ipc/handlers/fileHandlers.js",
         "src/main/ipc/handlers/sftpHandlers.js",

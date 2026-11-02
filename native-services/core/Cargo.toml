@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 core-protocol.workspace = true
 sftp.workspace = true
+ssh-hub.workspace = true
 forward.workspace = true
 zmodem.workspace = true
 auxsvc.workspace = true

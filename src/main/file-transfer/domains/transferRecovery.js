@@ -217,7 +217,7 @@ function createTransferRecovery(
       let network = 0;
       const runner = new ResumableTransfer({
         store: this.dependencies.resumeStore,
-        pool: this.dependencies._ensureTransferProcessPool(),
+        pool: this.dependencies._ensureTransferScheduler(),
         record,
         sshConfig,
         tabId,

@@ -5,8 +5,7 @@ use crate::watch::*;
 use core_protocol::service::Input;
 use netutil::NetworkPath;
 use openssh_sftp_client::Sftp;
-use russh::Disconnect;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
 pub async fn run_sftp_request(mut input: Input) -> Result<(), String> {
@@ -58,7 +57,7 @@ pub async fn run_sftp_request(mut input: Input) -> Result<(), String> {
         stage_started_at.elapsed().as_millis() as u64,
     );
 
-    let (sftp, handle) = match connect_sftp(&envelope.config, request_id, &stage_started_at).await {
+    let (sftp, lease) = match connect_sftp(&envelope.config, request_id, &stage_started_at).await {
         Ok(value) => value,
         Err(error) => {
             emit_error_result(
@@ -84,9 +83,8 @@ pub async fn run_sftp_request(mut input: Input) -> Result<(), String> {
     );
 
     let close_result = sftp.close().await.map_err(|error| error.to_string());
-    let _ = handle
-        .disconnect(Disconnect::ByApplication, "", "English")
-        .await;
+    // The hub keeps the connection for other streams; dropping the lease releases it.
+    drop(lease);
 
     if let Err(error) = close_result {
         if result.is_ok() {
@@ -121,6 +119,8 @@ pub async fn run_sftp_request(mut input: Input) -> Result<(), String> {
 /// are deliberately processed serially: this keeps the SFTP client/channel
 /// state predictable while still allowing progress events to be flushed after
 /// every transfer chunk.
+const CONNECTION_CHECK_INTERVAL: Duration = Duration::from_millis(250);
+
 pub async fn run_sftp_session(input: Input) -> Result<(), String> {
     let mut lines = input.lines();
     let first_line = lines
@@ -150,7 +150,7 @@ pub async fn run_sftp_session(input: Input) -> Result<(), String> {
         "requestStarted",
         session_started_at.elapsed().as_millis() as u64,
     );
-    let (sftp, handle) =
+    let (sftp, lease) =
         match connect_sftp(&envelope.config, first_request_id, &session_started_at).await {
             Ok(value) => value,
             Err(error) => {
@@ -167,11 +167,21 @@ pub async fn run_sftp_session(input: Input) -> Result<(), String> {
 
     process_session_request(&sftp, &envelope.request, &network_path, false).await?;
 
-    while let Some(line) = lines
-        .next_line()
-        .await
-        .map_err(|error| format!("failed to read SFTP session request: {error}"))?
-    {
+    // A session on a dropped connection would fail every later request.
+    // Ending it lets the client open a fresh session on a new connection.
+    let mut liveness = tokio::time::interval(CONNECTION_CHECK_INTERVAL);
+    loop {
+        let line = tokio::select! {
+            line = lines.next_line() => line
+                .map_err(|error| format!("failed to read SFTP session request: {error}"))?,
+            _ = liveness.tick() => {
+                if lease.handle().is_closed() {
+                    return Err("SSH connection closed".to_string());
+                }
+                continue;
+            }
+        };
+        let Some(line) = line else { break };
         let request: SftpRequest = match serde_json::from_str(line.trim()) {
             Ok(value) => value,
             Err(error) => {
@@ -193,9 +203,8 @@ pub async fn run_sftp_session(input: Input) -> Result<(), String> {
     }
 
     let close_result = sftp.close().await.map_err(|error| error.to_string());
-    let _ = handle
-        .disconnect(Disconnect::ByApplication, "", "English")
-        .await;
+    // The hub keeps the connection for other streams; dropping the lease releases it.
+    drop(lease);
     close_result
 }
 
@@ -310,7 +319,7 @@ pub async fn run_sftp_watch(mut input: Input) -> Result<(), String> {
         "requestStarted",
         stage_started_at.elapsed().as_millis() as u64,
     );
-    let (sftp, handle) = match connect_sftp(&envelope.config, request_id, &stage_started_at).await {
+    let (sftp, lease) = match connect_sftp(&envelope.config, request_id, &stage_started_at).await {
         Ok(value) => value,
         Err(error) => {
             emit_watch_error(
@@ -326,9 +335,8 @@ pub async fn run_sftp_watch(mut input: Input) -> Result<(), String> {
     let watch_result = watch_directory(&sftp, &envelope.request).await;
 
     let close_result = sftp.close().await.map_err(|error| error.to_string());
-    let _ = handle
-        .disconnect(Disconnect::ByApplication, "", "English")
-        .await;
+    // The hub keeps the connection for other streams; dropping the lease releases it.
+    drop(lease);
 
     if let Err(error) = watch_result {
         emit_watch_error(

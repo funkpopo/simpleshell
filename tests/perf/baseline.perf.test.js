@@ -26,7 +26,7 @@ const {
   NativeZmodemClient,
 } = require("../../src/main/native/nativeZmodemClient");
 const nativeSftp = require("../../src/main/native/nativeSftpClient");
-const TransferProcessPool = require("../../src/main/file-transfer/transferProcessPool");
+const TransferScheduler = require("../../src/main/file-transfer/transferScheduler");
 const {
   IPC_EVENT_CHANNELS,
 } = require("../../src/shared/contracts/ipc/channels");
@@ -447,7 +447,7 @@ describe("performance baseline", () => {
     for (let index = 0; index < SMALL_FILE_COUNT; index += 1) {
       fs.writeFileSync(path.join(localDir, `f${index}.txt`), payload);
     }
-    const transferPool = new TransferProcessPool({ maxWorkers: 8 });
+    const transferPool = new TransferScheduler({ maxWorkers: 8 });
     const run = async (direction) => {
       const handshakesBefore = sftp.stats.connections;
       const started = performance.now();
