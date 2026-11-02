@@ -68,10 +68,7 @@ describe("transfer name handling", () => {
       "dir (1)",
       "a.txt",
     ]);
-    expect(allocator.resolveSegments("Dir/a?.txt")).toEqual([
-      "Dir",
-      "a_.txt",
-    ]);
+    expect(allocator.resolveSegments("Dir/a?.txt")).toEqual(["Dir", "a_.txt"]);
     expect(allocator.resolveSegments("Dir/a:.txt")).toEqual([
       "Dir",
       "a_ (1).txt",
@@ -104,8 +101,20 @@ describe("per-file transfer progress", () => {
     });
 
     const fileList = [
-      { index: 1, name: "b.txt", size: 10, transferredBytes: 0, status: "pending" },
-      { index: 0, name: "a.txt", size: 10, transferredBytes: 0, status: "pending" },
+      {
+        index: 1,
+        name: "b.txt",
+        size: 10,
+        transferredBytes: 0,
+        status: "pending",
+      },
+      {
+        index: 0,
+        name: "a.txt",
+        size: 10,
+        transferredBytes: 0,
+        status: "pending",
+      },
     ];
     await act(async () => {
       applySftpTransferState({
@@ -197,17 +206,41 @@ describe("float card for multi-file transfers", () => {
     totalBytes: 100,
     totalFiles: 3,
     fileList: [
-      { index: 0, name: "a.txt", size: 20, transferredBytes: 20, status: "completed" },
-      { index: 1, name: "b.txt", size: 40, transferredBytes: 20, status: "transferring" },
-      { index: 2, name: "c.txt", size: 40, transferredBytes: 0, status: "pending" },
+      {
+        index: 0,
+        name: "a.txt",
+        size: 20,
+        transferredBytes: 20,
+        status: "completed",
+      },
+      {
+        index: 1,
+        name: "b.txt",
+        size: 40,
+        transferredBytes: 20,
+        status: "transferring",
+      },
+      {
+        index: 2,
+        name: "c.txt",
+        size: 40,
+        transferredBytes: 0,
+        status: "pending",
+      },
     ],
   };
 
   it("shows each active file with its own progress and a single count line", async () => {
-    await render({ variant: "float", transfer: multiFileTransfer, onCancel: vi.fn() });
+    await render({
+      variant: "float",
+      transfer: multiFileTransfer,
+      onCancel: vi.fn(),
+    });
 
     const text = document.body.textContent;
-    const rows = document.querySelectorAll('[data-testid="transfer-active-file"]');
+    const rows = document.querySelectorAll(
+      '[data-testid="transfer-active-file"]',
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0].textContent).toContain("b.txt");
     expect(rows[0].textContent).toContain("50%");
@@ -241,7 +274,9 @@ describe("float card for multi-file transfers", () => {
       document.querySelectorAll('[data-testid="transfer-active-file"]'),
     ).toHaveLength(0);
     expect(
-      document.querySelector('button[aria-label="fileManager.transfer.deleteRecord"]'),
+      document.querySelector(
+        'button[aria-label="fileManager.transfer.deleteRecord"]',
+      ),
     ).toBeTruthy();
 
     const toggle = [...document.querySelectorAll("button")].find((button) =>
@@ -254,6 +289,8 @@ describe("float card for multi-file transfers", () => {
     });
     expect(document.body.textContent).toContain("a.txt");
     expect(document.body.textContent).toContain("c.txt");
-    expect(document.body.textContent).toContain("fileManager.transfer.hideFileList");
+    expect(document.body.textContent).toContain(
+      "fileManager.transfer.hideFileList",
+    );
   });
 });

@@ -7,3 +7,4 @@ pub mod service;
 
 pub use control::{Control, ControlEnvelope, SCHEMA_VERSION};
 pub use frame::{Frame, FrameCodec, FrameKind};
+pub use service::{Events, StreamIo};

@@ -59,7 +59,8 @@ use tokio::sync::oneshot;
 
 pub use crate::auth::AuthResult;
 use crate::channels::{
-    Channel, ChannelMsg, ChannelReadHalf, ChannelRef, ChannelWriteHalf, WindowSizeRef,
+    Channel, ChannelMsg, ChannelReadHalf, ChannelRef, ChannelWriteHalf, WindowCredit,
+    WindowSizeRef, channel_queue,
 };
 use crate::cipher::{self, OpeningKey, clear};
 use crate::kex::{KexAlgorithmImplementor, KexCause, KexProgress, SessionKexState};
@@ -92,11 +93,12 @@ pub struct Session {
     receiver: Receiver<Msg>,
     sender: UnboundedSender<Reply>,
     channels: HashMap<ChannelId, ChannelRef>,
-    target_window_size: u32,
     pending_reads: Vec<Vec<u8>>,
     pending_len: u32,
     inbound_channel_sender: Sender<Msg>,
     inbound_channel_receiver: Receiver<Msg>,
+    window_credit_sender: UnboundedSender<(ChannelId, u32)>,
+    window_credit_receiver: UnboundedReceiver<(ChannelId, u32)>,
     open_global_requests: VecDeque<GlobalRequestResponse>,
     server_sig_algs: Option<Vec<Algorithm>>,
 }
@@ -258,7 +260,7 @@ pub struct Handle<H: Handler> {
     sender: Sender<Msg>,
     receiver: UnboundedReceiver<Reply>,
     join: russh_util::runtime::JoinHandle<Result<(), H::Error>>,
-    channel_buffer_size: usize,
+    window_credit: UnboundedSender<(ChannelId, u32)>,
 }
 
 impl<H: Handler> Drop for Handle<H> {
@@ -504,7 +506,7 @@ impl<H: Handler> Handle<H> {
     /// Wait for confirmation that a channel is open
     async fn wait_channel_confirmation(
         &self,
-        mut receiver: Receiver<ChannelMsg>,
+        mut receiver: UnboundedReceiver<ChannelMsg>,
         window_size_ref: WindowSizeRef,
     ) -> Result<Channel<Msg>, crate::Error> {
         loop {
@@ -523,7 +525,13 @@ impl<H: Handler> Handle<H> {
                             max_packet_size,
                             window_size: window_size_ref,
                         },
-                        read_half: ChannelReadHalf { receiver },
+                        read_half: ChannelReadHalf {
+                            receiver,
+                            credit: Some(WindowCredit {
+                                id,
+                                tx: self.window_credit.clone(),
+                            }),
+                        },
                     });
                 }
                 Some(ChannelMsg::OpenFailure(reason)) => {
@@ -606,7 +614,7 @@ impl<H: Handler> Handle<H> {
     /// usable when it's confirmed by the server, as indicated by the
     /// `confirmed` field of the corresponding `Channel`.
     pub async fn channel_open_session(&self) -> Result<Channel<Msg>, crate::Error> {
-        let (sender, receiver) = channel(self.channel_buffer_size);
+        let (sender, receiver) = channel_queue();
         let channel_ref = ChannelRef::new(sender);
         let window_size_ref = channel_ref.window_size().clone();
 
@@ -624,7 +632,7 @@ impl<H: Handler> Handle<H> {
         originator_address: A,
         originator_port: u32,
     ) -> Result<Channel<Msg>, crate::Error> {
-        let (sender, receiver) = channel(self.channel_buffer_size);
+        let (sender, receiver) = channel_queue();
         let channel_ref = ChannelRef::new(sender);
         let window_size_ref = channel_ref.window_size().clone();
 
@@ -655,7 +663,7 @@ impl<H: Handler> Handle<H> {
         originator_address: B,
         originator_port: u32,
     ) -> Result<Channel<Msg>, crate::Error> {
-        let (sender, receiver) = channel(self.channel_buffer_size);
+        let (sender, receiver) = channel_queue();
         let channel_ref = ChannelRef::new(sender);
         let window_size_ref = channel_ref.window_size().clone();
 
@@ -677,7 +685,7 @@ impl<H: Handler> Handle<H> {
         &self,
         socket_path: S,
     ) -> Result<Channel<Msg>, crate::Error> {
-        let (sender, receiver) = channel(self.channel_buffer_size);
+        let (sender, receiver) = channel_queue();
         let channel_ref = ChannelRef::new(sender);
         let window_size_ref = channel_ref.window_size().clone();
 
@@ -939,9 +947,7 @@ where
             config.maximum_packet_size
         );
     }
-    let channel_buffer_size = config.channel_buffer_size;
     let mut session = Session::new(
-        config.window_size,
         CommonSession {
             packet_writer: PacketWriter::clear(),
             auth_user: String::new(),
@@ -962,6 +968,7 @@ where
         session_sender,
     );
     session.begin_rekey()?;
+    let window_credit = session.window_credit_sender.clone();
     let (kex_done_signal, kex_done_signal_rx) = oneshot::channel();
     let join = russh_util::runtime::spawn(session.run(stream, handler, Some(kex_done_signal)));
 
@@ -977,7 +984,7 @@ where
         sender: handle_sender,
         receiver: handle_receiver,
         join,
-        channel_buffer_size,
+        window_credit,
     })
 }
 
@@ -992,6 +999,15 @@ async fn start_reading<R: AsyncRead + Unpin>(
 }
 
 impl Session {
+    /// The application took `len` bytes of `id`'s data off its queue.
+    fn consume_window(&mut self, id: ChannelId, len: u32) -> Result<(), crate::Error> {
+        let target = self.common.config.window_size;
+        if let Some(ref mut enc) = self.common.encrypted {
+            enc.consume_window(id, len, target)?;
+        }
+        Ok(())
+    }
+
     fn maybe_decompress(&mut self, buffer: &SSHBuffer) -> Result<IncomingSshPacket, Error> {
         if let Some(ref mut enc) = self.common.encrypted {
             let mut decomp = Vec::new();
@@ -1013,20 +1029,21 @@ impl Session {
     }
 
     fn new(
-        target_window_size: u32,
         common: CommonSession<Arc<Config>>,
         receiver: Receiver<Msg>,
         sender: UnboundedSender<Reply>,
     ) -> Self {
         let (inbound_channel_sender, inbound_channel_receiver) = channel(10);
+        let (window_credit_sender, window_credit_receiver) = unbounded_channel();
         Self {
             common,
             receiver,
             sender,
             kex: SessionKexState::Idle,
-            target_window_size,
             inbound_channel_sender,
             inbound_channel_receiver,
+            window_credit_sender,
+            window_credit_receiver,
             channels: HashMap::new(),
             pending_reads: Vec::new(),
             pending_len: 0,
@@ -1173,6 +1190,14 @@ impl Session {
                             Ok(next) => self.handle_msg(next)?,
                             Err(_) => break
                         }
+                    }
+                }
+                credit = self.window_credit_receiver.recv(), if !self.kex.active() => {
+                    // Batch every credit that is already queued into one flush.
+                    let mut next = credit;
+                    while let Some((id, len)) = next {
+                        self.consume_window(id, len)?;
+                        next = self.window_credit_receiver.try_recv().ok();
                     }
                 }
                 msg = self.inbound_channel_receiver.recv(), if !self.kex.active() => {

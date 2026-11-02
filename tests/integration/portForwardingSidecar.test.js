@@ -1,5 +1,7 @@
 import { describe, it } from "vitest";
 import { createRequire } from "node:module";
+// Unused hub connections close after this idle period (30 s in the app).
+process.env.SIMPLESHELL_HUB_IDLE_MS = "200";
 const require = createRequire(import.meta.url);
 const { nativeHostPath } = require("../helpers/nativeHost");
 
@@ -430,8 +432,10 @@ describe("port-forwarding-sidecar", () => {
           },
         );
         assert.equal(missingProxy.errorCode, "INVALID_CONFIG");
+        // An authenticated connection is shared per account, so use an
+        // account without one to observe the authentication failure.
         const wrongAuth = await native.request("start", "wrong-auth", 1, {
-          ssh: { ...fixture.ssh, password: "wrong" },
+          ssh: { ...fixture.ssh, username: "wrong-auth", password: "wrong" },
           rules,
         });
         assert.equal(wrongAuth.errorCode, "AUTH_FAILED");
@@ -494,8 +498,10 @@ describe("port-forwarding-sidecar", () => {
         await native.closeTab("proxied", 1);
         const authBeforeProxyFailure = fixture.state.authAttempts;
         proxyAllowed = false;
+        // A separate account, so the attempt cannot join the earlier
+        // proxied connection while it idles.
         const deniedProxy = await native.request("start", "proxy-denied", 1, {
-          ssh: proxiedSsh,
+          ssh: { ...proxiedSsh, username: "proxy-denied" },
           rules,
         });
         assert.equal(deniedProxy.errorCode, "CONNECT_FAILED");
@@ -592,6 +598,8 @@ describe("port-forwarding-sidecar", () => {
           "close tab drains active tunnels/SOCKS handshake, releases ports, prevents stale resurrection, is idempotent",
         );
 
+        // The pending authentication needs a new connection for the account.
+        await until(() => fixture.clients.size === 0, "idle SSH closed");
         fixture.state.hangAuth = true;
         const starting = native.request("start", "cancel-start", 1, {
           ssh: fixture.ssh,

@@ -9,7 +9,7 @@ use crate::panic::payload_message;
 use crate::services;
 use bytes::Bytes;
 use core_protocol::service::{self, channel_input, Output, ServiceContext};
-use core_protocol::{Control, ControlEnvelope, Frame, FrameCodec, FrameKind};
+use core_protocol::{Control, ControlEnvelope, Frame, FrameCodec, FrameKind, StreamIo};
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -19,6 +19,7 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 
 struct StreamHandle {
     input: Option<mpsc::UnboundedSender<Bytes>>,
+    events: mpsc::UnboundedSender<serde_json::Value>,
     abort: AbortHandle,
 }
 
@@ -54,11 +55,16 @@ fn open_stream(
     done: &mpsc::UnboundedSender<u32>,
 ) -> StreamHandle {
     let (input_tx, input_rx) = mpsc::unbounded_channel();
+    let (events_tx, events_rx) = mpsc::unbounded_channel();
     let context = ServiceContext::new(Output::frames(stream, out.clone()));
+    let io = StreamIo {
+        input: channel_input(input_rx),
+        events: events_rx,
+    };
     let task = tokio::spawn(
         context
             .clone()
-            .run(async move { services::run(&service, args, channel_input(input_rx)).await }),
+            .run(async move { services::run(&service, args, io).await }),
     );
     let abort = task.abort_handle();
     let out = out.clone();
@@ -81,6 +87,7 @@ fn open_stream(
     });
     StreamHandle {
         input: Some(input_tx),
+        events: events_tx,
         abort,
     }
 }
@@ -132,11 +139,41 @@ pub async fn serve(role: String) -> Result<(), String> {
             Some(Ok(frame)) => frame,
         };
 
-        if frame.kind == FrameKind::Data {
-            if let Some(input) = streams.get(&frame.stream).and_then(|s| s.input.as_ref()) {
-                let _ = input.send(frame.payload);
+        match frame.kind {
+            FrameKind::Data => {
+                if let Some(input) = streams.get(&frame.stream).and_then(|s| s.input.as_ref()) {
+                    let _ = input.send(frame.payload);
+                }
+                continue;
             }
-            continue;
+            FrameKind::Event => {
+                match serde_json::from_slice(&frame.payload) {
+                    Ok(event) => {
+                        if let Some(handle) = streams.get(&frame.stream) {
+                            let _ = handle.events.send(event);
+                        }
+                    }
+                    Err(error) => control(
+                        &out_tx,
+                        Control::Error {
+                            stream: Some(frame.stream),
+                            message: format!("invalid stream event: {error}"),
+                        },
+                    ),
+                }
+                continue;
+            }
+            FrameKind::Stderr => {
+                control(
+                    &out_tx,
+                    Control::Error {
+                        stream: Some(frame.stream),
+                        message: "stderr frames only flow from the core".into(),
+                    },
+                );
+                continue;
+            }
+            FrameKind::Control => {}
         }
 
         let message = match ControlEnvelope::parse(&frame.payload) {

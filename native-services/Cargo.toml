@@ -12,6 +12,8 @@ publish = false
 core-protocol = { path = "crates/core-protocol" }
 netutil = { path = "crates/netutil" }
 ssh-hub = { path = "crates/ssh-hub" }
+ssh-session = { path = "crates/ssh-session" }
+test-sshd = { path = "crates/test-sshd" }
 sftp = { path = "crates/sftp" }
 forward = { path = "crates/forward" }
 zmodem = { path = "crates/zmodem" }
@@ -31,6 +33,11 @@ tokio = { version = "1.50.0", features = ["fs", "io-std", "io-util", "macros", "
 tokio-util = { version = "0.7.18", features = ["codec", "rt"] }
 zmodem2 = "0.7.2"
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "socks", "stream"] }
+
+# Dependencies (crypto above all) are optimized even in dev builds so the
+# SSH tests and debug binaries move data at realistic speeds.
+[profile.dev.package."*"]
+opt-level = 2
 
 [patch.crates-io]
 russh = { path = "vendor/russh" }

@@ -14,17 +14,25 @@ describe("createConnectionStabilizer", () => {
     const stabilize = createConnectionStabilizer();
     const first = stabilize(
       rebuild([
-        { id: "g1", type: "group", name: "G", expanded: false, items: [
-          { id: "c1", type: "connection", name: "a", host: "1.1.1.1" },
-        ] },
+        {
+          id: "g1",
+          type: "group",
+          name: "G",
+          expanded: false,
+          items: [{ id: "c1", type: "connection", name: "a", host: "1.1.1.1" }],
+        },
         { id: "c2", type: "connection", name: "b", host: "2.2.2.2" },
       ]),
     );
     const second = stabilize(
       rebuild([
-        { id: "g1", type: "group", name: "G", expanded: false, items: [
-          { id: "c1", type: "connection", name: "a", host: "1.1.1.1" },
-        ] },
+        {
+          id: "g1",
+          type: "group",
+          name: "G",
+          expanded: false,
+          items: [{ id: "c1", type: "connection", name: "a", host: "1.1.1.1" }],
+        },
         { id: "c2", type: "connection", name: "b", host: "2.2.2.2" },
       ]),
     );
@@ -38,17 +46,25 @@ describe("createConnectionStabilizer", () => {
     const stabilize = createConnectionStabilizer();
     const first = stabilize(
       rebuild([
-        { id: "g1", type: "group", name: "G", expanded: false, items: [
-          { id: "c1", type: "connection", name: "a", host: "1.1.1.1" },
-        ] },
+        {
+          id: "g1",
+          type: "group",
+          name: "G",
+          expanded: false,
+          items: [{ id: "c1", type: "connection", name: "a", host: "1.1.1.1" }],
+        },
         { id: "g2", type: "group", name: "H", expanded: false, items: [] },
       ]),
     );
     const second = stabilize(
       rebuild([
-        { id: "g1", type: "group", name: "G", expanded: true, items: [
-          { id: "c1", type: "connection", name: "a", host: "1.1.1.1" },
-        ] },
+        {
+          id: "g1",
+          type: "group",
+          name: "G",
+          expanded: true,
+          items: [{ id: "c1", type: "connection", name: "a", host: "1.1.1.1" }],
+        },
         { id: "g2", type: "group", name: "H", expanded: false, items: [] },
       ]),
     );
@@ -65,16 +81,24 @@ describe("createConnectionStabilizer", () => {
     const stabilize = createConnectionStabilizer();
     const first = stabilize(
       rebuild([
-        { id: "g1", type: "group", name: "G", expanded: false, items: [
-          { id: "c1", type: "connection", name: "a", host: "1.1.1.1" },
-        ] },
+        {
+          id: "g1",
+          type: "group",
+          name: "G",
+          expanded: false,
+          items: [{ id: "c1", type: "connection", name: "a", host: "1.1.1.1" }],
+        },
       ]),
     );
     const second = stabilize(
       rebuild([
-        { id: "g1", type: "group", name: "G", expanded: false, items: [
-          { id: "c1", type: "connection", name: "a", host: "3.3.3.3" },
-        ] },
+        {
+          id: "g1",
+          type: "group",
+          name: "G",
+          expanded: false,
+          items: [{ id: "c1", type: "connection", name: "a", host: "3.3.3.3" }],
+        },
       ]),
     );
 
@@ -87,7 +111,9 @@ describe("createConnectionStabilizer", () => {
     const stabilize = createConnectionStabilizer();
     stabilize(rebuild([{ id: "c1", type: "connection", name: "a" }]));
     stabilize(rebuild([{ id: "c2", type: "connection", name: "b" }]));
-    const last = stabilize(rebuild([{ id: "c3", type: "connection", name: "c" }]));
+    const last = stabilize(
+      rebuild([{ id: "c3", type: "connection", name: "c" }]),
+    );
 
     expect(last).toHaveLength(1);
     expect(last[0].id).toBe("c3");

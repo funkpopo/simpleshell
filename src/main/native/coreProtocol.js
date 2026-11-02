@@ -5,10 +5,13 @@
  *   [len u32 LE = 5 + payload][kind u8][stream u32 LE][payload]
  *
  * Control frames (kind 1, stream 0) carry one JSON object with `schemaVersion`
- * and `op`. Data frames (kind 2, stream >= 1) carry opaque bytes.
+ * and `op`. Data frames (kind 2, stream >= 1) carry opaque bytes. Event
+ * frames (kind 3) carry one JSON object scoped to a stream, and stderr frames
+ * (kind 4) a stream's secondary output.
  */
 const CORE_SCHEMA_VERSION = 1;
-const FRAME_KIND = Object.freeze({ CONTROL: 1, DATA: 2 });
+const FRAME_KIND = Object.freeze({ CONTROL: 1, DATA: 2, EVENT: 3, STDERR: 4 });
+const KNOWN_KINDS = new Set(Object.values(FRAME_KIND));
 const FRAME_META_BYTES = 5;
 const FRAME_HEADER_BYTES = 4 + FRAME_META_BYTES;
 const MAX_FRAME_PAYLOAD = 16 * 1024 * 1024;
@@ -38,6 +41,14 @@ function encodeControl(message) {
       JSON.stringify({ schemaVersion: CORE_SCHEMA_VERSION, ...message }),
       "utf8",
     ),
+  );
+}
+
+function encodeEvent(stream, event) {
+  return encodeFrame(
+    FRAME_KIND.EVENT,
+    stream,
+    Buffer.from(JSON.stringify(event), "utf8"),
   );
 }
 
@@ -117,7 +128,7 @@ class FrameDecoder {
       const body = this._take(this.frameLength);
       this.frameLength = null;
       const kind = body.readUInt8(0);
-      if (kind !== FRAME_KIND.CONTROL && kind !== FRAME_KIND.DATA) {
+      if (!KNOWN_KINDS.has(kind)) {
         throw new Error(`unknown frame kind ${kind}`);
       }
       frames.push({
@@ -146,6 +157,7 @@ module.exports = {
   DATA_CHUNK_BYTES,
   encodeFrame,
   encodeControl,
+  encodeEvent,
   encodeData,
   FrameDecoder,
   parseControl,

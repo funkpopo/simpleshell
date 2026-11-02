@@ -7,10 +7,9 @@ publish.workspace = true
 [dependencies]
 core-protocol.workspace = true
 netutil.workspace = true
-futures-util.workspace = true
+ssh-hub.workspace = true
 russh.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

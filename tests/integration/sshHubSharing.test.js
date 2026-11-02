@@ -21,6 +21,9 @@ const {
   shutdownCoreSupervisors,
 } = require("../../src/main/native/coreSupervisor");
 const { createSftpLoopback } = require("../fixtures/sftp-loopback");
+const {
+  NativeSshClient,
+} = require("../../src/main/connection/native/nativeSshClient");
 
 async function waitFor(predicate, timeoutMs = 10000) {
   const deadline = Date.now() + timeoutMs;
@@ -113,5 +116,31 @@ describe("SFTP over shared hub connections", () => {
     } finally {
       await scheduler.shutdown();
     }
+  });
+
+  it("lets a terminal client and SFTP share the account's connection", async () => {
+    const before = { ...server.stats };
+    const terminal = new NativeSshClient();
+    const ready = new Promise((resolve, reject) => {
+      terminal.once("ready", resolve);
+      terminal.once("error", reject);
+    });
+    terminal.connect({
+      host: server.config.host,
+      port: server.config.port,
+      username: "shared-account",
+      password: server.config.password,
+      hostHash: "sha256",
+      hostVerifier: () => true,
+    });
+    await ready;
+    const result = await list(
+      { ...server.config, username: "shared-account" },
+      "terminal-tab",
+    );
+    expect(result.success).toBe(true);
+    expect(server.stats.connections - before.connections).toBe(1);
+    nativeSftp.closeNativeSession("terminal-tab");
+    terminal.end();
   });
 });

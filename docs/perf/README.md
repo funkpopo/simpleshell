@@ -5,18 +5,18 @@ servers: 48 MiB of terminal output, 1000 × 1 KiB files, 4 tabs. `baseline.json`
 is the reference captured before the Rust migration; each phase is compared
 with it before merging.
 
-| metric                           | baseline | P0   | P1   |
-| -------------------------------- | -------- | ---- | ---- |
-| terminal throughput (MB/s)       | 8.87     | 11.6 | 11.2 |
-| main event-loop delay p99 (ms)   | 28.0     | 28.0 | 22.6 |
-| health-check false positive rate | 0        | 0    | 0    |
-| tab open → first prompt (ms)     | 4.9      | 4.8  | 4.9  |
-| native processes per tab         | 1.25     | 0.25 | 0.25 |
-| total RSS, 4 tabs (MB)           | 442      | 280  | 266  |
-| upload 1000 files (ms)           | 12430    | 5609 | 2263 |
-| upload 1000 files: handshakes    | 1000     | 1000 | 0    |
-| download 1000 files (ms)         | 12397    | 5389 | 2331 |
-| download 1000 files: handshakes  | 1000     | 1000 | 0    |
+| metric                           | baseline | P0   | P1   | P2   |
+| -------------------------------- | -------- | ---- | ---- | ---- |
+| terminal throughput (MB/s)       | 8.87     | 11.6 | 11.2 | 11.3 |
+| main event-loop delay p99 (ms)   | 28.0     | 28.0 | 22.6 | 25.5 |
+| health-check false positive rate | 0        | 0    | 0    | 0    |
+| tab open → first prompt (ms)     | 4.9      | 4.8  | 4.9  | 2.1  |
+| native processes per tab         | 1.25     | 0.25 | 0.25 | 0.25 |
+| total RSS, 4 tabs (MB)           | 442      | 280  | 266  | 228  |
+| upload 1000 files (ms)           | 12430    | 5609 | 2263 | 2370 |
+| upload 1000 files: handshakes    | 1000     | 1000 | 0    | 0    |
+| download 1000 files (ms)         | 12397    | 5389 | 2331 | 1726 |
+| download 1000 files: handshakes  | 1000     | 1000 | 0    | 0    |
 
 Platform: win32-x64, Node 24.20.
 
@@ -33,3 +33,8 @@ Platform: win32-x64, Node 24.20.
   channel for consecutive files. The transfer batches report 0 handshakes
   because they reuse the connection the tab measurement opened to the same
   server (the first batch on a cold hub performs exactly one).
+- **P2** (terminal SSH in the core): the terminal uses `NativeSshClient`
+  over the shared hub connection. Time to prompt drops because new tabs for an
+  account join its live connection (the first one still handshakes). The
+  load test (`tests/integration/sshTerminalOutput.test.js`) runs both
+  backends and checks byte-exact output, ACK accounting and a bounded backlog.

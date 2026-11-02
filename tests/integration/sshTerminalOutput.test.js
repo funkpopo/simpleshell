@@ -9,6 +9,9 @@ import { performance } from "node:perf_hooks";
 
 const require = createRequire(import.meta.url);
 const { Server, Client } = require("ssh2");
+const {
+  NativeSshClient,
+} = require("../../src/main/connection/native/nativeSshClient");
 const SSHPool = require("../../src/main/connection/ssh-pool");
 const SshTransportHealth = require("../../src/main/connection/ssh-transport-health");
 const TerminalIOMailboxManager = require("../../src/main/terminal/terminalIOMailboxManager");
@@ -38,7 +41,7 @@ const until = async (predicate) => {
   }
 };
 
-async function createFixture() {
+async function createFixture(backend = "ssh2") {
   const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   let remote;
   let remoteStream;
@@ -67,7 +70,7 @@ async function createFixture() {
   );
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-  const client = new Client();
+  const client = backend === "native" ? new NativeSshClient() : new Client();
   client.on("error", () => {});
   const ready = once(client, "ready");
   client.connect({
@@ -113,12 +116,14 @@ async function createFixture() {
 
 describe("SSH terminal output under load", () => {
   it.each([
-    ["stdout", 510000],
-    ["stderr", 160000],
+    ["ssh2", "stdout", 510000],
+    ["ssh2", "stderr", 160000],
+    ["native", "stdout", 510000],
+    ["native", "stderr", 160000],
   ])(
-    "retains large Unicode %s output through SSH, native detection, renderer parsing and backpressure",
-    async (kind, lines) => {
-      const fixture = await createFixture();
+    "%s client retains large Unicode %s output through SSH, native detection, renderer parsing and backpressure",
+    async (backend, kind, lines) => {
+      const fixture = await createFixture(backend);
       const term = new Terminal({ cols: 120, rows: 30, scrollback: 500000 });
       const processId = 77;
       const channel = getTerminalIOMailboxOutputChannel(processId);
@@ -288,7 +293,11 @@ describe("SSH terminal output under load", () => {
         );
         expect(stats.ackBytes).toBe(stats.receivedBytes);
         expect(mailbox.pendingAckBytes).toBe(0);
-        expect(fixture.client._sock.destroyed).toBe(false);
+        expect(
+          backend === "native"
+            ? fixture.client.destroyed
+            : fixture.client._sock.destroyed,
+        ).toBe(false);
         expect(stats.healthChecks).toBeGreaterThan(0);
         expect(stats.healthFailures).toBe(0);
         expect(stats.pauses).toBeGreaterThan(0);

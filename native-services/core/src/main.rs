@@ -10,7 +10,7 @@ mod panic;
 mod server;
 mod services;
 
-use core_protocol::service;
+use core_protocol::StreamIo;
 use std::env;
 use std::process;
 
@@ -47,7 +47,7 @@ async fn main() {
             Ok(())
         }
         name if services::is_service(name) => {
-            services::run(name, args.collect(), service::stdin_input()).await
+            services::run(name, args.collect(), StreamIo::stdio()).await
         }
         other => Err(format!("unsupported command: {other}")),
     };

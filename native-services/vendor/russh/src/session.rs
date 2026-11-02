@@ -279,6 +279,44 @@ impl Encrypted {
         }
     }
 
+    /// Accounts for received data without re-opening the window; the window
+    /// grows back through [`Self::consume_window`] as the data is consumed.
+    pub fn track_received(&mut self, channel: ChannelId, len: usize) {
+        if let Some(channel) = self.channels.get_mut(&channel) {
+            let len = u32::try_from(len).unwrap_or(u32::MAX);
+            // Data beyond the window violates RFC 4254 5.2; it is still queued.
+            channel.sender_window_size = channel.sender_window_size.saturating_sub(len);
+            channel.unconsumed = channel.unconsumed.saturating_add(len);
+        }
+    }
+
+    /// The application consumed `len` bytes: once the peer's remaining window
+    /// is under half of `target`, extend it by everything that is no longer
+    /// queued locally.
+    pub fn consume_window(
+        &mut self,
+        channel: ChannelId,
+        len: u32,
+        target: u32,
+    ) -> Result<bool, crate::Error> {
+        let Some(channel) = self.channels.get_mut(&channel) else {
+            return Ok(false);
+        };
+        channel.unconsumed = channel.unconsumed.saturating_sub(len);
+        let allowed = target.saturating_sub(channel.unconsumed);
+        if channel.sender_window_size >= target / 2 || allowed <= channel.sender_window_size {
+            return Ok(false);
+        }
+        let increment = allowed - channel.sender_window_size;
+        push_packet!(self.write, {
+            self.write.push(msg::CHANNEL_WINDOW_ADJUST);
+            channel.recipient_channel.encode(&mut self.write)?;
+            increment.encode(&mut self.write)?;
+        });
+        channel.sender_window_size = allowed;
+        Ok(true)
+    }
+
     pub fn adjust_window_size(
         &mut self,
         channel: ChannelId,
@@ -551,6 +589,7 @@ impl Encrypted {
                     pending_data: std::collections::VecDeque::new(),
                     pending_eof: false,
                     pending_close: false,
+                    unconsumed: 0,
                 });
                 return ChannelId(self.last_channel_id.0);
             }

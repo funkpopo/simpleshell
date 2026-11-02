@@ -1,0 +1,814 @@
+diff -ruN a/src/channels/channel_ref.rs b/src/channels/channel_ref.rs
+--- a/src/channels/channel_ref.rs	2026-11-03 04:01:16.881288300 +0800
++++ b/src/channels/channel_ref.rs	2026-11-03 04:01:16.583970900 +0800
+@@ -1,18 +1,15 @@
+-use tokio::sync::mpsc::Sender;
+-
+-use super::WindowSizeRef;
+-use crate::ChannelMsg;
++use super::{ChannelSender, WindowSizeRef};
+ 
+ /// A handle to the [`super::Channel`]'s to be able to transmit messages
+ /// to it and update it's `window_size`.
+ #[derive(Debug)]
+ pub struct ChannelRef {
+-    pub(super) sender: Sender<ChannelMsg>,
++    pub(super) sender: ChannelSender,
+     pub(super) window_size: WindowSizeRef,
+ }
+ 
+ impl ChannelRef {
+-    pub fn new(sender: Sender<ChannelMsg>) -> Self {
++    pub fn new(sender: ChannelSender) -> Self {
+         Self {
+             sender,
+             window_size: WindowSizeRef::new(0),
+@@ -25,7 +22,7 @@
+ }
+ 
+ impl std::ops::Deref for ChannelRef {
+-    type Target = Sender<ChannelMsg>;
++    type Target = ChannelSender;
+ 
+     fn deref(&self) -> &Self::Target {
+         &self.sender
+diff -ruN a/src/channels/io/rx.rs b/src/channels/io/rx.rs
+--- a/src/channels/io/rx.rs	2026-11-03 04:01:16.879288800 +0800
++++ b/src/channels/io/rx.rs	2026-11-03 04:01:16.586655600 +0800
+@@ -37,7 +37,10 @@
+         let (msg, mut idx) = match self.buffer.take() {
+             Some(msg) => msg,
+             None => match ready!(self.channel.borrow_mut().receiver.poll_recv(cx)) {
+-                Some(msg) => (msg, 0),
++                Some(msg) => {
++                    self.channel.borrow_mut().consumed(&msg);
++                    (msg, 0)
++                }
+                 None => return Poll::Ready(Ok(())),
+             },
+         };
+diff -ruN a/src/channels/mod.rs b/src/channels/mod.rs
+--- a/src/channels/mod.rs	2026-11-03 04:01:16.881288300 +0800
++++ b/src/channels/mod.rs	2026-11-03 04:01:16.587663700 +0800
+@@ -2,7 +2,7 @@
+ 
+ use bytes::Bytes;
+ use tokio::io::{AsyncRead, AsyncWrite};
+-use tokio::sync::mpsc::{Receiver, Sender};
++use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
+ use tokio::sync::{Mutex, Notify};
+ 
+ use crate::{ChannelId, ChannelOpenFailure, Error, Pty, Sig};
+@@ -15,6 +15,48 @@
+ mod channel_stream;
+ pub use channel_stream::ChannelStream;
+ 
++// SimpleShell patch (per-channel flow control): messages for a channel are
++// queued without bounds so one slow reader never blocks the session loop.
++// The queue is bounded by the SSH window instead: client channels re-open
++// their window only as the application takes data from the queue.
++
++/// Session-side sender of a channel's message queue. `send` never waits.
++#[derive(Debug, Clone)]
++pub struct ChannelSender(UnboundedSender<ChannelMsg>);
++
++impl ChannelSender {
++    pub async fn send(
++        &self,
++        msg: ChannelMsg,
++    ) -> Result<(), tokio::sync::mpsc::error::SendError<ChannelMsg>> {
++        self.0.send(msg)
++    }
++
++    /// Same as `send`; kept for call sites written against a bounded queue.
++    pub fn try_send(
++        &self,
++        msg: ChannelMsg,
++    ) -> Result<(), tokio::sync::mpsc::error::SendError<ChannelMsg>> {
++        self.0.send(msg)
++    }
++
++    pub fn is_closed(&self) -> bool {
++        self.0.is_closed()
++    }
++}
++
++pub(crate) fn channel_queue() -> (ChannelSender, UnboundedReceiver<ChannelMsg>) {
++    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
++    (ChannelSender(tx), rx)
++}
++
++/// Returns consumed bytes to the session so it can extend the peer's window.
++#[derive(Debug, Clone)]
++pub(crate) struct WindowCredit {
++    pub(crate) id: ChannelId,
++    pub(crate) tx: UnboundedSender<(ChannelId, u32)>,
++}
++
+ #[derive(Debug)]
+ #[non_exhaustive]
+ /// Possible messages that [Channel::wait] can receive.
+@@ -142,7 +184,8 @@
+ ///
+ /// Allows you to read from a channel without borrowing the session
+ pub struct ChannelReadHalf {
+-    pub(crate) receiver: Receiver<ChannelMsg>,
++    pub(crate) receiver: UnboundedReceiver<ChannelMsg>,
++    pub(crate) credit: Option<WindowCredit>,
+ }
+ 
+ impl std::fmt::Debug for ChannelReadHalf {
+@@ -154,7 +197,22 @@
+ impl ChannelReadHalf {
+     /// Awaits an incoming [`ChannelMsg`], this method returns [`None`] if the channel has been closed.
+     pub async fn wait(&mut self) -> Option<ChannelMsg> {
+-        self.receiver.recv().await
++        let msg = self.receiver.recv().await;
++        if let Some(msg) = &msg {
++            self.consumed(msg);
++        }
++        msg
++    }
++
++    /// Data taken off the queue frees that much of the receive window.
++    pub(crate) fn consumed(&self, msg: &ChannelMsg) {
++        let len = match msg {
++            ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => data.len(),
++            _ => return,
++        };
++        if let Some(credit) = &self.credit {
++            let _ = credit.tx.send((credit.id, len as u32));
++        }
+     }
+ 
+     /// Make a reader for the [`Channel`] to receive [`ChannelMsg::Data`]
+@@ -407,11 +465,14 @@
+         sender: Sender<S>,
+         max_packet_size: u32,
+         window_size: u32,
+-        channel_buffer_size: usize,
++        credit: Option<UnboundedSender<(ChannelId, u32)>>,
+     ) -> (Self, ChannelRef) {
+-        let (tx, rx) = tokio::sync::mpsc::channel(channel_buffer_size);
++        let (tx, rx) = channel_queue();
+         let window_size = WindowSizeRef::new(window_size);
+-        let read_half = ChannelReadHalf { receiver: rx };
++        let read_half = ChannelReadHalf {
++            receiver: rx,
++            credit: credit.map(|tx| WindowCredit { id, tx }),
++        };
+         let write_half = ChannelWriteHalf {
+             id,
+             sender,
+diff -ruN a/src/client/encrypted.rs b/src/client/encrypted.rs
+--- a/src/client/encrypted.rs	2026-11-03 04:01:16.882288000 +0800
++++ b/src/client/encrypted.rs	2026-11-03 04:01:16.594855500 +0800
+@@ -401,15 +401,9 @@
+                 trace!("channel_data");
+                 let channel_num = map_err!(ChannelId::decode(&mut r))?;
+                 let data = map_err!(Bytes::decode(&mut r))?;
+-                let target = self.common.config.window_size;
++                // The window re-opens when the application consumes the data.
+                 if let Some(ref mut enc) = self.common.encrypted {
+-                    if enc.adjust_window_size(channel_num, &data, target)? {
+-                        let next_window =
+-                            client.adjust_window(channel_num, self.target_window_size);
+-                        if next_window > 0 {
+-                            self.target_window_size = next_window
+-                        }
+-                    }
++                    enc.track_received(channel_num, data.len());
+                 }
+ 
+                 if let Some(chan) = self.channels.get(&channel_num) {
+@@ -427,15 +421,9 @@
+                 let channel_num = map_err!(ChannelId::decode(&mut r))?;
+                 let extended_code = map_err!(u32::decode(&mut r))?;
+                 let data = map_err!(Bytes::decode(&mut r))?;
+-                let target = self.common.config.window_size;
++                // The window re-opens when the application consumes the data.
+                 if let Some(ref mut enc) = self.common.encrypted {
+-                    if enc.adjust_window_size(channel_num, &data, target)? {
+-                        let next_window =
+-                            client.adjust_window(channel_num, self.target_window_size);
+-                        if next_window > 0 {
+-                            self.target_window_size = next_window
+-                        }
+-                    }
++                    enc.track_received(channel_num, data.len());
+                 }
+ 
+                 if let Some(chan) = self.channels.get(&channel_num) {
+@@ -636,6 +624,7 @@
+                         pending_data: std::collections::VecDeque::new(),
+                         pending_eof: false,
+                         pending_close: false,
++                        unconsumed: 0,
+                     };
+ 
+                     let confirm = || {
+@@ -833,7 +822,7 @@
+             self.inbound_channel_sender.clone(),
+             msg.recipient_maximum_packet_size,
+             msg.recipient_window_size,
+-            self.common.config.channel_buffer_size,
++            Some(self.window_credit_sender.clone()),
+         );
+ 
+         self.channels.insert(id, channel_ref);
+diff -ruN a/src/client/mod.rs b/src/client/mod.rs
+--- a/src/client/mod.rs	2026-11-03 04:01:16.884289600 +0800
++++ b/src/client/mod.rs	2026-11-03 04:01:16.595860000 +0800
+@@ -59,7 +59,8 @@
+ 
+ pub use crate::auth::AuthResult;
+ use crate::channels::{
+-    Channel, ChannelMsg, ChannelReadHalf, ChannelRef, ChannelWriteHalf, WindowSizeRef,
++    Channel, ChannelMsg, ChannelReadHalf, ChannelRef, ChannelWriteHalf, WindowCredit,
++    WindowSizeRef, channel_queue,
+ };
+ use crate::cipher::{self, OpeningKey, clear};
+ use crate::kex::{KexAlgorithmImplementor, KexCause, KexProgress, SessionKexState};
+@@ -92,11 +93,12 @@
+     receiver: Receiver<Msg>,
+     sender: UnboundedSender<Reply>,
+     channels: HashMap<ChannelId, ChannelRef>,
+-    target_window_size: u32,
+     pending_reads: Vec<Vec<u8>>,
+     pending_len: u32,
+     inbound_channel_sender: Sender<Msg>,
+     inbound_channel_receiver: Receiver<Msg>,
++    window_credit_sender: UnboundedSender<(ChannelId, u32)>,
++    window_credit_receiver: UnboundedReceiver<(ChannelId, u32)>,
+     open_global_requests: VecDeque<GlobalRequestResponse>,
+     server_sig_algs: Option<Vec<Algorithm>>,
+ }
+@@ -258,7 +260,7 @@
+     sender: Sender<Msg>,
+     receiver: UnboundedReceiver<Reply>,
+     join: russh_util::runtime::JoinHandle<Result<(), H::Error>>,
+-    channel_buffer_size: usize,
++    window_credit: UnboundedSender<(ChannelId, u32)>,
+ }
+ 
+ impl<H: Handler> Drop for Handle<H> {
+@@ -504,7 +506,7 @@
+     /// Wait for confirmation that a channel is open
+     async fn wait_channel_confirmation(
+         &self,
+-        mut receiver: Receiver<ChannelMsg>,
++        mut receiver: UnboundedReceiver<ChannelMsg>,
+         window_size_ref: WindowSizeRef,
+     ) -> Result<Channel<Msg>, crate::Error> {
+         loop {
+@@ -523,7 +525,13 @@
+                             max_packet_size,
+                             window_size: window_size_ref,
+                         },
+-                        read_half: ChannelReadHalf { receiver },
++                        read_half: ChannelReadHalf {
++                            receiver,
++                            credit: Some(WindowCredit {
++                                id,
++                                tx: self.window_credit.clone(),
++                            }),
++                        },
+                     });
+                 }
+                 Some(ChannelMsg::OpenFailure(reason)) => {
+@@ -606,7 +614,7 @@
+     /// usable when it's confirmed by the server, as indicated by the
+     /// `confirmed` field of the corresponding `Channel`.
+     pub async fn channel_open_session(&self) -> Result<Channel<Msg>, crate::Error> {
+-        let (sender, receiver) = channel(self.channel_buffer_size);
++        let (sender, receiver) = channel_queue();
+         let channel_ref = ChannelRef::new(sender);
+         let window_size_ref = channel_ref.window_size().clone();
+ 
+@@ -624,7 +632,7 @@
+         originator_address: A,
+         originator_port: u32,
+     ) -> Result<Channel<Msg>, crate::Error> {
+-        let (sender, receiver) = channel(self.channel_buffer_size);
++        let (sender, receiver) = channel_queue();
+         let channel_ref = ChannelRef::new(sender);
+         let window_size_ref = channel_ref.window_size().clone();
+ 
+@@ -655,7 +663,7 @@
+         originator_address: B,
+         originator_port: u32,
+     ) -> Result<Channel<Msg>, crate::Error> {
+-        let (sender, receiver) = channel(self.channel_buffer_size);
++        let (sender, receiver) = channel_queue();
+         let channel_ref = ChannelRef::new(sender);
+         let window_size_ref = channel_ref.window_size().clone();
+ 
+@@ -677,7 +685,7 @@
+         &self,
+         socket_path: S,
+     ) -> Result<Channel<Msg>, crate::Error> {
+-        let (sender, receiver) = channel(self.channel_buffer_size);
++        let (sender, receiver) = channel_queue();
+         let channel_ref = ChannelRef::new(sender);
+         let window_size_ref = channel_ref.window_size().clone();
+ 
+@@ -939,9 +947,7 @@
+             config.maximum_packet_size
+         );
+     }
+-    let channel_buffer_size = config.channel_buffer_size;
+     let mut session = Session::new(
+-        config.window_size,
+         CommonSession {
+             packet_writer: PacketWriter::clear(),
+             auth_user: String::new(),
+@@ -962,6 +968,7 @@
+         session_sender,
+     );
+     session.begin_rekey()?;
++    let window_credit = session.window_credit_sender.clone();
+     let (kex_done_signal, kex_done_signal_rx) = oneshot::channel();
+     let join = russh_util::runtime::spawn(session.run(stream, handler, Some(kex_done_signal)));
+ 
+@@ -977,7 +984,7 @@
+         sender: handle_sender,
+         receiver: handle_receiver,
+         join,
+-        channel_buffer_size,
++        window_credit,
+     })
+ }
+ 
+@@ -992,6 +999,15 @@
+ }
+ 
+ impl Session {
++    /// The application took `len` bytes of `id`'s data off its queue.
++    fn consume_window(&mut self, id: ChannelId, len: u32) -> Result<(), crate::Error> {
++        let target = self.common.config.window_size;
++        if let Some(ref mut enc) = self.common.encrypted {
++            enc.consume_window(id, len, target)?;
++        }
++        Ok(())
++    }
++
+     fn maybe_decompress(&mut self, buffer: &SSHBuffer) -> Result<IncomingSshPacket, Error> {
+         if let Some(ref mut enc) = self.common.encrypted {
+             let mut decomp = Vec::new();
+@@ -1013,20 +1029,21 @@
+     }
+ 
+     fn new(
+-        target_window_size: u32,
+         common: CommonSession<Arc<Config>>,
+         receiver: Receiver<Msg>,
+         sender: UnboundedSender<Reply>,
+     ) -> Self {
+         let (inbound_channel_sender, inbound_channel_receiver) = channel(10);
++        let (window_credit_sender, window_credit_receiver) = unbounded_channel();
+         Self {
+             common,
+             receiver,
+             sender,
+             kex: SessionKexState::Idle,
+-            target_window_size,
+             inbound_channel_sender,
+             inbound_channel_receiver,
++            window_credit_sender,
++            window_credit_receiver,
+             channels: HashMap::new(),
+             pending_reads: Vec::new(),
+             pending_len: 0,
+@@ -1175,6 +1192,14 @@
+                         }
+                     }
+                 }
++                credit = self.window_credit_receiver.recv(), if !self.kex.active() => {
++                    // Batch every credit that is already queued into one flush.
++                    let mut next = credit;
++                    while let Some((id, len)) = next {
++                        self.consume_window(id, len)?;
++                        next = self.window_credit_receiver.try_recv().ok();
++                    }
++                }
+                 msg = self.inbound_channel_receiver.recv(), if !self.kex.active() => {
+                     match msg {
+                         Some(msg) => self.handle_msg(msg)?,
+diff -ruN a/src/lib_inner.rs b/src/lib_inner.rs
+--- a/src/lib_inner.rs	2026-11-03 04:01:16.908491200 +0800
++++ b/src/lib_inner.rs	2026-11-03 04:01:16.621416400 +0800
+@@ -473,6 +473,8 @@
+     pending_data: std::collections::VecDeque<(bytes::Bytes, Option<u32>, usize)>,
+     pending_eof: bool,
+     pending_close: bool,
++    /// Received bytes still queued for the application (flow control).
++    unconsumed: u32,
+ }
+ 
+ impl ChannelParams {
+diff -ruN a/src/server/encrypted.rs b/src/server/encrypted.rs
+--- a/src/server/encrypted.rs	2026-11-03 04:01:16.917008500 +0800
++++ b/src/server/encrypted.rs	2026-11-03 04:01:16.628331400 +0800
+@@ -1133,6 +1133,7 @@
+             pending_data: std::collections::VecDeque::new(),
+             pending_eof: false,
+             pending_close: false,
++            unconsumed: 0,
+         };
+ 
+         let (channel, reference) = Channel::new(
+@@ -1140,7 +1141,7 @@
+             self.sender.sender.clone(),
+             channel_params.recipient_maximum_packet_size,
+             channel_params.recipient_window_size,
+-            self.common.config.channel_buffer_size,
++            None,
+         );
+ 
+         match &msg.typ {
+diff -ruN a/src/server/mod.rs b/src/server/mod.rs
+--- a/src/server/mod.rs	2026-11-03 04:01:16.919011300 +0800
++++ b/src/server/mod.rs	2026-11-03 04:01:16.630337800 +0800
+@@ -1011,10 +1011,7 @@
+     // Reading SSH id and allocating a session.
+     let mut stream = SshRead::new(stream);
+     let (sender, receiver) = tokio::sync::mpsc::channel(config.event_buffer_size);
+-    let handle = server::session::Handle {
+-        sender,
+-        channel_buffer_size: config.channel_buffer_size,
+-    };
++    let handle = server::session::Handle { sender };
+ 
+     let common = read_ssh_id(config, &mut stream).await?;
+     let mut session = Session {
+diff -ruN a/src/server/session.rs b/src/server/session.rs
+--- a/src/server/session.rs	2026-11-03 04:01:16.920008400 +0800
++++ b/src/server/session.rs	2026-11-03 04:01:16.630337800 +0800
+@@ -7,11 +7,13 @@
+ use log::debug;
+ use negotiation::parse_kex_algo_list;
+ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+-use tokio::sync::mpsc::{channel, Receiver, Sender};
++use tokio::sync::mpsc::{Receiver, Sender, UnboundedReceiver};
+ use tokio::sync::oneshot;
+ 
+ use super::*;
+-use crate::channels::{Channel, ChannelMsg, ChannelReadHalf, ChannelRef, ChannelWriteHalf};
++use crate::channels::{
++    Channel, ChannelMsg, ChannelReadHalf, ChannelRef, ChannelWriteHalf, channel_queue,
++};
+ use crate::helpers::NameList;
+ use crate::kex::{KexCause, SessionKexState, EXTENSION_SUPPORT_AS_CLIENT};
+ use crate::{map_err, msg};
+@@ -96,7 +98,6 @@
+ /// the request/response cycle.
+ pub struct Handle {
+     pub(crate) sender: Sender<Msg>,
+-    pub(crate) channel_buffer_size: usize,
+ }
+ 
+ impl Handle {
+@@ -231,7 +232,7 @@
+     /// confirmed that it allows agent forwarding. See
+     /// [PROTOCOL.agent](https://datatracker.ietf.org/doc/html/draft-miller-ssh-agent).
+     pub async fn channel_open_agent(&self) -> Result<Channel<Msg>, Error> {
+-        let (sender, receiver) = channel(self.channel_buffer_size);
++        let (sender, receiver) = channel_queue();
+         let channel_ref = ChannelRef::new(sender);
+         let window_size_ref = channel_ref.window_size().clone();
+ 
+@@ -250,7 +251,7 @@
+     /// usable when it's confirmed by the server, as indicated by the
+     /// `confirmed` field of the corresponding `Channel`.
+     pub async fn channel_open_session(&self) -> Result<Channel<Msg>, Error> {
+-        let (sender, receiver) = channel(self.channel_buffer_size);
++        let (sender, receiver) = channel_queue();
+         let channel_ref = ChannelRef::new(sender);
+         let window_size_ref = channel_ref.window_size().clone();
+ 
+@@ -275,7 +276,7 @@
+         originator_address: B,
+         originator_port: u32,
+     ) -> Result<Channel<Msg>, Error> {
+-        let (sender, receiver) = channel(self.channel_buffer_size);
++        let (sender, receiver) = channel_queue();
+         let channel_ref = ChannelRef::new(sender);
+         let window_size_ref = channel_ref.window_size().clone();
+ 
+@@ -298,7 +299,7 @@
+         &self,
+         socket_path: A,
+     ) -> Result<Channel<Msg>, Error> {
+-        let (sender, receiver) = channel(self.channel_buffer_size);
++        let (sender, receiver) = channel_queue();
+         let channel_ref = ChannelRef::new(sender);
+         let window_size_ref = channel_ref.window_size().clone();
+ 
+@@ -320,7 +321,7 @@
+         originator_address: B,
+         originator_port: u32,
+     ) -> Result<Channel<Msg>, Error> {
+-        let (sender, receiver) = channel(self.channel_buffer_size);
++        let (sender, receiver) = channel_queue();
+         let channel_ref = ChannelRef::new(sender);
+         let window_size_ref = channel_ref.window_size().clone();
+ 
+@@ -342,7 +343,7 @@
+         &self,
+         server_socket_path: A,
+     ) -> Result<Channel<Msg>, Error> {
+-        let (sender, receiver) = channel(self.channel_buffer_size);
++        let (sender, receiver) = channel_queue();
+         let channel_ref = ChannelRef::new(sender);
+         let window_size_ref = channel_ref.window_size().clone();
+ 
+@@ -362,7 +363,7 @@
+         originator_address: A,
+         originator_port: u32,
+     ) -> Result<Channel<Msg>, Error> {
+-        let (sender, receiver) = channel(self.channel_buffer_size);
++        let (sender, receiver) = channel_queue();
+         let channel_ref = ChannelRef::new(sender);
+         let window_size_ref = channel_ref.window_size().clone();
+ 
+@@ -380,7 +381,7 @@
+ 
+     async fn wait_channel_confirmation(
+         &self,
+-        mut receiver: Receiver<ChannelMsg>,
++        mut receiver: UnboundedReceiver<ChannelMsg>,
+         window_size_ref: WindowSizeRef,
+     ) -> Result<Channel<Msg>, Error> {
+         loop {
+@@ -399,7 +400,10 @@
+                             max_packet_size,
+                             window_size: window_size_ref,
+                         },
+-                        read_half: ChannelReadHalf { receiver },
++                        read_half: ChannelReadHalf {
++                            receiver,
++                            credit: None,
++                        },
+                     });
+                 }
+                 Some(ChannelMsg::OpenFailure(reason)) => {
+diff -ruN a/src/session.rs b/src/session.rs
+--- a/src/session.rs	2026-11-03 04:01:16.929896600 +0800
++++ b/src/session.rs	2026-11-03 04:01:16.631338100 +0800
+@@ -279,6 +279,44 @@
+         }
+     }
+ 
++    /// Accounts for received data without re-opening the window; the window
++    /// grows back through [`Self::consume_window`] as the data is consumed.
++    pub fn track_received(&mut self, channel: ChannelId, len: usize) {
++        if let Some(channel) = self.channels.get_mut(&channel) {
++            let len = u32::try_from(len).unwrap_or(u32::MAX);
++            // Data beyond the window violates RFC 4254 5.2; it is still queued.
++            channel.sender_window_size = channel.sender_window_size.saturating_sub(len);
++            channel.unconsumed = channel.unconsumed.saturating_add(len);
++        }
++    }
++
++    /// The application consumed `len` bytes: once the peer's remaining window
++    /// is under half of `target`, extend it by everything that is no longer
++    /// queued locally.
++    pub fn consume_window(
++        &mut self,
++        channel: ChannelId,
++        len: u32,
++        target: u32,
++    ) -> Result<bool, crate::Error> {
++        let Some(channel) = self.channels.get_mut(&channel) else {
++            return Ok(false);
++        };
++        channel.unconsumed = channel.unconsumed.saturating_sub(len);
++        let allowed = target.saturating_sub(channel.unconsumed);
++        if channel.sender_window_size >= target / 2 || allowed <= channel.sender_window_size {
++            return Ok(false);
++        }
++        let increment = allowed - channel.sender_window_size;
++        push_packet!(self.write, {
++            self.write.push(msg::CHANNEL_WINDOW_ADJUST);
++            channel.recipient_channel.encode(&mut self.write)?;
++            increment.encode(&mut self.write)?;
++        });
++        channel.sender_window_size = allowed;
++        Ok(true)
++    }
++
+     pub fn adjust_window_size(
+         &mut self,
+         channel: ChannelId,
+@@ -551,6 +589,7 @@
+                     pending_data: std::collections::VecDeque::new(),
+                     pending_eof: false,
+                     pending_close: false,
++                    unconsumed: 0,
+                 });
+                 return ChannelId(self.last_channel_id.0);
+             }
+diff -ruN a/tests/test_backpressure.rs b/tests/test_backpressure.rs
+--- a/tests/test_backpressure.rs	2026-11-03 04:01:16.933909600 +0800
++++ b/tests/test_backpressure.rs	2026-11-03 04:01:16.635178800 +0800
+@@ -1,84 +1,79 @@
++//! SimpleShell patch: client channels re-open their receive window only as the
++//! application consumes data, and a stalled channel never blocks the others.
++
+ use std::net::{SocketAddr, TcpListener, TcpStream};
+ use std::sync::Arc;
++use std::time::Duration;
+ 
+-use futures::FutureExt;
+-use rand::RngCore;
+ use russh::keys::PrivateKeyWithHashAlg;
+-use russh::keys::key::safe_rng;
+ use russh::keys::ssh_key::rand_core::OsRng;
+ use russh::server::{self, Auth, Msg, Server as _, Session};
+ use russh::{Channel, ChannelMsg, client};
+ use ssh_key::PrivateKey;
+ use tokio::io::AsyncWriteExt;
+-use tokio::sync::watch;
+-use tokio::time::sleep;
++use tokio::sync::mpsc;
++use tokio::time::timeout;
+ 
+-pub const WINDOW_SIZE: usize = 8 * 2048;
+-pub const CHANNEL_BUFFER_SIZE: usize = 10;
++const CLIENT_WINDOW: u32 = 64 * 1024;
++const CHUNK: usize = 16 * 1024;
+ 
+ #[tokio::test]
+ async fn test_backpressure() -> Result<(), anyhow::Error> {
+-    env_logger::init();
+-
+     let addr = addr();
+-    let data = data();
+-    let (tx, rx) = watch::channel(());
+-
+-    tokio::spawn(Server::run(addr, rx));
+-
+-    // Wait until the server is started
++    let (written_tx, mut written) = mpsc::unbounded_channel::<(usize, usize)>();
++    tokio::spawn(Server::run(addr, written_tx));
+     while TcpStream::connect(addr).is_err() {
+-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
++        tokio::time::sleep(Duration::from_millis(10)).await;
+     }
+ 
+-    stream(addr, &data, tx).await?;
+-
+-    Ok(())
+-}
+-
+-async fn stream(addr: SocketAddr, data: &[u8], tx: watch::Sender<()>) -> Result<(), anyhow::Error> {
+-    let config = Arc::new(client::Config::default());
++    let config = Arc::new(client::Config {
++        window_size: CLIENT_WINDOW,
++        ..Default::default()
++    });
+     let key = Arc::new(PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap());
+-
+-    let mut session = russh::client::connect(config, addr, Client).await?;
+-    let channel = match session
+-        .authenticate_publickey(
+-            "user",
+-            PrivateKeyWithHashAlg::new(
+-                key,
+-                session.best_supported_rsa_hash().await.unwrap().flatten(),
+-            ),
+-        )
+-        .await
+-        .map(|x| x.success())
+-    {
+-        Ok(true) => session.channel_open_session().await?,
+-        Ok(false) => panic!("Authentication failed"),
+-        Err(err) => return Err(err.into()),
+-    };
+-
+-    let mut writer = channel.make_writer();
+-
+-    // TCP listener will buffer one extra message
+-    for _ in 0..=CHANNEL_BUFFER_SIZE {
+-        assert!(writer.write(data).await.is_ok());
+-    }
+-    let pending_write = async { writer.write(data).await.unwrap() };
+-    sleep(std::time::Duration::from_millis(100)).await;
+-    assert_eq!(pending_write.now_or_never(), None);
+-    // Make space on the buffer
+-    tx.send(()).unwrap();
+-    assert!(writer.write(data).await.is_ok());
+-
++    let mut session = client::connect(config, addr, Client).await?;
++    assert!(
++        session
++            .authenticate_publickey(
++                "user",
++                PrivateKeyWithHashAlg::new(key, session.best_supported_rsa_hash().await?.flatten()),
++            )
++            .await?
++            .success()
++    );
++
++    // Channel 0: the server floods it; the client does not read yet.
++    let mut stalled = session.channel_open_session().await?;
++    let mut flowing = session.channel_open_session().await?;
++
++    // The server can only write about one window ahead of the reader.
++    let mut stalled_bytes = 0;
++    while let Ok(Some((0, total))) = timeout(Duration::from_millis(300), written.recv()).await {
++        stalled_bytes = total;
++    }
++    assert!(stalled_bytes >= CLIENT_WINDOW as usize / 2);
++    assert!(stalled_bytes <= CLIENT_WINDOW as usize + CHUNK);
++
++    // Channel 1 keeps delivering while channel 0 is stalled.
++    let mut received = 0;
++    while received < 4 * CLIENT_WINDOW as usize {
++        match timeout(Duration::from_secs(5), flowing.wait()).await? {
++            Some(ChannelMsg::Data { data }) => received += data.len(),
++            other => panic!("unexpected message {other:?}"),
++        }
++    }
++
++    // Consuming channel 0 re-opens its window and the writer continues.
++    let mut drained = 0;
++    while drained < stalled_bytes + CHUNK {
++        match timeout(Duration::from_secs(5), stalled.wait()).await? {
++            Some(ChannelMsg::Data { data }) => drained += data.len(),
++            other => panic!("unexpected message {other:?}"),
++        }
++    }
+     Ok(())
+ }
+ 
+-fn data() -> Vec<u8> {
+-    let mut data = vec![0u8; WINDOW_SIZE]; // Check whether the window_size resizing works
+-    safe_rng().fill_bytes(&mut data);
+-    data
+-}
+-
+ /// Find a unused local address to bind our server to
+ fn addr() -> SocketAddr {
+     TcpListener::bind(("127.0.0.1", 0))
+@@ -89,20 +84,21 @@
+ 
+ #[derive(Clone)]
+ struct Server {
+-    rx: Option<watch::Receiver<()>>,
++    written: mpsc::UnboundedSender<(usize, usize)>,
++    channels: usize,
+ }
+ 
+ impl Server {
+-    async fn run(addr: SocketAddr, rx: watch::Receiver<()>) {
++    async fn run(addr: SocketAddr, written: mpsc::UnboundedSender<(usize, usize)>) {
+         let config = Arc::new(server::Config {
+             keys: vec![PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap()],
+-            window_size: WINDOW_SIZE as u32,
+-            channel_buffer_size: CHANNEL_BUFFER_SIZE,
+             ..Default::default()
+         });
+-        let mut sh = Server { rx: Some(rx) };
+-
+-        sh.run_on_address(config, addr).await.unwrap();
++        let mut server = Server {
++            written,
++            channels: 0,
++        };
++        server.run_on_address(config, addr).await.unwrap();
+     }
+ }
+ 
+@@ -127,19 +123,24 @@
+ 
+     async fn channel_open_session(
+         &mut self,
+-        mut channel: Channel<Msg>,
++        channel: Channel<Msg>,
+         _session: &mut Session,
+     ) -> Result<bool, Self::Error> {
+-        let mut rx = self.rx.take().unwrap();
++        let index = self.channels;
++        self.channels += 1;
++        let written = self.written.clone();
+         tokio::spawn(async move {
+-            while let Ok(_) = rx.changed().await {
+-                match channel.wait().await {
+-                    Some(ChannelMsg::Data { .. }) => (),
+-                    other => panic!("unexpected message {other:?}"),
++            let mut writer = channel.make_writer();
++            let chunk = vec![b'x'; CHUNK];
++            let mut total = 0;
++            loop {
++                if writer.write_all(&chunk).await.is_err() {
++                    break;
+                 }
++                total += CHUNK;
++                let _ = written.send((index, total));
+             }
+         });
+-
+         Ok(true)
+     }
+ }

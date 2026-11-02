@@ -37,7 +37,10 @@ where
         let (msg, mut idx) = match self.buffer.take() {
             Some(msg) => msg,
             None => match ready!(self.channel.borrow_mut().receiver.poll_recv(cx)) {
-                Some(msg) => (msg, 0),
+                Some(msg) => {
+                    self.channel.borrow_mut().consumed(&msg);
+                    (msg, 0)
+                }
                 None => return Poll::Ready(Ok(())),
             },
         };

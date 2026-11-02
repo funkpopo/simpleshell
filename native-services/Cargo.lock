@@ -715,12 +715,11 @@ name = "forward"
 version = "0.5.7"
 dependencies = [
  "core-protocol",
- "futures-util",
  "netutil",
  "russh",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "ssh-hub",
  "tokio",
  "tokio-util",
 ]
@@ -2541,6 +2540,7 @@ dependencies = [
  "serde_json",
  "sftp",
  "ssh-hub",
+ "ssh-session",
  "tokio",
  "tokio-util",
  "zmodem",
@@ -2627,10 +2627,27 @@ dependencies = [
 name = "ssh-hub"
 version = "0.5.7"
 dependencies = [
+ "base64",
  "netutil",
+ "pageant",
  "russh",
  "serde",
  "sha2 0.10.9",
+ "test-sshd",
+ "tokio",
+]
+
+[[package]]
+name = "ssh-session"
+version = "0.5.7"
+dependencies = [
+ "bytes",
+ "core-protocol",
+ "russh",
+ "serde",
+ "serde_json",
+ "ssh-hub",
+ "test-sshd",
  "tokio",
 ]
 
@@ -2706,6 +2723,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "test-sshd"
+version = "0.5.7"
+dependencies = [
+ "bytes",
+ "russh",
+ "sha2 0.10.9",
+ "tokio",
 ]
 
 [[package]]

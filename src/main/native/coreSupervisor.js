@@ -29,6 +29,7 @@ const {
   FRAME_KIND,
   encodeControl,
   encodeData,
+  encodeEvent,
   FrameDecoder,
   parseControl,
 } = require("./coreProtocol");
@@ -68,6 +69,13 @@ class CoreStreamProcess extends EventEmitter {
     });
   }
 
+  /** Sends a stream-scoped JSON event to the service. */
+  sendEvent(event) {
+    if (this._exited) return false;
+    this._supervisor._write(encodeEvent(this.streamId, event));
+    return true;
+  }
+
   kill() {
     if (this._exited) return false;
     this.killed = true;
@@ -77,6 +85,14 @@ class CoreStreamProcess extends EventEmitter {
 
   _data(payload) {
     if (!this._exited) this.stdout.push(payload);
+  }
+
+  _stderr(payload) {
+    if (!this._exited) this.stderr.push(payload);
+  }
+
+  _event(event) {
+    if (!this._exited) this.emit("event", event);
   }
 
   _finish(code, signal, errorText) {
@@ -324,6 +340,21 @@ class CoreSupervisor extends EventEmitter {
   _dispatchFrame(child, frame) {
     if (frame.kind === FRAME_KIND.DATA) {
       this._streams.get(frame.stream)?._data(frame.payload);
+      return true;
+    }
+    if (frame.kind === FRAME_KIND.STDERR) {
+      this._streams.get(frame.stream)?._stderr(frame.payload);
+      return true;
+    }
+    if (frame.kind === FRAME_KIND.EVENT) {
+      let event;
+      try {
+        event = JSON.parse(frame.payload.toString("utf8"));
+      } catch {
+        this._log(`Core(${this.role}) sent an invalid stream event`, "WARN");
+        return true;
+      }
+      this._streams.get(frame.stream)?._event(event);
       return true;
     }
     let message;

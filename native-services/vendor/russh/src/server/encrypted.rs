@@ -1133,6 +1133,7 @@ impl Session {
             pending_data: std::collections::VecDeque::new(),
             pending_eof: false,
             pending_close: false,
+            unconsumed: 0,
         };
 
         let (channel, reference) = Channel::new(
@@ -1140,7 +1141,7 @@ impl Session {
             self.sender.sender.clone(),
             channel_params.recipient_maximum_packet_size,
             channel_params.recipient_window_size,
-            self.common.config.channel_buffer_size,
+            None,
         );
 
         match &msg.typ {

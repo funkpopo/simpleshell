@@ -6,7 +6,8 @@
 
 const BaseConnectionPool = require("./base-connection-pool");
 const CLOSE_REASON = BaseConnectionPool.CLOSE_REASON;
-const Client = require("ssh2").Client;
+const { createSshClient } = require("./sshClientFactory");
+const { normalizeProxyConfig } = require("../native/nativeSidecarNetworkPath");
 const { getBasicSSHAlgorithms } = require("../../shared/domain/sshAlgorithms");
 const proxyManager = require("../proxy/proxy-manager");
 const {
@@ -241,7 +242,7 @@ class SSHPool extends BaseConnectionPool {
         reject(err);
       };
 
-      const ssh = new Client();
+      const ssh = createSshClient();
       // keyboard-interactive / 2FA：在 connect 前注册事件处理（需配合 tryKeyboard）
       attachKeyboardInteractiveSupport(ssh, sshConfig);
       const connectionInfo = {
@@ -363,8 +364,12 @@ class SSHPool extends BaseConnectionPool {
         this._handleSSHClose(connectionInfo, connectionKey, ssh);
       });
 
-      // 关键：ssh2 不支持 options.proxy，必须传入已建立好的代理隧道 socket（sock）
-      if (usingProxy) {
+      // 原生客户端由 core 建立代理隧道；ssh2 需要预先建立好的隧道 socket（sock）
+      if (usingProxy && ssh.acceptsProxyConfig) {
+        connectionOptions.proxy = normalizeProxyConfig(resolvedProxyConfig);
+        connectionOptions.proxyRequired = true;
+        ssh.connect(connectionOptions);
+      } else if (usingProxy) {
         (async () => {
           try {
             const targetPort = sshConfig.port || 22;

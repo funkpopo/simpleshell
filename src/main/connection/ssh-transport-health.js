@@ -1,5 +1,7 @@
-// ssh2 1.x exposes no public ping API. Keep its protocol/callback integration
-// here: global request replies are FIFO, including native keepalive replies.
+// Transport liveness checks. The native client exposes `checkTransport`.
+// ssh2 1.x exposes no public ping API; for that fallback the protocol/callback
+// integration stays here: global request replies are FIFO, including
+// native keepalive replies.
 class SshTransportHealth {
   constructor({ timeoutMs = 10000 } = {}) {
     this.timeoutMs = timeoutMs;
@@ -8,6 +10,20 @@ class SshTransportHealth {
   }
 
   check(client) {
+    // The native client answers from the core (keepalive or recent traffic).
+    if (typeof client?.checkTransport === "function") {
+      const pending = this.pending.get(client);
+      if (pending) return pending.promise;
+      let cancel;
+      const promise = Promise.race([
+        client.checkTransport(this.timeoutMs),
+        new Promise((resolve) => {
+          cancel = () => resolve(null);
+        }),
+      ]).finally(() => this.pending.delete(client));
+      this.pending.set(client, { promise, cancel });
+      return promise;
+    }
     const previous = this.pending.get(client);
     if (previous) {
       if (previous.socket === client?._sock) return previous.promise;

@@ -401,15 +401,9 @@ impl Session {
                 trace!("channel_data");
                 let channel_num = map_err!(ChannelId::decode(&mut r))?;
                 let data = map_err!(Bytes::decode(&mut r))?;
-                let target = self.common.config.window_size;
+                // The window re-opens when the application consumes the data.
                 if let Some(ref mut enc) = self.common.encrypted {
-                    if enc.adjust_window_size(channel_num, &data, target)? {
-                        let next_window =
-                            client.adjust_window(channel_num, self.target_window_size);
-                        if next_window > 0 {
-                            self.target_window_size = next_window
-                        }
-                    }
+                    enc.track_received(channel_num, data.len());
                 }
 
                 if let Some(chan) = self.channels.get(&channel_num) {
@@ -427,15 +421,9 @@ impl Session {
                 let channel_num = map_err!(ChannelId::decode(&mut r))?;
                 let extended_code = map_err!(u32::decode(&mut r))?;
                 let data = map_err!(Bytes::decode(&mut r))?;
-                let target = self.common.config.window_size;
+                // The window re-opens when the application consumes the data.
                 if let Some(ref mut enc) = self.common.encrypted {
-                    if enc.adjust_window_size(channel_num, &data, target)? {
-                        let next_window =
-                            client.adjust_window(channel_num, self.target_window_size);
-                        if next_window > 0 {
-                            self.target_window_size = next_window
-                        }
-                    }
+                    enc.track_received(channel_num, data.len());
                 }
 
                 if let Some(chan) = self.channels.get(&channel_num) {
@@ -636,6 +624,7 @@ impl Session {
                         pending_data: std::collections::VecDeque::new(),
                         pending_eof: false,
                         pending_close: false,
+                        unconsumed: 0,
                     };
 
                     let confirm = || {
@@ -833,7 +822,7 @@ impl Session {
             self.inbound_channel_sender.clone(),
             msg.recipient_maximum_packet_size,
             msg.recipient_window_size,
-            self.common.config.channel_buffer_size,
+            Some(self.window_credit_sender.clone()),
         );
 
         self.channels.insert(id, channel_ref);

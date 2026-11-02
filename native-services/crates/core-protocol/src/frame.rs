@@ -11,6 +11,9 @@
 //!   always use stream 0.
 //! * `Data` frames carry opaque bytes for one stream (>= 1). The supervisor
 //!   forwards them without parsing.
+//! * `Event` frames carry one JSON object scoped to a stream (for example a
+//!   terminal resize, or a channel's exit status).
+//! * `Stderr` frames carry a stream's secondary byte output.
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::fmt;
@@ -30,6 +33,8 @@ pub const CONTROL_STREAM: u32 = 0;
 pub enum FrameKind {
     Control = 1,
     Data = 2,
+    Event = 3,
+    Stderr = 4,
 }
 
 impl FrameKind {
@@ -37,6 +42,8 @@ impl FrameKind {
         match value {
             1 => Some(Self::Control),
             2 => Some(Self::Data),
+            3 => Some(Self::Event),
+            4 => Some(Self::Stderr),
             _ => None,
         }
     }
@@ -53,6 +60,22 @@ impl Frame {
     pub fn data(stream: u32, payload: impl Into<Bytes>) -> Self {
         Self {
             kind: FrameKind::Data,
+            stream,
+            payload: payload.into(),
+        }
+    }
+
+    pub fn event(stream: u32, payload: impl Into<Bytes>) -> Self {
+        Self {
+            kind: FrameKind::Event,
+            stream,
+            payload: payload.into(),
+        }
+    }
+
+    pub fn stderr(stream: u32, payload: impl Into<Bytes>) -> Self {
+        Self {
+            kind: FrameKind::Stderr,
             stream,
             payload: payload.into(),
         }
@@ -164,6 +187,8 @@ mod tests {
     fn round_trips_control_and_data_frames() {
         let mut buffer = encode(Frame::control_json(&b"{\"op\":\"ready\"}"[..]));
         buffer.extend_from_slice(&encode(Frame::data(7, vec![0, 255, 10, 13])));
+        buffer.extend_from_slice(&encode(Frame::event(7, &b"{}"[..])));
+        buffer.extend_from_slice(&encode(Frame::stderr(7, &b"err"[..])));
         let mut codec = FrameCodec;
         let control = codec.decode(&mut buffer).unwrap().unwrap();
         assert_eq!(control.kind, FrameKind::Control);
@@ -171,6 +196,14 @@ mod tests {
         assert_eq!(&control.payload[..], b"{\"op\":\"ready\"}");
         let data = codec.decode(&mut buffer).unwrap().unwrap();
         assert_eq!(data, Frame::data(7, vec![0, 255, 10, 13]));
+        assert_eq!(
+            codec.decode(&mut buffer).unwrap().unwrap().kind,
+            FrameKind::Event
+        );
+        assert_eq!(
+            codec.decode(&mut buffer).unwrap().unwrap(),
+            Frame::stderr(7, &b"err"[..])
+        );
         assert!(codec.decode(&mut buffer).unwrap().is_none());
     }
 

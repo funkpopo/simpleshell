@@ -94,7 +94,7 @@ impl Core {
                 FrameKind::Data if frame.stream == stream => {
                     data.push_str(&String::from_utf8_lossy(&frame.payload))
                 }
-                FrameKind::Data => {}
+                FrameKind::Data | FrameKind::Event | FrameKind::Stderr => {}
                 FrameKind::Control => {
                     let message = ControlEnvelope::parse(&frame.payload).unwrap().message;
                     if matches!(message, Control::Exit { stream: id, .. } if id == stream) {

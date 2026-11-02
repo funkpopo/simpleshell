@@ -1011,10 +1011,7 @@ where
     // Reading SSH id and allocating a session.
     let mut stream = SshRead::new(stream);
     let (sender, receiver) = tokio::sync::mpsc::channel(config.event_buffer_size);
-    let handle = server::session::Handle {
-        sender,
-        channel_buffer_size: config.channel_buffer_size,
-    };
+    let handle = server::session::Handle { sender };
 
     let common = read_ssh_id(config, &mut stream).await?;
     let mut session = Session {

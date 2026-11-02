@@ -27,6 +27,26 @@ use tokio::task::{AbortHandle, JoinHandle};
 
 pub type Input = Box<dyn AsyncBufRead + Send + Unpin>;
 
+/// Stream-scoped JSON events sent by the supervisor (resize, pause, ...).
+/// The receiver ends when the supervisor can no longer send events.
+pub type Events = mpsc::UnboundedReceiver<serde_json::Value>;
+
+/// Everything a service reads: its byte input and its incoming events.
+pub struct StreamIo {
+    pub input: Input,
+    pub events: Events,
+}
+
+impl StreamIo {
+    /// Process stdin; no events can arrive in standalone mode.
+    pub fn stdio() -> Self {
+        Self {
+            input: stdin_input(),
+            events: mpsc::unbounded_channel().1,
+        }
+    }
+}
+
 static STDOUT_RESERVED: AtomicBool = AtomicBool::new(false);
 
 /// Called by the frame server: from now on stdout carries frames only, and
@@ -90,6 +110,36 @@ impl Output {
         buffer.put_slice(line);
         buffer.put_u8(b'\n');
         self.write_bytes(buffer.freeze())
+    }
+
+    /// Sends one stream-scoped JSON event (on stderr when standalone).
+    pub fn write_event<T: Serialize + ?Sized>(&self, value: &T) -> Result<(), String> {
+        let payload = serde_json::to_vec(value)
+            .map_err(|error| format!("failed to serialize event: {error}"))?;
+        match &self.sink {
+            Sink::Stdout => {
+                eprintln!("event: {}", String::from_utf8_lossy(&payload));
+                Ok(())
+            }
+            Sink::Frames { stream, tx } => tx
+                .send(Frame::event(*stream, payload))
+                .map_err(|_| "core output channel closed".to_string()),
+        }
+    }
+
+    /// Writes the stream's secondary byte output (stderr).
+    pub fn write_stderr(&self, bytes: Bytes) -> Result<(), String> {
+        match &self.sink {
+            Sink::Stdout => {
+                let mut stderr = std::io::stderr().lock();
+                stderr
+                    .write_all(&bytes)
+                    .map_err(|error| format!("failed to write stderr: {error}"))
+            }
+            Sink::Frames { stream, tx } => tx
+                .send(Frame::stderr(*stream, bytes))
+                .map_err(|_| "core output channel closed".to_string()),
+        }
     }
 
     pub fn write_json<T: Serialize + ?Sized>(&self, value: &T) -> Result<(), String> {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
 use tokio::sync::{Mutex, Notify};
 
 use crate::{ChannelId, ChannelOpenFailure, Error, Pty, Sig};
@@ -14,6 +14,48 @@ pub use channel_ref::ChannelRef;
 
 mod channel_stream;
 pub use channel_stream::ChannelStream;
+
+// SimpleShell patch (per-channel flow control): messages for a channel are
+// queued without bounds so one slow reader never blocks the session loop.
+// The queue is bounded by the SSH window instead: client channels re-open
+// their window only as the application takes data from the queue.
+
+/// Session-side sender of a channel's message queue. `send` never waits.
+#[derive(Debug, Clone)]
+pub struct ChannelSender(UnboundedSender<ChannelMsg>);
+
+impl ChannelSender {
+    pub async fn send(
+        &self,
+        msg: ChannelMsg,
+    ) -> Result<(), tokio::sync::mpsc::error::SendError<ChannelMsg>> {
+        self.0.send(msg)
+    }
+
+    /// Same as `send`; kept for call sites written against a bounded queue.
+    pub fn try_send(
+        &self,
+        msg: ChannelMsg,
+    ) -> Result<(), tokio::sync::mpsc::error::SendError<ChannelMsg>> {
+        self.0.send(msg)
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.0.is_closed()
+    }
+}
+
+pub(crate) fn channel_queue() -> (ChannelSender, UnboundedReceiver<ChannelMsg>) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    (ChannelSender(tx), rx)
+}
+
+/// Returns consumed bytes to the session so it can extend the peer's window.
+#[derive(Debug, Clone)]
+pub(crate) struct WindowCredit {
+    pub(crate) id: ChannelId,
+    pub(crate) tx: UnboundedSender<(ChannelId, u32)>,
+}
 
 #[derive(Debug)]
 #[non_exhaustive]
@@ -142,7 +184,8 @@ impl WindowSizeRef {
 ///
 /// Allows you to read from a channel without borrowing the session
 pub struct ChannelReadHalf {
-    pub(crate) receiver: Receiver<ChannelMsg>,
+    pub(crate) receiver: UnboundedReceiver<ChannelMsg>,
+    pub(crate) credit: Option<WindowCredit>,
 }
 
 impl std::fmt::Debug for ChannelReadHalf {
@@ -154,7 +197,22 @@ impl std::fmt::Debug for ChannelReadHalf {
 impl ChannelReadHalf {
     /// Awaits an incoming [`ChannelMsg`], this method returns [`None`] if the channel has been closed.
     pub async fn wait(&mut self) -> Option<ChannelMsg> {
-        self.receiver.recv().await
+        let msg = self.receiver.recv().await;
+        if let Some(msg) = &msg {
+            self.consumed(msg);
+        }
+        msg
+    }
+
+    /// Data taken off the queue frees that much of the receive window.
+    pub(crate) fn consumed(&self, msg: &ChannelMsg) {
+        let len = match msg {
+            ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => data.len(),
+            _ => return,
+        };
+        if let Some(credit) = &self.credit {
+            let _ = credit.tx.send((credit.id, len as u32));
+        }
     }
 
     /// Make a reader for the [`Channel`] to receive [`ChannelMsg::Data`]
@@ -407,11 +465,14 @@ impl<S: From<(ChannelId, ChannelMsg)> + Send + Sync + 'static> Channel<S> {
         sender: Sender<S>,
         max_packet_size: u32,
         window_size: u32,
-        channel_buffer_size: usize,
+        credit: Option<UnboundedSender<(ChannelId, u32)>>,
     ) -> (Self, ChannelRef) {
-        let (tx, rx) = tokio::sync::mpsc::channel(channel_buffer_size);
+        let (tx, rx) = channel_queue();
         let window_size = WindowSizeRef::new(window_size);
-        let read_half = ChannelReadHalf { receiver: rx };
+        let read_half = ChannelReadHalf {
+            receiver: rx,
+            credit: credit.map(|tx| WindowCredit { id, tx }),
+        };
         let write_half = ChannelWriteHalf {
             id,
             sender,

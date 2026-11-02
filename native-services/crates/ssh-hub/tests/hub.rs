@@ -1,136 +1,27 @@
-//! Hub behaviour against an in-process russh server.
+//! Hub behaviour against the in-process test server.
 
-use russh::keys::ssh_key::rand_core::OsRng;
-use russh::keys::{Algorithm, PrivateKey};
-use russh::server::{self, Auth, Msg, Session};
-use russh::Channel;
-use ssh_hub::{hostkey, ConnectConfig, Hub, HubStats};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use russh::ChannelMsg;
+use ssh_hub::{ConnectConfig, Hub, HubStats, Interaction, KeyboardPrompt};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::net::TcpListener;
-use tokio::task::JoinHandle;
+use test_sshd::{Event, TestSshd, OTP, PASSWORD};
 
-#[derive(Default)]
-struct Counters {
-    connections: AtomicUsize,
-    sessions: AtomicUsize,
-}
-
-struct ServerHandler {
-    counters: Arc<Counters>,
-}
-
-impl server::Handler for ServerHandler {
-    type Error = russh::Error;
-
-    async fn auth_password(&mut self, _user: &str, password: &str) -> Result<Auth, Self::Error> {
-        Ok(if password == "secret" {
-            Auth::Accept
-        } else {
-            Auth::reject()
-        })
-    }
-
-    async fn channel_open_session(
-        &mut self,
-        _channel: Channel<Msg>,
-        _session: &mut Session,
-    ) -> Result<bool, Self::Error> {
-        self.counters.sessions.fetch_add(1, Ordering::SeqCst);
-        Ok(true)
-    }
-}
-
-struct TestServer {
-    port: u16,
-    fingerprint: String,
-    counters: Arc<Counters>,
-    sessions: Arc<Mutex<Vec<server::Handle>>>,
-    accept: JoinHandle<()>,
-}
-
-impl TestServer {
-    async fn start() -> Self {
-        let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
-        let fingerprint = hostkey::fingerprint(key.public_key()).unwrap();
-        let config = Arc::new(server::Config {
-            keys: vec![key],
-            auth_rejection_time: Duration::from_millis(5),
-            auth_rejection_time_initial: Some(Duration::ZERO),
-            ..Default::default()
-        });
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let counters = Arc::new(Counters::default());
-        let sessions = Arc::new(Mutex::new(Vec::new()));
-        let accept = {
-            let counters = Arc::clone(&counters);
-            let sessions = Arc::clone(&sessions);
-            tokio::spawn(async move {
-                while let Ok((socket, _)) = listener.accept().await {
-                    counters.connections.fetch_add(1, Ordering::SeqCst);
-                    let handler = ServerHandler {
-                        counters: Arc::clone(&counters),
-                    };
-                    if let Ok(session) =
-                        server::run_stream(Arc::clone(&config), socket, handler).await
-                    {
-                        sessions.lock().unwrap().push(session.handle());
-                        tokio::spawn(session);
-                    }
-                }
-            })
-        };
-        Self {
-            port,
-            fingerprint,
-            counters,
-            sessions,
-            accept,
-        }
-    }
-
-    fn config(&self) -> ConnectConfig {
-        ConnectConfig {
-            host: "127.0.0.1".into(),
-            port: Some(self.port),
-            username: "tester".into(),
-            password: Some("secret".into()),
-            private_key: None,
-            passphrase: None,
-            expected_host_fingerprint: Some(self.fingerprint.clone()),
-            proxy: None,
-            proxy_required: None,
-        }
-    }
-
-    fn connections(&self) -> usize {
-        self.counters.connections.load(Ordering::SeqCst)
-    }
-
-    /// Ends every server-side session.
-    async fn sever(&self) {
-        let sessions: Vec<_> = self.sessions.lock().unwrap().drain(..).collect();
-        for session in sessions {
-            let _ = session
-                .disconnect(
-                    russh::Disconnect::ByApplication,
-                    String::new(),
-                    String::new(),
-                )
-                .await;
-        }
-    }
-}
-
-impl Drop for TestServer {
-    fn drop(&mut self) {
-        self.accept.abort();
+fn config(server: &TestSshd) -> ConnectConfig {
+    ConnectConfig {
+        host: "127.0.0.1".into(),
+        port: Some(server.port),
+        username: "tester".into(),
+        password: Some(PASSWORD.into()),
+        expected_host_fingerprint: Some(server.fingerprint.clone()),
+        ..ConnectConfig::default()
     }
 }
 
 fn no_stage(_: &str) {}
+
+fn plain() -> Interaction {
+    Interaction::default()
+}
 
 async fn eventually(mut condition: impl FnMut() -> bool) {
     for _ in 0..200 {
@@ -144,18 +35,25 @@ async fn eventually(mut condition: impl FnMut() -> bool) {
 
 #[tokio::test]
 async fn leases_share_one_connection_and_channels() {
-    let server = TestServer::start().await;
+    let server = TestSshd::start().await;
     let hub = Hub::new(Duration::from_secs(60));
     let stages = Mutex::new(Vec::new());
     let record = |stage: &str| stages.lock().unwrap().push(stage.to_string());
 
-    let first = hub.acquire(&server.config(), &record).await.unwrap();
+    let first = hub
+        .acquire(&config(&server), &plain(), &record)
+        .await
+        .unwrap();
     assert!(!first.reused());
     assert_eq!(
         *stages.lock().unwrap(),
         ["tcpConnected", "sshHandshakeCompleted", "authenticated"]
     );
-    let second = hub.acquire(&server.config(), &record).await.unwrap();
+    // A different credential for the same account joins the connection.
+    let mut by_key = config(&server);
+    by_key.password = None;
+    by_key.private_key = Some(server.client_key_pem(None));
+    let second = hub.acquire(&by_key, &plain(), &record).await.unwrap();
     assert!(second.reused());
     assert_eq!(second.connection_id(), first.connection_id());
     assert_eq!(
@@ -163,9 +61,8 @@ async fn leases_share_one_connection_and_channels() {
         "sshConnectionReused"
     );
 
-    let channels = futures_join(&first, &second).await;
-    assert_eq!(channels, 2);
-    assert_eq!(server.counters.sessions.load(Ordering::SeqCst), 2);
+    let (a, b) = tokio::join!(first.open_session(), second.open_session());
+    assert!(a.is_ok() && b.is_ok());
     assert_eq!(server.connections(), 1);
     assert_eq!(
         hub.stats(),
@@ -177,20 +74,15 @@ async fn leases_share_one_connection_and_channels() {
     );
 }
 
-async fn futures_join(first: &ssh_hub::Lease, second: &ssh_hub::Lease) -> usize {
-    let (a, b) = tokio::join!(first.open_session(), second.open_session());
-    usize::from(a.is_ok()) + usize::from(b.is_ok())
-}
-
 #[tokio::test]
 async fn concurrent_acquires_perform_a_single_handshake() {
-    let server = TestServer::start().await;
+    let server = TestSshd::start().await;
     let hub = Arc::new(Hub::new(Duration::from_secs(60)));
     let tasks: Vec<_> = (0..8)
         .map(|_| {
             let hub = Arc::clone(&hub);
-            let config = server.config();
-            tokio::spawn(async move { hub.acquire(&config, &no_stage).await.unwrap() })
+            let config = config(&server);
+            tokio::spawn(async move { hub.acquire(&config, &plain(), &no_stage).await.unwrap() })
         })
         .collect();
     let mut leases = Vec::new();
@@ -203,54 +95,184 @@ async fn concurrent_acquires_perform_a_single_handshake() {
 }
 
 #[tokio::test]
-async fn different_identities_get_separate_connections() {
-    let server = TestServer::start().await;
+async fn authenticates_with_encrypted_keys_and_rejects_bad_credentials() {
+    let server = TestSshd::start().await;
     let hub = Hub::new(Duration::from_secs(60));
-    let _a = hub.acquire(&server.config(), &no_stage).await.unwrap();
-    let mut other_user = server.config();
-    other_user.username = "other".into();
-    let _b = hub.acquire(&other_user, &no_stage).await.unwrap();
-    assert_eq!(server.connections(), 2);
+    let mut encrypted = config(&server);
+    encrypted.password = None;
+    encrypted.private_key = Some(server.client_key_pem(Some("pass phrase")));
+    encrypted.passphrase = Some("pass phrase".into());
+    hub.acquire(&encrypted, &plain(), &no_stage).await.unwrap();
+    assert!(server
+        .events()
+        .contains(&Event::Auth("publickey:tester".into())));
 
-    let mut wrong_password = server.config();
-    wrong_password.password = Some("nope".into());
-    let error = hub.acquire(&wrong_password, &no_stage).await.err().unwrap();
-    assert!(error.contains("password authentication failed"), "{error}");
+    let fresh = Hub::new(Duration::from_secs(60));
+    let mut wrong = config(&server);
+    wrong.password = Some("nope".into());
+    let error = fresh
+        .acquire(&wrong, &plain(), &no_stage)
+        .await
+        .err()
+        .unwrap();
+    assert!(error.contains("failed"), "{error}");
 
-    let mut wrong_key = server.config();
+    let mut wrong_key = config(&server);
     wrong_key.expected_host_fingerprint = Some("SHA256:00".into());
-    let error = hub.acquire(&wrong_key, &no_stage).await.err().unwrap();
+    let error = fresh
+        .acquire(&wrong_key, &plain(), &no_stage)
+        .await
+        .err()
+        .unwrap();
     assert!(error.contains("host key verification failed"), "{error}");
-    assert_eq!(hub.stats().connections, 2);
+    // ...including when the connection already exists.
+    let error = hub
+        .acquire(&wrong_key, &plain(), &no_stage)
+        .await
+        .err()
+        .unwrap();
+    assert!(error.contains("host key verification failed"), "{error}");
+}
+
+#[tokio::test]
+async fn asks_for_host_keys_and_answers_keyboard_interactive_prompts() {
+    let server = TestSshd::start().await;
+    let hub = Hub::new(Duration::from_secs(60));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let prompts = Arc::new(Mutex::new(Vec::<KeyboardPrompt>::new()));
+    let interaction = |trust: bool| {
+        let seen = Arc::clone(&seen);
+        let prompts = Arc::clone(&prompts);
+        Interaction {
+            host_key: Some(Arc::new(move |info| {
+                seen.lock().unwrap().push(info);
+                Box::pin(async move { trust })
+            })),
+            keyboard: Some(Arc::new(move |prompt| {
+                prompts.lock().unwrap().push(prompt);
+                Box::pin(async { Some(vec![OTP.to_string()]) })
+            })),
+        }
+    };
+    let mut interactive = config(&server);
+    interactive.password = None;
+    interactive.expected_host_fingerprint = None;
+    interactive.try_keyboard = Some(true);
+
+    let error = hub
+        .acquire(&interactive, &interaction(false), &no_stage)
+        .await
+        .err()
+        .unwrap();
+    assert!(error.contains("host key verification failed"), "{error}");
+
+    let lease = hub
+        .acquire(&interactive, &interaction(true), &no_stage)
+        .await
+        .unwrap();
+    assert_eq!(
+        seen.lock().unwrap().last().unwrap().fingerprint,
+        server.fingerprint
+    );
+    assert_eq!(lease.host_key().unwrap().fingerprint, server.fingerprint);
+    assert_eq!(
+        prompts.lock().unwrap()[0].prompts,
+        [("Code: ".to_string(), false)]
+    );
+    assert!(server
+        .events()
+        .contains(&Event::Auth("keyboard-interactive:tester".into())));
+
+    // Reuse consults the verifier again and honours its answer.
+    assert!(hub
+        .acquire(&interactive, &interaction(true), &no_stage)
+        .await
+        .is_ok());
+    assert!(hub
+        .acquire(&interactive, &interaction(false), &no_stage)
+        .await
+        .is_err());
+    assert_eq!(server.connections(), 2);
 }
 
 #[tokio::test]
 async fn idle_connections_are_reclaimed_after_the_last_lease() {
-    let server = TestServer::start().await;
+    let server = TestSshd::start().await;
     let hub = Hub::new(Duration::from_millis(100));
-    let lease = hub.acquire(&server.config(), &no_stage).await.unwrap();
+    let lease = hub
+        .acquire(&config(&server), &plain(), &no_stage)
+        .await
+        .unwrap();
     tokio::time::sleep(Duration::from_millis(250)).await;
     assert_eq!(hub.stats().connections, 1, "a leased connection stays open");
 
     drop(lease);
     eventually(|| hub.stats().connections == 0).await;
-    let next = hub.acquire(&server.config(), &no_stage).await.unwrap();
+    let next = hub
+        .acquire(&config(&server), &plain(), &no_stage)
+        .await
+        .unwrap();
     assert!(!next.reused());
     assert_eq!(server.connections(), 2);
 }
 
 #[tokio::test]
-async fn a_dead_connection_is_replaced_on_the_next_acquire() {
-    let server = TestServer::start().await;
+async fn dead_connections_fail_health_checks_and_are_replaced() {
+    let server = TestSshd::start().await;
     let hub = Hub::new(Duration::from_secs(60));
-    let lease = hub.acquire(&server.config(), &no_stage).await.unwrap();
+    let lease = hub
+        .acquire(&config(&server), &plain(), &no_stage)
+        .await
+        .unwrap();
+    assert!(lease.check_alive(Duration::from_secs(2)).await);
+
     server.sever().await;
     eventually(|| lease.handle().is_closed()).await;
+    assert!(!lease.check_alive(Duration::from_secs(2)).await);
     assert!(lease.open_session().await.is_err());
     drop(lease);
 
-    let replacement = hub.acquire(&server.config(), &no_stage).await.unwrap();
+    let replacement = hub
+        .acquire(&config(&server), &plain(), &no_stage)
+        .await
+        .unwrap();
     assert!(!replacement.reused());
     assert!(replacement.open_session().await.is_ok());
     assert_eq!(server.connections(), 2);
+}
+
+#[tokio::test]
+async fn remote_forwards_route_server_channels_to_their_lease() {
+    let server = TestSshd::start().await;
+    let hub = Hub::new(Duration::from_secs(60));
+    let lease = hub
+        .acquire(&config(&server), &plain(), &no_stage)
+        .await
+        .unwrap();
+    let (port, mut incoming) = lease.remote_forward("127.0.0.1", 0).await.unwrap();
+    assert_eq!(port, 40022);
+
+    let mut opened = server.open_forwarded("127.0.0.1", port).await;
+    let forwarded = tokio::time::timeout(Duration::from_secs(5), incoming.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (forwarded.address.as_str(), forwarded.port),
+        ("127.0.0.1", port)
+    );
+    forwarded.channel.data(&b"ping"[..]).await.unwrap();
+    match opened[0].wait().await {
+        Some(ChannelMsg::Data { data }) => assert_eq!(&data[..], b"ping"),
+        other => panic!("unexpected {other:?}"),
+    }
+
+    lease
+        .cancel_remote_forward("127.0.0.1", port)
+        .await
+        .unwrap();
+    assert!(server.events().contains(&Event::CancelTcpipForward {
+        address: "127.0.0.1".into(),
+        port
+    }));
 }

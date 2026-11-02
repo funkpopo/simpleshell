@@ -46,33 +46,41 @@ afterAll(() => {
 });
 
 describe("logger async rotation", () => {
-  it("第一轮轮转：app.log 移为 app.1.log，app.log 重建为空", { timeout: 10000 }, async () => {
-    for (let i = 0; i < 80; i++) {
-      logToFile(`ROUND1 ${i} ${"y".repeat(300)}`, "INFO");
-    }
-    await wait(5500); // 跨过 5s 尺寸检查节流窗口，等待异步轮转完成
+  it(
+    "第一轮轮转：app.log 移为 app.1.log，app.log 重建为空",
+    { timeout: 10000 },
+    async () => {
+      for (let i = 0; i < 80; i++) {
+        logToFile(`ROUND1 ${i} ${"y".repeat(300)}`, "INFO");
+      }
+      await wait(5500); // 跨过 5s 尺寸检查节流窗口，等待异步轮转完成
 
-    expect(fs.existsSync(path.join(logDir, "app.1.log"))).toBe(true);
-    expect(getLogFilePath()).toBe(path.join(logDir, "app.log"));
-    // 当前 app.log 应为新一轮内容（不含 ROUND1）
-    const current = fs.readFileSync(path.join(logDir, "app.log"), "utf8");
-    expect(current).not.toContain("ROUND1");
-  });
+      expect(fs.existsSync(path.join(logDir, "app.1.log"))).toBe(true);
+      expect(getLogFilePath()).toBe(path.join(logDir, "app.log"));
+      // 当前 app.log 应为新一轮内容（不含 ROUND1）
+      const current = fs.readFileSync(path.join(logDir, "app.log"), "utf8");
+      expect(current).not.toContain("ROUND1");
+    },
+  );
 
-  it("第二轮轮转：app.1.log 异步 gzip 为 app.2.log.gz，内容完整可解压", { timeout: 10000 }, async () => {
-    for (let i = 0; i < 80; i++) {
-      logToFile(`ROUND2 ${i} ${"z".repeat(300)}`, "INFO");
-    }
-    await wait(5500);
+  it(
+    "第二轮轮转：app.1.log 异步 gzip 为 app.2.log.gz，内容完整可解压",
+    { timeout: 10000 },
+    async () => {
+      for (let i = 0; i < 80; i++) {
+        logToFile(`ROUND2 ${i} ${"z".repeat(300)}`, "INFO");
+      }
+      await wait(5500);
 
-    const gzPath = path.join(logDir, "app.2.log.gz");
-    expect(fs.existsSync(gzPath)).toBe(true);
-    const gz = fs.readFileSync(gzPath);
-    const gunzipped = zlib.gunzipSync(gz).toString();
-    expect(gunzipped).toContain("ROUND1 0");
-    // 新一轮：app.1.log 为第二轮 plain 内容；原 app.1.log 已 gzip 并删除
-    expect(fs.existsSync(path.join(logDir, "app.1.log"))).toBe(true);
-    expect(fs.existsSync(path.join(logDir, "app.2.log"))).toBe(false);
-    expect(fs.existsSync(path.join(logDir, "app.3.log.gz"))).toBe(false);
-  });
+      const gzPath = path.join(logDir, "app.2.log.gz");
+      expect(fs.existsSync(gzPath)).toBe(true);
+      const gz = fs.readFileSync(gzPath);
+      const gunzipped = zlib.gunzipSync(gz).toString();
+      expect(gunzipped).toContain("ROUND1 0");
+      // 新一轮：app.1.log 为第二轮 plain 内容；原 app.1.log 已 gzip 并删除
+      expect(fs.existsSync(path.join(logDir, "app.1.log"))).toBe(true);
+      expect(fs.existsSync(path.join(logDir, "app.2.log"))).toBe(false);
+      expect(fs.existsSync(path.join(logDir, "app.3.log.gz"))).toBe(false);
+    },
+  );
 });

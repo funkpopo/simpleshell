@@ -9,11 +9,13 @@ native-services/
 ├── crates/
 │   ├── core-protocol/      # frame codec, control messages, service I/O context
 │   ├── netutil/            # TCP / HTTP CONNECT / SOCKS proxy tunnels
-│   ├── ssh-hub/            # shared SSH connections (leases, idle reclaim)
+│   ├── ssh-hub/            # shared SSH connections: auth, host keys, algorithms, leases
+│   ├── ssh-session/        # ssh-connection / ssh-channel: terminal shells and exec
 │   ├── sftp/               # sftp-request|session|watch, scan-folder, checksum-file
 │   ├── forward/            # port-forward-serve (-L / -R / SOCKS5)
 │   ├── zmodem/             # zmodem-serve
-│   └── auxsvc/             # ai-serve, latency-serve, ip-query-serve
+│   ├── auxsvc/             # ai-serve, latency-serve, ip-query-serve
+│   └── test-sshd/          # in-process SSH server for tests (never shipped)
 └── vendor/russh/           # patched russh (own lockfile, outside the workspace)
 ```
 
@@ -22,13 +24,35 @@ never import each other. `core` is the only crate that knows every service.
 
 ## Shared SSH connections
 
-`ssh-hub` keeps one russh connection per identity (target, credentials, pinned
-host key, proxy). Services lease it and open channels: every SFTP session is
-an SFTP channel on the shared connection, so tabs and transfers to the same
-host perform one handshake. Concurrent acquires share that handshake; a
-connection whose last lease ends is closed after an idle timeout (30 s,
-`SIMPLESHELL_HUB_IDLE_MS`); a dead connection is replaced on the next acquire,
-and SFTP sessions on it end so clients reopen them.
+`ssh-hub` keeps one russh connection per account: target, user and network
+path. Terminals, SFTP sessions, transfers and port forwards lease it and open
+channels, so a tab, its file manager, its transfers and its forwards perform
+one handshake. As with OpenSSH connection multiplexing, an authenticated
+connection is shared by every consumer of that account whatever credentials
+each brings; each consumer's host-key policy is still checked against the key
+the connection verified (a pinned fingerprint must match, a verifier is asked).
+
+- Authentication follows ssh2's order: none, password, public key (encrypted
+  OpenSSH/PEM keys), agent identities (Unix socket, Windows named pipe or
+  Pageant), keyboard-interactive (prompts answered by the main process).
+  Agent forwarding bridges forwarded channels to the local agent.
+- Algorithm names from `sshAlgorithms.js` map onto russh preferences
+  (`ssh-hub/src/algorithms.rs`), including legacy CBC/3DES ciphers, SHA-1 and
+  group1 kex and hmac-md5/-96 MACs.
+- Concurrent acquires share a handshake; a connection whose last lease ends is
+  closed after an idle timeout (30 s, `SIMPLESHELL_HUB_IDLE_MS`); a dead
+  connection is replaced on the next acquire, and sessions on it end so
+  clients reopen them. Health checks use keepalive replies or recent channel
+  traffic.
+
+## Terminal channels
+
+`ssh-connection` streams authenticate and hold a lease; `ssh-channel` streams
+run a shell or exec on it with raw data / stderr frames and JSON events
+(`resize`, `signal`, `exit`, `close`). Output flows under two windows: the
+main process grants per-channel byte credit (256 KiB) and the patched russh
+(`vendor/README.md`) re-opens an SSH channel's window only as the core
+consumes it. A paused terminal therefore stalls only its own channel.
 
 ## Running
 

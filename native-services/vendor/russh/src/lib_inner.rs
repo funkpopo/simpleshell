@@ -473,6 +473,8 @@ pub(crate) struct ChannelParams {
     pending_data: std::collections::VecDeque<(bytes::Bytes, Option<u32>, usize)>,
     pending_eof: bool,
     pending_close: bool,
+    /// Received bytes still queued for the application (flow control).
+    unconsumed: u32,
 }
 
 impl ChannelParams {

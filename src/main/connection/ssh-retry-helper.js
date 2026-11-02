@@ -1,5 +1,6 @@
 const net = require("node:net");
-const { Client } = require("ssh2");
+const { createSshClient } = require("./sshClientFactory");
+const { normalizeProxyConfig } = require("../native/nativeSidecarNetworkPath");
 
 const proxyManager = require("../proxy/proxy-manager");
 const { getBasicSSHAlgorithms } = require("../../shared/domain/sshAlgorithms");
@@ -559,7 +560,6 @@ function calculateRetryDelay({
 
 async function createManagedSshConnection(sshConfig, options = {}) {
   delete sshConfig._interactiveAuthError;
-  const ClientCtor = options.ClientCtor || Client;
   const processedConfig = await processSSHPrivateKeyAsync(sshConfig);
   const networkProfile = resolveSshNetworkProfile(processedConfig);
   const connectionOptions = buildSshConnectOptions(processedConfig, {
@@ -580,7 +580,9 @@ async function createManagedSshConnection(sshConfig, options = {}) {
     : Math.max(baseTimeout, interactiveMinTimeout);
 
   return new Promise((resolve, reject) => {
-    const ssh = new ClientCtor();
+    const ssh = options.ClientCtor
+      ? new options.ClientCtor()
+      : createSshClient();
     // keyboard-interactive / 2FA：在 connect 前注册事件处理（需配合 tryKeyboard）
     attachKeyboardInteractiveSupport(ssh, sshConfig);
     let proxySocket = null;
@@ -739,7 +741,10 @@ async function createManagedSshConnection(sshConfig, options = {}) {
           proxyManager.isValidProxyConfig(resolvedProxyConfig) &&
           String(resolvedProxyConfig.type || "").toLowerCase() !== "none";
 
-        if (usingProxy) {
+        if (usingProxy && ssh.acceptsProxyConfig) {
+          connectionOptions.proxy = normalizeProxyConfig(resolvedProxyConfig);
+          connectionOptions.proxyRequired = true;
+        } else if (usingProxy) {
           const sock = await proxyManager.createTunnelSocket(
             resolvedProxyConfig,
             processedConfig.host,

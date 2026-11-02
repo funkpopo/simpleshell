@@ -33,7 +33,9 @@ pub(crate) async fn connect_sftp(
             stage_started_at.elapsed().as_millis() as u64,
         );
     };
-    let lease = ssh_hub::global().acquire(&config.ssh, &stage).await?;
+    let lease = ssh_hub::global()
+        .acquire(&config.ssh, &ssh_hub::Interaction::default(), &stage)
+        .await?;
     let channel = lease.open_session().await?;
     if let Err(error) = channel.request_subsystem(true, "sftp").await {
         lease.mark_broken();

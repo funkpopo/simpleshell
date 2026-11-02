@@ -1,5 +1,7 @@
 import { describe, it } from "vitest";
 import { createRequire } from "node:module";
+// Unused hub connections close after this idle period (30 s in the app).
+process.env.SIMPLESHELL_HUB_IDLE_MS = "200";
 const require = createRequire(import.meta.url);
 const { nativeHostPath } = require("../helpers/nativeHost");
 
@@ -292,6 +294,8 @@ describe("port-forwarding-service", () => {
         await echo(service.getStatus().L.boundPort);
         await service.closeTab("otp");
         assert.equal(authSignal.aborted, true);
+        // A new authentication needs the account's idle connection gone.
+        await until(() => fixture.clients.size === 0, "idle SSH closed");
         tab("otp-cancel", {
           password: undefined,
           keyboardInteractiveResponder: async () => {
@@ -332,6 +336,7 @@ describe("port-forwarding-service", () => {
           "keyboard-interactive prompts use the existing responder, and user cancellation aborts the native session",
         );
 
+        await until(() => fixture.clients.size === 0, "idle SSH closed");
         await checkAgent(service, fixture, tab);
         pass(
           "SSH agent authentication signs through a real local agent socket/Windows named pipe",

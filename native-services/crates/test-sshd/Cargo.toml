@@ -1,0 +1,11 @@
+[package]
+name = "test-sshd"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytes.workspace = true
+russh.workspace = true
+sha2.workspace = true
+tokio.workspace = true

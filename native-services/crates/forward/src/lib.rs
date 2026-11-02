@@ -1,5 +1,5 @@
 //! Native SSH forwarding ownership and bounded control protocol.
-mod auth;
+mod connect;
 mod session;
 mod socks;
 

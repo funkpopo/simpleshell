@@ -1,11 +1,8 @@
-use super::{auth, socks, Output, Request, Rule, CONNECT_TIMEOUT, MAX_STREAMS};
-use futures_util::FutureExt;
-use netutil::{connect_tcp, connect_via_proxy};
-use russh::client::{self, Handle, Msg};
-use russh::keys::PublicKey;
-use russh::{Channel, Disconnect};
+use super::{connect, socks, Output, Request, Rule, CONNECT_TIMEOUT, MAX_STREAMS};
+use russh::client::Msg;
+use russh::Channel;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
+use ssh_hub::Lease;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::copy_bidirectional_with_sizes;
@@ -19,126 +16,13 @@ enum Incoming {
     Local(TcpStream, Rule),
     Remote(Channel<Msg>, String, u32),
 }
-struct Handler {
-    fingerprint: String,
-    incoming: mpsc::Sender<Incoming>,
-}
-impl client::Handler for Handler {
-    type Error = russh::Error;
-    async fn check_server_key(&mut self, key: &PublicKey) -> Result<bool, Self::Error> {
-        let digest = Sha256::digest(key.to_bytes()?);
-        Ok(format!("SHA256:{digest:x}") == self.fingerprint)
-    }
-    async fn server_channel_open_forwarded_tcpip(
-        &mut self,
-        channel: Channel<Msg>,
-        address: &str,
-        port: u32,
-        _origin: &str,
-        _origin_port: u32,
-        _session: &mut client::Session,
-    ) -> Result<(), Self::Error> {
-        if let Err(error) = self
-            .incoming
-            .try_send(Incoming::Remote(channel, address.into(), port))
-        {
-            discard(error.into_inner());
-        }
-        Ok(())
-    }
-}
 fn discard(incoming: Incoming) {
     if let Incoming::Remote(channel, _, _) = incoming {
         drop(channel.into_stream());
     }
 }
-type SshHandle = Arc<Handle<Handler>>;
-
-fn algorithms() -> russh::Preferred {
-    // Retain the terminal's legacy compatibility options after modern defaults.
-    // This changes only forwarding negotiation, not other sidecars' policies.
-    let mut preferred = russh::Preferred::default();
-    preferred.kex.to_mut().extend([
-        russh::kex::ECDH_SHA2_NISTP256,
-        russh::kex::ECDH_SHA2_NISTP384,
-        russh::kex::ECDH_SHA2_NISTP521,
-        russh::kex::DH_G14_SHA1,
-        russh::kex::DH_GEX_SHA1,
-        russh::kex::DH_G1_SHA1,
-    ]);
-    preferred.cipher.to_mut().extend([
-        russh::cipher::AES_128_GCM,
-        russh::cipher::AES_256_GCM_LEGACY,
-        russh::cipher::AES_128_GCM_LEGACY,
-        russh::cipher::AES_128_CBC,
-        russh::cipher::AES_192_CBC,
-        russh::cipher::AES_256_CBC,
-        russh::cipher::TRIPLE_DES_CBC,
-    ]);
-    preferred.key.to_mut().push(russh::keys::Algorithm::Dsa);
-    preferred.mac.to_mut().extend([
-        russh::mac::HMAC_SHA256_96,
-        russh::mac::HMAC_SHA512_96,
-        russh::mac::HMAC_SHA1_96,
-        russh::mac::HMAC_MD5,
-        russh::mac::HMAC_MD5_96,
-    ]);
-    preferred
-}
-
-async fn connect(
-    request: &Request,
-    incoming: mpsc::Sender<Incoming>,
-    out: &Output,
-    answers: &mut mpsc::Receiver<(u32, Vec<String>)>,
-) -> Result<SshHandle, &'static str> {
-    let ssh = request.ssh.as_ref().ok_or("INVALID_CONFIG")?;
-    let transport = async {
-        let socket = if let Some(proxy) = &ssh.proxy {
-            connect_via_proxy(proxy, &ssh.host, ssh.port).await
-        } else if ssh.proxy_required {
-            return Err("PROXY_REQUIRED");
-        } else {
-            connect_tcp(&ssh.host, ssh.port, "SSH").await
-        }
-        .map_err(|_| "CONNECT_FAILED")?;
-        let config = client::Config {
-            preferred: algorithms(),
-            window_size: 256 * 1024,
-            maximum_packet_size: 32 * 1024,
-            channel_buffer_size: 16,
-            keepalive_interval: Some(Duration::from_secs(5)),
-            keepalive_max: 3,
-            nodelay: true,
-            ..Default::default()
-        };
-        client::connect_stream(
-            Arc::new(config),
-            socket,
-            Handler {
-                fingerprint: ssh.expected_host_fingerprint.clone(),
-                incoming,
-            },
-        )
-        .await
-        .map_err(|e| {
-            if matches!(e, russh::Error::UnknownKey) {
-                "HOST_KEY_MISMATCH"
-            } else if matches!(e, russh::Error::NoCommonAlgo { .. }) {
-                "ALGORITHM_UNSUPPORTED"
-            } else {
-                "CONNECT_FAILED"
-            }
-        })
-    };
-    let mut handle = timeout(Duration::from_secs(15), transport)
-        .await
-        .map_err(|_| "CONNECT_TIMEOUT")??;
-    auth::authenticate(&mut handle, request, out, answers)
-        .boxed()
-        .await?;
-    Ok(Arc::new(handle))
-}
+/// The shared hub connection this session forwards over.
+type SshHandle = Arc<Lease>;
 
 struct Binding {
     rule: Rule,
@@ -196,8 +80,8 @@ impl Resources {
         let handle = self.handle.as_ref().ok_or("DISCONNECTED")?;
         let mut bound = rule.clone();
         let listener = if rule.mode == "remote" {
-            let port = handle
-                .tcpip_forward(&rule.listen_host, u32::from(rule.listen_port))
+            let (port, mut channels) = handle
+                .remote_forward(&rule.listen_host, u32::from(rule.listen_port))
                 .await
                 .map_err(|_| "REMOTE_BIND_FAILED")?;
             if rule.listen_port == 0 {
@@ -206,7 +90,19 @@ impl Resources {
                     .filter(|p| *p > 0)
                     .ok_or("REMOTE_BIND_FAILED")?;
             }
-            None
+            // The hub routes this forward's channels here; hand them to the
+            // session's accept queue like local connections.
+            Some(core_protocol::service::spawn(async move {
+                while let Some(forwarded) = channels.recv().await {
+                    if let Err(error) = incoming.try_send(Incoming::Remote(
+                        forwarded.channel,
+                        forwarded.address,
+                        forwarded.port,
+                    )) {
+                        discard(error.into_inner());
+                    }
+                }
+            }))
         } else {
             let listener = TcpListener::bind((rule.listen_host.as_str(), rule.listen_port))
                 .await
@@ -239,7 +135,7 @@ impl Resources {
                 let handle = self.handle.as_ref().ok_or("DISCONNECTED")?;
                 timeout(
                     Duration::from_millis(500),
-                    handle.cancel_tcpip_forward(
+                    handle.cancel_remote_forward(
                         &binding.rule.listen_host,
                         u32::from(binding.rule.listen_port),
                     ),
@@ -255,12 +151,14 @@ impl Resources {
         for binding in &mut self.bindings {
             binding.close().await;
         }
+        // The connection is shared: cancel this session's remote forwards and
+        // release the lease instead of disconnecting.
         if let Some(handle) = self.handle.take() {
             let _ = timeout(Duration::from_millis(500), async {
                 for binding in &self.bindings {
-                    if binding.rule.mode == "remote" && !handle.is_closed() {
+                    if binding.rule.mode == "remote" && !handle.handle().is_closed() {
                         let _ = handle
-                            .cancel_tcpip_forward(
+                            .cancel_remote_forward(
                                 &binding.rule.listen_host,
                                 u32::from(binding.rule.listen_port),
                             )
@@ -269,14 +167,6 @@ impl Resources {
                 }
             })
             .await;
-            let _ = timeout(
-                Duration::from_millis(500),
-                handle.disconnect(Disconnect::ByApplication, "", ""),
-            )
-            .await;
-            if let Ok(handle) = Arc::try_unwrap(handle) {
-                let _ = timeout(Duration::from_secs(1), handle).await;
-            }
         }
     }
     fn result(&self, request: &Request) -> Value {
@@ -364,6 +254,7 @@ async fn local(mut socket: TcpStream, rule: Rule, handle: SshHandle) -> Result<(
         };
         let peer = socket.peer_addr().map_err(|_| ())?;
         let opened = handle
+            .handle()
             .channel_open_direct_tcpip(
                 host,
                 u32::from(port),
@@ -392,7 +283,7 @@ pub(super) async fn run(
     out: Output,
     cancel: CancellationToken,
     mut commands: mpsc::Receiver<Request>,
-    mut answers: mpsc::Receiver<(u32, Vec<String>)>,
+    answers: mpsc::Receiver<(u32, Vec<String>)>,
 ) {
     let (incoming, mut accepted) = mpsc::channel(MAX_STREAMS);
     let mut resources = Resources::default();
@@ -405,7 +296,7 @@ pub(super) async fn run(
         biased;
         _ = cancel.cancelled() => Err("CANCELLED"),
         result = timeout(setup_timeout, async {
-            resources.handle = Some(connect(&request, incoming.clone(), &out, &mut answers).await?);
+            resources.handle = Some(Arc::new(connect::acquire(&request, &out, answers).await?));
             timeout(CONNECT_TIMEOUT, resources.add(&request.rules, incoming.clone())).await.map_err(|_| "CONNECT_TIMEOUT")?
         }) => result.unwrap_or(Err("CONNECT_TIMEOUT")),
     };
@@ -422,7 +313,7 @@ pub(super) async fn run(
                 _ = cancel.cancelled() => break "closed",
                 _ = poll.tick() => {
                     resources.reap(&request, &out);
-                    if resources.handle.as_ref().unwrap().is_closed() { break "disconnected"; }
+                    if resources.handle.as_ref().unwrap().handle().is_closed() { break "disconnected"; }
                 }
                 command = commands.recv() => {
                     let Some(command) = command else { break "closed" };
