@@ -13,6 +13,7 @@ function createSshSessions(
     buildReconnectWaitMessage,
     getTerminalLanguage,
     buildReconnectTimeoutMessage,
+    outputProcessor,
   },
 ) {
   return new (class SshSessions {
@@ -376,103 +377,104 @@ function createSshSessions(
           return;
         }
 
-        ssh.shell(
-          { term: "xterm-256color", cols: 120, rows: 30 },
-          (err, stream) => {
-            if (err) {
-              logToFile(
-                `SSH shell error for processId ${processId}: ${err.message}`,
-                "ERROR",
-              );
-
-              if (isReconnectRecovery) {
-                return reject(err);
-              }
-
-              this.dependencies.connectionManager.releaseSSHConnection(
-                connectionInfo.key,
-                sshConfig.tabId,
-              );
-              this.dependencies._destroyProcessMailbox(processId);
-              this.dependencies.childProcesses.delete(processId);
-              if (sshConfig.tabId)
-                this.dependencies.childProcesses.delete(sshConfig.tabId);
-              this.dependencies._unbindConnectionProcess(connectionInfo?.key);
-              this.dependencies._unbindConnectionProcessByProcess(
-                processId,
-                sshConfig?.tabId,
-              );
-              return reject(err);
-            }
-
-            // 更新进程信息中的 stream 与最新连接对象
-            const latestProc = this.dependencies.childProcesses.get(processId);
-            if (latestProc) {
-              latestProc.stream = stream;
-              latestProc.process = ssh;
-              latestProc.connectionInfo = connectionInfo;
-              latestProc.ready = true;
-            }
-
-            if (sshConfig?.tabId) {
-              const latestTabProc = this.dependencies.childProcesses.get(
-                sshConfig.tabId,
-              );
-              if (latestTabProc) {
-                latestTabProc.stream = stream;
-                latestTabProc.process = ssh;
-                latestTabProc.connectionInfo = connectionInfo;
-                latestTabProc.ready = true;
-              }
-            }
-
-            this.dependencies._bindConnectionProcess(
-              connectionInfo?.key,
-              processId,
-              sshConfig?.tabId,
+        // Native clients process terminal output in the core.
+        const ptyWindow = { term: "xterm-256color", cols: 120, rows: 30 };
+        const openShell = (callback) =>
+          ssh.supportsTerminalPipe
+            ? ssh.shell(
+                ptyWindow,
+                { pipe: { rules: outputProcessor.highlightRules } },
+                callback,
+              )
+            : ssh.shell(ptyWindow, callback);
+        openShell((err, stream) => {
+          if (err) {
+            logToFile(
+              `SSH shell error for processId ${processId}: ${err.message}`,
+              "ERROR",
             );
 
             if (isReconnectRecovery) {
-              this.dependencies._resetProcessResizeState(processId);
-              // The old shell may have disconnected inside vim/less. Return to
-              // the normal buffer before any output from the replacement shell.
-              // Save first so an already-normal buffer keeps its current cursor.
-              this.dependencies._emitProcessOutput(
-                processId,
-                "\x1b7\x1b[?1049l",
-              );
+              return reject(err);
             }
 
-            this.dependencies._setupStreamEventListeners(
-              stream,
-              processId,
-              sshConfig,
-              connectionInfo,
+            this.dependencies.connectionManager.releaseSSHConnection(
+              connectionInfo.key,
+              sshConfig.tabId,
             );
+            this.dependencies._destroyProcessMailbox(processId);
+            this.dependencies.childProcesses.delete(processId);
+            if (sshConfig.tabId)
+              this.dependencies.childProcesses.delete(sshConfig.tabId);
+            this.dependencies._unbindConnectionProcess(connectionInfo?.key);
+            this.dependencies._unbindConnectionProcessByProcess(
+              processId,
+              sshConfig?.tabId,
+            );
+            return reject(err);
+          }
 
-            // 注册延迟检测
-            const latencyHandlers = this.dependencies.getLatencyHandlers();
-            if (latencyHandlers && sshConfig.tabId) {
-              try {
-                latencyHandlers.latencyService.registerSSHConnection(
-                  sshConfig.tabId,
-                  ssh,
-                  sshConfig.host,
-                  sshConfig.port || 22,
-                  sshConfig.proxy || null,
-                );
-                logToFile(
-                  `已为SSH连接注册延迟检测: ${sshConfig.tabId}`,
-                  "DEBUG",
-                );
-              } catch (latencyError) {
-                logToFile(`延迟检测注册失败: ${latencyError.message}`, "WARN");
-              }
+          // 更新进程信息中的 stream 与最新连接对象
+          const latestProc = this.dependencies.childProcesses.get(processId);
+          if (latestProc) {
+            latestProc.stream = stream;
+            latestProc.process = ssh;
+            latestProc.connectionInfo = connectionInfo;
+            latestProc.ready = true;
+          }
+
+          if (sshConfig?.tabId) {
+            const latestTabProc = this.dependencies.childProcesses.get(
+              sshConfig.tabId,
+            );
+            if (latestTabProc) {
+              latestTabProc.stream = stream;
+              latestTabProc.process = ssh;
+              latestTabProc.connectionInfo = connectionInfo;
+              latestTabProc.ready = true;
             }
+          }
 
-            resolve(processId);
-          },
-        );
+          this.dependencies._bindConnectionProcess(
+            connectionInfo?.key,
+            processId,
+            sshConfig?.tabId,
+          );
+
+          if (isReconnectRecovery) {
+            this.dependencies._resetProcessResizeState(processId);
+            // The old shell may have disconnected inside vim/less. Return to
+            // the normal buffer before any output from the replacement shell.
+            // Save first so an already-normal buffer keeps its current cursor.
+            this.dependencies._emitProcessOutput(processId, "\x1b7\x1b[?1049l");
+          }
+
+          this.dependencies._setupStreamEventListeners(
+            stream,
+            processId,
+            sshConfig,
+            connectionInfo,
+          );
+
+          // 注册延迟检测
+          const latencyHandlers = this.dependencies.getLatencyHandlers();
+          if (latencyHandlers && sshConfig.tabId) {
+            try {
+              latencyHandlers.latencyService.registerSSHConnection(
+                sshConfig.tabId,
+                ssh,
+                sshConfig.host,
+                sshConfig.port || 22,
+                sshConfig.proxy || null,
+              );
+              logToFile(`已为SSH连接注册延迟检测: ${sshConfig.tabId}`, "DEBUG");
+            } catch (latencyError) {
+              logToFile(`延迟检测注册失败: ${latencyError.message}`, "WARN");
+            }
+          }
+
+          resolve(processId);
+        });
       });
 
       this.dependencies.pendingShellCreations.set(

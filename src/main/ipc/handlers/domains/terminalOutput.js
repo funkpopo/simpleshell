@@ -212,7 +212,7 @@ function createTerminalOutput(
 
       return false;
     }
-    _configureProcessMailbox(processId, config = {}) {
+    _configureProcessMailbox(processId, config = {}, remoteFlow = null) {
       if (!this.dependencies.terminalIOMailboxManager) {
         return null;
       }
@@ -225,10 +225,88 @@ function createTerminalOutput(
             this._getFlowControlTarget(processId, config.tabId),
           applyResize: (cols, rows) =>
             this._applyMailboxResize(processId, config.tabId, cols, rows),
+          remoteFlow,
         },
       );
     }
+    /**
+     * Terminal pipe channels (native backend): the core already decoded,
+     * filtered and highlighted the output, merged stderr and runs ZMODEM;
+     * the mailbox passes renderer ACKs and pause reasons back to it.
+     */
+    _setupPipeStreamListeners(stream, processId, sshConfig, connectionInfo) {
+      const decoder = new StringDecoder("utf8");
+      const processMailbox = this._configureProcessMailbox(
+        processId,
+        sshConfig,
+        {
+          ack: (bytes) => stream.grantCredit(bytes),
+          pause: (reason) => stream.pauseFor(reason),
+          resume: (reason) => stream.resumeFor(reason),
+        },
+      );
+      const emitOutput = (payload, options = {}) => {
+        if (processMailbox) {
+          processMailbox.emitOutput(payload, options);
+          return;
+        }
+        this._emitProcessOutput(processId, payload);
+        // Nobody acknowledges direct output: return the credit at once.
+        if (options.trackBackpressure !== false) {
+          stream.grantCredit(Buffer.byteLength(payload, "utf8"));
+        }
+      };
+      const detachZmodem = zmodemTransferService.attachChannel(
+        processId,
+        stream,
+        {
+          tabId: sshConfig.tabId,
+          sshConfig,
+          emitTerminalText: (text) =>
+            emitOutput(text, { trackBackpressure: false }),
+        },
+      );
+
+      const dataHandler = (chunk) => {
+        const text = decoder.write(chunk);
+        if (text) emitOutput(text);
+      };
+      const editorModeHandler = (active) => {
+        for (const id of [processId, sshConfig.tabId]) {
+          const procInfo = id ? this.dependencies.childProcesses.get(id) : null;
+          if (procInfo) procInfo.editorMode = active;
+        }
+      };
+      const closeHandler = () => {
+        logToFile(`SSH stream closed for processId: ${processId}`, "INFO");
+        const tail = decoder.end();
+        if (tail) emitOutput(tail);
+        stream.removeListener("data", dataHandler);
+        stream.removeListener("editorMode", editorModeHandler);
+        stream.removeListener("close", closeHandler);
+        detachZmodem();
+        this._handleSshStreamClosed(
+          processId,
+          sshConfig,
+          connectionInfo,
+          emitOutput,
+        );
+      };
+
+      stream.on("data", dataHandler);
+      stream.on("editorMode", editorModeHandler);
+      stream.on("close", closeHandler);
+    }
     _setupStreamEventListeners(stream, processId, sshConfig, connectionInfo) {
+      if (stream.pipeMode) {
+        this._setupPipeStreamListeners(
+          stream,
+          processId,
+          sshConfig,
+          connectionInfo,
+        );
+        return;
+      }
       let buffer = Buffer.alloc(0);
       const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB 缓冲区上限
       const OUTPUT_PROFILE = {
@@ -505,110 +583,12 @@ function createTerminalOutput(
         stream.stderr?.removeListener?.("data", extendedDataHandler);
         stream.removeListener("close", closeHandler);
 
-        const mainWindow = this.dependencies._getMainWindow();
-
-        this._emitSshTabConnectionStatus(sshConfig.tabId, sshConfig, {
-          isConnected: false,
-          quality: "offline",
-        });
-
-        const procInfo = this.dependencies.childProcesses.get(processId);
-        if (
-          procInfo &&
-          procInfo.ready &&
-          mainWindow &&
-          !mainWindow.isDestroyed()
-        ) {
-          emitOutput(
-            `\r\n\x1b[33m*** ${getTerminalText(sshConfig, "sshDisconnected")} ***\x1b[0m\r\n`,
-          );
-        }
-
-        // 清理SFTP传输与 ZMODEM 会话
-        try {
-          filemanagementService.cleanupTransfersForTab(processId);
-          if (sshConfig.tabId && sshConfig.tabId !== processId) {
-            filemanagementService.cleanupTransfersForTab(sshConfig.tabId);
-          }
-        } catch (err) {
-          logToFile(
-            `Error cleaning up native transfers on SSH close: ${err.message}`,
-            "ERROR",
-          );
-        }
-        try {
-          zmodemTransferService.destroyProcess(processId);
-        } catch (err) {
-          logToFile(
-            `Error cleaning up ZMODEM session on SSH close: ${err.message}`,
-            "ERROR",
-          );
-        }
-
-        const closeReason =
-          connectionInfo?.closeReason ||
-          (connectionInfo?.intentionalClose ? "user" : "network");
-        const shouldReleaseConnection =
-          closeReason === "user" || closeReason === "system";
-        if (shouldReleaseConnection) {
-          // 用户/系统主动关闭时释放连接引用；网络断线路径保留以便自动重连
-          this.dependencies.connectionManager.releaseSSHConnection(
-            connectionInfo.key,
-            sshConfig.tabId,
-            {
-              reason: closeReason,
-              intentional: closeReason === "user",
-            },
-          );
-          if (
-            sshConfig?.tabId &&
-            this.dependencies.connectionManager?.sshConnectionPool
-              ?.removeTabReference
-          ) {
-            this.dependencies.connectionManager.sshConnectionPool.removeTabReference(
-              String(sshConfig.tabId),
-              {
-                closeIfIdle: false,
-                closeOptions: {
-                  reason: closeReason,
-                  intentional: closeReason === "user",
-                },
-              },
-            );
-          }
-          this.dependencies._unbindConnectionProcess(connectionInfo?.key);
-          this.dependencies._unbindConnectionProcessByProcess(
-            processId,
-            sshConfig?.tabId,
-          );
-        } else {
-          logToFile(
-            `SSH stream closed without intentional flag, keeping connection for auto-reconnect: ${connectionInfo.key}`,
-            "DEBUG",
-          );
-          const processInfo = this.dependencies.childProcesses.get(processId);
-          if (processInfo) {
-            processInfo.stream = null;
-            processInfo.ready = false;
-          }
-          if (sshConfig.tabId) {
-            const tabProcessInfo = this.dependencies.childProcesses.get(
-              sshConfig.tabId,
-            );
-            if (tabProcessInfo) {
-              tabProcessInfo.stream = null;
-              tabProcessInfo.ready = false;
-            }
-          }
-        }
-
-        // 仅主动关闭时清理进程映射；意外断线时保留以便自动恢复 shell
-        if (shouldReleaseConnection) {
-          this._destroyProcessMailbox(processId);
-          this.dependencies.childProcesses.delete(processId);
-          if (sshConfig.tabId)
-            this.dependencies.childProcesses.delete(sshConfig.tabId);
-        }
+        this._handleSshStreamClosed(
+          processId,
+          sshConfig,
+          connectionInfo,
+          emitOutput,
+        );
       };
 
       // 注册事件监听器
@@ -619,6 +599,113 @@ function createTerminalOutput(
         stream.on("extended data", extendedDataHandler);
       }
       stream.on("close", closeHandler);
+    }
+    /** Common teardown when a terminal's SSH stream closes. */
+    _handleSshStreamClosed(processId, sshConfig, connectionInfo, emitOutput) {
+      const mainWindow = this.dependencies._getMainWindow();
+
+      this._emitSshTabConnectionStatus(sshConfig.tabId, sshConfig, {
+        isConnected: false,
+        quality: "offline",
+      });
+
+      const procInfo = this.dependencies.childProcesses.get(processId);
+      if (
+        procInfo &&
+        procInfo.ready &&
+        mainWindow &&
+        !mainWindow.isDestroyed()
+      ) {
+        emitOutput(
+          `\r\n\x1b[33m*** ${getTerminalText(sshConfig, "sshDisconnected")} ***\x1b[0m\r\n`,
+        );
+      }
+
+      // 清理SFTP传输与 ZMODEM 会话
+      try {
+        filemanagementService.cleanupTransfersForTab(processId);
+        if (sshConfig.tabId && sshConfig.tabId !== processId) {
+          filemanagementService.cleanupTransfersForTab(sshConfig.tabId);
+        }
+      } catch (err) {
+        logToFile(
+          `Error cleaning up native transfers on SSH close: ${err.message}`,
+          "ERROR",
+        );
+      }
+      try {
+        zmodemTransferService.destroyProcess(processId);
+      } catch (err) {
+        logToFile(
+          `Error cleaning up ZMODEM session on SSH close: ${err.message}`,
+          "ERROR",
+        );
+      }
+
+      const closeReason =
+        connectionInfo?.closeReason ||
+        (connectionInfo?.intentionalClose ? "user" : "network");
+      const shouldReleaseConnection =
+        closeReason === "user" || closeReason === "system";
+      if (shouldReleaseConnection) {
+        // 用户/系统主动关闭时释放连接引用；网络断线路径保留以便自动重连
+        this.dependencies.connectionManager.releaseSSHConnection(
+          connectionInfo.key,
+          sshConfig.tabId,
+          {
+            reason: closeReason,
+            intentional: closeReason === "user",
+          },
+        );
+        if (
+          sshConfig?.tabId &&
+          this.dependencies.connectionManager?.sshConnectionPool
+            ?.removeTabReference
+        ) {
+          this.dependencies.connectionManager.sshConnectionPool.removeTabReference(
+            String(sshConfig.tabId),
+            {
+              closeIfIdle: false,
+              closeOptions: {
+                reason: closeReason,
+                intentional: closeReason === "user",
+              },
+            },
+          );
+        }
+        this.dependencies._unbindConnectionProcess(connectionInfo?.key);
+        this.dependencies._unbindConnectionProcessByProcess(
+          processId,
+          sshConfig?.tabId,
+        );
+      } else {
+        logToFile(
+          `SSH stream closed without intentional flag, keeping connection for auto-reconnect: ${connectionInfo.key}`,
+          "DEBUG",
+        );
+        const processInfo = this.dependencies.childProcesses.get(processId);
+        if (processInfo) {
+          processInfo.stream = null;
+          processInfo.ready = false;
+        }
+        if (sshConfig.tabId) {
+          const tabProcessInfo = this.dependencies.childProcesses.get(
+            sshConfig.tabId,
+          );
+          if (tabProcessInfo) {
+            tabProcessInfo.stream = null;
+            tabProcessInfo.ready = false;
+          }
+        }
+      }
+
+      // 仅主动关闭时清理进程映射；意外断线时保留以便自动恢复 shell
+      if (shouldReleaseConnection) {
+        this._destroyProcessMailbox(processId);
+        this.dependencies.childProcesses.delete(processId);
+        if (sshConfig.tabId)
+          this.dependencies.childProcesses.delete(sshConfig.tabId);
+      }
     }
     _createProcessInfo(client, connectionInfo, config, type) {
       return {

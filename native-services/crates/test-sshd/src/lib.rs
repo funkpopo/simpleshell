@@ -6,7 +6,9 @@
 //! Shell channels print `$ ` and run one command per input line:
 //! `flood <bytes>` writes that many bytes then `DONE\r\n$ `, `stderr <text>`
 //! writes to the extended stream, `exit <code>` ends the channel with that
-//! status, anything else is echoed. Exec runs the same commands once.
+//! status, anything else is echoed. `sz <bytes>` sends a file of
+//! [`sz_payload`] bytes over ZMODEM; `rz` receives one and prints
+//! `rz <name> <size> <sha256>`. Exec runs the same commands once.
 //! Everything clients request is recorded in [`TestSshd::events`].
 
 use bytes::Bytes;
@@ -21,6 +23,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
+
+mod zmodem;
+pub use zmodem::sz_payload;
+use zmodem::Peer;
 
 pub const PASSWORD: &str = "secret";
 pub const OTP: &str = "123456";
@@ -168,8 +174,16 @@ fn fingerprint(key: &PublicKey) -> String {
 struct Handler {
     state: Arc<State>,
     authorized: PublicKey,
-    shells: HashMap<ChannelId, String>,
+    shells: HashMap<ChannelId, Shell>,
     otp_sent: bool,
+}
+
+#[derive(Default)]
+struct Shell {
+    line: String,
+    zmodem: Option<Peer>,
+    /// The sender's trailing "OO" after a finished upload.
+    skip_over_and_out: bool,
 }
 
 impl Handler {
@@ -340,7 +354,7 @@ impl server::Handler for Handler {
         session: &mut Session,
     ) -> Result<(), Self::Error> {
         self.record(Event::Shell);
-        self.shells.insert(channel, String::new());
+        self.shells.insert(channel, Shell::default());
         session.channel_success(channel)?;
         session.data(channel, Bytes::from_static(b"$ "))?;
         Ok(())
@@ -370,12 +384,50 @@ impl server::Handler for Handler {
         session: &mut Session,
     ) -> Result<(), Self::Error> {
         self.record(Event::Input(data.to_vec()));
-        let Some(buffer) = self.shells.get_mut(&channel) else {
+        let Some(shell) = self.shells.get_mut(&channel) else {
             return Ok(());
         };
-        buffer.push_str(&String::from_utf8_lossy(data));
-        while let Some(newline) = buffer.find('\n') {
-            let line: String = buffer.drain(..=newline).collect();
+        if let Some(peer) = shell.zmodem.as_mut() {
+            let (wire, done) = peer.feed(data);
+            if !wire.is_empty() {
+                session.data(channel, Bytes::from(wire))?;
+            }
+            if let Some(done) = done {
+                shell.skip_over_and_out = matches!(peer, Peer::Receive { .. });
+                shell.zmodem = None;
+                session.data(
+                    channel,
+                    Bytes::from(format!("\r\n{done}\r\n$ ").into_bytes()),
+                )?;
+            }
+            return Ok(());
+        }
+        let mut text = String::from_utf8_lossy(data).into_owned();
+        if shell.skip_over_and_out {
+            text = text.trim_start_matches('O').to_string();
+            shell.skip_over_and_out = text.is_empty();
+        }
+        shell.line.push_str(&text);
+        while let Some(newline) = shell.line.find('\n') {
+            let line: String = shell.line.drain(..=newline).collect();
+            let command = line.trim();
+            let peer = match command.strip_prefix("sz ") {
+                Some(size) => Some(Peer::sz(size.parse().unwrap_or(0))),
+                None if command == "rz" => Some(Peer::rz()),
+                None => None,
+            };
+            if let Some(mut peer) = peer {
+                let (wire, _) = peer.feed(&[]);
+                session.data(channel, Bytes::from(wire))?;
+                shell.zmodem = Some(peer);
+                // Input after the command line belongs to the transfer.
+                let rest = std::mem::take(&mut shell.line);
+                if !rest.is_empty() {
+                    let (wire, _) = shell.zmodem.as_mut().unwrap().feed(rest.as_bytes());
+                    session.data(channel, Bytes::from(wire))?;
+                }
+                break;
+            }
             let handle = session.handle();
             tokio::spawn(async move {
                 match run_command(&handle, channel, &line).await {

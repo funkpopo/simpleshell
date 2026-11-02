@@ -6,6 +6,8 @@ publish.workspace = true
 
 [dependencies]
 core-protocol.workspace = true
+term-pipe.workspace = true
+zmodem.workspace = true
 ssh-hub.workspace = true
 bytes.workspace = true
 russh.workspace = true
@@ -15,3 +17,4 @@ tokio.workspace = true
 
 [dev-dependencies]
 test-sshd.workspace = true
+sha2.workspace = true

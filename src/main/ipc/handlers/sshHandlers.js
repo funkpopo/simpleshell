@@ -262,6 +262,7 @@ class SSHHandlers {
         buildReconnectWaitMessage,
         getTerminalLanguage,
         buildReconnectTimeoutMessage,
+        outputProcessor,
       },
     );
     this.childProcesses = dependencies.childProcesses;

@@ -49,6 +49,8 @@ const FILE_IO_CHUNK_BYTES: usize = 32 * 1024;
 const SCAN_TAIL_FLUSH_DELAY_MS: u64 = 500;
 const SESSION_INACTIVITY_TIMEOUT_MS: u64 = 45 * 1000;
 const WATCHDOG_INTERVAL_MS: u64 = 100;
+/// 5×CAN + 5×BS: makes the peer's lrzsz abort immediately.
+const CANCEL_SEQUENCE: [u8; 10] = [24, 24, 24, 24, 24, 8, 8, 8, 8, 8];
 
 #[derive(Debug, Deserialize)]
 #[serde(
@@ -106,13 +108,30 @@ enum ZmodemInput {
     },
 }
 
+/// What a session produced, in order.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Out {
+    /// Terminal output that is not ZMODEM traffic.
+    Passthrough(Vec<u8>),
+    /// Protocol bytes to write to the SSH channel.
+    WriteRemote(Vec<u8>),
+    /// `intro`, `offer`, `progress`, `fileDone`, `done`, `cancelled`,
+    /// `error`, `acceptFailed`.
+    Event(&'static str, Value),
+    Error {
+        message: String,
+        code: &'static str,
+    },
+}
+
+/// An upload file the user picked.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct GrantedFile {
-    path: String,
-    name: String,
+pub struct GrantedFile {
+    pub path: String,
+    pub name: String,
     #[serde(default)]
-    size: Option<u64>,
+    pub size: Option<u64>,
     #[allow(dead_code)]
     #[serde(default)]
     mtime_ms: Option<u64>,
@@ -149,6 +168,7 @@ struct Session {
     files_total: Option<u32>,
     finished: bool,
     last_activity: Instant,
+    outbox: Vec<Out>,
 }
 
 impl Session {
@@ -171,6 +191,7 @@ impl Session {
             files_total: None,
             finished: false,
             last_activity: Instant::now(),
+            outbox: Vec::new(),
         }
     }
 
@@ -275,7 +296,9 @@ async fn process_detection(session: &mut Session, chunk: &[u8]) {
                 session.scan_since = None;
             }
             if out_length > 0 {
-                emit_passthrough(&session.id, &combined[..out_length]);
+                session
+                    .outbox
+                    .push(Out::Passthrough(combined[..out_length].to_vec()));
             }
         }
         Some((index, intro_type)) => {
@@ -283,7 +306,7 @@ async fn process_detection(session: &mut Session, chunk: &[u8]) {
             let prefix = combined[..index].to_vec();
             let session_input = combined[index..].to_vec();
             if !prefix.is_empty() {
-                emit_passthrough(&session.id, &prefix);
+                session.outbox.push(Out::Passthrough(prefix));
             }
             session.scan.clear();
             session.scan_since = None;
@@ -310,11 +333,10 @@ async fn start_session_machine(session: &mut Session, intro_type: u8, session_in
                     session.direction = Some("download");
                 }
                 Err(error) => {
-                    emit_error_message(
-                        Some(&session.id),
-                        &format!("failed to create zmodem receiver: {error}"),
-                        "ZMODEM_MACHINE_START_FAILED",
-                    );
+                    session.outbox.push(Out::Error {
+                        message: format!("failed to create zmodem receiver: {error}"),
+                        code: "ZMODEM_MACHINE_START_FAILED",
+                    });
                     session.finished = true;
                     return;
                 }
@@ -328,11 +350,10 @@ async fn start_session_machine(session: &mut Session, intro_type: u8, session_in
                     session.direction = Some("upload");
                 }
                 Err(error) => {
-                    emit_error_message(
-                        Some(&session.id),
-                        &format!("failed to create zmodem sender: {error}"),
-                        "ZMODEM_MACHINE_START_FAILED",
-                    );
+                    session.outbox.push(Out::Error {
+                        message: format!("failed to create zmodem sender: {error}"),
+                        code: "ZMODEM_MACHINE_START_FAILED",
+                    });
                     session.finished = true;
                     return;
                 }
@@ -341,12 +362,23 @@ async fn start_session_machine(session: &mut Session, intro_type: u8, session_in
         _ => unreachable!(),
     }
 
-    emit_event(
-        &session.id,
+    session.outbox.push(Out::Event(
         "intro",
         json!({ "direction": session.direction, "generation": session.generation }),
-    );
+    ));
     drive_session(session).await;
+}
+
+/// Writes a session's outbox as `zmodem-serve` protocol messages.
+fn flush(session: &mut Session) {
+    for out in std::mem::take(&mut session.outbox) {
+        match out {
+            Out::Passthrough(bytes) => emit_passthrough(&session.id, &bytes),
+            Out::WriteRemote(bytes) => emit_write_remote(&session.id, &bytes),
+            Out::Event(kind, extra) => emit_event(&session.id, kind, extra),
+            Out::Error { message, code } => emit_error_message(Some(&session.id), &message, code),
+        }
+    }
 }
 
 fn emit_passthrough(session_id: &str, bytes: &[u8]) {
@@ -428,7 +460,7 @@ async fn drive_session(session: &mut Session) {
         match step {
             Step::WriteWire(bytes) => {
                 let n = bytes.len();
-                emit_write_remote(&session.id, &bytes);
+                session.outbox.push(Out::WriteRemote(bytes));
                 if let Some(machine) = session.machine.as_mut() {
                     match machine {
                         Machine::Receive(receiver) => receiver.wire_written(n),
@@ -459,11 +491,10 @@ async fn drive_session(session: &mut Session) {
             Step::FileCompleted => {
                 session.files_done += 1;
                 finish_upload_file(session).await;
-                emit_event(
-                    &session.id,
+                session.outbox.push(Out::Event(
                     "fileDone",
                     json!({ "filesDone": session.files_done }),
-                );
+                ));
                 if session.direction == Some("upload") {
                     // 对端 rz 发出 ZRINIT（准备好下一文件）后触发：
                     // 队列非空则启动下一文件，否则 sender.finish() 发 ZFIN
@@ -487,7 +518,7 @@ async fn drive_session(session: &mut Session) {
                             let Action::WriteWire(bytes) = action else {
                                 break;
                             };
-                            emit_write_remote(&session.id, bytes);
+                            session.outbox.push(Out::WriteRemote(bytes.to_vec()));
                             bytes.len()
                         };
                         // Rust crate drain_outgoing 不自动推进，
@@ -502,12 +533,12 @@ async fn drive_session(session: &mut Session) {
                         }
                     }
                 }
-                emit_event(&session.id, "done", json!({}));
+                session.outbox.push(Out::Event("done", json!({})));
                 finish_session(session);
                 return;
             }
             Step::Aborted => {
-                emit_event(&session.id, "cancelled", json!({}));
+                session.outbox.push(Out::Event("cancelled", json!({})));
                 finish_session(session);
                 return;
             }
@@ -542,7 +573,9 @@ async fn drive_session(session: &mut Session) {
 }
 
 fn fail_session(session: &mut Session, message: &str) {
-    emit_event(&session.id, "error", json!({ "message": message }));
+    session
+        .outbox
+        .push(Out::Event("error", json!({ "message": message })));
     finish_session(session);
 }
 
@@ -552,7 +585,7 @@ fn finish_session(session: &mut Session) {
     // 剩余 pending_input 属于 shell 输出，按顺序放行到终端。
     if !session.pending_input.is_empty() {
         let remaining = std::mem::take(&mut session.pending_input);
-        emit_passthrough(&session.id, &remaining);
+        session.outbox.push(Out::Passthrough(remaining));
     }
     session.machine = None;
     session.download_file = None;
@@ -608,11 +641,10 @@ async fn handle_write_file(session: &mut Session, bytes: &[u8]) -> Result<(), St
             .map_err(|error| format!("file_written failed: {error}"))?;
     }
     // 进度事件：节流由 JS 负责
-    emit_event(
-        &session.id,
+    session.outbox.push(Out::Event(
         "progress",
         json!({ "deltaBytes": n, "direction": "download" }),
-    );
+    ));
     Ok(())
 }
 
@@ -645,8 +677,7 @@ async fn handle_read_file(
             .submit_file(&buffer[..n])
             .map_err(|error| format!("submit_file failed: {error}"))?;
     }
-    emit_event(
-        &session.id,
+    session.outbox.push(Out::Event(
         "progress",
         json!({
             "deltaBytes": n,
@@ -654,7 +685,7 @@ async fn handle_read_file(
             "direction": "upload",
             "fileName": upload.granted.name,
         }),
-    );
+    ));
     Ok(())
 }
 
@@ -665,8 +696,7 @@ fn handle_file_started(session: &mut Session, name: &[u8], size: Option<u32>) {
             session.awaiting_accept = true;
             session.download_target = None;
             session.download_file = None;
-            emit_event(
-                &session.id,
+            session.outbox.push(Out::Event(
                 "offer",
                 json!({
                     "fileName": name_string,
@@ -674,14 +704,58 @@ fn handle_file_started(session: &mut Session, name: &[u8], size: Option<u32>) {
                     "nameBase64": BASE64_STANDARD.encode(name),
                     "awaitingAccept": true,
                 }),
-            );
+            ));
         }
         _ => {
-            emit_event(
-                &session.id,
+            session.outbox.push(Out::Event(
                 "offer",
                 json!({ "fileName": name_string, "fileSize": size }),
-            );
+            ));
+        }
+    }
+}
+
+/// Creates the approved download target and lets the receiver continue.
+/// Returns false (with an event queued) when the file cannot be created.
+async fn open_download(session: &mut Session, path: &str) -> bool {
+    session.last_activity = Instant::now();
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .await;
+    match file {
+        Ok(file) => {
+            session.download_target = Some(PathBuf::from(path));
+            session.download_file = Some(file);
+            session.awaiting_accept = false;
+            if let Some(Machine::Receive(receiver)) = session.machine.as_mut() {
+                if let Err(error) = receiver.accept_file_at(0) {
+                    fail_session(session, &format!("accept_file failed: {error}"));
+                    return false;
+                }
+            }
+            true
+        }
+        Err(error) => {
+            // Exclusive create failed (name taken / permission): the main
+            // process decides whether to retry or cancel.
+            session.outbox.push(Out::Event(
+                "acceptFailed",
+                json!({ "path": path, "message": format!("create target failed: {error}") }),
+            ));
+            false
+        }
+    }
+}
+
+fn abort_machine(session: &mut Session) {
+    if let Some(machine) = session.machine.as_mut() {
+        match machine {
+            Machine::Receive(receiver) => {
+                let _ = receiver.abort();
+            }
+            Machine::Send(sender) => sender.abort(),
         }
     }
 }
@@ -716,7 +790,7 @@ async fn watchdog(state: Arc<Mutex<SidecarState>>) {
                         let pending = std::mem::take(&mut session.scan);
                         session.scan_since = None;
                         // 扫描尾仅在检测模式下存在；放行到终端
-                        emit_passthrough(&session.id, &pending);
+                        session.outbox.push(Out::Passthrough(pending));
                         changed = true;
                     }
                 }
@@ -737,6 +811,7 @@ async fn watchdog(state: Arc<Mutex<SidecarState>>) {
                 drive_session(session).await;
                 changed = true;
             }
+            flush(session);
         }
         // 清理已结束会话
         let before = state.sessions.len();
@@ -810,13 +885,16 @@ async fn handle_send_files(
     // 记录文件清单：upload_queue 由驱动循环逐个 start_file
     if let Err(error) = start_next_upload_file(session).await {
         fail_session(session, &format!("upload start failed: {error}"));
+        flush(session);
         return;
     }
+    flush(session);
     acknowledge(
         request_id.as_ref(),
         json!({ "filesTotal": session.files_total }),
     );
     drive_session(session).await;
+    flush(session);
 }
 
 async fn start_next_upload_file(session: &mut Session) -> Result<(), String> {
@@ -941,6 +1019,7 @@ pub async fn serve(input: Input) -> Result<(), String> {
                 }
                 if session.machine.is_none() {
                     process_detection(session, &bytes).await;
+                    flush(session);
                 } else {
                     // 传输模式：全部字节交给协议状态机，不进入终端
                     session.last_activity = Instant::now();
@@ -948,6 +1027,7 @@ pub async fn serve(input: Input) -> Result<(), String> {
                     // 分离 state 与 session 的借用：drive_session 只用 session
                     let mut session = std::mem::replace(session, Session::new(String::new(), 0));
                     drive_session(&mut session).await;
+                    flush(&mut session);
                     state.sessions.insert(session_id.clone(), session);
                 }
                 update_flow_control(&state, &session_id);
@@ -982,38 +1062,15 @@ pub async fn serve(input: Input) -> Result<(), String> {
                     );
                     continue;
                 };
-                session.last_activity = Instant::now();
-                let file = OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&path)
-                    .await;
-                match file {
-                    Ok(file) => {
-                        session.download_target = Some(PathBuf::from(&path));
-                        session.download_file = Some(file);
-                        session.awaiting_accept = false;
-                        if let Some(Machine::Receive(receiver)) = session.machine.as_mut() {
-                            if let Err(error) = receiver.accept_file_at(0) {
-                                fail_session(session, &format!("accept_file failed: {error}"));
-                                continue;
-                            }
-                        }
-                        acknowledge(request_id.as_ref(), json!({ "path": path }));
-                        let mut session =
-                            std::mem::replace(session, Session::new(String::new(), 0));
-                        drive_session(&mut session).await;
-                        state.sessions.insert(session_id.clone(), session);
-                    }
-                    Err(error) => {
-                        // 排他创建失败（重名/权限）：交回 JS 决定重试或取消
-                        emit_event(
-                            &session_id,
-                            "acceptFailed",
-                            json!({ "path": path, "message": format!("create target failed: {error}") }),
-                        );
-                    }
+                if !open_download(session, &path).await {
+                    flush(session);
+                    continue;
                 }
+                acknowledge(request_id.as_ref(), json!({ "path": path }));
+                let mut session = std::mem::replace(session, Session::new(String::new(), 0));
+                drive_session(&mut session).await;
+                flush(&mut session);
+                state.sessions.insert(session_id.clone(), session);
             }
             ZmodemInput::Cancel {
                 request_id,
@@ -1026,7 +1083,9 @@ pub async fn serve(input: Input) -> Result<(), String> {
                 };
                 // 与 JS 旧实现一致：先向远端发送 5×CAN + 5×BS 取消序列，
                 // 让对端 lrzsz 立即中止传输，再结束本端会话
-                emit_write_remote(&session.id, &[24, 24, 24, 24, 24, 8, 8, 8, 8, 8]);
+                session
+                    .outbox
+                    .push(Out::WriteRemote(CANCEL_SEQUENCE.to_vec()));
                 if let Some(machine) = session.machine.as_mut() {
                     match machine {
                         Machine::Receive(receiver) => {
@@ -1037,6 +1096,7 @@ pub async fn serve(input: Input) -> Result<(), String> {
                 }
                 session.finished = false;
                 drive_session(session).await;
+                flush(session);
                 state.sessions.remove(&session_id);
                 acknowledge(request_id.as_ref(), json!({}));
             }
@@ -1082,6 +1142,132 @@ pub async fn serve(input: Input) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// ZMODEM handling inside a terminal stream: detection on raw output, the
+/// transfer itself, and passthrough of everything else, without sending the
+/// bytes through the main process. After a session ends, detection resumes.
+pub struct Detector {
+    session: Session,
+}
+
+impl Default for Detector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Detector {
+    pub fn new() -> Self {
+        Self {
+            session: Session::new("stream".into(), 0),
+        }
+    }
+
+    /// Whether a transfer is running (output is protocol, not terminal text).
+    pub fn in_transfer(&self) -> bool {
+        self.session.machine.is_some() && !self.session.finished
+    }
+
+    /// Raw bytes received but not yet consumed; reading should pause above
+    /// [`Detector::BUDGET_BYTES`].
+    pub fn unprocessed_bytes(&self) -> usize {
+        self.session.unprocessed_bytes()
+    }
+
+    pub const BUDGET_BYTES: usize = SESSION_BUDGET_BYTES;
+
+    fn take(&mut self) -> Vec<Out> {
+        let out = std::mem::take(&mut self.session.outbox);
+        if self.session.finished {
+            self.session = Session::new("stream".into(), 0);
+        }
+        out
+    }
+
+    pub async fn feed(&mut self, bytes: &[u8]) -> Vec<Out> {
+        if self.session.machine.is_none() {
+            process_detection(&mut self.session, bytes).await;
+        } else {
+            self.session.last_activity = Instant::now();
+            self.session.pending_input.extend_from_slice(bytes);
+            drive_session(&mut self.session).await;
+        }
+        self.take()
+    }
+
+    /// The user approved `path` for the offered download.
+    pub async fn accept_file(&mut self, path: &str) -> Vec<Out> {
+        if self.session.machine.is_some() && open_download(&mut self.session, path).await {
+            drive_session(&mut self.session).await;
+        }
+        self.take()
+    }
+
+    /// The user picked files for the remote `rz`.
+    pub async fn send_files(&mut self, files: Vec<GrantedFile>) -> Vec<Out> {
+        if self.session.machine.is_some() {
+            self.session.last_activity = Instant::now();
+            self.session.files_total = Some(files.len() as u32);
+            self.session.upload_queue = files;
+            match start_next_upload_file(&mut self.session).await {
+                Ok(()) => drive_session(&mut self.session).await,
+                Err(error) => {
+                    fail_session(&mut self.session, &format!("upload start failed: {error}"))
+                }
+            }
+        }
+        self.take()
+    }
+
+    pub async fn cancel(&mut self) -> Vec<Out> {
+        if self.session.machine.is_some() {
+            self.session
+                .outbox
+                .push(Out::WriteRemote(CANCEL_SEQUENCE.to_vec()));
+            abort_machine(&mut self.session);
+            drive_session(&mut self.session).await;
+            if !self.session.finished {
+                self.session.outbox.push(Out::Event("cancelled", json!({})));
+                finish_session(&mut self.session);
+            }
+        }
+        self.take()
+    }
+
+    /// Timers: release a held intro prefix after 500 ms; abort a transfer
+    /// that has been idle for 45 s.
+    pub async fn tick(&mut self) -> Vec<Out> {
+        let session = &mut self.session;
+        if !session.scan.is_empty()
+            && session.scan_since.is_some_and(|since| {
+                since.elapsed() >= Duration::from_millis(SCAN_TAIL_FLUSH_DELAY_MS)
+            })
+        {
+            let pending = std::mem::take(&mut session.scan);
+            session.scan_since = None;
+            session.outbox.push(Out::Passthrough(pending));
+        }
+        if session.machine.is_some()
+            && session.last_activity.elapsed()
+                >= Duration::from_millis(SESSION_INACTIVITY_TIMEOUT_MS)
+        {
+            abort_machine(session);
+            drive_session(session).await;
+        }
+        self.take()
+    }
+
+    /// End of stream: abort a transfer and release held bytes.
+    pub fn finish(&mut self) -> Vec<Out> {
+        abort_machine(&mut self.session);
+        if self.session.machine.is_none() && !self.session.scan.is_empty() {
+            let pending = std::mem::take(&mut self.session.scan);
+            self.session.outbox.push(Out::Passthrough(pending));
+        }
+        self.session.machine = None;
+        self.take()
+    }
 }
 
 #[cfg(test)]

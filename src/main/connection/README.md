@@ -27,4 +27,12 @@
 - 健康检查走 `checkTransport()`：keepalive 有应答，或超时窗口内收到过通道
   数据即视为存活；
 - 终端流控按通道进行：渲染背压暂停时 core 停止读取该通道，SSH 窗口随之
-  关闭，同一连接上的其他通道不受影响；主进程最多缓存 256 KiB 未消费输出。
+  关闭，同一连接上的其他通道不受影响；主进程最多缓存 256 KiB 未消费输出；
+- 终端 shell 以管道模式打开（`supportsTerminalPipe`，`shell(window,
+  { pipe: { rules } })`）：UTF-8 解码、OSC 过滤、高亮、编辑器模式检测与
+  ZMODEM 都在 core 的流内完成，`terminalOutput.js` 只把文本交给邮箱；
+  渲染端 ACK 与暂停原因经邮箱的 `remoteFlow` 原样转给 core 作为通道
+  credit（`grantCredit` / `pauseFor` / `resumeFor`），ZMODEM 由
+  `zmodemTransferService.attachChannel` 处理通道的 `zmodem` 事件。
+  ssh2 回退后端仍走主进程的 `output-processor.js` / `oscSafeOutput.js` /
+  `zmodem-serve` 路径，随 ssh2 一并移除。

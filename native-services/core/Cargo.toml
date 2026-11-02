@@ -13,6 +13,7 @@ core-protocol.workspace = true
 sftp.workspace = true
 ssh-hub.workspace = true
 ssh-session.workspace = true
+term-pipe.workspace = true
 forward.workspace = true
 zmodem.workspace = true
 auxsvc.workspace = true

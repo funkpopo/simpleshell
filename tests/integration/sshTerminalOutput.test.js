@@ -70,7 +70,7 @@ async function createFixture(backend = "ssh2") {
   );
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-  const client = backend === "native" ? new NativeSshClient() : new Client();
+  const client = backend === "ssh2" ? new Client() : new NativeSshClient();
   client.on("error", () => {});
   const ready = once(client, "ready");
   client.connect({
@@ -80,8 +80,10 @@ async function createFixture(backend = "ssh2") {
     keepaliveInterval: 0,
   });
   await ready;
+  // `pipe`: the core processes output (no highlight rules: text = bytes).
+  const options = backend === "pipe" ? { pipe: {} } : {};
   const stream = await new Promise((resolve, reject) =>
-    client.shell((error, channel) =>
+    client.shell({}, options, (error, channel) =>
       error ? reject(error) : resolve(channel),
     ),
   );
@@ -120,6 +122,8 @@ describe("SSH terminal output under load", () => {
     ["ssh2", "stderr", 160000],
     ["native", "stdout", 510000],
     ["native", "stderr", 160000],
+    ["pipe", "stdout", 510000],
+    ["pipe", "stderr", 160000],
   ])(
     "%s client retains large Unicode %s output through SSH, native detection, renderer parsing and backpressure",
     async (backend, kind, lines) => {
@@ -133,6 +137,8 @@ describe("SSH terminal output under load", () => {
         receivedBytes: 0,
         ackBytes: 0,
         peakPending: 0,
+        peakInFlight: 0,
+        creditGrants: 0,
         healthChecks: 0,
         healthFailures: 0,
       };
@@ -151,6 +157,10 @@ describe("SSH terminal output under load", () => {
               ? payload
               : [payload]) {
               stats.receivedBytes += Buffer.byteLength(message.data);
+              stats.peakInFlight = Math.max(
+                stats.peakInFlight,
+                stats.receivedBytes - stats.ackBytes,
+              );
               emitted.update(message.data);
               queueMicrotask(() => onOutput?.(message));
             }
@@ -224,6 +234,13 @@ describe("SSH terminal output under load", () => {
         connectionInfo,
       );
       const mailbox = manager._getMailbox(processId);
+      if (mailbox.remoteFlow) {
+        const { ack } = mailbox.remoteFlow;
+        mailbox.remoteFlow.ack = (bytes) => {
+          stats.creditGrants++;
+          ack(bytes);
+        };
+      }
       const getTarget = mailbox.getFlowControlTarget;
       mailbox.getFlowControlTarget = () => {
         const target = getTarget();
@@ -294,14 +311,22 @@ describe("SSH terminal output under load", () => {
         expect(stats.ackBytes).toBe(stats.receivedBytes);
         expect(mailbox.pendingAckBytes).toBe(0);
         expect(
-          backend === "native"
-            ? fixture.client.destroyed
-            : fixture.client._sock.destroyed,
+          backend === "ssh2"
+            ? fixture.client._sock.destroyed
+            : fixture.client.destroyed,
         ).toBe(false);
         expect(stats.healthChecks).toBeGreaterThan(0);
         expect(stats.healthFailures).toBe(0);
-        expect(stats.pauses).toBeGreaterThan(0);
-        expect(stats.resumes).toBeGreaterThan(0);
+        if (backend === "pipe") {
+          // Renderer ACKs are the core's credit: output in flight stays
+          // near the mailbox threshold without any pause in the main process.
+          expect(stats.creditGrants).toBeGreaterThan(0);
+          expect(stats.pauses).toBe(0);
+          expect(stats.peakInFlight).toBeLessThan(640 * 1024);
+        } else {
+          expect(stats.pauses).toBeGreaterThan(0);
+          expect(stats.resumes).toBeGreaterThan(0);
+        }
         // The pause watermark excludes bytes already granted SSH window credit
         // and queued in native detection. Verify a bounded backlog, not an exact
         // equality with the renderer's 512 KiB pause threshold.
@@ -318,7 +343,7 @@ describe("SSH terminal output under load", () => {
           );
         }
         console.log(
-          `SSH_OUTPUT ${kind}`,
+          `SSH_OUTPUT ${backend} ${kind}`,
           JSON.stringify({
             ...stats,
             lines,

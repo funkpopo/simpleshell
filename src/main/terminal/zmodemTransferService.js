@@ -36,6 +36,10 @@ const uniqueSavePath = async (dir, fileName) => {
  *  - 背压经独立 "zmodem" 暂停原因接入统一流控。
  *
  * 会话期间 ZMODEM 协议字节被拦截，不再进入终端渲染管线；会话结束后自动恢复。
+ *
+ * native SSH 后端的终端管道通道（attachChannel）：检测、协议、超时与背压
+ * 都在 core 的流内完成，本模块只处理通道的 zmodem 事件并下发
+ * accept/send/cancel；上面的 sidecar 路径仅服务 ssh2 回退后端。
  */
 class ZmodemTransferService {
   constructor(options = {}) {
@@ -165,6 +169,74 @@ class ZmodemTransferService {
     return this._feedNative(state, chunk);
   }
 
+  /**
+   * Terminal pipe channels run ZMODEM in the core: the channel emits
+   * `zmodem` (kind, event) and takes `zmodemAccept` / `zmodemSend` /
+   * `zmodemCancel`. Dialogs, naming and IPC stay here. Returns a detach
+   * function.
+   */
+  attachChannel(processId, channel, context = {}) {
+    const state =
+      this._states.get(String(processId)) ||
+      this._createState(processId, context);
+    if (!state) {
+      return () => {};
+    }
+    state.channel = channel;
+    if (typeof context.emitTerminalText === "function") {
+      state.emitTerminalText = context.emitTerminalText;
+    }
+    if (context.sshConfig !== undefined) {
+      state.sshConfig = context.sshConfig;
+    }
+    const onZmodem = (kind, event = {}) => {
+      // The core's session is over once it reports an outcome.
+      if (kind === "intro") {
+        state.remoteEnded = false;
+      } else if (["done", "cancelled", "error"].includes(kind)) {
+        state.remoteEnded = true;
+      }
+      void this._handleNativeEvent(state, {
+        kind,
+        event,
+        filesDone: event.filesDone,
+      });
+    };
+    channel.on("zmodem", onZmodem);
+    return () => {
+      channel.removeListener("zmodem", onZmodem);
+      if (state.channel === channel) {
+        state.channel = null;
+      }
+    };
+  }
+
+  /** The transfer backend of a session: its pipe channel or the sidecar. */
+  _sessionClient(state) {
+    const channel = state.channel;
+    if (channel) {
+      return {
+        acceptFile: (target) =>
+          channel.sendZmodem({ type: "zmodemAccept", path: target }),
+        sendFiles: (files) => channel.sendZmodem({ type: "zmodemSend", files }),
+        cancel: () => channel.sendZmodem({ type: "zmodemCancel" }),
+        close: () => {
+          if (!state.remoteEnded) {
+            channel.sendZmodem({ type: "zmodemCancel" });
+          }
+        },
+      };
+    }
+    const client = this._ensureClient();
+    const id = state.processId;
+    return {
+      acceptFile: (target) => client.acceptFile(id, target),
+      sendFiles: (files) => client.sendFiles(id, files),
+      cancel: () => client.cancel(id),
+      close: () => client.close?.(id),
+    };
+  }
+
   _createState(processId, context) {
     if (processId === undefined || processId === null) {
       return null;
@@ -184,6 +256,8 @@ class ZmodemTransferService {
           ? context.emitTerminalText
           : null,
       backend: "native",
+      channel: null,
+      remoteEnded: false,
       native: {
         chunks: [], // 有序待发送字节块（发送前计入背压统计）
         openSent: false,
@@ -271,11 +345,7 @@ class ZmodemTransferService {
       }
       const client = this._ensureClient();
       if (!(await client.ensureReady())) {
-        this._finishNativeSession(
-          state,
-          "error",
-          "zmodem sidecar unavailable",
-        );
+        this._finishNativeSession(state, "error", "zmodem sidecar unavailable");
         return;
       }
       if (!state.native.openSent) {
@@ -474,7 +544,7 @@ class ZmodemTransferService {
             transferred: 0,
             savePath: target,
           };
-          this._client.acceptFile(state.processId, target);
+          this._sessionClient(state).acceptFile(target);
           this._emitEvent(state, "offer", {
             fileName,
             fileSize: Number(event.fileSize) || 0,
@@ -608,7 +678,7 @@ class ZmodemTransferService {
       filesTotal: state.filesTotal,
       batchSummary: true,
     });
-    this._client.sendFiles(state.processId, valid);
+    this._sessionClient(state).sendFiles(valid);
   }
 
   async _pickUploadFiles(state) {
@@ -631,7 +701,7 @@ class ZmodemTransferService {
       return;
     }
     state.cancelRequested = true;
-    if (!this._ensureClient().cancel(state.processId)) {
+    if (!this._sessionClient(state).cancel()) {
       // sidecar 不可用：直接终结（远端由 SSH 断开回收）
       this._finishNativeSession(state, "cancelled", reason);
     }
@@ -654,7 +724,9 @@ class ZmodemTransferService {
         /* ignore */
       }
     }
-    this._client?.close?.(state.processId);
+    if (state.channel || this._client) {
+      this._sessionClient(state).close();
+    }
 
     if (status === "error") {
       this._emitTerminalText(state, "zmodemSessionFailed", {
@@ -688,7 +760,7 @@ class ZmodemTransferService {
   /** sidecar 进程退出：终结所有进行中的会话并释放暂停原因 */
   _handleNativeProcessExit() {
     for (const state of Array.from(this._states.values())) {
-      if (!state.active || state.finished) {
+      if (!state.active || state.finished || state.channel) {
         continue;
       }
       this._finishNativeSession(state, "error", "zmodem sidecar crashed");
@@ -820,8 +892,10 @@ class ZmodemTransferService {
     this._watchdog = setInterval(() => {
       const now = Date.now();
       for (const state of Array.from(this._states.values())) {
+        // Pipe channels time out in the core.
         if (
           state.active &&
+          !state.channel &&
           now - state.lastFeedAt > SESSION_INACTIVITY_TIMEOUT_MS
         ) {
           logToFile(

@@ -198,9 +198,11 @@ describe("NativeSshClient facade", () => {
       pty: { term: "xterm-256color", cols: 100, rows: 30, width: 0, height: 0 },
       env: {},
       agentForward: true,
+      credit: 256 * 1024,
     });
     channelStream.emit("event", { type: "opened" });
     const channel = await opened;
+    expect(channel.pipeMode).toBe(false);
 
     channel.on("data", () => {});
     channel.pause();
@@ -222,6 +224,57 @@ describe("NativeSshClient facade", () => {
 
     const error = await new Promise((resolve) => client.sftp(resolve));
     expect(error.message).toMatch(/native SFTP service/);
+  });
+
+  it("opens terminal pipe channels whose credit and pauses come from the caller", async () => {
+    const { client, streams } = createClient();
+    client.connect({ host: "h", username: "u" });
+    streams[0].emit("event", { type: "ready", token: "ssh-1" });
+    expect(client.supportsTerminalPipe).toBe(true);
+
+    const opened = new Promise((resolve, reject) =>
+      client.shell({}, { pipe: { rules: [] } }, (error, stream) =>
+        error ? reject(error) : resolve(stream),
+      ),
+    );
+    const core = streams[1];
+    expect(core.sent[0]).toMatchObject({
+      type: "open",
+      pipe: { rules: [] },
+      credit: 512 * 1024,
+    });
+    core.emit("event", { type: "opened" });
+    const channel = await opened;
+    expect(channel.pipeMode).toBe(true);
+
+    const editor = [];
+    const zmodem = [];
+    channel.on("editorMode", (active) => editor.push(active));
+    channel.on("zmodem", (kind, event) => zmodem.push([kind, event]));
+    channel.on("data", () => {});
+    core.stdout.write(Buffer.alloc(300 * 1024));
+    core.emit("event", { type: "editorMode", active: true });
+    core.emit("event", {
+      type: "zmodem",
+      kind: "offer",
+      event: { fileName: "a" },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    channel.grantCredit(4096);
+    channel.grantCredit(0);
+    channel.pauseFor("renderer");
+    channel.resumeFor("renderer");
+    channel.sendZmodem({ type: "zmodemCancel" });
+    // Reading does not renew credit in pipe mode; only grants do.
+    expect(core.sent.slice(1)).toEqual([
+      { type: "credit", bytes: 4096 },
+      { type: "pause", reason: "renderer" },
+      { type: "resume", reason: "renderer" },
+      { type: "zmodemCancel" },
+    ]);
+    expect(editor).toEqual([true]);
+    expect(zmodem).toEqual([["offer", { fileName: "a" }]]);
   });
 
   it("refuses channels before ready and reports close once", async () => {

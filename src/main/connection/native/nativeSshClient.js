@@ -10,10 +10,19 @@
  *
  * Proxies are resolved by the caller and passed as `options.proxy`
  * (`acceptsProxyConfig`); the core opens the tunnel.
+ *
+ * `shell(window, { pipe: { rules } }, cb)` opens a terminal pipe channel
+ * (`supportsTerminalPipe`): the core decodes, filters and highlights output,
+ * merges stderr, runs ZMODEM in the stream and emits `editorMode` /
+ * `zmodem` events. Its output credit is the renderer's: callers pass ACKs
+ * on with `grantCredit` and pause reasons with `pauseFor` / `resumeFor`.
  */
 const { EventEmitter } = require("node:events");
 const { Duplex, Readable } = require("node:stream");
 const { spawnCoreService } = require("../../native/coreSupervisor");
+const {
+  TERMINAL_IO_DEFAULTS,
+} = require("../../../shared/contracts/terminalIOMailboxProtocol");
 
 const OS_ERROR_CODES = {
   10061: "ECONNREFUSED",
@@ -86,11 +95,19 @@ function toNativeConfig(options) {
  */
 const CHANNEL_CREDIT_BYTES = 256 * 1024;
 
+/**
+ * Pipe channels may have as much unacknowledged text in flight as the
+ * renderer mailbox tolerates before it would pause.
+ */
+const PIPE_CREDIT_BYTES = TERMINAL_IO_DEFAULTS.backpressurePauseThresholdBytes;
+
 /** A shell or exec channel; mirrors ssh2's ClientChannel. */
 class NativeSshChannel extends Duplex {
-  constructor(core) {
+  constructor(core, { pipe = false } = {}) {
     super({ allowHalfOpen: true, emitClose: false });
     this._core = core;
+    /** Output is processed terminal text; see the module comment. */
+    this.pipeMode = pipe;
     this._flowPaused = false;
     this._exitCode = undefined;
     this._exitSignal = undefined;
@@ -128,6 +145,10 @@ class NativeSshChannel extends Duplex {
       }
     } else if (event.type === "eof") {
       this.emit("eof");
+    } else if (event.type === "editorMode") {
+      this.emit("editorMode", event.active === true);
+    } else if (event.type === "zmodem") {
+      this.emit("zmodem", event.kind, event.event || {});
     } else if (event.type === "closed") {
       this._finish();
     }
@@ -145,11 +166,12 @@ class NativeSshChannel extends Duplex {
   }
 
   /** Initial credit, sent with the `open` request. */
-  static get initialCredit() {
-    return CHANNEL_CREDIT_BYTES;
+  static initialCredit(pipe) {
+    return pipe ? PIPE_CREDIT_BYTES : CHANNEL_CREDIT_BYTES;
   }
 
   _renewCredit() {
+    if (this.pipeMode) return;
     const outstanding = this._granted - this._received;
     if (this._closed || outstanding >= CHANNEL_CREDIT_BYTES / 2) return;
     const grant = CHANNEL_CREDIT_BYTES - outstanding;
@@ -196,6 +218,34 @@ class NativeSshChannel extends Duplex {
     this._core.sendEvent({ type: paused ? "pause" : "resume" });
   }
 
+  /** Pipe mode: the renderer consumed `bytes` of output. */
+  grantCredit(bytes) {
+    const count = Math.floor(Number(bytes));
+    if (this._closed || !(count > 0)) return false;
+    this._core.sendEvent({ type: "credit", bytes: count });
+    return true;
+  }
+
+  /** Reading stops until every reason is resumed. */
+  pauseFor(reason) {
+    if (this._closed) return false;
+    this._core.sendEvent({ type: "pause", reason: String(reason) });
+    return true;
+  }
+
+  resumeFor(reason) {
+    if (this._closed) return false;
+    this._core.sendEvent({ type: "resume", reason: String(reason) });
+    return true;
+  }
+
+  /** `zmodemAccept {path}`, `zmodemSend {files}` or `zmodemCancel`. */
+  sendZmodem(command) {
+    if (this._closed) return false;
+    this._core.sendEvent(command);
+    return true;
+  }
+
   setWindow(rows, cols, height, width) {
     this._core.sendEvent({ type: "resize", cols, rows, width, height });
     return true;
@@ -226,6 +276,7 @@ class NativeSshClient extends EventEmitter {
     this.destroyed = false;
     /** Callers pass a resolved proxy instead of a pre-built `sock`. */
     this.acceptsProxyConfig = true;
+    this.supportsTerminalPipe = true;
   }
 
   connect(options = {}) {
@@ -349,7 +400,8 @@ class NativeSshClient extends EventEmitter {
       return false;
     }
     const core = this._spawn("ssh-channel");
-    const channel = new NativeSshChannel(core);
+    const pipe = Boolean(open.pipe);
+    const channel = new NativeSshChannel(core, { pipe });
     let settled = false;
     const settle = (error) => {
       if (settled) return;
@@ -375,7 +427,7 @@ class NativeSshClient extends EventEmitter {
     core.sendEvent({
       type: "open",
       connection: this._token,
-      credit: NativeSshChannel.initialCredit,
+      credit: NativeSshChannel.initialCredit(pipe),
       ...open,
     });
     return true;
@@ -406,6 +458,7 @@ class NativeSshClient extends EventEmitter {
         pty,
         env: options?.env || {},
         agentForward: this._options?.agentForward === true,
+        pipe: options?.pipe || undefined,
       },
       callback,
     );

@@ -1,4 +1,6 @@
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const { Server, utils } = require("ssh2");
 
 /**
@@ -6,10 +8,16 @@ const { Server, utils } = require("ssh2");
  *
  * Auth: password `secret`, or keyboard-interactive answering `123456` for the
  * prompt `Code: `. Shells print `$ `, echo each line, and treat `exit <n>`
- * as exit status n. Exec prints `ran:<command>` and exits 0. Requests are
- * recorded in `events`.
+ * as exit status n; `flood <bytes>` writes that many bytes then `DONE`.
+ * Exec prints `ran:<command>` and exits 0. Requests are recorded in
+ * `events`.
+ *
+ * With `zmodemHost` (a simpleshell-core binary) shells also run ZMODEM, with
+ * a zmodem-serve peer as the remote side: `sz <file>` sends the file and
+ * prints `sz <outcome>`; `rz <dir>` receives into dir and prints
+ * `rz <name> <size> <sha256>`.
  */
-async function createSshShellServer() {
+async function createSshShellServer({ zmodemHost } = {}) {
   const hostKey = crypto
     .generateKeyPairSync("rsa", { modulusLength: 2048 })
     .privateKey.export({ type: "pkcs1", format: "pem" });
@@ -83,8 +91,59 @@ async function createSshShellServer() {
           stream.on("error", () => {});
           stream.write("$ ");
           let input = "";
+          let peer = null;
+          let skipOverAndOut = false;
+          const transfer = async (command, target) => {
+            const { ZmodemPeer, buildZrinitFrame } = require("./zmodem-peer");
+            peer = new ZmodemPeer(zmodemHost, command);
+            await peer.ready;
+            peer.open();
+            peer.onWire = (bytes) => stream.write(bytes);
+            let saved = null;
+            if (command === "sz") {
+              peer.feed(buildZrinitFrame());
+              peer.sendFiles([
+                {
+                  path: target,
+                  name: path.basename(target),
+                  size: fs.statSync(target).size,
+                },
+              ]);
+            } else {
+              peer.onOffer = (offer) => {
+                saved = path.join(target, offer.event.fileName);
+                return saved;
+              };
+              // rz announces itself with ZRINIT.
+              stream.write(buildZrinitFrame());
+            }
+            const done = await peer.waitDone();
+            await peer.close();
+            peer = null;
+            let result = `${command} ${done.kind}`;
+            if (command === "rz" && done.kind === "done" && saved) {
+              const bytes = fs.readFileSync(saved);
+              const digest = crypto
+                .createHash("sha256")
+                .update(bytes)
+                .digest("hex");
+              result = `rz ${path.basename(saved)} ${bytes.length} ${digest}`;
+              // The sender's trailing "OO" arrives after the session.
+              skipOverAndOut = true;
+            }
+            stream.write(`\r\n${result}\r\n$ `);
+          };
           stream.on("data", (data) => {
-            input += data.toString("utf8");
+            if (peer) {
+              peer.feed(data);
+              return;
+            }
+            let text = data.toString("utf8");
+            if (skipOverAndOut) {
+              text = text.replace(/^O+/, "");
+              skipOverAndOut = text.length === 0;
+            }
+            input += text;
             let index;
             while ((index = input.indexOf("\n")) >= 0) {
               const line = input.slice(0, index).trim();
@@ -93,6 +152,29 @@ async function createSshShellServer() {
               if (exit) {
                 stream.exit(Number(exit[1]));
                 stream.end();
+                return;
+              }
+              const flood = /^flood (\d+)$/.exec(line);
+              if (flood) {
+                const row = "0123456789abcdefghijklmnopqrstuvwxyz\r\n";
+                const total = Number(flood[1]);
+                const block = row.repeat(Math.ceil(32768 / row.length));
+                for (let sent = 0; sent < total; sent += block.length) {
+                  stream.write(
+                    block.slice(0, Math.min(block.length, total - sent)),
+                  );
+                }
+                stream.write("DONE\r\n$ ");
+                continue;
+              }
+              const zmodem = /^(sz|rz) (.+)$/.exec(line);
+              if (zmodem && zmodemHost) {
+                input = "";
+                transfer(zmodem[1], zmodem[2]).catch((error) =>
+                  stream.write(
+                    `\r\n${zmodem[1]} failed: ${error.message}\r\n$ `,
+                  ),
+                );
                 return;
               }
               stream.write(`${line}\r\n$ `);

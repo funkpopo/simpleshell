@@ -15,6 +15,14 @@ const normalizePositiveInteger = (value, fallback) => {
   return Math.floor(numericValue);
 };
 
+/**
+ * Batches terminal output to the renderer and applies its flow control.
+ *
+ * By default the mailbox counts unacknowledged output and pauses the
+ * process's flow-control target. A mailbox created with `remoteFlow`
+ * (`{ack(bytes), pause(reason), resume(reason)}`) counts nothing: ACKs and
+ * pause reasons go to the producer — the core, for terminal pipe channels.
+ */
 class TerminalIOMailboxManager {
   constructor(options = {}) {
     this.getMainWindow =
@@ -58,6 +66,9 @@ class TerminalIOMailboxManager {
       lastResize: null,
       getFlowControlTarget: null,
       applyResize: null,
+      remoteFlow: null,
+      // Renderer ACKs also cover untracked notices; they are no credit.
+      untrackedAckBytes: 0,
       outputBatch: [],
       outputBatchBytes: 0,
       outputBatchTimer: null,
@@ -134,7 +145,7 @@ class TerminalIOMailboxManager {
   }
 
   _updateFlowControl(mailbox) {
-    if (!mailbox) {
+    if (!mailbox || mailbox.remoteFlow) {
       return;
     }
 
@@ -246,9 +257,11 @@ class TerminalIOMailboxManager {
       return false;
     }
 
-    for (const item of pending) {
-      if (item.trackBackpressure && item.bytes > 0) {
-        mailbox.pendingAckBytes += item.bytes;
+    if (!mailbox.remoteFlow) {
+      for (const item of pending) {
+        if (item.trackBackpressure && item.bytes > 0) {
+          mailbox.pendingAckBytes += item.bytes;
+        }
       }
     }
     this._updateFlowControl(mailbox);
@@ -332,6 +345,21 @@ class TerminalIOMailboxManager {
       mailbox.applyResize = options.applyResize;
     }
 
+    if (Object.prototype.hasOwnProperty.call(options, "remoteFlow")) {
+      // A new producer (e.g. after a reconnect) starts unpaused with fresh
+      // credit: hand it the reasons still in effect.
+      mailbox.remoteFlow = options.remoteFlow || null;
+      mailbox.pendingAckBytes = 0;
+      mailbox.untrackedAckBytes = 0;
+      if (mailbox.remoteFlow) {
+        mailbox.isFlowPaused = false;
+        this._clearFlowRecoveryTimer(mailbox);
+        for (const reason of mailbox.pausedReasons) {
+          this._callRemoteFlow(mailbox, "pause", reason);
+        }
+      }
+    }
+
     return mailbox;
   }
 
@@ -365,6 +393,9 @@ class TerminalIOMailboxManager {
         processId: mailbox.primaryProcessId,
         data: payload,
       });
+      if (sent && mailbox.remoteFlow) {
+        mailbox.untrackedAckBytes += this._countOutputPayloadBytes(payload);
+      }
       return Boolean(sent);
     }
 
@@ -394,9 +425,29 @@ class TerminalIOMailboxManager {
       return false;
     }
 
+    if (mailbox.remoteFlow) {
+      const untracked = Math.min(mailbox.untrackedAckBytes, ackBytes);
+      mailbox.untrackedAckBytes -= untracked;
+      if (ackBytes > untracked) {
+        this._callRemoteFlow(mailbox, "ack", ackBytes - untracked);
+      }
+      return true;
+    }
+
     mailbox.pendingAckBytes = Math.max(0, mailbox.pendingAckBytes - ackBytes);
     this._updateFlowControl(mailbox);
     return true;
+  }
+
+  _callRemoteFlow(mailbox, method, argument) {
+    try {
+      mailbox.remoteFlow[method](argument);
+    } catch (error) {
+      logToFile(
+        `Remote flow control ${method} failed for process ${mailbox.primaryProcessId}: ${error.message}`,
+        "WARN",
+      );
+    }
   }
 
   requestResize(processId, cols, rows, options = {}) {
@@ -458,7 +509,13 @@ class TerminalIOMailboxManager {
       return false;
     }
 
-    mailbox.pausedReasons.add(String(reason || "renderer"));
+    const key = String(reason || "renderer");
+    if (mailbox.remoteFlow) {
+      if (!mailbox.pausedReasons.has(key)) {
+        this._callRemoteFlow(mailbox, "pause", key);
+      }
+    }
+    mailbox.pausedReasons.add(key);
     this._updateFlowControl(mailbox);
     return true;
   }
@@ -469,7 +526,11 @@ class TerminalIOMailboxManager {
       return false;
     }
 
-    mailbox.pausedReasons.delete(String(reason || "renderer"));
+    const key = String(reason || "renderer");
+    if (mailbox.remoteFlow && mailbox.pausedReasons.has(key)) {
+      this._callRemoteFlow(mailbox, "resume", key);
+    }
+    mailbox.pausedReasons.delete(key);
     this._updateFlowControl(mailbox);
     return true;
   }

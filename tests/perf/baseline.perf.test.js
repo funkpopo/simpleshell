@@ -146,13 +146,21 @@ function createPool() {
   return pool;
 }
 
+// As sshSessions opens terminals: native clients process output in the core.
 function openShell(client) {
-  return new Promise((resolve, reject) =>
-    client.shell(
-      { term: "xterm-256color", cols: 120, rows: 30 },
-      (error, stream) => (error ? reject(error) : resolve(stream)),
-    ),
-  );
+  const window = { term: "xterm-256color", cols: 120, rows: 30 };
+  return new Promise((resolve, reject) => {
+    const done = (error, stream) => (error ? reject(error) : resolve(stream));
+    if (client.supportsTerminalPipe) {
+      client.shell(
+        window,
+        { pipe: { rules: outputProcessor.highlightRules } },
+        done,
+      );
+    } else {
+      client.shell(window, done);
+    }
+  });
 }
 
 // Runs the production main-process output path (decode, OSC filter, highlight,
