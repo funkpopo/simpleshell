@@ -4,33 +4,20 @@ const { spawnSync } = require("child_process");
 
 const projectRoot = path.resolve(__dirname, "..");
 const packageManifestPath = path.join(projectRoot, "package.json");
-const manifestPath = path.join(
-  projectRoot,
-  "native-services",
-  "desktop-host",
-  "Cargo.toml",
-);
+const nativeRoot = path.join(projectRoot, "native-services");
+// Workspace manifest: `[workspace.package] version` is shared by every crate.
+const manifestPath = path.join(nativeRoot, "Cargo.toml");
 const platformArchDir = `${process.platform}-${process.arch}`;
 const executableName =
-  process.platform === "win32"
-    ? "simpleshell-native-services.exe"
-    : "simpleshell-native-services";
+  process.platform === "win32" ? "simpleshell-core.exe" : "simpleshell-core";
 const buildOutputPath = path.join(
-  projectRoot,
-  "native-services",
-  "desktop-host",
+  nativeRoot,
   "target",
   "release",
   executableName,
 );
-const stagedDir = path.join(
-  projectRoot,
-  "native-services",
-  "bin",
-  platformArchDir,
-);
+const stagedDir = path.join(nativeRoot, "bin", platformArchDir);
 const stagedPath = path.join(stagedDir, executableName);
-const sourceRoot = path.join(projectRoot, "native-services", "desktop-host");
 
 function log(message) {
   process.stdout.write(`[prepare-native-services] ${message}\n`);
@@ -57,12 +44,12 @@ function getAppVersion() {
 function syncSidecarManifestVersion(appVersion) {
   const manifestContent = fs.readFileSync(manifestPath, "utf8");
   const packageSectionPattern =
-    /(\[package\][\s\S]*?\nversion\s*=\s*")([^"]+)(")/;
+    /(\[workspace\.package\][\s\S]*?\nversion\s*=\s*")([^"]+)(")/;
   const match = manifestContent.match(packageSectionPattern);
 
   if (!match) {
     throw new Error(
-      `unable to locate package.version in native-services manifest: ${manifestPath}`,
+      `unable to locate workspace.package.version in native-services manifest: ${manifestPath}`,
     );
   }
 
@@ -111,7 +98,7 @@ function getNewestMtimeMs(targetPath) {
 
   let newest = stats.mtimeMs;
   for (const entry of fs.readdirSync(targetPath, { withFileTypes: true })) {
-    if (entry.name === "target") {
+    if (entry.name === "target" || entry.name === "bin") {
       continue;
     }
     const childPath = path.join(targetPath, entry.name);
@@ -156,7 +143,15 @@ function tryBuildWithCargo() {
 
   const result = spawnSync(
     "cargo",
-    ["build", "--release", "--manifest-path", manifestPath],
+    [
+      "build",
+      "--release",
+      "--locked",
+      "-p",
+      "simpleshell-core",
+      "--manifest-path",
+      manifestPath,
+    ],
     {
       cwd: projectRoot,
       stdio: "inherit",
@@ -176,7 +171,7 @@ function tryBuildWithCargo() {
 }
 
 function main() {
-  ensureDir(path.join(projectRoot, "native-services", "bin"));
+  ensureDir(path.join(nativeRoot, "bin"));
   const appVersion = getAppVersion();
 
   if (!fs.existsSync(manifestPath)) {
@@ -184,10 +179,7 @@ function main() {
   }
 
   syncSidecarManifestVersion(appVersion);
-  const sourceMtime = Math.max(
-    getNewestMtimeMs(sourceRoot),
-    getNewestMtimeMs(path.join(projectRoot, "native-services", "vendor")),
-  );
+  const sourceMtime = getNewestMtimeMs(nativeRoot);
 
   if (hasStagedBinary() && !isStagedBinaryOutdated(sourceMtime)) {
     log(

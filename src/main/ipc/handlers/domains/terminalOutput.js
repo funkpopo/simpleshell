@@ -266,9 +266,15 @@ function createTerminalOutput(
       // ZMODEM native 后端：sidecar 透传字节回到同一解码/输出缓冲管线（P3.5），
       // 并经独立 "zmodem" 暂停原因接入统一流控（P3.6）
       const appendRawZmodemBytes = (rawChunk) => {
-        buffer = Buffer.concat([buffer, rawChunk]);
+        buffer = buffer.length ? Buffer.concat([buffer, rawChunk]) : rawChunk;
+        // Same bound as direct output: passthrough arrives in bursts, and an
+        // unbounded batch turns highlighting into one long main-thread task.
+        if (buffer.length >= getOutputProfile().flushThresholdBytes) {
+          flushBufferedOutput();
+        } else {
+          scheduleFlush();
+        }
         this._setProcessBufferedBytes(processId, bufferedBytesTotal());
-        scheduleFlush();
       };
       const setZmodemPaused = (paused) => {
         if (!this.dependencies.terminalIOMailboxManager) {

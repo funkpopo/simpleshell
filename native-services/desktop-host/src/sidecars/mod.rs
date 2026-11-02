@@ -1,9 +1,0 @@
-//! Product sidecars share this namespace. `main.rs` only routes subcommands;
-//! each sidecar owns its protocol and execution implementation.
-
-pub mod ai;
-pub mod file_management;
-pub mod ip_query;
-pub mod latency;
-pub mod port_forwarding;
-pub mod zmodem;

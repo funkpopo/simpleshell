@@ -40,9 +40,7 @@ const WORKER_UNPACK_DIRS = [
   ".webpack\\main\\utils.js",
 ];
 const NATIVE_SERVICES_BASENAME =
-  process.platform === "win32"
-    ? "simpleshell-native-services.exe"
-    : "simpleshell-native-services";
+  process.platform === "win32" ? "simpleshell-core.exe" : "simpleshell-core";
 const WINDOWS_ICON_PATH = path.join(__dirname, "src/renderer/assets/logo.ico");
 const LINUX_ICON_PATH = path.join(
   __dirname,

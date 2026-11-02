@@ -12,6 +12,8 @@ async function createSftpLoopback(root) {
   const publicKey = utils.parseKey(hostKey).getPublicSSH();
   const fingerprint = `SHA256:${crypto.createHash("sha256").update(publicKey).digest("hex")}`;
   const clients = new Set();
+  // Handshake/channel counters let benchmarks prove connection reuse.
+  const stats = { connections: 0, authentications: 0, sftpChannels: 0 };
   const operations = [];
   const handles = new Set();
   const control = {
@@ -39,14 +41,19 @@ async function createSftpLoopback(root) {
   });
   const server = new Server({ hostKeys: [hostKey] }, (client) => {
     clients.add(client);
+    stats.connections += 1;
     client.on("error", () => {});
     client.on("close", () => clients.delete(client));
-    client.on("authentication", (context) => context.accept());
+    client.on("authentication", (context) => {
+      stats.authentications += 1;
+      context.accept();
+    });
     client.on("ready", () =>
       client.on("session", (accept) => {
         const session = accept();
         session.on("sftp", (acceptSftp) => {
           const sftp = acceptSftp();
+          stats.sftpChannels += 1;
           const descriptors = new Map();
           let sequence = 0;
           const statusError = (id, error) => {
@@ -210,6 +217,7 @@ async function createSftpLoopback(root) {
   );
   return {
     operations,
+    stats,
     control,
     resolve,
     config: {

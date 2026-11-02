@@ -1,6 +1,6 @@
-const { spawn } = require("child_process");
 const { logToFile } = require("../utils/logger");
 const { getNativeServicesHostPath } = require("./nativeServices");
+const { spawnCoreService } = require("./coreSupervisor");
 
 /**
  * `ip-query-serve` sidecar 客户端（Phase 4 P4.2）。
@@ -73,14 +73,7 @@ class NativeIpQueryClient {
       }
       let child;
       try {
-        const hostPath =
-          typeof this._options.getHostPath === "function"
-            ? this._options.getHostPath()
-            : getNativeServicesHostPath();
-        child = spawn(hostPath, ["ip-query-serve"], {
-          stdio: ["pipe", "pipe", "pipe"],
-          windowsHide: true,
-        });
+        child = spawnCoreService("ip-query-serve");
       } catch (error) {
         logToFile(`nativeIpQueryClient spawn failed: ${error.message}`, "WARN");
         resolve(false);

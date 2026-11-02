@@ -159,7 +159,7 @@ npm run make              # 构建可分发的安装包
 ```
 
 集成测试需要先编译原生服务：
-`cargo build --locked --manifest-path native-services/desktop-host/Cargo.toml`。
+`cargo build --locked --manifest-path native-services/Cargo.toml`。
 
 Preload 契约使用 JSDoc 和 `src/shared/contracts/preload.d.ts` 中的共享类型声明。
 `npm test` 通过 TypeScript 解析暴露的方法和 IPC 调用，再根据
@@ -190,7 +190,7 @@ simpleshell/
 │   ├── preload/             # contextBridge API and subscriptions
 │   ├── renderer/            # React UI, terminal views and browser helpers
 │   └── shared/              # Contracts, pure cross-runtime logic and locales
-├── native-services/         # Rust native-services crate
+├── native-services/         # simpleshell-core 的 Rust workspace
 ├── tests/                   # 单元/契约/集成测试、辅助函数与测试页面
 ├── scripts/                 # 原生服务预构建、安装与 postinstall 辅助脚本
 ├── forge.config.js
@@ -219,7 +219,7 @@ simpleshell/
 
 ### **原生服务 Host**
 
-- **Rust host（`native-services/`）** - `simpleshell-native-services` 通过稳定子命令承载文件管理和 AI 服务
+- **Rust core（`native-services/`）** - 常驻 `simpleshell-core` 进程以多路复用流承载 SFTP、传输、端口转发、ZMODEM 与网络服务（见 `native-services/README.md`）
 
 ### **编辑、预览与渲染**
 

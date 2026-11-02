@@ -1,7 +1,7 @@
 const { EventEmitter } = require("node:events");
-const { spawn } = require("node:child_process");
 const { StringDecoder } = require("node:string_decoder");
 const { getNativeServicesHostPath } = require("./nativeServices");
+const { spawnCoreService } = require("./coreSupervisor");
 const { t: mainT } = require("../../shared/mainI18n");
 
 const RETRYABLE = new Set([
@@ -61,7 +61,7 @@ function forwardingError(code, language) {
 class NativePortForwardingClient extends EventEmitter {
   constructor(options = {}) {
     super();
-    this.spawn = options.spawn || spawn;
+    this.spawnService = options.spawnService || spawnCoreService;
     this.locate = options.locate || getNativeServicesHostPath;
     this.startTimeout = options.startTimeout || 10000;
     this.requestTimeout = options.requestTimeout || 10000;
@@ -83,10 +83,7 @@ class NativePortForwardingClient extends EventEmitter {
     if (this.starting) return this.starting;
     const binary = this.locate();
     if (!binary) throw forwardingError("SIDECAR_MISSING");
-    const child = this.spawn(binary, ["port-forward-serve"], {
-      windowsHide: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const child = this.spawnService("port-forward-serve");
     this.child = child;
     this.ready = false;
     this.starting = new Promise((resolve, reject) => {

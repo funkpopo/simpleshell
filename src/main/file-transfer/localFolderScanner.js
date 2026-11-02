@@ -1,6 +1,6 @@
 const path = require("path");
-const { execFile } = require("child_process");
 const { getNativeServicesHostPath } = require("../native/nativeServices");
+const { execCoreService } = require("../native/coreSupervisor");
 const { normalizeErrorMessage } = require("../utils/errorResponse");
 const { toPosixPath } = require("./transferShared");
 async function scanLocalFolderWithNativeSidecar(
@@ -8,14 +8,13 @@ async function scanLocalFolderWithNativeSidecar(
   translate,
   options = {},
 ) {
-  const scannerPath = getNativeServicesHostPath();
-  if (!scannerPath) {
+  if (!getNativeServicesHostPath()) {
     throw new Error(
       translate("mainProcess.transfer.errors.scannerHostMissing"),
     );
   }
 
-  const args = ["scan-folder", "--path", localFolderPath];
+  const args = ["--path", localFolderPath];
   const appendPositiveIntegerArg = (flag, value) => {
     const parsed = Math.floor(Number(value));
     if (Number.isFinite(parsed) && parsed > 0) {
@@ -27,49 +26,35 @@ async function scanLocalFolderWithNativeSidecar(
   appendPositiveIntegerArg("--max-depth", options.maxDepth);
   appendPositiveIntegerArg("--max-bytes", options.maxBytes);
 
-  return new Promise((resolve, reject) => {
-    execFile(
-      scannerPath,
-      args,
-      {
-        windowsHide: true,
-        maxBuffer: 64 * 1024 * 1024, // 目录扫描输出缓冲区上限（根据系统内存自动调整，非固定值）
-        timeout: 60000,
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          reject(
-            new Error(
-              stderr?.trim() || stdout?.trim() || normalizeErrorMessage(error),
-            ),
-          );
-          return;
-        }
-
-        const payload = String(stdout || "").trim();
-        if (!payload) {
-          reject(
-            new Error(
-              translate("mainProcess.transfer.errors.scannerEmptyOutput"),
-            ),
-          );
-          return;
-        }
-
-        try {
-          resolve(JSON.parse(payload));
-        } catch (parseError) {
-          reject(
-            new Error(
-              translate("mainProcess.transfer.errors.scannerInvalidJson", {
-                error: normalizeErrorMessage(parseError),
-              }),
-            ),
-          );
-        }
-      },
+  let stdout;
+  try {
+    ({ stdout } = await execCoreService("scan-folder", args, {
+      maxBuffer: 64 * 1024 * 1024,
+      timeoutMs: 60000,
+    }));
+  } catch (error) {
+    throw new Error(
+      error.stderr?.trim() ||
+        error.stdout?.trim() ||
+        normalizeErrorMessage(error),
     );
-  });
+  }
+
+  const payload = String(stdout || "").trim();
+  if (!payload) {
+    throw new Error(
+      translate("mainProcess.transfer.errors.scannerEmptyOutput"),
+    );
+  }
+  try {
+    return JSON.parse(payload);
+  } catch (parseError) {
+    throw new Error(
+      translate("mainProcess.transfer.errors.scannerInvalidJson", {
+        error: normalizeErrorMessage(parseError),
+      }),
+    );
+  }
 }
 
 async function scanLocalFolder(localFolderPath, translate) {

@@ -2,9 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const NATIVE_SERVICES_BASENAME =
-  process.platform === "win32"
-    ? "simpleshell-native-services.exe"
-    : "simpleshell-native-services";
+  process.platform === "win32" ? "simpleshell-core.exe" : "simpleshell-core";
 
 function getNativeServicesHostPath() {
   const overridePath = process.env.SIMPLESHELL_NATIVE_SERVICES_PATH;
@@ -40,7 +38,6 @@ function getNativeServicesHostPath() {
     path.join(
       process.cwd(),
       "native-services",
-      "desktop-host",
       "target",
       "release",
       NATIVE_SERVICES_BASENAME,
@@ -57,5 +54,6 @@ function getNativeServicesHostPath() {
 }
 
 module.exports = {
+  NATIVE_SERVICES_BASENAME,
   getNativeServicesHostPath,
 };

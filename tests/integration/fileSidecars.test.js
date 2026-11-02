@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import _path from "node:path";
 const require = createRequire(import.meta.url);
+const { nativeHostPath } = require("../helpers/nativeHost");
 const _repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 describe("checksum-sidecar", () => {
@@ -23,45 +24,6 @@ describe("checksum-sidecar", () => {
      */
 
     const repoRoot = _path.resolve(_repoRoot, "");
-    const os_platform = process.platform;
-
-    function nativeHostPath() {
-      const override = process.env.SIMPLESHELL_NATIVE_SERVICES_PATH;
-      if (override && fs.existsSync(override)) return override;
-      const candidates = [
-        path.join(
-          repoRoot,
-          "native-services",
-          "bin",
-          `${os_platform}-${process.arch}`,
-          os_platform === "win32"
-            ? "simpleshell-native-services.exe"
-            : "simpleshell-native-services",
-        ),
-        path.join(
-          repoRoot,
-          "native-services",
-          "desktop-host",
-          "target",
-          os_platform === "win32" ? "" : "release",
-        ),
-      ];
-      for (const dir of candidates.slice(0, 1)) {
-        if (fs.existsSync(dir)) return dir;
-      }
-      const release = path.join(
-        repoRoot,
-        "native-services",
-        "desktop-host",
-        "target",
-        "release",
-        os_platform === "win32"
-          ? "simpleshell-native-services.exe"
-          : "simpleshell-native-services",
-      );
-      if (fs.existsSync(release)) return release;
-      throw new Error("native services host binary not found; build it first");
-    }
 
     function referenceDigest(algorithm, bytes) {
       return crypto.createHash(algorithm).update(bytes).digest("hex");
@@ -287,9 +249,7 @@ describe("checksum-sidecar", () => {
 describe("ip-query-sidecar", () => {
   it("preserves the public behavior and resource lifecycle", async () => {
     const assert = require("node:assert/strict");
-    const fs = require("node:fs");
     const http = require("node:http");
-    const path = require("node:path");
     const { spawn } = require("node:child_process");
 
     /**
@@ -306,33 +266,6 @@ describe("ip-query-sidecar", () => {
      *  - 代理切换（死代理导致失败，验证代理真实生效而非静默直连）；
      *  - 取消与进程重启（重启后密钥/代理重下发）。
      */
-
-    const repoRoot = _path.resolve(_repoRoot, "");
-
-    function nativeHostPath() {
-      const override = process.env.SIMPLESHELL_NATIVE_SERVICES_PATH;
-      if (override && fs.existsSync(override)) return override;
-      const staged = path.join(
-        repoRoot,
-        "native-services",
-        "bin",
-        `${process.platform}-${process.arch}`,
-        process.platform === "win32"
-          ? "simpleshell-native-services.exe"
-          : "simpleshell-native-services",
-      );
-      if (fs.existsSync(staged)) return staged;
-      return path.join(
-        repoRoot,
-        "native-services",
-        "desktop-host",
-        "target",
-        "release",
-        process.platform === "win32"
-          ? "simpleshell-native-services.exe"
-          : "simpleshell-native-services",
-      );
-    }
 
     /** 启动 sidecar 并返回交互句柄 */
     function startSidecar(env = {}) {
@@ -753,7 +686,6 @@ describe("latency-sidecar", () => {
     const net = require("node:net");
     const { spawn } = require("node:child_process");
     const path = require("node:path");
-    const fs = require("node:fs");
 
     /**
      * latency-serve sidecar 行为契约检查（Phase 2）。
@@ -770,31 +702,6 @@ describe("latency-sidecar", () => {
      */
 
     const repoRoot = _path.resolve(_repoRoot, "");
-
-    function nativeHostPath() {
-      const override = process.env.SIMPLESHELL_NATIVE_SERVICES_PATH;
-      if (override && fs.existsSync(override)) return override;
-      const staged = path.join(
-        repoRoot,
-        "native-services",
-        "bin",
-        `${process.platform}-${process.arch}`,
-        process.platform === "win32"
-          ? "simpleshell-native-services.exe"
-          : "simpleshell-native-services",
-      );
-      if (fs.existsSync(staged)) return staged;
-      return path.join(
-        repoRoot,
-        "native-services",
-        "desktop-host",
-        "target",
-        "release",
-        process.platform === "win32"
-          ? "simpleshell-native-services.exe"
-          : "simpleshell-native-services",
-      );
-    }
 
     /** 立即关闭连接的 TCP 服务 */
     function createClosedServer() {
@@ -1236,33 +1143,6 @@ describe("zmodem-sidecar", () => {
      *    （对端 rz 收文件），最终文件摘要一致。
      * 4. 字节协议开销：测量 Base64 体积放大与编解码耗时（NDJSON+Base64 契约）。
      */
-
-    const repoRoot = _path.resolve(_repoRoot, "");
-
-    function nativeHostPath() {
-      const override = process.env.SIMPLESHELL_NATIVE_SERVICES_PATH;
-      if (override && fs.existsSync(override)) return override;
-      const staged = path.join(
-        repoRoot,
-        "native-services",
-        "bin",
-        `${process.platform}-${process.arch}`,
-        process.platform === "win32"
-          ? "simpleshell-native-services.exe"
-          : "simpleshell-native-services",
-      );
-      if (fs.existsSync(staged)) return staged;
-      return path.join(
-        repoRoot,
-        "native-services",
-        "desktop-host",
-        "target",
-        "release",
-        process.platform === "win32"
-          ? "simpleshell-native-services.exe"
-          : "simpleshell-native-services",
-      );
-    }
 
     /** 启动 sidecar 并返回交互句柄 */
     function startSidecar() {

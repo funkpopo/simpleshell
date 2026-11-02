@@ -1,5 +1,5 @@
-const { spawn } = require("child_process");
 const { getNativeServicesHostPath } = require("./nativeServices");
+const { spawnCoreService } = require("./coreSupervisor");
 
 /**
  * 本地文件校验和一次性命令桥接（Phase 1）。
@@ -344,10 +344,7 @@ async function invokeLocalChecksum({
       }
       activeCount += 1;
       try {
-        child = spawn(hostPath, args, {
-          stdio: ["pipe", "pipe", "pipe"],
-          windowsHide: true,
-        });
+        child = spawnCoreService(args[0], args.slice(1));
       } catch (error) {
         activeCount -= 1;
         onError(error);

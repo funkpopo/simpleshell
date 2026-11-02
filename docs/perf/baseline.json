@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "label": "baseline",
+  "generatedAt": "2026-11-02T18:46:17.129Z",
+  "platform": "win32-x64",
+  "node": "v24.20.0",
+  "context": {
+    "floodBytes": 50331648,
+    "smallFileCount": 1000,
+    "tabCount": 4
+  },
+  "metrics": {
+    "terminal.throughputMBps": {
+      "value": 8.87,
+      "unit": "MB/s"
+    },
+    "terminal.eventLoopP99Ms": {
+      "value": 28.02,
+      "unit": "ms",
+      "p50Ms": 8.98,
+      "maxMs": 57.08
+    },
+    "terminal.healthFalsePositiveRate": {
+      "value": 0,
+      "unit": "",
+      "checks": 51,
+      "falsePositives": 0
+    },
+    "terminal.timeToPromptMs": {
+      "value": 4.88,
+      "unit": "ms",
+      "samples": [
+        4.39,
+        4.51,
+        4.88,
+        9.82,
+        13.1
+      ]
+    },
+    "tabs.nativeProcessesPerTab": {
+      "value": 1.25,
+      "unit": "",
+      "nativeProcesses": 5
+    },
+    "tabs.totalRssMB": {
+      "value": 442.36,
+      "unit": "MB",
+      "nativeRssMB": 70.97
+    },
+    "transfer.upload1000.ms": {
+      "value": 12429.8,
+      "unit": "ms"
+    },
+    "transfer.upload1000.handshakes": {
+      "value": 1000,
+      "unit": ""
+    },
+    "transfer.download1000.ms": {
+      "value": 12397.04,
+      "unit": "ms"
+    },
+    "transfer.download1000.handshakes": {
+      "value": 1000,
+      "unit": ""
+    }
+  }
+}

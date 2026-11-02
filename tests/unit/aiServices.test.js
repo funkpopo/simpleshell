@@ -272,9 +272,9 @@ describe("ai-worker-sessions", () => {
         },
         clearTimeout: (timer) => timers.delete(timer),
         require: (name) => {
-          if (name === "node:child_process")
+          if (name === "./coreSupervisor")
             return {
-              spawn: () => {
+              spawnCoreService: () => {
                 const child = new EventEmitter();
                 child.stdout = new EventEmitter();
                 child.stderr = new EventEmitter();

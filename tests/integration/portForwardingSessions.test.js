@@ -1,9 +1,7 @@
 import { describe, it } from "vitest";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
-import _path from "node:path";
 const require = createRequire(import.meta.url);
-const _repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+const { nativeHostPath } = require("../helpers/nativeHost");
 
 describe("port-forwarding-service", () => {
   it("preserves the public behavior and resource lifecycle", async () => {
@@ -33,15 +31,7 @@ describe("port-forwarding-service", () => {
       listen,
     } = require("../fixtures/port-forwarding-loopback");
 
-    const binary =
-      process.env.SIMPLESHELL_NATIVE_SERVICES_PATH ||
-      _path.resolve(
-        _repoRoot,
-        "native-services/desktop-host/target/debug",
-        process.platform === "win32"
-          ? "simpleshell-native-services.exe"
-          : "simpleshell-native-services",
-      );
+    const binary = nativeHostPath();
     const makeRule = (id, type, targetPort, listenPort = 0) => ({
       id,
       name: id,
@@ -539,15 +529,7 @@ describe("port-forwarding-delete", () => {
       listen,
     } = require("../fixtures/port-forwarding-loopback");
 
-    const binary =
-      process.env.SIMPLESHELL_NATIVE_SERVICES_PATH ||
-      _path.resolve(
-        _repoRoot,
-        "native-services/desktop-host/target/debug",
-        process.platform === "win32"
-          ? "simpleshell-native-services.exe"
-          : "simpleshell-native-services",
-      );
+    const binary = nativeHostPath();
 
     async function rebind(port) {
       const listener = net.createServer();
@@ -746,15 +728,7 @@ describe("port-forwarding-algorithms", () => {
       until,
     } = require("../fixtures/port-forwarding-loopback");
 
-    const binary =
-      process.env.SIMPLESHELL_NATIVE_SERVICES_PATH ||
-      _path.resolve(
-        _repoRoot,
-        "native-services/desktop-host/target/debug",
-        process.platform === "win32"
-          ? "simpleshell-native-services.exe"
-          : "simpleshell-native-services",
-      );
+    const binary = nativeHostPath();
 
     // Node exports DSA as PKCS8; ssh2 expects the traditional six-integer PEM.
     // Both keys are generated for this test, with no persistent private-key fixture.

@@ -32,12 +32,7 @@ function safeReadRecentLogLines(logFilePath) {
 }
 
 function readCargoSidecarVersion() {
-  const cargoPath = path.join(
-    process.cwd(),
-    "native-services",
-    "desktop-host",
-    "Cargo.toml",
-  );
+  const cargoPath = path.join(process.cwd(), "native-services", "Cargo.toml");
 
   if (!fs.existsSync(cargoPath)) {
     return null;

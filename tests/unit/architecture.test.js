@@ -506,10 +506,7 @@ describe("sftp-native-boundary", () => {
 
     function rustSftpOperations() {
       const modRs = fs.readFileSync(
-        path.join(
-          repoRoot,
-          "native-services/desktop-host/src/sidecars/file_management/mod.rs",
-        ),
+        path.join(repoRoot, "native-services/crates/sftp/src/protocol.rs"),
         "utf8",
       );
       const enumStart = modRs.indexOf("enum SftpOperation");

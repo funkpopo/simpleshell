@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import _path from "node:path";
 const require = createRequire(import.meta.url);
+const { nativeHostPath } = require("../helpers/nativeHost");
 const _repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 describe("ai-sidecar", () => {
@@ -14,59 +15,13 @@ describe("ai-sidecar", () => {
     const path = require("node:path");
 
     const ROOT = _path.resolve(_repoRoot, "");
-    const sidecarsSourceDirectory = path.join(
-      ROOT,
-      "native-services",
-      "desktop-host",
-      "src",
-      "sidecars",
-    );
-    const aiSidecarSourceDirectory = path.join(sidecarsSourceDirectory, "ai");
-    const fileManagementSidecarSourceDirectory = path.join(
-      sidecarsSourceDirectory,
-      "file_management",
-    );
-    const executable =
-      process.env.SIMPLESHELL_NATIVE_SERVICES_PATH ||
-      path.join(
-        ROOT,
-        "native-services",
-        "desktop-host",
-        "target",
-        "debug",
-        process.platform === "win32"
-          ? "simpleshell-native-services.exe"
-          : "simpleshell-native-services",
-      );
+    const executable = nativeHostPath();
+    // The AI service lives in the auxiliary crate behind the stable `ai-serve` name.
     assert.ok(
-      fs.existsSync(executable),
-      "Build the Rust sidecar before running this check",
-    );
-    assert.ok(
-      fs.existsSync(path.join(sidecarsSourceDirectory, "mod.rs")),
-      "Sidecar root must declare its modules",
-    );
-    assert.ok(
-      fs.existsSync(path.join(aiSidecarSourceDirectory, "mod.rs")),
-      "AI sidecar implementation must live in src/sidecars/ai/mod.rs",
-    );
-    assert.ok(
-      fs.existsSync(path.join(fileManagementSidecarSourceDirectory, "mod.rs")),
-      "File-management sidecar implementation must live in src/sidecars/file_management/mod.rs",
-    );
-    assert.equal(
       fs.existsSync(
-        path.join(ROOT, "native-services", "desktop-host", "src", "ai.rs"),
+        path.join(ROOT, "native-services", "crates", "auxsvc", "src", "ai.rs"),
       ),
-      false,
-      "Legacy flat AI sidecar source must not remain",
-    );
-    assert.equal(
-      fs.existsSync(
-        path.join(ROOT, "native-services", "desktop-host", "src", "ai_sidecar"),
-      ),
-      false,
-      "Legacy AI sidecar directory must not remain",
+      "AI service implementation must live in crates/auxsvc/src/ai.rs",
     );
 
     const requests = [];

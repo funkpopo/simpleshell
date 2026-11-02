@@ -161,7 +161,7 @@ npm run make              # Build distributable installers
 ```
 
 Integration tests need a compiled native host:
-`cargo build --locked --manifest-path native-services/desktop-host/Cargo.toml`.
+`cargo build --locked --manifest-path native-services/Cargo.toml`.
 
 Preload contracts use JSDoc and shared declarations in `src/shared/contracts/preload.d.ts`.
 `npm test` parses exposed methods and IPC calls with TypeScript, then checks
@@ -193,7 +193,7 @@ simpleshell/
 │   ├── preload/             # contextBridge API and subscriptions
 │   ├── renderer/            # React UI, terminal views and browser helpers
 │   └── shared/              # Contracts, pure cross-runtime logic and locales
-├── native-services/         # Rust native-services crate
+├── native-services/         # Rust workspace for simpleshell-core
 ├── tests/                   # Unit, contract and integration suites, helpers and fixtures
 ├── scripts/                 # Native host staging, install and postinstall helpers
 ├── forge.config.js
@@ -222,7 +222,7 @@ Source is organized by runtime. Area-specific conventions live in README files n
 
 ### **Native Services Host**
 
-- **Rust host (`native-services/`)** - `simpleshell-native-services` hosts file-management and AI services behind stable subcommands
+- **Rust core (`native-services/`)** - resident `simpleshell-core` process hosting SFTP, transfers, port forwarding, ZMODEM and network services as multiplexed streams (see `native-services/README.md`)
 
 ### **Editing, Preview & Rendering**
 

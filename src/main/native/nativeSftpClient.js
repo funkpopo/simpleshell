@@ -1,7 +1,6 @@
-const { spawn } = require("child_process");
-
 const processManager = require("../process/processManager");
 const { getNativeServicesHostPath } = require("./nativeServices");
+const { spawnCoreService } = require("./coreSupervisor");
 const { processSSHPrivateKeyAsync } = require("../utils/ssh-utils");
 const { getTrustedHostFingerprint } = require("../utils/sshHostKeyTrust");
 const { logToFile } = require("../utils/logger");
@@ -297,34 +296,35 @@ async function resolveSshConfig(tabId, options = {}) {
   };
 }
 
+/** Rejection for a missing `simpleshell-core`, or null when it is available. */
+function missingHostError(operation) {
+  if (getNativeServicesHostPath()) return null;
+  logToFile(
+    `Native SFTP: simpleshell-core not found for ${operation || "unknown-operation"}`,
+    "ERROR",
+  );
+  return createNativeSidecarError("Native services host was not found", {
+    errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
+    errorKind: "sidecar",
+    retryable: false,
+    operation: operation || null,
+  });
+}
+
 function invokeNativeRequest(tabId, request, options = {}) {
-  const sidecarPath = getNativeServicesHostPath();
-  if (!sidecarPath) {
-    logToFile(
-      `Native SFTP: sidecar binary not found for ${request?.operation || "unknown-operation"}`,
-      "ERROR",
-    );
-    return Promise.reject(
-      createNativeSidecarError("Native services host was not found", {
-        errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
-        errorKind: "sidecar",
-        retryable: false,
-      }),
-    );
-  }
+  const missing = missingHostError(request?.operation);
+  if (missing) return Promise.reject(missing);
 
   logToFile(
-    `Native SFTP: invoking ${request?.operation || "unknown-operation"} for tab ${tabId} via ${sidecarPath}`,
+    `Native SFTP: invoking ${request?.operation || "unknown-operation"} for tab ${tabId}`,
     "INFO",
   );
 
   return resolveSshConfig(tabId).then((config) =>
-    invokeNativeRequestWithConfig(
-      config,
-      request,
-      { ...options, sessionKey: options.sessionKey || String(tabId) },
-      sidecarPath,
-    ),
+    invokeNativeRequestWithConfig(config, request, {
+      ...options,
+      sessionKey: options.sessionKey || String(tabId),
+    }),
   );
 }
 
@@ -343,14 +343,13 @@ function buildInvalidSidecarOutputError(error, request, line) {
 }
 
 /**
- * Spawns the native sidecar in the given mode ("sftp-request" | "sftp-watch"),
+ * Opens a core stream in the given mode ("sftp-request" | "sftp-watch"),
  * wires up the shared plumbing (stdout line buffering, stderr accumulation,
  * child-error wrapping, close flush) and writes the request envelope to stdin.
  * Mode-specific semantics (single response vs long-lived stream) stay in the
  * callers via the onLine/onChildError/onClose callbacks.
  */
 function spawnSidecarSession({
-  sidecarPath,
   mode,
   nativeConfig,
   request,
@@ -359,10 +358,7 @@ function spawnSidecarSession({
   onChildError,
   onClose,
 }) {
-  const child = spawn(sidecarPath, [mode], {
-    stdio: ["pipe", "pipe", "pipe"],
-    windowsHide: true,
-  });
+  const child = spawnCoreService(mode);
 
   if (typeof onSpawn === "function") {
     try {
@@ -424,8 +420,7 @@ function spawnSidecarSession({
 }
 
 class NativeSftpSession {
-  constructor({ sidecarPath, nativeConfig, sessionKey }) {
-    this.sidecarPath = sidecarPath;
+  constructor({ nativeConfig, sessionKey }) {
     this.nativeConfig = nativeConfig;
     this.sessionKey = sessionKey;
     this.child = null;
@@ -440,10 +435,7 @@ class NativeSftpSession {
   }
 
   _spawn() {
-    this.child = spawn(this.sidecarPath, ["sftp-session"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
+    this.child = spawnCoreService("sftp-session");
     logToFile(
       `Native SFTP session: spawned sessionKey=${this.sessionKey} pid=${this.child.pid || "unknown"} spawnElapsedMs=${Date.now() - this.spawnStartedAt}`,
       "INFO",
@@ -713,7 +705,6 @@ class NativeSftpSession {
 
 function invokePersistentNativeRequest(
   sessionKey,
-  sidecarPath,
   nativeConfig,
   request,
   options,
@@ -734,7 +725,7 @@ function invokePersistentNativeRequest(
     session = null;
   }
   if (!session || session.closed) {
-    session = new NativeSftpSession({ sidecarPath, nativeConfig, sessionKey });
+    session = new NativeSftpSession({ nativeConfig, sessionKey });
     session.fingerprint = fingerprint;
     nativeSftpSessions.set(sessionKey, session);
   }
@@ -763,26 +754,9 @@ function closeNativeSession(sessionKey) {
   );
 }
 
-function invokeNativeRequestWithConfig(
-  config,
-  request,
-  options = {},
-  resolvedSidecarPath = null,
-) {
-  const sidecarPath = resolvedSidecarPath || getNativeServicesHostPath();
-  if (!sidecarPath) {
-    logToFile(
-      `Native SFTP: sidecar binary not found for ${request?.operation || "unknown-operation"}`,
-      "ERROR",
-    );
-    return Promise.reject(
-      createNativeSidecarError("Native services host was not found", {
-        errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
-        errorKind: "sidecar",
-        retryable: false,
-      }),
-    );
-  }
+function invokeNativeRequestWithConfig(config, request, options = {}) {
+  const missing = missingHostError(request?.operation);
+  if (missing) return Promise.reject(missing);
 
   const normalizedRequest = normalizeNativeRequest(request);
   let nativeConfig;
@@ -799,7 +773,6 @@ function invokeNativeRequestWithConfig(
   );
   return invokePersistentNativeRequest(
     sessionKey,
-    sidecarPath,
     nativeConfig,
     normalizedRequest,
     options,
@@ -807,53 +780,19 @@ function invokeNativeRequestWithConfig(
 }
 
 function watchDirectory(tabId, remotePath, options = {}) {
-  const sidecarPath = getNativeServicesHostPath();
-  if (!sidecarPath) {
-    logToFile(
-      "Native SFTP: sidecar binary not found for watchDirectory",
-      "ERROR",
-    );
-    return Promise.reject(
-      createNativeSidecarError("Native services host was not found", {
-        errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
-        errorKind: "sidecar",
-        retryable: false,
-        operation: "watchDirectory",
-      }),
-    );
-  }
+  const missing = missingHostError("watchDirectory");
+  if (missing) return Promise.reject(missing);
 
-  logToFile(
-    `Native SFTP: starting directory watch for tab ${tabId} via ${sidecarPath}`,
-    "INFO",
-  );
+  logToFile(`Native SFTP: starting directory watch for tab ${tabId}`, "INFO");
 
   return resolveSshConfig(tabId).then((config) =>
-    watchDirectoryWithConfig(config, remotePath, options, sidecarPath),
+    watchDirectoryWithConfig(config, remotePath, options),
   );
 }
 
-function watchDirectoryWithConfig(
-  config,
-  remotePath,
-  options = {},
-  resolvedSidecarPath = null,
-) {
-  const sidecarPath = resolvedSidecarPath || getNativeServicesHostPath();
-  if (!sidecarPath) {
-    logToFile(
-      "Native SFTP: sidecar binary not found for watchDirectory",
-      "ERROR",
-    );
-    return Promise.reject(
-      createNativeSidecarError("Native services host was not found", {
-        errorCode: "NATIVE_SFTP_SIDECAR_MISSING",
-        errorKind: "sidecar",
-        retryable: false,
-        operation: "watchDirectory",
-      }),
-    );
-  }
+function watchDirectoryWithConfig(config, remotePath, options = {}) {
+  const missing = missingHostError("watchDirectory");
+  if (missing) return Promise.reject(missing);
 
   return new Promise((resolve, reject) => {
     let nativeConfig;
@@ -1079,7 +1018,6 @@ function watchDirectoryWithConfig(
     };
 
     child = spawnSidecarSession({
-      sidecarPath,
       mode: "sftp-watch",
       nativeConfig,
       request,

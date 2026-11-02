@@ -825,9 +825,7 @@ describe("window-native-feel", () => {
 
     // Missing paths are per-item results inside a successful batch response;
     // they no longer need the old per-request expectedFailure logging override.
-    const nativeSource = readSource(
-      "native-services/desktop-host/src/sidecars/file_management/mod.rs",
-    );
+    const nativeSource = readSource("native-services/crates/sftp/src/ops.rs");
     const batchStart = nativeSource.indexOf(
       "SftpOperation::GetFilePermissionsBatch => {",
     );
@@ -836,14 +834,15 @@ describe("window-native-feel", () => {
       batchStart >= 0 && batchEnd > batchStart,
       "Missing native batch branch",
     );
-    const nativeBatchSource = nativeSource.slice(batchStart, batchEnd);
+    const entryStart = nativeSource.indexOf("async fn permission_batch_entry");
+    assert.ok(entryStart >= 0, "Missing per-path batch entry");
     assertContains(
-      nativeBatchSource,
+      nativeSource.slice(entryStart, nativeSource.indexOf("\n}\n", entryStart)),
       /"success": false,[\s\S]*"errorCode": classification\.error_code/,
       "Native permission batches must preserve structured errors for each failed path.",
     );
     assertContains(
-      nativeBatchSource,
+      nativeSource.slice(batchStart, batchEnd),
       /Ok\(json!\(\{ "success": true, "results": results \}\)\)/,
       "Completed permission batches must return per-path results without logging missing paths as request failures.",
     );

@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = ["core", "crates/*"]
+exclude = ["vendor/russh"]
+
+[workspace.package]
+version = "0.5.7"
+edition = "2021"
+publish = false
+
+[workspace.dependencies]
+core-protocol = { path = "crates/core-protocol" }
+netutil = { path = "crates/netutil" }
+sftp = { path = "crates/sftp" }
+forward = { path = "crates/forward" }
+zmodem = { path = "crates/zmodem" }
+auxsvc = { path = "crates/auxsvc" }
+
+base64 = "0.22.1"
+bytes = "1.11.1"
+futures-util = "0.3.32"
+openssh-sftp-client = "0.15.4"
+russh = { version = "=0.58.0", default-features = false, features = ["flate2", "ring", "rsa", "dsa", "des", "legacy-macs"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sha2 = "0.10.9"
+md-5 = "0.10.6"
+ssh-key = "0.6.7"
+tokio = { version = "1.50.0", features = ["fs", "io-std", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-util = { version = "0.7.18", features = ["codec", "rt"] }
+zmodem2 = "0.7.2"
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "socks", "stream"] }
+
+[patch.crates-io]
+russh = { path = "vendor/russh" }

@@ -17,7 +17,7 @@ host or a desktop session.
 Build the native host before running the integration suite:
 
 ```sh
-cargo build --locked --manifest-path native-services/desktop-host/Cargo.toml
+cargo build --locked --manifest-path native-services/Cargo.toml
 npm run test:integration
 ```
 
@@ -73,3 +73,19 @@ This suite requires a built native host. Its mailbox bridge runs in process;
 syntax highlighting uses an identity transform so output hashes can be
 compared to the original UTF-8 bytes. The Electron fixtures separately cover
 rendering, IPC input, split sessions, and ZMODEM file transfers.
+
+## Performance baseline
+
+`npm run test:perf` (requires the native host) measures the migration metrics
+from `todo.md` against loopback SSH/SFTP servers and compares them with
+`docs/perf/baseline.json`:
+
+- terminal output throughput (MB/s) through the production main-process output
+  path, with main event-loop delay p99 and transport health-check false positives;
+- time from opening a tab to the first prompt;
+- native processes per tab and total RSS;
+- 1000 small-file uploads/downloads: total time and SSH handshakes.
+
+Results are written to `.cache/perf/<label>.json` (`SIMPLESHELL_PERF_LABEL`,
+default `latest`). `SIMPLESHELL_PERF_WRITE_BASELINE=1` replaces the committed
+baseline; only do that for a deliberate new reference point.

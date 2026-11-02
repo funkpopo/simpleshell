@@ -49,7 +49,7 @@ function buildZrinitFrame() {
 
 class ZmodemPeer {
   /**
-   * @param {string} hostPath simpleshell-native-services 二进制路径
+   * @param {string} hostPath simpleshell-core 二进制路径
    * @param {string} sessionId 对端会话 ID（同一进程内唯一）
    */
   constructor(hostPath, sessionId = "peer") {

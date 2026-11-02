@@ -1,0 +1,10 @@
+[package]
+name = "netutil"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+serde.workspace = true
+tokio.workspace = true

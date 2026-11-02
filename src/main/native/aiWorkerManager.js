@@ -1,6 +1,6 @@
-const { spawn } = require("node:child_process");
 const { BrowserWindow } = require("electron");
 const { getNativeServicesHostPath } = require("./nativeServices");
+const { spawnCoreService } = require("./coreSupervisor");
 const { logToFile } = require("../utils/logger");
 const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
 
@@ -145,10 +145,7 @@ function createAIWorker() {
     logToFile("Rust AI sidecar binary was not found", "ERROR");
     return null;
   }
-  const child = spawn(sidecarPath, ["ai-serve"], {
-    stdio: ["pipe", "pipe", "pipe"],
-    windowsHide: true,
-  });
+  const child = spawnCoreService("ai-serve");
   aiSidecar = child;
   stdoutBuffer = "";
   child.stdout.on("data", (chunk) => {

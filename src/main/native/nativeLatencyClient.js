@@ -1,5 +1,5 @@
-const { spawn } = require("child_process");
 const { getNativeServicesHostPath } = require("./nativeServices");
+const { spawnCoreService } = require("./coreSupervisor");
 
 /**
  * 延迟探测长驻 sidecar 桥接（Phase 2）。
@@ -67,10 +67,7 @@ class NativeLatencyClient {
       );
     }
 
-    const child = spawn(hostPath, ["latency-serve"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
+    const child = spawnCoreService("latency-serve");
 
     this.child = child;
     this.ready = false;

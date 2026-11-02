@@ -13,6 +13,7 @@ const configTransferService = require("../settings/configTransferService");
 const commandHistoryService = require("../terminal/command-history");
 const filemanagementService = require("../file-transfer/filemanagementService");
 const portForwardingService = require("../services/port-forwarding-service");
+const { shutdownCoreSupervisors } = require("../native/coreSupervisor");
 
 /**
  * 应用清理模块
@@ -355,6 +356,15 @@ class AppCleanup {
     }
   }
 
+  /** 关闭常驻 simpleshell-core 进程（各服务流已在前面的清理中结束）。 */
+  async shutdownNativeCore() {
+    try {
+      await shutdownCoreSupervisors();
+    } catch (error) {
+      logToFile(`Error shutting down native core: ${error.message}`, "ERROR");
+    }
+  }
+
   /**
    * 执行完整的清理流程
    * @param {Object} ipcSetup - IPC设置模块实例
@@ -378,6 +388,7 @@ class AppCleanup {
     await this.cleanupAllProcesses();
     await this.cleanupGlobalSftpResources();
     await this.cleanupConnectionManager();
+    await this.shutdownNativeCore();
     await this.cleanupRuntimeFiles();
     this.saveCommandHistory();
     this.saveLastConnections();

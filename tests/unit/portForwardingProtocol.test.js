@@ -20,7 +20,7 @@ describe("port-forwarding-client", () => {
         locate: () => process.execPath,
         startTimeout: 1000,
         requestTimeout: 100,
-        spawn: (_binary, _args, options) =>
+        spawnService: () =>
           spawn(
             process.execPath,
             [
@@ -30,7 +30,7 @@ describe("port-forwarding-client", () => {
               ),
               mode,
             ],
-            options,
+            { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
           ),
       });
     }

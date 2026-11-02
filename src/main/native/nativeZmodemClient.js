@@ -1,6 +1,6 @@
-const { spawn } = require("child_process");
 const { logToFile } = require("../utils/logger");
 const { getNativeServicesHostPath } = require("./nativeServices");
+const { spawnCoreService } = require("./coreSupervisor");
 
 /**
  * `zmodem-serve` sidecar 客户端（Phase 3 P3.5）。
@@ -92,14 +92,7 @@ class NativeZmodemClient {
       }
       let child;
       try {
-        const hostPath =
-          typeof this._options.getHostPath === "function"
-            ? this._options.getHostPath()
-            : getNativeServicesHostPath();
-        child = spawn(hostPath, ["zmodem-serve"], {
-          stdio: ["pipe", "pipe", "pipe"],
-          windowsHide: true,
-        });
+        child = spawnCoreService("zmodem-serve");
       } catch (error) {
         logToFile(`nativeZmodemClient spawn failed: ${error.message}`, "WARN");
         resolve(false);
