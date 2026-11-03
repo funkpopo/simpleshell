@@ -9,6 +9,8 @@ import {
   sameFingerprint,
   probeResumeState,
   resumeError,
+  atomicWrite,
+  renameReplacing,
 } from "../../src/main/file-transfer/transferResume.js";
 
 // 真实文件系统上的临时目录，每个用例独立
@@ -403,5 +405,58 @@ describe("resumeError", () => {
     expect(error.retryable).toBe(false);
     // 默认 errorKind
     expect(resumeError("x").errorKind).toBe("resume-conflict");
+  });
+});
+
+describe("atomicWrite 在目标被占用时", () => {
+  it("目标文件被读句柄打开时重试直到替换成功", async () => {
+    const target = path.join(root, "m.ssx-progress.json");
+    fs.writeFileSync(target, JSON.stringify({ n: 0 }));
+    // Windows 下打开中的文件无法被 rename 替换（EPERM），句柄关闭后应成功
+    const fd = fs.openSync(target, "r");
+    const release = setTimeout(() => fs.closeSync(fd), 60);
+    await atomicWrite(target, { n: 1 });
+    clearTimeout(release);
+    try {
+      fs.closeSync(fd);
+    } catch {
+      /* already closed */
+    }
+    expect(JSON.parse(fs.readFileSync(target, "utf8"))).toEqual({ n: 1 });
+    expect(
+      fs.readdirSync(root).filter((name) => name.endsWith(".tmp")),
+    ).toEqual([]);
+  });
+
+  it("重试耗尽后抛出原错误", async () => {
+    const error = await renameReplacing(
+      path.join(root, "missing.tmp"),
+      path.join(root, "x.json"),
+      [1],
+    ).catch((failure) => failure);
+    expect(error.code).toBe("ENOENT");
+  });
+});
+
+describe("TransferResumeStore 记录已移除", () => {
+  it("getRecord 对已移除的记录返回明确的 resume-missing", async () => {
+    const store = new TransferResumeStore(root);
+    const record = buildRecord(store);
+    await store.register(record);
+    await store.remove(record);
+    await expect(store.getRecord(record.id)).rejects.toMatchObject({
+      errorKind: "resume-missing",
+    });
+  });
+
+  it("list 跳过损坏或中途消失的记录，不影响其他任务", async () => {
+    const store = new TransferResumeStore(root);
+    const good = buildRecord(store);
+    await store.register(good);
+    await store.write(good, buildManifest(good));
+    fs.writeFileSync(path.join(root, `${"a".repeat(64)}.json`), "{broken");
+    const records = await store.list();
+    expect(records.map((entry) => entry.id)).toEqual([good.id]);
+    expect(records[0].manifest).toBeTruthy();
   });
 });

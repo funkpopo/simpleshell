@@ -69,6 +69,25 @@ async function readJson(filePath) {
   }
 }
 
+// Windows cannot replace a file while any handle has it open — a reader such
+// as list(), antivirus or the search indexer — and reports EPERM / EACCES /
+// EBUSY. Those holds are brief, so the replace is retried.
+const RENAME_RETRY_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+const RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80, 160, 320, 640];
+
+async function renameReplacing(from, to, delays = RENAME_RETRY_DELAYS_MS) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await fsp.rename(from, to);
+      return;
+    } catch (error) {
+      if (!RENAME_RETRY_CODES.has(error.code) || attempt >= delays.length)
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+    }
+  }
+}
+
 async function atomicWrite(filePath, value) {
   await fsp.mkdir(path.dirname(filePath), { recursive: true });
   const temporary = `${filePath}.${crypto.randomUUID()}.tmp`;
@@ -79,7 +98,12 @@ async function atomicWrite(filePath, value) {
   } finally {
     await handle.close();
   }
-  await fsp.rename(temporary, filePath);
+  try {
+    await renameReplacing(temporary, filePath);
+  } catch (error) {
+    await fsp.rm(temporary, { force: true });
+    throw error;
+  }
 }
 
 function validateManifest(manifest, record) {
@@ -233,8 +257,17 @@ class TransferResumeStore {
 
   async getRecord(id) {
     const record = await readJson(this.recordPath(id));
-    if (!record || record.id !== id || transferIdentity(record) !== id)
-      throw resumeError("Transfer recovery record is missing or invalid");
+    // Completing or discarding a transfer removes its record.
+    if (!record)
+      throw resumeError(
+        "This transfer is no longer resumable; refresh the list",
+        "resume-missing",
+      );
+    if (record.id !== id || transferIdentity(record) !== id)
+      throw resumeError(
+        "Transfer recovery record is invalid",
+        "resume-manifest-invalid",
+      );
     const expected = this.describe(record);
     if (
       expected.manifestPath !== record.manifestPath ||
@@ -256,7 +289,14 @@ class TransferResumeStore {
     for (const name of entries.filter((name) =>
       /^[a-f0-9]{64}\.json$/.test(name),
     )) {
-      const record = await this.getRecord(name.slice(0, -5));
+      let record;
+      try {
+        record = await this.getRecord(name.slice(0, -5));
+      } catch {
+        // Removed since readdir (the transfer finished or was discarded),
+        // or unreadable: nothing to resume or to show for it.
+        continue;
+      }
       try {
         const manifest = await this.read(record);
         records.push({
@@ -339,4 +379,5 @@ module.exports = {
   probeResumeState,
   resumeError,
   atomicWrite,
+  renameReplacing,
 };
