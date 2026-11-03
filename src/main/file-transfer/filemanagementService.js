@@ -33,6 +33,8 @@ const ResumableTransfer = require("./resumableTransfer");
 const {
   TransferResumeStore,
   connectionIdentity,
+  fingerprint,
+  probeResumeState,
   resumeError,
 } = require("./transferResume");
 const { validateAlgorithm } = require("./transferIntegrity");
@@ -134,11 +136,7 @@ class FilemanagementService {
           "_scheduleTransferSchedulerIdleShutdown",
           "_getTransferDisplayName",
         ],
-        fields: [
-          "transferEngineMode",
-          "activeTransfers",
-          "transferScheduler",
-        ],
+        fields: ["transferEngineMode", "activeTransfers", "transferScheduler"],
       }),
       {
         crypto,
@@ -195,6 +193,8 @@ class FilemanagementService {
         path,
         validateAlgorithm,
         resumeError,
+        fingerprint,
+        probeResumeState,
         fsp,
         nativeSftpClient,
         IPC_EVENT_CHANNELS,

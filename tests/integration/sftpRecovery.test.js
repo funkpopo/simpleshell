@@ -371,10 +371,9 @@ describe("sftp-resume", () => {
                 error.retryable === true,
             );
             assert.equal(validations, 2);
-            assert.equal(
-              (await context.store.read(context.record)).phase,
-              "integrity-failed",
-            );
+            // A failure leaves no residue: no manifest, no partial file.
+            assert.equal(await context.store.read(context.record), null);
+            assert.ok(!fs.existsSync(context.record.partPath));
             assert.ok(!fs.existsSync(localPath));
             await context.pool.shutdown();
           },
@@ -546,9 +545,14 @@ describe("sftp-resume", () => {
         }
 
         await check(
-          "source changes, corrupt manifests and modified retained bytes fail without truncation",
+          "source changes, corrupt manifests and modified retained bytes discard the state and transfer again",
           async () => {
-            for (const kind of ["source", "manifest", "destination"]) {
+            for (const kind of [
+              "source",
+              "manifest",
+              "destination",
+              "missing-partial",
+            ]) {
               const localPath = path.join(root, `conflict-${kind}.bin`);
               const remotePath = `/conflict-${kind}.bin`;
               await fsp.writeFile(server.resolve(remotePath), data);
@@ -577,22 +581,26 @@ describe("sftp-resume", () => {
                 await file.write(Buffer.from([data[0] ^ 0xff]), 0, 1, 0);
                 await file.close();
               }
-              const retained = await fsp.readFile(context.record.partPath);
+              // "Partial destination is missing": a retained manifest whose
+              // partial file is gone must not fail a new transfer.
+              if (kind === "missing-partial")
+                await fsp.rm(context.record.partPath);
               const resumed = run({
                 direction: "download",
                 localPath,
                 remotePath,
               });
-              await assert.rejects(resumed.runner.run(), (error) =>
-                [
-                  "source-changed",
-                  "resume-manifest-invalid",
-                  "resume-conflict",
-                ].includes(error.errorKind),
-              );
+              await resumed.runner.run();
               assert.deepEqual(
-                await fsp.readFile(context.record.partPath),
-                retained,
+                await fsp.readFile(localPath),
+                await fsp.readFile(server.resolve(remotePath)),
+              );
+              assert.equal(await resumed.store.read(resumed.record), null);
+              assert.ok(!fs.existsSync(resumed.record.partPath));
+              assert.ok(
+                runtime.logs.some((line) =>
+                  line.includes(`${resumed.record.id} retained state unusable`),
+                ),
               );
               await resumed.pool.shutdown();
             }
@@ -628,6 +636,11 @@ describe("sftp-resume", () => {
             );
             assert.equal(count, 2);
             assert.ok(!fs.existsSync(server.resolve("/remote-corrupt.bin")));
+            assert.ok(
+              !fs.existsSync(server.resolve(context.record.partPath)),
+              "the failed upload's remote partial file is removed",
+            );
+            assert.equal(await context.store.read(context.record), null);
             await context.pool.shutdown();
           },
         );
@@ -763,6 +776,19 @@ describe("sftp-resume", () => {
                 })
               ).success,
             );
+            // Listing removes retained state that can no longer be resumed.
+            const orphan = await pauseAgain("service-orphan.bin");
+            const orphanRecord = await service.resumeStore.getRecord(orphan.id);
+            await fsp.rm(orphanRecord.partPath);
+            assert.ok(
+              !(await service.listResumableTransfers()).tasks.some(
+                (item) => item.id === orphan.id,
+              ),
+            );
+            assert.ok(!fs.existsSync(orphanRecord.manifestPath));
+            await assert.rejects(service.resumeStore.getRecord(orphan.id), {
+              errorKind: "resume-missing",
+            });
             const disposable = await pauseAgain("service-cleanup.bin");
             assert.ok(
               (

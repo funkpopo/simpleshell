@@ -7,6 +7,8 @@ function createTransferRecovery(
     path,
     validateAlgorithm,
     resumeError,
+    fingerprint,
+    probeResumeState,
     fsp,
     nativeSftpClient,
     IPC_EVENT_CHANNELS,
@@ -18,6 +20,74 @@ function createTransferRecovery(
   return new (class TransferRecovery {
     constructor() {
       this.dependencies = dependencies;
+    }
+    /**
+     * Whether a retained transfer can still be continued: its manifest is
+     * readable and settled, and the source and partial file match it (the
+     * byte ranges themselves are verified when resuming). Remote files are
+     * checked only with a connected tab; otherwise the answer is unknown.
+     */
+    async _retainedStateUsable(record, tabId) {
+      const { manifest } = record;
+      if (
+        !manifest ||
+        ["preparing", "integrity-failed"].includes(manifest.phase)
+      )
+        return false;
+      const stat = async (filePath, local) => {
+        try {
+          return local
+            ? fingerprint(await fsp.stat(filePath), true)
+            : fingerprint(await nativeSftpClient.statFile(tabId, filePath));
+        } catch (error) {
+          if (
+            error.code === "ENOENT" ||
+            error.errorCode === "NATIVE_SFTP_NOT_FOUND"
+          )
+            return null;
+          throw error;
+        }
+      };
+      const download = record.direction === "download";
+      if (!download && !tabId) return null;
+      if (download && !tabId) {
+        // The remote source cannot be checked; the partial file can.
+        const destination = await stat(record.partPath, true);
+        return !!destination && destination.size <= manifest.totalSize;
+      }
+      const source = await stat(
+        download ? record.remotePath : record.localPath,
+        !download,
+      );
+      try {
+        await probeResumeState({
+          ...record,
+          fileSize: source?.size,
+          manifest,
+          source,
+          destination: await stat(record.partPath, download),
+          verifyRange: async () => {},
+        });
+        return true;
+      } catch (error) {
+        if (error.errorKind) return false;
+        throw error;
+      }
+    }
+    /** Removes a retained transfer's partial file and recovery state. */
+    async _discardRecord(record, tabId) {
+      if (record.direction === "download")
+        await fsp.rm(record.partPath, { force: true });
+      else {
+        const result = await nativeSftpClient.deleteFile(
+          tabId,
+          record.partPath,
+          false,
+        );
+        if (result?.errorCode !== "NATIVE_SFTP_NOT_FOUND")
+          nativeSftpClient.requireNativeSuccess(result);
+      }
+      await this.dependencies.resumeStore.remove(record);
     }
     async listResumableTransfers() {
       const records = await this.dependencies.resumeStore.list();
@@ -50,6 +120,33 @@ function createTransferRecovery(
           ) {
             tabId = sessionKey;
             break;
+          }
+        }
+        // Retained state that can no longer be resumed is only residue:
+        // clean it instead of listing it.
+        let usable = null;
+        try {
+          usable = await this._retainedStateUsable(record, tabId);
+        } catch (error) {
+          this.dependencies._log(
+            `Recovery check failed for ${record.id}: ${error.message}`,
+          );
+        }
+        if (usable === false && (record.direction === "download" || tabId)) {
+          let release = null;
+          try {
+            release = this.dependencies.resumeStore.acquire(record);
+            await this._discardRecord(record, tabId);
+            this.dependencies._log(
+              `Removed unusable retained transfer ${record.id} (${record.localPath})`,
+            );
+            continue;
+          } catch (error) {
+            this.dependencies._log(
+              `Could not remove retained transfer ${record.id}: ${error.message}`,
+            );
+          } finally {
+            release?.();
           }
         }
         result.push({
@@ -108,9 +205,7 @@ function createTransferRecovery(
         );
       const release = this.dependencies.resumeStore.acquire(record);
       try {
-        if (record.direction === "download")
-          await fsp.rm(record.partPath, { force: true });
-        else {
+        if (record.direction === "upload") {
           const config =
             await this.dependencies._resolveTransferSshConfig(tabId);
           if (
@@ -118,15 +213,8 @@ function createTransferRecovery(
             JSON.stringify(record.connection)
           )
             throw resumeError("Resume connection identity does not match");
-          const result = await nativeSftpClient.deleteFile(
-            tabId,
-            record.partPath,
-            false,
-          );
-          if (result?.errorCode !== "NATIVE_SFTP_NOT_FOUND")
-            nativeSftpClient.requireNativeSuccess(result);
         }
-        await this.dependencies.resumeStore.remove(record);
+        await this._discardRecord(record, tabId);
         return { success: true };
       } finally {
         release();

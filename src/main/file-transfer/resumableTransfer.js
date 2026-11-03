@@ -12,6 +12,24 @@ const {
 const isMissing = (error) =>
   error.code === "ENOENT" || error.errorCode === "NATIVE_SFTP_NOT_FOUND";
 
+// Errors meaning retained state from an earlier run cannot be continued.
+const STALE_STATE_KINDS = new Set([
+  "resume-conflict",
+  "resume-manifest-invalid",
+  "source-changed",
+  "integrity-mismatch",
+]);
+
+/**
+ * One file transfer with a persisted checkpoint (manifest + `.part` file).
+ *
+ * Only an interruption keeps the checkpoint (pause / cancel, a closed tab,
+ * quitting the app, a crash), so the transfer can be resumed. Success and
+ * failure both leave nothing behind: a failure removes the partial file and
+ * the recovery record. Retained state that turns out unusable (partial file
+ * gone or changed, source changed, broken manifest) is discarded and the
+ * file is transferred again from the start.
+ */
 class ResumableTransfer {
   constructor({
     store,
@@ -46,6 +64,10 @@ class ResumableTransfer {
       log,
     });
     this.manifest = null;
+    /** The run continues state from an earlier run. */
+    this.restored = false;
+    /** Data transfer started in this attempt. */
+    this.transferStarted = false;
     this.bytes = new Map();
     this.networkBytes = 0;
     this.sessionKey = `transfer-metadata:${record.id}`;
@@ -142,14 +164,13 @@ class ResumableTransfer {
     await this.store.write(this.record, this.manifest);
   }
 
-  async initializeTarget(exclusive) {
+  // The partial path is derived from the transfer identity, so a file
+  // already there is ours (left by a run whose cleanup failed): overwrite it.
+  async initializeTarget() {
     this.check();
     if (this.record.direction === "download") {
       await fsp.mkdir(path.dirname(this.record.partPath), { recursive: true });
-      const handle = await fsp.open(
-        this.record.partPath,
-        exclusive ? "wx" : "w",
-      );
+      const handle = await fsp.open(this.record.partPath, "w");
       try {
         if (this.manifest.segments.length > 1)
           await handle.truncate(this.manifest.totalSize);
@@ -158,10 +179,6 @@ class ResumableTransfer {
         await handle.close();
       }
     } else {
-      if (exclusive && (await this.destinationStat()))
-        throw resumeError(
-          "An untracked remote partial file already exists; clean it or restart explicitly",
-        );
       await this.remote({
         operation: "uploadFileToRemote",
         path: this.record.partPath,
@@ -198,207 +215,250 @@ class ResumableTransfer {
     });
   }
 
+  /** Removes the partial file and the recovery state, best effort. */
+  async discard() {
+    const { direction, partPath, id } = this.record;
+    try {
+      if (direction === "download") await fsp.rm(partPath, { force: true });
+      else
+        await this.remote({
+          operation: "deleteFile",
+          path: partPath,
+          isDirectory: false,
+        });
+    } catch (error) {
+      if (!isMissing(error))
+        this.log(
+          `SFTP ${id} could not remove partial file ${partPath}: ${error.message}`,
+        );
+    }
+    try {
+      await this.store.remove(this.record);
+    } catch (error) {
+      this.log(`SFTP ${id} could not remove recovery state: ${error.message}`);
+    }
+  }
+
   async run() {
     const release = this.store.acquire(this.record);
     try {
-      this.manifest = await this.store.read(this.record);
-      if (!this.manifest) {
-        const source = await this.sourceStat();
-        if (!source)
-          throw resumeError(
-            "Transfer source no longer exists",
-            "source-changed",
+      for (let fresh = false; ; fresh = true) {
+        try {
+          return await this.attempt();
+        } catch (error) {
+          // An interruption keeps the checkpoint for resuming.
+          if (this.signal.aborted) throw error;
+          const stale =
+            !fresh &&
+            this.restored &&
+            !this.transferStarted &&
+            STALE_STATE_KINDS.has(error.errorKind);
+          await this.discard();
+          if (!stale) throw error;
+          this.log(
+            `SFTP ${this.record.id} retained state unusable (${error.message}); transferring again`,
           );
-        this.manifest = {
-          version: 1,
-          ...this.record,
-          totalSize: source.size,
-          source,
-          destination: null,
-          segmentSize: this.segments(source.size)[0].length,
-          segments: this.segments(source.size).map(({ offset, length }) => ({
-            offset,
-            length,
-            done: false,
-          })),
-          algorithm: this.getAlgorithm(),
-          integrityRetries: 0,
-          phase: "preparing",
-          dirty: false,
-          createdAt: Date.now(),
-        };
-        await this.store.register(this.record);
-        await this.save();
-        await this.initializeTarget(true);
-      } else {
-        await this.store.register(this.record);
-        if (this.manifest.phase === "preparing")
-          throw resumeError(
-            "Transfer initialization was interrupted; restart this transfer",
-          );
-        if (this.manifest.phase === "integrity-failed")
-          throw resumeError(
-            "Integrity verification failed twice; restart this transfer",
-            "integrity-mismatch",
-          );
-        if (this.manifest.phase === "committing") return await this.commit();
-        if (this.manifest.phase === "resetting")
-          await this.initializeTarget(false);
-      }
-      this.onRecord(this.record.id);
-      while (true) {
-        this.check();
-        const resume = await this.probe();
-        const single = this.manifest.segments.length === 1;
-        this.manifest.segments.forEach((segment, index) =>
-          this.bytes.set(
-            index,
-            single ? resume.resumeOffset : segment.done ? segment.length : 0,
-          ),
-        );
-        this.report();
-        this.manifest.dirty = true;
-        this.manifest.phase = "transferring";
-        await this.save();
-        const tasks = this.manifest.segments.flatMap((segment, index) =>
-          segment.done
-            ? []
-            : [
-                {
-                  taskId: `${this.record.id}:${index}:${this.manifest.integrityRetries}`,
-                  direction: this.record.direction,
-                  localPath:
-                    this.record.direction === "download"
-                      ? this.record.partPath
-                      : this.record.localPath,
-                  remotePath:
-                    this.record.direction === "upload"
-                      ? this.record.partPath
-                      : this.record.remotePath,
-                  fileName: path.basename(this.record.localPath),
-                  segmentIndex: index,
-                  segmentCount: this.manifest.segments.length,
-                  totalBytes: segment.length,
-                  segmentOffset: segment.offset,
-                  segmentLength: segment.length,
-                  localWriteFlags: "r+",
-                  remoteWriteFlags: "r+",
-                  ensureParentDirectories: false,
-                },
-              ],
-        );
-        const attemptOffsets = new Map();
-        const result = await this.pool.runTasks({
-          transferKey: this.transferKey,
-          tabId: this.tabId,
-          sshConfig: this.sshConfig,
-          tasks,
-          maxConcurrency: this.maxConcurrency,
-          beforeAttempt: async ({ task, attempt }) => {
-            this.check();
-            if (!sameFingerprint(await this.sourceStat(), this.manifest.source))
-              throw resumeError("Transfer source changed", "source-changed");
-            const segment = this.manifest.segments[task.segmentIndex];
-            let offset = segment.offset;
-            if (single) {
-              const state = attempt === 1 ? resume : await this.probe();
-              offset = state.resumeOffset;
-            }
-            attemptOffsets.set(task.segmentIndex, offset - segment.offset);
-            this.bytes.set(task.segmentIndex, offset - segment.offset);
-            this.report();
-            this.log(
-              `SFTP ${this.record.id} segment=${task.segmentIndex} attempt=${attempt} offset=${offset} length=${segment.offset + segment.length - offset}`,
-            );
-            return {
-              ...task,
-              segmentOffset: offset,
-              segmentLength: segment.offset + segment.length - offset,
-              skipTransfer:
-                offset === this.manifest.totalSize &&
-                this.manifest.totalSize > 0,
-            };
-          },
-          onProgress: (message) => {
-            const index = message.segmentIndex;
-            const base = attemptOffsets.get(index) || 0;
-            this.bytes.set(
-              index,
-              Math.min(
-                this.manifest.segments[index].length,
-                base + message.transferredBytes,
-              ),
-            );
-            this.networkBytes += message.deltaBytes;
-            this.report();
-          },
-          onTaskDone: async (message) => {
-            const segment = this.manifest.segments[message.segmentIndex];
-            segment.done = true;
-            this.bytes.set(message.segmentIndex, segment.length);
-            await this.save();
-            this.report();
-          },
-        });
-        this.check();
-        const failure = result.results.find(
-          (item) => item.status === "rejected",
-        );
-        if (failure) throw failure.reason;
-        if (!sameFingerprint(await this.sourceStat(), this.manifest.source))
-          throw resumeError("Transfer source changed", "source-changed");
-        this.manifest.destination = await this.destinationStat();
-        if (this.manifest.destination?.size !== this.manifest.totalSize)
-          throw resumeError("Transferred file size is inconsistent");
-        this.manifest.dirty = false;
-        this.manifest.algorithm =
-          this.getAlgorithm() || this.manifest.algorithm;
-        this.manifest.phase = "validating";
-        await this.save();
-        let integrity = null;
-        if (this.manifest.algorithm) {
-          this.onState("validating", { algorithm: this.manifest.algorithm });
-          try {
-            integrity = await this.verify(this.manifest.algorithm);
-          } catch (error) {
-            if (error.errorKind !== "integrity-mismatch") throw error;
-            this.manifest.integrity = {
-              algorithm: error.algorithm,
-              localHash: error.localHash,
-              remoteHash: error.remoteHash,
-              verified: false,
-            };
-            if (this.manifest.integrityRetries === 1) {
-              this.manifest.phase = "integrity-failed";
-              await this.save();
-              throw error;
-            }
-            this.manifest.integrityRetries = 1;
-            this.manifest.phase = "resetting";
-            this.manifest.segments.forEach((segment) => {
-              segment.done = false;
-            });
-            await this.save();
-            this.onState("retransmitting", this.manifest.integrity);
-            this.log(
-              `SFTP ${this.record.id} integrity mismatch; full retransmission 1/1`,
-            );
-            await this.initializeTarget(false);
-            this.bytes.clear();
-            continue;
-          }
         }
-        this.manifest.integrity = integrity;
-        this.manifest.phase = "committing";
-        await this.save();
-        return await this.commit();
       }
     } finally {
       // dirty=true is intentional on interrupted writes. Recovery verifies the
-      // retained ranges, so an unavailable server never loses a checkpoint.
+      // retained ranges, so an interruption never loses a checkpoint.
       release();
       native.closeNativeSession(this.sessionKey);
       native.closeNativeSession(`${this.sessionKey}:checksum`);
+    }
+  }
+
+  async attempt() {
+    this.transferStarted = false;
+    this.bytes.clear();
+    // Set first: an unreadable manifest is retained state too.
+    this.restored = true;
+    this.manifest = await this.store.read(this.record);
+    if (!this.manifest) {
+      this.restored = false;
+      const source = await this.sourceStat();
+      if (!source)
+        throw resumeError("Transfer source no longer exists", "source-changed");
+      this.manifest = {
+        version: 1,
+        ...this.record,
+        totalSize: source.size,
+        source,
+        destination: null,
+        segmentSize: this.segments(source.size)[0].length,
+        segments: this.segments(source.size).map(({ offset, length }) => ({
+          offset,
+          length,
+          done: false,
+        })),
+        algorithm: this.getAlgorithm(),
+        integrityRetries: 0,
+        phase: "preparing",
+        dirty: false,
+        createdAt: Date.now(),
+      };
+      await this.store.register(this.record);
+      await this.save();
+      await this.initializeTarget();
+    } else {
+      await this.store.register(this.record);
+      if (this.manifest.phase === "preparing")
+        throw resumeError(
+          "Transfer initialization was interrupted; restart this transfer",
+        );
+      if (this.manifest.phase === "integrity-failed")
+        throw resumeError(
+          "Integrity verification failed twice; restart this transfer",
+          "integrity-mismatch",
+        );
+      if (this.manifest.phase === "committing") return await this.commit();
+      if (this.manifest.phase === "resetting") await this.initializeTarget();
+    }
+    this.onRecord(this.record.id);
+    while (true) {
+      this.check();
+      const resume = await this.probe();
+      const single = this.manifest.segments.length === 1;
+      this.manifest.segments.forEach((segment, index) =>
+        this.bytes.set(
+          index,
+          single ? resume.resumeOffset : segment.done ? segment.length : 0,
+        ),
+      );
+      this.report();
+      this.manifest.dirty = true;
+      this.manifest.phase = "transferring";
+      await this.save();
+      const tasks = this.manifest.segments.flatMap((segment, index) =>
+        segment.done
+          ? []
+          : [
+              {
+                taskId: `${this.record.id}:${index}:${this.manifest.integrityRetries}`,
+                direction: this.record.direction,
+                localPath:
+                  this.record.direction === "download"
+                    ? this.record.partPath
+                    : this.record.localPath,
+                remotePath:
+                  this.record.direction === "upload"
+                    ? this.record.partPath
+                    : this.record.remotePath,
+                fileName: path.basename(this.record.localPath),
+                segmentIndex: index,
+                segmentCount: this.manifest.segments.length,
+                totalBytes: segment.length,
+                segmentOffset: segment.offset,
+                segmentLength: segment.length,
+                localWriteFlags: "r+",
+                remoteWriteFlags: "r+",
+                ensureParentDirectories: false,
+              },
+            ],
+      );
+      const attemptOffsets = new Map();
+      this.transferStarted = true;
+      const result = await this.pool.runTasks({
+        transferKey: this.transferKey,
+        tabId: this.tabId,
+        sshConfig: this.sshConfig,
+        tasks,
+        maxConcurrency: this.maxConcurrency,
+        beforeAttempt: async ({ task, attempt }) => {
+          this.check();
+          if (!sameFingerprint(await this.sourceStat(), this.manifest.source))
+            throw resumeError("Transfer source changed", "source-changed");
+          const segment = this.manifest.segments[task.segmentIndex];
+          let offset = segment.offset;
+          if (single) {
+            const state = attempt === 1 ? resume : await this.probe();
+            offset = state.resumeOffset;
+          }
+          attemptOffsets.set(task.segmentIndex, offset - segment.offset);
+          this.bytes.set(task.segmentIndex, offset - segment.offset);
+          this.report();
+          this.log(
+            `SFTP ${this.record.id} segment=${task.segmentIndex} attempt=${attempt} offset=${offset} length=${segment.offset + segment.length - offset}`,
+          );
+          return {
+            ...task,
+            segmentOffset: offset,
+            segmentLength: segment.offset + segment.length - offset,
+            skipTransfer:
+              offset === this.manifest.totalSize && this.manifest.totalSize > 0,
+          };
+        },
+        onProgress: (message) => {
+          const index = message.segmentIndex;
+          const base = attemptOffsets.get(index) || 0;
+          this.bytes.set(
+            index,
+            Math.min(
+              this.manifest.segments[index].length,
+              base + message.transferredBytes,
+            ),
+          );
+          this.networkBytes += message.deltaBytes;
+          this.report();
+        },
+        onTaskDone: async (message) => {
+          const segment = this.manifest.segments[message.segmentIndex];
+          segment.done = true;
+          this.bytes.set(message.segmentIndex, segment.length);
+          await this.save();
+          this.report();
+        },
+      });
+      this.check();
+      const failure = result.results.find((item) => item.status === "rejected");
+      if (failure) throw failure.reason;
+      if (!sameFingerprint(await this.sourceStat(), this.manifest.source))
+        throw resumeError("Transfer source changed", "source-changed");
+      this.manifest.destination = await this.destinationStat();
+      if (this.manifest.destination?.size !== this.manifest.totalSize)
+        throw resumeError("Transferred file size is inconsistent");
+      this.manifest.dirty = false;
+      this.manifest.algorithm = this.getAlgorithm() || this.manifest.algorithm;
+      this.manifest.phase = "validating";
+      await this.save();
+      let integrity = null;
+      if (this.manifest.algorithm) {
+        this.onState("validating", { algorithm: this.manifest.algorithm });
+        try {
+          integrity = await this.verify(this.manifest.algorithm);
+        } catch (error) {
+          if (error.errorKind !== "integrity-mismatch") throw error;
+          this.manifest.integrity = {
+            algorithm: error.algorithm,
+            localHash: error.localHash,
+            remoteHash: error.remoteHash,
+            verified: false,
+          };
+          if (this.manifest.integrityRetries === 1) {
+            this.manifest.phase = "integrity-failed";
+            await this.save();
+            throw error;
+          }
+          this.manifest.integrityRetries = 1;
+          this.manifest.phase = "resetting";
+          this.manifest.segments.forEach((segment) => {
+            segment.done = false;
+          });
+          await this.save();
+          this.onState("retransmitting", this.manifest.integrity);
+          this.log(
+            `SFTP ${this.record.id} integrity mismatch; full retransmission 1/1`,
+          );
+          await this.initializeTarget();
+          this.bytes.clear();
+          continue;
+        }
+      }
+      this.manifest.integrity = integrity;
+      this.manifest.phase = "committing";
+      await this.save();
+      return await this.commit();
     }
   }
 
