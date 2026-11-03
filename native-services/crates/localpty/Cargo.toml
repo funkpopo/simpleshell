@@ -1,0 +1,16 @@
+[package]
+name = "localpty"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+core-protocol.workspace = true
+bytes.workspace = true
+portable-pty = "0.9.0"
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+core-protocol = { workspace = true, features = ["testing"] }

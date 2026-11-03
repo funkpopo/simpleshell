@@ -1,23 +1,15 @@
 const os = require("os");
-const si = require("systeminformation");
+const { querySystemMetrics } = require("../native/nativeSystemMetrics");
 const { t: mainT, getUiLanguage } = require("../../shared/mainI18n");
 const configService = require("../settings/configService");
 
 const unknownLabel = () =>
   mainT("common.unknown", { lng: getUiLanguage(configService) });
 
+// pid, name, cpu / memory (percent of the machine), memoryBytes; largest first.
 async function getProcessList() {
   try {
-    const processes = await si.processes();
-    return processes.list
-      .map((p) => ({
-        pid: p.pid,
-        name: p.name,
-        cpu: p.cpu,
-        memory: p.mem, // Memory usage in percent
-        memoryBytes: p.mem_rss * 1024, // mem_rss is in KB
-      }))
-      .sort((a, b) => b.memory - a.memory);
+    return await querySystemMetrics("processes");
   } catch (error) {
     console.error("Error getting process list:", error);
     return [];
@@ -26,11 +18,10 @@ async function getProcessList() {
 
 async function getCpuUsage() {
   try {
-    // 使用systeminformation库获取实时CPU使用率
-    const currentLoad = await si.currentLoad();
-    return Math.round(currentLoad.currentLoad);
+    const { cpu } = await querySystemMetrics("cpu");
+    return Math.round(cpu);
   } catch (error) {
-    console.error("Error getting CPU usage with systeminformation:", error);
+    console.error("Error getting CPU usage:", error);
   }
 }
 

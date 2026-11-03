@@ -33,8 +33,6 @@ describe("local-terminal-embedded", () => {
     const sidebarSource = read(
       "src/renderer/features/terminal/LocalTerminalSidebar.jsx",
     );
-    const webpackMainSource = read("webpack.main.config.js");
-    const forgeConfigSource = read("forge.config.js");
     const localTerminalConfigSource = read(
       "src/main/local-terminal/local-terminal-config.js",
     );
@@ -48,8 +46,8 @@ describe("local-terminal-embedded", () => {
     function assertEmbeddedPtyManager() {
       assert.match(
         managerSource,
-        /require\(["']node-pty["']\)/,
-        "local terminal manager must use node-pty",
+        /require\(["']\.\.\/native\/nativePty["']\)/,
+        "local terminal manager must use the core's pty service",
       );
       assert.match(
         managerSource,
@@ -58,7 +56,7 @@ describe("local-terminal-embedded", () => {
       );
       assert.match(
         managerSource,
-        /pty\.spawn/,
+        /await spawnPty\(/,
         "local terminal manager must spawn a PTY",
       );
       assert.match(
@@ -207,74 +205,6 @@ describe("local-terminal-embedded", () => {
       );
     }
 
-    function assertWebpackCopiesNodePtyPrebuilds() {
-      assert.match(
-        webpackMainSource,
-        /node_modules["'],\s*["']node-pty["'],\s*["']prebuilds["']/,
-        "main webpack config must copy node-pty prebuilds",
-      );
-      assert.match(
-        webpackMainSource,
-        /\.webpack["'],\s*["']main["'],\s*["']prebuilds["']/,
-        "node-pty prebuilds must be copied next to the bundled main process",
-      );
-      assert.match(
-        webpackMainSource,
-        /node_modules["'],\s*["']node-pty["'],\s*["']lib["'],\s*["']worker["']/,
-        "main webpack config must copy node-pty worker helpers",
-      );
-      assert.match(
-        webpackMainSource,
-        /\.webpack["'],\s*["']main["'],\s*["']worker["']/,
-        "node-pty worker helpers must be copied next to the bundled main process",
-      );
-      assert.match(
-        webpackMainSource,
-        /node_modules["'],\s*["']node-pty["'],\s*["']lib["'],\s*["']shared["']/,
-        "main webpack config must copy node-pty shared helpers",
-      );
-      assert.match(
-        webpackMainSource,
-        /conpty_console_list_agent\.js/,
-        "main webpack config must copy node-pty console list child-process helper",
-      );
-      assert.match(
-        webpackMainSource,
-        /copyFileIfExists[\s\S]*utils\.js/,
-        "main webpack config must copy node-pty utils helper for child-process helper",
-      );
-      assert.match(
-        webpackMainSource,
-        /fs\.cpSync\([^)]*recursive:\s*true/s,
-        "node-pty prebuild copy must preserve nested helper files",
-      );
-      assert.match(
-        forgeConfigSource,
-        /\.webpack\/main\/prebuilds/,
-        "packaged app must unpack node-pty prebuilds from asar",
-      );
-      assert.match(
-        forgeConfigSource,
-        /\.webpack\\{2}main\\{2}prebuilds/,
-        "packaged app must include Windows-style node-pty prebuild unpack path",
-      );
-      assert.match(
-        forgeConfigSource,
-        /\.webpack\/main\/worker/,
-        "packaged app must unpack node-pty worker helpers from asar",
-      );
-      assert.match(
-        forgeConfigSource,
-        /\.webpack\/main\/shared/,
-        "packaged app must unpack node-pty shared helpers from asar",
-      );
-      assert.match(
-        forgeConfigSource,
-        /conpty_console_list_agent\.js/,
-        "packaged app must unpack node-pty console list child-process helper",
-      );
-    }
-
     function assertRendererLocalTabSupport() {
       assert.match(
         webTerminalSource,
@@ -337,7 +267,6 @@ describe("local-terminal-embedded", () => {
       assertEmbeddedPtyManager();
       assertIpcAndPreloadSurface();
       assertLocalConfigNormalizationBlocksGuiCommands();
-      assertWebpackCopiesNodePtyPrebuilds();
       assertRendererLocalTabSupport();
       console.log("PASS local terminal embedded checks");
     }

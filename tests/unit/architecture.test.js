@@ -597,3 +597,26 @@ describe("sftp-native-boundary", () => {
     await main();
   });
 });
+
+describe("no-node-native-modules", () => {
+  it("keeps native code in simpleshell-core instead of Node addons", () => {
+    const assert = require("node:assert/strict");
+    const pkg = require("../../package.json");
+    const declared = { ...pkg.dependencies, ...pkg.devDependencies };
+    // Replaced by the core's pty, serial-port, telnet and system-metrics
+    // services; an addon would bring back Electron rebuilds.
+    for (const name of [
+      "node-pty",
+      "serialport",
+      "telnet-client",
+      "systeminformation",
+    ]) {
+      assert.equal(declared[name], undefined, `${name} must not return`);
+    }
+    const forgeConfig = require("node:fs").readFileSync(
+      _path.join(_repoRoot, "forge.config.js"),
+      "utf8",
+    );
+    assert.match(forgeConfig, /onlyModules:\s*\[\]/);
+  });
+});

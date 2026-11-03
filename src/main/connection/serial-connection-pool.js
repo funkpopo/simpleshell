@@ -7,8 +7,7 @@
  */
 
 const BaseConnectionPool = require("./base-connection-pool");
-// serialport 含原生绑定，冷启动加载可达数百毫秒；仅在真正打开串口时加载
-const loadSerialPort = () => require("serialport").SerialPort;
+const { NativeSerialPort } = require("../native/nativeSerialPort");
 const {
   classifyConnectionFailure,
 } = require("../../shared/connectionErrorAdvice");
@@ -69,29 +68,19 @@ function normalizeSerialConfig(config = {}) {
 }
 
 /**
- * 将归一化配置转换为 serialport 打开参数
+ * 将归一化配置转换为 core `serial-port` 打开参数
  * @param {Object} options - 归一化后的串口配置
- * @returns {Object} SerialPort open options
+ * @returns {Object} NativeSerialPort options
  */
 function buildSerialOpenOptions(options) {
-  const openOptions = {
+  return {
     path: options.path,
     baudRate: options.baudRate,
     dataBits: options.dataBits,
     stopBits: options.stopBits,
     parity: options.parity,
-    autoOpen: true,
+    flowControl: options.flowControl,
   };
-
-  if (options.flowControl === "rtscts") {
-    openOptions.rtscts = true;
-  } else if (options.flowControl === "xonxoff") {
-    openOptions.xon = true;
-    openOptions.xoff = true;
-    openOptions.xany = true;
-  }
-
-  return openOptions;
 }
 
 /**
@@ -144,8 +133,7 @@ class SerialConnectionPool extends BaseConnectionPool {
       const openOptions = buildSerialOpenOptions(options);
 
       try {
-        const SerialPort = loadSerialPort();
-        port = new SerialPort(openOptions);
+        port = new NativeSerialPort(openOptions);
       } catch (err) {
         reject(this._handleSerialError(err, options, connectionKey));
         return;
@@ -328,9 +316,7 @@ class SerialConnectionPool extends BaseConnectionPool {
       lowerMessage.includes("file not found") ||
       lowerMessage.includes("no such file") ||
       lowerMessage.includes("cannot find") ||
-      // USB 断开/句柄失效（serialport v12 @serialport/stream unix-read
-      // 标记 err.disconnected == true，C++ 层报错文本含 strerror(errno)）
-      err?.disconnected === true ||
+      // USB 断开/句柄失效：core 读取失败报 EIO，系统错误文本保留在消息中
       code === "EBADF" ||
       code === "ENXIO" ||
       code === "EIO" ||
@@ -375,8 +361,7 @@ class SerialConnectionPool extends BaseConnectionPool {
 
     // 创建增强的错误对象（使用简洁的错误消息）
     const enhancedError = new Error(errorMessage);
-    enhancedError.code =
-      err?.code || (err?.disconnected ? "EDISCONNECT" : null);
+    enhancedError.code = err?.code || null;
     enhancedError.originalError = err;
     enhancedError.connectionKey = connectionKey;
     enhancedError.serialConfig = {

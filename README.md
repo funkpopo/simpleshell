@@ -216,13 +216,11 @@ Source is organized by runtime. Area-specific conventions live in README files n
 
 - **[xterm.js](https://xtermjs.org/)** 6.1.0-beta.167 - Terminal emulator + add-ons
   - `@xterm/addon-fit`, `@xterm/addon-webgl`
-- **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - SSH/SFTP client
-- **[node-pty](https://github.com/microsoft/node-pty)** 1.2.0-beta.11 - Pseudo terminal support
-- **[telnet-client](https://www.npmjs.com/package/telnet-client)** 2.2.13 - Telnet client
+- **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - fallback SSH backend (the default SSH client runs in the Rust core)
 
 ### **Native Services Host**
 
-- **Rust core (`native-services/`)** - resident `simpleshell-core` process hosting SFTP, transfers, port forwarding, ZMODEM and network services as multiplexed streams (see `native-services/README.md`)
+- **Rust core (`native-services/`)** - resident `simpleshell-core` process hosting SSH terminals, the terminal output pipeline, SFTP, transfers, port forwarding, ZMODEM, local pseudo terminals (ConPTY / portable-pty), serial ports, Telnet, system metrics and network services as multiplexed streams (see `native-services/README.md`). The app ships no Node native addons.
 
 ### **Editing, Preview & Rendering**
 
@@ -235,7 +233,6 @@ Source is organized by runtime. Area-specific conventions live in README files n
 
 - **i18next** + **react-i18next** - Internationalization
 - **react-simple-maps** - World map visualization
-- **systeminformation** - System info collection
 - Proxy support: `http-proxy-agent`, `https-proxy-agent`, `socks-proxy-agent`
 - Performance helpers: `react-window`
 

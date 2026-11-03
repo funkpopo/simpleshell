@@ -1,26 +1,10 @@
 const path = require("path");
 const fs = require("fs");
 
-const copyDirectoryIfExists = (srcDir, destDir) => {
-  if (!fs.existsSync(srcDir)) {
-    return;
-  }
-
-  fs.rmSync(destDir, { recursive: true, force: true });
-  fs.cpSync(srcDir, destDir, { recursive: true });
-};
-
-const copyFileIfExists = (srcFile, destFile) => {
-  if (!fs.existsSync(srcFile)) {
-    return;
-  }
-
-  fs.mkdirSync(path.dirname(destFile), { recursive: true });
-  fs.copyFileSync(srcFile, destFile);
-};
-
-// Native-module rules apply to the main bundle only: the asset relocator injects
-// a `__dirname` runtime that breaks the sandboxed renderer and preload.
+// Asset relocation for the ssh2 fallback backend (its Pageant helper
+// `pagent.exe` and optional crypto binding); removed together with ssh2.
+// Main bundle only: the relocator injects a `__dirname` runtime that breaks
+// the sandboxed renderer and preload.
 const nativeModuleRules = [
   {
     // We're specifying native_modules in the test because the asset relocator loader generates a
@@ -101,54 +85,6 @@ module.exports = (_env, { mode }) => ({
               }
             });
           }
-
-          // node-pty resolves native modules relative to the bundled main file.
-          // Keep the upstream directory layout so conpty.node and its helper
-          // files are available at runtime in Electron.
-          copyDirectoryIfExists(
-            path.join(__dirname, "node_modules", "node-pty", "prebuilds"),
-            path.join(__dirname, ".webpack", "main", "prebuilds"),
-          );
-          // @serialport/bindings-cpp resolves its native binding via node-gyp-build
-          // relative to the bundled main file's parent directory (.webpack), so the
-          // prebuilds must be copied there for both dev and packaged runs.
-          copyDirectoryIfExists(
-            path.join(
-              __dirname,
-              "node_modules",
-              "@serialport",
-              "bindings-cpp",
-              "prebuilds",
-            ),
-            path.join(__dirname, ".webpack", "prebuilds"),
-          );
-          copyDirectoryIfExists(
-            path.join(__dirname, "node_modules", "node-pty", "lib", "worker"),
-            path.join(__dirname, ".webpack", "main", "worker"),
-          );
-          copyDirectoryIfExists(
-            path.join(__dirname, "node_modules", "node-pty", "lib", "shared"),
-            path.join(__dirname, ".webpack", "main", "shared"),
-          );
-          copyFileIfExists(
-            path.join(
-              __dirname,
-              "node_modules",
-              "node-pty",
-              "lib",
-              "conpty_console_list_agent.js",
-            ),
-            path.join(
-              __dirname,
-              ".webpack",
-              "main",
-              "conpty_console_list_agent.js",
-            ),
-          );
-          copyFileIfExists(
-            path.join(__dirname, "node_modules", "node-pty", "lib", "utils.js"),
-            path.join(__dirname, ".webpack", "main", "utils.js"),
-          );
         });
       },
     },

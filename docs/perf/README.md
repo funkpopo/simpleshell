@@ -5,18 +5,18 @@ servers: 48 MiB of terminal output, 1000 × 1 KiB files, 4 tabs. `baseline.json`
 is the reference captured before the Rust migration; each phase is compared
 with it before merging.
 
-| metric                           | baseline | P0   | P1   | P2   | P3   |
-| -------------------------------- | -------- | ---- | ---- | ---- | ---- |
-| terminal throughput (MB/s)       | 8.87     | 11.6 | 11.2 | 11.3 | 25.8 |
-| main event-loop delay p99 (ms)   | 28.0     | 28.0 | 22.6 | 25.5 | 10.3 |
-| health-check false positive rate | 0        | 0    | 0    | 0    | 0    |
-| tab open → first prompt (ms)     | 4.9      | 4.8  | 4.9  | 2.1  | 2.1  |
-| native processes per tab         | 1.25     | 0.25 | 0.25 | 0.25 | 0.25 |
-| total RSS, 4 tabs (MB)           | 442      | 280  | 266  | 228  | 124  |
-| upload 1000 files (ms)           | 12430    | 5609 | 2263 | 2370 | 1986 |
-| upload 1000 files: handshakes    | 1000     | 1000 | 0    | 0    | 0    |
-| download 1000 files (ms)         | 12397    | 5389 | 2331 | 1726 | 1671 |
-| download 1000 files: handshakes  | 1000     | 1000 | 0    | 0    | 0    |
+| metric                           | baseline | P0   | P1   | P2   | P3   | P4   |
+| -------------------------------- | -------- | ---- | ---- | ---- | ---- | ---- |
+| terminal throughput (MB/s)       | 8.87     | 11.6 | 11.2 | 11.3 | 25.8 | 26.5 |
+| main event-loop delay p99 (ms)   | 28.0     | 28.0 | 22.6 | 25.5 | 10.3 | 7.4  |
+| health-check false positive rate | 0        | 0    | 0    | 0    | 0    | 0    |
+| tab open → first prompt (ms)     | 4.9      | 4.8  | 4.9  | 2.1  | 2.1  | 2.0  |
+| native processes per tab         | 1.25     | 0.25 | 0.25 | 0.25 | 0.25 | 0.25 |
+| total RSS, 4 tabs (MB)           | 442      | 280  | 266  | 228  | 124  | 123  |
+| upload 1000 files (ms)           | 12430    | 5609 | 2263 | 2370 | 1986 | 1889 |
+| upload 1000 files: handshakes    | 1000     | 1000 | 0    | 0    | 0    | 0    |
+| download 1000 files (ms)         | 12397    | 5389 | 2331 | 1726 | 1671 | 1682 |
+| download 1000 files: handshakes  | 1000     | 1000 | 0    | 0    | 0    | 0    |
 
 Platform: win32-x64, Node 24.20.
 
@@ -49,3 +49,9 @@ Platform: win32-x64, Node 24.20.
   echo and prompt latency do not pay the batch delay. The load test's pipe
   variant keeps output in flight at ~540 KiB per terminal (renderer
   threshold 512 KiB) versus ~2.2 MiB on the JS path.
+- **P4** (no Node native addons): local terminals, Mosh, serial, Telnet and
+  local metrics moved into the core; none of them is on the measured paths,
+  so the column is a regression check. Single runs vary by several hundred
+  ms on the 1000-file download (one run read 2.9 s); interleaved A/B runs of
+  the P3 and P4 cores gave the same times (≈1.7 s), and the table uses the
+  last interleaved P4 run.

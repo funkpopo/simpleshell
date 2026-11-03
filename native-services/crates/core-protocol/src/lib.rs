@@ -4,6 +4,8 @@
 pub mod control;
 pub mod frame;
 pub mod service;
+#[cfg(feature = "testing")]
+pub mod testing;
 
 pub use control::{Control, ControlEnvelope, SCHEMA_VERSION};
 pub use frame::{Frame, FrameCodec, FrameKind};

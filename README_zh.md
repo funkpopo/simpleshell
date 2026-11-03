@@ -213,13 +213,11 @@ simpleshell/
 
 - **[xterm.js](https://xtermjs.org/)** 6.1.0-beta.167 - 终端模拟器 + 常用 Addon
   - `@xterm/addon-fit`, `@xterm/addon-webgl`
-- **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - SSH/SFTP 客户端
-- **[node-pty](https://github.com/microsoft/node-pty)** 1.2.0-beta.11 - 伪终端支持
-- **[telnet-client](https://www.npmjs.com/package/telnet-client)** 2.2.13 - Telnet 客户端
+- **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - 回退 SSH 后端（默认 SSH 客户端运行在 Rust core 中）
 
 ### **原生服务 Host**
 
-- **Rust core（`native-services/`）** - 常驻 `simpleshell-core` 进程以多路复用流承载 SFTP、传输、端口转发、ZMODEM 与网络服务（见 `native-services/README.md`）
+- **Rust core（`native-services/`）** - 常驻 `simpleshell-core` 进程以多路复用流承载 SSH 终端、终端输出管线、SFTP、传输、端口转发、ZMODEM、本地伪终端（ConPTY / portable-pty）、串口、Telnet、系统指标与网络服务（见 `native-services/README.md`）。应用不再包含 Node 原生插件。
 
 ### **编辑、预览与渲染**
 
@@ -232,7 +230,6 @@ simpleshell/
 
 - **i18next** + **react-i18next** - 国际化
 - **react-simple-maps** - 世界地图可视化
-- **systeminformation** - 系统信息采集
 - 代理支持：`http-proxy-agent`、`https-proxy-agent`、`socks-proxy-agent`
 - 性能辅助：`react-window`
 

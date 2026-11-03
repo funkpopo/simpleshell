@@ -4,7 +4,7 @@
  */
 
 const BaseConnectionPool = require("./base-connection-pool");
-const Telnet = require("telnet-client");
+const { NativeTelnet } = require("../native/nativeTelnet");
 
 /**
  * Telnet连接池类
@@ -46,7 +46,7 @@ class TelnetConnectionPool extends BaseConnectionPool {
     this._logInfo(`创建新Telnet连接: ${connectionKey}`);
 
     return new Promise((resolve, reject) => {
-      const telnet = new Telnet();
+      const telnet = new NativeTelnet();
       const connectionInfo = {
         client: telnet,
         config: telnetConfig,
@@ -60,16 +60,14 @@ class TelnetConnectionPool extends BaseConnectionPool {
       };
 
       // Telnet连接参数
+      // The core answers the first login / password prompts itself.
       const params = {
         host: telnetConfig.host,
         port: telnetConfig.port || 23,
-        negotiationMandatory: false,
         timeout: this.config.connectionTimeout,
         username: telnetConfig.username,
         password: telnetConfig.password,
-        passwordPrompt: /Password:|密码:/i,
-        loginPrompt: /login:|用户名:/i,
-        shellPrompt: /#|\$|>|%/,
+        term: "xterm-256color",
       };
 
       // 监听错误事件

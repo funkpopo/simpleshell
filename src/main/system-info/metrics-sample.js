@@ -6,14 +6,15 @@
  * - 内存使用率（%）与总量
  * - 网络吞吐（下行/上行 bytes/sec，与上次采样的差分）
  * - 磁盘 IO（读/写 bytes/sec，与上次采样的差分）
- * - 磁盘分区用量（df / wmic / systeminformation fsSize）
+ * - 磁盘分区用量（df / wmic / 本地 core）
  *
- * 本地走 systeminformation；远程经 SSH 执行合并命令读取 /proc，
- * 差分状态按 sshClient 存放在 WeakMap 中（连接断开自动回收）。
+ * 本地走 simpleshell-core 的 system-metrics 服务（速率由 core 差分）；
+ * 远程经 SSH 执行合并命令读取 /proc，差分状态按 sshClient 存放在
+ * WeakMap 中（连接断开自动回收）。
  */
 
 const os = require("os");
-const si = require("systeminformation");
+const { querySystemMetrics } = require("../native/nativeSystemMetrics");
 const { isSshClientUsable } = require("../utils/ssh-utils");
 
 const SECTOR_SIZE = 512;
@@ -30,8 +31,6 @@ const DISKSTATS_SKIP_PREFIXES = [
 
 // ===================== 差分状态 =====================
 
-// 本地差分状态（单实例）
-let localCounterState = null;
 // 远程差分状态：sshClient -> { ts, cpuIdle, cpuTotal, netRx, netTx, diskRead, diskWrite }
 const remoteCounterState = new WeakMap();
 
@@ -74,17 +73,7 @@ const formatResult = (ts, cpu, memory, net, diskIo, disks) => ({
 
 async function getLocalDiskUsage() {
   try {
-    const fsSizes = await si.fsSize();
-    return fsSizes
-      .filter((d) => d && d.mount && d.size > 0)
-      .map((d) => ({
-        mount: d.mount,
-        total: toFiniteNumber(d.size),
-        used: toFiniteNumber(d.used),
-        free: Math.max(0, toFiniteNumber(d.size) - toFiniteNumber(d.used)),
-        usedPercent: clampPercent(d.use),
-      }))
-      .sort((a, b) => b.usedPercent - a.usedPercent);
+    return await querySystemMetrics("disks");
   } catch (error) {
     console.error("[metrics-sample] getLocalDiskUsage failed:", error.message);
     return [];
@@ -93,86 +82,35 @@ async function getLocalDiskUsage() {
 
 async function getLocalMetricsSample() {
   const ts = Date.now();
-
-  const [load, mem, networkStats, fsStats, disks] = await Promise.all([
-    si.currentLoad().catch(() => null),
-    si.mem().catch(() => null),
-    si.networkStats().catch(() => []),
-    si.fsStats().catch(() => null),
-    getLocalDiskUsage(),
-  ]);
-
-  // CPU
-  const cpu = load ? clampPercent(load.currentLoad) : null;
-
-  // 内存
-  const memory = mem
-    ? {
-        total: toFiniteNumber(mem.total),
-        used: toFiniteNumber(mem.used),
-        free: toFiniteNumber(mem.available ?? mem.free),
-        usagePercent:
-          mem.total > 0
-            ? clampPercent((toFiniteNumber(mem.used) / mem.total) * 100)
-            : 0,
-      }
-    : { total: 0, used: 0, free: 0, usagePercent: 0 };
-
-  // 网络：si.networkStats 自带 rx_sec/tx_sec；汇总所有非内部接口
-  let rxPerSec = null;
-  let txPerSec = null;
-  if (Array.isArray(networkStats) && networkStats.length > 0) {
-    let rx = 0;
-    let tx = 0;
-    let hasValue = false;
-    for (const stat of networkStats) {
-      if (!stat || stat.internal) continue;
-      if (Number.isFinite(stat.rx_sec) && stat.rx_sec >= 0) {
-        rx += stat.rx_sec;
-        hasValue = true;
-      }
-      if (Number.isFinite(stat.tx_sec) && stat.tx_sec >= 0) {
-        tx += stat.tx_sec;
-        hasValue = true;
-      }
-    }
-    if (hasValue) {
-      rxPerSec = rx;
-      txPerSec = tx;
-    }
+  let sample = null;
+  try {
+    sample = await querySystemMetrics("sample");
+  } catch (error) {
+    console.error("[metrics-sample] local sample failed:", error.message);
   }
-
-  // 磁盘 IO：优先用 si 自带的速率，否则用累计字节数差分
-  let readPerSec = null;
-  let writePerSec = null;
-  if (
-    fsStats &&
-    Number.isFinite(fsStats.rx_sec) &&
-    fsStats.rx_sec >= 0 &&
-    Number.isFinite(fsStats.wx_sec) &&
-    fsStats.wx_sec >= 0
-  ) {
-    readPerSec = fsStats.rx_sec;
-    writePerSec = fsStats.wx_sec;
-  } else if (fsStats && Number.isFinite(fsStats.rx)) {
-    const prev = localCounterState;
-    const elapsed = prev ? ts - prev.ts : 0;
-    readPerSec = computePerSec(fsStats.rx, prev?.readBytes, elapsed);
-    writePerSec = computePerSec(fsStats.wx, prev?.writeBytes, elapsed);
+  if (!sample) {
+    return formatResult(
+      ts,
+      null,
+      { total: 0, used: 0, free: 0, usagePercent: 0 },
+      { rxPerSec: null, txPerSec: null },
+      { readPerSec: null, writePerSec: null },
+      [],
+    );
   }
-  localCounterState = {
-    ts,
-    readBytes: fsStats ? fsStats.rx : null,
-    writeBytes: fsStats ? fsStats.wx : null,
-  };
-
   return formatResult(
     ts,
-    cpu,
-    memory,
-    { rxPerSec, txPerSec },
-    { readPerSec, writePerSec },
-    disks,
+    clampPercent(sample.cpu),
+    {
+      ...sample.memory,
+      usagePercent: clampPercent(sample.memory.usagePercent),
+    },
+    sample.net,
+    sample.diskIo,
+    sample.disks.map((disk) => ({
+      ...disk,
+      usedPercent: clampPercent(disk.usedPercent),
+    })),
   );
 }
 

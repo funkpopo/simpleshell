@@ -16,5 +16,6 @@ serde_json.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+core-protocol = { workspace = true, features = ["testing"] }
 test-sshd.workspace = true
 sha2.workspace = true

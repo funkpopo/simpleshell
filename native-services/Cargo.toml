@@ -19,6 +19,10 @@ sftp = { path = "crates/sftp" }
 forward = { path = "crates/forward" }
 zmodem = { path = "crates/zmodem" }
 auxsvc = { path = "crates/auxsvc" }
+localpty = { path = "crates/localpty" }
+serial = { path = "crates/serial" }
+telnet = { path = "crates/telnet" }
+sysmetrics = { path = "crates/sysmetrics" }
 
 base64 = "0.22.1"
 bytes = "1.11.1"

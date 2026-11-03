@@ -1,5 +1,5 @@
 const EventEmitter = require("events");
-const pty = require("node-pty");
+const { spawnPty } = require("../native/nativePty");
 const {
   getTerminalProcessExitChannel,
 } = require("../../shared/contracts/ipc/channels");
@@ -188,13 +188,17 @@ class LocalTerminalManager extends EventEmitter {
 
     let ptyProcess;
     try {
-      ptyProcess = pty.spawn(normalizedConfig.command, normalizedConfig.args, {
-        name: options.name || "xterm-256color",
-        cols,
-        rows,
-        cwd: normalizedConfig.cwd,
-        env: normalizedConfig.env,
-      });
+      ptyProcess = await spawnPty(
+        normalizedConfig.command,
+        normalizedConfig.args,
+        {
+          name: options.name || "xterm-256color",
+          cols,
+          rows,
+          cwd: normalizedConfig.cwd,
+          env: normalizedConfig.env,
+        },
+      );
     } catch (error) {
       const serializedError = serializeError(error, normalizedConfig);
       this._emitStatus("error", {

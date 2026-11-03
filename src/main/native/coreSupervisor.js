@@ -15,8 +15,8 @@
  *  - the next spawn restarts the core, with exponential backoff after crashes;
  *  - an unanswered ping marks the core as hung and kills it.
  *
- * AI, latency and IP lookup run in a separate `aux` core so a fault there
- * cannot interrupt terminal or transfer streams.
+ * AI, latency, IP lookup and system metrics run in a separate `aux` core so
+ * a fault there cannot interrupt terminal or transfer streams.
  */
 const { spawn } = require("node:child_process");
 const { EventEmitter } = require("node:events");
@@ -34,7 +34,12 @@ const {
   parseControl,
 } = require("./coreProtocol");
 
-const AUX_SERVICES = new Set(["ai-serve", "latency-serve", "ip-query-serve"]);
+const AUX_SERVICES = new Set([
+  "ai-serve",
+  "latency-serve",
+  "ip-query-serve",
+  "system-metrics",
+]);
 const RESTART_BACKOFF_BASE_MS = 250;
 const RESTART_BACKOFF_MAX_MS = 5000;
 const CRASH_WINDOW_MS = 60_000;

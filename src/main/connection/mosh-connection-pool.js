@@ -6,7 +6,7 @@
  * - Mosh 的核心价值（弱网/漫游下的会话存活、断网自动恢复、SSP 状态同步）由
  *   mosh 客户端二进制自身完成：客户端先经 SSH 引导启动 mosh-server，
  *   再通过 UDP + SSP 同步终端状态。因此本池的职责是按连接配置拉起并托管
- *   一个 mosh 客户端进程（node-pty 伪终端），而不是重新实现协议本身。
+ *   一个 mosh 客户端进程（simpleshell-core 的 pty 服务提供伪终端），而不是重新实现协议本身。
  * - mosh 客户端是本地进程：SSH 认证交互（密码/密钥/OTP 提示）直接呈现在
  *   终端里由用户输入，无需复用 SSHAuthDialog。
  * - 连接键包含 tabId：mosh 会话为交互式终端会话，每个标签页持有独立进程
@@ -16,7 +16,7 @@
  */
 
 const BaseConnectionPool = require("./base-connection-pool");
-const pty = require("node-pty");
+const { spawnPty } = require("../native/nativePty");
 
 const PREDICT_VALUES = ["adaptive", "always", "never", "experimental"];
 
@@ -193,7 +193,7 @@ class MoshConnectionPool extends BaseConnectionPool {
 
     let ptyProcess;
     try {
-      ptyProcess = pty.spawn(spawnCommand, spawnArgs, {
+      ptyProcess = await spawnPty(spawnCommand, spawnArgs, {
         name: "xterm-256color",
         cols: DEFAULT_COLS,
         rows: DEFAULT_ROWS,
@@ -233,7 +233,7 @@ class MoshConnectionPool extends BaseConnectionPool {
   }
 
   /**
-   * 关闭Mosh连接（覆盖父类：node-pty 进程没有 end()/destroy()，使用 kill()）
+   * 关闭Mosh连接（覆盖父类：pty 进程没有 end()/destroy()，使用 kill()）
    * @param {string} key - 连接键
    * @param {Object} options - 关闭选项
    */

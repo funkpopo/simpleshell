@@ -23,22 +23,6 @@ const AUTHOR = "funkpopo <funkpopoisme@gmail.com>";
 const LOCALE_PAKS_TO_KEEP = new Set(["en-US.pak", "zh-CN.pak"]);
 const DEBIAN_CJK_FONT_DEPENDENCIES = ["fonts-noto-cjk"];
 const RPM_CJK_FONT_DEPENDENCIES = ["google-noto-sans-cjk-fonts"];
-const WORKER_UNPACK_DIRS = [
-  ".webpack/main/workers",
-  ".webpack\\main\\workers",
-  ".webpack/main/prebuilds",
-  ".webpack\\main\\prebuilds",
-  ".webpack/prebuilds",
-  ".webpack\\prebuilds",
-  ".webpack/main/worker",
-  ".webpack\\main\\worker",
-  ".webpack/main/shared",
-  ".webpack\\main\\shared",
-  ".webpack/main/conpty_console_list_agent.js",
-  ".webpack\\main\\conpty_console_list_agent.js",
-  ".webpack/main/utils.js",
-  ".webpack\\main\\utils.js",
-];
 const NATIVE_SERVICES_BASENAME =
   process.platform === "win32" ? "simpleshell-core.exe" : "simpleshell-core";
 const WINDOWS_ICON_PATH = path.join(__dirname, "src/renderer/assets/logo.ico");
@@ -47,14 +31,6 @@ const LINUX_ICON_PATH = path.join(
   "src/renderer/assets/SimpleShell.png",
 );
 const WEBPACK_DIR = path.resolve(__dirname, ".webpack");
-const NODE_PTY_PREBUILD_DIRS_BY_TARGET = {
-  "darwin-arm64": new Set(["darwin-arm64"]),
-  "darwin-x64": new Set(["darwin-x64"]),
-  "linux-arm64": new Set(["linux-arm64"]),
-  "linux-x64": new Set(["linux-x64"]),
-  "win32-arm64": new Set(["win32-arm64"]),
-  "win32-x64": new Set(["win32-x64"]),
-};
 
 installWindowsWebpackMoveFallback(WEBPACK_DIR);
 
@@ -257,50 +233,6 @@ const stripPackagedScripts = async (buildPath) => {
   );
 };
 
-const cleanupPackagedNodePtyPrebuilds = async (buildPath, platform, arch) => {
-  // node-pty 预编译位于 .webpack/main/prebuilds，
-  // @serialport/bindings-cpp 预编译位于 .webpack/prebuilds（node-gyp-build 解析路径不同）
-  const prebuildsDirs = [
-    path.join(buildPath, ".webpack", "main", "prebuilds"),
-    path.join(buildPath, ".webpack", "prebuilds"),
-  ];
-  const targetKey = `${platform}-${arch}`;
-  const prebuildDirsToKeep = NODE_PTY_PREBUILD_DIRS_BY_TARGET[targetKey];
-
-  if (!prebuildDirsToKeep) {
-    return;
-  }
-
-  await Promise.all(
-    prebuildsDirs.map(async (prebuildsDir) => {
-      let entries;
-      try {
-        entries = await fs.readdir(prebuildsDir, { withFileTypes: true });
-      } catch (error) {
-        if (error && error.code === "ENOENT") {
-          return;
-        }
-
-        throw error;
-      }
-
-      await Promise.all(
-        entries
-          .filter(
-            (entry) =>
-              entry.isDirectory() && !prebuildDirsToKeep.has(entry.name),
-          )
-          .map((entry) =>
-            fs.rm(path.join(prebuildsDir, entry.name), {
-              force: true,
-              recursive: true,
-            }),
-          ),
-      );
-    }),
-  );
-};
-
 const removePackagedSourceMaps = async (rootPath) => {
   let entries;
 
@@ -330,14 +262,9 @@ const removePackagedSourceMaps = async (rootPath) => {
   );
 };
 
-const cleanupPackagedDevelopmentFilesHook = async ({
-  arch,
-  buildPath,
-  platform,
-}) => {
+const cleanupPackagedDevelopmentFilesHook = async ({ buildPath }) => {
   await Promise.all([
     stripPackagedScripts(buildPath),
-    cleanupPackagedNodePtyPrebuilds(buildPath, platform, arch),
     removePackagedSourceMaps(buildPath),
   ]);
 };
@@ -423,9 +350,7 @@ module.exports = async () => {
         ProductName: PRODUCT_NAME,
         InternalName: PRODUCT_NAME,
       },
-      asar: {
-        unpackDir: `{${WORKER_UNPACK_DIRS.join(",")}}`,
-      },
+      asar: true,
       icon: "./src/renderer/assets/logo",
       ...(macSignConfig ? { osxSign: macSignConfig } : {}),
       ...(macNotarizeConfig ? { osxNotarize: macNotarizeConfig } : {}),
@@ -444,11 +369,10 @@ module.exports = async () => {
         unsafelyDisableChecksums: false,
       },
     },
+    // No Node native modules to rebuild: native code lives in simpleshell-core.
+    // (ssh2's optional cpu-features is shimmed in webpack.main.config.js.)
     rebuildConfig: {
-      // `cpu-features` is an optional dependency of `ssh2`.
-      // Under Electron 40 (Node 24 / new V8), rebuilding it from source may fail on Windows,
-      // but `ssh2` works fine without it (it falls back to pure JS).
-      ignoreModules: ["cpu-features"],
+      onlyModules: [],
     },
     makers: [
       {
@@ -505,10 +429,6 @@ module.exports = async () => {
       },
     ],
     plugins: [
-      {
-        name: "@electron-forge/plugin-auto-unpack-natives",
-        config: {},
-      },
       new WindowsSafeWebpackPlugin({
         mainConfig: "./webpack.main.config.js",
         renderer: {

@@ -1,128 +1,9 @@
 //! `ssh-connection` / `ssh-channel` driven in-process against the test server.
 
-use bytes::Bytes;
-use core_protocol::service::{channel_input, Output, ServiceContext};
-use core_protocol::{Frame, FrameKind, StreamIo};
+use core_protocol::testing::{contains, TestStream as Stream};
 use serde_json::{json, Value};
-use std::future::Future;
 use std::time::Duration;
 use test_sshd::{Event, TestSshd, OTP, PASSWORD};
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
-use tokio::time::timeout;
-
-struct Stream {
-    input: Option<mpsc::UnboundedSender<Bytes>>,
-    events: mpsc::UnboundedSender<Value>,
-    output: mpsc::UnboundedReceiver<Frame>,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-    _task: JoinHandle<Result<(), String>>,
-}
-
-impl Stream {
-    fn open<F, Fut>(service: F) -> Self
-    where
-        F: FnOnce(StreamIo) -> Fut,
-        Fut: Future<Output = Result<(), String>> + Send + 'static,
-    {
-        let (input, input_rx) = mpsc::unbounded_channel();
-        let (events, events_rx) = mpsc::unbounded_channel();
-        let (out_tx, output) = mpsc::unbounded_channel();
-        let io = StreamIo {
-            input: channel_input(input_rx),
-            events: events_rx,
-        };
-        let context = ServiceContext::new(Output::frames(1, out_tx));
-        let task = tokio::spawn(context.run(service(io)));
-        Self {
-            input: Some(input),
-            events,
-            output,
-            stdout: Vec::new(),
-            stderr: Vec::new(),
-            _task: task,
-        }
-    }
-
-    fn send(&self, event: Value) {
-        self.events.send(event).unwrap();
-    }
-
-    fn write(&self, bytes: &str) {
-        self.input
-            .as_ref()
-            .unwrap()
-            .send(Bytes::copy_from_slice(bytes.as_bytes()))
-            .unwrap();
-    }
-
-    /// Next event, collecting data and stderr seen on the way.
-    async fn event(&mut self) -> Value {
-        loop {
-            let frame = timeout(Duration::from_secs(10), self.output.recv())
-                .await
-                .expect("frame within 10s")
-                .expect("stream still running");
-            match frame.kind {
-                FrameKind::Event => return serde_json::from_slice(&frame.payload).unwrap(),
-                FrameKind::Data => self.stdout.extend_from_slice(&frame.payload),
-                FrameKind::Stderr => self.stderr.extend_from_slice(&frame.payload),
-                FrameKind::Control => {}
-            }
-        }
-    }
-
-    async fn event_of(&mut self, kind: &str) -> Value {
-        loop {
-            let event = self.event().await;
-            if event["type"] == kind {
-                return event;
-            }
-            assert_ne!(event["type"], "error", "unexpected error: {event}");
-        }
-    }
-
-    /// Drains output until `needle` appears in stdout. Only new bytes (plus
-    /// an overlap) are searched, so large outputs stay linear.
-    async fn stdout_until(&mut self, needle: &str) {
-        let mut searched: usize = 0;
-        loop {
-            let from = searched.saturating_sub(needle.len());
-            if contains(&self.stdout[from..], needle) {
-                return;
-            }
-            searched = self.stdout.len();
-            let frame = timeout(Duration::from_secs(10), self.output.recv())
-                .await
-                .expect("output within 10s")
-                .expect("stream still running");
-            match frame.kind {
-                FrameKind::Data => self.stdout.extend_from_slice(&frame.payload),
-                FrameKind::Stderr => self.stderr.extend_from_slice(&frame.payload),
-                _ => {}
-            }
-        }
-    }
-
-    /// Bytes that arrive within `window` without blocking for more.
-    async fn drain_for(&mut self, window: Duration) -> usize {
-        let mut received = 0;
-        while let Ok(Some(frame)) = timeout(window, self.output.recv()).await {
-            if frame.kind == FrameKind::Data {
-                received += frame.payload.len();
-                self.stdout.extend_from_slice(&frame.payload);
-            }
-        }
-        received
-    }
-}
-
-fn contains(haystack: &[u8], needle: &str) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle.as_bytes())
-}
 
 async fn connect(server: &TestSshd, extra: Value) -> (Stream, String) {
     let mut config = json!({
@@ -271,7 +152,7 @@ async fn a_paused_channel_stalls_alone_and_resumes_without_loss() {
 
     const FLOOD: usize = 16 * 1024 * 1024;
     stalled.send(json!({"type": "pause"}));
-    stalled.write(&format!("flood {FLOOD}\n"));
+    stalled.write(format!("flood {FLOOD}\n"));
     let before_resume = stalled.drain_for(Duration::from_millis(500)).await;
     // Nothing is read while paused: at most what was already decoded.
     assert!(before_resume < 4 * 1024 * 1024, "{before_resume}");
@@ -303,14 +184,13 @@ fn highlight_rules() -> Value {
     json!([{"type": "regex", "enabled": true, "pattern": "error", "flags": "g", "style": "color: red;"}])
 }
 
-impl Stream {
-    async fn zmodem(&mut self, kind: &str) -> Value {
-        loop {
-            let event = self.event_of("zmodem").await;
-            assert_ne!(event["kind"], "error", "unexpected error: {event}");
-            if event["kind"] == kind {
-                return event["event"].clone();
-            }
+/// The next ZMODEM event of `kind`.
+async fn zmodem(stream: &mut Stream, kind: &str) -> Value {
+    loop {
+        let event = stream.event_of("zmodem").await;
+        assert_ne!(event["kind"], "error", "unexpected error: {event}");
+        if event["kind"] == kind {
+            return event["event"].clone();
         }
     }
 }
@@ -348,7 +228,7 @@ async fn pipe_mode_credit_counts_text_and_pause_reasons_stack() {
     shell.stdout.clear();
 
     const FLOOD: usize = 4 * 1024 * 1024;
-    shell.write(&format!("flood {FLOOD}\n"));
+    shell.write(format!("flood {FLOOD}\n"));
     let first = shell.drain_for(Duration::from_millis(500)).await;
     // Reading stops once the credit is spent (plus at most one message).
     assert!(first <= 64 * 1024 + 64 * 1024, "{first}");
@@ -384,15 +264,15 @@ async fn zmodem_transfers_run_inside_the_stream() {
 
     // Download: the remote `sz` is detected and received in the core.
     const SIZE: usize = 300_000;
-    shell.write(&format!("sz {SIZE}\n"));
-    assert_eq!(shell.zmodem("intro").await["direction"], "download");
-    let offer = shell.zmodem("offer").await;
+    shell.write(format!("sz {SIZE}\n"));
+    assert_eq!(zmodem(&mut shell, "intro").await["direction"], "download");
+    let offer = zmodem(&mut shell, "offer").await;
     assert_eq!(offer["fileName"], format!("sz-{SIZE}.bin"));
     assert_eq!(offer["fileSize"], SIZE);
     let target = dir.join("download.bin");
     let _ = std::fs::remove_file(&target);
     shell.send(json!({"type": "zmodemAccept", "path": target}));
-    shell.zmodem("done").await;
+    zmodem(&mut shell, "done").await;
     shell.stdout_until("sz done").await;
     assert_eq!(std::fs::read(&target).unwrap(), test_sshd::sz_payload(SIZE));
     // No protocol bytes reached the terminal.
@@ -405,11 +285,11 @@ async fn zmodem_transfers_run_inside_the_stream() {
         .collect();
     std::fs::write(&source, &payload).unwrap();
     shell.write("rz\n");
-    assert_eq!(shell.zmodem("intro").await["direction"], "upload");
+    assert_eq!(zmodem(&mut shell, "intro").await["direction"], "upload");
     shell.send(json!({"type": "zmodemSend", "files": [
         {"path": source, "name": "upload.bin", "size": payload.len()}
     ]}));
-    shell.zmodem("done").await;
+    zmodem(&mut shell, "done").await;
     use sha2::Digest;
     let digest: String = sha2::Sha256::digest(&payload)
         .iter()

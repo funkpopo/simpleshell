@@ -410,19 +410,10 @@ function createProtocolSessions(
     }
     async listSerialPorts() {
       try {
-        const { SerialPort } = require("serialport");
-        const ports = await SerialPort.list();
-        return {
-          success: true,
-          data: ports.map((port) => ({
-            path: port.path,
-            friendlyName: port.friendlyName || port.friendly_name || port.path,
-            manufacturer: port.manufacturer || "",
-            serialNumber: port.serialNumber || "",
-            vendorId: port.vendorId || "",
-            productId: port.productId || "",
-          })),
-        };
+        const {
+          NativeSerialPort,
+        } = require("../../../native/nativeSerialPort");
+        return { success: true, data: await NativeSerialPort.list() };
       } catch (error) {
         logToFile(`Failed to list serial ports: ${error.message}`, "ERROR");
         return { success: false, error: error.message, data: [] };

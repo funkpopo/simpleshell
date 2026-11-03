@@ -535,7 +535,7 @@ class TerminalHandlers {
           return true;
         }
       } else if (typeof procInfo.process.resize === "function") {
-        // node-pty进程使用resize方法
+        // 本地 pty 进程（含 Mosh）使用 resize 方法
         procInfo.process.resize(cols, rows);
         return true;
       }

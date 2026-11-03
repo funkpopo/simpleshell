@@ -7,7 +7,8 @@ native-services/
 ├── Cargo.toml              # workspace: shared versions, patched russh
 ├── core/                   # bin `simpleshell-core`: CLI routing + resident frame server
 ├── crates/
-│   ├── core-protocol/      # frame codec, control messages, service I/O context
+│   ├── core-protocol/      # frame codec, control messages, service I/O context,
+│   │                       #   in-process stream harness for tests (feature `testing`)
 │   ├── netutil/            # TCP / HTTP CONNECT / SOCKS proxy tunnels
 │   ├── ssh-hub/            # shared SSH connections: auth, host keys, algorithms, leases
 │   ├── ssh-session/        # ssh-connection / ssh-channel: terminal shells and exec
@@ -15,6 +16,10 @@ native-services/
 │   ├── sftp/               # sftp-request|session|watch, scan-folder, checksum-file
 │   ├── forward/            # port-forward-serve (-L / -R / SOCKS5)
 │   ├── zmodem/             # ZMODEM engine: zmodem-serve and in-stream Detector
+│   ├── localpty/           # pty: local programs on ConPTY / Unix PTYs (local tabs, Mosh)
+│   ├── serial/             # serial-port, serial-list
+│   ├── telnet/             # telnet: negotiation (NAWS, TTYPE), automatic login
+│   ├── sysmetrics/         # system-metrics: CPU, memory, network, disks, processes
 │   ├── auxsvc/             # ai-serve, latency-serve, ip-query-serve
 │   └── test-sshd/          # in-process SSH server for tests (never shipped)
 └── vendor/russh/           # patched russh (own lockfile, outside the workspace)
@@ -83,6 +88,29 @@ SSH data ─▶ zmodem::Detector ─▶ term_pipe::TermPipe ─▶ text frames �
 The ssh2 fallback backend keeps the JS output path (`terminalOutput.js`,
 `output-processor.js`, the `zmodem-serve` service).
 
+## Local terminals and devices
+
+The app has no Node native addons; what node-pty, serialport, telnet-client
+and systeminformation did runs in the core:
+
+- `pty` runs a local program on a pseudo terminal (ConPTY on Windows, via
+  portable-pty). Blocking terminal I/O runs on threads joined to the stream
+  by bounded queues, so a paused terminal stops the program. ConPTY asks for
+  the cursor position first; xterm.js answers. After the program exits,
+  remaining output is drained briefly before `exit`.
+- `serial-port` / `serial-list` use the serialport crate (none / even / odd
+  parity, RTS/CTS or XON/XOFF flow control); errors carry node-style codes
+  (`ENOENT`, `EACCES`, `EINVAL`, `EIO`).
+- `telnet` negotiates ECHO / SGA, terminal type and window size (NAWS on
+  resize), doubles IAC in input, and answers the first login and password
+  prompts when credentials are configured.
+- `system-metrics` (aux core) keeps sysinfo counters in the resident
+  process, so CPU, network and disk rates are measured between requests.
+
+`src/main/native/` holds the matching JS clients (`nativePty`,
+`nativeSerialPort`, `nativeTelnet`, `nativeSystemMetrics`). Electron
+Forge's rebuild step has nothing to build (`rebuildConfig.onlyModules: []`).
+
 ## Running
 
 ```sh
@@ -118,7 +146,8 @@ One stdio pipe per process carries length-prefixed frames
   `signal: SIGTERM`).
 - Background tasks started through `core_protocol::service::spawn` belong to
   the stream and are aborted with it.
-- AI, latency and IP lookup run in a second `aux` instance of the same binary.
+- AI, latency, IP lookup and system metrics run in a second `aux` instance of
+  the same binary.
 - If a process dies, the supervisor ends its open streams (clients run their
   normal recovery: SFTP sessions reopen, transfers retry, port forwarding
   reconnects) and restarts it on the next request, backing off when it keeps
