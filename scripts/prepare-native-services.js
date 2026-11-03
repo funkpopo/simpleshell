@@ -67,6 +67,57 @@ function syncSidecarManifestVersion(appVersion) {
   return true;
 }
 
+// Crates that inherit `[workspace.package] version`.
+function getWorkspaceVersionedCrates() {
+  const manifests = [path.join(nativeRoot, "core", "Cargo.toml")];
+  const cratesDir = path.join(nativeRoot, "crates");
+  if (fs.existsSync(cratesDir)) {
+    for (const entry of fs.readdirSync(cratesDir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        manifests.push(path.join(cratesDir, entry.name, "Cargo.toml"));
+      }
+    }
+  }
+
+  const names = new Set();
+  for (const crateManifest of manifests) {
+    if (!fs.existsSync(crateManifest)) continue;
+    const content = fs.readFileSync(crateManifest, "utf8");
+    const name = content.match(/^name\s*=\s*"([^"]+)"/m)?.[1];
+    if (name && /^version\.workspace\s*=\s*true/m.test(content)) {
+      names.add(name);
+    }
+  }
+  return names;
+}
+
+// `cargo build --locked` refuses a lock file whose workspace crate versions
+// lag the manifest, so mirror the version there. Checked on every run: a run
+// that failed after syncing Cargo.toml leaves only the lock file stale.
+function syncLockfileVersions(appVersion) {
+  const lockPath = path.join(nativeRoot, "Cargo.lock");
+  if (!fs.existsSync(lockPath)) return false;
+
+  const crates = getWorkspaceVersionedCrates();
+  const lockContent = fs.readFileSync(lockPath, "utf8");
+  let changed = 0;
+  // Path packages have no `source` line; registry crates sharing a name keep
+  // their own version.
+  const updatedContent = lockContent.replace(
+    /(\[\[package\]\]\r?\nname = "([^"]+)"\r?\nversion = ")([^"]+)("(?!\r?\nsource = ))/g,
+    (whole, head, name, version, tail) => {
+      if (!crates.has(name) || version === appVersion) return whole;
+      changed += 1;
+      return `${head}${appVersion}${tail}`;
+    },
+  );
+
+  if (changed === 0) return false;
+  fs.writeFileSync(lockPath, updatedContent, "utf8");
+  log(`synced ${changed} workspace crate versions in Cargo.lock`);
+  return true;
+}
+
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
@@ -179,6 +230,7 @@ function main() {
   }
 
   syncSidecarManifestVersion(appVersion);
+  syncLockfileVersions(appVersion);
   const sourceMtime = getNewestMtimeMs(nativeRoot);
 
   if (hasStagedBinary() && !isStagedBinaryOutdated(sourceMtime)) {

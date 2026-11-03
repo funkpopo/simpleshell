@@ -102,7 +102,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "auxsvc"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "core-protocol",
  "futures-util",
@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "core-protocol"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "bytes",
  "serde",
@@ -786,7 +786,7 @@ dependencies = [
 
 [[package]]
 name = "forward"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "core-protocol",
  "netutil",
@@ -1484,7 +1484,7 @@ checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
 name = "localpty"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "bytes",
  "core-protocol",
@@ -1569,7 +1569,7 @@ dependencies = [
 
 [[package]]
 name = "netutil"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "base64",
  "serde",
@@ -2634,7 +2634,7 @@ dependencies = [
 
 [[package]]
 name = "serial"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "bytes",
  "core-protocol",
@@ -2675,7 +2675,7 @@ dependencies = [
 
 [[package]]
 name = "sftp"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "base64",
  "core-protocol",
@@ -2794,7 +2794,7 @@ checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 
 [[package]]
 name = "simpleshell-core"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "auxsvc",
  "bytes",
@@ -2894,7 +2894,7 @@ dependencies = [
 
 [[package]]
 name = "ssh-hub"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "base64",
  "netutil",
@@ -2908,7 +2908,7 @@ dependencies = [
 
 [[package]]
 name = "ssh-session"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "bytes",
  "core-protocol",
@@ -3013,7 +3013,7 @@ dependencies = [
 
 [[package]]
 name = "sysmetrics"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "core-protocol",
  "serde",
@@ -3024,7 +3024,7 @@ dependencies = [
 
 [[package]]
 name = "telnet"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "bytes",
  "core-protocol",
@@ -3035,7 +3035,7 @@ dependencies = [
 
 [[package]]
 name = "term-pipe"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "aho-corasick",
  "core-protocol",
@@ -3048,7 +3048,7 @@ dependencies = [
 
 [[package]]
 name = "test-sshd"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "bytes",
  "russh",
@@ -3998,7 +3998,7 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 
 [[package]]
 name = "zmodem"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "base64",
  "core-protocol",
