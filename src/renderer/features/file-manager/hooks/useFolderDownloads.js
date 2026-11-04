@@ -18,7 +18,6 @@ export default function useFolderDownloads({
   markTransferFailed,
   markTransferCompleted,
   showDownloadedLocationNotification,
-  handleDownload,
 }) {
   const buildFolderDownloadStatusText = useCallback(
     (options) => formatFolderDownloadStatusText(t, options),
@@ -197,9 +196,6 @@ export default function useFolderDownloads({
     };
     if (foldersToDownload.length === 1) {
       const savedSelectedFile = foldersToDownload[0];
-      if (!savedSelectedFile.isDirectory) {
-        return handleDownload();
-      }
       showNotification(
         t("fileManager.messages.startDownloadFolderNamed", {
           name: savedSelectedFile.name,

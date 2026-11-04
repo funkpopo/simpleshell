@@ -87,7 +87,6 @@ export default function useTransferTasks({
     ...transferContext,
     getSelectedFiles,
     showDownloadedLocationNotification,
-    handleDownload,
   });
   const handleDownloadSelection = useCallback(async () => {
     const selectedItems = getSelectedFiles();

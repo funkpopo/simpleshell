@@ -32,6 +32,12 @@ export default function useBackgroundDirectoryRefresh({
   pendingDirectoryWatchRefreshRef,
   directoryWatchRefreshRetryTimerRef,
 }) {
+  // 刷新回调被多个监听 effect 依赖，需保持稳定；错误文案经 ref 读取当前语言。
+  const tRef = useRef(t);
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
   const startBackgroundDirectoryRefresh = useCallback(
     async ({ reason = "userActivity", awaitDone = true } = {}) => {
       const curPath = currentPathRef.current;
@@ -155,12 +161,12 @@ export default function useBackgroundDirectoryRefresh({
         if (typeof resolve === "function") {
           resolve({
             ok: false,
-            error: response?.error || t("fileManager.errors.listFilesFailed"),
+            error: response?.error || tRef.current("fileManager.errors.listFilesFailed"),
           });
         }
         return {
           ok: false,
-          error: response?.error || t("fileManager.errors.listFilesFailed"),
+          error: response?.error || tRef.current("fileManager.errors.listFilesFailed"),
         };
       }
 
@@ -221,7 +227,7 @@ export default function useBackgroundDirectoryRefresh({
       bg.resolve = null;
       bg.reject = null;
       backgroundListBufferRef.current = [];
-      const protocolError = t("fileManager.errors.listFilesTokenMissing");
+      const protocolError = tRef.current("fileManager.errors.listFilesTokenMissing");
       if (typeof resolve === "function") {
         resolve({ ok: false, error: protocolError });
       }

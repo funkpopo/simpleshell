@@ -101,8 +101,8 @@ export function startTerminalSession({
           if (terminalCache[sessionKey] !== term) {
             // 连接可能在关闭窗格之后才成功；结束迟到的进程，禁止重新填充缓存。
             if (processId)
-              void window.terminalAPI
-                .killProcess(processId)
+              void Promise.resolve()
+                .then(() => window.terminalAPI.killProcess(processId))
                 .catch((closeError) => console.warn(closeError));
             return;
           }

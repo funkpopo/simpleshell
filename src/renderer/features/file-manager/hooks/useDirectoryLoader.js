@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { FILE_MANAGER_PATH_HISTORY_LIMIT } from "../fileManagerUtils.js";
 import {
   getCachedDirectory,
@@ -42,6 +42,9 @@ export default function useDirectoryLoader({
   resetSelection,
   markLastRefreshTime,
 }) {
+  // 重试定时器触发时调用最新渲染的 loadDirectory，避免使用过期的连接/语言闭包。
+  const latestLoadDirectoryRef = useRef(null);
+
   const getDirectoryFromCache = (path) =>
     getCachedDirectory(directoryCacheRef.current, path);
 
@@ -297,7 +300,8 @@ export default function useDirectoryLoader({
 
               // 添加延迟，避免立即重试
               addTimeout(() => {
-                loadDirectory(
+                releaseForegroundLoad();
+                latestLoadDirectoryRef.current(
                   path,
                   retryCount + 1,
                   forceRefresh,
@@ -353,7 +357,8 @@ export default function useDirectoryLoader({
 
         // 添加延迟，避免立即重试
         addTimeout(() => {
-          loadDirectory(
+          releaseForegroundLoad();
+          latestLoadDirectoryRef.current(
             path,
             retryCount + 1,
             forceRefresh,
@@ -375,13 +380,18 @@ export default function useDirectoryLoader({
       }
     } finally {
       followRequest?.signal.removeEventListener("abort", cancelFollowRequest);
-      releaseForegroundLoad();
+      // 等待重试期间保留前台加载占位，防止后台刷新插入；由重试定时器释放。
+      if (!isRetrying) {
+        releaseForegroundLoad();
+      }
       // 只有在不重试的情况下才关闭loading
       if (!isRetrying && isCurrentLoadRequest()) {
         setLoading(false);
       }
     }
   };
+
+  latestLoadDirectoryRef.current = loadDirectory;
 
   return { loadDirectory, updatePathHistoryState };
 }

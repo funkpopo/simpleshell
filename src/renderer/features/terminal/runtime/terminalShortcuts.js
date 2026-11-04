@@ -195,7 +195,7 @@ export function attachTerminalShortcutHandlers({
         }
       }
     } else if (
-      e.key === "F3" ||
+      (e.key === "F3" && !e.shiftKey) ||
       (e.ctrlKey && e.key === "g") ||
       (e.ctrlKey && e.key === ".")
     ) {

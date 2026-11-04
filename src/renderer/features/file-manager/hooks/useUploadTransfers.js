@@ -47,6 +47,7 @@ export default function useUploadTransfers({
     let activeUploadTransferId = null;
     const markUploadCancelled = () => {
       transferCancelled = true;
+      if (!activeUploadTransferId) return;
       markTransferCancelled(activeUploadTransferId, {
         statusText: t("fileManager.transfer.status.transferCancelled"),
         cancelMessage: t("fileManager.errors.userCancelled"),

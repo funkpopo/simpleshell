@@ -10,6 +10,13 @@ import {
 import { getTerminalFontFamily } from "../../../shared/lib/fonts.js";
 import { terminalCache } from "../runtime/terminalSessionStore.js";
 
+/** Positive integer from a settings value, or null when absent/invalid. */
+const parsePositiveInt = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
 /**
  * Loads persisted font/renderer settings for new terminals (`getFontSettings`)
  * and applies live `settingsChanged` updates to the cached terminal.
@@ -110,35 +117,32 @@ export function useTerminalSettingsSync({
         }
       }
 
-      if (
-        terminalRef.current &&
-        terminalCache[sessionKey] &&
-        fitAddonRef.current
-      ) {
-        if (terminalFontSize !== undefined) {
-          terminalCache[sessionKey].options.fontSize = parseInt(
-            terminalFontSize,
-            10,
-          );
+      const cachedTerminal = terminalCache[sessionKey];
+      if (cachedTerminal) {
+        // 无效数值（NaN）不写入 xterm，保留当前值
+        const fontSize = parsePositiveInt(terminalFontSize);
+        if (fontSize !== null) {
+          cachedTerminal.options.fontSize = fontSize;
         }
         if (terminalFont !== undefined) {
-          terminalCache[sessionKey].options.fontFamily =
+          cachedTerminal.options.fontFamily =
             getTerminalFontFamily(terminalFont);
         }
-        if (terminalFontWeight !== undefined) {
-          terminalCache[sessionKey].options.fontWeight = parseInt(
-            terminalFontWeight,
-            10,
-          );
+        const fontWeight = parsePositiveInt(terminalFontWeight);
+        if (fontWeight !== null) {
+          cachedTerminal.options.fontWeight = fontWeight;
         }
         if (terminalLineHeight !== undefined) {
-          terminalCache[sessionKey].options.lineHeight =
+          cachedTerminal.options.lineHeight =
             normalizeTerminalLineHeight(terminalLineHeight);
         }
 
-        eventManager.setTimeout(() => {
-          scheduleTerminalLayoutSyncRef.current("theme-updated");
-        }, 100);
+        // 字体选项随时写入缓存终端；重新布局需要已挂载且 fitAddon 就绪
+        if (terminalRef.current && fitAddonRef.current) {
+          eventManager.setTimeout(() => {
+            scheduleTerminalLayoutSyncRef.current("theme-updated");
+          }, 100);
+        }
       }
     };
 
