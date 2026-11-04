@@ -5,6 +5,23 @@
  * @import { ProcessId, Unsubscribe, PayloadCallback, IpcCallback, TerminalMailboxMessage, TerminalMailboxPayload } from "../../shared/contracts/preload"
  */
 
+/** @type {TextDecoder | undefined} */
+let inputDecoder;
+
+/**
+ * 终端输入统一为文本：字节按 UTF-8 解码（Uint8Array#toString 会得到 "1,2,3"）。
+ * @param {string|Uint8Array} data
+ * @returns {string}
+ */
+function toInputText(data) {
+  if (typeof data === "string") return data;
+  if (ArrayBuffer.isView(data)) {
+    inputDecoder ??= new TextDecoder();
+    return inputDecoder.decode(data);
+  }
+  return String(data);
+}
+
 /** @param {ReturnType<typeof import("../bridgeContext").createBridgeContext>} bridge */
 function createTerminalAPI(bridge) {
   const {
@@ -153,7 +170,7 @@ function createTerminalAPI(bridge) {
         processId,
         message: {
           type: TERMINAL_IO_MESSAGE_TYPES.INPUT,
-          data: typeof data === "string" ? data : data.toString(),
+          data: toInputText(data),
         },
       });
       return true;

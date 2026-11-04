@@ -80,16 +80,6 @@ class TerminalHandlers {
   getEventHandlers() {
     return [
       {
-        channel: IPC_EVENT_CHANNELS.TERMINAL_SEND_INPUT,
-        category: "terminal",
-        handler: this.sendInput.bind(this),
-      },
-      {
-        channel: IPC_EVENT_CHANNELS.TERMINAL_OUTPUT_ACK,
-        category: "terminal",
-        handler: this.handleOutputAck.bind(this),
-      },
-      {
         channel: TERMINAL_IO_MAILBOX_CHANNEL,
         category: "terminal",
         handler: this.handleMailboxMessage.bind(this),
@@ -100,31 +90,6 @@ class TerminalHandlers {
         handler: this.cancelZmodemTransfer.bind(this),
       },
     ];
-  }
-
-  /**
-   * 发送输入到进程（事件类型，无返回值）
-   */
-  sendInput(_event, { processId, input }) {
-    if (processId === undefined || processId === null) {
-      return;
-    }
-
-    if (this.terminalIOMailboxManager) {
-      this.terminalIOMailboxManager.handleRendererMessage(
-        processId,
-        {
-          type: TERMINAL_IO_MESSAGE_TYPES.INPUT,
-          data: input,
-        },
-        {
-          writeInput: this.writeToProcess.bind(this),
-        },
-      );
-      return;
-    }
-
-    this.writeToProcess(processId, input);
   }
 
   /**
@@ -143,29 +108,6 @@ class TerminalHandlers {
       );
     }
     return cancelled;
-  }
-
-  /**
-   * 渲染进程输出消费确认（用于主进程背压控制）
-   */
-  handleOutputAck(_event, payload) {
-    const handled = this.terminalIOMailboxManager?.handleRendererMessage(
-      payload?.processId,
-      {
-        type: TERMINAL_IO_MESSAGE_TYPES.ACK,
-        bytes: payload?.bytes,
-      },
-      {
-        writeInput: this.writeToProcess.bind(this),
-      },
-    );
-
-    if (!handled) {
-      logToFile(
-        `Ignored terminal output ack for process ${payload?.processId}`,
-        "DEBUG",
-      );
-    }
   }
 
   handleMailboxMessage(_event, payload) {

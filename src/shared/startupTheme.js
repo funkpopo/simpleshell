@@ -1,3 +1,4 @@
+// @ts-check
 const { getThemeTokens, installThemeVariables } = require("./themeTokens");
 /**
  * 启动期主题常量与解析。

@@ -214,16 +214,18 @@ const AboutDialog = memo(function AboutDialog({
 
   // Get app version
   useEffect(() => {
-    if (window.terminalAPI?.getAppVersion) {
-      const versionPromise = window.terminalAPI.getAppVersion();
-      if (versionPromise instanceof Promise) {
-        versionPromise.then((result) =>
-          setAppVersion(result.version || "1.0.0"),
-        );
-      } else {
-        setAppVersion(versionPromise || "1.0.0");
-      }
-    }
+    if (!window.terminalAPI?.getAppVersion) return undefined;
+    let cancelled = false;
+    // 主进程返回 { success, version }；失败时保留当前显示值
+    window.terminalAPI
+      .getAppVersion()
+      .then((result) => {
+        if (!cancelled && result?.version) setAppVersion(result.version);
+      })
+      .catch((error) => console.warn("Failed to read app version:", error));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 对话框打开时检测是否有已下载且校验通过的安装包，有则直接进入可安装状态

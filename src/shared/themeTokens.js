@@ -1,3 +1,4 @@
+// @ts-check
 const { Z_INDEX } = require("./constants/zIndex");
 
 /** Theme values shared by BrowserWindow, preload, CSS variables and MUI. */
@@ -153,6 +154,7 @@ function getThemeTokens(darkMode) {
 /** @param {boolean} darkMode */
 function getThemePalette(darkMode) {
   const value = getThemeTokens(darkMode);
+  /** @param {string} prefix */
   const group = (prefix) => ({
     main: value["--color-" + prefix + "-main"],
     light: value["--color-" + prefix + "-light"],
@@ -183,6 +185,10 @@ function getThemePalette(darkMode) {
 }
 /** @returns {string} */
 function buildThemeCss() {
+  /**
+   * @param {string} selector
+   * @param {boolean} mode
+   */
   const rule = (selector, mode) =>
     selector +
     "{color-scheme:" +

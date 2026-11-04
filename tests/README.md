@@ -30,7 +30,9 @@ its `*Responses` typedef.
 
 `checkJs` stays off in the config because checked files `require` modules outside
 the scope (e.g. `src/shared/startupTheme.js`), and `checkJs` would check those too.
-Each in-scope file opts in with a `// @ts-check` first line instead, and
+The shared modules the preload requires (`src/shared/startupTheme.js`,
+`themeTokens.js`, `constants/zIndex.js`) carry `// @ts-check` themselves, so they
+are checked as part of the program. Each in-scope file opts in with a `// @ts-check` first line instead, and
 `unit/preload-typings.test.js` fails if one is missing. To extend coverage to
 another folder:
 

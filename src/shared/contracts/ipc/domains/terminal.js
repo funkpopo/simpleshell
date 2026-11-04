@@ -203,19 +203,6 @@ const TERMINAL_CHANNEL_DEFINITIONS = Object.freeze([
     { permission: "credentials" },
   ),
   defineEvent(
-    "TERMINAL_SEND_INPUT",
-    "terminal:sendInput",
-    "terminal",
-    objectPayloadArgs(["processId", "input"]),
-    { permission: "process-control" },
-  ),
-  defineEvent(
-    "TERMINAL_OUTPUT_ACK",
-    "terminal:outputAck",
-    "terminal",
-    objectPayloadArgs(["processId", "bytes"]),
-  ),
-  defineEvent(
     "TERMINAL_IO_MAILBOX",
     "terminal:mailbox",
     "terminal",
