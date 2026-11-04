@@ -102,12 +102,13 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 const selector = (name) => "." + CSS.escape(aiClassName(name));
-async function waitFor(check, message) {
-  for (let attempt = 0; attempt < 100; attempt++) {
+async function waitFor(check, message, attempts = 100) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     if (check()) return;
     await delay(20);
   }
-  throw new Error(message);
+  // message may be a function so that it reports the state at failure time
+  throw new Error(typeof message === "function" ? message() : message);
 }
 async function checkMessageLayout(paper) {
   const messages = paper.querySelector(selector("ai-chat-messages"));
@@ -208,8 +209,17 @@ async function exerciseMessages(paper) {
   const handle = [...paper.children].find(
     (element) => getComputedStyle(element).cursor === "ew-resize",
   );
+  const cssWidth = () => parseFloat(getComputedStyle(paper).width);
+  // The open transition scales the dialog; measure only once it has settled.
+  await waitFor(
+    () => Math.abs(paper.getBoundingClientRect().width - cssWidth()) <= 1,
+    () =>
+      `AI window must finish opening before resizing: rendered ${paper.getBoundingClientRect().width}, CSS ${cssWidth()}`,
+    250,
+  );
   for (const width of [360, 800, 400]) {
-    const previousWidth = paper.getBoundingClientRect().width;
+    // Drag distance follows the layout width, not a possibly transformed box.
+    const previousWidth = cssWidth();
     handle.dispatchEvent(
       new MouseEvent("mousedown", { bubbles: true, clientX: 0 }),
     );
@@ -222,7 +232,9 @@ async function exerciseMessages(paper) {
     document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     await waitFor(
       () => Math.abs(paper.getBoundingClientRect().width - width) <= 1,
-      `AI resize handle must reach width ${width}, got ${paper.getBoundingClientRect().width}; viewport ${window.innerWidth}, CSS width ${getComputedStyle(paper).width}`,
+      () =>
+        `AI resize handle must reach width ${width}, got ${paper.getBoundingClientRect().width}; viewport ${window.innerWidth}, CSS width ${getComputedStyle(paper).width}`,
+      250,
     );
     await checkMessageLayout(paper);
   }

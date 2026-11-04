@@ -18,8 +18,10 @@ describe("port-forwarding-client", () => {
     function client(mode) {
       return new NativePortForwardingClient({
         locate: () => process.execPath,
-        startTimeout: 1000,
-        requestTimeout: 100,
+        // Spawning node can take seconds under parallel load; only the "hang"
+        // case exercises the request timeout, so only it keeps a short one.
+        startTimeout: 15000,
+        requestTimeout: mode === "hang" ? 100 : 15000,
         spawnService: () =>
           spawn(
             process.execPath,
