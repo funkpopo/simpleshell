@@ -137,18 +137,26 @@ describe("command suggestion keyboard rules", () => {
       ...extra,
     });
 
-  it("enters the list with the key pointing toward it", () => {
+  it("enters the list with ArrowDown wherever the popup is shown", () => {
     expect(act("ArrowDown")).toEqual({ type: "move", index: 0 });
-    expect(act("ArrowUp", -1, { showAbove: true })).toEqual({
+    // Placement no longer changes the keys: the prompt usually sits at the
+    // bottom, where the popup opens above, and ArrowUp must stay shell history.
+    expect(act("ArrowDown", -1, { showAbove: true })).toEqual({
       type: "move",
       index: 0,
     });
+    expect(act("ArrowDown", 0, { showAbove: true })).toEqual({
+      type: "move",
+      index: 1,
+    });
   });
 
-  it("leaves shell history keys alone until the list is entered", () => {
+  it("leaves ArrowUp to shell history until the list is entered", () => {
     expect(act("ArrowUp")).toEqual({ type: "pass" });
-    expect(act("ArrowDown", -1, { showAbove: true })).toEqual({
-      type: "pass",
+    expect(act("ArrowUp", -1, { showAbove: true })).toEqual({ type: "pass" });
+    expect(act("ArrowUp", 2, { showAbove: true })).toEqual({
+      type: "move",
+      index: 1,
     });
   });
 

@@ -124,8 +124,10 @@ const CURSOR_MOVE_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
 /**
  * 建议弹窗的键盘语义（纯函数，便于测试）：
- * - 朝弹窗方向的方向键进入/在列表中移动（弹窗在下方为 ↓，在上方为 ↑），到底不回绕；
- * - 反方向键在首项时退回输入行，未选中时原样交给 shell（不劫持历史命令）；
+ * - ↓ 进入列表并向后移动，到底不回绕；与弹窗在光标上方还是下方无关
+ *   （列表始终自上而下排列，↓ 的移动方向与视觉一致）；
+ * - ↑ 向前移动，在首项时退回输入行；未选中时原样交给 shell，
+ *   不劫持历史命令（提示符常在终端底部，↑ 必须留给 shell 历史）；
  * - Enter / Delete 仅在已用方向键选中某项时生效，否则照常输入；
  * - 左右移动光标会关闭弹窗并放行按键；带修饰键的组合一律放行。
  */
@@ -133,7 +135,6 @@ const resolveCommandSuggestionKeyAction = ({
   key,
   selectedIndex = -1,
   count = 0,
-  showAbove = false,
   ctrlKey = false,
   altKey = false,
   metaKey = false,
@@ -144,16 +145,14 @@ const resolveCommandSuggestionKeyAction = ({
   }
 
   const hasSelection = selectedIndex >= 0 && selectedIndex < count;
-  const towardKey = showAbove ? "ArrowUp" : "ArrowDown";
-  const awayKey = showAbove ? "ArrowDown" : "ArrowUp";
 
   switch (key) {
-    case towardKey:
+    case "ArrowDown":
       return {
         type: "move",
         index: hasSelection ? Math.min(selectedIndex + 1, count - 1) : 0,
       };
-    case awayKey:
+    case "ArrowUp":
       return hasSelection
         ? { type: "move", index: selectedIndex - 1 }
         : { type: "pass" };

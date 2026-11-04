@@ -109,7 +109,6 @@ const CommandSuggestion = ({
   const componentRef = useRef(null);
   // 本次显示期间的锚点与朝向：输入时保持稳定，避免弹窗随每个字符横向漂移、上下翻转
   const placementRef = useRef(null);
-  const showAboveRef = useRef(false);
   const restoreIndexRef = useRef(null);
 
   const items = useMemo(
@@ -126,7 +125,12 @@ const CommandSuggestion = ({
     setSelectedIndex(index);
   }, []);
 
-  // 新的建议列表到达时清除选中（删除后恢复到原位置）
+  // 上一次渲染的列表；下面的 effect 先于其更新执行，读到的是刷新前的列表
+  const previousItemsRef = useRef(items);
+
+  // 新的建议列表到达时：删除后恢复到原位置；已用方向键选中的命令仍在新列表中
+  // 时保留选中（同一输入的查询可能晚到或重复到达，不能吞掉刚做的选择）；
+  // 否则清除选中。
   useEffect(() => {
     setRemovedCommands((previous) =>
       previous.size === 0 ? previous : new Set(),
@@ -138,12 +142,22 @@ const CommandSuggestion = ({
       selectIndex(-1);
       return;
     }
+    if (restoreIndex !== null && suggestions.length > 0) {
+      selectIndex(Math.min(restoreIndex, suggestions.length - 1));
+      return;
+    }
+    const selectedCommand =
+      previousItemsRef.current[selectedIndexRef.current]?.command;
     selectIndex(
-      restoreIndex !== null && suggestions.length > 0
-        ? Math.min(restoreIndex, suggestions.length - 1)
-        : -1,
+      selectedCommand === undefined
+        ? -1
+        : suggestions.findIndex((item) => item.command === selectedCommand),
     );
   }, [visible, suggestions, selectIndex]);
+
+  useEffect(() => {
+    previousItemsRef.current = items;
+  }, [items]);
 
   const windowDimensions = useMemo(() => {
     if (items.length === 0) {
@@ -256,7 +270,6 @@ const CommandSuggestion = ({
         key: e.key,
         selectedIndex: selectedIndexRef.current,
         count: items.length,
-        showAbove: showAboveRef.current,
         ctrlKey: e.ctrlKey,
         altKey: e.altKey,
         metaKey: e.metaKey,
@@ -359,7 +372,6 @@ const CommandSuggestion = ({
       anchorY: anchoredPosition.y,
       showAbove: windowPosition.showAbove,
     };
-    showAboveRef.current = windowPosition.showAbove;
   });
 
   if (!windowPosition) {
@@ -405,7 +417,7 @@ const CommandSuggestion = ({
         ["Esc", t("webTerminal.suggestion.close")],
       ]
     : [
-        [showAbove ? "↑" : "↓", t("webTerminal.suggestion.navigate")],
+        ["↓", t("webTerminal.suggestion.navigate")],
         ["Esc", t("webTerminal.suggestion.close")],
       ];
 
@@ -423,7 +435,7 @@ const CommandSuggestion = ({
         height: frame.height,
         boxSizing: "border-box",
         display: "flex",
-        // 弹窗在光标上方时整体镜像：最佳匹配贴近光标，提示栏位于远端
+        // 弹窗在光标上方时提示栏移到远端，列表贴近光标
         flexDirection: showAbove ? "column-reverse" : "column",
         // 高于浮动窗口（zIndex.floatWindow），保证输入建议始终可见；
         // 低于模态/锁屏/主题切换遮罩（见 shared/constants/zIndex.js）
@@ -448,7 +460,8 @@ const CommandSuggestion = ({
           overflowX: "hidden",
           padding: 0,
           display: "flex",
-          flexDirection: showAbove ? "column-reverse" : "column",
+          // 列表始终自上而下：↓ 选择下一项时高亮向下移动，与按键方向一致
+          flexDirection: "column",
         }}
       >
         {items.map((suggestion, index) => {
