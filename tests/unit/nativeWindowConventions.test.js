@@ -460,22 +460,22 @@ describe("window-native-feel", () => {
       );
     const dragUploadSource =
       require("../helpers/renderer-sources.js").readRendererCallback(
-        "src/renderer/features/file-manager/hooks/useTransferTasks.js",
+        "src/renderer/features/file-manager/hooks/useDroppedUploads.js",
         "handleDroppedItems",
       );
     const uploadTransferSource =
       require("../helpers/renderer-sources.js").readRendererCallback(
-        "src/renderer/features/file-manager/hooks/useTransferTasks.js",
+        "src/renderer/features/file-manager/hooks/useUploadTransfers.js",
         "runUploadTransfer",
       );
     const downloadSource =
       require("../helpers/renderer-sources.js").readRendererCallback(
-        "src/renderer/features/file-manager/hooks/useTransferTasks.js",
+        "src/renderer/features/file-manager/hooks/useDownloadTransfers.js",
         "handleDownload",
       );
     const downloadFolderSource =
       require("../helpers/renderer-sources.js").readRendererCallback(
-        "src/renderer/features/file-manager/hooks/useTransferTasks.js",
+        "src/renderer/features/file-manager/hooks/useFolderDownloads.js",
         "handleDownloadFolder",
       );
 
