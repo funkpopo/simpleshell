@@ -98,10 +98,24 @@ export function ChatMessageDots({ messages, onSelect }) {
             `ai-chat-dot ${message.role === "user" ? "is-user" : "is-assistant"}`,
           )}
           onClick={() => onSelect(message.id)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onSelect(message.id);
+            }
+          }}
           title={
-            message.role === "user" ? t("ai.editMessage") : t("ai.copyMessage")
+            message.role === "user"
+              ? t("ai.jumpToUserMessage")
+              : t("ai.jumpToAssistantMessage")
+          }
+          aria-label={
+            message.role === "user"
+              ? t("ai.jumpToUserMessage")
+              : t("ai.jumpToAssistantMessage")
           }
           role="button"
+          tabIndex={0}
         />
       ))}
     </Box>

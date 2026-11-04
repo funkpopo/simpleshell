@@ -938,6 +938,8 @@
       "proxyPortRequired": "请输入有效的代理端口（1-65535）"
     },
     "ai": {
+      "jumpToUserMessage": "跳转到该条提问",
+      "jumpToAssistantMessage": "跳转到该条回复",
       "title": "AI 助手",
       "inputPlaceholder": "输入消息...",
       "startConversation": "开始对话，提出你的问题",

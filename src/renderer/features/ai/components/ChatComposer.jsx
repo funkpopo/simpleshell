@@ -41,14 +41,19 @@ export default function ChatComposer({
           maxRows={4}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyPress={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+          onKeyDown={(e) => {
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing &&
+              e.keyCode !== 229
+            ) {
               e.preventDefault();
               onSend();
             }
           }}
           placeholder={t("ai.inputPlaceholder")}
-          disabled={isPending || abortController}
+          disabled={Boolean(isPending || abortController)}
           inputRef={inputRef}
           variant="outlined"
           size="small"

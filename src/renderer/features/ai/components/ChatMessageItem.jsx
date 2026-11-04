@@ -53,7 +53,11 @@ export default function ChatMessageItem({
         `ai-message-row ${isUserMessage ? "is-user" : "is-assistant"}`,
       )}
       ref={(el) => {
-        if (el) messageRefsMap.current[message.id] = el;
+        if (el) {
+          messageRefsMap.current[message.id] = el;
+        } else {
+          delete messageRefsMap.current[message.id];
+        }
       }}
     >
       <Paper
@@ -78,7 +82,6 @@ export default function ChatMessageItem({
               <StreamContent isStreaming={isStreaming}>
                 {renderMessageContent(
                   assistantTextContent,
-                  message.id,
                   isStreaming,
                 )}
               </StreamContent>

@@ -110,7 +110,7 @@ export default function useChatMarkdownRenderer({
 
   // 渲染消息内容，包含命令块的解析
   const renderMessageContent = useCallback(
-    (content, messageId, isStreaming) => {
+    (content, isStreaming) => {
       // 解析命令块
       const commands = parseCommandsFromResponse(content);
 

@@ -18,6 +18,7 @@ import useChatAutoScroll from "./hooks/useChatAutoScroll.js";
 import useChatWindowSize from "./hooks/useChatWindowSize.js";
 import useChatApiSettings from "./hooks/useChatApiSettings.js";
 import useChatRequest from "./hooks/useChatRequest.js";
+import { deleteChatMemory } from "./lib/chatMemory.js";
 import useChatMarkdownRenderer from "./hooks/useChatMarkdownRenderer.jsx";
 import ChatResizeHandles from "./components/ChatResizeHandles.jsx";
 import ChatHeader from "./components/ChatHeader.jsx";
@@ -141,10 +142,8 @@ const AIChatWindow = ({
     setInput("");
     setError("");
     setExpandedThinking({});
-    // 删除记忆文件
-    if (window.terminalAPI?.deleteMemory) {
-      await window.terminalAPI.deleteMemory();
-    }
+    // 删除记忆文件（失败只记录，不能阻止关闭）
+    await deleteChatMemory();
     if (onClose) {
       onClose();
     }
@@ -172,7 +171,7 @@ const AIChatWindow = ({
       hideBackdrop
       disableEnforceFocus
       disableAutoFocus
-      disableEscapeKeyDown={isPending || abortController}
+      disableEscapeKeyDown={Boolean(isPending || abortController)}
       customwidth={windowWidth}
       customheight={windowHeight}
       customzindex={zIndex}
@@ -216,7 +215,7 @@ const AIChatWindow = ({
           showThinking={showThinking}
           expandedThinking={expandedThinking}
           onToggleThinking={toggleThinking}
-          requestBusy={isPending || abortController}
+          requestBusy={Boolean(isPending || abortController)}
           renderMessageContent={renderMessageContent}
           markdownComponents={markdownComponents}
           markdownUrlTransform={markdownUrlTransform}

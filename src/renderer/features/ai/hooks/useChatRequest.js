@@ -12,6 +12,7 @@ import {
   createApiResponseError,
   formatBriefApiError,
 } from "../lib/aiApiErrors.js";
+import { deleteChatMemory } from "../lib/chatMemory.js";
 
 // AI 请求生命周期：发送（流式/非流式）、流事件订阅与清理、中断、
 // 编辑/重试截断历史、清空对话。消息、输入与错误状态由调用方持有。
@@ -53,6 +54,8 @@ export default function useChatRequest({
     const request = activeRequestRef.current;
     if (!request) return;
     activeRequestRef.current = null;
+    // 关闭窗口/清空对话时同样复位，避免重开后输入框仍禁用、停止按钮仍显示
+    setAbortController(null);
     request.controller.abort();
     cleanupStreamHandlers(request.id);
     if (request.sent) {
@@ -191,14 +194,13 @@ export default function useChatRequest({
             activeRequestRef.current === request &&
             !controller.signal.aborted
           ) {
-            setMessages((prev) => {
-              const newMessages = [...prev];
-              const lastMessage = newMessages[newMessages.length - 1];
-              if (lastMessage && lastMessage.id === assistantMessage.id) {
-                lastMessage.content += data.chunk;
-              }
-              return newMessages;
-            });
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessage.id
+                  ? { ...message, content: message.content + data.chunk }
+                  : message,
+              ),
+            );
           }
         };
 
@@ -208,16 +210,7 @@ export default function useChatRequest({
             activeRequestRef.current === request &&
             !controller.signal.aborted
           ) {
-            startTransition(() => {
-              setMessages((prev) => {
-                const newMessages = [...prev];
-                const lastMessage = newMessages[newMessages.length - 1];
-                if (lastMessage && lastMessage.id === assistantMessage.id) {
-                  lastMessage.isStreaming = false;
-                }
-                return newMessages;
-              });
-            });
+            markAssistantMessageComplete(assistantMessage.id);
             activeRequestRef.current = null;
             setAbortController(null);
             // 清理监听器
@@ -324,15 +317,7 @@ export default function useChatRequest({
     await sendMessageContent(input, messages, { clearInput: true });
   };
 
-  const clearMemoryAfterTruncate = async () => {
-    if (window.terminalAPI?.deleteMemory) {
-      try {
-        await window.terminalAPI.deleteMemory();
-      } catch (err) {
-        console.error("Failed to reset AI memory after truncating chat:", err);
-      }
-    }
-  };
+  const clearMemoryAfterTruncate = deleteChatMemory;
 
   const handleEditMessage = async (message) => {
     if (message.role !== "user" || isPending || abortController) {
@@ -375,21 +360,19 @@ export default function useChatRequest({
   const handleAbortRequest = () => {
     if (abortController) {
       cancelActiveRequest();
-      setAbortController(null);
 
       // 标记最后一条消息为非流式状态
       startTransition(() => {
         setMessages((prev) => {
-          const newMessages = [...prev];
-          const lastMessage = newMessages[newMessages.length - 1];
+          const lastMessage = prev[prev.length - 1];
           if (
-            lastMessage &&
-            lastMessage.role === "assistant" &&
-            lastMessage.isStreaming
+            !lastMessage ||
+            lastMessage.role !== "assistant" ||
+            !lastMessage.isStreaming
           ) {
-            lastMessage.isStreaming = false;
+            return prev;
           }
-          return newMessages;
+          return [...prev.slice(0, -1), { ...lastMessage, isStreaming: false }];
         });
       });
     }
@@ -398,13 +381,10 @@ export default function useChatRequest({
   // 清空对话
   const handleClearChat = async () => {
     cancelActiveRequest();
-    setAbortController(null);
     setMessages([]);
     setError("");
-    // 删除记忆文件
-    if (window.terminalAPI?.deleteMemory) {
-      await window.terminalAPI.deleteMemory();
-    }
+    // 删除记忆文件（失败只记录，不影响清空）
+    await deleteChatMemory();
   };
 
   return {

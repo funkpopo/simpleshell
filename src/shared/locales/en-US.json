@@ -943,6 +943,8 @@
       "proxyPortRequired": "Please enter a valid proxy port (1-65535)"
     },
     "ai": {
+      "jumpToUserMessage": "Jump to this question",
+      "jumpToAssistantMessage": "Jump to this reply",
       "title": "AI Assistant",
       "inputPlaceholder": "Type a message...",
       "startConversation": "Start a conversation, ask your question",
