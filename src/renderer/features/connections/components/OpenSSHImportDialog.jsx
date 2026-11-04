@@ -268,6 +268,10 @@ export default function OpenSSHImportDialog({ onClose }) {
                                     entry.agentForward
                                       ? ` · ${t("connectionManager.agentForward")}`
                                       : ""
+                                  }${
+                                    entry.enableCompression
+                                      ? ` · ${t("connectionManager.compressionShort")}`
+                                      : ""
                                   }`
                                 : t("connectionManager.sshImportProxyHint")
                             }

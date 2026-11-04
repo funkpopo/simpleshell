@@ -257,6 +257,7 @@ async function resolveSshConfig(tabId, options = {}) {
     privateKey: rawConfig.privateKey || undefined,
     privateKeyPath: rawConfig.privateKeyPath || undefined,
     passphrase: rawConfig.passphrase || undefined,
+    enableCompression: rawConfig.enableCompression === true || undefined,
     ...(includeTimeouts
       ? {
           readyTimeout: rawConfig.readyTimeout || undefined,
@@ -293,6 +294,7 @@ async function resolveSshConfig(tabId, options = {}) {
     proxyRequired: networkPath.proxyRequired,
     networkPath: networkPath.networkPath,
     expectedHostFingerprint,
+    enableCompression: sshConfig.enableCompression,
   };
 }
 

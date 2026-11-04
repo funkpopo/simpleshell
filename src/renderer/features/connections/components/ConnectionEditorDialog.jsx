@@ -619,6 +619,33 @@ export default function ConnectionEditorDialog({ editor }) {
                       >
                         {t("connectionManager.agentForwardHint")}
                       </Typography>
+                      <FormControlLabel
+                        sx={{ mt: 1 }}
+                        control={
+                          <Checkbox
+                            checked={formData.enableCompression === true}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                enableCompression: e.target.checked,
+                              }))
+                            }
+                            size="small"
+                          />
+                        }
+                        label={
+                          <Typography variant="body2">
+                            {t("connectionManager.enableCompression")}
+                          </Typography>
+                        }
+                      />
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: "block" }}
+                      >
+                        {t("connectionManager.enableCompressionHint")}
+                      </Typography>
                     </Box>
                   )}
                 </>

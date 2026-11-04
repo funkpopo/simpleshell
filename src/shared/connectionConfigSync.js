@@ -11,6 +11,7 @@ const CONNECTION_FIELDS = [
   "passphrase",
   "agentPath",
   "agentForward",
+  "enableCompression",
   "proxy",
   "protocol",
   "os",
@@ -27,6 +28,7 @@ const SSH_AUTH_FIELDS = [
   "passphrase",
   "agentPath",
   "agentForward",
+  "enableCompression",
   "proxy",
   "protocol",
 ];

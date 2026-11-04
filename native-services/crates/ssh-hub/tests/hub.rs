@@ -276,3 +276,37 @@ async fn remote_forwards_route_server_channels_to_their_lease() {
         port
     }));
 }
+
+/// Bytes on an exec channel until it closes.
+async fn exec_output(lease: &ssh_hub::Lease, command: &str) -> Vec<u8> {
+    let mut channel = lease.open_session().await.unwrap();
+    channel.exec(true, command).await.unwrap();
+    let mut out = Vec::new();
+    while let Some(message) = channel.wait().await {
+        match message {
+            ChannelMsg::Data { data } => out.extend_from_slice(&data),
+            ChannelMsg::Close | ChannelMsg::Eof => break,
+            _ => {}
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn compressed_connections_carry_bulk_output_intact() {
+    let server = TestSshd::start().await;
+    let hub = Hub::new(Duration::from_secs(60));
+    let mut compressed = config(&server);
+    compressed.enable_compression = Some(true);
+    let lease = hub.acquire(&compressed, &plain(), &no_stage).await.unwrap();
+
+    let out = exec_output(&lease, "flood 200000").await;
+    assert!(out.len() >= 200_000, "got {} bytes", out.len());
+    assert!(String::from_utf8_lossy(&out).contains("DONE"));
+    // Compression does not change which consumers share the connection.
+    let plain_lease = hub
+        .acquire(&config(&server), &plain(), &no_stage)
+        .await
+        .unwrap();
+    assert!(plain_lease.reused());
+}

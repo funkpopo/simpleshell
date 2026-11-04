@@ -49,6 +49,8 @@ pub(crate) struct SshConfig {
     agent_path: Option<String>,
     #[serde(default)]
     keyboard_interactive: bool,
+    #[serde(default)]
+    enable_compression: bool,
 }
 
 #[derive(Deserialize)]

@@ -100,6 +100,7 @@ export const getTerminalConfigSignature = (config) => {
     config.passphrase || "",
     config.agentPath || "",
     config.agentForward ? "1" : "0",
+    config.enableCompression ? "1" : "0",
     JSON.stringify(config.proxy || null),
     config.splitReconnect ? "1" : "0",
     config.language || "",

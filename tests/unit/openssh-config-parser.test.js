@@ -207,6 +207,15 @@ describe("parseOpenSSHConfig", () => {
     expect(hosts[0].agentForward).toBe(true);
   });
 
+  it("Compression yes 映射为 enableCompression，且不再记为不支持项", () => {
+    const { hosts } = parseOpenSSHConfig(
+      "Host web1\n  Compression yes\nHost web2\n  Compression no",
+    );
+    expect(hosts[0].enableCompression).toBe(true);
+    expect(hosts[0].unsupportedOptions).not.toContain("compression");
+    expect(hosts[1].enableCompression).toBe(false);
+  });
+
   it("非法端口被忽略", () => {
     const { hosts } = parseOpenSSHConfig("Host web1\n  Port abc\n  Port 70000");
     expect(hosts[0].port).toBeNull();

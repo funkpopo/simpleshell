@@ -150,6 +150,7 @@ export const buildConnectionPayloadFromForm = ({
         : "",
     agentPath: String(formData.agentPath || "").trim(),
     agentForward: formData.agentForward === true,
+    enableCompression: formData.enableCompression === true,
     os: formData.os,
     connectionType: formData.connectionType,
     protocol,

@@ -166,6 +166,10 @@ function buildSshConnectOptions(
   if (typeof processedConfig.hostVerifier === "function") {
     options.hostVerifier = processedConfig.hostVerifier;
   }
+  // zlib 压缩（core 中协商 zlib@openssh.com / zlib，服务器不支持时回落 none）
+  if (processedConfig.enableCompression === true) {
+    options.compress = true;
+  }
 
   // keyboard-interactive（2FA/OTP）：始终启用，配合 `keyboard-interactive` 事件处理
   options.tryKeyboard = true;

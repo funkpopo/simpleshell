@@ -20,6 +20,7 @@ const SUPPORTED_KEYWORDS = [
   "user",
   "identityfile",
   "forwardagent",
+  "compression",
   "proxyjump",
   "proxycommand",
 ];
@@ -30,7 +31,6 @@ const NOTED_UNSUPPORTED_KEYWORDS = [
   "proxycommand",
   "serveraliveinterval",
   "serveralivecountmax",
-  "compression",
   "identitiesonly",
   "identitiesonly",
   "addkeystoagent",
@@ -411,6 +411,9 @@ function resolveHostOptions(blocks, alias) {
         case "forwardagent":
           result.forwardAgent = /^(yes|true)$/i.test(option.valueTokens[0]);
           break;
+        case "compression":
+          result.compression = /^(yes|true)$/i.test(option.valueTokens[0]);
+          break;
         case "proxyjump":
           result.proxyJump = option.valueTokens.join(" ");
           break;
@@ -456,6 +459,7 @@ function buildHostEntry(alias, block, resolved, homeDir) {
       expandPathTokens(path, homeDir, alias),
     ),
     agentForward: resolved.forwardAgent === true,
+    enableCompression: resolved.compression === true,
     proxyJump: resolved.proxyJump || "",
     proxyCommand: resolved.proxyCommand || "",
     unsupportedOptions: Array.from(resolved.extraKeywords || []),
@@ -506,6 +510,7 @@ function mapHostsToConnections(hosts, options = {}) {
       privateKeyPath: entry.privateKeyPath || "",
       agentPath: "",
       agentForward: entry.agentForward === true,
+      enableCompression: entry.enableCompression === true,
       os: "",
       connectionType: "",
       protocol: "ssh",

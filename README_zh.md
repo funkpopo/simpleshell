@@ -31,6 +31,7 @@ SimpleShell 是一款现代化、功能丰富的 SSH 终端应用，结合了 El
 
 - **多协议支持**：SSH、Telnet、串口（COM）、Mosh 和本地 PowerShell 终端
 - **SSH Agent 转发**：密码、私钥和 Agent 登录均可开启转发；密码/私钥登录保持原认证方式，导入的 `ForwardAgent yes` 同样生效。可单独指定本机 Agent 路径，更改后重新连接生效。
+- **SSH 压缩**：可按连接开启 zlib 压缩（`zlib@openssh.com` / `zlib`，服务器不支持时不压缩），适合低带宽链路；导入 OpenSSH 配置时识别 `Compression yes`
 - **连接池化**：智能连接复用，最小化资源占用
 - **OpenSSH 配置导入**：一键解析 `~/.ssh/config` 并批量导入主机（支持 HostName/Port/User/IdentityFile/ForwardAgent、Host 通配与取反模式、全局默认项；ProxyJump/ProxyCommand 主机提示需手动配置跳板）
 - **串口控制台**：直连串口/COM 设备，可配置波特率、数据位、停止位、校验位与流控；同一端口每个标签页持有独占会话

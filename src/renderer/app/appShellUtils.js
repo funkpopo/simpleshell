@@ -172,6 +172,7 @@ export const getConnectionSyncSignature = (connection) =>
     passphrase: connection?.passphrase || "",
     agentPath: connection?.agentPath || "",
     agentForward: connection?.agentForward === true,
+    enableCompression: connection?.enableCompression === true,
     os: connection?.os || "",
     connectionType: connection?.connectionType || "",
     protocol: connection?.protocol || "",

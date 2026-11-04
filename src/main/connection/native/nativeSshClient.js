@@ -84,6 +84,7 @@ function toNativeConfig(options) {
     keepaliveIntervalMs: options.keepaliveInterval || undefined,
     keepaliveCountMax: options.keepaliveCountMax || undefined,
     readyTimeoutMs: options.readyTimeout || undefined,
+    enableCompression: options.compress === true || undefined,
   };
 }
 

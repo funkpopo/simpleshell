@@ -380,7 +380,7 @@ pub(crate) async fn establish(
             keepalive_interval: Some(config.keepalive_interval()),
             keepalive_max: config.keepalive_max(),
             nodelay: true,
-            preferred: preferred(config.algorithms.as_ref()),
+            preferred: preferred(config.algorithms.as_ref(), config.compression()),
             ..Default::default()
         });
         client::connect_stream(

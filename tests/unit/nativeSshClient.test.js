@@ -87,6 +87,15 @@ describe("NativeSshClient facade", () => {
     });
   });
 
+  it("passes compression to the core only when requested", () => {
+    expect(
+      toNativeConfig({ host: "h", username: "u", compress: true }),
+    ).toMatchObject({ enableCompression: true });
+    expect(
+      toNativeConfig({ host: "h", username: "u" }).enableCompression,
+    ).toBeUndefined();
+  });
+
   it("asks hostVerifier with the sha256 hex digest and relays the decision", async () => {
     const { client, streams } = createClient();
     const verifier = vi.fn((hash, callback) =>

@@ -54,6 +54,7 @@ const getConnectionVersion = (connection) => {
     connection.privateKeyPath || "",
     connection.agentPath || "",
     connection.agentForward ? "1" : "0",
+    connection.enableCompression ? "1" : "0",
     connection.os || "",
     connection.password || "",
     connection.hasPassword ? "1" : "0",

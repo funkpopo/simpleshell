@@ -861,10 +861,8 @@ class SSHPool extends BaseConnectionPool {
       options.hostHash = processedConfig.hostHash.trim();
     }
 
-    // 启用压缩（如果配置）
-    if (processedConfig && processedConfig.enableCompression === true) {
-      options.compress = true;
-      this._logInfo("SSH connection compression enabled (compress=true)");
+    if (options.compress) {
+      this._logInfo("SSH connection compression enabled (zlib)");
     }
 
     if (processedConfig.privateKey && processedConfig.passphrase) {

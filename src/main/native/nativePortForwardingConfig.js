@@ -85,6 +85,7 @@ async function resolveForwardingConfig(proc, proxyManager) {
       agentPath,
       keyboardInteractive: true,
       expectedHostFingerprint,
+      enableCompression: raw.enableCompression === true || undefined,
       ...network,
     },
     revision: revisionOf(network),

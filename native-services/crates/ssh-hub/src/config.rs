@@ -46,6 +46,11 @@ pub struct ConnectConfig {
     pub keepalive_interval_ms: Option<u64>,
     pub keepalive_count_max: Option<usize>,
     pub ready_timeout_ms: Option<u64>,
+    /// Offer zlib compression (`zlib@openssh.com`, `zlib`) ahead of `none`.
+    /// The server still decides; without it only `none` is preferred. Like
+    /// OpenSSH multiplexing, the first consumer of a shared connection
+    /// decides whether it is compressed.
+    pub enable_compression: Option<bool>,
 }
 
 /// Opaque identity of a connection: target, user and network path. As with
@@ -93,6 +98,10 @@ impl ConnectConfig {
             .filter(|ms| *ms > 0)
             .map(Duration::from_millis)
             .unwrap_or(DEFAULT_KEEPALIVE_INTERVAL)
+    }
+
+    pub(crate) fn compression(&self) -> bool {
+        self.enable_compression.unwrap_or(false)
     }
 
     pub(crate) fn keepalive_max(&self) -> usize {

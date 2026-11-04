@@ -30,6 +30,7 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 ### 🔌 **Connection Management**
 
 - **Multi-Protocol Support**: SSH, Telnet, Serial (COM), Mosh, and local PowerShell terminals
+- **SSH Compression**: Optional per-connection zlib compression (`zlib@openssh.com` / `zlib`, falling back to none) for low-bandwidth links; `Compression yes` is picked up from imported OpenSSH configs
 - **Connection Pooling**: Intelligent connection reuse to minimize resource usage
 - **OpenSSH Config Import**: Parse `~/.ssh/config` and batch-import hosts in one click (supports HostName/Port/User/IdentityFile/ForwardAgent, Host wildcard & negation patterns, and global defaults; hosts using ProxyJump/ProxyCommand are flagged for manual jump configuration)
 - **SSH Agent Forwarding**: Enable forwarding with password, private-key, or agent login. Password/private-key connections keep their login methods when forwarding is enabled; imported `ForwardAgent yes` applies to those connections too. The local agent path is configurable; reconnect after changing this setting.

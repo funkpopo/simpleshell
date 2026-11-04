@@ -8,7 +8,7 @@
 
 use crate::config::AlgorithmNames;
 use russh::keys::{Algorithm, HashAlg};
-use russh::{cipher, kex, mac, Preferred};
+use russh::{cipher, compression, kex, mac, Preferred};
 use std::borrow::Cow;
 use std::str::FromStr;
 
@@ -59,10 +59,28 @@ fn host_key_algorithms(names: &[String]) -> Vec<Algorithm> {
     picked
 }
 
+/// Compression offered when enabled: OpenSSH's delayed variant first (it
+/// starts after authentication, so auth packets stay uncompressed), then
+/// plain zlib, and `none` last so servers without zlib still connect.
+const COMPRESSION_ENABLED: &[compression::Name] = &[
+    compression::ZLIB_LEGACY,
+    compression::ZLIB,
+    compression::NONE,
+];
+
+/// Compression offered when disabled: `none` only, so the server cannot
+/// pick zlib from our list.
+const COMPRESSION_DISABLED: &[compression::Name] = &[compression::NONE];
+
 /// russh preferences for `names`; lists left empty fall back to the defaults
 /// extended with legacy algorithms, so old servers still negotiate.
-pub fn preferred(names: Option<&AlgorithmNames>) -> Preferred {
+pub fn preferred(names: Option<&AlgorithmNames>, compress: bool) -> Preferred {
     let mut preferred = compatible_defaults();
+    preferred.compression = Cow::Borrowed(if compress {
+        COMPRESSION_ENABLED
+    } else {
+        COMPRESSION_DISABLED
+    });
     let Some(names) = names else {
         return preferred;
     };
@@ -129,12 +147,15 @@ mod tests {
 
     #[test]
     fn maps_the_basic_list_in_order_and_skips_unknown_names() {
-        let preferred = preferred(Some(&AlgorithmNames {
-            kex: names(&["curve25519-sha256", "diffie-hellman-group1-sha1", "bogus"]),
-            server_host_key: names(&["ssh-ed25519", "ssh-rsa", "ssh-dss"]),
-            cipher: names(&["aes128-ctr", "aes256-gcm", "3des-cbc"]),
-            hmac: names(&["umac-128-etm@openssh.com", "hmac-sha2-256", "hmac-md5"]),
-        }));
+        let preferred = preferred(
+            Some(&AlgorithmNames {
+                kex: names(&["curve25519-sha256", "diffie-hellman-group1-sha1", "bogus"]),
+                server_host_key: names(&["ssh-ed25519", "ssh-rsa", "ssh-dss"]),
+                cipher: names(&["aes128-ctr", "aes256-gcm", "3des-cbc"]),
+                hmac: names(&["umac-128-etm@openssh.com", "hmac-sha2-256", "hmac-md5"]),
+            }),
+            false,
+        );
         let kex: Vec<&str> = preferred.kex.iter().map(|n| n.as_ref()).collect();
         assert_eq!(
             kex,
@@ -167,7 +188,7 @@ mod tests {
 
     #[test]
     fn empty_lists_keep_compatible_defaults() {
-        let preferred = preferred(Some(&AlgorithmNames::default()));
+        let preferred = preferred(Some(&AlgorithmNames::default()), false);
         assert!(preferred
             .kex
             .iter()
@@ -177,5 +198,18 @@ mod tests {
             .iter()
             .any(|name| name.as_ref() == "ext-info-c"));
         assert!(preferred.mac.iter().any(|name| name.as_ref() == "hmac-md5"));
+    }
+
+    #[test]
+    fn compression_is_offered_only_when_enabled() {
+        let order = |compress| -> Vec<String> {
+            preferred(None, compress)
+                .compression
+                .iter()
+                .map(|name| name.as_ref().to_string())
+                .collect()
+        };
+        assert_eq!(order(false), ["none"]);
+        assert_eq!(order(true), ["zlib@openssh.com", "zlib", "none"]);
     }
 }

@@ -49,6 +49,9 @@ the connection verified (a pinned fingerprint must match, a verifier is asked).
 - Algorithm names from `sshAlgorithms.js` map onto russh preferences
   (`ssh-hub/src/algorithms.rs`), including legacy CBC/3DES ciphers, SHA-1 and
   group1 kex and hmac-md5/-96 MACs.
+- Compression: with `enableCompression` the client offers
+  `zlib@openssh.com`, `zlib`, `none` (otherwise only `none`). Like the rest
+  of the connection, it is decided by the consumer that opens it.
 - Concurrent acquires share a handshake; a connection whose last lease ends is
   closed after an idle timeout (30 s, `SIMPLESHELL_HUB_IDLE_MS`); a dead
   connection is replaced on the next acquire, and sessions on it end so

@@ -28,6 +28,7 @@ fn config(request: &Request) -> Result<ConnectConfig, &'static str> {
         proxy_required: Some(ssh.proxy_required),
         agent: ssh.agent_path.clone(),
         try_keyboard: Some(ssh.keyboard_interactive),
+        enable_compression: Some(ssh.enable_compression),
         ..ConnectConfig::default()
     })
 }
