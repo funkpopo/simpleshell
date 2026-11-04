@@ -7,27 +7,40 @@ import {
 } from "../lib/aiSystemPrompt";
 import { createEmptyCustomRules } from "../lib/aiSettingsModel.js";
 
+const sameRules = (left, right) =>
+  JSON.stringify(normalizeCustomRiskRules(left)) ===
+  JSON.stringify(normalizeCustomRiskRules(right));
+
 // 自定义风险规则编辑：新增（正则校验）、删除、保存并应用到风险评估模块。
-// 保存期间复用设置对话框共享的 loading / 提示状态。
-export default function useCustomRiskRules({
-  setLoading,
-  setError,
-  setSuccess,
-}) {
+// 保存状态独立于设置对话框的整体加载状态，保存时只禁用保存按钮。
+export default function useCustomRiskRules({ setError, setSuccess }) {
   const { t } = useTranslation();
   const [customRules, setCustomRules] = useState(createEmptyCustomRules());
+  // 最近一次加载/保存的规则，用于判断是否有未保存的修改
+  const [savedRules, setSavedRules] = useState(createEmptyCustomRules());
   const [newRulePattern, setNewRulePattern] = useState("");
   const [newRuleLevel, setNewRuleLevel] = useState("high");
   const [ruleError, setRuleError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const dirty = !sameRules(customRules, savedRules);
 
   // 加载自定义风险规则（未保存过规则时保持当前状态）
   const applyStoredRules = (storedRules) => {
     if (storedRules) {
       const normalizedRules = normalizeCustomRiskRules(storedRules);
       setCustomRules(normalizedRules);
+      setSavedRules(normalizedRules);
       // 应用到风险评估模块
       applyCustomRiskRules(normalizedRules);
     }
+  };
+
+  // 放弃未保存的修改，恢复到最近一次加载/保存的规则
+  const discardChanges = () => {
+    setCustomRules(savedRules);
+    setNewRulePattern("");
+    setRuleError("");
   };
 
   // 添加自定义规则
@@ -45,7 +58,7 @@ export default function useCustomRiskRules({
     }
 
     if (customRules[newRuleLevel]?.includes(validation.pattern)) {
-      setRuleError(t("aiSettings.invalidRegex"));
+      setRuleError(t("aiSettings.duplicateRule"));
       return;
     }
 
@@ -67,7 +80,7 @@ export default function useCustomRiskRules({
 
   // 保存自定义规则
   const handleSaveRules = async () => {
-    setLoading(true);
+    setSaving(true);
     setError("");
     try {
       if (window.terminalAPI?.saveCustomRiskRules) {
@@ -77,6 +90,7 @@ export default function useCustomRiskRules({
         if (result) {
           // 应用到风险评估模块
           setCustomRules(normalizedRules);
+          setSavedRules(normalizedRules);
           applyCustomRiskRules(normalizedRules);
           setSuccess(t("aiSettings.rulesSaved"));
         } else {
@@ -86,7 +100,7 @@ export default function useCustomRiskRules({
     } catch {
       setError(t("aiSettings.rulesSaveFailed"));
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -97,7 +111,10 @@ export default function useCustomRiskRules({
     newRuleLevel,
     setNewRuleLevel,
     ruleError,
+    saving,
+    dirty,
     applyStoredRules,
+    discardChanges,
     handleAddRule,
     handleDeleteRule,
     handleSaveRules,

@@ -23,7 +23,7 @@ import ApiConfigList from "./components/ApiConfigList.jsx";
 import ApiConfigForm from "./components/ApiConfigForm.jsx";
 import AIProxySettingsPanel from "./components/AIProxySettingsPanel.jsx";
 import CustomRiskRulesTab from "./components/CustomRiskRulesTab.jsx";
-import DeleteApiConfirmDialog from "./components/DeleteApiConfirmDialog.jsx";
+import ConfirmDialog from "./components/ConfirmDialog.jsx";
 
 const AISettings = ({ open, onClose }) => {
   const { t } = useTranslation();
@@ -45,6 +45,7 @@ const AISettings = ({ open, onClose }) => {
     proxy,
     rules,
     deleteConfirmOpen,
+    discardRulesConfirmOpen,
     handleConfigChange,
     handleAddApi,
     handleEditApi,
@@ -56,6 +57,8 @@ const AISettings = ({ open, onClose }) => {
     handleSave,
     handleTest,
     handleClose,
+    handleConfirmDiscardRules,
+    handleCancelDiscardRules,
     handleFetchModels,
   } = useAISettingsController({ open, onClose });
 
@@ -182,7 +185,8 @@ const AISettings = ({ open, onClose }) => {
                   newRuleLevel={rules.newRuleLevel}
                   setNewRuleLevel={rules.setNewRuleLevel}
                   ruleError={rules.ruleError}
-                  loading={loading}
+                  saving={rules.saving}
+                  dirty={rules.dirty}
                   onAddRule={rules.handleAddRule}
                   onDeleteRule={rules.handleDeleteRule}
                   onSaveRules={rules.handleSaveRules}
@@ -219,10 +223,23 @@ const AISettings = ({ open, onClose }) => {
       </DialogActions>
 
       {/* 删除确认对话框 */}
-      <DeleteApiConfirmDialog
+      <ConfirmDialog
         open={deleteConfirmOpen}
+        title={t("aiSettings.deleteConfirmTitle")}
+        message={t("aiSettings.deleteConfirm")}
+        confirmLabel={t("common.delete")}
         onCancel={handleCancelDelete}
         onConfirm={handleConfirmDelete}
+      />
+
+      {/* 放弃未保存的自定义规则确认 */}
+      <ConfirmDialog
+        open={discardRulesConfirmOpen}
+        title={t("aiSettings.unsavedRulesTitle")}
+        message={t("aiSettings.unsavedRulesMessage")}
+        confirmLabel={t("aiSettings.discardRules")}
+        onCancel={handleCancelDiscardRules}
+        onConfirm={handleConfirmDiscardRules}
       />
     </Dialog>
   );

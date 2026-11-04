@@ -46,11 +46,14 @@ export default function useAISettingsController({ open, onClose }) {
   const proxy = useAIProxySettings({ setError, setSuccess });
 
   // 自定义风险规则状态
-  const rules = useCustomRiskRules({ setLoading, setError, setSuccess });
+  const rules = useCustomRiskRules({ setError, setSuccess });
 
   // 删除确认对话框状态
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+
+  // 关闭时存在未保存的自定义规则，需要确认是否放弃
+  const [discardRulesConfirmOpen, setDiscardRulesConfirmOpen] = useState(false);
 
   // 加载AI设置并管理焦点 - 只在对话框打开时执行
   useEffect(() => {
@@ -60,7 +63,7 @@ export default function useAISettingsController({ open, onClose }) {
       loadSettings();
 
       // 在对话框完全渲染后设置焦点到添加按钮
-      setTimeout(() => {
+      const focusTimer = setTimeout(() => {
         const addButton = document.querySelector(
           '[data-testid="add-api-button"]',
         );
@@ -68,19 +71,23 @@ export default function useAISettingsController({ open, onClose }) {
           addButton.focus();
         }
       }, 100);
+      return () => clearTimeout(focusTimer);
     }
+    return undefined;
   }, [open]); // 只依赖 open，移除 editMode 依赖
 
   // 当切换到编辑模式时设置焦点
   useEffect(() => {
     if (editMode && open) {
       // 延迟设置焦点，确保DOM更新完成
-      setTimeout(() => {
+      const focusTimer = setTimeout(() => {
         if (firstInputRef.current) {
           firstInputRef.current.focus();
         }
       }, 100);
+      return () => clearTimeout(focusTimer);
     }
+    return undefined;
   }, [editMode, open]);
 
   const loadSettings = async () => {
@@ -109,7 +116,7 @@ export default function useAISettingsController({ open, onClose }) {
         proxy.applyStoredProxy(settings.proxyConfig);
       }
     } catch {
-      setError(t("aiSettings.configSaveFailed"));
+      setError(t("aiSettings.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -121,6 +128,9 @@ export default function useAISettingsController({ open, onClose }) {
   };
 
   const handleConfigChange = (field, value) => {
+    if (field === "provider" || field === "apiUrl") {
+      setAvailableModels([]);
+    }
     setConfig((prev) => {
       if (field === "apiKey") {
         const typedApiKey = typeof value === "string" ? value.trim() : "";
@@ -135,7 +145,6 @@ export default function useAISettingsController({ open, onClose }) {
       }
 
       if (field === "provider" || field === "apiUrl") {
-        setAvailableModels([]);
         return {
           ...prev,
           [field]: value,
@@ -267,42 +276,20 @@ export default function useAISettingsController({ open, onClose }) {
     setLoading(true);
     setError("");
     try {
-      if (editMode) {
-        // 编辑模式：保存单个API配置
-        const apiConfig = buildSavableApiConfig({
-          ...config,
-          id: config.id || Date.now().toString(),
-        });
+      // 保存按钮只在编辑模式下显示：保存单个API配置
+      const apiConfig = buildSavableApiConfig({
+        ...config,
+        id: config.id || Date.now().toString(),
+      });
 
-        const result = await window.terminalAPI.saveApiConfig(apiConfig);
-        if (result) {
-          setSuccess(t("aiSettings.configSaved"));
-          setEditMode(false);
-          setEditingConfig(null);
-          await loadSettings(); // 重新加载设置
-        } else {
-          setError(t("aiSettings.configSaveFailed"));
-        }
+      const result = await window.terminalAPI.saveApiConfig(apiConfig);
+      if (result) {
+        setSuccess(t("aiSettings.configSaved"));
+        setEditMode(false);
+        setEditingConfig(null);
+        await loadSettings(); // 重新加载设置
       } else {
-        // 列表模式：保存整体设置（兼容旧版本）
-        const apiConfig = buildSavableApiConfig({
-          ...config,
-          id: Date.now().toString(),
-        });
-        const settings = {
-          current: apiConfig,
-          configs: [apiConfig],
-        };
-
-        const result = await window.terminalAPI.saveAISettings(settings);
-        if (result) {
-          setSuccess(t("aiSettings.configSaved"));
-          setTimeout(() => {
-            onClose();
-          }, 1500);
-        } else {
-          setError(t("aiSettings.configSaveFailed"));
-        }
+        setError(t("aiSettings.configSaveFailed"));
       }
     } catch {
       setError(t("aiSettings.configSaveFailed"));
@@ -339,7 +326,10 @@ export default function useAISettingsController({ open, onClose }) {
           setError(
             t("aiSettings.testFailed") +
               ": " +
-              (result?.error || t("errors.common.unknownError")),
+              describeRequestError(
+                result?.error,
+                t("errors.common.unknownError"),
+              ),
           );
         }
       }
@@ -354,12 +344,30 @@ export default function useAISettingsController({ open, onClose }) {
     }
   };
 
-  const handleClose = () => {
+  const closeDialog = () => {
     setError("");
     setSuccess("");
     setEditMode(false);
     setEditingConfig(null);
     onClose();
+  };
+
+  const handleClose = () => {
+    if (rules.dirty) {
+      setDiscardRulesConfirmOpen(true);
+      return;
+    }
+    closeDialog();
+  };
+
+  const handleConfirmDiscardRules = () => {
+    setDiscardRulesConfirmOpen(false);
+    rules.discardChanges();
+    closeDialog();
+  };
+
+  const handleCancelDiscardRules = () => {
+    setDiscardRulesConfirmOpen(false);
   };
 
   // 获取可用模型列表
@@ -392,9 +400,12 @@ export default function useAISettingsController({ open, onClose }) {
       if (result && result.models && Array.isArray(result.models)) {
         const models = normalizeModelList(result.models);
         setAvailableModels(models);
-        if (config.model && !models.includes(config.model)) {
-          handleConfigChange("model", "");
-        }
+        // 以 await 之后的最新配置为准，用户等待期间的选择不会被旧值覆盖
+        setConfig((prev) =>
+          prev.model && !models.includes(prev.model)
+            ? { ...prev, model: "", name: "" }
+            : prev,
+        );
         setSuccess(t("aiSettings.modelsFetched"));
       } else {
         setError(t("aiSettings.fetchModelsFailed"));
@@ -428,6 +439,7 @@ export default function useAISettingsController({ open, onClose }) {
     proxy,
     rules,
     deleteConfirmOpen,
+    discardRulesConfirmOpen,
     handleConfigChange,
     handleAddApi,
     handleEditApi,
@@ -439,6 +451,8 @@ export default function useAISettingsController({ open, onClose }) {
     handleSave,
     handleTest,
     handleClose,
+    handleConfirmDiscardRules,
+    handleCancelDiscardRules,
     handleFetchModels,
   };
 }

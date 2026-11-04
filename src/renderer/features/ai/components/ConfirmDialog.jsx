@@ -10,8 +10,15 @@ import {
 import { useTranslation } from "react-i18next";
 import { Z_INDEX } from "../../../shared/constants/zIndex.js";
 
-// 删除 API 配置的二次确认对话框（叠在 AI 设置对话框之上）。
-export default function DeleteApiConfirmDialog({ open, onCancel, onConfirm }) {
+// 叠在 AI 设置对话框之上的二次确认对话框（删除配置、放弃未保存的规则等）。
+export default function ConfirmDialog({
+  open,
+  title,
+  message,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}) {
   const { t } = useTranslation();
 
   return (
@@ -35,16 +42,16 @@ export default function DeleteApiConfirmDialog({ open, onCancel, onConfirm }) {
         },
       }}
     >
-      <DialogTitle>{t("aiSettings.deleteConfirmTitle")}</DialogTitle>
+      <DialogTitle>{title}</DialogTitle>
       <DialogContent>
-        <Typography>{t("aiSettings.deleteConfirm")}</Typography>
+        <Typography>{message}</Typography>
       </DialogContent>
       <DialogActions sx={{ p: 2, gap: 1 }}>
         <Button onClick={onCancel} color="inherit">
           {t("common.cancel")}
         </Button>
         <Button onClick={onConfirm} variant="contained" color="error">
-          {t("common.delete")}
+          {confirmLabel}
         </Button>
       </DialogActions>
     </Dialog>

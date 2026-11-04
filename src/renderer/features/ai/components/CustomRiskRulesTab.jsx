@@ -125,7 +125,8 @@ export default function CustomRiskRulesTab({
   newRuleLevel,
   setNewRuleLevel,
   ruleError,
-  loading,
+  saving,
+  dirty,
   onAddRule,
   onDeleteRule,
   onSaveRules,
@@ -283,8 +284,21 @@ export default function CustomRiskRulesTab({
       )}
 
       {/* 保存按钮 */}
-      <Box sx={{ mt: 2, display: "flex", justifyContent: "flex-end" }}>
-        <Button variant="contained" onClick={onSaveRules} disabled={loading}>
+      <Box
+        sx={{
+          mt: 2,
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          gap: 2,
+        }}
+      >
+        {dirty && (
+          <Typography variant="caption" color="warning.main">
+            {t("aiSettings.rulesUnsaved")}
+          </Typography>
+        )}
+        <Button variant="contained" onClick={onSaveRules} disabled={saving}>
           {t("aiSettings.saveRules")}
         </Button>
       </Box>

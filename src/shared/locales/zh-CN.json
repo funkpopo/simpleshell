@@ -860,6 +860,12 @@
       "close": "关闭"
     },
     "aiSettings": {
+      "loadFailed": "加载 AI 设置失败",
+      "duplicateRule": "该等级下已存在相同的规则",
+      "rulesUnsaved": "规则有未保存的修改",
+      "unsavedRulesTitle": "放弃未保存的规则？",
+      "unsavedRulesMessage": "自定义风险规则有未保存的修改，关闭后这些修改将丢失。",
+      "discardRules": "放弃修改",
       "title": "AI 设置",
       "apiUrl": "API 基础地址",
       "apiUrlHelp": "请输入基础 API 地址，如：https://api.openai.com/v1（不要包含 /chat/completions）",

@@ -111,8 +111,14 @@ export const describeRequestError = (err, unknownMessage) => {
   } else if (typeof err === "string") {
     // 字符串错误
     errorMessage = err;
-  } else {
-    // 其他对象，转为字符串
+  } else if (err && typeof err === "object") {
+    // 其他对象：尽量序列化，避免显示 "[object Object]"
+    try {
+      errorMessage = JSON.stringify(err);
+    } catch {
+      errorMessage = unknownMessage;
+    }
+  } else if (err !== undefined && err !== null && err !== "") {
     errorMessage = String(err);
   }
   return errorMessage;

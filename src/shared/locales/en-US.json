@@ -865,6 +865,12 @@
       "close": "Close"
     },
     "aiSettings": {
+      "loadFailed": "Failed to load AI settings",
+      "duplicateRule": "This rule already exists at this level",
+      "rulesUnsaved": "Rules have unsaved changes",
+      "unsavedRulesTitle": "Discard unsaved rules?",
+      "unsavedRulesMessage": "Your custom risk rules have unsaved changes that will be lost if you close.",
+      "discardRules": "Discard changes",
       "title": "AI Settings",
       "apiUrl": "API Base URL",
       "apiUrlHelp": "Enter the base API URL, e.g., https://api.openai.com/v1 (do not include /chat/completions)",
