@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.8-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platform">
 </p>
@@ -50,7 +50,6 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 - **Bulk Transfers**: Upload/download entire folders with progress tracking
 - **Resumable SFTP Transfers**: Pause, reconnect, or restart the app and resume retained files from the transfer panel; files of 128 MiB or larger resume by completed segments
 - **Integrity Verification**: Optional SHA-256 by default or MD5 per task, streamed over SFTP without shell access; a mismatch triggers exactly one full-file retransmission and reports both hashes if it fails again
-- **Zero-Copy Engine**: High-performance file transfers with minimal memory usage
 - **Smart Caching**: Multi-level cache for improved file access speed
 - **File Preview**: Built-in viewer for text, images, code, and PDFs
 
@@ -80,7 +79,6 @@ SimpleShell is a modern, feature-rich SSH terminal application that combines the
 
 - **Lazy Loading**: Components loaded on-demand for faster startup
 - **Backpressure Control**: Stable file transfers with flow control
-- **Memory Management**: Active memory pool with leak detection
 - **Connection Health Monitoring**: Automatic reconnection and failover
 
 ## **Installation**
@@ -105,6 +103,7 @@ Download the latest release for your platform from the [Releases page](https://g
 
 - **Windows**: `.exe` installer
 - **Linux**: `.deb` or `.rpm` package
+- **macOS**: no prebuilt package yet; build from source (`npm run make -- --platform=darwin`)
 
 ### **Build from Source**
 
@@ -118,9 +117,9 @@ Vitest suites under `tests/unit` cover contracts, architecture boundaries and ap
 
 - Node.js 22.22.2+ (22 LTS) or 24.15.0+ and npm
 - Git
-- Python (for node-gyp compilation)
-- Build tools for your platform:
-  - **Windows**: Visual Studio Build Tools or Visual Studio
+- Rust stable toolchain with `cargo` (`npm start` / `package` / `make` build the `simpleshell-core` native host; there are no Node native addons, so Python/node-gyp is not needed)
+- Build tools for your platform (for the Rust linker):
+  - **Windows**: Visual Studio Build Tools (MSVC, "Desktop development with C++")
   - **macOS**: Xcode Command Line Tools
   - **Linux**: build-essential package
 

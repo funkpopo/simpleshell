@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/版本-0.5.1-blue" alt="版本">
+  <img src="https://img.shields.io/badge/版本-0.5.8-blue" alt="版本">
   <img src="https://img.shields.io/badge/许可证-Apache%202.0-green" alt="许可证">
   <img src="https://img.shields.io/badge/平台-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="平台">
 </p>
@@ -35,7 +35,7 @@ SimpleShell 是一款现代化、功能丰富的 SSH 终端应用，结合了 El
 - **OpenSSH 配置导入**：一键解析 `~/.ssh/config` 并批量导入主机（支持 HostName/Port/User/IdentityFile/ForwardAgent、Host 通配与取反模式、全局默认项；ProxyJump/ProxyCommand 主机提示需手动配置跳板）
 - **串口控制台**：直连串口/COM 设备，可配置波特率、数据位、停止位、校验位与流控；同一端口每个标签页持有独占会话
 - **Mosh 支持**：弱网/漫游场景下经本地 mosh 客户端建立会话（SSH 引导启动，认证在终端内交互完成）。Windows 可勾选「经 WSL 运行」，或填写 MSYS2/Cygwin 中 mosh 的完整路径；支持预测模式（adaptive/always/never/experimental）与自定义 mosh-server 端口。
-- **Mosh 漫游状态**：连接指示器跟随聚焦窗格，显示运行中、等待恢复或已退出；等待状态来自标准 Mosh 客户端的网络提示。断网或切换网络时保留标签页，由客户端恢复原会话。该状态属于界面提示，不代表 UDP 延迟，SSH 探测不会重启 Mosh 会话。配置与手动验证见 [手动验证指南](MANUAL_TESTING.md)。
+- **Mosh 漫游状态**：连接指示器跟随聚焦窗格，显示运行中、等待恢复或已退出；等待状态来自标准 Mosh 客户端的网络提示。断网或切换网络时保留标签页，由客户端恢复原会话。该状态属于界面提示，不代表 UDP 延迟，SSH 探测不会重启 Mosh 会话。
 - **智能标签页**：拖放标签页重排、合并和分屏支持
 - **会话工具联动**：资源监控、文件管理、AI 助手与快捷命令跟随激活窗格；每个会话独立保存文件导航与 AI 对话/草稿，切换 SSH 窗格时文件侧栏保持展开。
 - **分屏终端**：将标签页拖到另一标签页中段叠加，或拖入终端区投隆区，即可合并为分屏（最多 2×2 四窗格）；右键合并后的标签 →「拆分恢复标签页」可将窗格还原为独立标签页，合并与拆分均保留会话与终端显示内容；每窗格独立会话、可连接不同主机；拖动窗格头部交换位置，拖拽分隔条调整比例；窗格可与同步输入分组组合实现批量运维（`Ctrl+Shift+W` 关闭当前窗格） 关闭窗格只结束该会话（包括根窗格），关闭其他窗格只保留指定会话；已有分屏的标签需要先还原为独立标签，才能并入其他标签。
@@ -44,13 +44,12 @@ SimpleShell 是一款现代化、功能丰富的 SSH 终端应用，结合了 El
 
 ### 📁 **高级文件管理**
 
-- **原生 SFTP 操作**：目录浏览、文件读写与传输由 Rust 服务执行，上传不限制文件总数；拖拽上传冲突检查提交完整路径列表，同一会话内最多并发读取 8 项元数据，JS 保留任务调度、重试与续传 manifest。验证步骤见 [手动验证指南](MANUAL_TESTING.md)。
+- **原生 SFTP 操作**：目录浏览、文件读写与传输由 Rust 服务执行，上传不限制文件总数；拖拽上传冲突检查提交完整路径列表，同一会话内最多并发读取 8 项元数据，JS 保留任务调度、重试与续传 manifest。
 - **完整 SFTP 浏览器**：直观的文件浏览和拖放操作
 - **终端目录跟随**：在「设置 → 常规」统一控制 SFTP 是否跟随当前 SSH 终端，默认开启并持久保存；各标签页、分屏会话的目录信息相互隔离。
 - **批量传输**：支持进度跟踪的文件夹上传/下载
 - **SFTP 断点续传**：暂停、断线或应用重启后，可从传输面板继续保留的任务；128 MiB 及以上文件按已完成段续传
 - **完整性校验**：可选 SHA-256 全局开关与 MD5 单任务校验，通过 SFTP 流式计算，无需 shell 权限；不一致时整文件重传一次，再失败展示两端哈希
-- **零拷贝引擎**：高性能文件传输，内存使用最小化
 - **智能缓存**：多级缓存提升文件访问速度
 - **文件预览**：内置文本、图片、代码和 PDF 查看器
 
@@ -80,7 +79,6 @@ SimpleShell 是一款现代化、功能丰富的 SSH 终端应用，结合了 El
 
 - **延迟加载**：按需加载组件，加快启动速度
 - **背压控制**：通过流量控制实现稳定的文件传输
-- **内存管理**：带泄漏检测的主动内存池
 - **连接健康监控**：自动重连和故障转移
 
 ## **安装**
@@ -105,6 +103,7 @@ curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/master/scripts
 
 - **Windows**：`.exe` 安装程序
 - **Linux**：`.deb` 或 `.rpm` 安装包
+- **macOS**：暂无预构建安装包，请从源码构建（`npm run make -- --platform=darwin`）
 
 ### **从源代码构建**
 
@@ -116,9 +115,9 @@ curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/master/scripts
 
 - Node.js 22.22.2+ (22 LTS) or 24.15.0+ 和 npm
 - Git
-- Python（用于 node-gyp 编译）
-- 平台构建工具：
-  - **Windows**：Visual Studio Build Tools 或 Visual Studio
+- Rust stable 工具链与 `cargo`（`npm start` / `package` / `make` 会编译 `simpleshell-core` 原生宿主；应用已不含 Node 原生插件，无需 Python/node-gyp）
+- 平台构建工具（供 Rust 链接器使用）：
+  - **Windows**：Visual Studio Build Tools（MSVC，“使用 C++ 的桌面开发”）
   - **macOS**：Xcode Command Line Tools
   - **Linux**：build-essential 包
 
