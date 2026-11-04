@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["core", "crates/*"]
-exclude = ["vendor/russh"]
+exclude = ["vendor/russh", "fuzz"]
 
 [workspace.package]
 version = "0.5.8"
@@ -36,7 +36,7 @@ md-5 = "0.10.6"
 ssh-key = "0.6.7"
 tokio = { version = "1.50.0", features = ["fs", "io-std", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-util = { version = "0.7.18", features = ["codec", "rt"] }
-zmodem2 = "0.7.2"
+zmodem2 = "=0.7.2"  # 0.7.3 makes FileInfo non-exhaustive (E0639 in crates/zmodem)
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "socks", "stream"] }
 
 # Dependencies (crypto above all) are optimized even in dev builds so the

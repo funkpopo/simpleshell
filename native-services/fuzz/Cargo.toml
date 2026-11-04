@@ -1,0 +1,55 @@
+[package]
+name = "simpleshell-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+# cargo-fuzz targets (nightly + libFuzzer); see "Fuzzing" in ../README.md.
+# The harnesses live in `crates/fuzz-harness` so stable `cargo test` runs
+# the same checks.
+
+[dependencies]
+libfuzzer-sys = "0.4"
+fuzz-harness = { path = "../crates/fuzz-harness" }
+
+# Not a member of the native-services workspace.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "term_pipe"
+path = "fuzz_targets/term_pipe.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "telnet"
+path = "fuzz_targets/telnet.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zmodem"
+path = "fuzz_targets/zmodem.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frame_codec"
+path = "fuzz_targets/frame_codec.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "control"
+path = "fuzz_targets/control.rs"
+test = false
+doc = false
+bench = false

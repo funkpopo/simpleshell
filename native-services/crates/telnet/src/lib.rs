@@ -11,7 +11,7 @@
 //! (sent with NAWS once the server asks for it), `pause`, `resume`, `close`.
 //! The stream ends with `end` when the server closes, then `closed`.
 
-mod protocol;
+pub mod protocol;
 
 use bytes::Bytes;
 use core_protocol::service::{self, Input};
@@ -107,7 +107,9 @@ async fn connect(open: &Open) -> Result<TcpStream, (String, &'static str)> {
 }
 
 /// Answers login and password prompts once each, early in the session.
-struct AutoLogin {
+/// Public (hidden) only so `fuzz-harness` can drive it with untrusted output.
+#[doc(hidden)]
+pub struct AutoLogin {
     username: Option<String>,
     password: Option<String>,
     tail: String,
@@ -115,7 +117,7 @@ struct AutoLogin {
 }
 
 impl AutoLogin {
-    fn new(username: Option<String>, password: Option<String>) -> Self {
+    pub fn new(username: Option<String>, password: Option<String>) -> Self {
         Self {
             username: username.filter(|name| !name.is_empty()),
             password,
@@ -129,7 +131,7 @@ impl AutoLogin {
     }
 
     /// Bytes to send in reply to newly received output.
-    fn observe(&mut self, data: &[u8]) -> Option<String> {
+    pub fn observe(&mut self, data: &[u8]) -> Option<String> {
         if !self.active() {
             return None;
         }

@@ -85,19 +85,23 @@ impl TermPipe {
     }
 
     fn process(&mut self, text: &str, is_final: bool) -> Processed {
-        let mut editor_mode = None;
+        let before = self.editor.active();
         let editor = &mut self.editor;
         let highlighter = self.highlighter.as_deref();
         let text = self.osc.transform(text, is_final, |visible| {
-            if let Some(changed) = editor.observe(visible) {
-                editor_mode = Some(changed);
-            }
+            editor.observe(visible);
             match highlighter {
                 Some(highlighter) => highlighter.apply(visible),
                 None => visible.to_string(),
             }
         });
-        Processed { text, editor_mode }
+        // Segments between OSC sequences may switch the mode on and back off
+        // within one chunk: report only a change across the whole chunk.
+        let after = self.editor.active();
+        Processed {
+            text,
+            editor_mode: (after != before).then_some(after),
+        }
     }
 
     pub fn stdout(&mut self, bytes: &[u8]) -> Processed {
@@ -149,5 +153,17 @@ mod tests {
         assert_eq!(rest.editor_mode, Some(true));
         assert_eq!(pipe.stderr(b"oops"), "\x1b[31moops\x1b[0m");
         assert_eq!(pipe.finish(), Processed::default());
+    }
+
+    #[test]
+    fn editor_mode_on_and_off_within_one_chunk_is_not_reported() {
+        // Found by fuzzing: segments split by an OSC turned the mode on and
+        // off again, and `Some(false)` was reported while it was already off.
+        let mut pipe = TermPipe::new(None);
+        let processed = pipe.stdout(b"vim file\x1b]0;t\x07:q");
+        assert_eq!(processed.editor_mode, None);
+        assert_eq!(pipe.stdout(b"less").editor_mode, Some(true));
+        let processed = pipe.stdout(b"x\x1b]0;t\x07  :wq\r\n");
+        assert_eq!(processed.editor_mode, Some(false));
     }
 }

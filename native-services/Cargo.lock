@@ -887,6 +887,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "fuzz-harness"
+version = "0.5.8"
+dependencies = [
+ "bytes",
+ "core-protocol",
+ "serde_json",
+ "telnet",
+ "term-pipe",
+ "tokio",
+ "tokio-util",
+ "zmodem",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

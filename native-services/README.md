@@ -15,13 +15,15 @@ native-services/
 │   ├── term-pipe/          # terminal output pipeline; highlight-text / -validate
 │   ├── sftp/               # sftp-request|session|watch, scan-folder, checksum-file
 │   ├── forward/            # port-forward-serve (-L / -R / SOCKS5)
-│   ├── zmodem/             # ZMODEM engine: zmodem-serve and in-stream Detector
+│   ├── zmodem/             # ZMODEM engine: in-stream Detector (zmodem-serve is test-only)
 │   ├── localpty/           # pty: local programs on ConPTY / Unix PTYs (local tabs, Mosh)
 │   ├── serial/             # serial-port, serial-list
 │   ├── telnet/             # telnet: negotiation (NAWS, TTYPE), automatic login
 │   ├── sysmetrics/         # system-metrics: CPU, memory, network, disks, processes
 │   ├── auxsvc/             # ai-serve, latency-serve, ip-query-serve
-│   └── test-sshd/          # in-process SSH server for tests (never shipped)
+│   ├── test-sshd/          # in-process SSH server for tests (never shipped)
+│   └── fuzz-harness/       # fuzz harnesses for untrusted-input parsers (tests only)
+├── fuzz/                   # cargo-fuzz targets (outside the workspace)
 └── vendor/russh/           # patched russh (own lockfile, outside the workspace)
 ```
 
@@ -74,7 +76,8 @@ SSH data ─▶ zmodem::Detector ─▶ term_pipe::TermPipe ─▶ text frames �
 
 - Output is batched like the old main-process path (8 ms / 16 KiB) before
   highlighting, and stderr is merged in order (red). `highlight-text` runs
-  the same pipeline for parity tests against the JS reference.
+  the same pipeline for parity tests against the JS reference
+  (`tests/helpers/referenceHighlighter.js`).
 - ZMODEM is detected and transferred inside the stream: protocol bytes go
   straight back to the channel, and only `zmodem {kind, event}` events reach
   the main process, which answers with `zmodemAccept` / `zmodemSend` /
@@ -84,9 +87,6 @@ SSH data ─▶ zmodem::Detector ─▶ term_pipe::TermPipe ─▶ text frames �
   already counts. Pause reasons (`pause {reason}`) are kept per reason, so
   output stalls until each is resumed. In flight per terminal stays near the
   renderer's 512 KiB threshold.
-
-The ssh2 fallback backend keeps the JS output path (`terminalOutput.js`,
-`output-processor.js`, the `zmodem-serve` service).
 
 ## Local terminals and devices
 
@@ -122,6 +122,48 @@ cargo test --locked --manifest-path native-services/Cargo.toml
   Electron main process (`src/main/native/coreSupervisor.js`).
 - `simpleshell-core <service> [args]` — one service over plain stdio, used by
   protocol tests and for debugging.
+
+## Fuzzing
+
+The parsers that read bytes from remote hosts (or the supervisor) have fuzz
+harnesses in `crates/fuzz-harness`: `term_pipe` (UTF-8 decoding, OSC filter,
+editor mode, highlighting with the default rules), `telnet` (IAC negotiation,
+automatic login), `zmodem` (in-stream `Detector` and the zmodem2 machines it
+drives, including accepted downloads and uploads), `frame_codec` and
+`control` (frame decoding, control messages). Each input's first 8 bytes
+seed how the rest is split into chunks, and besides "no panic" the harnesses
+check invariants: chunking never changes the result, plain `TermPipe` output
+equals `String::from_utf8_lossy` of the input, ZMODEM detection passes every
+byte before an intro through, frames and control messages round-trip.
+(SFTP replies are parsed by `openssh-sftp-client`, not here.)
+
+On stable, `cargo test` runs them on seeded random inputs (400 per target);
+a longer run:
+
+```sh
+FUZZ_HARNESS_ITERS=300000 FUZZ_HARNESS_SEED=7 \
+  cargo test --release --manifest-path native-services/Cargo.toml -p fuzz-harness
+```
+
+Coverage-guided fuzzing uses [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz)
+(nightly, libFuzzer; use Linux, macOS or WSL — the instrumented build did not
+link with MSVC):
+
+```sh
+cargo install cargo-fuzz
+cd native-services/fuzz
+cargo +nightly fuzz run zmodem -- -max_total_time=120 -dict=dict/zmodem.dict
+cargo +nightly fuzz run telnet -- -max_total_time=120 -dict=dict/telnet.dict
+cargo +nightly fuzz run term_pipe -- -max_total_time=120
+cargo +nightly fuzz run frame_codec -- -max_total_time=120
+cargo +nightly fuzz run control -- -max_total_time=120 -dict=dict/control.dict
+```
+
+`fuzz/Cargo.lock` is the workspace lock plus libFuzzer; refresh it by copying
+`Cargo.lock` over it rather than re-resolving (zmodem2 0.7.3 does not build
+with the `zmodem` crate). A crash is saved under `fuzz/artifacts/<target>/`;
+replay it with `cargo +nightly fuzz run <target> <file>`, then fix the parser
+and add a regression test to its crate.
 
 ## Frame protocol
 
