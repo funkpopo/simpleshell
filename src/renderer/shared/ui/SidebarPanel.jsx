@@ -120,7 +120,14 @@ export function SidebarTitleBar({
   return (
     <Box sx={{ ...sidebarTitleBarSx(theme), ...sx }}>
       <Box sx={{ minWidth: 0, flex: 1, pr: 1 }}>
-        <Typography variant="subtitle1" fontWeight="medium" noWrap sx={titleSx}>
+        <Typography
+          variant="subtitle1"
+          noWrap
+          sx={[
+            { fontWeight: "medium" },
+            ...(Array.isArray(titleSx) ? titleSx : [titleSx]),
+          ]}
+        >
           {title}
         </Typography>
         {contextLine}

@@ -35,13 +35,15 @@ export default function FileContextMenus({
   const { t } = useTranslation();
   return (
     <Menu
+      slotProps={{
+        paper: {
+          "data-file-manager-context-menu": "true",
+          sx: compactContextMenuPaperSx,
+        },
+      }}
       open={contextMenu !== null && !menuItems.isDeleting}
       onClose={handleContextMenuClose}
       anchorReference="anchorPosition"
-      PaperProps={{
-        "data-file-manager-context-menu": "true",
-        sx: compactContextMenuPaperSx,
-      }}
       anchorPosition={
         contextMenu !== null
           ? {

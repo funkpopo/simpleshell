@@ -316,7 +316,11 @@ const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
 
     return (
       <Box sx={{ p: 2 }}>
-        <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+        <Typography
+          sx={{ fontWeight: "bold" }}
+          variant="subtitle1"
+          gutterBottom
+        >
           {t("ipAddressQuery.ipInfo")}
         </Typography>
         <Paper
@@ -337,7 +341,11 @@ const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
             </Grid>
           </Grid>
         </Paper>
-        <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+        <Typography
+          sx={{ fontWeight: "bold" }}
+          variant="subtitle1"
+          gutterBottom
+        >
           {t("ipAddressQuery.location")}
         </Typography>
         <Paper
@@ -570,14 +578,16 @@ const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
                       }}
                     >
                       <ListItemText
-                        primaryTypographyProps={{
-                          variant: "body2",
-                          noWrap: true,
-                        }}
-                        secondaryTypographyProps={{
-                          variant: "caption",
-                          color: "text.secondary",
-                          noWrap: true,
+                        slotProps={{
+                          primary: {
+                            variant: "body2",
+                            noWrap: true,
+                          },
+                          secondary: {
+                            variant: "caption",
+                            color: "text.secondary",
+                            noWrap: true,
+                          },
                         }}
                         primary={h.ip || t("ipAddressQuery.myIp")}
                         secondary={`${h.locationText || ""} ${new Date(h.time).toLocaleTimeString()}`}

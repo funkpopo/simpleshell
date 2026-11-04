@@ -152,8 +152,13 @@ const AccordionHeader = ({ title, icon, expanded, onClick }) => {
       <Typography
         variant="subtitle2"
         component="h3"
-        fontWeight={600}
-        sx={{ flexGrow: 1, ml: 0.75, fontSize: "0.8125rem", lineHeight: 1.3 }}
+        sx={{
+          fontWeight: 600,
+          flexGrow: 1,
+          ml: 0.75,
+          fontSize: "0.8125rem",
+          lineHeight: 1.3,
+        }}
       >
         {title}
       </Typography>
@@ -720,8 +725,7 @@ const ResourceMonitorContent = memo(
                         variant="caption"
                         color="text.secondary"
                         align="center"
-                        display="block"
-                        sx={{ py: 1 }}
+                        sx={{ display: "block", py: 1 }}
                       >
                         {t("resourceMonitor.noDiskData")}
                       </Typography>
@@ -911,8 +915,11 @@ const ResourceMonitorContent = memo(
                             variant="caption"
                             color="text.secondary"
                             align="center"
-                            display="block"
-                            sx={{ pt: 0.75, fontSize: "0.68rem" }}
+                            sx={{
+                              display: "block",
+                              pt: 0.75,
+                              fontSize: "0.68rem",
+                            }}
                           >
                             {t("resourceMonitor.topProcessesHint", {
                               count: MAX_VISIBLE_PROCESSES,
@@ -928,10 +935,10 @@ const ResourceMonitorContent = memo(
               {/* 系统信息提示 */}
               <Box sx={{ mt: 1 }}>
                 <Typography
+                  sx={{ display: "block" }}
                   variant="caption"
                   color="text.secondary"
                   align="center"
-                  display="block"
                 >
                   {systemInfo.isLocal
                     ? t("resourceMonitor.localInfo")

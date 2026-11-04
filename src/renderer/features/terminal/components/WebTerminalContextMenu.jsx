@@ -51,6 +51,11 @@ const WebTerminalContextMenu = ({
     // 默认的关闭过渡动画叠加菜单 Paper 的 backdrop-filter 模糊,在 Electron 下会留下
     // 残影遮罩与菜单项高亮;与 FileManager 右键菜单保持一致,立即关闭可避免残留。
     <Menu
+      slotProps={{
+        paper: {
+          sx: getWebTerminalContextMenuPaperSx(theme),
+        },
+      }}
       open={contextMenu !== null}
       onClose={onClose}
       anchorReference="anchorPosition"
@@ -62,9 +67,6 @@ const WebTerminalContextMenu = ({
       transitionDuration={0}
       disableAutoFocusItem
       disableScrollLock
-      PaperProps={{
-        sx: getWebTerminalContextMenuPaperSx(theme),
-      }}
     >
       <MenuItem onClick={onCopy} disabled={!selectedText}>
         <ListItemIcon>

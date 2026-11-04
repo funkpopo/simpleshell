@@ -190,7 +190,11 @@ const CategoryItem = React.memo(function CategoryItem({
         <ListItemText
           sx={{ my: 0, minWidth: 0 }}
           primary={
-            <Typography variant="subtitle2" fontWeight="medium" noWrap>
+            <Typography
+              sx={{ fontWeight: "medium" }}
+              variant="subtitle2"
+              noWrap
+            >
               {category.name}
             </Typography>
           }
@@ -834,6 +838,12 @@ function ShortcutCommands({
   // 渲染菜单
   const renderMenu = () => (
     <Menu
+      slotProps={{
+        paper: {
+          "data-shortcut-commands-context-menu": "true",
+          sx: compactContextMenuPaperSx,
+        },
+      }}
       open={menuOpen}
       onClose={handleMenuClose}
       anchorReference="anchorPosition"
@@ -845,10 +855,6 @@ function ShortcutCommands({
       transitionDuration={0}
       disableAutoFocusItem
       disableScrollLock
-      PaperProps={{
-        "data-shortcut-commands-context-menu": "true",
-        sx: compactContextMenuPaperSx,
-      }}
     >
       {dialogType === "command" && (
         <div>

@@ -48,7 +48,7 @@ export default function AIProxySettingsPanel({
         }}
       >
         <ProxyIcon fontSize="small" color="primary" />
-        <Typography variant="subtitle1" fontWeight="medium">
+        <Typography sx={{ fontWeight: "medium" }} variant="subtitle1">
           {t("aiSettings.proxyConfig")}
         </Typography>
         <Chip
@@ -110,6 +110,7 @@ export default function AIProxySettingsPanel({
               variant="outlined"
             />
             <TextField
+              slotProps={{ htmlInput: { inputMode: "numeric" } }}
               label={t("aiSettings.proxyPort")}
               value={proxyConfig.port}
               onChange={(e) => onProxyChange("port", e.target.value)}
@@ -117,7 +118,6 @@ export default function AIProxySettingsPanel({
               sx={{ width: 140 }}
               placeholder="7890"
               variant="outlined"
-              inputProps={{ inputMode: "numeric" }}
             />
           </Box>
           <Box sx={{ display: "flex", gap: 2 }}>

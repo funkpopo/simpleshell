@@ -295,10 +295,12 @@ export default function DiffPreview({
         }}
       >
         <Stack
+          sx={{
+            alignItems: { xs: "flex-start", md: "center" },
+            justifyContent: "space-between",
+          }}
           direction={{ xs: "column", md: "row" }}
           spacing={1}
-          alignItems={{ xs: "flex-start", md: "center" }}
-          justifyContent="space-between"
         >
           <Box>
             <Typography variant="subtitle2">
@@ -310,7 +312,12 @@ export default function DiffPreview({
               })}
             </Typography>
           </Box>
-          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+          <Stack
+            sx={{ flexWrap: "wrap" }}
+            direction="row"
+            spacing={0.75}
+            useFlexGap
+          >
             <Chip
               size="small"
               variant="outlined"

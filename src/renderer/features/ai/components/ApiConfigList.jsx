@@ -81,7 +81,10 @@ export default function ApiConfigList({
                         mb: 1,
                       }}
                     >
-                      <Typography variant="subtitle1" fontWeight="medium">
+                      <Typography
+                        sx={{ fontWeight: "medium" }}
+                        variant="subtitle1"
+                      >
                         {apiConfig.model || apiConfig.name}
                       </Typography>
                       {currentApiId === apiConfig.id && (

@@ -77,10 +77,12 @@ export default function TextPreviewDialog({
     >
       <DialogTitle sx={{ px: 2.5, py: 2 }}>
         <Stack
+          sx={{
+            alignItems: { xs: "flex-start", md: "center" },
+            justifyContent: "space-between",
+          }}
           direction={{ xs: "column", md: "row" }}
           spacing={1.5}
-          alignItems={{ xs: "flex-start", md: "center" }}
-          justifyContent="space-between"
         >
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography variant="h6" component="div" noWrap>
@@ -105,10 +107,9 @@ export default function TextPreviewDialog({
           </Box>
 
           <Stack
+            sx={{ alignItems: "center", flexWrap: "wrap" }}
             direction="row"
             spacing={1}
-            alignItems="center"
-            flexWrap="wrap"
             useFlexGap
           >
             {file?.size ? (
@@ -218,11 +219,13 @@ export default function TextPreviewDialog({
         <Stack
           direction="row"
           spacing={1}
-          alignItems="center"
-          justifyContent="flex-end"
-          flexWrap="wrap"
           useFlexGap
-          sx={{ minWidth: 0 }}
+          sx={{
+            alignItems: "center",
+            justifyContent: "flex-end",
+            flexWrap: "wrap",
+            minWidth: 0,
+          }}
         >
           {isTextPreview ? (
             <>

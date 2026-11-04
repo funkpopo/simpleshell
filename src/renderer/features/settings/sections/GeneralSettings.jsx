@@ -378,12 +378,12 @@ export default function GeneralSettings({ initialValues, ref }) {
             }}
           >
             <TextField
+              slotProps={{ htmlInput: { min: 50, max: 99 } }}
               size="small"
               type="number"
               label={t("settings.diskAlert.threshold")}
               value={diskAlertThreshold}
               onChange={(e) => setDiskAlertThreshold(e.target.value)}
-              inputProps={{ min: 50, max: 99 }}
               sx={{ flex: "1 1 140px", minWidth: 140 }}
             />
             <TextField

@@ -142,14 +142,16 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
       {/* 八进制输入框 */}
       <Box sx={{ mb: 3 }}>
         <TextField
+          slotProps={{
+            htmlInput: {
+              pattern: "[0-7]{3}",
+              maxLength: 3,
+            },
+          }}
           label={t("filePermission.octalLabel")}
           value={octalValue}
           onChange={handleOctalChange}
           size="small"
-          inputProps={{
-            pattern: "[0-7]{3}",
-            maxLength: 3,
-          }}
           helperText={t("filePermission.octalHelper")}
           error={
             octalValue.length > 0 &&

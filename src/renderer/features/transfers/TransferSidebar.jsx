@@ -291,7 +291,7 @@ const TransferSidebar = memo(
         <Box sx={sidebarTitleBarSx(theme)}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <SwapVertIcon color="primary" />
-            <Typography variant="subtitle1" fontWeight="medium">
+            <Typography sx={{ fontWeight: "medium" }} variant="subtitle1">
               {t("fileManager.transfer.panelTitle")}
             </Typography>
           </Box>
@@ -403,14 +403,13 @@ const TransferSidebar = memo(
                     >
                       {task.fileName}
                     </Typography>
-                    <Typography variant="caption" display="block">
+                    <Typography sx={{ display: "block" }} variant="caption">
                       {task.username}@{task.host} ·{" "}
                       {formatSize(task.totalBytes)}
                     </Typography>
                     <Typography
                       variant="caption"
-                      display="block"
-                      sx={{ overflowWrap: "anywhere" }}
+                      sx={{ display: "block", overflowWrap: "anywhere" }}
                     >
                       {task.direction === "download"
                         ? task.localPath

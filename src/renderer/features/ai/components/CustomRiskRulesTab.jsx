@@ -99,12 +99,14 @@ function BuiltinRiskRules() {
                 {builtinPatterns.map((pattern, index) => (
                   <ListItem key={index} sx={{ py: 0.25 }}>
                     <ListItemText
-                      primary={pattern}
-                      primaryTypographyProps={{
-                        fontFamily: "monospace",
-                        fontSize: "0.8rem",
-                        color: "text.secondary",
+                      slotProps={{
+                        primary: {
+                          fontFamily: "monospace",
+                          fontSize: "0.8rem",
+                          color: "text.secondary",
+                        },
                       }}
+                      primary={pattern}
                     />
                   </ListItem>
                 ))}
@@ -257,11 +259,13 @@ export default function CustomRiskRulesTab({
                   {customRules[level].map((pattern, index) => (
                     <ListItem key={index} sx={{ py: 0.5 }}>
                       <ListItemText
-                        primary={pattern}
-                        primaryTypographyProps={{
-                          fontFamily: "monospace",
-                          fontSize: "0.85rem",
+                        slotProps={{
+                          primary: {
+                            fontFamily: "monospace",
+                            fontSize: "0.85rem",
+                          },
                         }}
+                        primary={pattern}
                       />
                       <ListItemSecondaryAction>
                         <Tooltip title={t("aiSettings.deleteRule")}>

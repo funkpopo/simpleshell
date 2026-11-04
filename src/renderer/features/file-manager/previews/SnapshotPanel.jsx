@@ -62,9 +62,8 @@ export default function SnapshotPanel({
         }}
       >
         <Stack
+          sx={{ alignItems: "center", justifyContent: "space-between" }}
           direction="row"
-          alignItems="center"
-          justifyContent="space-between"
           spacing={1}
         >
           <Typography variant="subtitle2">
@@ -118,6 +117,12 @@ export default function SnapshotPanel({
                     }}
                   >
                     <ListItemText
+                      slotProps={{
+                        primary: {
+                          variant: "body2",
+                          fontWeight: 600,
+                        },
+                      }}
                       primary={
                         snapshot.label || t("filePreview.snapshotFallbackLabel")
                       }
@@ -147,10 +152,6 @@ export default function SnapshotPanel({
                           </Typography>
                         </Box>
                       }
-                      primaryTypographyProps={{
-                        variant: "body2",
-                        fontWeight: 600,
-                      }}
                     />
                   </ListItemButton>
                   {isSelected ? (

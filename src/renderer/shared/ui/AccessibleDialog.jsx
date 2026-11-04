@@ -105,15 +105,18 @@ const AccessibleDialog = React.forwardRef(function AccessibleDialog(
     [defaultActionRef, onDefaultAction, onKeyDown],
   );
 
-  const mergedPaperProps = {
-    ...(PaperProps || {}),
-    onKeyDown: handleKeyDown,
-  };
-
+  // MUI v9 已移除 Dialog 的 PaperProps；兼容调用方传入的 PaperProps，
+  // 统一并入 slotProps.paper（slotProps 优先，sx 合并）。
+  const legacyPaper = PaperProps || {};
+  const slotPaper = slotProps?.paper || {};
   const mergedSlotProps = {
     ...(slotProps || {}),
     paper: {
-      ...(slotProps?.paper || {}),
+      ...legacyPaper,
+      ...slotPaper,
+      ...(legacyPaper.sx && slotPaper.sx
+        ? { sx: [legacyPaper.sx, slotPaper.sx].flat() }
+        : {}),
       onKeyDown: handleKeyDown,
     },
   };
@@ -125,7 +128,6 @@ const AccessibleDialog = React.forwardRef(function AccessibleDialog(
       open={open}
       onClose={onClose}
       disableEscapeKeyDown={effectiveDisableEscapeKeyDown}
-      PaperProps={mergedPaperProps}
       slotProps={mergedSlotProps}
     >
       {children}

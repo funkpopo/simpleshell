@@ -74,9 +74,8 @@ export default function BinaryPreviewDialog({
     >
       <DialogTitle sx={{ px: 2.5, py: 2 }}>
         <Stack
+          sx={{ justifyContent: "space-between", alignItems: "center" }}
           direction="row"
-          justifyContent="space-between"
-          alignItems="center"
           spacing={1.5}
         >
           <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -151,7 +150,7 @@ export default function BinaryPreviewDialog({
         >
           {t("filePreview.download")}
         </Button>
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack sx={{ alignItems: "center" }} direction="row" spacing={1}>
           {controls}
           <Button size="small" onClick={handleClose}>
             {t("common.close")}
@@ -159,14 +158,16 @@ export default function BinaryPreviewDialog({
         </Stack>
       </DialogActions>
       <Menu
+        slotProps={{
+          paper: {
+            "data-file-preview-context-menu": "true",
+            sx: compactContextMenuPaperSx,
+          },
+        }}
         open={Boolean(contextMenu)}
         onClose={() => setContextMenu(null)}
         anchorReference="anchorPosition"
         anchorPosition={contextMenu || undefined}
-        PaperProps={{
-          "data-file-preview-context-menu": "true",
-          sx: compactContextMenuPaperSx,
-        }}
         transitionDuration={0}
         disableAutoFocusItem
         disableScrollLock

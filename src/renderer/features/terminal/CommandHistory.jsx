@@ -610,6 +610,12 @@ function CommandHistory({
 
       {/* 上下文菜单 */}
       <Menu
+        slotProps={{
+          paper: {
+            "data-command-history-context-menu": "true",
+            sx: compactContextMenuPaperSx,
+          },
+        }}
         open={menuOpen}
         onClose={handleMenuClose}
         anchorReference="anchorPosition"
@@ -621,10 +627,6 @@ function CommandHistory({
         transitionDuration={0}
         disableAutoFocusItem
         disableScrollLock
-        PaperProps={{
-          "data-command-history-context-menu": "true",
-          sx: compactContextMenuPaperSx,
-        }}
       >
         <MenuItem onClick={() => handleEditCommand(menuTargetCommand)}>
           <ListItemIcon>

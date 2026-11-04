@@ -403,14 +403,16 @@ export const GroupListItem = memo(function GroupListItem({
               {(!group.items || group.items.length === 0) && (
                 <ListItem sx={viewStyles.listItemSx}>
                   <ListItemText
-                    primary={t("connectionManager.noConnections")}
-                    primaryTypographyProps={{
-                      variant: "caption",
-                      sx: {
-                        fontStyle: "italic",
-                        color: "text.disabled",
+                    slotProps={{
+                      primary: {
+                        variant: "caption",
+                        sx: {
+                          fontStyle: "italic",
+                          color: "text.disabled",
+                        },
                       },
                     }}
+                    primary={t("connectionManager.noConnections")}
                   />
                 </ListItem>
               )}

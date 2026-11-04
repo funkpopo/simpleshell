@@ -65,10 +65,10 @@ const SkeletonLoader = memo(
           <Stack spacing={2}>
             {Array.from({ length: lines }, (_, index) => (
               <Stack
+                sx={{ alignItems: "center" }}
                 key={index}
                 direction="row"
                 spacing={2}
-                alignItems="center"
               >
                 {showAvatar && (
                   <Skeleton
@@ -79,7 +79,7 @@ const SkeletonLoader = memo(
                     sx={sx}
                   />
                 )}
-                <Stack spacing={0.5} flex={1}>
+                <Stack sx={{ flex: 1 }} spacing={0.5}>
                   <Skeleton
                     variant="text"
                     width={pick(PRIMARY_WIDTHS, index)}

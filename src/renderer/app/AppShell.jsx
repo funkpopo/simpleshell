@@ -541,7 +541,7 @@ export default function AppShell() {
                       "& .MuiTabs-scroller": {
                         px: 0.5,
                       },
-                      "& .MuiTabs-flexContainer": {
+                      "& .MuiTabs-list": {
                         gap: 0,
                       },
                       "& .MuiTabs-indicator": {

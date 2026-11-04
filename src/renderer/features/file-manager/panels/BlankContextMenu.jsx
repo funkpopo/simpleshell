@@ -26,13 +26,15 @@ export default function BlankContextMenu({
   const { t } = useTranslation();
   return (
     <Menu
+      slotProps={{
+        paper: {
+          "data-file-manager-context-menu": "true",
+          sx: compactContextMenuPaperSx,
+        },
+      }}
       open={blankContextMenu !== null && !menuItems.isDeleting}
       onClose={handleBlankContextMenuClose}
       anchorReference="anchorPosition"
-      PaperProps={{
-        "data-file-manager-context-menu": "true",
-        sx: compactContextMenuPaperSx,
-      }}
       anchorPosition={
         blankContextMenu !== null
           ? {

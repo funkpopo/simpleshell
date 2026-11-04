@@ -365,6 +365,21 @@ const SSHAuthDialog = ({
             {t("sshAuth.username")}:(<u>U</u>)
           </Typography>
           <TextField
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Box
+                      component="span"
+                      aria-hidden="true"
+                      sx={{ display: "inline-flex", color: "action.disabled" }}
+                    >
+                      <VisibilityIcon fontSize="small" sx={{ opacity: 0.5 }} />
+                    </Box>
+                  </InputAdornment>
+                ),
+              },
+            }}
             inputRef={usernameRef}
             fullWidth
             size="small"
@@ -372,19 +387,6 @@ const SSHAuthDialog = ({
             onChange={(e) => setUsername(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={t("sshAuth.enterUsername")}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <Box
-                    component="span"
-                    aria-hidden="true"
-                    sx={{ display: "inline-flex", color: "action.disabled" }}
-                  >
-                    <VisibilityIcon fontSize="small" sx={{ opacity: 0.5 }} />
-                  </Box>
-                </InputAdornment>
-              ),
-            }}
             sx={authInputSx}
           />
         </Box>
@@ -515,6 +517,38 @@ const SSHAuthDialog = ({
                 {t("sshAuth.password")}:(<u>P</u>)
               </Typography>
               <TextField
+                slotProps={{
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <Tooltip
+                          title={
+                            showPassword
+                              ? t("common.hidePassword")
+                              : t("common.showPassword")
+                          }
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={() => setShowPassword(!showPassword)}
+                            edge="end"
+                            aria-label={
+                              showPassword
+                                ? t("common.hidePassword")
+                                : t("common.showPassword")
+                            }
+                          >
+                            {showPassword ? (
+                              <VisibilityOffIcon fontSize="small" />
+                            ) : (
+                              <VisibilityIcon fontSize="small" />
+                            )}
+                          </IconButton>
+                        </Tooltip>
+                      </InputAdornment>
+                    ),
+                  },
+                }}
                 inputRef={passwordRef}
                 fullWidth
                 size="small"
@@ -523,36 +557,6 @@ const SSHAuthDialog = ({
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={t("sshAuth.enterPassword")}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <Tooltip
-                        title={
-                          showPassword
-                            ? t("common.hidePassword")
-                            : t("common.showPassword")
-                        }
-                      >
-                        <IconButton
-                          size="small"
-                          onClick={() => setShowPassword(!showPassword)}
-                          edge="end"
-                          aria-label={
-                            showPassword
-                              ? t("common.hidePassword")
-                              : t("common.showPassword")
-                          }
-                        >
-                          {showPassword ? (
-                            <VisibilityOffIcon fontSize="small" />
-                          ) : (
-                            <VisibilityIcon fontSize="small" />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                    </InputAdornment>
-                  ),
-                }}
                 sx={authInputSx}
               />
             </Box>

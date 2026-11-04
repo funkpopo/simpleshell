@@ -34,6 +34,12 @@ export default function PreviewContextMenu({
   const { t } = useTranslation();
   return (
     <Menu
+      slotProps={{
+        paper: {
+          "data-file-preview-context-menu": "true",
+          sx: compactContextMenuPaperSx,
+        },
+      }}
       open={Boolean(contextMenu)}
       onClose={handleContextMenuClose}
       anchorReference="anchorPosition"
@@ -42,10 +48,6 @@ export default function PreviewContextMenu({
           ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
           : undefined
       }
-      PaperProps={{
-        "data-file-preview-context-menu": "true",
-        sx: compactContextMenuPaperSx,
-      }}
       transitionDuration={0}
       disableAutoFocusItem
       disableScrollLock

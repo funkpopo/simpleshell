@@ -545,7 +545,14 @@ const AboutDialog = memo(function AboutDialog({
 
     return (
       <Box sx={{ mt: 1.25 }}>
-        <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap">
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 0.75,
+            flexWrap: "wrap",
+          }}
+        >
           {shouldShowSecurityChip ? (
             <Chip
               label={t("update.securityUpdate")}
@@ -610,7 +617,7 @@ const AboutDialog = memo(function AboutDialog({
       case "checking":
         primaryContent = (
           <Box sx={updatePanelSx}>
-            <Box display="flex" alignItems="center" gap={1}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <CircularProgress size={16} />
               <Typography variant="body2">{t("update.checking")}</Typography>
             </Box>
@@ -621,7 +628,7 @@ const AboutDialog = memo(function AboutDialog({
       case "upToDate":
         primaryContent = (
           <Box sx={updatePanelSx}>
-            <Box display="flex" alignItems="center" gap={1}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <CheckIcon color="success" />
               <Typography variant="body2" color="success.main">
                 {t("update.upToDate")}
@@ -636,7 +643,7 @@ const AboutDialog = memo(function AboutDialog({
         if (canInstallDownloadedUpdate) {
           primaryContent = (
             <Box sx={updatePanelSx}>
-              <Box display="flex" alignItems="center" gap={1}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                 <CheckIcon color="success" />
                 <Typography variant="body2" color="success.main">
                   {t("update.readyToInstall")}
@@ -668,7 +675,7 @@ const AboutDialog = memo(function AboutDialog({
         } else {
           primaryContent = (
             <Box sx={updatePanelSx}>
-              <Box display="flex" alignItems="center" gap={1}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                 <UpdateIcon color="primary" />
                 <Typography variant="body2">{t("update.available")}</Typography>
               </Box>
@@ -690,16 +697,18 @@ const AboutDialog = memo(function AboutDialog({
         primaryContent = (
           <Box sx={updatePanelSx}>
             <Box
-              display="flex"
-              alignItems="center"
-              justifyContent="space-between"
-              mb={1}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                mb: 1,
+              }}
             >
               <Typography variant="body2">{t("update.downloading")}</Typography>
               <Typography
+                sx={{ fontWeight: 600 }}
                 variant="caption"
                 color="primary.main"
-                fontWeight={600}
               >
                 {Math.round(downloadProgress)}%
               </Typography>
@@ -743,7 +752,7 @@ const AboutDialog = memo(function AboutDialog({
       case "downloaded":
         primaryContent = (
           <Box sx={updatePanelSx}>
-            <Box display="flex" alignItems="center" gap={1}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <CheckIcon color="success" />
               <Typography variant="body2" color="success.main">
                 {t("update.downloadComplete")}
@@ -777,7 +786,7 @@ const AboutDialog = memo(function AboutDialog({
       case "installing":
         primaryContent = (
           <Box sx={updatePanelSx}>
-            <Box display="flex" alignItems="center" gap={1}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <CircularProgress size={16} />
               <Typography variant="body2">{t("update.installing")}</Typography>
             </Box>
@@ -790,7 +799,7 @@ const AboutDialog = memo(function AboutDialog({
         if (canInstallDownloadedUpdate) {
           primaryContent = (
             <Box sx={updatePanelSx}>
-              <Box display="flex" alignItems="center" gap={1}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                 <CheckIcon color="success" />
                 <Typography variant="body2" color="success.main">
                   {t("update.readyToInstall")}

@@ -218,6 +218,13 @@ export default function TerminalSettings({ initialValues, ref }) {
                 sx={{ flex: 1 }}
               />
               <TextField
+                slotProps={{
+                  htmlInput: {
+                    min: 300,
+                    max: 1000,
+                    style: { textAlign: "center" },
+                  },
+                }}
                 value={terminalFontWeight}
                 onChange={(e) => {
                   const val = parseInt(e.target.value, 10);
@@ -225,11 +232,6 @@ export default function TerminalSettings({ initialValues, ref }) {
                 }}
                 size="small"
                 type="number"
-                inputProps={{
-                  min: 300,
-                  max: 1000,
-                  style: { textAlign: "center" },
-                }}
                 sx={{ width: 64 }}
               />
             </Box>
@@ -269,6 +271,13 @@ export default function TerminalSettings({ initialValues, ref }) {
 
           <Box>
             <TextField
+              slotProps={{
+                htmlInput: {
+                  min: MIN_TERMINAL_SCROLLBACK_LINES,
+                  max: MAX_TERMINAL_SCROLLBACK_LINES,
+                  step: 1000,
+                },
+              }}
               fullWidth
               size="small"
               type="number"
@@ -279,11 +288,6 @@ export default function TerminalSettings({ initialValues, ref }) {
                 if (Number.isFinite(v)) {
                   setTerminalScrollbackLines(v);
                 }
-              }}
-              inputProps={{
-                min: MIN_TERMINAL_SCROLLBACK_LINES,
-                max: MAX_TERMINAL_SCROLLBACK_LINES,
-                step: 1000,
               }}
             />
           </Box>
@@ -310,23 +314,26 @@ export default function TerminalSettings({ initialValues, ref }) {
 
           <Box sx={compactFieldSx}>
             <TextField
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">MB</InputAdornment>
+                  ),
+                },
+                htmlInput: { min: 1 },
+              }}
               fullWidth
               size="small"
               type="number"
               label={t("settings.logFileSizeLimitLabel")}
               value={maxFileSize}
               onChange={handleMaxFileSizeChange}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">MB</InputAdornment>
-                ),
-              }}
-              inputProps={{ min: 1 }}
             />
           </Box>
 
           <Box sx={compactFieldSx}>
             <TextField
+              slotProps={{ htmlInput: { min: 1 } }}
               fullWidth
               size="small"
               type="number"
@@ -338,12 +345,12 @@ export default function TerminalSettings({ initialValues, ref }) {
                   setCleanupIntervalDays(v);
                 }
               }}
-              inputProps={{ min: 1 }}
             />
           </Box>
 
           <Box sx={compactFieldSx}>
             <TextField
+              slotProps={{ htmlInput: { min: 1, max: 365 } }}
               fullWidth
               size="small"
               type="number"
@@ -355,7 +362,6 @@ export default function TerminalSettings({ initialValues, ref }) {
                   setBackupRetentionDays(v);
                 }
               }}
-              inputProps={{ min: 1, max: 365 }}
             />
           </Box>
 

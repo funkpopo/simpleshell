@@ -177,12 +177,11 @@ const AIChatWindow = ({
       customzindex={zIndex}
       ref={dialogRef}
       onMouseDown={onFocus}
-      slotProps={{
+      {...createAnchoredTransition(anchorEl, {
         paper: {
           className: aiClassName("ai-chat-paper"),
         },
-      }}
-      {...createAnchoredTransition(anchorEl)}
+      })}
     >
       <ChatResizeHandles
         isResizing={isResizing}

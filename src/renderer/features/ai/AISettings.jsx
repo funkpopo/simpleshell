@@ -108,7 +108,7 @@ const AISettings = ({ open, onClose }) => {
       </DialogTitle>
       <DialogContent dividers sx={{ p: 0 }}>
         {loading && (
-          <Box display="flex" justifyContent="center" p={4}>
+          <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
             <CircularProgress />
           </Box>
         )}
