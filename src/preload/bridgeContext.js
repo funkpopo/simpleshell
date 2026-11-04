@@ -2,12 +2,14 @@
 /**
  * Preload 运行于隔离上下文；类型检查由 tests/helpers/preloadAnalysis.js 执行。
  * 主进程尚未细化的响应使用 unknown，调用方应先缩窄类型。
- * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, TerminalMailboxPayload, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, TransferProgressPayload, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../shared/contracts/preload"
+ * @import { Unsubscribe, IpcCallback, ReconnectCallback, TerminalMailboxMessage, TerminalMailboxPayload, ExternalOpenOptions, TransferProgressPayload } from "../shared/contracts/preload"
+ * @import { ContractIpcRenderer } from "../shared/contracts/ipc/types"
+ * @import { ExternalOpenRequest } from "../shared/contracts/ipc/domains/app"
  */
 
 const {
   contextBridge,
-  ipcRenderer,
+  ipcRenderer: electronIpcRenderer,
   webUtils,
   crashReporter,
 } = require("electron");
@@ -27,6 +29,11 @@ const {
   applyStartupThemeToDocument,
   parseStartupThemeFromArgv,
 } = require("../shared/startupTheme");
+
+// Same object as Electron's ipcRenderer. The cast narrows invoke/send to
+// registered channels with schema-conforming arguments (see
+// src/shared/contracts/ipc/types.d.ts); listeners keep Electron's signatures.
+const ipcRenderer = /** @type {ContractIpcRenderer} */ (electronIpcRenderer);
 
 function createBridgeContext() {
   // 启动主题：在页面脚本运行前根据 main 传入的 additionalArguments 校正 DOM，
@@ -112,12 +119,15 @@ function createBridgeContext() {
 
   const localTerminalStatusWrappers = new WeakMap();
 
+  // Keys are exactly AI_STREAM_CHANNELS; callers check membership before indexing.
+  /** @type {Record<string, WeakMap<IpcCallback, IpcCallback>>} */
   const streamWrappersByChannel = {
     [IPC_EVENT_CHANNELS.AI_STREAM_CHUNK]: new WeakMap(),
     [IPC_EVENT_CHANNELS.AI_STREAM_END]: new WeakMap(),
     [IPC_EVENT_CHANNELS.AI_STREAM_ERROR]: new WeakMap(),
   };
 
+  /** @type {readonly string[]} */
   const AI_STREAM_CHANNELS = Object.freeze([
     IPC_EVENT_CHANNELS.AI_STREAM_CHUNK,
     IPC_EVENT_CHANNELS.AI_STREAM_END,
@@ -335,6 +345,7 @@ function createBridgeContext() {
   /**
    * @param {unknown} url
    * @param {ExternalOpenOptions} [options]
+   * @returns {ExternalOpenRequest}
    */
   const normalizeExternalOpenRequest = (url, options = {}) => {
     if (typeof url !== "string") {

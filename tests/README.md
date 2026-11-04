@@ -11,6 +11,37 @@ npm run lint
 npx vitest run tests/unit/i18n.test.js   # a single suite
 ```
 
+## Type checking
+
+```sh
+npm run typecheck   # tsc -p tsconfig.preload.json, must report zero errors
+```
+
+This covers the IPC contracts (`src/shared/contracts/**`) and the preload bridge
+(`src/preload/**`) with `strict` plus `noUnusedLocals`/`noUnusedParameters`,
+`noImplicitReturns`, `noFallthroughCasesInSwitch` and `noImplicitOverride`. The
+channel registry (`src/shared/contracts/ipc/domains/*.js`) keeps keys, channel
+names and argument schemas as literal types; `ipc/types.d.ts` turns them into
+argument tuples. As a result, every `ipcRenderer.invoke`/`send` in the preload is
+checked against the same schema main validates at runtime. Unknown channel
+constants, wrong argument types/counts and missing required payload fields are
+compile errors. Responses are `unknown` unless the domain module declares them in
+its `*Responses` typedef.
+
+`checkJs` stays off in the config because checked files `require` modules outside
+the scope (e.g. `src/shared/startupTheme.js`), and `checkJs` would check those too.
+Each in-scope file opts in with a `// @ts-check` first line instead, and
+`unit/preload-typings.test.js` fails if one is missing. To extend coverage to
+another folder:
+
+1. Add its glob to `include` in `tsconfig.preload.json` and to the folder list in
+   the `// @ts-check` test in `unit/preload-typings.test.js`.
+2. Add `// @ts-check` to each file, then run `npm run typecheck` and fix the
+   errors with JSDoc (`@param`, `@returns`, `@typedef`, `@import`). Any
+   `@ts-expect-error` or cast needs a comment explaining why.
+3. Optionally add a `tsconfig.json` in the folder that `extends` the root config,
+   so editors use the same settings (see `src/preload/tsconfig.json`).
+
 `npm test` runs `unit/**/*.test.js`. These checks do not require a built native
 host or a desktop session.
 

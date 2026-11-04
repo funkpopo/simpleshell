@@ -161,8 +161,10 @@ npm run make              # 构建可分发的安装包
 `cargo build --locked --manifest-path native-services/Cargo.toml`。
 
 Preload 契约使用 JSDoc 和 `src/shared/contracts/preload.d.ts` 中的共享类型声明。
-`npm test` 通过 TypeScript 解析暴露的方法和 IPC 调用，再根据
-`tsconfig.preload.json` 检查全部 `src/preload/**/*.js` 模块的实现与注释是否一致，
+`npm run typecheck`（`npm test` 中同样会执行）根据 `tsconfig.preload.json`
+检查全部 `src/preload/**/*.js` 与 `src/shared/contracts/**` 模块；preload 中每个
+`ipcRenderer.invoke` / `send` 都会对照 `src/shared/contracts/ipc/domains/` 下按领域划分的
+通道 schema 检查参数，主进程运行时校验使用的也是同一套 schema，
 并开启完整的 `strict` 检查（包括 `noImplicitAny` 和 `strictFunctionTypes`）。
 编辑器通过 `src/preload/tsconfig.json` 继承同一套配置。
 尚未细化契约的原始 IPC 响应保留为 `unknown`，调用方需要先缩窄类型；

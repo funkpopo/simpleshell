@@ -2,7 +2,7 @@
 /**
  * Preload 运行于隔离上下文；类型检查由 tests/helpers/preloadAnalysis.js 执行。
  * 主进程尚未细化的响应使用 unknown，调用方应先缩窄类型。
- * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../../shared/contracts/preload"
+ * @import { Unsubscribe, IpcCallback } from "../../shared/contracts/preload"
  */
 
 /** @param {ReturnType<typeof import("../bridgeContext").createBridgeContext>} bridge */
@@ -131,7 +131,7 @@ function createAiAPI(bridge) {
     // 记忆文件管理API
     /**
      * 通过 IPC_REQUEST_CHANNELS.MEMORY_SAVE 请求主进程。
-     * @param {unknown} memory
+     * @param {Record<string, unknown>} memory
      * @returns {Promise<unknown>}
      */
     saveMemory: (memory) =>

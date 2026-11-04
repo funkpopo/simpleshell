@@ -2,7 +2,7 @@
 /**
  * Preload 运行于隔离上下文；类型检查由 tests/helpers/preloadAnalysis.js 执行。
  * 主进程尚未细化的响应使用 unknown，调用方应先缩窄类型。
- * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../../shared/contracts/preload"
+ * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, WindowState } from "../../shared/contracts/preload"
  */
 
 /** @param {ReturnType<typeof import("../bridgeContext").createBridgeContext>} bridge */
@@ -63,7 +63,7 @@ function createSystemAPI(bridge) {
     // 获取应用版本
     /**
      * 通过 IPC_REQUEST_CHANNELS.APP_GET_VERSION 请求主进程。
-     * @returns {Promise<IpcResult<string>>}
+     * @returns {Promise<IpcResult<{ success: true, version: string }>>}
      */
     getAppVersion: () =>
       ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_GET_VERSION),

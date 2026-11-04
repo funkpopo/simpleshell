@@ -1,0 +1,263 @@
+// @ts-check
+/**
+ * IPC channels for UI/log/security settings, config transfer and sync,
+ * shortcut commands and command history (category: settings).
+ */
+
+/**
+ * No settings response shape is fixed by main yet; all resolve to unknown.
+ * @typedef {{}} SettingsResponses
+ */
+
+const {
+  NO_ARGS_SCHEMA,
+  STANDARD_RESPONSE_SCHEMA,
+  args,
+  arrayArg,
+  defineEvent,
+  defineRequest,
+  numberArg,
+  objectArg,
+  stringArg,
+} = require("../schema");
+
+const SETTINGS_CHANNEL_DEFINITIONS = Object.freeze([
+  defineRequest(
+    "SETTINGS_LOAD_UI",
+    "settings:loadUISettings",
+    "settings",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "SETTINGS_SAVE_UI",
+    "settings:saveUISettings",
+    "settings",
+    args([objectArg()]),
+  ),
+  defineRequest(
+    "SETTINGS_LOAD_LOG",
+    "settings:loadLogSettings",
+    "settings",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "SETTINGS_SAVE_LOG",
+    "settings:saveLogSettings",
+    "settings",
+    args([objectArg()]),
+  ),
+  defineRequest(
+    "SETTINGS_GET_ERROR_REPORTING",
+    "settings:getErrorReportingSettings",
+    "settings",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "SETTINGS_SAVE_ERROR_REPORTING",
+    "settings:saveErrorReportingSettings",
+    "settings",
+    args([objectArg()]),
+  ),
+  defineRequest(
+    "SETTINGS_UPDATE_PREFETCH",
+    "settings:updatePrefetchSettings",
+    "settings",
+    args([objectArg()]),
+  ),
+  defineRequest(
+    "SETTINGS_GET_CREDENTIAL_SECURITY_STATUS",
+    "settings:getCredentialSecurityStatus",
+    "settings",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "SETTINGS_UPDATE_CREDENTIAL_SECURITY",
+    "settings:updateCredentialSecurity",
+    "settings",
+    args([objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "credentials" },
+  ),
+  defineRequest(
+    "SETTINGS_UNLOCK_CREDENTIAL_STORE",
+    "settings:unlockCredentialStore",
+    "settings",
+    args([stringArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "credentials" },
+  ),
+  defineRequest(
+    "SETTINGS_LOCK_CREDENTIAL_STORE",
+    "settings:lockCredentialStore",
+    "settings",
+    NO_ARGS_SCHEMA,
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "credentials" },
+  ),
+  defineRequest(
+    "SETTINGS_CLEAR_LOCAL_DATA",
+    "settings:clearLocalData",
+    "settings",
+    args([objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "filesystem" },
+  ),
+  defineEvent(
+    "SETTINGS_LOCAL_DATA_CLEARED",
+    "settings:localDataCleared",
+    "settings",
+    args([objectArg()]),
+  ),
+  defineRequest(
+    "CONFIG_TRANSFER_EXPORT",
+    "settings:configTransferExport",
+    "settings",
+    args([objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "filesystem" },
+  ),
+  defineRequest(
+    "CONFIG_TRANSFER_IMPORT",
+    "settings:configTransferImport",
+    "settings",
+    args([objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "filesystem" },
+  ),
+  defineRequest(
+    "CONFIG_TRANSFER_LIST_SECTIONS",
+    "settings:configTransferListSections",
+    "settings",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "CONFIG_SYNC_LOAD_SETTINGS",
+    "settings:configSyncLoadSettings",
+    "settings",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "CONFIG_SYNC_SAVE_SETTINGS",
+    "settings:configSyncSaveSettings",
+    "settings",
+    args([objectArg()]),
+  ),
+  defineRequest(
+    "CONFIG_SYNC_TEST",
+    "settings:configSyncTest",
+    "settings",
+    args([objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "network" },
+  ),
+  defineRequest(
+    "CONFIG_SYNC_UPLOAD",
+    "settings:configSyncUpload",
+    "settings",
+    args([objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "network" },
+  ),
+  defineRequest(
+    "CONFIG_SYNC_DOWNLOAD",
+    "settings:configSyncDownload",
+    "settings",
+    args([objectArg()]),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "network" },
+  ),
+  defineEvent(
+    "CONFIG_TRANSFER_IMPORTED",
+    "settings:configTransferImported",
+    "settings",
+    args([objectArg()]),
+  ),
+  defineRequest(
+    "CONFIG_SYNC_GET_STATUS",
+    "settings:configSyncGetStatus",
+    "settings",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "CONFIG_SYNC_PULL_NOW",
+    "settings:configSyncPullNow",
+    "settings",
+    NO_ARGS_SCHEMA,
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "network" },
+  ),
+  defineEvent(
+    "CONFIG_SYNC_AUTO_EVENT",
+    "settings:configSyncAutoEvent",
+    "settings",
+    args([objectArg()]),
+  ),
+  defineRequest(
+    "SHORTCUT_COMMANDS_GET",
+    "get-shortcut-commands",
+    "settings",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "SHORTCUT_COMMANDS_SAVE",
+    "save-shortcut-commands",
+    "settings",
+    args([objectArg()]),
+  ),
+  defineRequest(
+    "COMMAND_HISTORY_ADD",
+    "command-history:add",
+    "settings",
+    args([stringArg()]),
+  ),
+  defineRequest(
+    "COMMAND_HISTORY_GET_SUGGESTIONS",
+    "command-history:getSuggestions",
+    "settings",
+    args([stringArg(), numberArg()], { minItems: 1, maxItems: 2 }),
+  ),
+  defineRequest(
+    "COMMAND_HISTORY_INCREMENT_USAGE",
+    "command-history:incrementUsage",
+    "settings",
+    args([stringArg()]),
+  ),
+  defineRequest(
+    "COMMAND_HISTORY_CLEAR",
+    "command-history:clear",
+    "settings",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "COMMAND_HISTORY_GET_STATISTICS",
+    "command-history:getStatistics",
+    "settings",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "COMMAND_HISTORY_GET_ALL",
+    "command-history:getAll",
+    "settings",
+    NO_ARGS_SCHEMA,
+  ),
+  defineRequest(
+    "COMMAND_HISTORY_DELETE",
+    "command-history:delete",
+    "settings",
+    args([stringArg()]),
+  ),
+  defineRequest(
+    "COMMAND_HISTORY_DELETE_BATCH",
+    "command-history:deleteBatch",
+    "settings",
+    args([arrayArg()]),
+  ),
+  defineEvent(
+    "COMMAND_HISTORY_CHANGED",
+    "command-history:changed",
+    "settings",
+    args([objectArg()]),
+  ),
+]);
+
+module.exports = { SETTINGS_CHANNEL_DEFINITIONS };

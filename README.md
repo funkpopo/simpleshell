@@ -163,9 +163,11 @@ Integration tests need a compiled native host:
 `cargo build --locked --manifest-path native-services/Cargo.toml`.
 
 Preload contracts use JSDoc and shared declarations in `src/shared/contracts/preload.d.ts`.
-`npm test` parses exposed methods and IPC calls with TypeScript, then checks
-all `src/preload/**/*.js` modules against their annotations using
-`tsconfig.preload.json`, with full `strict` checking enabled (including
+`npm run typecheck` (also exercised by `npm test`) checks all
+`src/preload/**/*.js` and `src/shared/contracts/**` modules using
+`tsconfig.preload.json`. Every `ipcRenderer.invoke` / `send` in the preload is
+checked against the per-domain channel schemas in
+`src/shared/contracts/ipc/domains/`, the same schemas main validates at runtime, with full `strict` checking enabled (including
 `noImplicitAny` and `strictFunctionTypes`). The editor-discoverable
 `src/preload/tsconfig.json` inherits the same configuration. Raw IPC
 responses that have no detailed contract remain `unknown` and must be narrowed

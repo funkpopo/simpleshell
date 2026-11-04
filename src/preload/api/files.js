@@ -2,7 +2,7 @@
 /**
  * Preload 运行于隔离上下文；类型检查由 tests/helpers/preloadAnalysis.js 执行。
  * 主进程尚未细化的响应使用 unknown，调用方应先缩窄类型。
- * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../../shared/contracts/preload"
+ * @import { Unsubscribe, PayloadCallback, IpcCallback, ExternalEditorCallback, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../../shared/contracts/preload"
  */
 
 /** @param {ReturnType<typeof import("../bridgeContext").createBridgeContext>} bridge */
@@ -299,7 +299,7 @@ function createFilesAPI(bridge) {
     /**
      * 通过 IPC_REQUEST_CHANNELS.FILE_DOWNLOAD_FILES 请求主进程。
      * @param {string} tabId
-     * @param {unknown} files
+     * @param {unknown[]} files
      * @param {DownloadProgressCallback} [progressCallback]
      * @returns {Promise<unknown>}
      */
@@ -398,7 +398,7 @@ function createFilesAPI(bridge) {
      * 通过 IPC_REQUEST_CHANNELS.FILE_SET_PERMISSIONS 请求主进程。
      * @param {string} tabId
      * @param {string} filePath
-     * @param {unknown} permissions
+     * @param {string} permissions Octal mode string, e.g. "644".
      * @returns {Promise<unknown>}
      */
     setFilePermissions: (tabId, filePath, permissions) =>
@@ -562,7 +562,7 @@ function createFilesAPI(bridge) {
      * 通过 IPC_REQUEST_CHANNELS.FILE_UPLOAD_DROPPED 请求主进程。
      * @param {string} tabId
      * @param {string} targetFolder
-     * @param {unknown} uploadData
+     * @param {Record<string, unknown>} uploadData
      * @param {UploadDroppedProgressCallback} [progressCallback]
      * @returns {Promise<unknown>}
      */
@@ -840,11 +840,14 @@ function createFilesAPI(bridge) {
       const payload = normalizeExternalOpenRequest(url, options);
       const result = await Promise.race([
         ipcRenderer.invoke(IPC_REQUEST_CHANNELS.APP_OPEN_EXTERNAL, payload),
-        new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error("openExternal IPC timed out")),
-            OPEN_EXTERNAL_IPC_TIMEOUT,
-          ),
+        // Typed so the race keeps the invoke response type instead of any.
+        /** @type {Promise<never>} */ (
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("openExternal IPC timed out")),
+              OPEN_EXTERNAL_IPC_TIMEOUT,
+            ),
+          )
         ),
       ]);
       if (result && typeof result === "object" && "success" in result) {
@@ -888,7 +891,7 @@ function createFilesAPI(bridge) {
      * 通过 IPC_REQUEST_CHANNELS.FILE_CHECK_DROPPED_UPLOAD_CONFLICTS 请求主进程。
      * @param {string} tabId
      * @param {string} targetFolder
-     * @param {unknown} uploadData
+     * @param {Record<string, unknown>} uploadData
      * @returns {Promise<unknown>}
      */
     checkDroppedUploadConflicts: (tabId, targetFolder, uploadData) =>

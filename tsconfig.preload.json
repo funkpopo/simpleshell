@@ -1,14 +1,20 @@
 {
+  "//": "Type-checks the IPC contracts and the preload bridge (npm run typecheck). checkJs stays false on purpose: these files require modules outside the checked scope (src/shared/startupTheme.js -> themeTokens.js), and checkJs would check those too. Each in-scope file opts in with a `// @ts-check` header instead; tests/unit/preload-typings.test.js fails if a file under an included folder lacks it. See tests/README.md (Type checking).",
   "compilerOptions": {
     "allowJs": true,
     "checkJs": false,
     "noEmit": true,
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
     "skipLibCheck": true,
     "target": "ES2022",
     "module": "commonjs",
     "types": ["node"],
     "lib": ["ES2022", "DOM"]
   },
-  "include": ["src/preload/**/*.js"]
+  "include": ["src/preload/**/*.js", "src/shared/contracts/**/*"]
 }

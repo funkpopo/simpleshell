@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { collectPreloadSources } from "../helpers/preload-sources.js";
 import {
   inspectPreload,
@@ -197,4 +199,85 @@ describe("preload JSDoc implementation type checking", () => {
       ),
     ).toBe(true);
   }, 15000);
+});
+
+describe("IPC contract type checking (npm run typecheck)", () => {
+  const terminalApiPath = fileURLToPath(
+    new URL("../../src/preload/api/terminal.js", import.meta.url),
+  );
+  const terminalApiSource = fs.readFileSync(terminalApiPath, "utf8");
+
+  /** @param {string} from @param {string} to */
+  const diagnosticsForTerminalApi = (from, to) => {
+    const changed = terminalApiSource.replace(from, to);
+    expect(changed).not.toBe(terminalApiSource);
+    return getPreloadTypeDiagnostics(changed, terminalApiPath);
+  };
+
+  it("拒绝未注册的通道常量", () => {
+    const diagnostics = diagnosticsForTerminalApi(
+      "IPC_REQUEST_CHANNELS.COMMAND_HISTORY_CLEAR)",
+      "IPC_REQUEST_CHANNELS.COMMAND_HISTORY_WIPE)",
+    );
+    expect(
+      diagnostics.some(
+        (d) =>
+          (d.code === 2339 || d.code === 2551) &&
+          String(d.messageText).includes("COMMAND_HISTORY_WIPE"),
+      ),
+    ).toBe(true);
+  }, 15000);
+
+  it("invoke 实参必须符合通道 schema 的类型", () => {
+    const diagnostics = diagnosticsForTerminalApi(
+      "IPC_REQUEST_CHANNELS.COMMAND_HISTORY_ADD, command)",
+      "IPC_REQUEST_CHANNELS.COMMAND_HISTORY_ADD, 42)",
+    );
+    expect(diagnostics.some((d) => d.code === 2345)).toBe(true);
+  }, 15000);
+
+  it("对象载荷缺少 schema required 字段时报错", () => {
+    const apiPath = fileURLToPath(
+      new URL("../../src/preload/api/connections.js", import.meta.url),
+    );
+    const original = fs.readFileSync(apiPath, "utf8");
+    const changed = original.replace(
+      "@param {TabRequest} args",
+      "@param {{ tab: string }} args",
+    );
+    expect(changed).not.toBe(original);
+    const diagnostics = getPreloadTypeDiagnostics(changed, apiPath);
+    expect(
+      diagnostics.some(
+        (d) =>
+          d.code === 2345 &&
+          String(ts.flattenDiagnosticMessageText(d.messageText, "\n")).includes(
+            "tabId",
+          ),
+      ),
+    ).toBe(true);
+  }, 15000);
+
+  it("受检目录中的每个 JS 文件都以 // @ts-check 开头", () => {
+    // tsconfig.preload.json keeps checkJs off so required out-of-scope modules
+    // are not checked; coverage therefore depends on this per-file pragma.
+    const roots = ["../../src/preload", "../../src/shared/contracts"].map(
+      (relative) => fileURLToPath(new URL(relative, import.meta.url)),
+    );
+    const missing = [];
+    const walk = (directory) => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const fullPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) walk(fullPath);
+        else if (
+          entry.name.endsWith(".js") &&
+          !/^\/\/ @ts-check\r?\n/.test(fs.readFileSync(fullPath, "utf8"))
+        ) {
+          missing.push(fullPath);
+        }
+      }
+    };
+    roots.forEach(walk);
+    expect(missing).toEqual([]);
+  });
 });

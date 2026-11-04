@@ -10,6 +10,7 @@
     "package": "node scripts/prepare-native-services.js && electron-forge package",
     "make": "node scripts/prepare-native-services.js && node scripts/prepare-winstaller-vendor.js && electron-forge make",
     "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.preload.json",
     "format": "prettier --write .",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.mjs",

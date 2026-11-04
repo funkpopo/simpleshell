@@ -2,7 +2,8 @@
 /**
  * Preload 运行于隔离上下文；类型检查由 tests/helpers/preloadAnalysis.js 执行。
  * 主进程尚未细化的响应使用 unknown，调用方应先缩窄类型。
- * @import { IpcResult, ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, ExternalEditorCallback, TerminalMailboxMessage, WindowState, ExternalOpenOptions, ExternalOpenResult, ListFilesOptions, DownloadProgressCallback, UploadProgressCallback, UploadFolderProgressCallback, UploadDroppedProgressCallback } from "../../shared/contracts/preload"
+ * @import { ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback } from "../../shared/contracts/preload"
+ * @import { TabRequest } from "../../shared/contracts/ipc/domains/connection"
  */
 
 /** @param {ReturnType<typeof import("../bridgeContext").createBridgeContext>} bridge */
@@ -19,7 +20,7 @@ function createConnectionsAPI(bridge) {
     // 重连管理API
     /**
      * 通过 IPC_REQUEST_CHANNELS.RECONNECT_GET_STATUS 请求主进程。
-     * @param {unknown} args
+     * @param {TabRequest} args
      * @returns {Promise<unknown>}
      */
     getReconnectStatus: (args) =>
@@ -27,7 +28,7 @@ function createConnectionsAPI(bridge) {
 
     /**
      * 通过 IPC_REQUEST_CHANNELS.RECONNECT_PAUSE 请求主进程。
-     * @param {unknown} args
+     * @param {TabRequest} args
      * @returns {Promise<unknown>}
      */
     pauseReconnect: (args) =>
@@ -35,7 +36,7 @@ function createConnectionsAPI(bridge) {
 
     /**
      * 通过 IPC_REQUEST_CHANNELS.RECONNECT_RESUME 请求主进程。
-     * @param {unknown} args
+     * @param {TabRequest} args
      * @returns {Promise<unknown>}
      */
     resumeReconnect: (args) =>
@@ -465,7 +466,7 @@ function createConnectionsAPI(bridge) {
     // 响应 SSH 认证请求
     /**
      * 通过 IPC_REQUEST_CHANNELS.SSH_AUTH_RESPONSE 请求主进程。
-     * @param {unknown} response
+     * @param {Record<string, unknown>} response
      * @returns {Promise<unknown>}
      */
     respondSSHAuth: (response) =>

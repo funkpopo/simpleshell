@@ -21,7 +21,17 @@ describe("local-terminal-embedded", () => {
     const handlerSource = read(
       "src/main/ipc/handlers/localTerminalHandlers.js",
     );
-    const channelSource = read("src/shared/contracts/ipc/channels.js");
+    // The registry is split into per-domain modules; check all of it.
+    const ipcContractDir = "src/shared/contracts/ipc";
+    const channelSource = [
+      `${ipcContractDir}/channels.js`,
+      ...fs
+        .readdirSync(path.join(ROOT, ipcContractDir, "domains"))
+        .filter((name) => name.endsWith(".js"))
+        .map((name) => `${ipcContractDir}/domains/${name}`),
+    ]
+      .map(read)
+      .join("\n");
     const preloadSource =
       require("../helpers/preload-sources").collectPreloadSources();
     const appSource =
