@@ -9,11 +9,10 @@ for (const [name, exports] of [["logger", { logToFile: () => {} }]]) {
   require.cache[filename] = { id: filename, filename, loaded: true, exports };
 }
 const { nativeHostPath } = require("../helpers/nativeHost");
-const outputProcessor = require("../../src/main/terminal/output-processor");
+// The former main-process highlighter and OSC filter, kept as references.
+const outputProcessor = require("../helpers/referenceHighlighter");
 const highlightRules = require("../../src/shared/domain/highlight-configs");
-const {
-  createOscSafeOutputTransform,
-} = require("../../src/main/terminal/oscSafeOutput");
+const { createOscSafeOutputTransform } = require("../helpers/oscSafeOutput");
 
 /** Runs samples through the core's `highlight-text` service. */
 async function rustOutputs(rules, requests) {
@@ -158,8 +157,8 @@ function corpus() {
   return samples;
 }
 
-describe("term-pipe parity with the main-process output path", () => {
-  it("highlights exactly like output-processor.js", async () => {
+describe("term-pipe parity with the former main-process output path", () => {
+  it("highlights exactly like the reference highlighter", async () => {
     const samples = corpus();
     const rust = await rustOutputs(
       highlightRules,
@@ -175,7 +174,7 @@ describe("term-pipe parity with the main-process output path", () => {
     expect(mismatches.slice(0, 3)).toEqual([]);
   });
 
-  it("matches the OSC-safe pipeline of terminalOutput.js", async () => {
+  it("matches the reference OSC-safe streaming pipeline", async () => {
     const samples = corpus();
     const rust = await rustOutputs(
       highlightRules,
@@ -188,7 +187,7 @@ describe("term-pipe parity with the main-process output path", () => {
         );
         return {
           sample,
-          // As terminalOutput.js streams: the chunk, then the final flush.
+          // As the main process streamed: the chunk, then the final flush.
           expected: transform(sample, false) + transform("", true),
           actual: rust[index],
         };

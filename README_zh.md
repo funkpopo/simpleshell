@@ -212,7 +212,7 @@ simpleshell/
 
 - **[xterm.js](https://xtermjs.org/)** 6.1.0-beta.167 - 终端模拟器 + 常用 Addon
   - `@xterm/addon-fit`, `@xterm/addon-webgl`
-- **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - 回退 SSH 后端（默认 SSH 客户端运行在 Rust core 中）
+- **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - 仅作开发依赖，用于测试中的回环 SSH 服务器（应用的 SSH 客户端运行在 Rust core 中）
 
 ### **原生服务 Host**
 

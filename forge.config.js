@@ -370,7 +370,6 @@ module.exports = async () => {
       },
     },
     // No Node native modules to rebuild: native code lives in simpleshell-core.
-    // (ssh2's optional cpu-features is shimmed in webpack.main.config.js.)
     rebuildConfig: {
       onlyModules: [],
     },

@@ -53,6 +53,7 @@
     "node-loader": "2.1.0",
     "prettier": "3.9.6",
     "react-transition-group": "4.4.5",
+    "ssh2": "1.17.0",
     "style-loader": "4.0.0",
     "typescript": "5.9.3",
     "vite": "^8.3.0",
@@ -105,8 +106,7 @@
     "react-simple-maps": "3.0.0",
     "react-window": "2.3.1",
     "remark-gfm": "4.0.1",
-    "socks-proxy-agent": "10.1.0",
-    "ssh2": "1.17.0"
+    "socks-proxy-agent": "10.1.0"
   },
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"

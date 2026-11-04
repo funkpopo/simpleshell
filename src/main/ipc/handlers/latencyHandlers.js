@@ -98,7 +98,7 @@ class LatencyHandlers {
    */
   async registerConnection(event, { tabId, host, port }) {
     void event;
-    // 从进程管理器获取SSH连接实例（tabId 对应的 ssh2.Client）
+    // 从进程管理器获取SSH连接实例（tabId 对应的 NativeSshClient）
     const processManager = require("../../process/processManager");
     const proc = processManager.getProcess(tabId);
     if (!proc || proc.type !== "ssh2" || !proc.process) {

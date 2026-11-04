@@ -7,10 +7,7 @@ const createSshSessions = require("./domains/sshSessions");
 const SSHAuthenticationService = require("../../connection/sshAuthenticationService");
 const { StringDecoder } = require("string_decoder");
 const { logToFile } = require("../../utils/logger");
-const outputProcessor = require("../../terminal/output-processor");
-const {
-  createOscSafeOutputTransform,
-} = require("../../terminal/oscSafeOutput");
+const highlightRules = require("../../../shared/domain/highlight-configs");
 const configService = require("../../settings/configService");
 const { indexConnections } = require("../../../shared/connectionConfigSync");
 const {
@@ -93,8 +90,6 @@ function getTerminalText(config, key, params = {}) {
       return mainT("mainProcess.terminal.moshError", options);
     case "moshFailedHint":
       return mainT("mainProcess.terminal.moshFailedHint", options);
-    case "droppedBytesWarning":
-      return mainT("mainProcess.terminal.droppedBytesWarning", options);
     case "sshConnected":
     case "sshConnectedReused":
       return mainT("mainProcess.terminal.sshConnected", options);
@@ -164,8 +159,6 @@ class SSHHandlers {
         IPC_EVENT_CHANNELS,
         getTerminalText,
         StringDecoder,
-        createOscSafeOutputTransform,
-        outputProcessor,
         logToFile,
         zmodemTransferService,
         filemanagementService,
@@ -262,7 +255,7 @@ class SSHHandlers {
         buildReconnectWaitMessage,
         getTerminalLanguage,
         buildReconnectTimeoutMessage,
-        outputProcessor,
+        highlightRules,
       },
     );
     this.childProcesses = dependencies.childProcesses;

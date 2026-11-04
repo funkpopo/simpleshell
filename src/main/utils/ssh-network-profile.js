@@ -4,9 +4,6 @@ const {
 } = require("../services/networkQuality");
 
 const DEFAULT_SSH_NETWORK_PROFILE = Object.freeze({
-  tcpNoDelay: true,
-  socketKeepAlive: true,
-  socketKeepAliveInitialDelay: 10000,
   keepaliveInterval: 10000,
   keepaliveCountMax: 9,
   readyTimeout: 30000,
@@ -24,13 +21,6 @@ const toBoundedInt = (value, min, max, fallback) => {
   }
 
   return intValue;
-};
-
-const toBoolean = (value, fallback) => {
-  if (typeof value === "boolean") {
-    return value;
-  }
-  return fallback;
 };
 
 const getNetworkProfileSource = (config = {}) => {
@@ -70,9 +60,6 @@ const resolveSshNetworkProfile = (
   const effectiveDefaults = qualityOverrides
     ? {
         ...defaults,
-        socketKeepAliveInitialDelay:
-          qualityOverrides.socketKeepAliveInitialDelay ??
-          defaults.socketKeepAliveInitialDelay,
         keepaliveInterval:
           qualityOverrides.keepaliveInterval ?? defaults.keepaliveInterval,
         keepaliveCountMax:
@@ -81,20 +68,6 @@ const resolveSshNetworkProfile = (
       }
     : defaults;
 
-  const tcpNoDelay = toBoolean(
-    readProfileValue(config, profileSource, "tcpNoDelay"),
-    effectiveDefaults.tcpNoDelay,
-  );
-  const socketKeepAlive = toBoolean(
-    readProfileValue(config, profileSource, "socketKeepAlive"),
-    effectiveDefaults.socketKeepAlive,
-  );
-  const socketKeepAliveInitialDelay = toBoundedInt(
-    readProfileValue(config, profileSource, "socketKeepAliveInitialDelay"),
-    1000,
-    120000,
-    effectiveDefaults.socketKeepAliveInitialDelay,
-  );
   const keepaliveInterval = toBoundedInt(
     readProfileValue(config, profileSource, "keepaliveInterval"),
     5000,
@@ -115,9 +88,6 @@ const resolveSshNetworkProfile = (
   );
 
   return {
-    tcpNoDelay,
-    socketKeepAlive,
-    socketKeepAliveInitialDelay,
     keepaliveInterval,
     keepaliveCountMax,
     readyTimeout,
@@ -129,40 +99,7 @@ const resolveSshNetworkProfile = (
   };
 };
 
-const applySocketNetworkProfile = (
-  socket,
-  profile = DEFAULT_SSH_NETWORK_PROFILE,
-) => {
-  if (!socket || typeof socket !== "object") {
-    return false;
-  }
-
-  const resolvedProfile = resolveSshNetworkProfile(profile);
-
-  try {
-    if (typeof socket.setNoDelay === "function") {
-      socket.setNoDelay(resolvedProfile.tcpNoDelay !== false);
-    }
-  } catch {
-    /* intentionally ignored */
-  }
-
-  try {
-    if (typeof socket.setKeepAlive === "function") {
-      socket.setKeepAlive(
-        resolvedProfile.socketKeepAlive !== false,
-        resolvedProfile.socketKeepAliveInitialDelay,
-      );
-    }
-  } catch {
-    /* intentionally ignored */
-  }
-
-  return true;
-};
-
 module.exports = {
   DEFAULT_SSH_NETWORK_PROFILE,
   resolveSshNetworkProfile,
-  applySocketNetworkProfile,
 };

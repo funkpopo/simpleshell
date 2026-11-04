@@ -11,14 +11,10 @@ const { normalizeProxyConfig } = require("../native/nativeSidecarNetworkPath");
 const { getBasicSSHAlgorithms } = require("../../shared/domain/sshAlgorithms");
 const proxyManager = require("../proxy/proxy-manager");
 const {
-  createChannelPoolManager,
   processSSHPrivateKeyAsync,
   buildSshConnectOptions,
 } = require("../utils/ssh-utils");
-const {
-  resolveSshNetworkProfile,
-  applySocketNetworkProfile,
-} = require("../utils/ssh-network-profile");
+const { resolveSshNetworkProfile } = require("../utils/ssh-network-profile");
 const { isAuthErrorMessage } = require("../../shared/errorClassification");
 const {
   attachKeyboardInteractiveSupport,
@@ -58,9 +54,6 @@ class SSHPool extends BaseConnectionPool {
     // 简化的请求队列（移除了复杂的路由和负载均衡）
     this.requestQueue = [];
     this.isProcessingQueue = false;
-
-    // 为每个连接初始化通道管理器
-    this.channelManagers = new Map();
 
     // 重连策略固定为弱网默认（DEFAULT_SSH_RETRY_CONFIG），无多模式切换
     this.reconnectionManager = new ReconnectionManager();
@@ -229,6 +222,8 @@ class SSHPool extends BaseConnectionPool {
       );
     }
 
+    const ssh = createSshClient();
+
     return new Promise((resolve, reject) => {
       let settled = false;
       const finishResolve = (val) => {
@@ -242,7 +237,6 @@ class SSHPool extends BaseConnectionPool {
         reject(err);
       };
 
-      const ssh = createSshClient();
       // keyboard-interactive / 2FA：在 connect 前注册事件处理（需配合 tryKeyboard）
       attachKeyboardInteractiveSupport(ssh, sshConfig);
       const connectionInfo = {
@@ -257,9 +251,7 @@ class SSHPool extends BaseConnectionPool {
         stream: null,
         listeners: new Set(),
         usingProxy: usingProxy,
-        proxySocket: null,
         closeReason: CLOSE_REASON.NETWORK,
-        channelManager: createChannelPoolManager(30), // 最多30个并发通道
       };
 
       // 先放入连接池：即使初次连接失败，也允许后续自动重连替换 connectionInfo.client
@@ -278,11 +270,6 @@ class SSHPool extends BaseConnectionPool {
       const timeout = setTimeout(() => {
         this._logInfo(`SSH connection timed out: ${connectionKey}`);
         connectionInfo.connecting = false;
-        try {
-          if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
-        } catch {
-          /* intentionally ignored */
-        }
         try {
           ssh.end();
         } catch {
@@ -310,7 +297,6 @@ class SSHPool extends BaseConnectionPool {
         clearTimeout(timeout);
         connectionInfo.ready = true;
         connectionInfo.connecting = false;
-        applySocketNetworkProfile(ssh._sock, networkProfile);
 
         this._logInfo(
           `SSH connection established: ${connectionKey}${usingProxy ? " (via proxy)" : ""}`,
@@ -331,11 +317,6 @@ class SSHPool extends BaseConnectionPool {
         if (connectionInfo.client !== ssh) return;
         clearTimeout(timeout);
         connectionInfo.connecting = false;
-        try {
-          if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
-        } catch {
-          /* intentionally ignored */
-        }
 
         const enhancedError = this._handleSSHError(
           sshConfig._interactiveAuthError || err,
@@ -364,49 +345,12 @@ class SSHPool extends BaseConnectionPool {
         this._handleSSHClose(connectionInfo, connectionKey, ssh);
       });
 
-      // 原生客户端由 core 建立代理隧道；ssh2 需要预先建立好的隧道 socket（sock）
-      if (usingProxy && ssh.acceptsProxyConfig) {
+      // The core opens the proxy tunnel.
+      if (usingProxy) {
         connectionOptions.proxy = normalizeProxyConfig(resolvedProxyConfig);
         connectionOptions.proxyRequired = true;
-        ssh.connect(connectionOptions);
-      } else if (usingProxy) {
-        (async () => {
-          try {
-            const targetPort = sshConfig.port || 22;
-            const sock = await this.proxyManager.createTunnelSocket(
-              resolvedProxyConfig,
-              sshConfig.host,
-              targetPort,
-              { timeoutMs: connectionTimeoutMs },
-            );
-            applySocketNetworkProfile(sock, networkProfile);
-            connectionInfo.proxySocket = sock;
-            connectionOptions.sock = sock;
-            ssh.connect(connectionOptions);
-          } catch (e) {
-            clearTimeout(timeout);
-            try {
-              if (connectionInfo.proxySocket)
-                connectionInfo.proxySocket.destroy();
-            } catch {
-              /* intentionally ignored */
-            }
-            // 代理隧道创建失败：多为本地代理/VPN未就绪，按可重试处理
-            this._failOrReconnectInitial(
-              e,
-              sshConfig,
-              usingProxy,
-              connectionKey,
-              ssh,
-              connectionInfo,
-              finishResolve,
-              finishReject,
-            );
-          }
-        })();
-      } else {
-        ssh.connect(connectionOptions);
       }
+      ssh.connect(connectionOptions);
     });
   }
 
@@ -583,8 +527,7 @@ class SSHPool extends BaseConnectionPool {
     return (
       connectionInfo.ready &&
       connectionInfo.client &&
-      !connectionInfo.client.destroyed &&
-      !connectionInfo.client._sock?.destroyed
+      !connectionInfo.client.destroyed
     );
   }
 
@@ -896,28 +839,6 @@ class SSHPool extends BaseConnectionPool {
   }
 
   /**
-   * 获取适合ssh2库的代理协议字符串
-   * @param {string} proxyType - 代理类型
-   * @returns {string} ssh2库支持的代理协议字符串
-   * @private
-   */
-  _getProxyProtocol(proxyType) {
-    const type = proxyType.toLowerCase();
-
-    switch (type) {
-      case PROXY_TYPES.HTTP:
-      case PROXY_TYPES.HTTPS:
-        return "http";
-      case PROXY_TYPES.SOCKS4:
-        return "socks4";
-      case PROXY_TYPES.SOCKS5:
-        return "socks5";
-      default:
-        return "http";
-    }
-  }
-
-  /**
    * 构建SSH连接选项
    * @param {Object} processedConfig - 已处理私钥的SSH配置（processSSHPrivateKeyAsync 的结果）
    * @param {Object|null} networkProfile - 网络参数（可选）
@@ -1128,11 +1049,6 @@ class SSHPool extends BaseConnectionPool {
       this._logInfo(
         `Intentionally closing connection: ${connectionKey}, reason=${closeReason}`,
       );
-      try {
-        if (connectionInfo.proxySocket) connectionInfo.proxySocket.destroy();
-      } catch {
-        /* intentionally ignored */
-      }
       this.connections.delete(connectionKey);
       this.processRequestQueue();
       return;

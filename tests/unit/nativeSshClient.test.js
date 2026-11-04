@@ -10,9 +10,6 @@ const {
   toSshError,
   toNativeConfig,
 } = require("../../src/main/connection/native/nativeSshClient");
-const {
-  resolveSshBackend,
-} = require("../../src/main/connection/sshClientFactory");
 
 /** Stands in for a core stream: records sent events, lets tests emit. */
 function fakeStream(service) {
@@ -230,7 +227,6 @@ describe("NativeSshClient facade", () => {
     const { client, streams } = createClient();
     client.connect({ host: "h", username: "u" });
     streams[0].emit("event", { type: "ready", token: "ssh-1" });
-    expect(client.supportsTerminalPipe).toBe(true);
 
     const opened = new Promise((resolve, reject) =>
       client.shell({}, { pipe: { rules: [] } }, (error, stream) =>
@@ -292,18 +288,55 @@ describe("NativeSshClient facade", () => {
     expect(await client.checkTransport()).toBe(false);
   });
 
-  it("selects the backend from the override, falling back without the native host", () => {
-    vi.stubEnv("SIMPLESHELL_SSH_BACKEND", "ssh2");
-    expect(resolveSshBackend()).toBe("ssh2");
-    vi.stubEnv("SIMPLESHELL_SSH_BACKEND", "native");
-    vi.stubEnv(
-      "SIMPLESHELL_NATIVE_SERVICES_PATH",
-      "Z:/missing/simpleshell-core.exe",
+  it("creates native clients and fails clearly without the native host", () => {
+    const factoryPath =
+      require.resolve("../../src/main/connection/sshClientFactory");
+    const servicesPath =
+      require.resolve("../../src/main/native/nativeServices");
+    const loadFactory = (hostPath) => {
+      delete require.cache[factoryPath];
+      const real = require.cache[servicesPath];
+      require.cache[servicesPath] = {
+        id: servicesPath,
+        filename: servicesPath,
+        loaded: true,
+        exports: { getNativeServicesHostPath: () => hostPath },
+      };
+      try {
+        return require(factoryPath);
+      } finally {
+        if (real) require.cache[servicesPath] = real;
+        else delete require.cache[servicesPath];
+        delete require.cache[factoryPath];
+      }
+    };
+    expect(
+      loadFactory("/bin/simpleshell-core").createSshClient(),
+    ).toBeInstanceOf(NativeSshClient);
+    expect(() => loadFactory(null).createSshClient()).toThrow(
+      expect.objectContaining({ code: "ENATIVECORE" }),
     );
-    const expected =
-      require("../../src/main/native/nativeServices").getNativeServicesHostPath()
-        ? "native"
-        : "ssh2";
-    expect(resolveSshBackend()).toBe(expected);
+  });
+
+  it("leaves no in-process SSH implementation in the app sources", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const root = path.resolve(__dirname, "../../src");
+    const offenders = [];
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const file = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(file);
+        else if (
+          /\.(c|m)?jsx?$/.test(entry.name) &&
+          /require\(["']ssh2(\/[^"']*)?["']\)|from\s+["']ssh2(\/[^"']*)?["']/.test(
+            fs.readFileSync(file, "utf8"),
+          )
+        )
+          offenders.push(path.relative(root, file));
+      }
+    };
+    walk(root);
+    expect(offenders).toEqual([]);
   });
 });

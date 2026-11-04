@@ -1,6 +1,13 @@
-const { logToFile } = require("../utils/logger");
-const processManager = require("../process/processManager");
-const highlightRuleConfigs = require("../../shared/domain/highlight-configs"); // New import
+/**
+ * Reference syntax highlighter for parity tests of the core's `term-pipe`.
+ *
+ * This is the main-process highlighter that terminals used before output
+ * processing moved into `simpleshell-core` (formerly
+ * src/main/terminal/output-processor.js). The app no longer runs it;
+ * tests/integration/termPipeParity.test.js checks that `highlight-text`
+ * still produces exactly its output.
+ */
+const highlightRuleConfigs = require("../../src/shared/domain/highlight-configs");
 
 // 添加ANSI颜色代码
 const ANSI_COLORS = {
@@ -84,7 +91,7 @@ const resolveAnsiColor = (color) => {
   );
 };
 
-const { escapeRegExp: escapeRegex } = require("../utils/textUtils");
+const { escapeRegExp: escapeRegex } = require("../../src/main/utils/textUtils");
 
 const ensureGlobalRegexFlags = (flags = "") => {
   const normalized = typeof flags === "string" ? flags : "";
@@ -354,25 +361,6 @@ const parseStyleToFormat = (style) => {
 
 class OutputProcessor {
   constructor() {
-    // 跟踪编辑器会话状态的正则表达式
-    this.editorCommandRegex =
-      /\b(vi|vim|nano|emacs|pico|ed|less|more|cat|man)\b/;
-    this.editorExitCommands = [
-      "q",
-      "quit",
-      "exit",
-      "wq",
-      "ZZ",
-      "x",
-      ":q",
-      ":wq",
-      ":x",
-      "Ctrl+X",
-    ];
-    this.editorExitRegex = new RegExp(
-      `^(${this.editorExitCommands.join("|").replace(/\+/g, "\\+")}|:\\w+)$`,
-      "i",
-    );
     this.highlightRules = [];
     this.compiledHighlightRules = [];
     this.updateHighlightRules(highlightRuleConfigs);
@@ -449,45 +437,6 @@ class OutputProcessor {
     }
 
     return null;
-  }
-
-  processTerminalOutput(processId, output) {
-    try {
-      const procInfo = processManager.getProcess(processId);
-
-      if (procInfo) {
-        // 编辑器检测在原始输出上执行，而不是高亮后的输出。
-        // 仅在状态变化时记录日志：输出中常见 more/cat 等词，大量输出时
-        // 每段都写日志会持续占用主进程。
-        const wasEditorMode = procInfo.editorMode;
-        if (this.editorCommandRegex.test(output)) {
-          procInfo.editorMode = true;
-        }
-        if (procInfo.editorMode && this.editorExitRegex.test(output.trim())) {
-          procInfo.editorMode = false;
-        }
-        if (procInfo.editorMode !== wasEditorMode) {
-          logToFile(
-            `Editor mode ${procInfo.editorMode ? "activated" : "deactivated"} for process ${processId}`,
-            "INFO",
-          );
-        }
-      }
-
-      return this.applySyntaxHighlighting(output);
-    } catch (error) {
-      logToFile(
-        `Error processing terminal output for process ${processId}: ${error.message}`,
-        "ERROR",
-      );
-      // 即使发生错误，也尝试高亮原始输出
-      return this.applySyntaxHighlighting(output);
-    }
-  }
-
-  isEditorMode(processId) {
-    const procInfo = processManager.getProcess(processId);
-    return procInfo ? procInfo.editorMode : false;
   }
 
   collectHighlightCandidates(text) {
@@ -579,11 +528,8 @@ class OutputProcessor {
             break;
           }
         }
-      } catch (e) {
-        logToFile(
-          `Error collecting highlight matches for rule '${rule.id}': ${e.message}`,
-          "ERROR",
-        );
+      } catch {
+        // A failing rule contributes no matches.
       }
     }
 
@@ -806,7 +752,6 @@ class OutputProcessor {
   }
 }
 
-// 创建单例实例
-const outputProcessor = new OutputProcessor();
+const referenceHighlighter = new OutputProcessor();
 
-module.exports = outputProcessor;
+module.exports = referenceHighlighter;

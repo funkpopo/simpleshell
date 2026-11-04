@@ -215,7 +215,7 @@ Source is organized by runtime. Area-specific conventions live in README files n
 
 - **[xterm.js](https://xtermjs.org/)** 6.1.0-beta.167 - Terminal emulator + add-ons
   - `@xterm/addon-fit`, `@xterm/addon-webgl`
-- **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - fallback SSH backend (the default SSH client runs in the Rust core)
+- **[ssh2](https://github.com/mscdex/ssh2)** 1.17.0 - dev dependency only: loopback SSH servers in tests (the app's SSH client runs in the Rust core)
 
 ### **Native Services Host**
 

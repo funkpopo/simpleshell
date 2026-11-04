@@ -15,16 +15,10 @@ const SSHPool = require("../../src/main/connection/ssh-pool");
 const SshTransportHealth = require("../../src/main/connection/ssh-transport-health");
 const TerminalIOMailboxManager = require("../../src/main/terminal/terminalIOMailboxManager");
 const createTerminalOutput = require("../../src/main/ipc/handlers/domains/terminalOutput");
-const outputProcessor = require("../../src/main/terminal/output-processor");
-const {
-  createOscSafeOutputTransform,
-} = require("../../src/main/terminal/oscSafeOutput");
+const highlightRules = require("../../src/shared/domain/highlight-configs");
 const {
   ZmodemTransferService,
 } = require("../../src/main/terminal/zmodemTransferService");
-const {
-  NativeZmodemClient,
-} = require("../../src/main/native/nativeZmodemClient");
 const nativeSftp = require("../../src/main/native/nativeSftpClient");
 const TransferScheduler = require("../../src/main/file-transfer/transferScheduler");
 const {
@@ -68,17 +62,6 @@ if (process.env.SIMPLESHELL_PERF_DIAG === "1") {
     require("../../src/main/native/coreSupervisor").CoreSupervisor.prototype,
     "_drainInbox",
     "core.drainInbox",
-  );
-  instrument(outputProcessor, "processTerminalOutput", "output.highlight");
-  instrument(
-    ZmodemTransferService.prototype,
-    "_handleNativeMessage",
-    "zmodem.message",
-  );
-  instrument(
-    ZmodemTransferService.prototype,
-    "feedOutput",
-    "zmodem.feedOutput",
   );
   instrument(
     TerminalIOMailboxManager.prototype,
@@ -146,25 +129,20 @@ function createPool() {
   return pool;
 }
 
-// As sshSessions opens terminals: native clients process output in the core.
+// As sshSessions opens terminals: the core processes output (pipe mode).
 function openShell(client) {
   const window = { term: "xterm-256color", cols: 120, rows: 30 };
   return new Promise((resolve, reject) => {
-    const done = (error, stream) => (error ? reject(error) : resolve(stream));
-    if (client.supportsTerminalPipe) {
-      client.shell(
-        window,
-        { pipe: { rules: outputProcessor.highlightRules } },
-        done,
-      );
-    } else {
-      client.shell(window, done);
-    }
+    client.shell(
+      window,
+      { pipe: { rules: highlightRules } },
+      (error, stream) => (error ? reject(error) : resolve(stream)),
+    );
   });
 }
 
-// Runs the production main-process output path (decode, OSC filter, highlight,
-// mailbox flow control) against a renderer mailbox that ACKs like xterm.
+// Runs the production main-process output path (pipe channel text, mailbox
+// flow control) against a renderer mailbox that ACKs like xterm.
 function attachTerminalPipeline(stream, processId) {
   const channel = getTerminalIOMailboxOutputChannel(processId);
   let onOutput;
@@ -207,12 +185,6 @@ function attachTerminalPipeline(stream, processId) {
   });
   renderer.attachProcess(processId);
   const zmodem = new ZmodemTransferService({ emitIpc() {} });
-  const native = new NativeZmodemClient();
-  zmodem._client = native;
-  native.setMessageHandler((type, id, message) =>
-    zmodem._handleNativeMessage(type, id, message),
-  );
-  native.setExitHandler(() => zmodem._handleNativeProcessExit());
   const deps = {
     terminalIOMailboxManager: manager,
     childProcesses: new Map([
@@ -228,8 +200,6 @@ function attachTerminalPipeline(stream, processId) {
     IPC_EVENT_CHANNELS,
     getTerminalText: (_config, key) => key,
     StringDecoder,
-    createOscSafeOutputTransform,
-    outputProcessor,
     logToFile() {},
     zmodemTransferService: zmodem,
     filemanagementService: { cleanupTransfersForTab() {} },
@@ -266,8 +236,6 @@ function attachTerminalPipeline(stream, processId) {
       renderer.destroy();
       manager.destroyProcess(processId);
       zmodem.destroyAll();
-      clearInterval(zmodem._watchdog);
-      native.destroy();
       vi.unstubAllGlobals();
     },
   };
@@ -403,9 +371,7 @@ describe("performance baseline", () => {
     const image = helpers.nativeImageName();
     const pool = createPool();
     const streams = [];
-    const zmodem = new NativeZmodemClient();
     try {
-      expect(await zmodem.ensureReady()).toBe(true);
       for (let tab = 0; tab < TAB_COUNT; tab += 1) {
         const connection = await pool.getConnection({
           ...shellServer.config,
@@ -441,7 +407,6 @@ describe("performance baseline", () => {
       for (let tab = 0; tab < TAB_COUNT; tab += 1)
         nativeSftp.closeNativeSession(`perf-tab-${tab}`);
       for (const stream of streams) stream.destroy?.();
-      zmodem.destroy();
       pool.cleanup();
     }
   });

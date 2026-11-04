@@ -8,10 +8,7 @@ const {
   processSSHPrivateKeyAsync,
   buildSshConnectOptions,
 } = require("../utils/ssh-utils");
-const {
-  resolveSshNetworkProfile,
-  applySocketNetworkProfile,
-} = require("../utils/ssh-network-profile");
+const { resolveSshNetworkProfile } = require("../utils/ssh-network-profile");
 const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
 const {
   attachKeyboardInteractiveSupport,
@@ -579,13 +576,11 @@ async function createManagedSshConnection(sshConfig, options = {}) {
       )
     : Math.max(baseTimeout, interactiveMinTimeout);
 
+  const ssh = createSshClient();
+
   return new Promise((resolve, reject) => {
-    const ssh = options.ClientCtor
-      ? new options.ClientCtor()
-      : createSshClient();
     // keyboard-interactive / 2FA：在 connect 前注册事件处理（需配合 tryKeyboard）
     attachKeyboardInteractiveSupport(ssh, sshConfig);
-    let proxySocket = null;
     let settled = false;
     let cleanedUp = false;
     let timeoutId = null;
@@ -609,26 +604,6 @@ async function createManagedSshConnection(sshConfig, options = {}) {
 
       try {
         removeSetupListeners();
-      } catch {
-        /* intentionally ignored */
-      }
-
-      try {
-        if (proxySocket && typeof proxySocket.destroy === "function") {
-          proxySocket.destroy();
-        }
-      } catch {
-        /* intentionally ignored */
-      }
-
-      try {
-        if (
-          ssh._sock &&
-          ssh._sock !== proxySocket &&
-          typeof ssh._sock.destroy === "function"
-        ) {
-          ssh._sock.destroy();
-        }
       } catch {
         /* intentionally ignored */
       }
@@ -673,7 +648,6 @@ async function createManagedSshConnection(sshConfig, options = {}) {
 
     const connectionHandle = {
       client: ssh,
-      proxySocket: null,
       processedConfig,
       networkProfile,
       connectionTimeoutMs,
@@ -694,7 +668,6 @@ async function createManagedSshConnection(sshConfig, options = {}) {
     }, connectionTimeoutMs);
 
     const onReady = () => {
-      applySocketNetworkProfile(ssh._sock, networkProfile);
       detach();
       finishResolve(connectionHandle);
     };
@@ -741,20 +714,10 @@ async function createManagedSshConnection(sshConfig, options = {}) {
           proxyManager.isValidProxyConfig(resolvedProxyConfig) &&
           String(resolvedProxyConfig.type || "").toLowerCase() !== "none";
 
-        if (usingProxy && ssh.acceptsProxyConfig) {
+        // The core opens the proxy tunnel.
+        if (usingProxy) {
           connectionOptions.proxy = normalizeProxyConfig(resolvedProxyConfig);
           connectionOptions.proxyRequired = true;
-        } else if (usingProxy) {
-          const sock = await proxyManager.createTunnelSocket(
-            resolvedProxyConfig,
-            processedConfig.host,
-            processedConfig.port || 22,
-            { timeoutMs: connectionTimeoutMs },
-          );
-          applySocketNetworkProfile(sock, networkProfile);
-          proxySocket = sock;
-          connectionHandle.proxySocket = sock;
-          connectionOptions.sock = sock;
         }
 
         ssh.connect(connectionOptions);

@@ -24,7 +24,7 @@ const TerminalIOMailboxManager = require("../../src/main/terminal/terminalIOMail
 const {
   ZmodemTransferService,
 } = require("../../src/main/terminal/zmodemTransferService");
-const outputProcessor = require("../../src/main/terminal/output-processor");
+const outputProcessor = require("../helpers/referenceHighlighter");
 const highlightRules = require("../../src/shared/domain/highlight-configs");
 const { nativeHostPath } = require("../helpers/nativeHost");
 const { createSshShellServer } = require("../fixtures/ssh-shell-server");

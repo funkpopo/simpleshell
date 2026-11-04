@@ -344,7 +344,7 @@ class ProxyManager extends EventEmitter {
   }
 
   /**
-   * 通过代理创建到目标的 TCP 隧道 socket（用于 ssh2 的 sock）
+   * 通过代理创建到目标的 TCP 隧道 socket（用于预检与延迟探测）
    * @param {object} proxyConfig
    * @param {string} targetHost
    * @param {number} targetPort

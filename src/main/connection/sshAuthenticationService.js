@@ -420,7 +420,7 @@ class SSHAuthenticationService {
   }
 
   /**
-   * 创建 ssh2 hostVerifier 回调
+   * 创建 hostVerifier 回调（NativeSshClient 的 connect 选项）
    */
   _createHostVerifier(sshConfig) {
     return (fingerprint, callback) => {

@@ -5,8 +5,6 @@ const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
 const { resolveLanguage, t: mainT } = require("../../shared/mainI18n");
 
 const PROGRESS_EMIT_INTERVAL_MS = 150;
-const SESSION_INACTIVITY_TIMEOUT_MS = 45 * 1000;
-const WATCHDOG_INTERVAL_MS = 5 * 1000;
 
 const { formatBytes } = require("../../shared/common");
 
@@ -26,27 +24,18 @@ const uniqueSavePath = async (dir, fileName) => {
 };
 
 /**
- * ZMODEM（rz/sz）传输服务（native sidecar 编排器）。
+ * ZMODEM（rz/sz）传输服务。
  *
- * 自 P3.9 起协议状态机完全由 native sidecar（zmodem-serve，Rust）承担，
- * 旧的 JS zmodem2 状态机路径已移除。本模块仅负责编排：
- *  - 将 SSH 流的原始字节按序投递给 sidecar（检测、协议与透传均在 sidecar 内）；
- *  - 透传字节经 onRawOutput 回调进入原有解码/输出缓冲管线；
- *  - 文件选择框、保存策略、国际化、进度节流与 IPC 事件仍在 JS；
- *  - 背压经独立 "zmodem" 暂停原因接入统一流控。
- *
- * 会话期间 ZMODEM 协议字节被拦截，不再进入终端渲染管线；会话结束后自动恢复。
- *
- * native SSH 后端的终端管道通道（attachChannel）：检测、协议、超时与背压
- * 都在 core 的流内完成，本模块只处理通道的 zmodem 事件并下发
- * accept/send/cancel；上面的 sidecar 路径仅服务 ssh2 回退后端。
+ * SSH 终端以管道通道运行（attachChannel）：ZMODEM 检测、协议、超时与背压
+ * 都在 core 的流内完成，会话期间协议字节不进入终端渲染管线。本模块只处理
+ * 通道的 zmodem 事件并下发 accept/send/cancel；文件选择框、保存策略、
+ * 国际化、进度节流与 IPC 事件仍在 JS。
  */
 class ZmodemTransferService {
   constructor(options = {}) {
     this._options = options;
     this._states = new Map(); // processId -> state
     this._byTabId = new Map(); // tabId -> processId
-    this._watchdog = null;
   }
 
   // ------------------------------------------------------------------
@@ -117,32 +106,17 @@ class ZmodemTransferService {
   // ------------------------------------------------------------------
 
   /**
-   * 将 SSH 流的原始字节喂给 sidecar 检测器。
-   *
-   * @param {number|string} processId
-   * @param {Buffer} chunk 原始输出字节
-   * @param {object} context { stream, tabId, sshConfig, emitTerminalText, onRawOutput, onBackpressure }
-   * @returns {Buffer} 应继续进入终端渲染管线的字节（native 始终为空，透传经 onRawOutput）
+   * The channel emits `zmodem` (kind, event) and takes `zmodemAccept` /
+   * `zmodemSend` / `zmodemCancel`. Returns a detach function.
    */
-  feedOutput(processId, chunk, context = {}) {
-    if (!chunk || !chunk.length) {
-      return chunk || Buffer.alloc(0);
-    }
-
-    let state = this._states.get(String(processId));
+  attachChannel(processId, channel, context = {}) {
+    const state =
+      this._states.get(String(processId)) ||
+      this._createState(processId, context);
     if (!state) {
-      state = this._createState(processId, context);
-      if (!state) {
-        return chunk;
-      }
+      return () => {};
     }
-
-    if (context.stream) {
-      state.stream = context.stream;
-    }
-    if (typeof context.emitTerminalText === "function") {
-      state.emitTerminalText = context.emitTerminalText;
-    }
+    state.channel = channel;
     if (context.tabId !== undefined && context.tabId !== null) {
       const tabKey = String(context.tabId);
       if (state.tabId !== tabKey) {
@@ -153,36 +127,6 @@ class ZmodemTransferService {
         this._byTabId.set(tabKey, state.processId);
       }
     }
-    if (context.sshConfig !== undefined) {
-      state.sshConfig = context.sshConfig;
-    }
-    if (typeof context.onRawOutput === "function") {
-      state.onRawOutput = context.onRawOutput;
-    }
-    if (typeof context.onBackpressure === "function") {
-      state.onBackpressure = context.onBackpressure;
-    }
-    state.lastFeedAt = Date.now();
-
-    // 字节全部交给 sidecar（含检测与透传），透传字节经 onRawOutput 回调
-    // 进入原有解码/输出缓冲管线，保持字节归属与顺序
-    return this._feedNative(state, chunk);
-  }
-
-  /**
-   * Terminal pipe channels run ZMODEM in the core: the channel emits
-   * `zmodem` (kind, event) and takes `zmodemAccept` / `zmodemSend` /
-   * `zmodemCancel`. Dialogs, naming and IPC stay here. Returns a detach
-   * function.
-   */
-  attachChannel(processId, channel, context = {}) {
-    const state =
-      this._states.get(String(processId)) ||
-      this._createState(processId, context);
-    if (!state) {
-      return () => {};
-    }
-    state.channel = channel;
     if (typeof context.emitTerminalText === "function") {
       state.emitTerminalText = context.emitTerminalText;
     }
@@ -211,30 +155,9 @@ class ZmodemTransferService {
     };
   }
 
-  /** The transfer backend of a session: its pipe channel or the sidecar. */
-  _sessionClient(state) {
-    const channel = state.channel;
-    if (channel) {
-      return {
-        acceptFile: (target) =>
-          channel.sendZmodem({ type: "zmodemAccept", path: target }),
-        sendFiles: (files) => channel.sendZmodem({ type: "zmodemSend", files }),
-        cancel: () => channel.sendZmodem({ type: "zmodemCancel" }),
-        close: () => {
-          if (!state.remoteEnded) {
-            channel.sendZmodem({ type: "zmodemCancel" });
-          }
-        },
-      };
-    }
-    const client = this._ensureClient();
-    const id = state.processId;
-    return {
-      acceptFile: (target) => client.acceptFile(id, target),
-      sendFiles: (files) => client.sendFiles(id, files),
-      cancel: () => client.cancel(id),
-      close: () => client.close?.(id),
-    };
+  /** Sends a ZMODEM command to the session's pipe channel. */
+  _sendZmodem(state, command) {
+    return state.channel ? state.channel.sendZmodem(command) : false;
   }
 
   _createState(processId, context) {
@@ -250,28 +173,16 @@ class ZmodemTransferService {
           ? String(context.tabId)
           : null,
       sshConfig: context?.sshConfig || null,
-      stream: context?.stream || null,
       emitTerminalText:
         typeof context?.emitTerminalText === "function"
           ? context.emitTerminalText
           : null,
-      backend: "native",
       channel: null,
       remoteEnded: false,
-      native: {
-        chunks: [], // 有序待发送字节块（发送前计入背压统计）
-        openSent: false,
-        pumping: false,
-        remoteQueue: [], // writeRemote 背压队列（stream.write 返回 false 时）
-        streamBusy: false,
-        paused: false,
-      },
       active: false,
-      // 会话在 intro 事件前处于检测阶段：finished=false 允许输入泵开启会话
       finished: false,
       direction: null,
       cancelRequested: false,
-      lastFeedAt: Date.now(),
       filesDone: 0,
       filesTotal: null,
       currentFile: null,
@@ -282,206 +193,10 @@ class ZmodemTransferService {
     if (state.tabId) {
       this._byTabId.set(state.tabId, state.processId);
     }
-    this._ensureWatchdog();
     return state;
   }
 
-  /**
-   * sidecar 未决字节统计（输入队列 + writeRemote 队列），
-   * 供 sshHandlers 计入 terminalIOMailboxManager 背压缓冲统计。
-   */
-  getHeldBytes(id) {
-    const state = this._findState(id);
-    if (!state || !state.native) {
-      return 0;
-    }
-    let total = 0;
-    for (const chunk of state.native.chunks) {
-      total += chunk.length;
-    }
-    for (const chunk of state.native.remoteQueue) {
-      total += chunk.length;
-    }
-    return total;
-  }
-
-  // ------------------------------------------------------------------
-  // native 后端（sidecar zmodem-serve 编排）
-  // ------------------------------------------------------------------
-
-  /** 惰性获取共享 sidecar 客户端并绑定消息路由 */
-  _ensureClient() {
-    if (this._client) {
-      return this._client;
-    }
-    const { nativeZmodemClient } = require("../native/nativeZmodemClient");
-    nativeZmodemClient.setMessageHandler((type, sessionId, message) => {
-      this._handleNativeMessage(type, sessionId, message);
-    });
-    nativeZmodemClient.setExitHandler(() => {
-      this._handleNativeProcessExit();
-    });
-    this._client = nativeZmodemClient;
-    return nativeZmodemClient;
-  }
-
-  /** 会话输入：块进入有序队列，异步泵向 sidecar，返回空 Buffer */
-  _feedNative(state, chunk) {
-    state.native.chunks.push(Buffer.from(chunk));
-    this._maybeNativeBackpressure(state);
-    void this._pumpNative(state);
-    return Buffer.alloc(0);
-  }
-
-  /** 有序投递：open（首次）→ 依次发送输入块；sidecar 不可用时终结会话 */
-  async _pumpNative(state) {
-    if (state.native.pumping || state.finished) {
-      return;
-    }
-    state.native.pumping = true;
-    try {
-      if (state.finished) {
-        return;
-      }
-      const client = this._ensureClient();
-      if (!(await client.ensureReady())) {
-        this._finishNativeSession(state, "error", "zmodem sidecar unavailable");
-        return;
-      }
-      if (!state.native.openSent) {
-        state.native.openSent = true;
-        if (!client.open(state.processId)) {
-          this._finishNativeSession(
-            state,
-            "error",
-            "zmodem sidecar unavailable",
-          );
-          return;
-        }
-      }
-      while (state.native.chunks.length && !state.finished) {
-        const chunk = state.native.chunks.shift();
-        if (!client.input(state.processId, chunk)) {
-          this._finishNativeSession(
-            state,
-            "error",
-            "zmodem sidecar write failed",
-          );
-          return;
-        }
-      }
-    } finally {
-      state.native.pumping = false;
-    }
-  }
-
-  /** writeRemote 背压：stream.write 返回 false 时排队，drain 后续发 */
-  _writeNativeRemote(state, chunk) {
-    if (state.native.streamBusy) {
-      state.native.remoteQueue.push(Buffer.from(chunk));
-      this._maybeNativeBackpressure(state);
-      return;
-    }
-    if (!state.stream || typeof state.stream.write !== "function") {
-      return;
-    }
-    let writable = false;
-    try {
-      writable = state.stream.write(Buffer.from(chunk));
-    } catch (error) {
-      logToFile(`ZMODEM native write failed: ${error.message}`, "WARN");
-      return;
-    }
-    if (!writable) {
-      state.native.streamBusy = true;
-      const onDrain = () => {
-        state.stream?.off?.("drain", onDrain);
-        state.native.streamBusy = false;
-        const queued = state.native.remoteQueue;
-        state.native.remoteQueue = [];
-        for (const pending of queued) {
-          this._writeNativeRemote(state, pending);
-        }
-        this._maybeNativeBackpressure(state);
-      };
-      if (state.stream && typeof state.stream.on === "function") {
-        state.stream.on("drain", onDrain);
-      } else {
-        // 无 drain 事件的流：避免永久阻塞
-        state.native.streamBusy = false;
-      }
-    }
-  }
-
-  /**
-   * 背压暂停原因：sidecar 未决字节超过会话预算（2 MiB）时暂停 SSH 流读取；
-   * 回落到恢复水位（1 MiB）以下时恢复。通过独立 "zmodem" 暂停原因交由统一
-   * 流控协调，单次恢复不清除 renderer 等其他原因。
-   */
-  _maybeNativeBackpressure(state) {
-    if (typeof state.onBackpressure !== "function") {
-      return;
-    }
-    const held = this.getHeldBytes(state.processId);
-    if (!state.native.paused && held > 2 * 1024 * 1024) {
-      state.native.paused = true;
-      try {
-        state.onBackpressure(true);
-      } catch (error) {
-        logToFile(`ZMODEM backpressure pause failed: ${error.message}`, "WARN");
-      }
-    } else if (state.native.paused && held <= 1024 * 1024) {
-      state.native.paused = false;
-      try {
-        state.onBackpressure(false);
-      } catch (error) {
-        logToFile(
-          `ZMODEM backpressure resume failed: ${error.message}`,
-          "WARN",
-        );
-      }
-    }
-  }
-
-  /** sidecar 消息路由（单会话，同步字段/字节归属见 sidecar README） */
-  _handleNativeMessage(type, sessionId, message) {
-    const state = sessionId ? this._states.get(String(sessionId)) : null;
-    if (!state) {
-      // 旧进程事件或未注册会话：通过代次丢弃（重启只服务新会话）
-      return;
-    }
-    switch (type) {
-      case "passthrough": {
-        const chunk = Buffer.from(message.dataBase64 || "", "base64");
-        if (chunk.length && typeof state.onRawOutput === "function") {
-          try {
-            state.onRawOutput(chunk);
-          } catch (error) {
-            logToFile(
-              `ZMODEM passthrough delivery failed: ${error.message}`,
-              "WARN",
-            );
-          }
-        }
-        return;
-      }
-      case "writeRemote": {
-        const chunk = Buffer.from(message.dataBase64 || "", "base64");
-        if (chunk.length) {
-          this._writeNativeRemote(state, chunk);
-        }
-        return;
-      }
-      case "event": {
-        this._handleNativeEvent(state, message);
-        return;
-      }
-      default:
-        return;
-    }
-  }
-
-  /** sidecar 事件映射为现有 ZMODEM IPC（事件名与旧实现完全兼容） */
+  /** core 的 zmodem 事件映射为 ZMODEM IPC 事件 */
   async _handleNativeEvent(state, message) {
     const kind = message.kind;
     const event = message.event || {};
@@ -544,7 +259,7 @@ class ZmodemTransferService {
             transferred: 0,
             savePath: target,
           };
-          this._sessionClient(state).acceptFile(target);
+          this._sendZmodem(state, { type: "zmodemAccept", path: target });
           this._emitEvent(state, "offer", {
             fileName,
             fileSize: Number(event.fileSize) || 0,
@@ -612,7 +327,7 @@ class ZmodemTransferService {
         this._finishNativeSession(
           state,
           "error",
-          event.message || event.error || "zmodem sidecar error",
+          event.message || event.error || "zmodem error",
         );
         return;
       default:
@@ -639,7 +354,7 @@ class ZmodemTransferService {
     return base;
   }
 
-  /** 上传：选择文件后按授权路径下发给 sidecar */
+  /** 上传：选择文件后按授权路径下发给 core */
   async _beginNativeUpload(state) {
     const filePaths = await this._pickUploadFiles(state);
     if (state.finished || state.cancelRequested) {
@@ -678,7 +393,7 @@ class ZmodemTransferService {
       filesTotal: state.filesTotal,
       batchSummary: true,
     });
-    this._sessionClient(state).sendFiles(valid);
+    this._sendZmodem(state, { type: "zmodemSend", files: valid });
   }
 
   async _pickUploadFiles(state) {
@@ -695,14 +410,14 @@ class ZmodemTransferService {
     return result.canceled ? null : result.filePaths;
   }
 
-  /** 会话取消：先发取消消息（sidecar 向远端发 CAN 序列），事件驱动结束 */
+  /** 会话取消：先发取消消息（core 向远端发 CAN 序列），事件驱动结束 */
   _cancelNativeSession(state, reason) {
     if (state.cancelRequested || state.finished) {
       return;
     }
     state.cancelRequested = true;
-    if (!this._sessionClient(state).cancel()) {
-      // sidecar 不可用：直接终结（远端由 SSH 断开回收）
+    if (!this._sendZmodem(state, { type: "zmodemCancel" })) {
+      // 通道已关闭：直接终结（远端由 SSH 断开回收）
       this._finishNativeSession(state, "cancelled", reason);
     }
   }
@@ -714,18 +429,8 @@ class ZmodemTransferService {
     state.finished = true;
     state.active = false;
     state.cancelRequested = false;
-    state.native.chunks = [];
-    state.native.remoteQueue = [];
-    state.native.paused = false;
-    if (typeof state.onBackpressure === "function") {
-      try {
-        state.onBackpressure(false);
-      } catch {
-        /* ignore */
-      }
-    }
-    if (state.channel || this._client) {
-      this._sessionClient(state).close();
+    if (!state.remoteEnded) {
+      this._sendZmodem(state, { type: "zmodemCancel" });
     }
 
     if (status === "error") {
@@ -752,19 +457,8 @@ class ZmodemTransferService {
     state.finished = false;
     state.active = false;
     state.cancelRequested = false;
-    state.native.openSent = false;
     state.direction = null;
     state.currentFile = null;
-  }
-
-  /** sidecar 进程退出：终结所有进行中的会话并释放暂停原因 */
-  _handleNativeProcessExit() {
-    for (const state of Array.from(this._states.values())) {
-      if (!state.active || state.finished || state.channel) {
-        continue;
-      }
-      this._finishNativeSession(state, "error", "zmodem sidecar crashed");
-    }
   }
 
   // ------------------------------------------------------------------
@@ -883,32 +577,6 @@ class ZmodemTransferService {
       fileSize: current?.size || 0,
       transferred: current?.transferred || 0,
     });
-  }
-
-  _ensureWatchdog() {
-    if (this._watchdog) {
-      return;
-    }
-    this._watchdog = setInterval(() => {
-      const now = Date.now();
-      for (const state of Array.from(this._states.values())) {
-        // Pipe channels time out in the core.
-        if (
-          state.active &&
-          !state.channel &&
-          now - state.lastFeedAt > SESSION_INACTIVITY_TIMEOUT_MS
-        ) {
-          logToFile(
-            `ZMODEM session timed out (inactivity): process=${state.processId}`,
-            "WARN",
-          );
-          this._cancelNativeSession(state, "timeout");
-        }
-      }
-    }, WATCHDOG_INTERVAL_MS);
-    if (typeof this._watchdog.unref === "function") {
-      this._watchdog.unref();
-    }
   }
 }
 

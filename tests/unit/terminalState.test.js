@@ -473,38 +473,6 @@ describe("terminal-working-directory", () => {
     assert.equal(store.getWorkingDirectoryState("A::p1").path, "/pane");
     store.clearWorkingDirectorySession("A::p1");
 
-    const {
-      createOscSafeOutputTransform,
-    } = require("../../src/main/terminal/oscSafeOutput");
-    for (const terminator of ["\x07", "\x1b\\"]) {
-      const report = `\x1b]1337;CurrentDir=/srv/@host-abcdef:中文 ERROR${terminator}`;
-      const input = `before ${report} after`;
-      for (let split = 0; split <= input.length; split++) {
-        const transform = createOscSafeOutputTransform((text) =>
-          text.toUpperCase(),
-        );
-        assert.equal(
-          transform(input.slice(0, split)) +
-            transform(input.slice(split), true),
-          `BEFORE ${report} AFTER`,
-          `OSC corrupted at split ${split}`,
-        );
-      }
-      const transform = createOscSafeOutputTransform((text) =>
-        text.toUpperCase(),
-      );
-      assert.equal(
-        [...input].map((char) => transform(char)).join("") +
-          transform("", true),
-        `BEFORE ${report} AFTER`,
-      );
-    }
-    const transform = createOscSafeOutputTransform((text) => text);
-    assert.equal(
-      transform("trailing\x1b") + transform("", true),
-      "trailing\x1b",
-    );
-
     const configService = require("../../src/main/settings/configService");
     const {
       createConfigValidators,

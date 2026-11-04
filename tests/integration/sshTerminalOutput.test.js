@@ -8,7 +8,8 @@ import { StringDecoder } from "node:string_decoder";
 import { performance } from "node:perf_hooks";
 
 const require = createRequire(import.meta.url);
-const { Server, Client } = require("ssh2");
+// ssh2 (npm) serves as the remote SSH server of these tests.
+const { Server } = require("ssh2");
 const {
   NativeSshClient,
 } = require("../../src/main/connection/native/nativeSshClient");
@@ -20,12 +21,6 @@ const { Terminal } = require("@xterm/xterm");
 const {
   ZmodemTransferService,
 } = require("../../src/main/terminal/zmodemTransferService");
-const {
-  NativeZmodemClient,
-} = require("../../src/main/native/nativeZmodemClient");
-const {
-  createOscSafeOutputTransform,
-} = require("../../src/main/terminal/oscSafeOutput");
 const {
   IPC_EVENT_CHANNELS,
 } = require("../../src/shared/contracts/ipc/channels");
@@ -41,11 +36,11 @@ const until = async (predicate) => {
   }
 };
 
-async function createFixture(backend = "ssh2") {
+/** `pipe`: a terminal pipe channel; `raw`: a plain shell channel. */
+async function createFixture(mode = "pipe") {
   const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   let remote;
   let remoteStream;
-  let rejectForward;
   const server = new Server(
     {
       hostKeys: [privateKey.export({ type: "pkcs1", format: "pem" })],
@@ -54,10 +49,7 @@ async function createFixture(backend = "ssh2") {
       remote = connection;
       connection.on("error", () => {});
       connection.on("authentication", (auth) => auth.accept());
-      connection.on("request", (_accept, reject, name) => {
-        if (name === "tcpip-forward") rejectForward = reject;
-        else reject?.();
-      });
+      connection.on("request", (_accept, reject) => reject?.());
       connection.on("session", (accept) => {
         const session = accept();
         session.on("pty", (acceptPty) => acceptPty());
@@ -70,7 +62,7 @@ async function createFixture(backend = "ssh2") {
   );
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-  const client = backend === "ssh2" ? new Client() : new NativeSshClient();
+  const client = new NativeSshClient();
   client.on("error", () => {});
   const ready = once(client, "ready");
   client.connect({
@@ -81,7 +73,7 @@ async function createFixture(backend = "ssh2") {
   });
   await ready;
   // `pipe`: the core processes output (no highlight rules: text = bytes).
-  const options = backend === "pipe" ? { pipe: {} } : {};
+  const options = mode === "pipe" ? { pipe: {} } : {};
   const stream = await new Promise((resolve, reject) =>
     client.shell({}, options, (error, channel) =>
       error ? reject(error) : resolve(channel),
@@ -98,15 +90,6 @@ async function createFixture(backend = "ssh2") {
     get remoteStream() {
       return remoteStream;
     },
-    async blockGlobalReplies() {
-      // SSH global replies are FIFO. Model a reply queued behind a slow
-      // operation while the same authenticated transport keeps sending output.
-      const result = new Promise((resolve) =>
-        client.forwardIn("127.0.0.1", 0, (error) => resolve(error)),
-      );
-      await until(() => rejectForward);
-      return { result, release: () => rejectForward() };
-    },
     async close() {
       stream.destroy();
       client.destroy();
@@ -118,22 +101,17 @@ async function createFixture(backend = "ssh2") {
 
 describe("SSH terminal output under load", () => {
   it.each([
-    ["ssh2", "stdout", 510000],
-    ["ssh2", "stderr", 160000],
-    ["native", "stdout", 510000],
-    ["native", "stderr", 160000],
-    ["pipe", "stdout", 510000],
-    ["pipe", "stderr", 160000],
+    ["stdout", 510000],
+    ["stderr", 160000],
   ])(
-    "%s client retains large Unicode %s output through SSH, native detection, renderer parsing and backpressure",
-    async (backend, kind, lines) => {
-      const fixture = await createFixture(backend);
+    "terminal pipe retains large Unicode %s output through SSH, core processing, renderer parsing and credit",
+    async (kind, lines) => {
+      const fixture = await createFixture("pipe");
       const term = new Terminal({ cols: 120, rows: 30, scrollback: 500000 });
       const processId = 77;
       const channel = getTerminalIOMailboxOutputChannel(processId);
       const stats = {
         pauses: 0,
-        resumes: 0,
         receivedBytes: 0,
         ackBytes: 0,
         peakPending: 0,
@@ -195,12 +173,6 @@ describe("SSH terminal output under load", () => {
       });
       renderer.attachProcess(processId);
       const transfer = new ZmodemTransferService({ emitIpc() {} });
-      const native = new NativeZmodemClient();
-      transfer._client = native;
-      native.setMessageHandler((type, id, message) =>
-        transfer._handleNativeMessage(type, id, message),
-      );
-      native.setExitHandler(() => transfer._handleNativeProcessExit());
       const connectionInfo = {
         key: "ssh-output",
         ready: true,
@@ -221,8 +193,6 @@ describe("SSH terminal output under load", () => {
         IPC_EVENT_CHANNELS,
         getTerminalText: (_config, key) => key,
         StringDecoder,
-        createOscSafeOutputTransform,
-        outputProcessor: { processTerminalOutput: (_id, text) => text },
         logToFile() {},
         zmodemTransferService: transfer,
         filemanagementService: { cleanupTransfersForTab() {} },
@@ -234,30 +204,18 @@ describe("SSH terminal output under load", () => {
         connectionInfo,
       );
       const mailbox = manager._getMailbox(processId);
-      if (mailbox.remoteFlow) {
-        const { ack } = mailbox.remoteFlow;
-        mailbox.remoteFlow.ack = (bytes) => {
-          stats.creditGrants++;
-          ack(bytes);
-        };
-      }
-      const getTarget = mailbox.getFlowControlTarget;
-      mailbox.getFlowControlTarget = () => {
-        const target = getTarget();
+      const { ack, pause } = mailbox.remoteFlow;
+      mailbox.remoteFlow.ack = (bytes) => {
+        stats.creditGrants++;
         stats.peakPending = Math.max(
           stats.peakPending,
           mailbox.pendingAckBytes + mailbox.bufferedBytes,
         );
-        return {
-          pause: () => {
-            stats.pauses++;
-            target.pause();
-          },
-          resume: () => {
-            stats.resumes++;
-            target.resume();
-          },
-        };
+        ack(bytes);
+      };
+      mailbox.remoteFlow.pause = (reason) => {
+        stats.pauses++;
+        pause(reason);
       };
       const started = performance.now();
       const health = new SshTransportHealth({ timeoutMs: 1000 });
@@ -310,26 +268,14 @@ describe("SSH terminal output under load", () => {
         );
         expect(stats.ackBytes).toBe(stats.receivedBytes);
         expect(mailbox.pendingAckBytes).toBe(0);
-        expect(
-          backend === "ssh2"
-            ? fixture.client._sock.destroyed
-            : fixture.client.destroyed,
-        ).toBe(false);
+        expect(fixture.client.destroyed).toBe(false);
         expect(stats.healthChecks).toBeGreaterThan(0);
         expect(stats.healthFailures).toBe(0);
-        if (backend === "pipe") {
-          // Renderer ACKs are the core's credit: output in flight stays
-          // near the mailbox threshold without any pause in the main process.
-          expect(stats.creditGrants).toBeGreaterThan(0);
-          expect(stats.pauses).toBe(0);
-          expect(stats.peakInFlight).toBeLessThan(640 * 1024);
-        } else {
-          expect(stats.pauses).toBeGreaterThan(0);
-          expect(stats.resumes).toBeGreaterThan(0);
-        }
-        // The pause watermark excludes bytes already granted SSH window credit
-        // and queued in native detection. Verify a bounded backlog, not an exact
-        // equality with the renderer's 512 KiB pause threshold.
+        // Renderer ACKs are the core's credit: output in flight stays near
+        // the mailbox threshold without any pause in the main process.
+        expect(stats.creditGrants).toBeGreaterThan(0);
+        expect(stats.pauses).toBe(0);
+        expect(stats.peakInFlight).toBeLessThan(640 * 1024);
         expect(stats.peakPending).toBeLessThan(8 * 1024 * 1024);
         if (kind === "stdout") {
           expect(emitted.copy().digest("hex")).toBe(
@@ -343,7 +289,7 @@ describe("SSH terminal output under load", () => {
           );
         }
         console.log(
-          `SSH_OUTPUT ${backend} ${kind}`,
+          `SSH_OUTPUT pipe ${kind}`,
           JSON.stringify({
             ...stats,
             lines,
@@ -357,16 +303,14 @@ describe("SSH terminal output under load", () => {
         renderer.destroy();
         manager.destroyProcess(processId);
         transfer.destroyAll();
-        clearInterval(transfer._watchdog);
-        native.destroy();
         await fixture.close();
         term.dispose();
         vi.unstubAllGlobals();
       }
     },
   );
-  it("keeps a busy SSH transport alive when global replies are delayed, then detects a real half-open connection", async () => {
-    const fixture = await createFixture();
+  it("keeps a busy SSH transport alive, then detects a real half-open connection", async () => {
+    const fixture = await createFixture("raw");
     const pool = new SSHPool();
     const key = "output-fixture";
     const conn = {
@@ -386,7 +330,6 @@ describe("SSH terminal output under load", () => {
       received += data.length;
     });
     try {
-      const blocked = await fixture.blockGlobalReplies();
       for (let i = 0; i < 4; i++) {
         const check = pool.performHealthCheck();
         fixture.remoteStream.write(Buffer.alloc(64 * 1024, 65 + i));
@@ -398,10 +341,6 @@ describe("SSH terminal output under load", () => {
         ).toBe(true);
         expect(lost).toHaveLength(0);
       }
-      expect(fixture.client._callbacks).toHaveLength(2);
-      blocked.release();
-      expect(await blocked.result).toBeInstanceOf(Error);
-      await until(() => fixture.client._callbacks.length === 0);
       await pool.performHealthCheck();
       expect(conn.ready).toBe(true);
 

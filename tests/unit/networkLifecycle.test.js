@@ -453,18 +453,15 @@ describe("latency-service", () => {
 describe("ssh-transport-health", () => {
   it("preserves the public behavior and resource lifecycle", async () => {
     const assert = require("node:assert/strict");
-    const { EventEmitter, once } = require("node:events");
-    const { generateKeyPairSync } = require("node:crypto");
-    const { Client, Server } = require("ssh2");
+    const { EventEmitter } = require("node:events");
     const SSHPool = require("../../src/main/connection/ssh-pool");
     const SshTransportHealth = require("../../src/main/connection/ssh-transport-health");
 
     function fakeClient() {
       const client = new EventEmitter();
-      client._callbacks = [];
-      client._sock = { destroyed: false };
-      client.pings = 0;
-      client._protocol = { ping: () => client.pings++ };
+      client.probes = [];
+      client.checkTransport = () =>
+        new Promise((resolve) => client.probes.push(resolve));
       client.destroy = () => {
         client.destroyed = true;
         client.emit("close");
@@ -472,59 +469,35 @@ describe("ssh-transport-health", () => {
       return client;
     }
 
-    async function testPingOrderingAndCancellation() {
+    async function testProbeSharingAndCancellation() {
       const health = new SshTransportHealth({ timeoutMs: 20 });
       const client = fakeClient();
-      let otherReplies = 0;
-      client._callbacks.push(() => otherReplies++);
       const first = health.check(client);
       assert.strictEqual(
         health.check(client),
         first,
-        "overlapping checks share one ping",
+        "overlapping checks share one probe",
       );
-      assert.equal(client.pings, 1);
-      client._callbacks.shift()(false);
-      assert.equal(otherReplies, 1);
-      assert.equal(
-        health.pending.size,
-        1,
-        "unrelated reply cannot finish ping",
-      );
-      client._callbacks.shift()(true);
-      assert.equal(
-        await first,
-        true,
-        "REQUEST_FAILURE still proves the SSH transport is alive",
-      );
+      assert.equal(client.probes.length, 1);
+      client.probes.shift()(true);
+      assert.equal(await first, true);
 
       const cancelled = health.check(client);
       health.cancel(client);
       assert.equal(await cancelled, null);
-      client._callbacks.push(() => otherReplies++);
-      client._callbacks.shift()(true);
-      assert.equal(
-        otherReplies,
-        1,
-        "cancelled ping retains its FIFO reply slot",
-      );
-      client._callbacks.shift()(false);
-      assert.equal(otherReplies, 2);
-      assert.equal(client.listenerCount("close"), 0);
-
-      const timeout = health.check(client);
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      assert.equal(await timeout, false);
-      client._callbacks.shift()(true);
+      client.probes.shift()(false);
       assert.equal(health.pending.size, 0);
+
+      const failed = health.check(client);
+      client.probes.shift()(false);
+      assert.equal(await failed, false);
       const disposed = health.check(client);
       health.dispose();
       assert.equal(await disposed, null);
-      assert.equal(client.listenerCount("close"), 0);
       assert.equal(
         await health.check({}),
         null,
-        "unknown ssh2 implementations use native keepalive",
+        "clients without a transport check are unknown",
       );
     }
 
@@ -662,71 +635,10 @@ describe("ssh-transport-health", () => {
       }
     }
 
-    async function testRealSshHalfOpenTransport() {
-      const { privateKey } = generateKeyPairSync("rsa", {
-        modulusLength: 2048,
-      });
-      const server = new Server({
-        hostKeys: [privateKey.export({ type: "pkcs1", format: "pem" })],
-      });
-      const client = new Client();
-      let serverClient;
-      let sessionRequests = 0;
-      server.on("connection", (connection) => {
-        serverClient = connection;
-        connection.on("error", () => {});
-        connection.on("authentication", (auth) => auth.accept());
-        connection.on("session", (_accept, reject) => {
-          sessionRequests++;
-          reject();
-        });
-      });
-      server.listen(0, "127.0.0.1");
-      await once(server, "listening");
-      const { pool, conn, lost, scheduled } = setupPool(client);
-      pool.transportHealth.timeoutMs = 250;
-      try {
-        const ready = once(client, "ready");
-        client.connect({
-          host: "127.0.0.1",
-          port: server.address().port,
-          username: "test",
-          keepaliveInterval: 0,
-        });
-        await ready;
-        await pool.performHealthCheck();
-        assert.equal(
-          conn.ready,
-          true,
-          "live ssh2 ping must succeed without opening channels",
-        );
-        assert.equal(lost.length, 0);
-        assert.equal(
-          sessionRequests,
-          0,
-          "health checks must not run remote commands or open shells",
-        );
-
-        // Keep TCP open but stop reading SSH requests, as when a VPN route vanishes.
-        serverClient._sock.pause();
-        assert.equal(client._sock.destroyed, false);
-        await pool.performHealthCheck();
-        assert.equal(conn.ready, false);
-        assert.equal(lost.length, 1);
-        assert.equal(scheduled.length, 1);
-      } finally {
-        pool.cleanup();
-        client.destroy();
-        serverClient?._sock.destroy();
-        await new Promise((resolve) => server.close(resolve));
-      }
-    }
-
     await (async () => {
       for (const test of [
-        testPingOrderingAndCancellation,
+        testProbeSharingAndCancellation,
         testPoolRecoveryGuards,
-        testRealSshHalfOpenTransport,
       ]) {
         await test();
         console.log(`PASS ${test.name}`);

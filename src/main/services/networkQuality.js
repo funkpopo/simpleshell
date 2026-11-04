@@ -30,7 +30,6 @@ const QUALITY_CHECK_INTERVAL_MS = Object.freeze({
 const QUALITY_NETWORK_PROFILE_OVERRIDES = Object.freeze({
   [NETWORK_QUALITY_LEVELS.EXCELLENT]: Object.freeze({
     keepaliveInterval: 10_000,
-    socketKeepAliveInitialDelay: 10_000,
     keepaliveCountMax: 9,
     readyTimeout: 30_000,
     outputDispatchThresholdBytes: 4096,
@@ -39,7 +38,6 @@ const QUALITY_NETWORK_PROFILE_OVERRIDES = Object.freeze({
   }),
   [NETWORK_QUALITY_LEVELS.GOOD]: Object.freeze({
     keepaliveInterval: 10_000,
-    socketKeepAliveInitialDelay: 10_000,
     keepaliveCountMax: 9,
     readyTimeout: 30_000,
     outputDispatchThresholdBytes: 4096,
@@ -48,7 +46,6 @@ const QUALITY_NETWORK_PROFILE_OVERRIDES = Object.freeze({
   }),
   [NETWORK_QUALITY_LEVELS.DEGRADED]: Object.freeze({
     keepaliveInterval: 15_000,
-    socketKeepAliveInitialDelay: 15_000,
     keepaliveCountMax: 12,
     readyTimeout: 45_000,
     outputDispatchThresholdBytes: 8192,
@@ -57,7 +54,6 @@ const QUALITY_NETWORK_PROFILE_OVERRIDES = Object.freeze({
   }),
   [NETWORK_QUALITY_LEVELS.POOR]: Object.freeze({
     keepaliveInterval: 25_000,
-    socketKeepAliveInitialDelay: 20_000,
     keepaliveCountMax: 15,
     readyTimeout: 75_000,
     outputDispatchThresholdBytes: 16_384,
@@ -66,7 +62,6 @@ const QUALITY_NETWORK_PROFILE_OVERRIDES = Object.freeze({
   }),
   [NETWORK_QUALITY_LEVELS.OFFLINE]: Object.freeze({
     keepaliveInterval: 30_000,
-    socketKeepAliveInitialDelay: 25_000,
     keepaliveCountMax: 15,
     readyTimeout: 90_000,
     outputDispatchThresholdBytes: 16_384,

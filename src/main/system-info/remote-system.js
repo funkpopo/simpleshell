@@ -5,6 +5,7 @@ const remoteProcessListCache = new WeakMap();
 
 const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
 const configService = require("../settings/configService");
+const { isSshClientUsable } = require("../utils/ssh-utils");
 
 const systemInfoText = (key, params = {}) =>
   translateLocale(key, { lng: getUiLanguage(configService), ...params });
@@ -378,14 +379,6 @@ async function getRemoteSystemInfo(sshClient) {
     data: cloneSystemInfo(result),
   });
   return result;
-}
-
-function isSshClientUsable(sshClient) {
-  return (
-    sshClient &&
-    (!sshClient._readableState || !sshClient._readableState.ended) &&
-    (!sshClient._sock || (sshClient._sock.readable && sshClient._sock.writable))
-  );
 }
 
 /** 与 GNU ps --no-headers 等输出一致：pid ppid %cpu %mem user comm... */

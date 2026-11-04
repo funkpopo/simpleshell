@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
-const { Server, Client } = require("ssh2");
+// ssh2 (npm) serves as the remote SSH server of this fixture.
+const { Server } = require("ssh2");
 const { generateKeyPairSync } = require("node:crypto");
+const { StringDecoder } = require("node:string_decoder");
 const fs = require("node:fs");
 const path = require("node:path");
 const { ZmodemPeer, buildZrinitFrame } = require("./zmodem-peer");
@@ -10,6 +12,12 @@ const {
 const {
   ZmodemTransferService,
 } = require("../../src/main/terminal/zmodemTransferService");
+const {
+  NativeSshClient,
+} = require("../../src/main/connection/native/nativeSshClient");
+const {
+  shutdownCoreSupervisors,
+} = require("../../src/main/native/coreSupervisor");
 process.on("uncaughtException", (error) => {
   console.error("SCREEN_SPLIT FAIL", error.stack);
   app.exit(1);
@@ -158,37 +166,44 @@ const server = new Server(
 );
 
 const connect = async (tabId, processId = nextProcess++) => {
-  const client = new Client();
+  const client = new NativeSshClient();
   const record = { client, tabId, processId, stream: null, pending: [] };
   processes.set(processId, record);
   await new Promise((resolve, reject) => {
     client.once("error", reject);
     client.once("ready", () =>
-      client.shell({ term: "xterm-256color" }, (error, stream) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        record.stream = stream;
-        const emitOutput = (text) =>
-          win.webContents.send(`fixture-output-${processId}`, {
-            type: "output",
-            data: text,
-          });
-        stream.on("data", (data) => {
-          // native 后端：透传字节经 onRawOutput 回调进入终端（与
-          // sshHandlers 的真实集成一致）；feedOutput 同步返回恒为空
-          const visible = transfer.feedOutput(processId, data, {
-            stream,
+      // As sshSessions opens terminals: a pipe channel runs ZMODEM in the
+      // core and emits `zmodem` events for zmodemTransferService.
+      client.shell(
+        { term: "xterm-256color" },
+        { pipe: {} },
+        (error, stream) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          record.stream = stream;
+          const emitOutput = (text) =>
+            win.webContents.send(`fixture-output-${processId}`, {
+              type: "output",
+              data: text,
+            });
+          transfer.attachChannel(processId, stream, {
             tabId,
             sshConfig: { host: "127.0.0.1" },
             emitTerminalText: emitOutput,
-            onRawOutput: (raw) => emitOutput(raw.toString("utf8")),
           });
-          if (visible?.length) emitOutput(visible.toString());
-        });
-        resolve();
-      }),
+          const decoder = new StringDecoder("utf8");
+          stream.on("data", (data) => {
+            const text = decoder.write(data);
+            if (!text) return;
+            emitOutput(text);
+            // The fixture renderer does not ACK: return the credit at once.
+            stream.grantCredit(Buffer.byteLength(text, "utf8"));
+          });
+          resolve();
+        },
+      ),
     );
     client.connect({
       host: "127.0.0.1",
@@ -262,6 +277,7 @@ ipcMain.on("fixture-result", async (_event, result) => {
     );
   for (const record of processes.values()) record.client.end();
   server.close();
+  await shutdownCoreSupervisors();
   app.exit(result.success ? 0 : 1);
 });
 app.whenReady().then(async () => {

@@ -82,7 +82,6 @@ describe("port-forwarding-service", () => {
       });
       const tab = (id, overrides = {}, processId = id) => {
         const client = new EventEmitter();
-        client._sock = { readable: true, writable: true };
         client.forwardOut = client.forwardIn = () => {
           throw new Error("Node forwarding must not be used");
         };
@@ -181,7 +180,7 @@ describe("port-forwarding-service", () => {
         );
 
         const oldGeneration = service.sessions.get("tab:a").generation;
-        proc.process._sock.readable = false;
+        proc.process.destroyed = true;
         proc.process.emit("close");
         await until(
           () => fixture.clients.size === 0,
@@ -236,7 +235,7 @@ describe("port-forwarding-service", () => {
         await service.startRule("L", "43");
         assert.equal(service.getStatus().L.tabId, "43");
         await echo(service.getStatus().L.boundPort);
-        numericOnly.process._sock.readable = false;
+        numericOnly.process.destroyed = true;
         assert.deepEqual(service.getActiveSessions(), []);
         await assert.rejects(service.startRule("R", "43"), {
           code: "SESSION_UNAVAILABLE",
@@ -546,7 +545,6 @@ describe("port-forwarding-delete", () => {
       const fixture = await createFixture();
       const native = new NativePortForwardingClient({ locate: () => binary });
       const client = new EventEmitter();
-      client._sock = { readable: true, writable: true };
       const config = { ...fixture.ssh, tabId: "delete-tab" };
       delete config.expectedHostFingerprint;
       setTrustedHostFingerprint(

@@ -65,7 +65,7 @@ SSH 全局请求的回复按 FIFO 排队，也与大量输出共享 TCP 传输�
 
 链路测试还复现并修复了两处问题：
 
-- ssh2 1.17 的错误输出来自 `channel.stderr` 的 `data` 事件，原先注册的
+- （历史记录：ssh2 后备通道现已移除，此条仅适用于当时的实现）ssh2 1.17 的错误输出来自 `channel.stderr` 的 `data` 事件，原先注册的
   `extended data` 事件不会交付这些内容。现在读取真实 stderr 流，并将
   stdout/stderr 一起接入邮箱的暂停/恢复，避免共享 SSH 窗口被积压堵住。
 - 终端按 32 Ki 字符分块时，可能切开 emoji 的 UTF-16 代理对，导致各块

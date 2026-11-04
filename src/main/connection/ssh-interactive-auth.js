@@ -1,7 +1,7 @@
 /**
  * SSH 交互式认证辅助（keyboard-interactive / 2FA）
  *
- * 基于 ssh2 的 `tryKeyboard` + `keyboard-interactive` 事件实现：
+ * 基于 NativeSshClient 的 `tryKeyboard` + `keyboard-interactive` 事件实现：
  * - 可自动回答的提示（已存密码 + 非回显的 Password 类提示）直接代答；
  * - 无法自动回答的提示（OTP 验证码 / 短信验证码 / 安全短语等）通过注入的
  *   `keyboardInteractiveResponder` 回调请求用户输入（主进程转发到渲染层对话框）；
@@ -157,9 +157,9 @@ async function resolveKeyboardInteractiveAnswers({
 }
 
 /**
- * 为 ssh2 Client 附加 keyboard-interactive 事件处理
+ * 为 SSH 客户端附加 keyboard-interactive 事件处理
  * 需要配合 connect options 中的 tryKeyboard: true（buildSshConnectOptions 已默认开启）
- * @param {Object} client - ssh2 Client 实例
+ * @param {Object} client - NativeSshClient 实例
  * @param {Object} sshConfig - SSH 配置
  */
 function attachKeyboardInteractiveSupport(client, sshConfig) {

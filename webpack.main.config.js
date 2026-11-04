@@ -30,14 +30,6 @@ module.exports = (_env, { mode }) => ({
   entry: {
     index: "./src/main/index.js",
   },
-  resolve: {
-    // Make optional native deps safe for bundling/package.
-    alias: {
-      // `ssh2` optionally loads this native module for cipher ordering.
-      // We skip rebuilding it for Electron 40 (Node 24) on Windows, so bundle a shim.
-      "cpu-features$": path.join(__dirname, "src/main/shims/cpu-features.js"),
-    },
-  },
   module: {
     rules: [...nativeModuleRules, ...require("./webpack.rules")(mode)],
   },

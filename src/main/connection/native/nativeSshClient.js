@@ -1,20 +1,19 @@
 /**
- * ssh2-compatible client backed by `simpleshell-core`.
+ * SSH client backed by `simpleshell-core`.
  *
- * Implements the part of ssh2's `Client` the app uses — `connect`, `shell`,
- * `exec`, `end`, `destroy`, the `ready` / `error` / `end` / `close` /
- * `keyboard-interactive` events and the `hostVerifier` option — on top of the
- * core's `ssh-connection` and `ssh-channel` streams. The SSH connection
- * itself lives in the core's hub and is shared with SFTP, transfers and port
- * forwarding to the same account.
+ * Its API follows the ssh2 (npm) `Client` the app was written against —
+ * `connect`, `shell`, `exec`, `end`, `destroy`, the `ready` / `error` /
+ * `end` / `close` / `keyboard-interactive` events and the `hostVerifier`
+ * option — on top of the core's `ssh-connection` and `ssh-channel` streams.
+ * The SSH connection itself lives in the core's hub and is shared with SFTP,
+ * transfers and port forwarding to the same account.
  *
- * Proxies are resolved by the caller and passed as `options.proxy`
- * (`acceptsProxyConfig`); the core opens the tunnel.
+ * Proxies are resolved by the caller and passed as `options.proxy`; the
+ * core opens the tunnel.
  *
- * `shell(window, { pipe: { rules } }, cb)` opens a terminal pipe channel
- * (`supportsTerminalPipe`): the core decodes, filters and highlights output,
- * merges stderr, runs ZMODEM in the stream and emits `editorMode` /
- * `zmodem` events. Its output credit is the renderer's: callers pass ACKs
+ * `shell(window, { pipe: { rules } }, cb)` opens a terminal pipe channel:
+ * the core decodes, filters and highlights output, merges stderr, runs
+ * ZMODEM in the stream and emits `editorMode` / `zmodem` events. Its output credit is the renderer's: callers pass ACKs
  * on with `grantCredit` and pause reasons with `pauseFor` / `resumeFor`.
  */
 const { EventEmitter } = require("node:events");
@@ -274,9 +273,6 @@ class NativeSshClient extends EventEmitter {
     this._ready = false;
     this._closed = false;
     this.destroyed = false;
-    /** Callers pass a resolved proxy instead of a pre-built `sock`. */
-    this.acceptsProxyConfig = true;
-    this.supportsTerminalPipe = true;
   }
 
   connect(options = {}) {
@@ -486,6 +482,11 @@ class NativeSshClient extends EventEmitter {
       },
       callback,
     );
+  }
+
+  /** Whether `channel` was opened on this client and is still open. */
+  ownsChannel(channel) {
+    return this._channels.has(channel);
   }
 
   /** SFTP runs through the core's SFTP service, not the terminal client. */

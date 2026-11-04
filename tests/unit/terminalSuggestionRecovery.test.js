@@ -779,7 +779,7 @@ describe("webterminal-reconnect-suggestions", () => {
           };
           const sessions = createSshSessions(handler, { logToFile() {} });
           await sessions._createSSHShell(
-            { shell: (_options, callback) => callback(null, {}) },
+            { shell: (_window, _options, callback) => callback(null, {}) },
             "pid",
             {},
             { key: "connection" },

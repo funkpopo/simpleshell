@@ -135,13 +135,13 @@ async function processSSHPrivateKeyAsync(sshConfig) {
 }
 
 /**
- * 主进程：由处理后的SSH配置构建 ssh2 connect options 的公共字段
- * 各调用方特有字段（如 sock、compress、hostHash 处理方式等）由调用方自行补充
+ * 主进程：由处理后的SSH配置构建 NativeSshClient connect options 的公共字段
+ * 各调用方特有字段（如 proxy、hostHash 处理方式等）由调用方自行补充
  * @param {Object} processedConfig - 已处理私钥的SSH配置对象
  * @param {Object} extras - 附加参数
  * @param {Object} extras.networkProfile - 网络参数（keepalive/readyTimeout）
  * @param {Object} extras.algorithms - SSH算法配置
- * @returns {Object} ssh2 connect options 对象
+ * @returns {Object} connect options 对象
  */
 function buildSshConnectOptions(
   processedConfig,
@@ -187,7 +187,7 @@ function buildSshConnectOptions(
     options.agent = agentPath;
     options.agentForward = agentForward;
 
-    // ssh2 默认会把 options.agent 加入登录认证序列。仅开启转发时，
+    // 指定 options.agent 时默认会把 Agent 加入登录认证序列。仅开启转发时，
     // 保留原有密码/私钥和交互式认证，不额外尝试 Agent 中的身份。
     if (!agentAuth) {
       options.authHandler = [
@@ -212,7 +212,7 @@ const WINDOWS_OPENSSH_AGENT_PIPE = "\\\\.\\pipe\\openssh-ssh-agent";
 function resolveSshAgentPath(sshConfig = {}) {
   const customPath =
     typeof sshConfig.agentPath === "string" ? sshConfig.agentPath.trim() : "";
-  // 允许显式指定 "pageant"（Windows PuTTY Pageant，ssh2 原生支持）
+  // 允许显式指定 "pageant"（Windows PuTTY Pageant，由 core 的 ssh-hub 支持）
   if (customPath.toLowerCase() === "pageant") {
     return "pageant";
   }
@@ -229,23 +229,17 @@ function resolveSshAgentPath(sshConfig = {}) {
 }
 
 /**
- * 判断SSH客户端连接是否仍然可用
- * （与 src/main/system-info/remote-system.js 内同名函数逻辑一致）
- * @param {Object} sshClient - ssh2 客户端实例
+ * 判断SSH客户端连接是否仍然可用（连接关闭后 NativeSshClient.destroyed 为 true）
+ * @param {Object} sshClient - NativeSshClient 实例
  * @returns {boolean} 是否可用
  */
 function isSshClientUsable(sshClient) {
-  return Boolean(
-    sshClient &&
-    (!sshClient._readableState || !sshClient._readableState.ended) &&
-    (!sshClient._sock ||
-      (sshClient._sock.readable && sshClient._sock.writable)),
-  );
+  return Boolean(sshClient && sshClient.destroyed !== true);
 }
 
 /**
  * 判断SSH shell stream 是否仍然可写可用
- * @param {Object} stream - ssh2 shell stream
+ * @param {Object} stream - SSH shell channel
  * @returns {boolean} 是否可用
  */
 function isSshStreamUsable(stream) {
@@ -280,58 +274,6 @@ function extractTabIdFromSessionKey(key) {
   return parts[1];
 }
 
-/**
- * 创建SSH通道池管理器
- * 用于跟踪和限制SSH连接上的活跃通道数
- * @param {number} maxChannels - 最大通道数限制（默认30）
- * @returns {object} 通道管理器对象
- */
-function createChannelPoolManager(maxChannels = 30) {
-  let activeChannels = 0;
-  const waitingQueue = [];
-
-  return {
-    // 获取一个通道槽位
-    async acquire() {
-      return new Promise((resolve) => {
-        if (activeChannels < maxChannels) {
-          activeChannels++;
-          resolve();
-        } else {
-          // 加入等待队列
-          waitingQueue.push(resolve);
-        }
-      });
-    },
-
-    // 释放一个通道槽位
-    release() {
-      activeChannels--;
-      if (waitingQueue.length > 0) {
-        const resolve = waitingQueue.shift();
-        activeChannels++;
-        resolve();
-      }
-    },
-
-    // 获取当前活跃通道数
-    getActiveChannelCount() {
-      return activeChannels;
-    },
-
-    // 获取等待队列长度
-    getWaitingQueueLength() {
-      return waitingQueue.length;
-    },
-
-    // 重置管理器
-    reset() {
-      activeChannels = 0;
-      waitingQueue.length = 0;
-    },
-  };
-}
-
 module.exports = {
   isSshClientUsable,
   isSshStreamUsable,
@@ -339,5 +281,4 @@ module.exports = {
   processSSHPrivateKeyAsync,
   buildSshConnectOptions,
   resolveSshAgentPath,
-  createChannelPoolManager,
 };

@@ -111,12 +111,10 @@ function createSshRecovery(
       if (!stream || !client) {
         return false;
       }
-      // ssh2 Channel 内部持有 _client 引用，可直接比对归属
-      if (stream._client) {
-        return stream._client === client;
-      }
       // 无法判断归属时保守起见视为不可用，触发重建 shell
-      return false;
+      return typeof client.ownsChannel === "function"
+        ? client.ownsChannel(stream)
+        : false;
     }
     async _handleConnectionReconnected(connectionKey, connectionInfoFromPool) {
       if (!connectionKey) return;
@@ -178,7 +176,7 @@ function createSshRecovery(
           "reconnectRecoveryFailedDefault",
         );
         logToFile(
-          `自动恢复终端会话失败: connection=${connectionKey}, process=${processId}, error=bound process is not ssh2`,
+          `自动恢复终端会话失败: connection=${connectionKey}, process=${processId}, error=bound process is not SSH`,
           "ERROR",
         );
         this.dependencies._emitTerminalSessionRestoreFailed({

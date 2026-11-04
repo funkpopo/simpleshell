@@ -201,7 +201,7 @@ class ReconnectionManager extends EventEmitter {
     logToFile(`Registered reconnect session: ${sessionId}`, "DEBUG");
     this.emit("sessionRegistered", { sessionId, session });
 
-    // 关键：很多场景（例如 ssh2 的 close 已经触发后才注册）不会再收到旧连接事件，
+    // 关键：很多场景（例如旧连接的 close 已经触发后才注册）不会再收到旧连接事件，
     // 因此需要在注册时就直接安排一次重连。
     if (autoStart && session.state === RECONNECT_STATE.PENDING) {
       this._ensureReconnectWindowStarted(session);
@@ -1164,26 +1164,6 @@ class ReconnectionManager extends EventEmitter {
         });
       }, timeoutMs);
 
-    const trySftp = () =>
-      this._probeWithTimeout((finish) => {
-        client.sftp((err, sftp) => {
-          if (err) {
-            finish(false);
-            return;
-          }
-
-          try {
-            if (sftp && typeof sftp.end === "function") {
-              sftp.end();
-            }
-          } catch {
-            /* intentionally ignored */
-          }
-
-          finish(true);
-        });
-      }, timeoutMs);
-
     const tryShell = () =>
       this._probeWithTimeout((finish) => {
         client.shell((err, stream) => {
@@ -1204,8 +1184,9 @@ class ReconnectionManager extends EventEmitter {
         });
       }, timeoutMs);
 
+    // SFTP runs in the core's SFTP service, so only channels can prove the
+    // new connection; servers without exec still allow a shell.
     if (await tryExec()) return true;
-    if (await trySftp()) return true;
     return await tryShell();
   }
 
