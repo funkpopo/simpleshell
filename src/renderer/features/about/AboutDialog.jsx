@@ -168,7 +168,8 @@ const AboutDialog = memo(function AboutDialog({
   const { t, i18n } = useTranslation();
   const { showError } = useNotification();
   const [checkingForUpdate, setCheckingForUpdate] = useState(false);
-  const [appVersion, setAppVersion] = useState("1.0.0");
+  // 真实版本由主进程提供；读取完成前保持 null，避免把占位值当作当前版本
+  const [appVersion, setAppVersion] = useState(null);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [downloadedInstallerInfo, setDownloadedInstallerInfo] = useState(null);
   const [updateStatus, setUpdateStatus] = useState("idle"); // idle, checking, available, downloading, downloaded, installing, error, upToDate
@@ -207,6 +208,7 @@ const AboutDialog = memo(function AboutDialog({
     !shouldShowSecurityChip &&
     (displayUpdateInfo?.isImportantUpdate === true ||
       updateSeverity === "important");
+  const displayAppVersion = appVersion || "—";
   const lastUpdateError = downloadedInstallerInfo?.lastError;
   const shouldShowFailureProtectionNotice = Boolean(
     lastUpdateError?.message && downloadedInstallerInfo?.available,
@@ -378,6 +380,10 @@ const AboutDialog = memo(function AboutDialog({
 
       if (result.success) {
         setUpdateInfo(result.updateInfo);
+        // 主进程返回的 currentVersion 是权威值，可补上尚未读取到的版本号
+        if (result.updateInfo?.currentVersion) {
+          setAppVersion(result.updateInfo.currentVersion);
+        }
         // 检查更新后若本地已有校验通过的安装包，直接进入可安装状态
         const installerInfo = await refreshDownloadedInstallerInfo();
         setUpdateStatus(
@@ -659,7 +665,7 @@ const AboutDialog = memo(function AboutDialog({
                 {t("update.currentVersion")}:{" "}
                 {downloadedInstallerInfo?.currentVersion ||
                   updateInfo?.currentVersion ||
-                  appVersion}{" "}
+                  displayAppVersion}{" "}
                 →{" "}
                 {downloadedInstallerInfo?.installerVersion ||
                   updateInfo?.latestVersion}
@@ -768,7 +774,7 @@ const AboutDialog = memo(function AboutDialog({
               {t("update.currentVersion")}:{" "}
               {downloadedInstallerInfo?.currentVersion ||
                 updateInfo?.currentVersion ||
-                appVersion}{" "}
+                displayAppVersion}{" "}
               →{" "}
               {downloadedInstallerInfo?.installerVersion ||
                 updateInfo?.latestVersion}
@@ -813,7 +819,7 @@ const AboutDialog = memo(function AboutDialog({
                 sx={{ display: "block", mt: 1 }}
               >
                 {t("update.currentVersion")}:{" "}
-                {downloadedInstallerInfo?.currentVersion || appVersion} →{" "}
+                {downloadedInstallerInfo?.currentVersion || displayAppVersion} →{" "}
                 {downloadedInstallerInfo?.installerVersion}
               </Typography>
               {renderUpdateMetadata()}
@@ -972,7 +978,7 @@ const AboutDialog = memo(function AboutDialog({
       <DialogContent dividers>
         <Box sx={{ mb: 2 }}>
           <Typography variant="body1" gutterBottom>
-            {t("about.version")}: {appVersion}
+            {t("about.version")}: {displayAppVersion}
           </Typography>
           <Typography variant="body2" color="text.secondary" gutterBottom>
             {t("about.description")}
