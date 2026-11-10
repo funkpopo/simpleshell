@@ -8,7 +8,9 @@ const {
 } = require("../../src/renderer/features/terminal/model/commandSuggestionState.js");
 const {
   CURSOR_GAP,
+  buildCommandSuggestionPlacement,
   getSuggestionWindowHeight,
+  resolveCommandSuggestionAnchor,
   resolveCommandSuggestionFrameLayout,
   resolveCommandSuggestionWindowPosition,
 } = require("../../src/renderer/features/terminal/model/commandSuggestionPosition.js");
@@ -114,6 +116,40 @@ describe("command suggestion placement", () => {
       windowHeight: 800,
     });
     expect(placement.left).toBe(150);
+  });
+
+  it("keeps the sticky anchor attached to the terminal when it moves", () => {
+    const cursor = { x: 400, y: 100, cursorHeight: 18, cursorBottom: 118 };
+    const before = { left: 0, top: 0, width: 800, right: 800, bottom: 600 };
+    const placement = buildCommandSuggestionPlacement({
+      anchoredPosition: { ...cursor, anchorX: 150 },
+      windowPosition: { showAbove: false },
+      terminalRect: before,
+    });
+    // 左侧侧边栏展开：终端整体右移 300px，光标随之右移
+    const after = { left: 300, top: 0, width: 800, right: 1100, bottom: 600 };
+    const anchored = resolveCommandSuggestionAnchor({
+      position: { ...cursor, x: 700 },
+      placement,
+      terminalRect: after,
+    });
+    expect(anchored.anchorX).toBe(450);
+  });
+
+  it("drops the sticky anchor when the terminal width changes", () => {
+    const cursor = { x: 400, y: 100, cursorHeight: 18, cursorBottom: 118 };
+    const placement = buildCommandSuggestionPlacement({
+      anchoredPosition: { ...cursor, anchorX: 150 },
+      windowPosition: { showAbove: false },
+      terminalRect: { left: 0, top: 0, width: 800 },
+    });
+    const anchored = resolveCommandSuggestionAnchor({
+      position: { ...cursor, x: 380 },
+      placement,
+      terminalRect: { left: 0, top: 0, width: 500 },
+    });
+    expect(anchored.anchorX).toBeUndefined();
+    expect(anchored.x).toBe(380);
   });
 
   it("hides instead of rendering a sliver when no row fits on either side", () => {

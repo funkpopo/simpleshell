@@ -135,6 +135,65 @@ const resolveCommandSuggestionWindowPosition = ({
 };
 
 /**
+ * 结合本次显示期间记录的锚点得到用于定位的光标位置。
+ * 锚点以终端容器左上角为原点保存（而非视口绝对坐标）：侧边栏展开/收起、
+ * 分屏拖拽等让终端整体平移或改变宽度时，锚点随终端一起移动，
+ * 不会停留在旧位置而远离输入光标。
+ * 同一输入行内左边缘固定在首次出现的位置；退格越过该位置时跟随光标左移。
+ */
+const resolveCommandSuggestionAnchor = ({
+  position = null,
+  placement = null,
+  terminalRect = null,
+} = {}) => {
+  if (
+    !position ||
+    !placement ||
+    !terminalRect ||
+    !isFiniteNumber(terminalRect.left) ||
+    !isFiniteNumber(terminalRect.top) ||
+    !isFiniteNumber(placement.anchorOffsetX) ||
+    !isFiniteNumber(placement.anchorOffsetY)
+  ) {
+    return position;
+  }
+  // 终端宽度变化会触发重排，同一行的锚点不再可信
+  if (
+    isFiniteNumber(placement.terminalWidth) &&
+    isFiniteNumber(terminalRect.width) &&
+    Math.abs(placement.terminalWidth - terminalRect.width) >= 1
+  ) {
+    return position;
+  }
+  if (Math.abs(terminalRect.top + placement.anchorOffsetY - position.y) >= 1) {
+    return position;
+  }
+  return {
+    ...position,
+    anchorX: Math.min(terminalRect.left + placement.anchorOffsetX, position.x),
+  };
+};
+
+const buildCommandSuggestionPlacement = ({
+  anchoredPosition,
+  windowPosition,
+  terminalRect,
+} = {}) => {
+  if (!anchoredPosition || !windowPosition || !terminalRect) {
+    return null;
+  }
+  const anchorX = isFiniteNumber(anchoredPosition.anchorX)
+    ? anchoredPosition.anchorX
+    : anchoredPosition.x;
+  return {
+    anchorOffsetX: anchorX - terminalRect.left,
+    anchorOffsetY: anchoredPosition.y - terminalRect.top,
+    terminalWidth: terminalRect.width,
+    showAbove: windowPosition.showAbove,
+  };
+};
+
+/**
  * 在已分配的窗口区域内排布列表与提示栏，并返回实际渲染高度。
  * 提示栏是否显示只取决于剩余空间（不取决于条目数量），且贴近光标的一边
  * 始终按实际高度对齐：弹窗在上方时底边固定在光标上方 CURSOR_GAP 处，
@@ -179,6 +238,8 @@ module.exports = {
   SUGGESTION_MAX_HEIGHT,
   CURSOR_GAP,
   getSuggestionWindowHeight,
+  resolveCommandSuggestionAnchor,
+  buildCommandSuggestionPlacement,
   resolveCommandSuggestionWindowPosition,
   resolveCommandSuggestionFrameLayout,
 };

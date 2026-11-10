@@ -400,11 +400,35 @@ export const useTerminalSuggestions = ({
       typeof term?.onScroll === "function"
         ? term.onScroll(refreshPosition)
         : null;
+    // 容器尺寸变化后 fit() 是延迟执行的：ResizeObserver 触发时 cols/rows 还是旧值，
+    // fit 之后的重排可能移动光标所在的行列，必须在终端 resize 后再次定位
+    let resizeFrame = null;
+    const cancelResizeFrame = () => {
+      if (resizeFrame !== null && typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(resizeFrame);
+      }
+      resizeFrame = null;
+    };
+    const resizeSubscription =
+      typeof term?.onResize === "function"
+        ? term.onResize(() => {
+            refreshPosition();
+            if (typeof requestAnimationFrame === "function") {
+              cancelResizeFrame();
+              resizeFrame = requestAnimationFrame(() => {
+                resizeFrame = null;
+                refreshPosition();
+              });
+            }
+          })
+        : null;
     window.addEventListener("resize", refreshPosition);
     refreshPosition();
     return () => {
       observer?.disconnect();
       scrollSubscription?.dispose?.();
+      resizeSubscription?.dispose?.();
+      cancelResizeFrame();
       window.removeEventListener("resize", refreshPosition);
     };
   }, [

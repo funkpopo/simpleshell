@@ -20,7 +20,9 @@ import {
   shouldIgnoreCommandSuggestionKeyEvent,
 } from "./model/commandSuggestionState.js";
 import {
+  buildCommandSuggestionPlacement,
   getSuggestionWindowHeight,
+  resolveCommandSuggestionAnchor,
   resolveCommandSuggestionFrameLayout,
   resolveCommandSuggestionWindowPosition,
   SUGGESTION_BOTTOM_BAR_HEIGHT,
@@ -193,19 +195,19 @@ const CommandSuggestion = ({
 
   let windowPosition = null;
   let anchoredPosition = position;
+  let terminalRect = null;
   if (isOpen && windowDimensions && position) {
     const placement = placementRef.current;
-    // 同一输入行内左边缘固定在首次出现的位置；退格越过该位置时跟随光标左移
-    if (placement && Math.abs(placement.anchorY - position.y) < 1) {
-      anchoredPosition = {
-        ...position,
-        anchorX: Math.min(placement.anchorX, position.x),
-      };
-    }
+    terminalRect = terminalElement?.getBoundingClientRect?.() || null;
+    anchoredPosition = resolveCommandSuggestionAnchor({
+      position,
+      placement,
+      terminalRect,
+    });
     windowPosition = resolveCommandSuggestionWindowPosition({
       position: anchoredPosition,
       windowDimensions,
-      terminalRect: terminalElement?.getBoundingClientRect?.() || null,
+      terminalRect,
       windowWidth: window.innerWidth,
       windowHeight: window.innerHeight,
       preferAbove: placement ? placement.showAbove : null,
@@ -364,14 +366,14 @@ const CommandSuggestion = ({
   }, [selectedIndex, isRendered]);
 
   useLayoutEffect(() => {
-    if (!windowPosition || !anchoredPosition) {
+    if (!windowPosition || !anchoredPosition || !terminalRect) {
       return;
     }
-    placementRef.current = {
-      anchorX: anchoredPosition.anchorX ?? anchoredPosition.x,
-      anchorY: anchoredPosition.y,
-      showAbove: windowPosition.showAbove,
-    };
+    placementRef.current = buildCommandSuggestionPlacement({
+      anchoredPosition,
+      windowPosition,
+      terminalRect,
+    });
   });
 
   if (!windowPosition) {
