@@ -22,23 +22,23 @@
   -webkit-user-select: none;
 }
 
-/* 暗色主题遮罩 */
+/* 暗色主题遮罩（与 themeTokens.js 暗色色板对齐） */
 .theme-switch-overlay.dark {
   background: radial-gradient(
     circle at 100% 0%,
-    #121212 0%,
-    #1a1a1a 30%,
-    #0d0d0d 100%
+    #15181b 0%,
+    #0d0f11 35%,
+    #08090a 100%
   );
 }
 
-/* 亮色主题遮罩 */
+/* 亮色主题遮罩（与 themeTokens.js 亮色色板对齐） */
 .theme-switch-overlay.light {
   background: radial-gradient(
     circle at 100% 0%,
-    #f0f2f5 0%,
-    #ffffff 30%,
-    #e8eaed 100%
+    #ffffff 0%,
+    #f8f8f5 35%,
+    #f1f1ee 100%
   );
 }
 

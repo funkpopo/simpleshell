@@ -42,7 +42,7 @@ export default function Breadcrumbs({
         slotProps={{
           input: {
             style: {
-              fontSize: "1.0rem",
+              fontSize: "0.8125rem",
             },
             startAdornment: (
               <InputAdornment position="start">

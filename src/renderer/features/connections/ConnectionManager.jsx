@@ -21,6 +21,7 @@ import { useTranslation } from "react-i18next";
 import { useNotification } from "../../shared/notifications/NotificationContext";
 import SidebarPanel from "../../shared/ui/SidebarPanel.jsx";
 import SidebarSearchField from "../../shared/ui/SidebarSearchField.jsx";
+import { sidebarSectionSx } from "../../shared/ui/sidebarItemStyles";
 import useSidebarPanel from "../../shared/hooks/useSidebarPanel";
 import useContextMenuRetarget from "../../shared/hooks/useContextMenuRetarget";
 import {
@@ -417,37 +418,39 @@ const ConnectionManager = memo(
         onClose={onClose}
         sessionContext={sessionContext}
       >
-        {/* 操作按钮区 */}
+        {/* 操作按钮与搜索区（对齐统一 12px 栅格，减少重复水平分隔线） */}
         <Box
-          sx={{
-            p: 1,
+          sx={(theme) => ({
+            ...sidebarSectionSx(theme),
             display: "flex",
-            justifyContent: "flex-end",
-            borderBottom: 1,
-            borderColor: "divider",
+            flexDirection: "column",
             gap: 1,
-          }}
+          })}
         >
-          <Button
-            size="small"
-            startIcon={<AddIcon />}
-            onClick={() => handleAddConnection()}
-            sx={{ fontSize: "0.75rem" }}
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: 1,
+            }}
           >
-            {t("connectionManager.newConnection")}
-          </Button>
-          <Button
-            size="small"
-            startIcon={<FolderIcon />}
-            onClick={handleAddGroup}
-            sx={{ fontSize: "0.75rem" }}
-          >
-            {t("connectionManager.newGroup")}
-          </Button>
-        </Box>
-
-        {/* 搜索框 */}
-        <Box sx={{ p: 1, borderBottom: 1, borderColor: "divider" }}>
+            <Button
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() => handleAddConnection()}
+              sx={{ fontSize: "0.75rem" }}
+            >
+              {t("connectionManager.newConnection")}
+            </Button>
+            <Button
+              size="small"
+              startIcon={<FolderIcon />}
+              onClick={handleAddGroup}
+              sx={{ fontSize: "0.75rem" }}
+            >
+              {t("connectionManager.newGroup")}
+            </Button>
+          </Box>
           <SidebarSearchField
             inputRef={searchInputRef}
             placeholder={t("connectionManager.search")}

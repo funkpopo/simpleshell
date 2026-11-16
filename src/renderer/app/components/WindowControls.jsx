@@ -93,7 +93,7 @@ const WindowControls = () => {
     ? theme.palette.text.primary
     : theme.palette.grey[100];
 
-  const controlSize = 32;
+  const controlSize = 26;
 
   // 用 && 提升特异性，避免被 MuiIconButton 的全局 styleOverrides 覆盖；
   // 常驻淡色圆底 + 加粗笔画，确保细线图标在浅色背景下也有足够视觉分量
@@ -105,7 +105,7 @@ const WindowControls = () => {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    transition: "background-color 0.15s ease",
+    transition: "background-color 0.15s ease, color 0.15s ease",
     "&&": {
       color: iconColor,
       backgroundColor: idleBg,
@@ -115,7 +115,7 @@ const WindowControls = () => {
       color: iconColor,
     },
     "&& .MuiSvgIcon-root": {
-      fontSize: "1.25rem",
+      fontSize: "1.05rem",
       color: "inherit",
       strokeWidth: isLight ? 1.1 : 0,
       stroke: isLight ? "currentColor" : "transparent",

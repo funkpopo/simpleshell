@@ -136,13 +136,12 @@ export const createUnifiedTheme = (darkMode) =>
             transform: "translateZ(0)",
             "&:hover": {
               boxShadow: "none",
-              transform: "translateY(-1px)",
             },
             "&:active": {
-              transform: "scale(0.97)",
+              transform: "scale(0.98)",
             },
             [REDUCED_MOTION_QUERY]: {
-              transition: "box-shadow 0.2s ease, background-color 0.2s ease",
+              transition: "background-color 0.2s ease, border-color 0.2s ease",
               "&:active": { transform: "none" },
             },
           },
@@ -177,7 +176,8 @@ export const createUnifiedTheme = (darkMode) =>
               backgroundColor: darkMode
                 ? "rgba(255,255,255,0.02)"
                 : "rgba(0,0,0,0.02)",
-              transition: "all 0.2s ease",
+              transition:
+                "background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease",
               "&:hover .MuiOutlinedInput-notchedOutline": {
                 borderColor: primaryColor(darkMode),
                 borderWidth: "1px",
@@ -221,14 +221,12 @@ export const createUnifiedTheme = (darkMode) =>
             transform: "translateZ(0)",
             "&:hover": {
               backgroundColor: hoverBg(darkMode),
-              transform: "translateY(-1px)",
             },
             "&:active": {
               transform: "scale(0.94)",
             },
             [REDUCED_MOTION_QUERY]: {
               transition: "background-color 0.2s ease",
-              "&:hover": { transform: "none" },
               "&:active": { transform: "none" },
             },
           },
@@ -279,8 +277,6 @@ export const createUnifiedTheme = (darkMode) =>
           root: {
             paddingTop: 4,
             paddingBottom: 4,
-            minHeight: 50,
-            maxHeight: 50,
             borderRadius: RADIUS_SM,
             "&:hover": {
               backgroundColor: "transparent",
@@ -289,8 +285,6 @@ export const createUnifiedTheme = (darkMode) =>
           dense: {
             paddingTop: 2,
             paddingBottom: 2,
-            minHeight: 50,
-            maxHeight: 50,
           },
           gutters: {
             paddingLeft: 8,
@@ -303,7 +297,7 @@ export const createUnifiedTheme = (darkMode) =>
         styleOverrides: {
           root: {
             borderRadius: RADIUS_SM,
-            transition: "all 0.2s ease",
+            transition: "background-color 140ms ease, color 140ms ease",
             backgroundColor: "transparent",
             "&:hover": {
               backgroundColor: hoverBg(darkMode),
@@ -326,7 +320,8 @@ export const createUnifiedTheme = (darkMode) =>
           root: {
             borderRadius: RADIUS_SM,
             fontWeight: 500,
-            transition: "all 0.2s ease",
+            transition:
+              "background-color 160ms ease, border-color 160ms ease, color 160ms ease",
             letterSpacing: "0.035em",
           },
           outlined: {
@@ -379,7 +374,7 @@ export const createUnifiedTheme = (darkMode) =>
             fontSize: "0.875rem",
             borderRadius: RADIUS_SM,
             margin: "2px 4px",
-            transition: "all 0.2s ease",
+            transition: "background-color 120ms ease, color 120ms ease",
             backgroundColor: "transparent",
             "&:hover": {
               backgroundColor: hoverBg(darkMode),
@@ -403,7 +398,7 @@ export const createUnifiedTheme = (darkMode) =>
             textTransform: "none",
             fontWeight: 500,
             borderRadius: 0,
-            transition: "all 0.2s ease",
+            transition: "background-color 160ms ease, color 160ms ease",
             "&:hover": {
               backgroundColor: hoverBg(darkMode),
             },

@@ -248,10 +248,23 @@ const Settings = memo(({ open, onClose }) => {
                 minWidth: 0,
                 overflowY: "auto",
                 p: { xs: 1.5, sm: 2 },
+                "& > [data-settings-panel]:not([hidden])": {
+                  animation:
+                    "ss-settings-panel-in 160ms cubic-bezier(0.2, 0, 0, 1)",
+                },
+                "@keyframes ss-settings-panel-in": {
+                  from: { opacity: 0, transform: "translateY(4px)" },
+                  to: { opacity: 1, transform: "translateY(0)" },
+                },
+                "@media (prefers-reduced-motion: reduce)": {
+                  "& > [data-settings-panel]:not([hidden])": {
+                    animation: "none",
+                  },
+                },
               }}
             >
               {/* Tab 0: General */}
-              <Box hidden={activeTab !== 0}>
+              <Box data-settings-panel="0" hidden={activeTab !== 0}>
                 <GeneralSettings
                   initialValues={initialValues}
                   open={open}
@@ -260,7 +273,7 @@ const Settings = memo(({ open, onClose }) => {
               </Box>
 
               {/* Tab 1: Terminal & Logs */}
-              <Box hidden={activeTab !== 1}>
+              <Box data-settings-panel="1" hidden={activeTab !== 1}>
                 <TerminalSettings
                   initialValues={initialValues}
                   open={open}
@@ -269,7 +282,7 @@ const Settings = memo(({ open, onClose }) => {
               </Box>
 
               {/* Tab 2: Performance */}
-              <Box hidden={activeTab !== 2}>
+              <Box data-settings-panel="2" hidden={activeTab !== 2}>
                 <PerformanceSettings
                   initialValues={initialValues}
                   open={open}
@@ -278,7 +291,7 @@ const Settings = memo(({ open, onClose }) => {
               </Box>
 
               {/* Tab 3: Security */}
-              <Box hidden={activeTab !== 3}>
+              <Box data-settings-panel="3" hidden={activeTab !== 3}>
                 <SecuritySettings
                   initialValues={initialValues}
                   open={open}
@@ -287,12 +300,12 @@ const Settings = memo(({ open, onClose }) => {
               </Box>
 
               {/* Tab 4: Data & Sync */}
-              <Box hidden={activeTab !== 4}>
+              <Box data-settings-panel="4" hidden={activeTab !== 4}>
                 <DataSyncSettings initialValues={initialValues} open={open} />
               </Box>
 
               {/* Tab 5: Feedback */}
-              <Box hidden={activeTab !== 5}>
+              <Box data-settings-panel="5" hidden={activeTab !== 5}>
                 <FeedbackSettings
                   initialValues={initialValues}
                   open={open}

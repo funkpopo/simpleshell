@@ -14,6 +14,7 @@ import {
   sidebarTitleBarSx,
   sidebarTitleIconButtonSx,
 } from "./sidebarItemStyles";
+import { useSidebarPosition } from "./sidebarPositionContext.js";
 
 /**
  * 侧边栏标题栏：标题 + 可选会话上下文 + 附加操作 + 关闭按钮。
@@ -190,8 +191,15 @@ function SidebarPanel({
   children,
 }) {
   const theme = useTheme();
+  const sidebarPosition = useSidebarPosition();
   const resolvedElevation =
     elevation !== undefined ? elevation : theme.palette.mode === "dark" ? 1 : 0;
+  const slideFrom = sidebarPosition === "left" ? "left" : "right";
+  const borderSide = borderLeft
+    ? sidebarPosition === "left"
+      ? "right"
+      : "left"
+    : null;
 
   // 滑入/滑出期间开启 willChange，结束后清除。仅在 open 真正变化时开启：
   // 以打开状态挂载时没有位移过渡，也就不会收到 transitionend，若在挂载时
@@ -231,11 +239,11 @@ function SidebarPanel({
       {...focusProps}
       elevation={resolvedElevation}
       square={square}
-      sx={{ ...sidebarPaperSx(theme, { borderLeft }), ...paperSx }}
+      sx={{ ...sidebarPaperSx(theme, { borderSide }), ...paperSx }}
       {...paperProps}
     >
       <Box
-        sx={sidebarContentSx(theme, open, { animating })}
+        sx={sidebarContentSx(theme, open, { animating, slideFrom })}
         onTransitionEnd={handleTransitionEnd}
       >
         <SidebarTitleBar

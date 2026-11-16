@@ -5,7 +5,7 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 
 export const sectionCardSx = {
   p: 1.5,
-  borderRadius: 1.5,
+  borderRadius: "var(--radius-md, 6px)",
   border: "1px solid",
   borderColor: "divider",
   bgcolor: (theme) =>
@@ -22,7 +22,8 @@ const sectionTitleRowSx = {
 };
 
 export const compactFieldSx = {
-  mb: 1,
+  mb: 1.25,
+  "&:last-child": { mb: 0 },
 };
 
 // 滑块行标签统一列宽，保证同卡片内多条 Slider 左边缘对齐
@@ -70,6 +71,8 @@ export const SettingsToggleRow = ({
     sx={{
       minWidth: 0,
       pt: 1.25,
+      pb: 1.25,
+      "&:last-child": { pb: 0 },
       borderTop: "1px solid",
       borderColor: "divider",
       display: "flex",

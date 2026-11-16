@@ -13,8 +13,8 @@ import { useTranslation } from "react-i18next";
  * 网络延迟显示组件
  * 显示聚焦会话的 SSH 延迟或 Mosh 漫游提示。
  */
-// inline 模式占位宽度：仅在指示器可见时占用，避免标签栏永久损失宽度
-const INLINE_PLACEHOLDER_MIN_WIDTH = 150;
+// inline 模式占位宽度：仅在指示器可见时占用，紧凑贴合 Chip 尺寸避免标签栏冗余留白
+const INLINE_PLACEHOLDER_MIN_WIDTH = 92;
 const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
   currentTab,
   tabs,
@@ -443,8 +443,9 @@ const NetworkLatencyIndicator = memo(function NetworkLatencyIndicator({
               fontSize: "0.75rem",
               minWidth: "80px",
               cursor: isMosh ? "default" : "pointer",
-              ml: placement === "inline" ? 1 : 0,
-              transition: "all 0.3s ease",
+              ml: placement === "inline" ? 0.5 : 0,
+              transition:
+                "background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 160ms ease, box-shadow 180ms ease",
               "&:hover": {
                 backgroundColor:
                   theme.palette.mode === "dark"

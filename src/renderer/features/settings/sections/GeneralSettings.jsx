@@ -229,7 +229,7 @@ export default function GeneralSettings({ initialValues, ref }) {
         <Typography sx={subSectionLabelSx}>
           {t("settings.dnd.title")}
         </Typography>
-        <Box sx={{ ...sectionCardSx, mb: 1.5 }}>
+        <Box sx={sectionCardSx}>
           <Box sx={{ display: "flex", flexDirection: "column" }}>
             <FormControlLabel
               control={
@@ -281,7 +281,7 @@ export default function GeneralSettings({ initialValues, ref }) {
         <Typography sx={subSectionLabelSx}>
           {t("settings.desktopIntegration.title")}
         </Typography>
-        <Box sx={{ ...sectionCardSx, mb: 1.5 }}>
+        <Box sx={sectionCardSx}>
           <Box sx={{ display: "flex", flexDirection: "column" }}>
             <FormControlLabel
               control={

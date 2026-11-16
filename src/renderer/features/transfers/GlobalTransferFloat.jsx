@@ -140,8 +140,9 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
         elevation={16}
         sx={{
           position: "fixed",
-          bottom: 64, // 在底部栏上方，留出足够空间
-          right: 24,
+          bottom: "calc(20px + var(--ss-transfer-bar-offset, 0px))",
+          right:
+            "min(var(--ss-floating-right, 56px), max(16px, calc(100vw - 380px)))",
           // 视口钳制：小窗口下不溢出视口
           width: isMinimized
             ? "min(280px, calc(100vw - 48px))"
@@ -153,7 +154,11 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
           borderRadius: `${RADIUS.LG}px`,
           backgroundColor: theme.palette.background.paper,
           border: `1px solid ${theme.palette.divider}`,
-          transition: "all 0.3s ease-in-out",
+          transition:
+            "width 240ms cubic-bezier(0.2, 0, 0, 1), max-height 240ms cubic-bezier(0.2, 0, 0, 1), right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 180ms ease",
+          "@media (prefers-reduced-motion: reduce)": {
+            transition: "none",
+          },
           boxShadow: theme.shadows[16],
         }}
       >

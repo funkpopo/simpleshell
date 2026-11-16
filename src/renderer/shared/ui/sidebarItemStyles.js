@@ -5,7 +5,7 @@ const SELECTED_HOVER_OPACITY = 0.14;
 const REDUCED_MOTION_QUERY = "@media (prefers-reduced-motion: reduce)";
 
 /** 列表项圆角：对齐 --radius-sm */
-export const SIDEBAR_ITEM_RADIUS = "var(--radius-sm, 6px)";
+export const SIDEBAR_ITEM_RADIUS = "var(--radius-sm, 3px)";
 
 // 列表项水平 inset（轻微缩进，仅本模块内部使用）
 const SIDEBAR_ITEM_INSET_X = 0.75;
@@ -30,7 +30,8 @@ export const SIDEBAR_COMMAND_ROW_PITCH =
  * 所有侧栏共用同一内边距与分隔线，骨架屏也按此尺寸占位。
  */
 export const sidebarSectionSx = (theme) => ({
-  p: 1,
+  px: 1.5,
+  py: 1,
   flexShrink: 0,
   borderBottom: `1px solid ${theme.palette.divider}`,
 });
@@ -61,7 +62,7 @@ export const sidebarContentAreaSx = {
 
 /** 底部状态栏（计数、加载状态） */
 export const sidebarFooterSx = (theme) => ({
-  px: 1.25,
+  px: 1.5,
   py: 0.5,
   minHeight: 30,
   flexShrink: 0,
@@ -72,11 +73,18 @@ export const sidebarFooterSx = (theme) => ({
 });
 
 // 侧边栏 Paper 外壳统一样式
-export const sidebarPaperSx = (theme, { borderLeft = true } = {}) => {
+export const sidebarPaperSx = (
+  theme,
+  { borderLeft = true, borderSide } = {},
+) => {
   const isDark = theme.palette.mode === "dark";
-  const border = borderLeft
-    ? { borderLeft: `1px solid ${theme.palette.divider}` }
-    : {};
+  const resolvedSide = borderSide ?? (borderLeft ? "left" : null);
+  const border =
+    resolvedSide === "right"
+      ? { borderRight: `1px solid ${theme.palette.divider}` }
+      : resolvedSide === "left"
+        ? { borderLeft: `1px solid ${theme.palette.divider}` }
+        : {};
 
   return {
     width: "100%",
@@ -100,7 +108,7 @@ export const sidebarTitleBarSx = (theme) => ({
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-  px: 1.25,
+  px: 1.5,
   py: 0.75,
   minHeight: SIDEBAR_TITLE_BAR_HEIGHT,
   flexShrink: 0,

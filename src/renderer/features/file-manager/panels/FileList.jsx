@@ -10,6 +10,7 @@ import {
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { FileManagerSkeleton } from "../../../shared/ui/SkeletonLoader.jsx";
+import SidebarEmptyState from "../../../shared/ui/SidebarEmptyState.jsx";
 import FolderIcon from "@mui/icons-material/Folder";
 import OverflowTooltipText from "../../../shared/ui/OverflowTooltipText.jsx";
 import { List as VirtualizedList } from "react-window";
@@ -60,12 +61,11 @@ const FILE_LIST_SECONDARY_TEXT_SX = {
 const FILE_ROW_BUTTON_SX = {
   minHeight: FILE_LIST_ITEM_MIN_HEIGHT,
   height: FILE_LIST_ITEM_MIN_HEIGHT,
-  px: 1.5,
+  px: 0.75,
   py: 0.5,
-  borderRadius: 1,
+  borderRadius: "var(--radius-sm, 3px)",
   overflow: "hidden",
-  transition:
-    "background-color 0.15s ease-in-out, border-color 0.15s ease-in-out",
+  transition: "background-color 140ms ease, border-color 140ms ease",
   userSelect: "none",
   cursor: "default",
   "&.Mui-selected": {
@@ -158,7 +158,7 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
   onActivate,
 }) {
   const rowStyle = useMemo(
-    () => ({ ...style, boxSizing: "border-box", padding: "2px 4px" }),
+    () => ({ ...style, boxSizing: "border-box", padding: "2px 6px" }),
     [style],
   );
   const file = rows[index];
@@ -228,11 +228,13 @@ export default function FileList({
         onContextMenu={handleBlankContextMenu}
         onClick={handleBlankClick}
       >
-        <Typography variant="body2" color="text.secondary">
-          {searchTerm
-            ? t("fileManager.noSearchResults")
-            : t("fileManager.emptyDirectory")}
-        </Typography>
+        <SidebarEmptyState
+          message={
+            searchTerm
+              ? t("fileManager.noSearchResults")
+              : t("fileManager.emptyDirectory")
+          }
+        />
       </Box>
     );
   }
@@ -337,6 +339,6 @@ const viewStyles = {
   },
   listSx: {
     py: 0.5,
-    px: 0.5,
+    px: 0.75,
   },
 };

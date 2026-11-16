@@ -59,7 +59,9 @@ export default function PaneDropOverlay() {
                 bgcolor: paneDropZone === zone ? "action.focus" : "transparent",
                 opacity: paneDropZone === zone ? 0.4 : 0,
                 borderRadius: 1,
-                m: 0.5,
+                m: 0.75,
+                transition:
+                  "opacity 140ms ease, background-color 140ms ease, border-color 140ms ease",
                 ...sx,
               }}
             />

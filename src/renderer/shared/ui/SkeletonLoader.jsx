@@ -21,6 +21,7 @@ import {
   sidebarSectionSx,
   sidebarTitleBarSx,
 } from "./sidebarItemStyles";
+import { useSidebarPosition } from "./sidebarPositionContext.js";
 
 // 宽度按行序轮换而不是随机生成：同一骨架每次渲染完全一致，
 // 避免重渲染时占位条跳动，也便于与真实内容的视觉节奏对齐。
@@ -214,7 +215,7 @@ const SkeletonListRow = memo(function SkeletonListRow({ index, preset }) {
         height={9}
       />
     ) : null;
-  const paddingLeft = leading ? 0.5 : icon === "tile" ? 2 : 1;
+  const paddingLeft = leading ? 0.5 : icon === "tile" ? 2 : 0.75;
   return (
     <Box
       sx={[
@@ -736,18 +737,21 @@ export const SidebarLazySkeleton = memo(
   ({ open = false, variant = "list", loadingLabel }) => {
     const theme = useTheme();
     const { t } = useTranslation();
+    const sidebarPosition = useSidebarPosition();
+    const slideFrom = sidebarPosition === "left" ? "left" : "right";
+    const borderSide = sidebarPosition === "left" ? "right" : "left";
 
     return (
       <Paper
         aria-busy="true"
         aria-label={loadingLabel || t("common.loading")}
         sx={{
-          ...sidebarPaperSx(theme),
+          ...sidebarPaperSx(theme, { borderSide }),
           position: "relative",
         }}
         elevation={theme.palette.mode === "dark" ? 1 : 0}
       >
-        <Box sx={sidebarContentSx(theme, open)}>
+        <Box sx={sidebarContentSx(theme, open, { slideFrom })}>
           <Box sx={sidebarTitleBarSx(theme)}>
             <Skeleton variant="rounded" width="42%" height={14} />
             <Skeleton variant="circular" width={22} height={22} />

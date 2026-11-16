@@ -36,17 +36,20 @@ export default function useDragResize({
   const optionsRef = useRef(null);
   optionsRef.current = { getStart, getBounds, onResize, onStateChange, onEnd };
 
-  const listenersRef = useRef({ move: null, up: null });
+  const listenersRef = useRef({ move: null, up: null, frameId: null });
 
   const clearListeners = useCallback(() => {
-    const { move, up } = listenersRef.current;
+    const { move, up, frameId } = listenersRef.current;
+    if (frameId != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(frameId);
+    }
     if (move) {
       document.removeEventListener("mousemove", move);
     }
     if (up) {
       document.removeEventListener("mouseup", up);
     }
-    listenersRef.current = { move: null, up: null };
+    listenersRef.current = { move: null, up: null, frameId: null };
     if (manageBodyStyles) {
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
@@ -71,6 +74,15 @@ export default function useDragResize({
       const bounds = optionsRef.current.getBounds() || {};
       let latestWidth = start.width;
       let latestHeight = start.height;
+      let pendingNext = null;
+
+      const flushPending = () => {
+        listenersRef.current.frameId = null;
+        if (!pendingNext) return;
+        const payload = pendingNext;
+        pendingNext = null;
+        optionsRef.current.onResize?.(payload);
+      };
 
       const handleMouseMove = (moveEvent) => {
         const next = {};
@@ -92,10 +104,29 @@ export default function useDragResize({
           );
           next.height = latestHeight;
         }
-        optionsRef.current.onResize?.(next);
+        if (typeof requestAnimationFrame !== "function") {
+          optionsRef.current.onResize?.(next);
+          return;
+        }
+        if (listenersRef.current.frameId === null) {
+          pendingNext = null;
+          optionsRef.current.onResize?.(next);
+          listenersRef.current.frameId = requestAnimationFrame(flushPending);
+        } else {
+          pendingNext = next;
+        }
       };
 
       const handleMouseUp = () => {
+        if (pendingNext) {
+          if (
+            listenersRef.current.frameId !== null &&
+            typeof cancelAnimationFrame === "function"
+          ) {
+            cancelAnimationFrame(listenersRef.current.frameId);
+          }
+          flushPending();
+        }
         optionsRef.current.onStateChange?.(null);
         clearListeners();
         optionsRef.current.onEnd?.({
@@ -104,7 +135,11 @@ export default function useDragResize({
         });
       };
 
-      listenersRef.current = { move: handleMouseMove, up: handleMouseUp };
+      listenersRef.current = {
+        move: handleMouseMove,
+        up: handleMouseUp,
+        frameId: null,
+      };
       if (manageBodyStyles) {
         document.body.style.userSelect = "none";
         document.body.style.cursor = CURSOR_BY_MODE[mode] || "ew-resize";

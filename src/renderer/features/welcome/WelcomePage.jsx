@@ -812,7 +812,7 @@ const WelcomePage = ({
                 minHeight: 42,
                 justifyContent: "space-between",
                 px: 2,
-                borderRadius: "2px",
+                borderRadius: "var(--radius-sm, 3px)",
               }}
             >
               {t("welcome.newConnection")}
@@ -957,7 +957,8 @@ const WelcomePage = ({
                           fontSize: 16,
                           opacity: 0,
                           transform: "translateX(-5px)",
-                          transition: "all 160ms ease",
+                          transition:
+                            "opacity 160ms ease, transform 160ms ease",
                         }}
                       />
                     </Box>

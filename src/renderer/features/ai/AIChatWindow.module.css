@@ -45,7 +45,7 @@
 .ai-chat-header.ai-chat-header.ai-chat-header {
   flex-shrink: 0;
   min-height: 44px;
-  padding: 7px 8px;
+  padding: 7px 12px;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: var(--ai-surface);
   border-bottom: 1px solid var(--ai-line);
@@ -220,7 +220,7 @@
   flex-direction: column;
   gap: 10px;
   padding: 10px 12px 8px;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 /* ---- Empty state ---- */
@@ -381,7 +381,7 @@
   width: 24px;
   height: 24px;
   padding: 4px;
-  border-radius: 6px;
+  border-radius: var(--ai-radius-control);
   font-size: 15px;
   color: var(--ai-ink-3);
 }
@@ -482,16 +482,7 @@
 
 /* Streaming settle when finished */
 .ai-stream-done.ai-stream-done.ai-stream-done .ai-stream-body {
-  animation: ai-stream-settle 0.35s ease-out both;
-}
-
-@keyframes ai-stream-settle {
-  from {
-    filter: blur(0.4px);
-  }
-  to {
-    filter: none;
-  }
+  animation: none;
 }
 
 /* ---- Thinking block ---- */
@@ -696,7 +687,7 @@
   width: 24px;
   height: 24px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: var(--ai-radius-control);
   color: var(--ai-ink-3);
   transition:
     background 0.1s ease,
@@ -773,7 +764,7 @@
 /* ---- Composer / footer ---- */
 .ai-chat-footer.ai-chat-footer.ai-chat-footer {
   flex-shrink: 0;
-  padding: 8px;
+  padding: 8px 12px 10px;
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   border-top: 1px solid var(--ai-line);
   background: var(--ai-surface);
@@ -990,7 +981,7 @@
 
 /* ---- Error alert ---- */
 .ai-chat-error.ai-chat-error.ai-chat-error {
-  margin: 0 6px 6px;
+  margin: 0 12px 8px;
   border-radius: var(--ai-radius-control);
   font-size: 12.5px;
   background: var(--ai-inset);
@@ -1021,7 +1012,7 @@
 .ai-exec-command.ai-exec-command.ai-exec-command :global(.MuiIconButton-root) {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--ai-radius-control);
   color: var(--ai-ink-3);
 }
 

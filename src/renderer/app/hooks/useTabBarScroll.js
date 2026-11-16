@@ -104,10 +104,25 @@ export default function useTabBarScroll({ tabCount, currentTab }) {
     const scrollerRect = scroller.getBoundingClientRect();
     const tabRect = selectedTab.getBoundingClientRect();
     const EXTRA_PADDING = 16;
+    let targetLeft = null;
     if (tabRect.left < scrollerRect.left) {
-      scroller.scrollLeft -= scrollerRect.left - tabRect.left + EXTRA_PADDING;
+      targetLeft =
+        scroller.scrollLeft -
+        (scrollerRect.left - tabRect.left + EXTRA_PADDING);
     } else if (tabRect.right > scrollerRect.right) {
-      scroller.scrollLeft += tabRect.right - scrollerRect.right + EXTRA_PADDING;
+      targetLeft =
+        scroller.scrollLeft +
+        (tabRect.right - scrollerRect.right + EXTRA_PADDING);
+    }
+    if (targetLeft !== null) {
+      if (typeof scroller.scrollTo === "function") {
+        scroller.scrollTo({
+          left: Math.max(0, targetLeft),
+          behavior: "smooth",
+        });
+      } else {
+        scroller.scrollLeft = Math.max(0, targetLeft);
+      }
     }
   }, []);
 

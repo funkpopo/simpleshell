@@ -132,8 +132,8 @@ export default function SidebarCommandRow({
             minWidth: 0,
             height: "100%",
             py: 0.5,
-            pl: checkbox ? 0.5 : 1,
-            pr: actions ? 6.75 : 1,
+            pl: checkbox ? 0.5 : 0.75,
+            pr: actions ? 6.75 : 0.75,
             boxSizing: "border-box",
           },
         ]}

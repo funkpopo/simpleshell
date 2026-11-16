@@ -24,6 +24,7 @@ export default function SidebarPanels({
   localTerminalSidebarOpen,
   activeSidebarContentWidth,
   sidebarResizing,
+  onWidthTransitionEnd,
   activeSessionKey,
   handleCloseResourceMonitor,
   resourceMonitorTabId,
@@ -92,8 +93,17 @@ export default function SidebarPanels({
     dispatch(actions.setPortForwardingOpen(false));
     setFallbackSidebarAfterClose("forwarding");
   }, [dispatch, setFallbackSidebarAfterClose]);
+  const handleContainerTransitionEnd = useCallback(
+    (event) => {
+      if (event.target !== event.currentTarget) return;
+      if (event.propertyName !== "width") return;
+      onWidthTransitionEnd?.();
+    },
+    [onWidthTransitionEnd],
+  );
   return (
     <Box
+      onTransitionEnd={handleContainerTransitionEnd}
       sx={{
         width: `${activeSidebarContentWidth}px`,
         height: "100%",

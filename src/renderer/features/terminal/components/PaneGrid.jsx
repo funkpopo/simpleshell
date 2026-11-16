@@ -14,8 +14,8 @@ import {
   MAX_PANE_RATIO,
 } from "../model/paneLayout.js";
 
-const DIVIDER_THICKNESS = 5;
-const DIVIDER_HIT_AREA = 12;
+const DIVIDER_THICKNESS = 2;
+const DIVIDER_HIT_AREA = 10;
 const MIN_PANE_SIZE_PX = 80;
 
 /**
@@ -63,6 +63,7 @@ const Pane = ({
         minHeight: 0,
         overflow: "hidden",
         bgcolor: isPaneDragOver ? "action.hover" : "transparent",
+        transition: "background-color 140ms ease",
         ...sx,
       }}
     >
@@ -71,15 +72,17 @@ const Pane = ({
           draggable
           onDragStart={handleHeaderDragStart}
           sx={{
+            position: "relative",
             display: "flex",
             alignItems: "center",
             gap: 0.5,
-            height: 22,
+            height: 24,
             flexShrink: 0,
-            px: 0.75,
+            px: 1,
             bgcolor: focused ? "action.selected" : "action.hover",
             borderBottom: "1px solid",
-            borderColor: "divider",
+            borderColor: focused ? "primary.main" : "divider",
+            transition: "background-color 140ms ease, border-color 140ms ease",
             cursor: "grab",
             userSelect: "none",
             WebkitAppRegion: "no-drag",
@@ -107,7 +110,6 @@ const Pane = ({
         </Box>
       ) : null}
       <Box sx={viewStyles.boxSx}>{children}</Box>
-      {focused && showHeader ? <Box sx={viewStyles.boxSx2} /> : null}
       {isPaneDragOver ? <Box sx={viewStyles.boxSx3} /> : null}
     </Box>
   );
@@ -421,16 +423,6 @@ const viewStyles = {
   iconButtonSx: { p: 0.25 },
   closeIconSx: { fontSize: 13 },
   boxSx: { flex: 1, minHeight: 0, position: "relative" },
-  boxSx2: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 2,
-    bgcolor: "primary.main",
-    zIndex: Z_INDEX.paneHeader,
-    pointerEvents: "none",
-  },
   boxSx3: {
     position: "absolute",
     inset: 0,
@@ -440,5 +432,6 @@ const viewStyles = {
     opacity: 0.35,
     pointerEvents: "none",
     zIndex: Z_INDEX.paneControl,
+    transition: "opacity 140ms ease",
   },
 };

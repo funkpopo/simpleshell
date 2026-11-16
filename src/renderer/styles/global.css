@@ -97,17 +97,14 @@ button,
   0% {
     transform: scaleY(0.25);
     opacity: 0;
-    filter: blur(6px);
   }
   55% {
-    transform: scaleY(1.08);
+    transform: scaleY(1.06);
     opacity: 1;
-    filter: blur(0px);
   }
   100% {
     transform: scaleY(1);
     opacity: 1;
-    filter: blur(0px);
   }
 }
 

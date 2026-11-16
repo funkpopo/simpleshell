@@ -116,11 +116,20 @@ export default function useAppTheme() {
           dispatch(actions.setDarkMode(newDarkMode));
         });
 
-        // 动画结束后清理（0.5s 动画时长）
-        setTimeout(() => {
+        // 动画结束后清理（监听 animationend，并保留安全兜底定时器覆盖 reduced-motion）
+        let cleaned = false;
+        const cleanupOverlay = () => {
+          if (cleaned) return;
+          cleaned = true;
+          clearTimeout(fallbackTimer);
+          overlay.removeEventListener("animationend", cleanupOverlay);
           document.body.classList.remove("theme-switching");
           overlay.remove();
-        }, 500);
+        };
+        const fallbackTimer = setTimeout(cleanupOverlay, 550);
+        overlay.addEventListener("animationend", cleanupOverlay, {
+          once: true,
+        });
 
         // 保存主题设置到配置文件
         if (window.terminalAPI?.saveUISettings) {

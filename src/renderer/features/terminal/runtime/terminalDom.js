@@ -69,7 +69,9 @@ body:not(.light-theme) .search-bar {
   padding: 6px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(88, 166, 255, 0.1);
   align-items: center;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(10px);
 }
 .dark-theme .search-bar:focus-within,
@@ -91,7 +93,9 @@ body:not(.light-theme) .search-bar:focus-within {
   padding: 6px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(88, 166, 255, 0.15);
   align-items: center;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(10px);
 }
 .light-theme .search-bar:focus-within {
@@ -110,7 +114,9 @@ body:not(.light-theme) .search-input {
   font-family: inherit;
   padding: 4px 8px;
   width: 200px;
-  transition: all 0.2s ease;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease;
 }
 .dark-theme .search-input::placeholder,
 body:not(.light-theme) .search-input::placeholder {
@@ -131,7 +137,9 @@ body:not(.light-theme) .search-input:focus {
   font-family: inherit;
   padding: 4px 8px;
   width: 200px;
-  transition: all 0.2s ease;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease;
 }
 .light-theme .search-input::placeholder {
   color: rgba(0, 0, 0, 0.4);

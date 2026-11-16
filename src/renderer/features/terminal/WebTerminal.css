@@ -108,7 +108,9 @@ body:not(.dark-theme) .xterm .xterm-selection div {
   text-decoration-style: dotted;
   text-decoration-color: rgba(100, 150, 255, 0.5);
   cursor: default;
-  transition: all 0.2s ease;
+  transition:
+    text-decoration-color 0.16s ease,
+    background-color 0.16s ease;
 }
 
 .xterm-link:hover {

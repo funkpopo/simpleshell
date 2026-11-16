@@ -31,6 +31,7 @@ import {
 
 import SidebarRail from "./SidebarRail.jsx";
 import SidebarPanels from "./SidebarPanels.jsx";
+import { SidebarPositionContext } from "../../shared/ui/sidebarPositionContext.js";
 
 export default function SidebarWorkspace({
   activeSession,
@@ -222,22 +223,28 @@ export default function SidebarWorkspace({
     setSidebarWidth,
     setUiSettingsSnapshot,
   });
-  React.useEffect(() => {
-    const triggerDelays = [10, 100, 280];
-    const timers = triggerDelays.map((delay) =>
-      setTimeout(() => {
-        window.dispatchEvent(
-          new CustomEvent("sidebarChanged", {
-            detail: {
-              sidebarWidth: hasVisibleSidebar ? sidebarWidth : 0,
-              timestamp: Date.now(),
-            },
-          }),
-        );
-      }, delay),
+  const sidebarWidthLatestRef = useRef(sidebarWidth);
+  sidebarWidthLatestRef.current = sidebarWidth;
+  const dispatchSidebarChanged = useCallback((visible, width) => {
+    window.dispatchEvent(
+      new CustomEvent("sidebarChanged", {
+        detail: {
+          sidebarWidth: visible ? width : 0,
+          timestamp: Date.now(),
+        },
+      }),
     );
-    return () => timers.forEach((timer) => clearTimeout(timer));
-  }, [hasVisibleSidebar, sidebarPosition, sidebarWidth]);
+  }, []);
+  React.useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      dispatchSidebarChanged(hasVisibleSidebar, sidebarWidthLatestRef.current);
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [hasVisibleSidebar, sidebarPosition, dispatchSidebarChanged]);
+  const handleSidebarWidthTransitionEnd = useCallback(() => {
+    dispatchSidebarChanged(hasVisibleSidebar, sidebarWidthLatestRef.current);
+    window.dispatchEvent(new Event("resize"));
+  }, [hasVisibleSidebar, dispatchSidebarChanged]);
   const handleToggleSidebarPosition = useCallback(async () => {
     const nextPosition = sidebarPosition === "left" ? "right" : "left";
     setSidebarPosition(nextPosition);
@@ -539,6 +546,21 @@ export default function SidebarWorkspace({
     ? normalizeSidebarWidth(sidebarWidth)
     : 0;
   React.useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const floatingRight =
+      sidebarPosition === "right"
+        ? 48 +
+          (activeSidebarContentWidth > 0 ? activeSidebarContentWidth + 12 : 8)
+        : 16;
+    document.documentElement.style.setProperty(
+      "--ss-floating-right",
+      `${floatingRight}px`,
+    );
+    return () => {
+      document.documentElement.style.removeProperty("--ss-floating-right");
+    };
+  }, [sidebarPosition, activeSidebarContentWidth]);
+  React.useEffect(() => {
     // 处理欢迎页AI按钮点击事件
     const handleToggleGlobalAI = () => {
       handleToggleGlobalAiChatWindow();
@@ -619,7 +641,7 @@ export default function SidebarWorkspace({
     },
   }));
   return (
-    <>
+    <SidebarPositionContext.Provider value={sidebarPosition}>
       <Box
         sx={{
           position: "relative",
@@ -686,6 +708,7 @@ export default function SidebarWorkspace({
           localTerminalSidebarOpen={localTerminalSidebarOpen}
           activeSidebarContentWidth={activeSidebarContentWidth}
           sidebarResizing={sidebarResizing}
+          onWidthTransitionEnd={handleSidebarWidthTransitionEnd}
           activeSessionKey={activeSessionKey}
           handleCloseResourceMonitor={handleCloseResourceMonitor}
           resourceMonitorTabId={resourceMonitorTabId}
@@ -778,6 +801,6 @@ export default function SidebarWorkspace({
         onClose={handleCloseTransferFloat}
         initialTransfer={transferFloatInitialTransfer}
       />
-    </>
+    </SidebarPositionContext.Provider>
   );
 }

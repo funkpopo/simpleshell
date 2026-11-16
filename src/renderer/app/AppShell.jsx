@@ -443,7 +443,7 @@ export default function AppShell() {
                 onMouseDownCapture={handleTopBarInteraction}
                 sx={{
                   px: 1,
-                  minHeight: "30px",
+                  minHeight: "34px",
                   display: "flex",
                   alignItems: "center",
                   gap: 0.5,
@@ -456,13 +456,13 @@ export default function AppShell() {
                     color="inherit"
                     aria-label={t("menu.mainMenu")}
                     data-main-menu-button="true"
+                    size="small"
                     sx={{
-                      mr: 1,
                       WebkitAppRegion: "no-drag",
                     }}
                     onClick={handleMenu}
                   >
-                    <AppsIcon />
+                    <AppsIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 {credentialSecurityStatus.masterPasswordEnabled && (
@@ -472,7 +472,6 @@ export default function AppShell() {
                       size="small"
                       aria-label={t("menu.lockApp")}
                       sx={{
-                        mr: 1,
                         WebkitAppRegion: "no-drag",
                       }}
                       onClick={handleLockApp}
@@ -549,15 +548,13 @@ export default function AppShell() {
                       },
                       "& .MuiTabs-scrollButtons": {
                         width: 24,
+                        flexShrink: 0,
                         color: "text.secondary",
-                        transition:
-                          "opacity 0.2s ease, width 0.2s ease, min-width 0.2s ease",
+                        transition: "opacity 160ms ease, color 160ms ease",
                       },
                       "& .MuiTabs-scrollButtons.Mui-disabled": {
-                        opacity: 0,
-                        width: 0,
-                        minWidth: 0,
-                        overflow: "hidden",
+                        opacity: 0.25,
+                        pointerEvents: "none",
                       },
                     }}
                   >
@@ -666,6 +663,14 @@ export default function AppShell() {
                       width: "100%",
                       height: "100%",
                       zIndex: Z_INDEX.raised,
+                      animation: "ss-fade-in 160ms cubic-bezier(0.2, 0, 0, 1)",
+                      "@keyframes ss-fade-in": {
+                        from: { opacity: 0 },
+                        to: { opacity: 1 },
+                      },
+                      "@media (prefers-reduced-motion: reduce)": {
+                        animation: "none",
+                      },
                     }}
                   >
                     <WelcomePage

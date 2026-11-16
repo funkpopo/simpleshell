@@ -9,6 +9,7 @@ import {
   sidebarPaperSx,
 } from "../../shared/ui/sidebarItemStyles";
 import { SidebarTitleBar } from "../../shared/ui/SidebarPanel.jsx";
+import { useSidebarPosition } from "../../shared/ui/sidebarPositionContext.js";
 import useSidebarPanel from "../../shared/hooks/useSidebarPanel";
 import useFileNotifications from "./hooks/useFileNotifications.js";
 import useConfirmDialog from "./hooks/useConfirmDialog.js";
@@ -47,6 +48,9 @@ const FileManagerContainer = memo(
   }) => {
     const theme = useTheme();
     const { t } = useTranslation();
+    const sidebarPosition = useSidebarPosition();
+    const slideFrom = sidebarPosition === "left" ? "left" : "right";
+    const borderSide = sidebarPosition === "left" ? "right" : "left";
     const fileManagerRootRef = useRef(null);
     // 使用自动清理Hook
     const { addTimeout } = useAutoCleanup();
@@ -297,7 +301,7 @@ const FileManagerContainer = memo(
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         sx={{
-          ...sidebarPaperSx(theme),
+          ...sidebarPaperSx(theme, { borderSide }),
           position: "relative",
           // 拖拽时的视觉反馈（不可用半透明色覆盖背景，否则 Paper 会变透明透出底层深色背景）
           ...(isDragging && {
@@ -308,7 +312,7 @@ const FileManagerContainer = memo(
         }}
         elevation={theme.palette.mode === "dark" ? 1 : 0}
       >
-        <Box sx={sidebarContentSx(theme, open)}>
+        <Box sx={sidebarContentSx(theme, open, { slideFrom })}>
           <SidebarTitleBar
             title={
               tabName

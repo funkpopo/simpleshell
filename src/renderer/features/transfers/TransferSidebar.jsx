@@ -32,6 +32,7 @@ import {
 } from "../../shared/ui/sidebarItemStyles";
 import TransferItemCard from "./components/TransferItemCard.jsx";
 import WindowedSidebarList from "../../shared/ui/WindowedSidebarList.jsx";
+import SidebarEmptyState from "../../shared/ui/SidebarEmptyState.jsx";
 
 // 默认和限制宽度
 const DEFAULT_WIDTH = 320;
@@ -248,6 +249,7 @@ const TransferSidebar = memo(
       }),
       onResize: ({ width }) => setWindowWidth(width),
       onStateChange: (mode) => setIsResizing(mode !== null),
+      manageBodyStyles: true,
     });
     const handleResizeStart = useMemo(
       () => startResize("width"),
@@ -377,7 +379,7 @@ const TransferSidebar = memo(
             renderItem={(row) => {
               if (row.type === "heading") {
                 return (
-                  <Box sx={{ px: 2, py: 1, bgcolor: "action.hover" }}>
+                  <Box sx={{ px: 1.5, py: 0.75, bgcolor: "action.hover" }}>
                     <Typography variant="caption" color="text.secondary">
                       {row.label}
                     </Typography>
@@ -390,11 +392,13 @@ const TransferSidebar = memo(
                   <Box
                     key={task.id}
                     sx={{
-                      my: 1,
-                      p: 1,
+                      mx: 1,
+                      my: 0.75,
+                      px: 1.5,
+                      py: 1,
                       border: 1,
                       borderColor: "divider",
-                      borderRadius: 1,
+                      borderRadius: "var(--radius-md, 6px)",
                     }}
                   >
                     <Typography
@@ -425,7 +429,14 @@ const TransferSidebar = memo(
                         {task.error}
                       </Typography>
                     )}
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 0.5,
+                        mt: 0.75,
+                      }}
+                    >
                       <Button
                         size="small"
                         disabled={
@@ -487,22 +498,11 @@ const TransferSidebar = memo(
 
           {/* 空状态 */}
           {transferRows.length === 0 && (
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                color: "text.secondary",
-                p: 4,
-              }}
-            >
-              <SwapVertIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
-              <Typography variant="body2">
-                {t("fileManager.transfer.noTransfers")}
-              </Typography>
-            </Box>
+            <SidebarEmptyState
+              icon={<SwapVertIcon />}
+              message={t("fileManager.transfer.noTransfers")}
+              sx={{ height: "100%" }}
+            />
           )}
         </Box>
       </FloatingDialog>

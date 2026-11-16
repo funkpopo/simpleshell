@@ -11,6 +11,8 @@ export default function useSidebarResize({
 }) {
   const [sidebarResizing, setSidebarResizing] = React.useState(false);
   const sidebarResizeStateRef = React.useRef(null);
+  const resizeRafRef = React.useRef(null);
+  const pendingWidthRef = React.useRef(null);
   const sidebarWidthRef = React.useRef(sidebarWidth);
   const sidebarPositionRef = React.useRef(sidebarPosition);
   React.useEffect(() => {
@@ -19,6 +21,15 @@ export default function useSidebarResize({
   React.useEffect(() => {
     sidebarPositionRef.current = sidebarPosition;
   }, [sidebarPosition]);
+  const cancelPendingResizeFrame = useCallback(() => {
+    if (
+      resizeRafRef.current !== null &&
+      typeof cancelAnimationFrame === "function"
+    ) {
+      cancelAnimationFrame(resizeRafRef.current);
+      resizeRafRef.current = null;
+    }
+  }, []);
   const saveSidebarWidthSetting = useCallback(
     async (width) => {
       if (!window.terminalAPI?.saveUISettings) {
@@ -50,6 +61,15 @@ export default function useSidebarResize({
     if (!resizeState) {
       return;
     }
+    cancelPendingResizeFrame();
+    if (pendingWidthRef.current !== null) {
+      const flushedWidth = pendingWidthRef.current;
+      pendingWidthRef.current = null;
+      if (flushedWidth !== sidebarWidthRef.current) {
+        sidebarWidthRef.current = flushedWidth;
+        setSidebarWidth(flushedWidth);
+      }
+    }
     sidebarResizeStateRef.current = null;
     setSidebarResizing(false);
     document.body.style.cursor = resizeState.bodyCursor || "";
@@ -69,7 +89,7 @@ export default function useSidebarResize({
         },
       }),
     );
-  }, [saveSidebarWidthSetting]);
+  }, [cancelPendingResizeFrame, saveSidebarWidthSetting, setSidebarWidth]);
   const handleSidebarResizeMove = useCallback(
     (event) => {
       const resizeState = sidebarResizeStateRef.current;
@@ -81,9 +101,28 @@ export default function useSidebarResize({
           ? event.clientX - resizeState.startX
           : resizeState.startX - event.clientX;
       const nextWidth = normalizeSidebarWidth(resizeState.startWidth + delta);
-      if (nextWidth !== sidebarWidthRef.current) {
-        sidebarWidthRef.current = nextWidth;
-        setSidebarWidth(nextWidth);
+      const applyWidth = (targetWidth) => {
+        if (targetWidth !== null && targetWidth !== sidebarWidthRef.current) {
+          sidebarWidthRef.current = targetWidth;
+          setSidebarWidth(targetWidth);
+        }
+      };
+      if (typeof requestAnimationFrame !== "function") {
+        applyWidth(nextWidth);
+        event.preventDefault();
+        return;
+      }
+      if (resizeRafRef.current === null) {
+        applyWidth(nextWidth);
+        pendingWidthRef.current = null;
+        resizeRafRef.current = requestAnimationFrame(() => {
+          resizeRafRef.current = null;
+          const trailingWidth = pendingWidthRef.current;
+          pendingWidthRef.current = null;
+          applyWidth(trailingWidth);
+        });
+      } else {
+        pendingWidthRef.current = nextWidth;
       }
       event.preventDefault();
     },
@@ -123,6 +162,7 @@ export default function useSidebarResize({
 
   React.useEffect(
     () => () => {
+      cancelPendingResizeFrame();
       const resizeState = sidebarResizeStateRef.current;
       if (resizeState) {
         document.body.style.cursor = resizeState.bodyCursor || "";
@@ -130,7 +170,7 @@ export default function useSidebarResize({
         sidebarResizeStateRef.current = null;
       }
     },
-    [],
+    [cancelPendingResizeFrame],
   );
   return { sidebarResizing, handleSidebarResizeStart };
 }

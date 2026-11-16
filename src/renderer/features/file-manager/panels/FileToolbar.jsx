@@ -241,6 +241,14 @@ export default function FileToolbar({
               sx={{
                 flex: 1,
                 minWidth: 0,
+                animation: "ss-search-in 160ms cubic-bezier(0.2, 0, 0, 1)",
+                "@keyframes ss-search-in": {
+                  from: { opacity: 0, transform: "translateX(6px)" },
+                  to: { opacity: 1, transform: "translateX(0)" },
+                },
+                "@media (prefers-reduced-motion: reduce)": {
+                  animation: "none",
+                },
                 ...getSearchFieldMotionSx(theme),
               }}
             />

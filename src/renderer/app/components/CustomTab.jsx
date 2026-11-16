@@ -232,8 +232,6 @@ const CustomTab = memo((props) => {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    mr: 1,
-                    ml: 0.2,
                     border: "1.5px solid #fff",
                     boxShadow: "0 0 0 1px rgba(0,0,0,0.10)",
                     lineHeight: 1,
@@ -253,13 +251,12 @@ const CustomTab = memo((props) => {
               sx={{
                 minWidth: 28,
                 flex: "1 1 auto",
-                mr: onClose ? 0.75 : 0,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 color: "inherit",
                 WebkitTextFillColor: "currentColor",
-                opacity: "1 !important",
+                opacity: 1,
                 visibility: "visible",
                 fontSize: "0.78rem",
                 fontWeight: "inherit",
@@ -281,7 +278,6 @@ const CustomTab = memo((props) => {
                       minHeight: 8,
                       borderRadius: "50%",
                       bgcolor: statusColor,
-                      mr: 1,
                       boxShadow: "0 0 0 1px rgba(255,255,255,0.75)",
                       animation: "reconnectPulse 1.6s ease-in-out infinite",
                     }}
@@ -297,7 +293,6 @@ const CustomTab = memo((props) => {
                     minHeight: 8,
                     borderRadius: "50%",
                     bgcolor: statusColor,
-                    mr: 1,
                     boxShadow: "0 0 0 1px rgba(255,255,255,0.75)",
                     animation: "reconnectPulse 1.6s ease-in-out infinite",
                   }}
@@ -322,22 +317,20 @@ const CustomTab = memo((props) => {
           maxWidth: mergedLabel ? 560 : 240,
           minHeight: 30,
           py: 0,
-          px: 1.2,
+          px: 1.25,
           borderRadius: dragSessionActive ? "3px" : 0,
           cursor: isDragSource ? "grabbing" : "pointer",
           userSelect: "none",
           color: "var(--color-text-secondary) !important",
           backgroundColor: "transparent !important",
-          opacity: "1 !important",
+          opacity: 1,
           transition: [
-            "opacity 0.36s cubic-bezier(0.32, 0.72, 0, 1)",
-            "transform 0.44s cubic-bezier(0.34, 1.45, 0.64, 1)",
-            "box-shadow 0.38s cubic-bezier(0.32, 0.72, 0, 1)",
-            "background-color 0.28s ease",
-            "color 0.22s ease",
-            "filter 0.34s ease",
-            "border-color 0.3s ease",
-            "backdrop-filter 0.34s ease",
+            "opacity 200ms cubic-bezier(0.2, 0, 0, 1)",
+            "transform 220ms cubic-bezier(0.2, 0, 0, 1)",
+            "box-shadow 180ms cubic-bezier(0.2, 0, 0, 1)",
+            "background-color 160ms ease",
+            "color 160ms ease",
+            "border-color 160ms ease",
           ].join(", "),
           willChange: "auto",
           "&:hover": {
@@ -352,31 +345,29 @@ const CustomTab = memo((props) => {
           ...(dragSessionActive &&
             !isDragSource &&
             !isDraggedOver && {
+              opacity: 0.85,
               transform: "scale(0.985)",
-              filter: "saturate(0.92) brightness(0.97)",
             }),
 
           // 原位占位：保留清晰轮廓，不引入额外色彩
           ...(isDragSource && {
             cursor: "grabbing",
             opacity: 0.38,
-            transform: "scale(0.92) translateY(4px)",
+            transform: "scale(0.92) translateY(3px)",
             backgroundColor: "background.default",
             border: "1px solid",
             borderColor: "divider",
             boxShadow: "none",
-            filter: "none",
-            willChange: "transform, opacity, filter",
+            willChange: "transform, opacity",
           }),
 
           // 悬停目标：用单色底和插入线明确落点
           ...(isDraggedOver && {
             position: "relative",
             cursor: "default",
-            transform: "scale(1.03) translateY(-2px)",
+            transform: "scale(1.03) translateY(-1px)",
             backgroundColor: (theme) => alpha(theme.palette.text.primary, 0.1),
             boxShadow: "none",
-            filter: "none",
             zIndex: Z_INDEX.control,
             ...(dragInsertPosition === "before" && {
               "&::before": {
@@ -489,6 +480,7 @@ const viewStyles = {
   boxSx: {
     display: "flex",
     alignItems: "center",
+    gap: 0.75,
     position: "relative",
     minWidth: 0,
     width: "100%",
@@ -497,18 +489,18 @@ const viewStyles = {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    width: 20,
-    height: 20,
+    width: 18,
+    height: 18,
     borderRadius: "3px",
     opacity: 0,
     flexShrink: 0,
     transition:
-      "opacity 0.2s ease, color 0.2s ease, background-color 0.2s ease",
+      "opacity 0.16s ease, color 0.16s ease, background-color 0.16s ease",
     "&:hover": {
       color: "error.main",
       opacity: 1,
       backgroundColor: (theme) => alpha(theme.palette.error.main, 0.12),
     },
   },
-  closeIconSx: { width: 15, height: 15 },
+  closeIconSx: { width: 14, height: 14 },
 };

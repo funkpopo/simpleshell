@@ -44,8 +44,15 @@ export const createFloatingDialog = ({
   minHeight,
   maxHeight,
   borderRadius,
-}) =>
-  styled(Dialog)(({ theme, customwidth, customheight, customzindex }) => ({
+}) => {
+  const defaultRight = typeof right === "number" ? `${right}px` : right;
+  const defaultBottom = typeof bottom === "number" ? `${bottom}px` : bottom;
+  return styled(Dialog, {
+    shouldForwardProp: (prop) =>
+      prop !== "customwidth" &&
+      prop !== "customheight" &&
+      prop !== "customzindex",
+  })(({ theme, customwidth, customheight, customzindex }) => ({
     pointerEvents: "none",
     zIndex: customzindex || Z_INDEX.modal,
     "& .MuiDialog-container": {
@@ -54,8 +61,8 @@ export const createFloatingDialog = ({
     "& .MuiDialog-paper": {
       pointerEvents: "auto",
       position: "fixed",
-      right,
-      bottom,
+      right: `min(var(--ss-floating-right, ${defaultRight}), max(16px, calc(100vw - 380px)))`,
+      bottom: `calc(${defaultBottom} + var(--ss-transfer-bar-offset, 0px))`,
       margin: 0,
       width: customwidth || width,
       ...(minWidth != null ? { minWidth } : {}),
@@ -74,5 +81,10 @@ export const createFloatingDialog = ({
           ? "0 10px 40px rgba(0, 0, 0, 0.6)"
           : "0 10px 40px rgba(0, 0, 0, 0.2)",
       overflow: "visible",
+      transition: "right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 180ms ease",
+      "@media (prefers-reduced-motion: reduce)": {
+        transition: "none",
+      },
     },
   }));
+};

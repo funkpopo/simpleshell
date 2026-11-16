@@ -1,4 +1,4 @@
-import React, { useCallback, memo } from "react";
+import React, { useCallback, useEffect, memo } from "react";
 import {
   Box,
   Paper,
@@ -186,8 +186,24 @@ const TransferProgress = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
     clearCompletedTransfersForAllTabs();
   }, []);
 
+  const hasTransfers = Boolean(allTransfers && allTransfers.length > 0);
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    if (hasTransfers) {
+      document.documentElement.style.setProperty(
+        "--ss-transfer-bar-offset",
+        "56px",
+      );
+    } else {
+      document.documentElement.style.removeProperty("--ss-transfer-bar-offset");
+    }
+    return () => {
+      document.documentElement.style.removeProperty("--ss-transfer-bar-offset");
+    };
+  }, [hasTransfers]);
+
   // 如果没有传输任务，不显示底部栏
-  if (!allTransfers || allTransfers.length === 0) {
+  if (!hasTransfers) {
     return null;
   }
 
