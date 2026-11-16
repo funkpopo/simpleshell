@@ -4,8 +4,12 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   isCursorAtInputEnd,
+  resolveCommandSuggestionCompletion,
   resolveCommandSuggestionKeyAction,
 } = require("../../src/renderer/features/terminal/model/commandSuggestionState.js");
+const {
+  getVisibleCommandBeforeCursor,
+} = require("../../src/renderer/features/terminal/model/promptDetection.js");
 const {
   CURSOR_GAP,
   buildCommandSuggestionPlacement,
@@ -255,5 +259,96 @@ describe("isCursorAtInputEnd", () => {
   it("falls back to allowing suggestions when the buffer is unreadable", () => {
     expect(isCursorAtInputEnd(null)).toBe(true);
     expect(isCursorAtInputEnd({ buffer: { active: {} } })).toBe(true);
+  });
+});
+
+describe("resolveCommandSuggestionCompletion", () => {
+  it("appends only the remaining suffix when typed input matches the command prefix", () => {
+    expect(
+      resolveCommandSuggestionCompletion({
+        typedInput: "d",
+        suggestionCommand: "df -h",
+      }),
+    ).toEqual({ deleteCount: 0, insertText: "f -h" });
+
+    expect(
+      resolveCommandSuggestionCompletion({
+        typedInput: "df ",
+        suggestionCommand: "df -h",
+      }),
+    ).toEqual({ deleteCount: 0, insertText: "-h" });
+  });
+
+  it("deletes only the diverging suffix when part of the prefix matches", () => {
+    expect(
+      resolveCommandSuggestionCompletion({
+        typedInput: "df -H",
+        suggestionCommand: "df -h",
+      }),
+    ).toEqual({ deleteCount: 1, insertText: "h" });
+  });
+
+  it("replaces mismatched or non-prefix input using Unicode code point counts", () => {
+    expect(
+      resolveCommandSuggestionCompletion({
+        typedInput: "D",
+        suggestionCommand: "df -h",
+      }),
+    ).toEqual({ deleteCount: 1, insertText: "df -h" });
+
+    expect(
+      resolveCommandSuggestionCompletion({
+        typedInput: "status",
+        suggestionCommand: "git status",
+      }),
+    ).toEqual({ deleteCount: 6, insertText: "git status" });
+
+    expect(
+      resolveCommandSuggestionCompletion({
+        typedInput: "echo 🚀",
+        suggestionCommand: "echo 🎉",
+      }),
+    ).toEqual({ deleteCount: 1, insertText: "🎉" });
+  });
+});
+
+describe("getVisibleCommandBeforeCursor", () => {
+  const createSlicedTerm = (lines, cursorX, cursorY = lines.length - 1) => ({
+    buffer: {
+      active: {
+        type: "normal",
+        baseY: 0,
+        cursorX,
+        cursorY,
+        getLine: (row) => {
+          const text = lines[row];
+          if (text === undefined) return undefined;
+          return {
+            isWrapped: row > 0,
+            translateToString: (trim, start = 0, end = text.length) => {
+              const value = text.slice(start, end);
+              return trim ? value.trimEnd() : value;
+            },
+          };
+        },
+      },
+    },
+  });
+
+  it("preserves trailing spaces typed before the cursor", () => {
+    expect(getVisibleCommandBeforeCursor(createSlicedTerm(["$ df "], 5))).toBe(
+      "df ",
+    );
+  });
+
+  it("ignores ghost text after the cursor and reads wrapped lines", () => {
+    expect(
+      getVisibleCommandBeforeCursor(createSlicedTerm(["$ df -h"], 3)),
+    ).toBe("d");
+    expect(
+      getVisibleCommandBeforeCursor(
+        createSlicedTerm(["$ git ", "status "], 7, 1),
+      ),
+    ).toBe("git status ");
   });
 });

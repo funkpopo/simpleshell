@@ -67,9 +67,9 @@ const normalizePromptLine = (value = "") =>
 const MAX_PROMPT_ROWS = 32;
 const MAX_PROMPT_CHARS = 4096;
 
-const getLogicalLineUntilCursor = (term) => {
+const readLogicalLine = (term, { sliceToCursor = false } = {}) => {
   const buffer = term?.buffer?.active;
-  if (!buffer) {
+  if (!buffer || typeof buffer.getLine !== "function") {
     return "";
   }
 
@@ -77,6 +77,11 @@ const getLogicalLineUntilCursor = (term) => {
   const cursorY =
     Math.max(0, Number(buffer.baseY) || 0) +
     Math.max(0, Number(buffer.cursorY) || 0);
+  const hasCursorX =
+    sliceToCursor &&
+    typeof buffer.cursorX === "number" &&
+    Number.isFinite(buffer.cursorX);
+  const cursorX = hasCursorX ? Math.max(0, Math.floor(buffer.cursorX)) : null;
   let startY = cursorY;
 
   while (startY > 0) {
@@ -92,17 +97,28 @@ const getLogicalLineUntilCursor = (term) => {
   let length = 0;
   for (let lineIndex = startY; lineIndex <= cursorY; lineIndex += 1) {
     const line = buffer.getLine(lineIndex);
-    if (!line) {
+    if (!line || typeof line.translateToString !== "function") {
       continue;
     }
-    const text = line.translateToString(true);
+    const isCursorRow = lineIndex === cursorY;
+    let text;
+    if (!sliceToCursor) {
+      text = line.translateToString(true);
+    } else if (isCursorRow && cursorX !== null) {
+      text = line.translateToString(false, 0, cursorX);
+    } else {
+      text = line.translateToString(isCursorRow);
+    }
     length += text.length;
     if (length > MAX_PROMPT_CHARS) return "";
     parts.push(text);
   }
 
-  return normalizePromptLine(parts.join(""));
+  const joined = String(parts.join("")).replace(/\u00a0/g, " ");
+  return sliceToCursor ? joined : joined.replace(/\s+$/g, "");
 };
+
+const getLogicalLineUntilCursor = (term) => readLogicalLine(term);
 
 const isLikelyPromptLine = (line) => {
   const normalized = normalizePromptLine(line);
@@ -133,13 +149,8 @@ const isPromptReadyFromTerminal = (term) => {
   return isLikelyPromptLine(currentLine);
 };
 
-// Only server-echoed text after a recognized prompt can become history.
-// SSH does not report subsequent remote termios ECHO changes to the client.
-// Unknown/custom prompts therefore fail closed instead of using keystrokes.
-const getVisibleCommand = (term) => {
-  if (term?.buffer?.active?.type === "alternate") return "";
-  const line = getLogicalLineUntilCursor(term);
-  if (PASSWORD_PROMPT_REGEX.test(line)) return "";
+const extractCommandFromPromptLine = (line) => {
+  if (!line || PASSWORD_PROMPT_REGEX.test(line)) return "";
   for (const pattern of TERMINAL_PROMPT_INPUT_PATTERNS) {
     const command = line.match(pattern)?.[1] || "";
     if (command) return isSensitiveCommand(command) ? "" : command;
@@ -147,9 +158,27 @@ const getVisibleCommand = (term) => {
   return "";
 };
 
+// Only server-echoed text after a recognized prompt can become history.
+// SSH does not report subsequent remote termios ECHO changes to the client.
+// Unknown/custom prompts therefore fail closed instead of using keystrokes.
+const getVisibleCommand = (term) => {
+  if (term?.buffer?.active?.type === "alternate") return "";
+  return extractCommandFromPromptLine(getLogicalLineUntilCursor(term));
+};
+
+// Reads the command before the cursor without trimming trailing spaces so
+// suggestion completion computes the exact prefix/delete count.
+const getVisibleCommandBeforeCursor = (term) => {
+  if (term?.buffer?.active?.type === "alternate") return "";
+  return extractCommandFromPromptLine(
+    readLogicalLine(term, { sliceToCursor: true }),
+  );
+};
+
 module.exports = {
   PASSWORD_PROMPT_REGEX,
   getVisibleCommand,
+  getVisibleCommandBeforeCursor,
   TERMINAL_PROMPT_INPUT_PATTERNS,
   getLogicalLineUntilCursor,
   isLikelyPromptLine,

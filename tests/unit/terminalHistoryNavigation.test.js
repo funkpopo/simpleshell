@@ -320,4 +320,51 @@ describe("terminal history navigation", () => {
     await h.flush(200);
     expect(h.api.showSuggestions).toBe(true);
   });
+
+  it("completes prefix matches without re-sending the leading character", async () => {
+    const h = await setup();
+    await h.input("d");
+    await h.output("d");
+    await h.flush();
+    h.options.sendInputToProcess.mockClear();
+    h.options.broadcastInputToGroup.mockClear();
+
+    await act(() =>
+      h.api.handleSuggestionSelect({ command: "df -h", count: 1 }),
+    );
+    expect(h.options.sendInputToProcess).toHaveBeenCalledTimes(1);
+    expect(h.options.sendInputToProcess).toHaveBeenCalledWith("pid", "f -h");
+    expect(h.options.broadcastInputToGroup).toHaveBeenCalledWith(
+      "f -h",
+      "history-test",
+    );
+  });
+
+  it("preserves trailing spaces and uses DEL (\\x7f) instead of \\b when replacing mismatched input", async () => {
+    const h = await setup();
+    await h.input("D");
+    await h.output("D");
+    await h.flush();
+    h.options.sendInputToProcess.mockClear();
+    h.options.broadcastInputToGroup.mockClear();
+
+    await act(() =>
+      h.api.handleSuggestionSelect({ command: "df -h", count: 1 }),
+    );
+    expect(
+      h.options.sendInputToProcess.mock.calls.map((call) => call[1]),
+    ).toEqual(["\x7f", "df -h"]);
+    expect(
+      h.options.broadcastInputToGroup.mock.calls.map((call) => call[0]),
+    ).toEqual(["\x7f", "df -h"]);
+
+    await h.output("df ");
+    h.options.sendInputToProcess.mockClear();
+    await act(() =>
+      h.api.handleSuggestionSelect({ command: "df -h", count: 1 }),
+    );
+    expect(
+      h.options.sendInputToProcess.mock.calls.map((call) => call[1]),
+    ).toEqual(["-h"]);
+  });
 });

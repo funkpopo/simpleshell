@@ -171,8 +171,36 @@ const resolveCommandSuggestionKeyAction = ({
   }
 };
 
+const resolveCommandSuggestionCompletion = ({
+  typedInput = "",
+  suggestionCommand = "",
+} = {}) => {
+  const targetCommand = String(suggestionCommand ?? "");
+  if (!targetCommand) {
+    return { deleteCount: 0, insertText: "" };
+  }
+
+  const typedChars = Array.from(String(typedInput ?? ""));
+  const targetChars = Array.from(targetCommand);
+  let commonPrefixLength = 0;
+
+  while (
+    commonPrefixLength < typedChars.length &&
+    commonPrefixLength < targetChars.length &&
+    typedChars[commonPrefixLength] === targetChars[commonPrefixLength]
+  ) {
+    commonPrefixLength += 1;
+  }
+
+  return {
+    deleteCount: typedChars.length - commonPrefixLength,
+    insertText: targetChars.slice(commonPrefixLength).join(""),
+  };
+};
+
 module.exports = {
   isCursorAtInputEnd,
+  resolveCommandSuggestionCompletion,
   resolveCommandSuggestionKeyAction,
   normalizeCommandSuggestionInput,
   shouldRequestCommandSuggestions,

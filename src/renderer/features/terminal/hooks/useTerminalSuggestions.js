@@ -9,8 +9,13 @@ import {
 import {
   isCursorAtInputEnd,
   normalizeCommandSuggestionInput,
+  resolveCommandSuggestionCompletion,
   shouldRequestCommandSuggestions,
 } from "../model/commandSuggestionState.js";
+import {
+  getVisibleCommandBeforeCursor,
+  isPromptReadyFromTerminal,
+} from "../model/promptDetection.js";
 import { getSuggestionWindowHeight } from "../model/commandSuggestionPosition.js";
 
 const waitForTerminalLayoutFrame = () =>
@@ -479,29 +484,28 @@ export const useTerminalSuggestions = ({
           suggestion.command,
         );
 
-        const currentLine =
-          termRef.current.buffer.active
-            .getLine(
-              (termRef.current.buffer.active.baseY || 0) +
-                termRef.current.buffer.active.cursorY,
-            )
-            ?.translateToString() || "";
-        const commandMatch = currentLine.match(
-          /(?:[>$#][>$#]?|[\w-]+@[\w-]+:[~\w/.]+[$#>])\s*(.*)$/,
-        );
-        const currentInputOnLine = commandMatch ? commandMatch[1] : "";
-        const currentInputLength = currentInputOnLine.length;
-        const deleteCount = currentInput.length || currentInputLength;
+        const liveTypedInput = getVisibleCommandBeforeCursor(termRef.current);
+        const fallbackInput = currentInputRef.current || currentInput || "";
+        const typedInput =
+          liveTypedInput ||
+          (isPromptReadyFromTerminal(termRef.current) ? "" : fallbackInput);
+
+        const { deleteCount, insertText } = resolveCommandSuggestionCompletion({
+          typedInput,
+          suggestionCommand: suggestion.command,
+        });
 
         for (let i = 0; i < deleteCount; i++) {
-          sendInputToProcess(processCache[sessionKey], "\b");
-          broadcastInputToGroup("\b", sessionKey);
+          sendInputToProcess(processCache[sessionKey], "\x7f");
+          broadcastInputToGroup("\x7f", sessionKey);
         }
 
-        sendInputToProcess(processCache[sessionKey], suggestion.command);
-        // Choosing a floating suggestion writes directly to the process instead
-        // of going through xterm's onData event, so broadcast it explicitly.
-        broadcastInputToGroup(suggestion.command, sessionKey);
+        if (insertText) {
+          sendInputToProcess(processCache[sessionKey], insertText);
+          // Choosing a floating suggestion writes directly to the process instead
+          // of going through xterm's onData event, so broadcast it explicitly.
+          broadcastInputToGroup(insertText, sessionKey);
+        }
         setCurrentInput(suggestion.command);
         setShowSuggestions(false);
         setSuggestions([]);
