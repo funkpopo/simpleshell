@@ -137,7 +137,7 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
   return (
     <Fade in={open}>
       <Paper
-        elevation={16}
+        elevation={0}
         sx={{
           position: "fixed",
           bottom: "calc(20px + var(--ss-transfer-bar-offset, 0px))",
@@ -153,13 +153,13 @@ const GlobalTransferFloat = ({ open, onClose, initialTransfer }) => {
           overflow: "hidden",
           borderRadius: `${RADIUS.LG}px`,
           backgroundColor: theme.palette.background.paper,
-          border: `1px solid ${theme.palette.divider}`,
+          border: "1px solid var(--color-border)",
+          boxShadow: "var(--float-shadow)",
           transition:
             "width 240ms cubic-bezier(0.2, 0, 0, 1), max-height 240ms cubic-bezier(0.2, 0, 0, 1), right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 180ms ease",
           "@media (prefers-reduced-motion: reduce)": {
             transition: "none",
           },
-          boxShadow: theme.shadows[16],
         }}
       >
         {/* 标题栏 */}

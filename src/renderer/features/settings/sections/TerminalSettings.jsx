@@ -26,7 +26,6 @@ import {
 import {
   sectionCardSx,
   compactFieldSx,
-  sliderLabelSx,
   subSectionLabelSx,
 } from "../components/SettingsSection.jsx";
 
@@ -172,16 +171,10 @@ export default function TerminalSettings({ initialValues, ref }) {
           </Box>
 
           <Box sx={compactFieldSx}>
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 0.5,
-              }}
-            >
-              <Typography variant="body2" sx={sliderLabelSx}>
-                {t("settings.terminalFontSizeLabel")}
-              </Typography>
+            <Typography variant="subtitle2" gutterBottom>
+              {t("settings.terminalFontSizeLabel")}
+            </Typography>
+            <Box sx={{ px: 1 }}>
               <Slider
                 value={terminalFontSize}
                 onChange={handleTerminalFontSizeChange}
@@ -193,7 +186,6 @@ export default function TerminalSettings({ initialValues, ref }) {
                 min={12}
                 max={18}
                 size="small"
-                sx={{ flex: 1 }}
               />
             </Box>
           </Box>
@@ -203,26 +195,19 @@ export default function TerminalSettings({ initialValues, ref }) {
               sx={{
                 display: "flex",
                 alignItems: "center",
-                gap: 0.5,
+                justifyContent: "space-between",
+                mb: 0.5,
               }}
             >
-              <Typography variant="body2" sx={sliderLabelSx}>
+              <Typography variant="subtitle2">
                 {t("settings.fontWeight")}
               </Typography>
-              <Slider
-                value={terminalFontWeight}
-                onChange={handleTerminalFontWeightChange}
-                min={300}
-                max={1000}
-                size="small"
-                sx={{ flex: 1 }}
-              />
               <TextField
                 slotProps={{
                   htmlInput: {
                     min: 300,
                     max: 1000,
-                    style: { textAlign: "center" },
+                    style: { textAlign: "center", padding: "2px 6px" },
                   },
                 }}
                 value={terminalFontWeight}
@@ -232,7 +217,16 @@ export default function TerminalSettings({ initialValues, ref }) {
                 }}
                 size="small"
                 type="number"
-                sx={{ width: 64 }}
+                sx={{ width: 72 }}
+              />
+            </Box>
+            <Box sx={{ px: 1 }}>
+              <Slider
+                value={terminalFontWeight}
+                onChange={handleTerminalFontWeightChange}
+                min={300}
+                max={1000}
+                size="small"
               />
             </Box>
           </Box>
@@ -242,12 +236,21 @@ export default function TerminalSettings({ initialValues, ref }) {
               sx={{
                 display: "flex",
                 alignItems: "center",
-                gap: 0.5,
+                justifyContent: "space-between",
               }}
             >
-              <Typography variant="body2" sx={sliderLabelSx}>
+              <Typography variant="subtitle2">
                 {t("settings.terminalLineHeight")}
               </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ fontVariantNumeric: "tabular-nums" }}
+              >
+                {Number(terminalLineHeight || 1.0).toFixed(2)}
+              </Typography>
+            </Box>
+            <Box sx={{ px: 1 }}>
               <Slider
                 value={terminalLineHeight}
                 onChange={(_event, value) => {
@@ -263,7 +266,6 @@ export default function TerminalSettings({ initialValues, ref }) {
                   { value: 1.4, label: "1.4" },
                 ]}
                 size="small"
-                sx={{ flex: 1 }}
                 valueLabelDisplay="auto"
               />
             </Box>
@@ -302,7 +304,12 @@ export default function TerminalSettings({ initialValues, ref }) {
         <Box sx={sectionCardSx}>
           <Box sx={compactFieldSx}>
             <FormControl fullWidth variant="outlined" size="small">
-              <Select value={logLevel} onChange={handleLogLevelChange}>
+              <InputLabel>{t("settings.logLevelLabel")}</InputLabel>
+              <Select
+                value={logLevel}
+                label={t("settings.logLevelLabel")}
+                onChange={handleLogLevelChange}
+              >
                 {logLevels.map((level) => (
                   <MenuItem key={level.value} value={level.value}>
                     {level.label}

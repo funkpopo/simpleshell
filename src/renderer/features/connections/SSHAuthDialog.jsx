@@ -635,30 +635,45 @@ const SSHAuthDialog = ({
             // 视口钳制：小窗口下不横向溢出
             minWidth: "min(400px, calc(100vw - 32px))",
             maxWidth: "min(500px, calc(100vw - 32px))",
-            borderRadius: 2,
-            border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+            borderRadius: "var(--radius-lg, 10px)",
+            border: "1px solid var(--color-border)",
+            boxShadow: "var(--float-shadow)",
           },
         },
       }}
     >
       <DialogTitle
         sx={{
-          textAlign: "center",
           py: 1.5,
+          px: 2.5,
           borderBottom: `1px solid ${theme.palette.divider}`,
-          color: theme.palette.primary.main,
-          fontWeight: 500,
+          fontWeight: 600,
+          fontSize: "0.95rem",
         }}
       >
         {getTitle()}
       </DialogTitle>
 
-      <DialogContent sx={{ pt: 0, pb: 1 }}>
-        {step === "keyboardInteractive"
-          ? renderKeyboardInteractiveStep()
-          : step === "hostVerify"
-            ? renderHostVerifyStep()
-            : renderCredentialsStep()}
+      <DialogContent sx={{ pt: 2, pb: 1.5 }}>
+        <Box
+          key={step}
+          sx={{
+            animation: "fadeIn 180ms cubic-bezier(0.2, 0, 0, 1)",
+            "@keyframes fadeIn": {
+              from: { opacity: 0, transform: "translateY(2px)" },
+              to: { opacity: 1, transform: "translateY(0)" },
+            },
+            "@media (prefers-reduced-motion: reduce)": {
+              animation: "none",
+            },
+          }}
+        >
+          {step === "keyboardInteractive"
+            ? renderKeyboardInteractiveStep()
+            : step === "hostVerify"
+              ? renderHostVerifyStep()
+              : renderCredentialsStep()}
+        </Box>
       </DialogContent>
 
       {authData?.requireCredentials !== false && (

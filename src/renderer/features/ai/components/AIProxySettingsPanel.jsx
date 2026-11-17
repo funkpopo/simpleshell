@@ -63,27 +63,32 @@ export default function AIProxySettingsPanel({
         />
       </AccordionSummary>
       <AccordionDetails>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           {t("aiSettings.proxyConfigHelp")}
         </Typography>
         <Box
           sx={{
             display: "flex",
             flexDirection: "column",
-            gap: 2,
+            gap: 1.5,
           }}
         >
           <FormControlLabel
             control={
               <Switch
+                size="small"
                 checked={proxyConfig.enabled}
                 onChange={(e) => onProxyChange("enabled", e.target.checked)}
               />
             }
-            label={t("aiSettings.proxyEnable")}
+            label={
+              <Typography variant="body2">
+                {t("aiSettings.proxyEnable")}
+              </Typography>
+            }
           />
-          <Box sx={{ display: "flex", gap: 2 }}>
-            <FormControl sx={{ minWidth: 150 }} variant="outlined">
+          <Box sx={{ display: "flex", gap: 1.5 }}>
+            <FormControl sx={{ minWidth: 120 }} size="small" variant="outlined">
               <InputLabel>{t("aiSettings.proxyType")}</InputLabel>
               <Select
                 value={proxyConfig.type}
@@ -106,6 +111,7 @@ export default function AIProxySettingsPanel({
               onChange={(e) => onProxyChange("host", e.target.value)}
               disabled={!proxyConfig.enabled}
               fullWidth
+              size="small"
               placeholder="127.0.0.1"
               variant="outlined"
             />
@@ -115,18 +121,20 @@ export default function AIProxySettingsPanel({
               value={proxyConfig.port}
               onChange={(e) => onProxyChange("port", e.target.value)}
               disabled={!proxyConfig.enabled}
-              sx={{ width: 140 }}
+              size="small"
+              sx={{ width: 120 }}
               placeholder="7890"
               variant="outlined"
             />
           </Box>
-          <Box sx={{ display: "flex", gap: 2 }}>
+          <Box sx={{ display: "flex", gap: 1.5 }}>
             <TextField
               label={t("aiSettings.proxyUsername")}
               value={proxyConfig.username}
               onChange={(e) => onProxyChange("username", e.target.value)}
               disabled={!proxyConfig.enabled}
               fullWidth
+              size="small"
               variant="outlined"
             />
             <TextField
@@ -135,6 +143,7 @@ export default function AIProxySettingsPanel({
               onChange={(e) => onProxyChange("password", e.target.value)}
               disabled={!proxyConfig.enabled}
               fullWidth
+              size="small"
               type="password"
               variant="outlined"
               helperText={
@@ -152,6 +161,7 @@ export default function AIProxySettingsPanel({
           >
             <Button
               variant="contained"
+              size="small"
               startIcon={<SaveIcon />}
               onClick={onSaveProxy}
               disabled={proxySaving}

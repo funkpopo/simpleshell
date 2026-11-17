@@ -37,20 +37,22 @@ export default function ConfirmDialog({
       slotProps={{
         paper: {
           sx: {
-            borderRadius: 2,
+            borderRadius: "var(--radius-md, 6px)",
           },
         },
       }}
     >
       <DialogTitle>{title}</DialogTitle>
-      <DialogContent>
-        <Typography>{message}</Typography>
+      <DialogContent dividers>
+        <Typography variant="body2" color="text.secondary">
+          {message}
+        </Typography>
       </DialogContent>
-      <DialogActions sx={{ p: 2, gap: 1 }}>
-        <Button onClick={onCancel} color="inherit">
+      <DialogActions>
+        <Button onClick={onCancel} color="inherit" variant="outlined" size="small">
           {t("common.cancel")}
         </Button>
-        <Button onClick={onConfirm} variant="contained" color="error">
+        <Button onClick={onConfirm} variant="contained" color="error" size="small">
           {confirmLabel}
         </Button>
       </DialogActions>

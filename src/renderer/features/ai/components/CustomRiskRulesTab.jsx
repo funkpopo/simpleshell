@@ -89,11 +89,13 @@ function BuiltinRiskRules() {
               <List
                 dense
                 sx={{
-                  bgcolor: "action.hover",
-                  borderRadius: 1,
+                  bgcolor: "background.default",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: "var(--radius-md, 6px)",
                   maxHeight: 200,
                   overflow: "auto",
-                  opacity: 0.8,
+                  opacity: 0.85,
                 }}
               >
                 {builtinPatterns.map((pattern, index) => (
@@ -142,8 +144,16 @@ export default function CustomRiskRulesTab({
       </Typography>
 
       {/* 添加新规则 */}
-      <Card variant="outlined" sx={{ mb: 3, p: 2 }}>
-        <Typography variant="subtitle2" sx={{ mb: 2 }}>
+      <Card
+        variant="outlined"
+        sx={{
+          mb: 2.5,
+          p: 1.75,
+          borderRadius: "var(--radius-md, 6px)",
+          bgcolor: "background.default",
+        }}
+      >
+        <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600 }}>
           {t("aiSettings.addNewRule")}
         </Typography>
         <Box
@@ -238,8 +248,10 @@ export default function CustomRiskRulesTab({
           sx={{
             textAlign: "center",
             py: 3,
-            bgcolor: "action.hover",
-            borderRadius: 1,
+            bgcolor: "background.default",
+            border: "1px dashed",
+            borderColor: "divider",
+            borderRadius: "var(--radius-md, 6px)",
           }}
         >
           <Typography color="text.secondary">
@@ -255,7 +267,15 @@ export default function CustomRiskRulesTab({
                   level={level}
                   count={customRules[level].length}
                 />
-                <List dense sx={{ bgcolor: "action.hover", borderRadius: 1 }}>
+                <List
+                  dense
+                  sx={{
+                    bgcolor: "background.default",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: "var(--radius-md, 6px)",
+                  }}
+                >
                   {customRules[level].map((pattern, index) => (
                     <ListItem key={index} sx={{ py: 0.5 }}>
                       <ListItemText

@@ -41,6 +41,7 @@
         "consolasDescription": "System default monospace font"
       },
       "logSettingsTitle": "Log Settings",
+      "logLevelLabel": "Log Level",
       "logFileSizeLimitLabel": "Log File Size Limit",
       "logCleanupIntervalLabel": "Log Cleanup Interval",
       "logLevels": {

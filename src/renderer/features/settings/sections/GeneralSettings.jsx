@@ -6,8 +6,6 @@ import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import Slider from "@mui/material/Slider";
 import TextField from "@mui/material/TextField";
-import Switch from "@mui/material/Switch";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import Grid from "@mui/material/Grid";
 import { useTranslation } from "react-i18next";
 import {
@@ -230,114 +228,64 @@ export default function GeneralSettings({ initialValues, ref }) {
           {t("settings.dnd.title")}
         </Typography>
         <Box sx={sectionCardSx}>
-          <Box sx={{ display: "flex", flexDirection: "column" }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={dndEnabled}
-                  onChange={(e) => setDndEnabled(e.target.checked)}
-                  size="small"
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  {t("settings.dnd.enable")}
-                </Typography>
-              }
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={dndAutoScroll}
-                  onChange={(e) => setDndAutoScroll(e.target.checked)}
-                  disabled={!dndEnabled}
-                  size="small"
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  {t("settings.dnd.autoScroll")}
-                </Typography>
-              }
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={dndCompactPreview}
-                  onChange={(e) => setDndCompactPreview(e.target.checked)}
-                  disabled={!dndEnabled}
-                  size="small"
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  {t("settings.dnd.compactPreview")}
-                </Typography>
-              }
-            />
-          </Box>
+          <SettingsToggleRow
+            id="settings-dnd-enable"
+            noDivider
+            label={t("settings.dnd.enable")}
+            checked={dndEnabled}
+            onChange={(e) => setDndEnabled(e.target.checked)}
+          />
+          <SettingsToggleRow
+            id="settings-dnd-autoscroll"
+            label={t("settings.dnd.autoScroll")}
+            checked={dndAutoScroll}
+            disabled={!dndEnabled}
+            onChange={(e) => setDndAutoScroll(e.target.checked)}
+          />
+          <SettingsToggleRow
+            id="settings-dnd-compact"
+            label={t("settings.dnd.compactPreview")}
+            checked={dndCompactPreview}
+            disabled={!dndEnabled}
+            onChange={(e) => setDndCompactPreview(e.target.checked)}
+          />
         </Box>
 
         <Typography sx={subSectionLabelSx}>
           {t("settings.desktopIntegration.title")}
         </Typography>
         <Box sx={sectionCardSx}>
-          <Box sx={{ display: "flex", flexDirection: "column" }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={trayEnabled}
-                  onChange={(e) => {
-                    setTrayEnabled(e.target.checked);
-                    if (!e.target.checked) {
-                      setCloseToTray(false);
-                    }
-                  }}
-                  size="small"
-                />
+          <SettingsToggleRow
+            id="settings-tray-enable"
+            noDivider
+            label={t("settings.desktopIntegration.trayEnabled")}
+            checked={trayEnabled}
+            onChange={(e) => {
+              setTrayEnabled(e.target.checked);
+              if (!e.target.checked) {
+                setCloseToTray(false);
               }
-              label={
-                <Typography variant="body2">
-                  {t("settings.desktopIntegration.trayEnabled")}
-                </Typography>
-              }
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={closeToTray}
-                  onChange={(e) => setCloseToTray(e.target.checked)}
-                  disabled={!trayEnabled}
-                  size="small"
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  {t("settings.desktopIntegration.closeToTray")}
-                </Typography>
-              }
-            />
-          </Box>
+            }}
+          />
+          <SettingsToggleRow
+            id="settings-close-to-tray"
+            label={t("settings.desktopIntegration.closeToTray")}
+            checked={closeToTray}
+            disabled={!trayEnabled}
+            onChange={(e) => setCloseToTray(e.target.checked)}
+          />
         </Box>
 
         <Typography sx={subSectionLabelSx}>
           {t("settings.externalEditor.title")}
         </Typography>
         <Box sx={sectionCardSx}>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={externalEditorEnabled}
-                onChange={(e) => setExternalEditorEnabled(e.target.checked)}
-                size="small"
-              />
-            }
-            label={
-              <Typography variant="body2">
-                {t("settings.externalEditor.enable")}
-              </Typography>
-            }
-            sx={{ mb: 0.75 }}
+          <SettingsToggleRow
+            id="settings-external-editor-enable"
+            noDivider
+            label={t("settings.externalEditor.enable")}
+            checked={externalEditorEnabled}
+            onChange={(e) => setExternalEditorEnabled(e.target.checked)}
           />
           <TextField
             fullWidth
@@ -346,6 +294,7 @@ export default function GeneralSettings({ initialValues, ref }) {
             value={externalEditorCommand}
             onChange={(e) => setExternalEditorCommand(e.target.value)}
             disabled={!externalEditorEnabled}
+            sx={{ mt: 1 }}
           />
         </Box>
 
@@ -353,28 +302,22 @@ export default function GeneralSettings({ initialValues, ref }) {
           {t("settings.diskAlert.title")}
         </Typography>
         <Box sx={sectionCardSx}>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={diskAlertEnabled}
-                onChange={(e) => setDiskAlertEnabled(e.target.checked)}
-                size="small"
-              />
-            }
-            label={
-              <Typography variant="body2">
-                {t("settings.diskAlert.enable")}
-              </Typography>
-            }
-            sx={{ mb: 1 }}
+          <SettingsToggleRow
+            id="settings-disk-alert-enable"
+            noDivider
+            label={t("settings.diskAlert.enable")}
+            checked={diskAlertEnabled}
+            onChange={(e) => setDiskAlertEnabled(e.target.checked)}
           />
           <Box
             sx={{
+              mt: 1,
               display: "flex",
               gap: 1.5,
               flexWrap: "wrap",
               opacity: diskAlertEnabled ? 1 : 0.5,
               pointerEvents: diskAlertEnabled ? "auto" : "none",
+              transition: "opacity 160ms ease",
             }}
           >
             <TextField
@@ -427,7 +370,7 @@ export default function GeneralSettings({ initialValues, ref }) {
           <Typography
             variant="caption"
             color="text.secondary"
-            sx={{ mt: 0.75, display: "block" }}
+            sx={{ mt: 0.75, display: "block", lineHeight: 1.5 }}
           >
             {t("settings.resourceMonitor.modeHint")}
           </Typography>

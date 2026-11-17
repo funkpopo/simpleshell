@@ -181,21 +181,24 @@ export const sidebarRailButtonSx = (theme, active = false) => ({
       ? getSidebarItemSelectedHoverBg(theme)
       : theme.palette.action.hover,
   },
-  // 展开指示放在 disabled 之前，确保禁用态可覆盖 ::before
-  ...(active
-    ? {
-        "&::before": {
-          content: '""',
-          position: "absolute",
-          left: 2,
-          top: "22%",
-          bottom: "22%",
-          width: 2,
-          borderRadius: 1,
-          bgcolor: "primary.main",
-        },
-      }
-    : {}),
+  // 展开指示放在 disabled 之前，确保禁用态可覆盖 ::before；始终挂载以便平滑缩放/淡入
+  "&::before": {
+    content: '""',
+    position: "absolute",
+    left: 2,
+    top: "22%",
+    bottom: "22%",
+    width: 2,
+    borderRadius: 1,
+    bgcolor: "primary.main",
+    opacity: active ? 1 : 0,
+    transform: active ? "scaleY(1)" : "scaleY(0.35)",
+    transition:
+      "transform 180ms cubic-bezier(0.2, 0, 0, 1), opacity 160ms ease",
+    [REDUCED_MOTION_QUERY]: {
+      transition: "none",
+    },
+  },
   "&.Mui-disabled": {
     color: "action.disabled",
     bgcolor: "transparent",
@@ -236,7 +239,7 @@ export const sidebarContentSx = (
   { animating = false, slideFrom = "right" } = {},
 ) => {
   const hiddenX = slideFrom === "left" ? "-100%" : "100%";
-  const duration = theme.transitions.duration.enteringScreen;
+  const easing = "cubic-bezier(0.2, 0, 0, 1)";
 
   return {
     width: "100%",
@@ -251,13 +254,11 @@ export const sidebarContentSx = (
     backfaceVisibility: "hidden",
     contain: "layout paint",
     pointerEvents: open ? "auto" : "none",
+    opacity: open ? 1 : 0.72,
     transform: open ? "translate3d(0, 0, 0)" : `translate3d(${hiddenX}, 0, 0)`,
     // 动画结束后清除 willChange，避免长期占用合成层
-    willChange: animating ? "transform" : "auto",
-    transition: theme.transitions.create("transform", {
-      easing: theme.transitions.easing.sharp,
-      duration,
-    }),
+    willChange: animating ? "transform, opacity" : "auto",
+    transition: `transform 240ms ${easing}, opacity 200ms ${easing}`,
     [REDUCED_MOTION_QUERY]: {
       transition: "none",
       willChange: "auto",

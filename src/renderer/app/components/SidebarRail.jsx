@@ -283,18 +283,22 @@ export default function SidebarRail({
           <AIIcon />
           {aiPanelOpen && (
             <Box
-              sx={{
-                position: "absolute",
-                top: 4,
-                right: 4,
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                bgcolor: aiApiReachable === false ? "#f44336" : "#4caf50",
-                boxShadow:
+              sx={(theme) => {
+                const statusColor =
                   aiApiReachable === false
-                    ? "0 0 4px #f44336"
-                    : "0 0 4px #4caf50",
+                    ? theme.palette.error.main
+                    : theme.palette.success.main;
+                return {
+                  position: "absolute",
+                  top: 4,
+                  right: 4,
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  bgcolor: statusColor,
+                  boxShadow: `0 0 0 1.5px ${theme.palette.background.paper}`,
+                  transition: "background-color 180ms ease",
+                };
               }}
             />
           )}

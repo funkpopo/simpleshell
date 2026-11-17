@@ -1,4 +1,5 @@
 import Button from "@mui/material/Button";
+import Collapse from "@mui/material/Collapse";
 import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
 import FormControl from "@mui/material/FormControl";
@@ -6,8 +7,6 @@ import InputLabel from "@mui/material/InputLabel";
 import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import TextField from "@mui/material/TextField";
-import Switch from "@mui/material/Switch";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import Grid from "@mui/material/Grid";
 import TerminalIcon from "@mui/icons-material/Terminal";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
@@ -21,6 +20,7 @@ import OpenSSHImportDialog from "../../connections/components/OpenSSHImportDialo
 import {
   sectionCardSx,
   SectionCardHeader,
+  SettingsToggleRow,
 } from "../components/SettingsSection.jsx";
 import useConfigSync from "../hooks/useConfigSync.js";
 
@@ -120,22 +120,17 @@ export default function DataSyncSettings({ initialValues, open }) {
               />
             </Grid>
           </Grid>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={rememberExportPassword}
-                onChange={(e) =>
-                  handleRememberExportPasswordChange(e.target.checked)
-                }
-                size="small"
-              />
-            }
-            label={
-              <Typography variant="body2">
-                {t("settings.dataSync.autoSync.rememberPassword")}
-              </Typography>
-            }
-          />
+          <Box sx={{ mt: 1 }}>
+            <SettingsToggleRow
+              id="settings-remember-export-password"
+              noDivider
+              label={t("settings.dataSync.autoSync.rememberPassword")}
+              checked={rememberExportPassword}
+              onChange={(e) =>
+                handleRememberExportPasswordChange(e.target.checked)
+              }
+            />
+          </Box>
           <Box sx={{ mt: 1 }}>
             <Button
               variant="outlined"
@@ -340,50 +335,30 @@ export default function DataSyncSettings({ initialValues, open }) {
           <SectionCardHeader
             icon={CloudSyncIcon}
             title={t("settings.dataSync.autoSync.title")}
-            actions={
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={autoSyncEnabled}
-                    onChange={(e) => handleToggleAutoSync(e.target.checked)}
-                    disabled={configTransferBusy !== ""}
-                    size="small"
-                  />
-                }
-                label={
-                  <Typography variant="body2">
-                    {t("settings.dataSync.autoSync.enable")}
-                  </Typography>
-                }
-              />
-            }
           />
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            {t("settings.dataSync.autoSync.description")}
-          </Typography>
+          <SettingsToggleRow
+            id="settings-auto-sync-enable"
+            label={t("settings.dataSync.autoSync.enable")}
+            description={t("settings.dataSync.autoSync.description")}
+            checked={autoSyncEnabled}
+            disabled={configTransferBusy !== ""}
+            onChange={(e) => handleToggleAutoSync(e.target.checked)}
+          />
 
-          {autoSyncEnabled && (
-            <>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={autoSyncOnStartup}
-                    onChange={(e) => {
-                      setAutoSyncOnStartup(e.target.checked);
-                      handleAutoSyncOptionChange({
-                        autoSyncOnStartup: e.target.checked,
-                      });
-                    }}
-                    size="small"
-                  />
-                }
-                label={
-                  <Typography variant="body2">
-                    {t("settings.dataSync.autoSync.onStartup")}
-                  </Typography>
-                }
+          <Collapse in={autoSyncEnabled} timeout={200} unmountOnExit>
+            <Box sx={{ mt: 0.5 }}>
+              <SettingsToggleRow
+                id="settings-auto-sync-startup"
+                label={t("settings.dataSync.autoSync.onStartup")}
+                checked={autoSyncOnStartup}
+                onChange={(e) => {
+                  setAutoSyncOnStartup(e.target.checked);
+                  handleAutoSyncOptionChange({
+                    autoSyncOnStartup: e.target.checked,
+                  });
+                }}
               />
-              <FormControl fullWidth size="small" sx={{ mt: 0.5 }}>
+              <FormControl fullWidth size="small" sx={{ mt: 1 }}>
                 <InputLabel>
                   {t("settings.dataSync.autoSync.interval")}
                 </InputLabel>
@@ -411,8 +386,8 @@ export default function DataSyncSettings({ initialValues, open }) {
                   ))}
                 </Select>
               </FormControl>
-            </>
-          )}
+            </Box>
+          </Collapse>
 
           <Box sx={{ mt: 1 }}>
             <Button

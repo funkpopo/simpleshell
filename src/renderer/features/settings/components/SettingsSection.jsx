@@ -4,32 +4,35 @@ import Switch from "@mui/material/Switch";
 import FormControlLabel from "@mui/material/FormControlLabel";
 
 export const sectionCardSx = {
-  p: 1.5,
+  p: 1.75,
   borderRadius: "var(--radius-md, 6px)",
   border: "1px solid",
   borderColor: "divider",
   bgcolor: (theme) =>
     theme.palette.mode === "dark"
-      ? "rgba(255, 255, 255, 0.03)"
-      : "rgba(17, 24, 39, 0.025)",
+      ? "rgba(255, 255, 255, 0.025)"
+      : "rgba(21, 23, 25, 0.02)",
+  transition: "border-color 160ms ease, background-color 160ms ease",
 };
 
 const sectionTitleRowSx = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
+  gap: 1,
   mb: 1,
 };
 
 export const compactFieldSx = {
-  mb: 1.25,
+  mb: 1.5,
   "&:last-child": { mb: 0 },
 };
 
 // 滑块行标签统一列宽，保证同卡片内多条 Slider 左边缘对齐
 export const sliderLabelSx = {
-  minWidth: 52,
+  minWidth: 60,
   fontSize: "0.8rem",
+  fontWeight: 500,
   flexShrink: 0,
 };
 
@@ -41,9 +44,13 @@ export const SectionCardHeader = ({
   actions = null,
 }) => (
   <Box sx={sectionTitleRowSx}>
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-      {Icon ? <Icon sx={{ color: iconColor }} /> : null}
-      <Typography variant="subtitle1">{title}</Typography>
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
+      {Icon ? (
+        <Icon sx={{ color: iconColor, fontSize: 18, flexShrink: 0 }} />
+      ) : null}
+      <Typography variant="subtitle2" sx={{ fontWeight: 650 }}>
+        {title}
+      </Typography>
     </Box>
     {actions}
   </Box>
@@ -53,10 +60,10 @@ export const subSectionLabelSx = {
   fontSize: "0.7rem",
   fontWeight: 700,
   textTransform: "uppercase",
-  letterSpacing: "0.5px",
+  letterSpacing: "0.06em",
   color: "text.secondary",
   mb: 0.75,
-  mt: 1.5,
+  mt: 1.75,
   "&:first-of-type": { mt: 0 },
 };
 
@@ -66,28 +73,38 @@ export const SettingsToggleRow = ({
   description,
   checked,
   onChange,
+  disabled = false,
+  noDivider = false,
 }) => (
   <Box
     sx={{
       minWidth: 0,
-      pt: 1.25,
-      pb: 1.25,
+      pt: noDivider ? 0 : 1.125,
+      pb: 1.125,
       "&:last-child": { pb: 0 },
-      borderTop: "1px solid",
+      borderTop: noDivider ? "none" : "1px solid",
       borderColor: "divider",
       display: "flex",
       flexDirection: "column",
-      gap: 0.5,
+      gap: 0.375,
+      opacity: disabled ? 0.55 : 1,
+      transition: "opacity 160ms ease",
     }}
   >
     <FormControlLabel
+      disabled={disabled}
       labelPlacement="start"
       control={
         <Switch
           checked={checked}
           onChange={onChange}
+          disabled={disabled}
           size="small"
-          slotProps={{ input: { "aria-describedby": `${id}-description` } }}
+          slotProps={
+            description
+              ? { input: { "aria-describedby": `${id}-description` } }
+              : undefined
+          }
           sx={{ flexShrink: 0 }}
         />
       }
@@ -107,18 +124,27 @@ export const SettingsToggleRow = ({
       sx={{
         m: 0,
         width: "100%",
+        minHeight: 30,
         gap: 1.5,
         justifyContent: "space-between",
+        cursor: disabled ? "default" : "pointer",
       }}
     />
-    <Typography
-      id={`${id}-description`}
-      component="p"
-      variant="caption"
-      color="text.secondary"
-      sx={{ m: 0, display: "block", lineHeight: 1.6, overflowWrap: "anywhere" }}
-    >
-      {description}
-    </Typography>
+    {description ? (
+      <Typography
+        id={`${id}-description`}
+        component="p"
+        variant="caption"
+        color="text.secondary"
+        sx={{
+          m: 0,
+          display: "block",
+          lineHeight: 1.55,
+          overflowWrap: "anywhere",
+        }}
+      >
+        {description}
+      </Typography>
+    ) : null}
   </Box>
 );

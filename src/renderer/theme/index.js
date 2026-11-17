@@ -252,6 +252,56 @@ export const createUnifiedTheme = (darkMode) =>
         },
       },
 
+      MuiDialogTitle: {
+        styleOverrides: {
+          root: {
+            fontSize: "1rem",
+            fontWeight: 650,
+            lineHeight: 1.35,
+            padding: "14px 20px",
+          },
+        },
+      },
+
+      MuiDialogContent: {
+        styleOverrides: {
+          root: {
+            padding: "16px 20px",
+          },
+          dividers: {
+            borderTopColor: getThemeTokens(darkMode)["--color-divider"],
+            borderBottomColor: getThemeTokens(darkMode)["--color-divider"],
+          },
+        },
+      },
+
+      MuiDialogActions: {
+        styleOverrides: {
+          root: {
+            padding: "12px 20px",
+            gap: 8,
+            "& > :not(style) ~ :not(style)": {
+              marginLeft: 0,
+            },
+          },
+        },
+      },
+
+      MuiBackdrop: {
+        styleOverrides: {
+          root: {
+            backgroundColor: darkMode
+              ? "rgba(8, 9, 10, 0.56)"
+              : "rgba(21, 23, 25, 0.28)",
+            backdropFilter: "blur(2px)",
+          },
+          invisible: {
+            backgroundColor: "transparent",
+            backdropFilter: "none",
+          },
+        },
+      },
+
       MuiSnackbar: {
         defaultProps: {
           slots: { transition: SnackbarSlideTransition },
@@ -412,8 +462,32 @@ export const createUnifiedTheme = (darkMode) =>
       MuiTabs: {
         styleOverrides: {
           indicator: {
-            height: 1,
-            borderRadius: 0,
+            height: 2,
+            borderRadius: "2px 2px 0 0",
+            transition: "all 200ms cubic-bezier(0.2, 0, 0, 1)",
+          },
+        },
+      },
+
+      MuiAccordion: {
+        styleOverrides: {
+          root: {
+            borderRadius: RADIUS_MD,
+            boxShadow: "none",
+            border: `1px solid ${borderClr(darkMode)}`,
+            backgroundImage: "none",
+            transition: "border-color 160ms ease, background-color 160ms ease",
+            "&::before": {
+              display: "none",
+            },
+          },
+        },
+      },
+
+      MuiAlert: {
+        styleOverrides: {
+          root: {
+            borderRadius: RADIUS_MD,
           },
         },
       },
@@ -435,6 +509,13 @@ export const createUnifiedTheme = (darkMode) =>
       MuiSwitch: {
         styleOverrides: {
           root: {
+            "& .MuiSwitch-switchBase": {
+              transition:
+                "transform 160ms cubic-bezier(0.2, 0, 0, 1), color 160ms ease",
+              "&:hover": {
+                backgroundColor: primaryAlpha(darkMode, 0.08),
+              },
+            },
             "& .MuiSwitch-switchBase.Mui-checked": {
               color: primaryColor(darkMode),
               "& + .MuiSwitch-track": {
@@ -445,6 +526,7 @@ export const createUnifiedTheme = (darkMode) =>
           },
           track: {
             borderRadius: 10,
+            transition: "background-color 160ms ease, opacity 160ms ease",
           },
           thumb: {
             boxShadow: "0 2px 4px rgba(0,0,0,0.2)",

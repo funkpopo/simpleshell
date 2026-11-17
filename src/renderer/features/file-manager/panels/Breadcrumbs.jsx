@@ -55,7 +55,7 @@ export default function Breadcrumbs({
           flex: 1,
           minWidth: 0,
           "& .MuiOutlinedInput-root": {
-            borderRadius: 1.5,
+            borderRadius: "var(--radius-md, 6px)",
             "& fieldset": {
               borderColor: theme.palette.divider,
             },

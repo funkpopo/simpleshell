@@ -1,3 +1,5 @@
+import { alpha } from "@mui/material/styles";
+
 export const compactContextMenuPaperSx = {
   minWidth: 172,
   py: 0.5,
@@ -42,16 +44,12 @@ export const getWebTerminalContextMenuPaperSx = (theme) => {
 
   return {
     ...compactContextMenuPaperSx,
-    borderRadius: 1,
-    boxShadow: isDark
-      ? "0 8px 24px rgba(0,0,0,0.42)"
-      : "0 8px 24px rgba(20,24,32,0.18)",
-    border: `1px solid ${
-      isDark ? "rgba(255,255,255,0.16)" : "rgba(20,24,32,0.12)"
-    }`,
-    bgcolor: isDark ? "rgba(26, 28, 34, 0.58)" : "rgba(255,255,255,0.62)",
+    borderRadius: "var(--radius-md, 6px)",
+    boxShadow: "var(--shadow-md)",
+    border: "1px solid var(--color-border)",
+    bgcolor: alpha(theme.palette.background.paper, isDark ? 0.86 : 0.9),
     color: "text.primary",
-    backdropFilter: "blur(16px) saturate(150%)",
-    WebkitBackdropFilter: "blur(16px) saturate(150%)",
+    backdropFilter: "blur(16px) saturate(1.15)",
+    WebkitBackdropFilter: "blur(16px) saturate(1.15)",
   };
 };

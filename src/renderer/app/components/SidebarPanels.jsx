@@ -110,13 +110,12 @@ export default function SidebarPanels({
         position: "relative",
         // 仅拖拽期间提升合成层，避免常驻 willChange 占用资源
         willChange: sidebarResizing ? "width" : undefined,
-        transition: (theme) =>
-          sidebarResizing
-            ? "none"
-            : theme.transitions.create("width", {
-                easing: theme.transitions.easing.sharp,
-                duration: theme.transitions.duration.enteringScreen,
-              }),
+        transition: sidebarResizing
+          ? "none"
+          : "width 240ms cubic-bezier(0.2, 0, 0, 1)",
+        "@media (prefers-reduced-motion: reduce)": {
+          transition: "none",
+        },
         overflow: "hidden",
       }}
     >

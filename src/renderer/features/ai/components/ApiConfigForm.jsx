@@ -32,22 +32,19 @@ export default function ApiConfigForm({
   const { t } = useTranslation();
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      <Box>
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            mb: 2,
-          }}
-        >
-          <Typography variant="h6">
-            {editingConfig ? t("aiSettings.editApi") : t("aiSettings.addApi")}
-          </Typography>
-        </Box>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <Typography variant="subtitle1" sx={{ fontWeight: 650 }}>
+          {editingConfig ? t("aiSettings.editApi") : t("aiSettings.addApi")}
+        </Typography>
       </Box>
-      <FormControl fullWidth variant="outlined">
+      <FormControl fullWidth size="small" variant="outlined">
         <InputLabel>{t("aiSettings.providerType")}</InputLabel>
         <Select
           value={config.provider}
@@ -70,6 +67,7 @@ export default function ApiConfigForm({
         value={config.apiUrl}
         onChange={(e) => onConfigChange("apiUrl", e.target.value)}
         fullWidth
+        size="small"
         placeholder={t("aiSettings.placeholders.baseUrl")}
         variant="outlined"
         required
@@ -80,6 +78,7 @@ export default function ApiConfigForm({
         value={config.apiKey}
         onChange={(e) => onConfigChange("apiKey", e.target.value)}
         fullWidth
+        size="small"
         type="password"
         placeholder={t("aiSettings.placeholders.apiKey")}
         variant="outlined"
@@ -97,7 +96,7 @@ export default function ApiConfigForm({
           alignItems: "flex-start",
         }}
       >
-        <FormControl fullWidth variant="outlined" required>
+        <FormControl fullWidth size="small" variant="outlined" required>
           <InputLabel id="ai-settings-model-label" shrink>
             {t("aiSettings.model")}
           </InputLabel>
@@ -134,28 +133,34 @@ export default function ApiConfigForm({
           </Select>
         </FormControl>
         <Tooltip title={t("aiSettings.fetchModels")}>
-          <IconButton
-            onClick={onFetchModels}
-            disabled={
-              fetchingModels ||
-              !config.apiUrl.trim() ||
-              !hasConfiguredApiKey(config)
-            }
-            sx={{ mt: 1 }}
-            aria-label={t("aiSettings.fetchModels")}
-          >
-            {fetchingModels ? <CircularProgress size={20} /> : <RefreshIcon />}
-          </IconButton>
+          <span>
+            <IconButton
+              size="small"
+              onClick={onFetchModels}
+              disabled={
+                fetchingModels ||
+                !config.apiUrl.trim() ||
+                !hasConfiguredApiKey(config)
+              }
+              sx={{ mt: 0.25 }}
+              aria-label={t("aiSettings.fetchModels")}
+            >
+              {fetchingModels ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
+            </IconButton>
+          </span>
         </Tooltip>
       </Box>
       <FormControlLabel
         control={
           <Switch
+            size="small"
             checked={config.streamEnabled}
             onChange={(e) => onConfigChange("streamEnabled", e.target.checked)}
           />
         }
-        label={t("aiSettings.streamEnabled")}
+        label={
+          <Typography variant="body2">{t("aiSettings.streamEnabled")}</Typography>
+        }
       />
     </Box>
   );

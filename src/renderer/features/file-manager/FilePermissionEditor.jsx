@@ -164,7 +164,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
 
       {/* 权限位勾选框 */}
       <Grid container spacing={2}>
-        <Grid item xs={4}>
+        <Grid size={4}>
           <Typography variant="subtitle2" align="center" sx={{ mb: 1 }}>
             {t("filePermission.owner")}
           </Typography>
@@ -202,7 +202,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
           </FormGroup>
         </Grid>
 
-        <Grid item xs={4}>
+        <Grid size={4}>
           <Typography variant="subtitle2" align="center" sx={{ mb: 1 }}>
             {t("filePermission.group")}
           </Typography>
@@ -240,7 +240,7 @@ const FilePermissionEditor = ({ permissions = "644", onChange }) => {
           </FormGroup>
         </Grid>
 
-        <Grid item xs={4}>
+        <Grid size={4}>
           <Typography variant="subtitle2" align="center" sx={{ mb: 1 }}>
             {t("filePermission.other")}
           </Typography>

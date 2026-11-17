@@ -225,7 +225,7 @@ const TransferProgress = ({ onOpenFloat, isFloatOpen, onToggleFloat }) => {
       : 0;
   return (
     <Paper
-      elevation={4}
+      elevation={0}
       sx={{
         width: "100%",
         display: "flex",

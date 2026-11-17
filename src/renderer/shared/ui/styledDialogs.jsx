@@ -1,5 +1,5 @@
 import Dialog from "./AccessibleDialog.jsx";
-import { styled } from "@mui/material/styles";
+import { alpha, styled } from "@mui/material/styles";
 import { Z_INDEX } from "../constants/zIndex.js";
 
 /**
@@ -8,23 +8,22 @@ import { Z_INDEX } from "../constants/zIndex.js";
  */
 
 /**
- * 磨砂玻璃效果的 Dialog（AboutDialog / Settings 共用）。
+ * 磨砂玻璃效果的 Dialog（AboutDialog / Settings / AISettings 共用）。
+ * 与全局航天中性色体系保持一致，避免偏蓝冷色调或重投影。
  * 可通过 paperMaxHeight 追加限制 paper 最大高度（如 Settings 的 "80vh"）。
  */
 export const GlassDialog = styled(Dialog, {
   shouldForwardProp: (prop) => prop !== "paperMaxHeight",
 })(({ theme, paperMaxHeight }) => ({
   "& .MuiDialog-paper": {
-    backgroundColor:
-      theme.palette.mode === "dark"
-        ? "rgba(40, 44, 52, 0.75)"
-        : "rgba(255, 255, 255, 0.75)",
-    backdropFilter: "blur(10px)",
-    boxShadow:
-      theme.palette.mode === "dark"
-        ? "0 8px 32px 0 rgba(0, 0, 0, 0.37)"
-        : "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
-    border: "1px solid rgba(255, 255, 255, 0.18)",
+    backgroundColor: alpha(
+      theme.palette.background.paper,
+      theme.palette.mode === "dark" ? 0.9 : 0.94,
+    ),
+    backdropFilter: "blur(16px) saturate(1.15)",
+    WebkitBackdropFilter: "blur(16px) saturate(1.15)",
+    boxShadow: "var(--float-shadow)",
+    border: "1px solid var(--color-border)",
     ...(paperMaxHeight ? { maxHeight: paperMaxHeight } : {}),
   },
 }));
@@ -70,18 +69,18 @@ export const createFloatingDialog = ({
       height: customheight || height,
       ...(minHeight != null ? { minHeight } : {}),
       maxHeight,
-      backgroundColor:
-        theme.palette.mode === "dark"
-          ? "rgba(30, 30, 30, 0.95)"
-          : "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(10px)",
+      backgroundColor: alpha(
+        theme.palette.background.paper,
+        theme.palette.mode === "dark" ? 0.94 : 0.96,
+      ),
+      backdropFilter: "blur(16px) saturate(1.15)",
+      WebkitBackdropFilter: "blur(16px) saturate(1.15)",
       borderRadius,
-      boxShadow:
-        theme.palette.mode === "dark"
-          ? "0 10px 40px rgba(0, 0, 0, 0.6)"
-          : "0 10px 40px rgba(0, 0, 0, 0.2)",
+      border: "1px solid var(--color-border)",
+      boxShadow: "var(--float-shadow)",
       overflow: "visible",
-      transition: "right 220ms cubic-bezier(0.4, 0, 0.2, 1), bottom 180ms ease",
+      transition:
+        "right 240ms cubic-bezier(0.2, 0, 0, 1), bottom 180ms cubic-bezier(0.2, 0, 0, 1)",
       "@media (prefers-reduced-motion: reduce)": {
         transition: "none",
       },

@@ -98,36 +98,21 @@ const MasterPasswordOverlay = React.memo(
         }}
       >
         <Paper
-          elevation={12}
+          elevation={0}
           sx={{
-            width: "min(92vw, 420px)",
+            width: "min(92vw, 400px)",
             px: 3,
-            py: 3.5,
-            borderRadius: 3,
-            border: "1px solid",
-            borderColor: (theme) => alpha(theme.palette.primary.main, 0.18),
+            py: 3,
+            borderRadius: "var(--radius-lg, 10px)",
+            border: "1px solid var(--color-border)",
             backgroundColor: (theme) =>
               alpha(
                 theme.palette.background.paper,
                 theme.palette.mode === "dark" ? 0.94 : 0.96,
               ),
-            boxShadow: (theme) =>
-              theme.palette.mode === "dark"
-                ? `0 24px 60px ${alpha("#000000", 0.45)}`
-                : `0 20px 44px ${alpha(theme.palette.primary.dark, 0.16)}`,
+            boxShadow: "var(--float-shadow)",
             position: "relative",
             overflow: "hidden",
-            "&::before": {
-              content: '""',
-              position: "absolute",
-              inset: 0,
-              background: (theme) =>
-                `linear-gradient(180deg, ${alpha(
-                  theme.palette.primary.main,
-                  theme.palette.mode === "dark" ? 0.16 : 0.08,
-                )}, transparent 42%)`,
-              pointerEvents: "none",
-            },
           }}
         >
           <Tooltip title={t("common.close")}>
@@ -137,59 +122,52 @@ const MasterPasswordOverlay = React.memo(
               onClick={handleClose}
               sx={{
                 position: "absolute",
-                top: 10,
-                right: 10,
+                top: 12,
+                right: 12,
                 zIndex: Z_INDEX.control,
                 color: "text.secondary",
-                bgcolor: (theme) => alpha(theme.palette.background.paper, 0.45),
-                "&:hover": {
-                  color: "text.primary",
-                  bgcolor: (theme) => alpha(theme.palette.action.hover, 0.75),
-                },
               }}
             >
               <CloseIcon fontSize="small" />
             </IconButton>
           </Tooltip>
 
-          {/* 内容 wrapper 统一压到 ::before 渐变层之上，
-              各元素无需再逐个写 position/zIndex */}
           <Box sx={{ position: "relative", zIndex: Z_INDEX.raised }}>
             <Box
               sx={{
-                width: 52,
-                height: 52,
-                borderRadius: "50%",
+                width: 44,
+                height: 44,
+                borderRadius: "var(--radius-md, 6px)",
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
                 bgcolor: (theme) =>
                   alpha(
                     theme.palette.primary.main,
-                    theme.palette.mode === "dark" ? 0.2 : 0.12,
+                    theme.palette.mode === "dark" ? 0.12 : 0.08,
                   ),
                 color: "primary.main",
                 border: "1px solid",
-                borderColor: (theme) => alpha(theme.palette.primary.main, 0.22),
+                borderColor: "divider",
                 mb: 2,
               }}
             >
-              <LockOutlinedIcon />
+              <LockOutlinedIcon fontSize="small" />
             </Box>
 
-            <Typography variant="h6" sx={{ mb: 1 }}>
+            <Typography variant="h6" sx={{ mb: 0.75 }}>
               {loading
                 ? t("masterPassword.loadingTitle")
                 : t("masterPassword.title")}
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
               {loading
                 ? t("masterPassword.loadingDescription")
                 : t("masterPassword.description")}
             </Typography>
 
             {error ? (
-              <Alert severity="error" sx={{ mb: 2 }}>
+              <Alert severity="error" variant="outlined" sx={{ mb: 2 }}>
                 {error}
               </Alert>
             ) : null}
@@ -198,6 +176,7 @@ const MasterPasswordOverlay = React.memo(
               <>
                 <TextField
                   fullWidth
+                  size="small"
                   inputRef={inputRef}
                   label={t("masterPassword.passwordLabel")}
                   type="password"
@@ -214,7 +193,7 @@ const MasterPasswordOverlay = React.memo(
                 <Button
                   fullWidth
                   variant="contained"
-                  sx={{ mt: 2.5, py: 1.1 }}
+                  sx={{ mt: 2, py: 1 }}
                   disabled={!password || isSubmitting}
                   onClick={handleSubmit}
                 >

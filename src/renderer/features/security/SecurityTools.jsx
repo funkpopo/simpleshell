@@ -221,6 +221,19 @@ const RandomPasswordGenerator = ({ open, onClose, sessionContext = null }) => {
           p: 1.5,
         }}
       >
+        <Box
+          key={tabValue}
+          sx={{
+            animation: "fadeIn 160ms cubic-bezier(0.2, 0, 0, 1)",
+            "@keyframes fadeIn": {
+              from: { opacity: 0, transform: "translateY(2px)" },
+              to: { opacity: 1, transform: "translateY(0)" },
+            },
+            "@media (prefers-reduced-motion: reduce)": {
+              animation: "none",
+            },
+          }}
+        >
         {/* 密码生成器标签页 */}
         {tabValue === 0 && (
           <>
@@ -320,7 +333,14 @@ const RandomPasswordGenerator = ({ open, onClose, sessionContext = null }) => {
               />
             </FormGroup>
 
-            <Box sx={{ mb: 1.5 }}>
+            <Box
+              sx={{
+                mb: 1.5,
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 0.75,
+              }}
+            >
               <TextField
                 value={password}
                 label={t("randomPassword.generatedPassword")}
@@ -334,41 +354,39 @@ const RandomPasswordGenerator = ({ open, onClose, sessionContext = null }) => {
                     readOnly: true,
                     sx: {
                       wordBreak: "break-all",
+                      fontFamily: "ui-monospace, monospace",
                     },
                   },
                 }}
-                sx={{ mb: 1 }}
               />
-              <Box sx={{ display: "flex", gap: 1 }}>
-                <Tooltip
-                  title={
+              <Tooltip
+                title={
+                  copySuccess.password
+                    ? t("randomPassword.copied")
+                    : t("randomPassword.copy")
+                }
+                onClose={() =>
+                  setCopySuccess({ ...copySuccess, password: false })
+                }
+              >
+                <IconButton
+                  onClick={() => copyToClipboard(password, "password")}
+                  size="small"
+                  color="primary"
+                  sx={{ mt: 0.5, flexShrink: 0 }}
+                  aria-label={
                     copySuccess.password
                       ? t("randomPassword.copied")
                       : t("randomPassword.copy")
                   }
-                  onClose={() =>
-                    setCopySuccess({ ...copySuccess, password: false })
-                  }
                 >
-                  <IconButton
-                    onClick={() => copyToClipboard(password, "password")}
-                    size="small"
-                    color="primary"
-
-                    aria-label={
-                      copySuccess.password
-                        ? t("randomPassword.copied")
-                        : t("randomPassword.copy")
-                    }
-                  >
-                    {copySuccess.password ? (
-                      <CheckIcon color="success" />
-                    ) : (
-                      <ContentCopyIcon />
-                    )}
-                  </IconButton>
-                </Tooltip>
-              </Box>
+                  {copySuccess.password ? (
+                    <CheckIcon color="success" />
+                  ) : (
+                    <ContentCopyIcon />
+                  )}
+                </IconButton>
+              </Tooltip>
             </Box>
 
             <Button
@@ -606,6 +624,7 @@ const RandomPasswordGenerator = ({ open, onClose, sessionContext = null }) => {
             )}
           </>
         )}
+        </Box>
       </Box>
     </SidebarPanel>
   );

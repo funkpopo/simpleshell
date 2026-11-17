@@ -12,6 +12,8 @@ import LinearProgress from "@mui/material/LinearProgress";
 import Alert from "@mui/material/Alert";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import PropTypes from "prop-types";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
@@ -23,34 +25,32 @@ import UpdateIcon from "@mui/icons-material/Update";
 import CheckIcon from "@mui/icons-material/Check";
 import CancelIcon from "@mui/icons-material/Cancel";
 import ScheduleIcon from "@mui/icons-material/Schedule";
+import CloseIcon from "@mui/icons-material/Close";
 import { getMarkdownContentSx } from "../../shared/ui/markdownContentSx.js";
 import { normalizeSafeMarkdownHref } from "../../shared/lib/markdownLinks.js";
 
 const updatePanelSx = {
   mt: 1,
   p: 1.5,
-  borderRadius: 2,
+  borderRadius: "var(--radius-md, 6px)",
   border: "1px solid",
   borderColor: "divider",
   bgcolor: (theme) =>
     theme.palette.mode === "dark"
-      ? "rgba(255, 255, 255, 0.04)"
-      : "rgba(17, 24, 39, 0.03)",
+      ? "rgba(255, 255, 255, 0.025)"
+      : "rgba(21, 23, 25, 0.02)",
 };
 
 // 更新日志容器属性（maxHeight/border/padding/overflow）；
 // markdown 排版统一走 shared/ui/markdownContentSx.js（density: compact）
 const releaseNoteContainerSx = {
-  mt: 2,
+  mt: 1.5,
   maxHeight: 220,
   overflow: "auto",
-  borderRadius: 1.5,
+  borderRadius: "var(--radius-md, 6px)",
   border: "1px solid",
   borderColor: "divider",
-  bgcolor: (theme) =>
-    theme.palette.mode === "dark"
-      ? "rgba(0, 0, 0, 0.2)"
-      : "rgba(17, 24, 39, 0.04)",
+  bgcolor: "background.default",
   p: 1.25,
 };
 const releaseNoteSx = [
@@ -974,47 +974,120 @@ const AboutDialog = memo(function AboutDialog({
 
   return (
     <GlassDialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{t("about.title")}</DialogTitle>
+      <DialogTitle
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 1,
+        }}
+      >
+        <span>{t("about.title")}</span>
+        <Tooltip title={t("common.close")}>
+          <span>
+            <IconButton
+              size="small"
+              aria-label={t("common.close")}
+              onClick={onClose}
+              disabled={updateStatus === "installing"}
+              sx={{ color: "text.secondary" }}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </DialogTitle>
       <DialogContent dividers>
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="body1" gutterBottom>
-            {t("about.version")}: {displayAppVersion}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            {t("about.description")}
-          </Typography>
-
-          <Typography variant="body2" sx={{ mt: 2 }}>
-            {t("about.author")}: funkpopo
-          </Typography>
-          <Typography variant="body2">
-            {t("about.email")}:{" "}
-            <Link
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                handleOpenExternalLink("mailto:funkpopoisme@gmail.com");
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+          <Box
+            sx={{
+              p: 1.5,
+              borderRadius: "var(--radius-md, 6px)",
+              border: "1px solid",
+              borderColor: "divider",
+              bgcolor: (theme) =>
+                theme.palette.mode === "dark"
+                  ? "rgba(255, 255, 255, 0.025)"
+                  : "rgba(21, 23, 25, 0.02)",
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1,
+                mb: 0.75,
               }}
             >
-              funkpopoisme@gmail.com
-            </Link>
-          </Typography>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                SimpleShell
+              </Typography>
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`${t("about.version")}: ${displayAppVersion}`}
+                sx={{ fontFamily: "monospace", fontSize: "0.72rem" }}
+              />
+            </Box>
+            <Typography variant="body2" color="text.secondary">
+              {t("about.description")}
+            </Typography>
+            <Box
+              sx={{
+                mt: 1.25,
+                pt: 1,
+                borderTop: "1px solid",
+                borderColor: "divider",
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                gap: 1,
+              }}
+            >
+              <Typography variant="caption" color="text.secondary">
+                {t("about.author")}:{" "}
+                <Box
+                  component="span"
+                  sx={{ color: "text.primary", fontWeight: 500 }}
+                >
+                  funkpopo
+                </Box>
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {t("about.email")}:{" "}
+                <Link
+                  href="#"
+                  underline="hover"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleOpenExternalLink("mailto:funkpopoisme@gmail.com");
+                  }}
+                >
+                  funkpopoisme@gmail.com
+                </Link>
+              </Typography>
+            </Box>
+          </Box>
 
-          <Divider sx={{ my: 2 }} />
+          <Divider />
 
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="subtitle1" gutterBottom>
+          <Box>
+            <Typography
+              variant="subtitle2"
+              sx={{ fontWeight: 650 }}
+              gutterBottom
+            >
               {t("about.updateCheck")}
             </Typography>
 
             {renderUpdateContent()}
 
             {updateInfo?.releaseNotes && updateInfo?.hasUpdate && (
-              <Box sx={{ mt: 2 }}>
+              <Box sx={{ mt: 1.5 }}>
                 <Typography variant="subtitle2" gutterBottom>
                   {t("update.releaseNotes")}
                 </Typography>
-                <Box sx={releaseNoteSx}>
+                <Box className="app-scrollbar" sx={releaseNoteSx}>
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={releaseNoteMarkdownComponents}
@@ -1026,17 +1099,24 @@ const AboutDialog = memo(function AboutDialog({
               </Box>
             )}
 
-            <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1 }}>
+            <Box
+              sx={{
+                mt: 1.5,
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                flexWrap: "wrap",
+              }}
+            >
               {renderUpdateButtons()}
             </Box>
           </Box>
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={updateStatus === "installing"}>
-          {t("about.close")}
-        </Button>
         <Button
+          variant="outlined"
+          size="small"
           onClick={() =>
             handleOpenExternalLink(
               "https://github.com/funkpopo/simpleshell/releases",
@@ -1044,6 +1124,13 @@ const AboutDialog = memo(function AboutDialog({
           }
         >
           {t("about.visitGithub")}
+        </Button>
+        <Button
+          size="small"
+          onClick={onClose}
+          disabled={updateStatus === "installing"}
+        >
+          {t("about.close")}
         </Button>
       </DialogActions>
     </GlassDialog>

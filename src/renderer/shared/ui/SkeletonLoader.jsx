@@ -389,7 +389,7 @@ export const ResourceMonitorSkeleton = memo(function ResourceMonitorSkeleton() {
       sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}
     >
       {Array.from({ length: 5 }, (_, index) => (
-        <Paper key={index} elevation={2} sx={{ borderRadius: 1 }}>
+        <Paper key={index} elevation={0} sx={{ borderRadius: "var(--radius-md, 6px)", border: "1px solid", borderColor: "divider", bgcolor: "background.default" }}>
           <SkeletonCardHeader index={index} />
           {index < 3 ? (
             <Box
@@ -433,12 +433,12 @@ export const IpQueryResultSkeleton = memo(function IpQueryResultSkeleton({
       sx={{ p: 2 }}
     >
       <Skeleton variant="text" width={120} height={28} />
-      <Paper elevation={2} sx={{ p: 2, borderRadius: 1, mb: 2 }}>
+      <Paper elevation={0} sx={{ p: 2, borderRadius: "var(--radius-md, 6px)", border: "1px solid", borderColor: "divider", bgcolor: "background.default", mb: 2 }}>
         <Skeleton variant="text" width="60%" height={22} />
         <Skeleton variant="text" width="40%" height={22} />
       </Paper>
       <Skeleton variant="text" width={120} height={28} />
-      <Paper elevation={2} sx={{ p: 2, borderRadius: 1 }}>
+      <Paper elevation={0} sx={{ p: 2, borderRadius: "var(--radius-md, 6px)", border: "1px solid", borderColor: "divider", bgcolor: "background.default" }}>
         <Skeleton variant="text" width="50%" height={20} />
         <Skeleton variant="text" width="40%" height={20} />
         <Skeleton variant="text" width="30%" height={20} />

@@ -2,10 +2,7 @@ import * as React from "react";
 import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
-import Switch from "@mui/material/Switch";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import Chip from "@mui/material/Chip";
-import Grid from "@mui/material/Grid";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import FeedbackIcon from "@mui/icons-material/Feedback";
@@ -18,6 +15,7 @@ import {
 import {
   sectionCardSx,
   SectionCardHeader,
+  SettingsToggleRow,
 } from "../components/SettingsSection.jsx";
 
 export default function FeedbackSettings({ initialValues, ref }) {
@@ -98,100 +96,56 @@ export default function FeedbackSettings({ initialValues, ref }) {
             />
           }
         />
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25 }}>
           {t("settings.feedback.description")}
         </Typography>
-        <Grid container spacing={1}>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={errorReportingEnabled}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setErrorReportingEnabled(checked);
-                    if (!checked) {
-                      setIncludeDiagnosticsInFeedback(false);
-                    } else {
-                      setIncludeDiagnosticsInFeedback(true);
-                    }
-                  }}
-                  size="small"
-                />
+        <Box sx={{ display: "flex", flexDirection: "column" }}>
+          <SettingsToggleRow
+            id="settings-feedback-error-reporting"
+            label={t("settings.feedback.enable")}
+            description={t("settings.feedback.enableHelper")}
+            checked={errorReportingEnabled}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setErrorReportingEnabled(checked);
+              if (!checked) {
+                setIncludeDiagnosticsInFeedback(false);
+              } else {
+                setIncludeDiagnosticsInFeedback(true);
               }
-              label={
-                <Typography variant="body2">
-                  {t("settings.feedback.enable")}
-                </Typography>
-              }
-            />
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: "block", mt: 0.25 }}
-            >
-              {t("settings.feedback.enableHelper")}
-            </Typography>
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={
-                    errorReportingEnabled && includeDiagnosticsInFeedback
-                  }
-                  onChange={(e) =>
-                    setIncludeDiagnosticsInFeedback(e.target.checked)
-                  }
-                  disabled={!errorReportingEnabled}
-                  size="small"
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  {t("settings.feedback.includeDiagnostics")}
-                </Typography>
-              }
-            />
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: "block", mt: 0.25 }}
-            >
-              {t("settings.feedback.includeDiagnosticsHelper")}
-            </Typography>
-          </Grid>
-          <Grid size={{ xs: 12 }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={crashCaptureEnabled}
-                  onChange={(e) => setCrashCaptureEnabled(e.target.checked)}
-                  size="small"
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  {t("settings.feedback.enableCrashCapture")}
-                </Typography>
-              }
-            />
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: "block", mt: 0.25 }}
-            >
-              {t("settings.feedback.crashCaptureHelper")}
-            </Typography>
-          </Grid>
-        </Grid>
+            }}
+          />
+          <SettingsToggleRow
+            id="settings-feedback-include-diagnostics"
+            label={t("settings.feedback.includeDiagnostics")}
+            description={t("settings.feedback.includeDiagnosticsHelper")}
+            checked={errorReportingEnabled && includeDiagnosticsInFeedback}
+            disabled={!errorReportingEnabled}
+            onChange={(e) =>
+              setIncludeDiagnosticsInFeedback(e.target.checked)
+            }
+          />
+          <SettingsToggleRow
+            id="settings-feedback-crash-capture"
+            label={t("settings.feedback.enableCrashCapture")}
+            description={t("settings.feedback.crashCaptureHelper")}
+            checked={crashCaptureEnabled}
+            onChange={(e) => setCrashCaptureEnabled(e.target.checked)}
+          />
+        </Box>
         {crashReporterStatus?.crashDirectory ? (
           <Typography
             variant="caption"
             color="text.secondary"
             sx={{
               display: "block",
-              mt: 0.75,
+              mt: 1.25,
+              px: 1,
+              py: 0.75,
+              borderRadius: "var(--radius-sm, 3px)",
+              bgcolor: "background.paper",
+              border: "1px solid",
+              borderColor: "divider",
               wordBreak: "break-all",
               fontFamily: "monospace",
             }}
@@ -204,7 +158,7 @@ export default function FeedbackSettings({ initialValues, ref }) {
           sx={{
             display: "flex",
             gap: 0.75,
-            mt: 1,
+            mt: 1.5,
             flexWrap: "wrap",
           }}
         >

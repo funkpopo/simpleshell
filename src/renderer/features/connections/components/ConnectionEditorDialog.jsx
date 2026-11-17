@@ -19,6 +19,7 @@ import {
   Divider,
   Alert,
   CircularProgress,
+  Collapse,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
@@ -747,7 +748,11 @@ export default function ConnectionEditorDialog({ editor }) {
                     label={t("connectionManager.useSystemProxy")}
                   />
 
-                  {!formData.proxyUseDefault && (
+                  <Collapse
+                    in={!formData.proxyUseDefault}
+                    timeout={200}
+                    unmountOnExit
+                  >
                     <Box
                       sx={{
                         display: "flex",
@@ -817,7 +822,7 @@ export default function ConnectionEditorDialog({ editor }) {
                         />
                       </Box>
                     </Box>
-                  )}
+                  </Collapse>
                 </>
               )}
 
@@ -894,7 +899,7 @@ export default function ConnectionEditorDialog({ editor }) {
               : t("connectionManager.testConnection")}
           </Button>
         )}
-        <Button onClick={handleDialogClose}>
+        <Button variant="outlined" onClick={handleDialogClose}>
           {autoSaveEnabled ? t("common.close") : t("common.cancel")}
         </Button>
         <Button onClick={handleSave} variant="contained">

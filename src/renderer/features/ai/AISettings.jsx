@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import Dialog from "../../shared/ui/AccessibleDialog.jsx";
+import { GlassDialog } from "../../shared/ui/styledDialogs.jsx";
 import {
   DialogTitle,
   DialogContent,
@@ -63,11 +63,12 @@ const AISettings = ({ open, onClose }) => {
   } = useAISettingsController({ open, onClose });
 
   return (
-    <Dialog
+    <GlassDialog
       open={open}
       onClose={handleClose}
       maxWidth="md"
       fullWidth
+      paperMaxHeight="min(84vh, 780px)"
       sx={{
         zIndex: Z_INDEX.modalRaised,
         pointerEvents: "auto",
@@ -75,14 +76,13 @@ const AISettings = ({ open, onClose }) => {
           pointerEvents: "auto",
         },
       }}
-      PaperProps={{
-        sx: {
-          width: "min(860px, calc(100vw - 32px))",
-          maxWidth: "none",
-          maxHeight: "min(88vh, 820px)",
-          borderRadius: 2,
-          backdropFilter: "blur(10px)",
-          pointerEvents: "auto",
+      slotProps={{
+        paper: {
+          sx: {
+            width: "min(820px, calc(100vw - 32px))",
+            maxWidth: "none",
+            pointerEvents: "auto",
+          },
         },
       }}
     >
@@ -101,45 +101,74 @@ const AISettings = ({ open, onClose }) => {
             onClick={handleClose}
             size="small"
             aria-label={t("common.close")}
+            sx={{ color: "text.secondary" }}
           >
-            <CloseIcon />
+            <CloseIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       </DialogTitle>
-      <DialogContent dividers sx={{ p: 0 }}>
+      <DialogContent dividers sx={{ p: 0, display: "flex", flexDirection: "column" }}>
         {loading && (
           <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-            <CircularProgress />
+            <CircularProgress size={28} />
           </Box>
         )}
 
         {!loading && (
-          <Box>
+          <Box sx={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
             {/* 标签页 */}
             <Tabs
               value={tabValue}
               onChange={(e, newValue) => setTabValue(newValue)}
-              sx={{ borderBottom: 1, borderColor: "divider" }}
+              sx={{
+                px: 2,
+                minHeight: 40,
+                borderBottom: 1,
+                borderColor: "divider",
+                bgcolor: "background.default",
+                flexShrink: 0,
+                "& .MuiTab-root": { minHeight: 40, py: 0.75, fontSize: "0.85rem" },
+              }}
             >
               <Tab label={t("aiSettings.apiManagement")} />
               <Tab label={t("aiSettings.customRules")} />
             </Tabs>
 
             {/* 标签页内容 */}
-            <Box sx={{ p: 3 }}>
+            <Box
+              className="app-scrollbar"
+              sx={{
+                p: 2.25,
+                overflowY: "auto",
+                flex: 1,
+                "& > [data-ai-settings-panel]": {
+                  animation:
+                    "ss-ai-panel-in 180ms cubic-bezier(0.2, 0, 0, 1)",
+                },
+                "@keyframes ss-ai-panel-in": {
+                  from: { opacity: 0, transform: "translateY(4px)" },
+                  to: { opacity: 1, transform: "translateY(0)" },
+                },
+                "@media (prefers-reduced-motion: reduce)": {
+                  "& > [data-ai-settings-panel]": {
+                    animation: "none",
+                  },
+                },
+              }}
+            >
               {error && (
-                <Alert severity="error" sx={{ mb: 2 }}>
+                <Alert severity="error" variant="outlined" sx={{ mb: 2 }}>
                   {error}
                 </Alert>
               )}
               {success && (
-                <Alert severity="success" sx={{ mb: 2 }}>
+                <Alert severity="success" variant="outlined" sx={{ mb: 2 }}>
                   {success}
                 </Alert>
               )}
 
               {tabValue === 0 && (
-                <Box>
+                <Box data-ai-settings-panel="0">
                   {!editMode ? (
                     // API列表模式
                     <ApiConfigList
@@ -164,7 +193,7 @@ const AISettings = ({ open, onClose }) => {
                   )}
 
                   {/* 代理配置（可展开） */}
-                  <Divider sx={{ my: 3 }} />
+                  <Divider sx={{ my: 2.25 }} />
                   <AIProxySettingsPanel
                     proxyConfig={proxy.proxyConfig}
                     proxySaving={proxy.proxySaving}
@@ -178,25 +207,27 @@ const AISettings = ({ open, onClose }) => {
 
               {/* 自定义风险规则标签页 */}
               {tabValue === 1 && (
-                <CustomRiskRulesTab
-                  customRules={rules.customRules}
-                  newRulePattern={rules.newRulePattern}
-                  setNewRulePattern={rules.setNewRulePattern}
-                  newRuleLevel={rules.newRuleLevel}
-                  setNewRuleLevel={rules.setNewRuleLevel}
-                  ruleError={rules.ruleError}
-                  saving={rules.saving}
-                  dirty={rules.dirty}
-                  onAddRule={rules.handleAddRule}
-                  onDeleteRule={rules.handleDeleteRule}
-                  onSaveRules={rules.handleSaveRules}
-                />
+                <Box data-ai-settings-panel="1">
+                  <CustomRiskRulesTab
+                    customRules={rules.customRules}
+                    newRulePattern={rules.newRulePattern}
+                    setNewRulePattern={rules.setNewRulePattern}
+                    newRuleLevel={rules.newRuleLevel}
+                    setNewRuleLevel={rules.setNewRuleLevel}
+                    ruleError={rules.ruleError}
+                    saving={rules.saving}
+                    dirty={rules.dirty}
+                    onAddRule={rules.handleAddRule}
+                    onDeleteRule={rules.handleDeleteRule}
+                    onSaveRules={rules.handleSaveRules}
+                  />
+                </Box>
               )}
             </Box>
           </Box>
         )}
       </DialogContent>
-      <DialogActions sx={{ p: 2, gap: 1 }}>
+      <DialogActions>
         {editMode ? (
           // 编辑模式的按钮
           <>
@@ -207,7 +238,7 @@ const AISettings = ({ open, onClose }) => {
             >
               {testing ? t("aiSettings.testing") : t("aiSettings.test")}
             </Button>
-            <Button onClick={handleCancelEdit} disabled={loading}>
+            <Button onClick={handleCancelEdit} disabled={loading} variant="outlined">
               {t("aiSettings.cancel")}
             </Button>
             <Button onClick={handleSave} disabled={loading} variant="contained">
@@ -216,7 +247,7 @@ const AISettings = ({ open, onClose }) => {
           </>
         ) : (
           // 列表模式的按钮
-          <Button onClick={handleClose} disabled={loading}>
+          <Button onClick={handleClose} disabled={loading} variant="outlined">
             {t("aiSettings.cancel")}
           </Button>
         )}
@@ -241,7 +272,7 @@ const AISettings = ({ open, onClose }) => {
         onCancel={handleCancelDiscardRules}
         onConfirm={handleConfirmDiscardRules}
       />
-    </Dialog>
+    </GlassDialog>
   );
 };
 

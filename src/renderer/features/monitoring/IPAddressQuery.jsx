@@ -324,11 +324,14 @@ const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
           {t("ipAddressQuery.ipInfo")}
         </Typography>
         <Paper
-          elevation={2}
+          elevation={0}
           sx={{
             p: 2,
-            borderRadius: 1,
-            borderLeft: `4px solid ${theme.palette.primary.main}`,
+            borderRadius: "var(--radius-md, 6px)",
+            border: "1px solid",
+            borderColor: "divider",
+            borderLeft: `3px solid ${theme.palette.primary.main}`,
+            bgcolor: "background.default",
             mb: 2,
           }}
         >
@@ -349,11 +352,14 @@ const IPAddressQuery = memo(({ open, onClose, sessionContext = null }) => {
           {t("ipAddressQuery.location")}
         </Typography>
         <Paper
-          elevation={2}
+          elevation={0}
           sx={{
             p: 2,
-            borderRadius: 1,
-            borderLeft: `4px solid ${theme.palette.info.main}`,
+            borderRadius: "var(--radius-md, 6px)",
+            border: "1px solid",
+            borderColor: "divider",
+            borderLeft: `3px solid ${theme.palette.info.main}`,
+            bgcolor: "background.default",
           }}
         >
           <Grid container spacing={1}>

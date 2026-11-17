@@ -21,6 +21,7 @@ import {
   Typography,
 } from "@mui/material";
 import AccessibleDialog from "../../shared/ui/AccessibleDialog.jsx";
+import { getSidebarItemSurfaceBg } from "../../shared/ui/sidebarItemStyles.js";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/DeleteOutlined";
 import EditIcon from "@mui/icons-material/EditOutlined";
@@ -455,9 +456,14 @@ const PortForwardingDialog = ({
                   sx={{
                     minWidth: 0,
                     flexShrink: 0,
-                    border: 1,
+                    border: "1px solid",
                     borderColor: "divider",
-                    borderRadius: 1,
+                    borderRadius: "var(--radius-md, 6px)",
+                    bgcolor: (theme) => getSidebarItemSurfaceBg(theme),
+                    transition: "border-color 160ms cubic-bezier(0.2, 0, 0, 1)",
+                    "&:hover": {
+                      borderColor: "text.secondary",
+                    },
                     p: 1,
                     display: "flex",
                     flexDirection: "column",
@@ -594,7 +600,6 @@ const PortForwardingDialog = ({
         }}
         maxWidth="xs"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 2 } }}
       >
         <DialogTitle>
           {form.id ? t("portForwarding.editRule") : t("portForwarding.addRule")}

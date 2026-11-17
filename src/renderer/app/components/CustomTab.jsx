@@ -415,7 +415,7 @@ const CustomTab = memo((props) => {
             color: "var(--tab-selected-fg) !important",
             backgroundColor: "transparent !important",
             boxShadow:
-              "inset 0 -1px 0 var(--tab-selected-indicator) !important",
+              "inset 0 -2px 0 var(--tab-selected-indicator) !important",
             fontWeight: 650,
             transform: "none",
             "& .tab-label-text": {

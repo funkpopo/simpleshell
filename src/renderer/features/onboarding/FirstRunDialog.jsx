@@ -1,13 +1,13 @@
 import * as React from "react";
-import Dialog from "../../shared/ui/AccessibleDialog.jsx";
+import { GlassDialog } from "../../shared/ui/styledDialogs.jsx";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
+import Collapse from "@mui/material/Collapse";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import InputLabel from "@mui/material/InputLabel";
@@ -20,6 +20,17 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../../i18n/i18n";
+
+const onboardingCardSx = {
+  p: 1.5,
+  borderRadius: "var(--radius-md, 6px)",
+  border: "1px solid",
+  borderColor: "divider",
+  bgcolor: (theme) =>
+    theme.palette.mode === "dark"
+      ? "rgba(255, 255, 255, 0.025)"
+      : "rgba(21, 23, 25, 0.02)",
+};
 
 const ONBOARDING_VERSION = 1;
 
@@ -197,30 +208,23 @@ const FirstRunDialog = ({
   ]);
 
   return (
-    <Dialog
+    <GlassDialog
       open={open}
       onClose={() => {}}
       maxWidth="sm"
       fullWidth
       onDefaultAction={handleFinish}
-      slotProps={{
-        paper: {
-          sx: {
-            borderRadius: 1.5,
-          },
-        },
-      }}
     >
-      <DialogTitle sx={{ pb: 1 }}>
+      <DialogTitle sx={{ pb: 1.25 }}>
         <Typography variant="h6" component="div" sx={{ fontWeight: 700 }}>
           {t("firstRun.title")}
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {t("firstRun.subtitle")}
         </Typography>
       </DialogTitle>
-      <DialogContent dividers sx={{ py: 2.25 }}>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.25 }}>
+      <DialogContent dividers>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
           {error ? (
             <Alert severity="error" variant="outlined">
               {error}
@@ -239,68 +243,111 @@ const FirstRunDialog = ({
             </Select>
           </FormControl>
 
-          <Divider />
-
-          <Box>
-            <Typography variant="subtitle2" sx={{ mb: 0.75 }}>
+          <Box sx={onboardingCardSx}>
+            <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 650 }}>
               {t("firstRun.privacyTitle")}
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mb: 1, lineHeight: 1.5 }}
+            >
               {t("firstRun.privacyDescription")}
             </Typography>
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={errorReportingEnabled}
-                  onChange={(event) => {
-                    const checked = event.target.checked;
-                    setErrorReportingEnabled(checked);
-                    setIncludeDiagnostics(checked);
-                  }}
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  {t("firstRun.errorReporting")}
-                </Typography>
-              }
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={errorReportingEnabled && includeDiagnostics}
-                  disabled={!errorReportingEnabled}
-                  onChange={(event) =>
-                    setIncludeDiagnostics(event.target.checked)
-                  }
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  {t("firstRun.includeDiagnostics")}
-                </Typography>
-              }
-            />
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                borderTop: "1px solid",
+                borderColor: "divider",
+                pt: 0.75,
+                gap: 0.5,
+              }}
+            >
+              <FormControlLabel
+                labelPlacement="start"
+                sx={{
+                  m: 0,
+                  width: "100%",
+                  justifyContent: "space-between",
+                  cursor: "pointer",
+                }}
+                control={
+                  <Switch
+                    size="small"
+                    checked={errorReportingEnabled}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setErrorReportingEnabled(checked);
+                      setIncludeDiagnostics(checked);
+                    }}
+                  />
+                }
+                label={
+                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                    {t("firstRun.errorReporting")}
+                  </Typography>
+                }
+              />
+              <FormControlLabel
+                labelPlacement="start"
+                disabled={!errorReportingEnabled}
+                sx={{
+                  m: 0,
+                  width: "100%",
+                  justifyContent: "space-between",
+                  opacity: errorReportingEnabled ? 1 : 0.55,
+                  cursor: errorReportingEnabled ? "pointer" : "default",
+                }}
+                control={
+                  <Switch
+                    size="small"
+                    checked={errorReportingEnabled && includeDiagnostics}
+                    disabled={!errorReportingEnabled}
+                    onChange={(event) =>
+                      setIncludeDiagnostics(event.target.checked)
+                    }
+                  />
+                }
+                label={
+                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                    {t("firstRun.includeDiagnostics")}
+                  </Typography>
+                }
+              />
+            </Box>
           </Box>
 
-          <Divider />
-
-          <Box>
-            <Typography variant="subtitle2" sx={{ mb: 0.75 }}>
+          <Box sx={onboardingCardSx}>
+            <Typography variant="subtitle2" sx={{ mb: 0.75, fontWeight: 650 }}>
               {t("firstRun.credentialTitle")}
             </Typography>
             <RadioGroup
               value={credentialMode}
               onChange={(event) => setCredentialMode(event.target.value)}
+              sx={{ gap: 0.75 }}
             >
               <FormControlLabel
                 value="system"
-                control={<Radio size="small" />}
+                sx={{
+                  m: 0,
+                  p: 1,
+                  borderRadius: "var(--radius-sm, 3px)",
+                  border: "1px solid",
+                  borderColor:
+                    credentialMode === "system" ? "primary.main" : "divider",
+                  bgcolor:
+                    credentialMode === "system"
+                      ? "action.selected"
+                      : "transparent",
+                  transition:
+                    "background-color 140ms ease, border-color 140ms ease",
+                  alignItems: "flex-start",
+                }}
+                control={<Radio size="small" sx={{ pt: 0.25 }} />}
                 label={
                   <Box>
-                    <Typography variant="body2">
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
                       {t("firstRun.systemCredentialMode")}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
@@ -311,10 +358,25 @@ const FirstRunDialog = ({
               />
               <FormControlLabel
                 value="master"
-                control={<Radio size="small" />}
+                sx={{
+                  m: 0,
+                  p: 1,
+                  borderRadius: "var(--radius-sm, 3px)",
+                  border: "1px solid",
+                  borderColor:
+                    credentialMode === "master" ? "primary.main" : "divider",
+                  bgcolor:
+                    credentialMode === "master"
+                      ? "action.selected"
+                      : "transparent",
+                  transition:
+                    "background-color 140ms ease, border-color 140ms ease",
+                  alignItems: "flex-start",
+                }}
+                control={<Radio size="small" sx={{ pt: 0.25 }} />}
                 label={
                   <Box>
-                    <Typography variant="body2">
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
                       {t("firstRun.masterCredentialMode")}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
@@ -325,10 +387,14 @@ const FirstRunDialog = ({
               />
             </RadioGroup>
 
-            {credentialMode === "master" ? (
+            <Collapse
+              in={credentialMode === "master"}
+              timeout={200}
+              unmountOnExit
+            >
               <Box
                 sx={{
-                  mt: 1,
+                  mt: 1.25,
                   display: "grid",
                   gap: 1.25,
                   gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
@@ -356,7 +422,7 @@ const FirstRunDialog = ({
                   }
                 />
               </Box>
-            ) : null}
+            </Collapse>
           </Box>
 
           <Alert severity="info" variant="outlined">
@@ -364,7 +430,7 @@ const FirstRunDialog = ({
           </Alert>
         </Box>
       </DialogContent>
-      <DialogActions sx={{ px: 3, py: 1.5 }}>
+      <DialogActions>
         <Button
           onClick={handleFinish}
           variant="contained"
@@ -374,7 +440,7 @@ const FirstRunDialog = ({
           {t("firstRun.finish")}
         </Button>
       </DialogActions>
-    </Dialog>
+    </GlassDialog>
   );
 };
 

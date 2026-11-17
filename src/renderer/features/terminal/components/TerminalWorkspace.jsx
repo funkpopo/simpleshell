@@ -86,34 +86,41 @@ export default function TerminalWorkspace({
   const slots = useRef(new Map());
   return (
     <>
-      {tabs.map((tab) => (
-        <div
-          key={tab.id}
-          style={{
-            position: "absolute",
-            inset: 0,
-            visibility: tab.id === activeTabId ? "visible" : "hidden",
-            pointerEvents: tab.id === activeTabId ? "auto" : "none",
-          }}
-        >
-          <PaneGrid
-            tabId={tab.id}
-            layout={layouts[tab.id] ?? getSinglePaneLayout(tab.id)}
-            isActive={tab.id === activeTabId}
-            renderPaneTerminal={(id) => (
-              <SessionSlot sessionKey={id} slots={slots} />
-            )}
-            getPaneLabel={(id) =>
-              sessions.find((session) => session.sessionKey === id)?.label
-            }
-            onFocusPane={(id) => onFocusPane(tab.id, id)}
-            onClosePane={(id) => onClosePane(tab.id, id)}
-            canClosePane={() => true}
-            onSetRatios={(ratios) => onSetRatios(tab.id, ratios)}
-            {...dragProps}
-          />
-        </div>
-      ))}
+      {tabs.map((tab) => {
+        const isTabActive = tab.id === activeTabId;
+        return (
+          <div
+            key={tab.id}
+            style={{
+              position: "absolute",
+              inset: 0,
+              visibility: isTabActive ? "visible" : "hidden",
+              opacity: isTabActive ? 1 : 0,
+              pointerEvents: isTabActive ? "auto" : "none",
+              transition: isTabActive
+                ? "opacity 160ms cubic-bezier(0.2, 0, 0, 1)"
+                : "none",
+            }}
+          >
+            <PaneGrid
+              tabId={tab.id}
+              layout={layouts[tab.id] ?? getSinglePaneLayout(tab.id)}
+              isActive={isTabActive}
+              renderPaneTerminal={(id) => (
+                <SessionSlot sessionKey={id} slots={slots} />
+              )}
+              getPaneLabel={(id) =>
+                sessions.find((session) => session.sessionKey === id)?.label
+              }
+              onFocusPane={(id) => onFocusPane(tab.id, id)}
+              onClosePane={(id) => onClosePane(tab.id, id)}
+              canClosePane={() => true}
+              onSetRatios={(ratios) => onSetRatios(tab.id, ratios)}
+              {...dragProps}
+            />
+          </div>
+        );
+      })}
       {sessions.map((session) => {
         const layout = layouts[session.parentTabId];
         const visible = session.parentTabId === activeTabId;

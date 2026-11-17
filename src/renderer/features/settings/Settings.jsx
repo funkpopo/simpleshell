@@ -36,21 +36,27 @@ const BootstrapDialogTitle = memo((props) => {
   const { children, onClose, ...other } = props;
 
   return (
-    <DialogTitle sx={{ m: 0, p: 2 }} {...other}>
+    <DialogTitle
+      sx={{
+        m: 0,
+        px: 2.5,
+        py: 1.5,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+      }}
+      {...other}
+    >
       {children}
       {onClose ? (
         <Tooltip title={t("common.close")}>
           <IconButton
+            size="small"
             aria-label={t("common.close")}
             onClick={onClose}
-            sx={{
-              position: "absolute",
-              right: 8,
-              top: 8,
-              color: (theme) => theme.palette.grey[500],
-            }}
+            sx={{ color: "text.secondary" }}
           >
-            <CloseIcon />
+            <CloseIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       ) : null}
@@ -209,22 +215,56 @@ const Settings = memo(({ open, onClose }) => {
             {/* Sidebar */}
             <Box
               sx={{
-                width: { xs: 128, sm: 160 },
+                width: { xs: 136, sm: 172 },
                 flexShrink: 0,
                 borderRight: 1,
                 borderColor: "divider",
+                bgcolor: "background.default",
                 overflowY: "auto",
               }}
             >
-              <List dense component="nav" sx={{ pt: 1, pb: 1 }}>
+              <List
+                dense
+                component="nav"
+                sx={{ p: 1, display: "flex", flexDirection: "column", gap: 0.5 }}
+              >
                 {sidebarItems.map((item) => (
                   <ListItemButton
                     key={item.id}
                     selected={activeTab === item.id}
                     onClick={() => setActiveTab(item.id)}
-                    sx={{ px: { xs: 1, sm: 2 } }}
+                    sx={{
+                      position: "relative",
+                      px: { xs: 1, sm: 1.25 },
+                      py: 0.875,
+                      borderRadius: "var(--radius-sm, 3px)",
+                      transition:
+                        "background-color 140ms ease, color 140ms ease",
+                      "&::before": {
+                        content: '""',
+                        position: "absolute",
+                        left: 2,
+                        top: "22%",
+                        bottom: "22%",
+                        width: 2,
+                        borderRadius: 1,
+                        bgcolor: "primary.main",
+                        opacity: activeTab === item.id ? 1 : 0,
+                        transform:
+                          activeTab === item.id ? "scaleY(1)" : "scaleY(0.35)",
+                        transition:
+                          "transform 180ms cubic-bezier(0.2, 0, 0, 1), opacity 160ms ease",
+                      },
+                      "& .MuiListItemIcon-root": {
+                        color:
+                          activeTab === item.id
+                            ? "primary.main"
+                            : "text.secondary",
+                        transition: "color 140ms ease",
+                      },
+                    }}
                   >
-                    <ListItemIcon sx={{ minWidth: { xs: 28, sm: 36 } }}>
+                    <ListItemIcon sx={{ minWidth: { xs: 28, sm: 32 } }}>
                       {item.icon}
                     </ListItemIcon>
                     <ListItemText
@@ -232,7 +272,10 @@ const Settings = memo(({ open, onClose }) => {
                       slotProps={{
                         primary: {
                           variant: "body2",
-                          sx: { overflowWrap: "anywhere" },
+                          sx: {
+                            overflowWrap: "anywhere",
+                            fontWeight: activeTab === item.id ? 600 : 400,
+                          },
                         },
                       }}
                     />
@@ -243,14 +286,15 @@ const Settings = memo(({ open, onClose }) => {
 
             {/* Content Panel */}
             <Box
+              className="app-scrollbar"
               sx={{
                 flex: 1,
                 minWidth: 0,
                 overflowY: "auto",
-                p: { xs: 1.5, sm: 2 },
+                p: { xs: 1.75, sm: 2.25 },
                 "& > [data-settings-panel]:not([hidden])": {
                   animation:
-                    "ss-settings-panel-in 160ms cubic-bezier(0.2, 0, 0, 1)",
+                    "ss-settings-panel-in 180ms cubic-bezier(0.2, 0, 0, 1)",
                 },
                 "@keyframes ss-settings-panel-in": {
                   from: { opacity: 0, transform: "translateY(4px)" },
