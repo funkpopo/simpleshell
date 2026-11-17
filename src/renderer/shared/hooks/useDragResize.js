@@ -76,7 +76,7 @@ export default function useDragResize({
       let latestHeight = start.height;
       let pendingNext = null;
 
-      const flushPending = () => {
+      const flushResize = () => {
         listenersRef.current.frameId = null;
         if (!pendingNext) return;
         const payload = pendingNext;
@@ -104,16 +104,13 @@ export default function useDragResize({
           );
           next.height = latestHeight;
         }
+        pendingNext = next;
         if (typeof requestAnimationFrame !== "function") {
-          optionsRef.current.onResize?.(next);
+          flushResize();
           return;
         }
         if (listenersRef.current.frameId === null) {
-          pendingNext = null;
-          optionsRef.current.onResize?.(next);
-          listenersRef.current.frameId = requestAnimationFrame(flushPending);
-        } else {
-          pendingNext = next;
+          listenersRef.current.frameId = requestAnimationFrame(flushResize);
         }
       };
 
@@ -125,7 +122,7 @@ export default function useDragResize({
           ) {
             cancelAnimationFrame(listenersRef.current.frameId);
           }
-          flushPending();
+          flushResize();
         }
         optionsRef.current.onStateChange?.(null);
         clearListeners();

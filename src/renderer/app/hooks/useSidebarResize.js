@@ -101,28 +101,25 @@ export default function useSidebarResize({
           ? event.clientX - resizeState.startX
           : resizeState.startX - event.clientX;
       const nextWidth = normalizeSidebarWidth(resizeState.startWidth + delta);
-      const applyWidth = (targetWidth) => {
-        if (targetWidth !== null && targetWidth !== sidebarWidthRef.current) {
-          sidebarWidthRef.current = targetWidth;
-          setSidebarWidth(targetWidth);
-        }
-      };
+      pendingWidthRef.current = nextWidth;
       if (typeof requestAnimationFrame !== "function") {
-        applyWidth(nextWidth);
+        if (nextWidth !== sidebarWidthRef.current) {
+          sidebarWidthRef.current = nextWidth;
+          setSidebarWidth(nextWidth);
+        }
         event.preventDefault();
         return;
       }
       if (resizeRafRef.current === null) {
-        applyWidth(nextWidth);
-        pendingWidthRef.current = null;
         resizeRafRef.current = requestAnimationFrame(() => {
           resizeRafRef.current = null;
-          const trailingWidth = pendingWidthRef.current;
+          const targetWidth = pendingWidthRef.current;
           pendingWidthRef.current = null;
-          applyWidth(trailingWidth);
+          if (targetWidth !== null && targetWidth !== sidebarWidthRef.current) {
+            sidebarWidthRef.current = targetWidth;
+            setSidebarWidth(targetWidth);
+          }
         });
-      } else {
-        pendingWidthRef.current = nextWidth;
       }
       event.preventDefault();
     },
