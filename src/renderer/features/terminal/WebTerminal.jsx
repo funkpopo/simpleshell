@@ -666,6 +666,7 @@ const WebTerminal = ({
         position={cursorPosition}
         onSelectSuggestion={handleSuggestionSelect}
         onClose={closeSuggestions}
+        terminalRef={terminalRef}
         terminalElement={terminalRef.current}
         currentInput={currentInput}
       />

@@ -495,9 +495,10 @@ export const useTerminalSuggestions = ({
           suggestionCommand: suggestion.command,
         });
 
-        for (let i = 0; i < deleteCount; i++) {
-          sendInputToProcess(processCache[sessionKey], "\x7f");
-          broadcastInputToGroup("\x7f", sessionKey);
+        if (deleteCount > 0) {
+          const backspaces = "\x7f".repeat(deleteCount);
+          sendInputToProcess(processCache[sessionKey], backspaces);
+          broadcastInputToGroup(backspaces, sessionKey);
         }
 
         if (insertText) {
@@ -519,6 +520,8 @@ export const useTerminalSuggestions = ({
       currentInput,
       sendInputToProcess,
       sessionKey,
+      setCurrentInput,
+      setShowSuggestions,
       termRef,
     ],
   );
@@ -532,9 +535,12 @@ export const useTerminalSuggestions = ({
       setSuggestions([]);
 
       if (shouldSuppressUntilEnter) {
+        if (options?.reason === "escape") {
+          setSuggestionsHiddenByEsc(true);
+        }
         setSuggestionsSuppressedUntilEnter(true);
         suppressionContextRef.current = {
-          input: currentInput,
+          input: currentInputRef.current,
           timestamp: Date.now(),
         };
       } else {
@@ -546,7 +552,11 @@ export const useTerminalSuggestions = ({
         };
       }
     },
-    [currentInput],
+    [
+      setShowSuggestions,
+      setSuggestionsHiddenByEsc,
+      setSuggestionsSuppressedUntilEnter,
+    ],
   );
 
   return {

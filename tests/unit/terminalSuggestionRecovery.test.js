@@ -898,6 +898,38 @@ describe("webterminal-reconnect-suggestions", () => {
         "PASS restore stays scoped to its session and survives listener rebinding",
       );
 
+      const selectionBatch = createHarness();
+      selectionBatch.input("gi");
+      selectionBatch.setLine("$ gi");
+      selectionBatch.parseOutput();
+      await selectionBatch.flush();
+      selectionBatch.requests.at(-1).resolve({
+        success: true,
+        suggestions: [{ command: "GIT status", count: 2 }],
+      });
+      await selectionBatch.flush();
+      const beforeSelectCount = selectionBatch.sent.length;
+      let selectionApi = selectionBatch.render();
+      selectionApi.handleSuggestionSelect({ command: "GIT status" });
+      assert.deepEqual(
+        selectionBatch.sent.slice(beforeSelectCount).map((entry) => entry.data),
+        ["\x7f\x7f", "GIT status"],
+        "handleSuggestionSelect must batch backspaces before inserting the completion",
+      );
+
+      selectionBatch.setLine("$ docker");
+      selectionBatch.parseOutput();
+      selectionApi = selectionBatch.render();
+      selectionApi.setCurrentInput("docker");
+      selectionApi.closeSuggestions({
+        reason: "escape",
+        suppressUntilEnter: true,
+      });
+      assert.equal(selectionApi.suggestionsHiddenByEscRef.current, true);
+      assert.equal(selectionApi.suggestionsSuppressedRef.current, true);
+      assert.equal(selectionApi.suppressionContextRef.current.input, "docker");
+      selectionBatch.dispose();
+
       await testReplacementShellBufferReset();
     }
 

@@ -190,9 +190,6 @@ function registerApplicationLifecycle() {
     // 创建窗口
     createMainWindow();
 
-    // 创建AI Worker
-    aiWorkerManager.createAIWorker();
-
     logToFile("Application ready and window created", "INFO");
   });
 

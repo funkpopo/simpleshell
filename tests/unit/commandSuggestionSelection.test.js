@@ -120,4 +120,24 @@ describe("CommandSuggestion keyboard selection", () => {
     await render(list("git status", "git diff"));
     expect(selected()).toEqual([]);
   });
+
+  it("handles keyboard navigation when anchored via terminalRef without terminalElement", async () => {
+    await act(async () =>
+      root.render(
+        createElement(CommandSuggestion, {
+          suggestions: list("git status", "git log"),
+          visible: true,
+          position: cursorNearBottom,
+          terminalRef: { current: terminal },
+          currentInput: "g",
+          onSelectSuggestion: () => {},
+          onClose: () => {},
+        }),
+      ),
+    );
+
+    const down = await press("ArrowDown");
+    expect(down.defaultPrevented).toBe(true);
+    expect(selected()).toEqual(["git status"]);
+  });
 });

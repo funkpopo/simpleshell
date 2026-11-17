@@ -34,10 +34,44 @@ export function attachTerminalShortcutHandlers({
       ".xterm-helper-textarea",
     );
 
-    return (
-      target?.classList?.contains?.("xterm-helper-textarea") ||
-      document.activeElement === helperTextarea
-    );
+    if (helperTextarea) {
+      return (
+        target === helperTextarea ||
+        Boolean(term.element?.contains?.(target)) ||
+        document.activeElement === helperTextarea
+      );
+    }
+
+    return Boolean(target?.classList?.contains?.("xterm-helper-textarea"));
+  };
+
+  const isActiveTerminalClipboardContext = (target) => {
+    if (!isActiveRef.current) {
+      return false;
+    }
+
+    if (
+      term.element?.contains?.(target) ||
+      terminalRef.current?.contains?.(target)
+    ) {
+      return true;
+    }
+
+    if (target?.classList?.contains?.("xterm-helper-textarea")) {
+      return !term.element;
+    }
+
+    const tagName = target?.tagName;
+    if (
+      tagName === "INPUT" ||
+      tagName === "TEXTAREA" ||
+      tagName === "SELECT" ||
+      target?.isContentEditable
+    ) {
+      return false;
+    }
+
+    return true;
   };
 
   const scheduleShortcutRecovery = ({
@@ -144,21 +178,31 @@ export function attachTerminalShortcutHandlers({
     }
 
     if (e.ctrlKey && e.key === ";") {
+      if (!isActiveTerminalClipboardContext(e.target)) {
+        return;
+      }
       const selection = term.getSelection();
       if (selection) {
         e.preventDefault();
-        window.clipboardAPI.writeText(selection);
+        Promise.resolve(window.clipboardAPI.writeText(selection)).catch(
+          () => {},
+        );
       }
     } else if (e.ctrlKey && e.key === "'") {
+      if (!isActiveTerminalClipboardContext(e.target)) {
+        return;
+      }
       e.preventDefault();
 
       if (!markPasteIfAllowedRef.current()) {
         return;
       }
 
-      window.clipboardAPI.readText().then((text) => {
-        handlePasteTextRef.current(text);
-      });
+      Promise.resolve(window.clipboardAPI.readText())
+        .then((text) => {
+          handlePasteTextRef.current(text);
+        })
+        .catch(() => {});
     } else if (
       e.ctrlKey &&
       !e.altKey &&

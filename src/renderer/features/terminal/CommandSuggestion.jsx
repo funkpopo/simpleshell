@@ -99,8 +99,15 @@ const CommandSuggestion = ({
   onSelectSuggestion,
   onClose,
   terminalElement,
+  terminalRef,
   currentInput = "",
 }) => {
+  const resolvedTerminalElement =
+    terminalRef?.current || terminalElement || null;
+  const getTerminalElement = useCallback(
+    () => terminalRef?.current || terminalElement || null,
+    [terminalRef, terminalElement],
+  );
   const theme = useTheme();
   const { t } = useTranslation();
   const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -198,7 +205,7 @@ const CommandSuggestion = ({
   let terminalRect = null;
   if (isOpen && windowDimensions && position) {
     const placement = placementRef.current;
-    terminalRect = terminalElement?.getBoundingClientRect?.() || null;
+    terminalRect = resolvedTerminalElement?.getBoundingClientRect?.() || null;
     anchoredPosition = resolveCommandSuggestionAnchor({
       position,
       placement,
@@ -261,8 +268,9 @@ const CommandSuggestion = ({
       if (shouldIgnoreCommandSuggestionKeyEvent(e)) {
         return;
       }
+      const activeTerminalElement = getTerminalElement();
       if (
-        !isNodeWithin(terminalElement, e.target) &&
+        !isNodeWithin(activeTerminalElement, e.target) &&
         !isNodeWithin(componentRef.current, e.target)
       ) {
         return;
@@ -318,7 +326,7 @@ const CommandSuggestion = ({
   }, [
     isRendered,
     items,
-    terminalElement,
+    getTerminalElement,
     handleSuggestionSelect,
     handleDeleteSuggestion,
     onClose,
@@ -331,7 +339,7 @@ const CommandSuggestion = ({
 
     const isOutside = (target) =>
       !isNodeWithin(componentRef.current, target) &&
-      !isNodeWithin(terminalElement, target);
+      !isNodeWithin(getTerminalElement(), target);
 
     const handleMouseDownOutside = (e) => {
       if (!isNodeWithin(componentRef.current, e.target)) {
@@ -350,7 +358,7 @@ const CommandSuggestion = ({
       document.removeEventListener("mousedown", handleMouseDownOutside);
       document.removeEventListener("focusin", handleFocusOutside);
     };
-  }, [isRendered, onClose, terminalElement]);
+  }, [isRendered, onClose, getTerminalElement]);
 
   // 滚动选中项到可见区域
   useEffect(() => {

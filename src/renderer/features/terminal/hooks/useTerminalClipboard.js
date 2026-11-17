@@ -22,9 +22,14 @@ export function useTerminalClipboard({
           return;
         }
 
-        window.clipboardAPI.readText().then((text) => {
-          handlePasteText(text);
-        });
+        window.clipboardAPI
+          .readText()
+          .then((text) => {
+            handlePasteText(text);
+          })
+          .catch(() => {
+            // 剪贴板读取失败
+          });
       }
     },
     [handlePasteText, markPasteIfAllowed, termRef],

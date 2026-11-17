@@ -60,17 +60,22 @@ function buildAppMenuItems() {
 
 function buildEditSubmenu() {
   const { mainT, lng } = getMenuT();
+  const isDarwin = process.platform === "darwin";
+  const editItem = (role, labelKey) => ({
+    role,
+    label: mainT(labelKey, { lng }),
+    // Windows/Linux 隐藏菜单栏仍会注册全局加速键，若不关闭会截获终端 Ctrl+C / Ctrl+A；
+    // 输入框由 Chromium 原生处理编辑快捷键，macOS 则需保留 Cmd+* 菜单角色加速键。
+    ...(isDarwin ? {} : { registerAccelerator: false }),
+  });
   return [
-    { role: "undo", label: mainT("mainProcess.menu.undo", { lng }) },
-    { role: "redo", label: mainT("mainProcess.menu.redo", { lng }) },
+    editItem("undo", "mainProcess.menu.undo"),
+    editItem("redo", "mainProcess.menu.redo"),
     { type: "separator" },
-    { role: "cut", label: mainT("mainProcess.menu.cut", { lng }) },
-    { role: "copy", label: mainT("mainProcess.menu.copy", { lng }) },
-    { role: "paste", label: mainT("mainProcess.menu.paste", { lng }) },
-    {
-      role: "selectAll",
-      label: mainT("mainProcess.menu.selectAll", { lng }),
-    },
+    editItem("cut", "mainProcess.menu.cut"),
+    editItem("copy", "mainProcess.menu.copy"),
+    editItem("paste", "mainProcess.menu.paste"),
+    editItem("selectAll", "mainProcess.menu.selectAll"),
   ];
 }
 
