@@ -93,9 +93,11 @@ describe("ipc-schema", () => {
 
     const ROOT = _path.resolve(_repoRoot, "");
     const SRC_DIR = path.join(ROOT, "src");
-    const { IPC_CHANNEL_DEFINITIONS, getChannelDefinition } = require(
-      path.join(ROOT, "src/shared/contracts/ipc/channels"),
-    );
+    const {
+      IPC_CHANNEL_DEFINITIONS,
+      IPC_REQUEST_CHANNELS,
+      getChannelDefinition,
+    } = require(path.join(ROOT, "src/shared/contracts/ipc/channels"));
     const { validateSchema } = require(
       path.join(ROOT, "src/main/ipc/schema/validator"),
     );
@@ -133,6 +135,10 @@ describe("ipc-schema", () => {
         kind: "progress-channel-property",
         re: /progressChannel:\s*["']([^"']+)["']/g,
       },
+      {
+        kind: "send-to-renderer",
+        re: /(?:safeSendToRenderer|sendToRenderer|broadcastToAllWindows)\(\s*["']([^"']+)["']/g,
+      },
     ];
 
     const FORBIDDEN_IPC_PATTERNS = [
@@ -163,6 +169,10 @@ describe("ipc-schema", () => {
       {
         kind: "webcontents-static-channel",
         re: /(?:webContents|sender)\.send\(\s*["'][^"']+["']/g,
+      },
+      {
+        kind: "send-to-renderer-static-channel",
+        re: /(?:safeSendToRenderer|sendToRenderer|broadcastToAllWindows)\(\s*["'][^"']+["']/g,
       },
     ];
 
@@ -347,11 +357,54 @@ describe("ipc-schema", () => {
       );
     }
 
+    function assertAllRequestChannelsUsed() {
+      const mainSource = walkJavaScriptFiles(path.join(SRC_DIR, "main"))
+        .map((file) => fs.readFileSync(file, "utf8"))
+        .join("\n");
+      const clientSource = [
+        ...walkJavaScriptFiles(path.join(SRC_DIR, "preload")),
+        ...walkJavaScriptFiles(path.join(SRC_DIR, "renderer")),
+      ]
+        .map((file) => fs.readFileSync(file, "utf8"))
+        .join("\n");
+
+      // Renderer terminal resize uses TERMINAL_IO_MAILBOX_CHANNEL; TERMINAL_RESIZE
+      // stays registered on main as a legacy/test endpoint.
+      const clientReferenceAllowlist = new Set(["TERMINAL_RESIZE"]);
+      const unreferencedInMain = [];
+      const unreferencedInClient = [];
+
+      for (const key of Object.keys(IPC_REQUEST_CHANNELS)) {
+        const refPattern = new RegExp(`\\b${key}\\b`);
+        if (!refPattern.test(mainSource)) {
+          unreferencedInMain.push(key);
+        }
+        if (
+          !clientReferenceAllowlist.has(key) &&
+          !refPattern.test(clientSource)
+        ) {
+          unreferencedInClient.push(key);
+        }
+      }
+
+      assert.deepEqual(
+        unreferencedInMain,
+        [],
+        `IPC_REQUEST_CHANNELS missing main handler reference: ${unreferencedInMain.join(", ")}`,
+      );
+      assert.deepEqual(
+        unreferencedInClient,
+        [],
+        `IPC_REQUEST_CHANNELS unused by preload/renderer: ${unreferencedInClient.join(", ")}`,
+      );
+    }
+
     function run() {
       assertDefinitionsAreComplete();
       assertStaticChannelsAreDeclared();
       assertNoStaticIpcStringUsage();
       assertNoForbiddenIpcPatterns();
+      assertAllRequestChannelsUsed();
       console.log("PASS check-ipc-schema");
     }
 
@@ -392,7 +445,8 @@ describe("runtime-boundaries", () => {
     function checkImport(filename, specifier) {
       if (typeof specifier !== "string") return;
       const relative = path.relative(sourceRoot, filename);
-      const owner = relative.split(path.sep)[0];
+      const sourceParts = relative.split(path.sep);
+      const owner = sourceParts[0];
       if (!allowed[owner]) {
         failures.push(`${relative}: source must belong to an explicit runtime`);
         return;
@@ -406,8 +460,18 @@ describe("runtime-boundaries", () => {
         const targetOwner = path
           .relative(sourceRoot, target)
           .split(path.sep)[0];
-        const sourceParts = relative.split(path.sep);
         const targetParts = path.relative(sourceRoot, target).split(path.sep);
+        const targetRel = targetParts.join("/");
+        if (
+          sourceParts[0] === "main" &&
+          sourceParts[1] === "utils" &&
+          targetParts[0] !== "shared" &&
+          !(targetParts[0] === "main" && targetParts[1] === "utils")
+        ) {
+          failures.push(
+            `${relative}: main/utils cannot import domain module (${specifier})`,
+          );
+        }
         if (
           sourceParts[0] === "renderer" &&
           sourceParts[1] === "shared" &&
@@ -418,18 +482,72 @@ describe("runtime-boundaries", () => {
             `${relative}: renderer/shared cannot depend on application or feature implementations`,
           );
         }
+        if (
+          sourceParts[0] === "renderer" &&
+          sourceParts[1] === "features" &&
+          targetParts[0] === "renderer" &&
+          targetParts[1] === "app"
+        ) {
+          const allowedAppImport =
+            sourceParts[2] === "terminal" &&
+            targetRel === "renderer/app/state/AppContext.jsx";
+          if (!allowedAppImport) {
+            failures.push(
+              `${relative}: renderer/features cannot depend on renderer/app (${specifier})`,
+            );
+          }
+        }
+        if (
+          sourceParts[0] === "renderer" &&
+          sourceParts[1] === "features" &&
+          targetParts[0] === "renderer" &&
+          targetParts[1] === "features" &&
+          sourceParts[2] !== targetParts[2]
+        ) {
+          const sourceFeature = sourceParts[2];
+          const targetFeature = targetParts[2];
+          const allowedCrossFeature =
+            ((sourceFeature === "file-manager" ||
+              sourceFeature === "terminal") &&
+              targetFeature === "transfers") ||
+            (sourceFeature === "settings" &&
+              targetRel ===
+                "renderer/features/connections/components/OpenSSHImportDialog.jsx");
+          if (!allowedCrossFeature) {
+            failures.push(
+              `${relative}: disallowed cross-feature import (${specifier})`,
+            );
+          }
+        }
         if (!allowed[owner].has(targetOwner)) {
           failures.push(
             `${relative}: ${owner} cannot import ${targetOwner} (${specifier})`,
           );
         }
-      } else if (
-        owner !== "main" &&
-        (specifier.startsWith("node:") ||
-          nodeModules.has(specifier) ||
-          (specifier === "electron" && owner !== "preload"))
-      ) {
-        failures.push(`${relative}: ${specifier} is not available in ${owner}`);
+      } else {
+        if (
+          sourceParts[0] === "main" &&
+          sourceParts[1] === "utils" &&
+          !(
+            specifier.startsWith("node:") ||
+            nodeModules.has(specifier) ||
+            specifier === "electron"
+          )
+        ) {
+          failures.push(
+            `${relative}: main/utils cannot import third-party or runtime package (${specifier})`,
+          );
+        }
+        if (
+          owner !== "main" &&
+          (specifier.startsWith("node:") ||
+            nodeModules.has(specifier) ||
+            (specifier === "electron" && owner !== "preload"))
+        ) {
+          failures.push(
+            `${relative}: ${specifier} is not available in ${owner}`,
+          );
+        }
       }
     }
 
@@ -472,6 +590,127 @@ describe("runtime-boundaries", () => {
     walk(sourceRoot);
     assert.deepEqual(failures, [], failures.join("\n"));
     console.log("PASS check-runtime-boundaries");
+  });
+});
+
+describe("module-cycles", () => {
+  it("contains zero circular static imports or requires under src", async () => {
+    const assert = require("node:assert/strict");
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const { parse } = require("@babel/parser");
+    const traverse = require("@babel/traverse").default;
+
+    const root = _path.resolve(_repoRoot, "");
+    const sourceRoot = path.join(root, "src");
+    const graph = new Map();
+
+    function resolveLocal(filename, specifier) {
+      if (typeof specifier !== "string" || !specifier.startsWith(".")) {
+        return null;
+      }
+      const candidate = path.resolve(path.dirname(filename), specifier);
+      const match = [
+        candidate,
+        ...[".js", ".jsx", ".json", "/index.js", "/index.jsx"].map(
+          (suffix) => candidate + suffix,
+        ),
+      ].find((value) => fs.existsSync(value) && fs.statSync(value).isFile());
+      if (!match) return null;
+      const rel = path.relative(root, match).replace(/\\/g, "/");
+      return rel.startsWith("src/") && /\.(js|jsx)$/.test(rel) ? rel : null;
+    }
+
+    function walk(directory) {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const filename = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          walk(filename);
+          continue;
+        }
+        if (!/\.jsx?$/.test(entry.name)) continue;
+        const rel = path.relative(root, filename).replace(/\\/g, "/");
+        const ast = parse(fs.readFileSync(filename, "utf8"), {
+          sourceType: "unambiguous",
+          plugins: ["jsx"],
+        });
+        const deps = new Set();
+        const addEdge = (specifier) => {
+          const target = resolveLocal(filename, specifier);
+          if (target) deps.add(target);
+        };
+        traverse(ast, {
+          ImportDeclaration({ node }) {
+            addEdge(node.source.value);
+          },
+          ExportNamedDeclaration({ node }) {
+            addEdge(node.source?.value);
+          },
+          ExportAllDeclaration({ node }) {
+            addEdge(node.source.value);
+          },
+          CallExpression({ node }) {
+            if (node.callee.name === "require") {
+              addEdge(node.arguments[0]?.value);
+            }
+          },
+        });
+        graph.set(rel, [...deps]);
+      }
+    }
+
+    walk(sourceRoot);
+
+    let index = 0;
+    const indices = new Map();
+    const lowlink = new Map();
+    const stack = [];
+    const onStack = new Set();
+    const cycles = [];
+
+    function strongConnect(node) {
+      indices.set(node, index);
+      lowlink.set(node, index);
+      index += 1;
+      stack.push(node);
+      onStack.add(node);
+
+      for (const dep of graph.get(node) || []) {
+        if (!indices.has(dep)) {
+          strongConnect(dep);
+          lowlink.set(node, Math.min(lowlink.get(node), lowlink.get(dep)));
+        } else if (onStack.has(dep)) {
+          lowlink.set(node, Math.min(lowlink.get(node), indices.get(dep)));
+        }
+      }
+
+      if (lowlink.get(node) === indices.get(node)) {
+        const scc = [];
+        while (true) {
+          const member = stack.pop();
+          onStack.delete(member);
+          scc.push(member);
+          if (member === node) break;
+        }
+        if (scc.length > 1 || (graph.get(node) || []).includes(node)) {
+          cycles.push(scc.reverse());
+        }
+      }
+    }
+
+    for (const node of graph.keys()) {
+      if (!indices.has(node)) {
+        strongConnect(node);
+      }
+    }
+
+    assert.deepEqual(
+      cycles,
+      [],
+      `Found module dependency cycles:\n${cycles
+        .map((cycle) => `- ${cycle.join(" -> ")}`)
+        .join("\n")}`,
+    );
   });
 });
 
@@ -544,12 +783,21 @@ describe("sftp-native-boundary", () => {
     }
 
     function main() {
+      const listJsFiles = (dir) =>
+        fs
+          .readdirSync(path.join(repoRoot, dir), { withFileTypes: true })
+          .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
+          .map((entry) => `${dir}/${entry.name}`)
+          .sort();
+
       const guardedModules = [
         "src/main/native/nativeSftpClient.js",
+        ...listJsFiles("src/main/native/sftp"),
         "src/main/file-transfer/filemanagementService.js",
         "src/main/file-transfer/transferScheduler.js",
         "src/main/file-transfer/resumableTransfer.js",
         "src/main/ipc/handlers/fileHandlers.js",
+        ...listJsFiles("src/main/ipc/handlers/file-domains"),
         "src/main/ipc/handlers/sftpHandlers.js",
       ];
 
@@ -618,5 +866,41 @@ describe("no-node-native-modules", () => {
       "utf8",
     );
     assert.match(forgeConfig, /onlyModules:\s*\[\]/);
+  });
+});
+
+describe("no-ssh2-process-type", () => {
+  it('bans runtime "ssh2" process-type literals across src', () => {
+    const assert = require("node:assert/strict");
+    const fs = require("node:fs");
+    const path = require("node:path");
+
+    const root = _path.resolve(_repoRoot, "");
+    const sourceRoot = path.join(root, "src");
+    const literalPattern =
+      /\btype\s*[!=]==\s*["']ssh2["']|\btype\s*:\s*["']ssh2["']|\[\s*["']ssh2["']/;
+    const violations = [];
+
+    function walk(directory) {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const filename = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          walk(filename);
+          continue;
+        }
+        if (!/\.jsx?$/.test(entry.name)) continue;
+        const source = fs.readFileSync(filename, "utf8");
+        if (literalPattern.test(source)) {
+          violations.push(path.relative(root, filename).replace(/\\/g, "/"));
+        }
+      }
+    }
+
+    walk(sourceRoot);
+    assert.deepEqual(
+      violations,
+      [],
+      `Found legacy "ssh2" process-type literals:\n${violations.join("\n")}`,
+    );
   });
 });

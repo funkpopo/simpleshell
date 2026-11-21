@@ -1,3 +1,5 @@
+// @ts-check
+
 const CONNECTION_FIELDS = [
   "name",
   "host",
@@ -33,6 +35,11 @@ const SSH_AUTH_FIELDS = [
   "protocol",
 ];
 
+/**
+ * @param {readonly Record<string, any>[] | null | undefined} items
+ * @param {Map<string, Record<string, any>>} [result]
+ * @returns {Map<string, Record<string, any>>}
+ */
 function indexConnections(items, result = new Map()) {
   for (const item of Array.isArray(items) ? items : []) {
     if (item?.type === "connection" && item.id) result.set(item.id, item);
@@ -41,7 +48,13 @@ function indexConnections(items, result = new Map()) {
   return result;
 }
 
-// 仅应用用户实际修改的字段，保留当前会话中未持久化的认证答案和运行时信息。
+/**
+ * 仅应用用户实际修改的字段，保留当前会话中未持久化的认证答案和运行时信息。
+ * @param {Record<string, any> | null | undefined} current
+ * @param {Record<string, any> | null | undefined} previous
+ * @param {Record<string, any> | null | undefined} next
+ * @returns {Record<string, any> | null | undefined}
+ */
 function mergeSavedConnectionConfig(current, previous, next) {
   if (!current || !next) return current;
   let merged = current;

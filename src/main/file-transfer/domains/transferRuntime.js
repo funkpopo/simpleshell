@@ -117,8 +117,7 @@ function createTransferRuntime(
       }, TRANSFER_POOL_IDLE_SHUTDOWN_MS);
 
       if (
-        typeof this.dependencies.transferSchedulerIdleTimer.unref ===
-        "function"
+        typeof this.dependencies.transferSchedulerIdleTimer.unref === "function"
       ) {
         this.dependencies.transferSchedulerIdleTimer.unref();
       }

@@ -21,7 +21,7 @@ import {
   cancelTransferWithNotice,
   clearCompletedTransfersForAllTabs,
 } from "./state/globalTransferStore.js";
-import { createAnchoredTransition } from "../../app/lib/launchAnimation.js";
+import { createAnchoredTransition } from "../../shared/lib/launchAnimation.js";
 import useDragResize from "../../shared/hooks/useDragResize.js";
 import { sumTransferFileCount } from "./lib/transferCounts.js";
 import { useTranslation } from "react-i18next";

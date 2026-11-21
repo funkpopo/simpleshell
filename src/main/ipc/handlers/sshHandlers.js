@@ -39,7 +39,7 @@ const { isAuthErrorMessage } = require("../../../shared/errorClassification");
 const {
   isSshStreamUsable,
   extractTabIdFromSessionKey,
-} = require("../../utils/ssh-utils");
+} = require("../../connection/ssh-utils");
 const {
   getPrimaryWindow,
   broadcastToAllWindows,

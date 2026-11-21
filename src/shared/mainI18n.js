@@ -1,16 +1,31 @@
+// @ts-check
+
 /**
  * Main-process / shared translation helper.
  * Loads the same locale JSON files as the renderer and supports {{var}} interpolation.
  * Safe to require from Electron main, workers, and shared CJS modules.
  */
 
-const { isZhLanguage } = require("./connectionErrorAdvice");
+/**
+ * @param {unknown} language
+ * @returns {boolean}
+ */
+function isZhLanguage(language) {
+  return String(language || "zh-CN")
+    .toLowerCase()
+    .startsWith("zh");
+}
 
+/** @type {readonly string[]} */
 const SUPPORTED_LANGUAGES = Object.freeze(["zh-CN", "en-US"]);
 const DEFAULT_LANGUAGE = "zh-CN";
 
+/** @type {Record<string, Record<string, any>> | null} */
 let resourcesByLanguage = null;
 
+/**
+ * @returns {Record<string, Record<string, any>>}
+ */
 function loadLocaleResources() {
   if (resourcesByLanguage) {
     return resourcesByLanguage;
@@ -26,6 +41,10 @@ function loadLocaleResources() {
   return resourcesByLanguage;
 }
 
+/**
+ * @param {unknown} language
+ * @returns {"zh-CN" | "en-US"}
+ */
 function normalizeLanguage(language) {
   if (typeof language !== "string" || !language.trim()) {
     return DEFAULT_LANGUAGE;
@@ -33,7 +52,7 @@ function normalizeLanguage(language) {
 
   const normalized = language.trim();
   if (SUPPORTED_LANGUAGES.includes(normalized)) {
-    return normalized;
+    return /** @type {"zh-CN" | "en-US"} */ (normalized);
   }
 
   const lower = normalized.toLowerCase();
@@ -47,6 +66,11 @@ function normalizeLanguage(language) {
   return isZhLanguage(normalized) ? "zh-CN" : "en-US";
 }
 
+/**
+ * @param {Record<string, any> | null | undefined} root
+ * @param {string} key
+ * @returns {any}
+ */
 function resolvePath(root, key) {
   if (!root || typeof key !== "string" || !key) {
     return undefined;
@@ -60,6 +84,11 @@ function resolvePath(root, key) {
   }, root);
 }
 
+/**
+ * @param {string} template
+ * @param {Record<string, unknown>} [params]
+ * @returns {string}
+ */
 function interpolate(template, params = {}) {
   if (typeof template !== "string") {
     return template;
@@ -77,9 +106,7 @@ function interpolate(template, params = {}) {
 /**
  * Translate a key for the given language.
  * @param {string} key - Dot-path key under translation root
- * @param {object} [options]
- * @param {string} [options.lng] - Language code
- * @param {string} [options.language] - Alias of lng
+ * @param {{ lng?: string, language?: string } & Record<string, unknown>} [options]
  * @returns {string}
  */
 function t(key, options = {}) {
@@ -107,7 +134,7 @@ function t(key, options = {}) {
 
 /**
  * Resolve UI language from configService when available.
- * @param {object} [configService]
+ * @param {{ loadUISettings?: () => ({ language?: string } | null | undefined) } | null} [configService]
  * @returns {string}
  */
 function getUiLanguage(configService) {
@@ -126,8 +153,8 @@ function getUiLanguage(configService) {
 
 /**
  * Resolve language from connection/session config, then UI settings.
- * @param {object} [sessionOrConfig]
- * @param {object} [configService]
+ * @param {{ language?: string, config?: { language?: string }, sshConfig?: { language?: string }, telnetConfig?: { language?: string } } | null} [sessionOrConfig]
+ * @param {{ loadUISettings?: () => ({ language?: string } | null | undefined) } | null} [configService]
  * @returns {string}
  */
 function resolveLanguage(sessionOrConfig, configService) {

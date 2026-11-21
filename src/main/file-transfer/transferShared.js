@@ -35,7 +35,8 @@ function normalizeRemoteTransferPath(remotePath) {
 
 // Windows 文件名限制：非法字符、结尾的点/空格、设备保留名
 const WINDOWS_INVALID_NAME_CHARS = /[<>:"/\\|?*\u0000-\u001f]/g;
-const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$/i;
+const WINDOWS_RESERVED_NAME =
+  /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$/i;
 
 /** 把单个远程路径段转换为本地文件系统可用的名称 */
 function sanitizeLocalPathSegment(segment, platform = process.platform) {

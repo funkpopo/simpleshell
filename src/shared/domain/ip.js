@@ -1,3 +1,5 @@
+// @ts-check
+
 // Simple IP utilities supporting IPv4/IPv6 validation and private/special detection
 // This file is used both in renderer and main (CommonJS export).
 
@@ -5,7 +7,11 @@
 const ipv4Regex =
   /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
 
-// Basic IPv6 validation (supports compressed forms and IPv4-mapped)
+/**
+ * Basic IPv6 validation (supports compressed forms and IPv4-mapped)
+ * @param {unknown} ip
+ * @returns {boolean}
+ */
 function isValidIPv6(ip) {
   if (typeof ip !== "string") return false;
   // Zone index (e.g., %eth0) not supported
@@ -24,6 +30,10 @@ function isValidIPv6(ip) {
   return isValidPureIPv6(ip);
 }
 
+/**
+ * @param {string} ip
+ * @returns {boolean}
+ */
 function isValidPureIPv6(ip) {
   // Only hex, colon, and optional leading/trailing empty from compression
   if (!/^[:0-9a-fA-F]+$/.test(ip)) return false;
@@ -60,17 +70,29 @@ function isValidPureIPv6(ip) {
   return true;
 }
 
+/**
+ * @param {string} ip
+ * @returns {boolean}
+ */
 function isValidIPv4(ip) {
   return ipv4Regex.test(ip);
 }
 
+/**
+ * @param {string} ip
+ * @returns {0 | 4 | 6}
+ */
 function isIP(ip) {
   if (isValidIPv4(ip)) return 4;
   if (isValidIPv6(ip)) return 6;
   return 0;
 }
 
-// Private/special detection
+/**
+ * Private/special detection
+ * @param {string} ip
+ * @returns {boolean}
+ */
 function isPrivateOrSpecialIPv4(ip) {
   if (!isValidIPv4(ip)) return false;
   const [a, b, c, d] = ip.split(".").map((n) => parseInt(n, 10));
@@ -90,6 +112,10 @@ function isPrivateOrSpecialIPv4(ip) {
   return false;
 }
 
+/**
+ * @param {string} ip
+ * @returns {number}
+ */
 function parseFirstHextet(ip) {
   // Normalize start; handle leading '::'
   if (ip.startsWith("::")) return 0;
@@ -98,6 +124,10 @@ function parseFirstHextet(ip) {
   return parseInt(first, 16);
 }
 
+/**
+ * @param {string} ip
+ * @returns {boolean}
+ */
 function isPrivateOrSpecialIPv6(ip) {
   if (!isValidIPv6(ip)) return false;
 
@@ -124,6 +154,10 @@ function isPrivateOrSpecialIPv6(ip) {
   return false;
 }
 
+/**
+ * @param {string} ip
+ * @returns {boolean}
+ */
 function isPrivateOrSpecial(ip) {
   const v = isIP(ip);
   if (v === 4) return isPrivateOrSpecialIPv4(ip);

@@ -3,7 +3,7 @@ import {
   MAX_TERMINAL_SCROLLBACK_LINES,
   MIN_TERMINAL_SCROLLBACK_LINES,
   normalizeTerminalScrollbackLines,
-} from "../../terminal/model/terminalScrollback.js";
+} from "../../../../shared/domain/terminalScrollback.js";
 import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
@@ -22,7 +22,7 @@ import { useNotification } from "../../../shared/notifications/NotificationConte
 import {
   openLogDirectory,
   exportDiagnostics,
-} from "../../diagnostics/diagnosticsActions.js";
+} from "../../../shared/lib/diagnosticsActions.js";
 import {
   sectionCardSx,
   compactFieldSx,

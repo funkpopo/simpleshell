@@ -13,9 +13,10 @@ SSH 运行在 `simpleshell-core` 中，按账号（主机、端口、用户、�
 `NativeSshClient` 的接口沿用应用最初基于的 ssh2 `Client`（`connect` /
 `shell` / `exec` / `end`，`ready` / `error` / `close` / `keyboard-interactive`
 事件，`hostVerifier` 选项）。连接池（`ssh-pool.js`）、重连策略
-（`reconnection-manager.js`）、主机指纹信任（`sshAuthenticationService.js`
-的 `hostVerifier`）和 keyboard-interactive 应答（`ssh-interactive-auth.js`）
-都建立在它之上：
+（`reconnection-manager.js` 组合 `reconnect/` 下的失败策略、重连执行与会话控制）、
+SSH 工具与网络画像（`ssh-utils.js`、`ssh-network-profile.js`）、主机指纹信任
+（`sshHostKeyTrust.js` 与 `sshAuthenticationService.js` 的 `hostVerifier`）和
+keyboard-interactive 应答（`ssh-interactive-auth.js`）都建立在它之上：
 
 - 代理由调用方解析后通过 `options.proxy` 传入，隧道在 core 中建立；
 - 健康检查（`ssh-transport-health.js`）走 `checkTransport()`：keepalive 有

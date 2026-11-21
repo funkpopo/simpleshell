@@ -4,21 +4,21 @@
 composes the following hooks and passes explicit data and commands to panels and
 dialogs. There is no shared mutable controller object or catch-all context.
 
-| Owner                          | State and responsibilities                                                                                                                                  |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hooks/useFileNav.js`          | Current path, history, directory cache, foreground request ordering, chunk buffers, background refresh, directory watches and terminal directory following. |
-| `hooks/useFileSelection.js`    | Search, sort, selection and range anchor. Reconciles refreshed entries by identity and clears selection when navigation changes.                            |
-| `hooks/useFileOps.js`          | Composes file commands, staged deletion with rollback and copy-path operations. Delegates dialog state to focused owners.                                   |
-| `hooks/useFileNameDialog.js`   | Independent create-file, create-folder and rename drafts, captured targets, submission guards and mutation retries.                                         |
-| `hooks/useFileDetails.js`      | Properties request ordering and permission editing against a captured file target.                                                                          |
-| `hooks/useFilePreview.js`      | Preview file/path identity, external editor settings and event subscriptions.                                                                               |
-| `hooks/useTransferTasks.js`    | Upload/download task creation, drop validation and overwrite confirmation, progress updates, completion and task-local cancellation.                        |
-| `hooks/useTransferHosts.js`    | Host metadata requests keyed by the set of transfer sessions; progress ticks never trigger additional IPC reads.                                            |
-| `hooks/useDragDrop.js`         | Native drag gestures and matching browser entries to verified local paths; submits entries to the transfer hook.                                            |
-| `hooks/useFileMenus.js`        | Menu anchors, context targeting and menu actions. Selection changes use selection commands.                                                                 |
-| `hooks/useFileKeyboard.js`     | Keyboard routing to navigation, selection and file commands.                                                                                                |
-| `hooks/useConfirmDialog.js`    | One confirmation at a time. Superseded or unmounted asynchronous confirmations resolve as cancelled.                                                        |
-| `hooks/useFileManagerClose.js` | Close lifecycle and confirmation when the session still has active transfers.                                                                               |
+| Owner                                    | State and responsibilities                                                                                                                                  |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hooks/useFileNav.js`                    | Current path, history, directory cache, foreground request ordering, chunk buffers, background refresh, directory watches and terminal directory following. |
+| `hooks/useFileSelection.js`              | Search, sort, selection and range anchor. Reconciles refreshed entries by identity and clears selection when navigation changes.                            |
+| `hooks/useFileOps.js`                    | Composes file commands, staged deletion with rollback and copy-path operations. Delegates dialog state to focused owners.                                   |
+| `hooks/useFileNameDialog.js`             | Independent create-file, create-folder and rename drafts, captured targets, submission guards and mutation retries.                                         |
+| `hooks/useFileDetails.js`                | Properties request ordering and permission editing against a captured file target.                                                                          |
+| `hooks/useFilePreview.js`                | Preview file/path identity, external editor settings and event subscriptions.                                                                               |
+| `hooks/useTransferTasks.js`              | Upload/download task creation, drop validation and overwrite confirmation, progress updates, completion and task-local cancellation.                        |
+| `../transfers/hooks/useTransferHosts.js` | Host metadata requests keyed by the set of transfer sessions; progress ticks never trigger additional IPC reads.                                            |
+| `hooks/useDragDrop.js`                   | Native drag gestures and matching browser entries to verified local paths; submits entries to the transfer hook.                                            |
+| `hooks/useFileMenus.js`                  | Menu anchors, context targeting and menu actions. Selection changes use selection commands.                                                                 |
+| `hooks/useFileKeyboard.js`               | Keyboard routing to navigation, selection and file commands.                                                                                                |
+| `hooks/useConfirmDialog.js`              | One confirmation at a time. Superseded or unmounted asynchronous confirmations resolve as cancelled.                                                        |
+| `hooks/useFileManagerClose.js`           | Close lifecycle and confirmation when the session still has active transfers.                                                                               |
 
 Directory changes flow from navigation to selection through `files` and
 `selectionResetKey`. Navigation never writes selection state, and file/transfer

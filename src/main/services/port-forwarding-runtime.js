@@ -9,7 +9,7 @@ const {
   networkSnapshot,
   revisionOf,
 } = require("../native/nativePortForwardingConfig");
-const { isSshClientUsable } = require("../utils/ssh-utils");
+const { isSshClientUsable } = require("../connection/ssh-utils");
 
 const nativeRule = (rule) => ({
   id: rule.id,
@@ -78,8 +78,7 @@ class PortForwardingRuntime extends EventEmitter {
     this.proxyManager?.on?.("changed", this.onProxyChanged);
     this._syncNetworkTimer();
     for (const [id, proc] of this.processManager.getAllProcesses())
-      if (["ssh2", "ssh"].includes(proc?.type))
-        this._tabReady(this._tabId(id, proc));
+      if (proc?.type === "ssh") this._tabReady(this._tabId(id, proc));
   }
 
   _tabId(id, proc) {
@@ -155,11 +154,7 @@ class PortForwardingRuntime extends EventEmitter {
     const { proc } = resolved;
     const client =
       proc?.connectionInfo?.client || proc?.client || proc?.process;
-    if (
-      !proc ||
-      !["ssh2", "ssh"].includes(proc.type) ||
-      !isSshClientUsable(client)
-    )
+    if (!proc || proc.type !== "ssh" || !isSshClientUsable(client))
       throw forwardingError("SESSION_UNAVAILABLE", proc?.config?.language);
     return { ...resolved, client };
   }

@@ -64,12 +64,12 @@ function scan(file) {
     const deep = node.source.value.match(/^@mui\/material\/([A-Z]\w+)$/);
     if (deep)
       for (const s of node.specifiers)
-        if (s.type === "ImportDefaultSpecifier") local.set(s.local.name, deep[1]);
+        if (s.type === "ImportDefaultSpecifier")
+          local.set(s.local.name, deep[1]);
   }
 
   const problems = [];
-  const where = (node) =>
-    `${path.relative(ROOT, file)}:${node.loc.start.line}`;
+  const where = (node) => `${path.relative(ROOT, file)}:${node.loc.start.line}`;
   const checkClasses = (node, text) => {
     for (const [, component, key] of text.matchAll(
       /Mui([A-Z]\w*)-([A-Za-z0-9]+)/g,

@@ -492,7 +492,15 @@ const ResourceMonitorContent = memo(
           ) : systemInfo ? (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
               {/* 系统信息卡片 */}
-              <Paper elevation={0} sx={{ borderRadius: "var(--radius-md, 6px)", border: "1px solid", borderColor: "divider", bgcolor: "background.default" }}>
+              <Paper
+                elevation={0}
+                sx={{
+                  borderRadius: "var(--radius-md, 6px)",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: "background.default",
+                }}
+              >
                 <AccordionHeader
                   title={
                     systemInfo.isLocal
@@ -535,7 +543,15 @@ const ResourceMonitorContent = memo(
               {displayMode === "independent" ? (
                 <>
                   {/* CPU信息卡片 */}
-                  <Paper elevation={0} sx={{ borderRadius: "var(--radius-md, 6px)", border: "1px solid", borderColor: "divider", bgcolor: "background.default" }}>
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      borderRadius: "var(--radius-md, 6px)",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      bgcolor: "background.default",
+                    }}
+                  >
                     <AccordionHeader
                       title={t("resourceMonitor.cpu")}
                       icon={
@@ -583,7 +599,15 @@ const ResourceMonitorContent = memo(
                   </Paper>
 
                   {/* 内存信息卡片 */}
-                  <Paper elevation={0} sx={{ borderRadius: "var(--radius-md, 6px)", border: "1px solid", borderColor: "divider", bgcolor: "background.default" }}>
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      borderRadius: "var(--radius-md, 6px)",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      bgcolor: "background.default",
+                    }}
+                  >
                     <AccordionHeader
                       title={t("resourceMonitor.memory")}
                       icon={
@@ -633,7 +657,15 @@ const ResourceMonitorContent = memo(
 
               {/* 历史趋势图表卡片：仅在「历史趋势」模式下显示，与独立 CPU/内存卡片二选一 */}
               {displayMode === "trend" ? (
-                <Paper elevation={0} sx={{ borderRadius: "var(--radius-md, 6px)", border: "1px solid", borderColor: "divider", bgcolor: "background.default" }}>
+                <Paper
+                  elevation={0}
+                  sx={{
+                    borderRadius: "var(--radius-md, 6px)",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    bgcolor: "background.default",
+                  }}
+                >
                   <AccordionHeader
                     title={t("resourceMonitor.historyTitle")}
                     icon={
@@ -711,7 +743,15 @@ const ResourceMonitorContent = memo(
               ) : null}
 
               {/* 磁盘分区用量卡片 */}
-              <Paper elevation={0} sx={{ borderRadius: "var(--radius-md, 6px)", border: "1px solid", borderColor: "divider", bgcolor: "background.default" }}>
+              <Paper
+                elevation={0}
+                sx={{
+                  borderRadius: "var(--radius-md, 6px)",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: "background.default",
+                }}
+              >
                 <AccordionHeader
                   title={t("resourceMonitor.disksTitle")}
                   icon={<StorageIcon sx={{ color: theme.palette.info.main }} />}
@@ -801,7 +841,15 @@ const ResourceMonitorContent = memo(
               </Paper>
 
               {/* 进程列表卡片 */}
-              <Paper elevation={0} sx={{ borderRadius: "var(--radius-md, 6px)", border: "1px solid", borderColor: "divider", bgcolor: "background.default" }}>
+              <Paper
+                elevation={0}
+                sx={{
+                  borderRadius: "var(--radius-md, 6px)",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: "background.default",
+                }}
+              >
                 <AccordionHeader
                   title={t("resourceMonitor.processes")}
                   icon={<Memory sx={{ color: theme.palette.secondary.main }} />}

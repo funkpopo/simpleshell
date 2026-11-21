@@ -25,7 +25,7 @@ describe("ssh-auth-config", () => {
     const {
       setTrustedHostFingerprint,
       getTrustedHostFingerprint,
-    } = require("../../src/main/utils/sshHostKeyTrust");
+    } = require("../../src/main/connection/sshHostKeyTrust");
 
     const tick = () => new Promise((resolve) => setImmediate(resolve));
     const processes = new Map();

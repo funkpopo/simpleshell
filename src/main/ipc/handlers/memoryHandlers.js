@@ -2,10 +2,10 @@ const path = require("path");
 const fs = require("fs").promises;
 const { app } = require("electron");
 const { getTempDirectory } = require("../../utils/appPaths");
-const fileCache = require("../../utils/fileCache");
+const fileCache = require("../../storage/fileCache");
 const {
   mainProcessResourceManager,
-} = require("../../utils/mainProcessResourceManager");
+} = require("../../diagnostics/mainProcessResourceManager");
 const processManager = require("../../process/processManager");
 const aiWorkerManager = require("../../native/aiWorkerManager");
 const {

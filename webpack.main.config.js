@@ -1,37 +1,13 @@
 const path = require("path");
 const fs = require("fs");
 
-// Asset relocation for the ssh2 fallback backend (its Pageant helper
-// `pagent.exe` and optional crypto binding); removed together with ssh2.
-// Main bundle only: the relocator injects a `__dirname` runtime that breaks
-// the sandboxed renderer and preload.
-const nativeModuleRules = [
-  {
-    // We're specifying native_modules in the test because the asset relocator loader generates a
-    // "fake" .node file which is really a cjs file.
-    test: /native_modules[/\\].+\.node$/,
-    use: "node-loader",
-  },
-  {
-    test: /[/\\]node_modules[/\\].+\.(m?js|node)$/,
-    exclude: /[/\\]node_modules[/\\]pdfjs-dist[/\\]/,
-    parser: { amd: false },
-    use: {
-      loader: "@vercel/webpack-asset-relocator-loader",
-      options: {
-        outputAssetBase: "native_modules",
-      },
-    },
-  },
-];
-
 module.exports = (_env, { mode }) => ({
   devtool: mode === "development" ? "eval-cheap-module-source-map" : false,
   entry: {
     index: "./src/main/index.js",
   },
   module: {
-    rules: [...nativeModuleRules, ...require("./webpack.rules")(mode)],
+    rules: require("./webpack.rules")(mode),
   },
   // 确保worker可以正确解析
   node: {

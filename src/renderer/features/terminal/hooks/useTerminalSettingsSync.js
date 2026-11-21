@@ -6,7 +6,7 @@ import {
 import {
   DEFAULT_TERMINAL_SCROLLBACK_LINES,
   normalizeTerminalScrollbackLines,
-} from "../model/terminalScrollback.js";
+} from "../../../../shared/domain/terminalScrollback.js";
 import { getTerminalFontFamily } from "../../../shared/lib/fonts.js";
 import { terminalCache } from "../runtime/terminalSessionStore.js";
 

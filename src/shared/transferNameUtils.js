@@ -1,5 +1,11 @@
+// @ts-check
+
 // 传输条目显示名工具：主进程与渲染进程共用的纯字符串逻辑（零依赖）
 
+/**
+ * @param {unknown} name
+ * @returns {string}
+ */
 function normalizeTransferName(name) {
   return typeof name === "string" ? name.trim() : "";
 }
@@ -8,6 +14,9 @@ function normalizeTransferName(name) {
  * 由条目名列表构建传输显示名。
  * 多条目时优先使用 formatMultipleName({firstName, count}) 回调
  * （渲染进程传 i18n 模板、主进程传中文模板），未提供时回退 "name (count)"。
+ * @param {readonly unknown[] | null | undefined} names
+ * @param {(params: { firstName: string, count: number }) => string} [formatMultipleName]
+ * @returns {string}
  */
 function buildTransferDisplayName(names, formatMultipleName) {
   const normalizedNames = Array.from(
@@ -32,6 +41,10 @@ function buildTransferDisplayName(names, formatMultipleName) {
   return `${normalizedNames[0]} (${normalizedNames.length})`;
 }
 
+/**
+ * @param {unknown} targetPath
+ * @returns {string}
+ */
 function getTopLevelTransferItemName(targetPath) {
   const normalizedPath = String(targetPath || "")
     .replace(/\\/g, "/")

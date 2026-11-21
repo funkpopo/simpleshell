@@ -6,7 +6,7 @@ import { PassThrough } from "node:stream";
 const require = createRequire(import.meta.url);
 vi.mock("../../src/main/utils/logger", () => ({ logToFile: () => {} }));
 const protocol = require("../../src/main/native/coreProtocol");
-const crashReporter = require("../../src/main/utils/crashReporter");
+const crashReporter = require("../../src/main/diagnostics/crashReporter");
 crashReporter.recordCrashMarker = () => null;
 const { CoreSupervisor } = require("../../src/main/native/coreSupervisor");
 

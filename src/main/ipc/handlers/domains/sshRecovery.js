@@ -168,7 +168,7 @@ function createSshRecovery(
       }
 
       const activeProc = procInfo || tabProcInfo;
-      if (!activeProc || activeProc.type !== "ssh2") {
+      if (!activeProc || activeProc.type !== "ssh") {
         const sshConfig =
           activeProc?.config || connectionInfoFromPool?.config || null;
         const message = getTerminalText(

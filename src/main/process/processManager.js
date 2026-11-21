@@ -44,7 +44,7 @@ function getProcess(processId) {
   // still point to the stale client instance.
   if (
     proc &&
-    proc.type === "ssh2" &&
+    proc.type === "ssh" &&
     proc.connectionInfo &&
     proc.connectionInfo.client
   ) {
@@ -199,7 +199,7 @@ const detachAndTerminateProcess = (id, procRecord, logContext = "") => {
   }
 
   // 对于SSH连接，关闭stream
-  if (procRecord.type === "ssh2" && procRecord.stream) {
+  if (procRecord.type === "ssh" && procRecord.stream) {
     try {
       procRecord.stream.close();
       logToFile(`关闭SSH stream${logContext}: ${id}`, "INFO");
@@ -234,7 +234,7 @@ function cleanupProcess(processId, options = {}) {
     }
 
     // 调用连接释放回调
-    if (onConnectionRelease && proc.type === "ssh2" && proc.connectionInfo) {
+    if (onConnectionRelease && proc.type === "ssh" && proc.connectionInfo) {
       onConnectionRelease(proc);
     }
 
@@ -286,7 +286,7 @@ function cleanupAllProcesses(options = {}) {
       }
 
       // 调用连接释放回调
-      if (onConnectionRelease && proc.type === "ssh2" && proc.connectionInfo) {
+      if (onConnectionRelease && proc.type === "ssh" && proc.connectionInfo) {
         onConnectionRelease(proc);
       }
 

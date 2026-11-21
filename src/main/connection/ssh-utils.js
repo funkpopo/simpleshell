@@ -1,6 +1,6 @@
 const fs = require("fs");
-const { logToFile } = require("./logger");
-const { sanitizePathForLog } = require("./log-sanitizer");
+const { logToFile } = require("../utils/logger");
+const { sanitizePathForLog } = require("../utils/log-sanitizer");
 const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
 
 /**

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, memo, useTransition } from "react";
 import { createFloatingDialog } from "../../shared/ui/styledDialogs.jsx";
 import { DialogContent, Alert } from "@mui/material";
 import AISettings from "./AISettings";
-import { createAnchoredTransition } from "../../app/lib/launchAnimation.js";
+import { createAnchoredTransition } from "../../shared/lib/launchAnimation.js";
 import {
   DEFAULT_HEIGHT,
   DEFAULT_WIDTH,

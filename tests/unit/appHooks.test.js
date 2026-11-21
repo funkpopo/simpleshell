@@ -48,6 +48,7 @@ afterEach(async () => {
 it.each(["left", "right"])(
   "persists the final %s sidebar width and releases pointer listeners",
   async (sidebarPosition) => {
+    vi.useFakeTimers();
     const setSidebarWidth = vi.fn();
     const setUiSettingsSnapshot = vi.fn();
     window.terminalAPI.loadUISettings = vi
@@ -71,13 +72,14 @@ it.each(["left", "right"])(
       }),
     );
     expect(hook.current.sidebarResizing).toBe(true);
-    await act(() =>
+    await act(() => {
       document.dispatchEvent(
         new MouseEvent("pointermove", {
           clientX: sidebarPosition === "left" ? 540 : 460,
         }),
-      ),
-    );
+      );
+      vi.runAllTimers();
+    });
     expect(setSidebarWidth).toHaveBeenLastCalledWith(340);
     await act(async () => document.dispatchEvent(new Event("pointerup")));
     expect(hook.current.sidebarResizing).toBe(false);

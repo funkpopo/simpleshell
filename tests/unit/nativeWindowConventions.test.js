@@ -36,14 +36,18 @@ describe("window-native-feel", () => {
   }
 
   function getFunctionSource(source, name) {
-    const ast = babel.parseSync(source, { configFile: false, babelrc: false });
     let functionSource;
-    const visit = ({ node }) => {
-      if ((node.id?.name || node.key?.name) === name) {
-        functionSource = source.slice(node.start, node.end);
-      }
-    };
-    babel.traverse(ast, { ClassMethod: visit, FunctionDeclaration: visit });
+    for (const chunk of source.split("/* @source-file */")) {
+      if (!chunk.trim()) continue;
+      const ast = babel.parseSync(chunk, { configFile: false, babelrc: false });
+      const visit = ({ node }) => {
+        if ((node.id?.name || node.key?.name) === name) {
+          functionSource = chunk.slice(node.start, node.end);
+        }
+      };
+      babel.traverse(ast, { ClassMethod: visit, FunctionDeclaration: visit });
+      if (functionSource) break;
+    }
     assert.ok(functionSource, `Missing function: ${name}`);
     return functionSource;
   }
@@ -71,16 +75,22 @@ describe("window-native-feel", () => {
   const globalCssSource = readSource("src/renderer/styles/global.css");
   const fileManagerSource =
     require("../helpers/renderer-sources.js").collectFileManagerSources();
-  const fileHandlersSource = readSource(
-    "src/main/ipc/handlers/fileHandlers.js",
-  );
+  const fileHandlersSource = [
+    readSource("src/main/ipc/handlers/fileHandlers.js"),
+    require("../helpers/renderer-sources.js").collectDirectorySources(
+      "src/main/ipc/handlers/file-domains",
+    ),
+  ].join("\n/* @source-file */\n");
   const filemanagementServiceSource =
     require("../helpers/renderer-sources.js").collectDirectorySources(
       "src/main/file-transfer",
     );
-  const nativeSftpClientSource = readSource(
-    "src/main/native/nativeSftpClient.js",
-  );
+  const nativeSftpClientSource = [
+    readSource("src/main/native/nativeSftpClient.js"),
+    require("../helpers/renderer-sources.js").collectDirectorySources(
+      "src/main/native/sftp",
+    ),
+  ].join("\n/* @source-file */\n");
   const ipcTraceSource = readSource("src/main/ipc/ipcTrace.js");
   const preloadSource =
     require("../helpers/preload-sources").collectPreloadSources();
@@ -397,7 +407,7 @@ describe("window-native-feel", () => {
 
     assertContains(
       desktopIntegrationSource,
-      /safeSendToRenderer\("app:open-files"/,
+      /safeSendToRenderer\(\s*IPC_EVENT_CHANNELS\.APP_OPEN_FILES/,
       "Validated system-opened local files must be sent to the renderer through a declared event.",
     );
 

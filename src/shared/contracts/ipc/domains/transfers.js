@@ -156,12 +156,6 @@ const TRANSFERS_CHANNEL_DEFINITIONS = Object.freeze([
     args([objectArg()]),
   ),
   defineEvent(
-    "TRANSFER_PROGRESS_BATCH",
-    "transfer-progress:batch",
-    "file",
-    args([arrayArg()]),
-  ),
-  defineEvent(
     "DYNAMIC_UPLOAD_PROGRESS",
     "upload-progress-*",
     "file",

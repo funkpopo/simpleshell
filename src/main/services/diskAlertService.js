@@ -16,7 +16,7 @@ const { broadcastToAllWindows } = require("../window/windowManager");
 const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
 const processManager = require("../process/processManager");
 const configService = require("../settings/configService");
-const { isSshClientUsable } = require("../utils/ssh-utils");
+const { isSshClientUsable } = require("../connection/ssh-utils");
 const {
   getLocalDiskUsage,
   getRemoteDiskUsage,
@@ -149,7 +149,7 @@ class DiskAlertService {
       // 告警时所有引用该连接的标签页都应收到事件
       const clientGroups = new Map();
       for (const [, proc] of processManager.getAllProcesses()) {
-        if (!proc || proc.type !== "ssh2") continue;
+        if (!proc || proc.type !== "ssh") continue;
         const client = proc.connectionInfo?.client || proc.process;
         if (!client || !isSshClientUsable(client)) continue;
 

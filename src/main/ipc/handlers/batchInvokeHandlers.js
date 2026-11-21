@@ -129,10 +129,22 @@ async function batchInvoke(_event, calls) {
   return results;
 }
 
+class BatchInvokeHandlers {
+  getHandlers() {
+    return [
+      {
+        channel: IPC_REQUEST_CHANNELS.IPC_BATCH_INVOKE,
+        category: "ipc",
+        handler: batchInvoke,
+      },
+    ];
+  }
+}
+
 function registerBatchInvokeHandlers(ipcMain, safeHandle) {
   safeHandle(ipcMain, IPC_REQUEST_CHANNELS.IPC_BATCH_INVOKE, batchInvoke);
 }
 
-module.exports = {
-  registerBatchInvokeHandlers,
-};
+module.exports = BatchInvokeHandlers;
+module.exports.BatchInvokeHandlers = BatchInvokeHandlers;
+module.exports.registerBatchInvokeHandlers = registerBatchInvokeHandlers;

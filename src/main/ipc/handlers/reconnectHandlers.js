@@ -10,7 +10,7 @@ const {
   normalizeLanguage,
   resolveLanguage,
 } = require("../../../shared/mainI18n");
-const { extractTabIdFromSessionKey } = require("../../utils/ssh-utils");
+const { extractTabIdFromSessionKey } = require("../../connection/ssh-utils");
 const { broadcastToAllWindows } = require("../../window/windowManager");
 
 // 存储重连事件监听器

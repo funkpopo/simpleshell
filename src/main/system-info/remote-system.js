@@ -5,7 +5,7 @@ const remoteProcessListCache = new WeakMap();
 
 const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
 const configService = require("../settings/configService");
-const { isSshClientUsable } = require("../utils/ssh-utils");
+const { isSshClientUsable } = require("../connection/ssh-utils");
 
 const systemInfoText = (key, params = {}) =>
   translateLocale(key, { lng: getUiLanguage(configService), ...params });

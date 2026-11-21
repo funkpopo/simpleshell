@@ -10,12 +10,12 @@ const {
   updateLogConfig,
 } = require("../../utils/logger");
 const { getTempDirectory } = require("../../utils/appPaths");
-const runtimeFileLifecycle = require("../../utils/runtimeFileLifecycle");
+const runtimeFileLifecycle = require("../../storage/runtimeFileLifecycle");
 const { broadcastToAllWindows } = require("../../window/windowManager");
 const {
   getErrorReportingStatus,
   saveErrorReportingSettings,
-} = require("../../utils/crashReporter");
+} = require("../../diagnostics/crashReporter");
 const {
   applyDesktopIntegrationSettings,
 } = require("../../bootstrap/desktopIntegration");

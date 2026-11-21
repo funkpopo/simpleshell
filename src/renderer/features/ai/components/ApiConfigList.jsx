@@ -102,10 +102,7 @@ export default function ApiConfigList({
                         mb: 0.75,
                       }}
                     >
-                      <Typography
-                        sx={{ fontWeight: 600 }}
-                        variant="subtitle2"
-                      >
+                      <Typography sx={{ fontWeight: 600 }} variant="subtitle2">
                         {apiConfig.model || apiConfig.name}
                       </Typography>
                       {currentApiId === apiConfig.id && (
@@ -135,7 +132,15 @@ export default function ApiConfigList({
                   </Box>
                 </Box>
               </CardContent>
-              <CardActions sx={{ px: 1.5, pt: 0, pb: 1, justifyContent: "flex-end", gap: 0.5 }}>
+              <CardActions
+                sx={{
+                  px: 1.5,
+                  pt: 0,
+                  pb: 1,
+                  justifyContent: "flex-end",
+                  gap: 0.5,
+                }}
+              >
                 <Box>
                   {currentApiId !== apiConfig.id && (
                     <Button

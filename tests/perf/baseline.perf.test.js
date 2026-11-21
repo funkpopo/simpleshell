@@ -188,7 +188,7 @@ function attachTerminalPipeline(stream, processId) {
   const deps = {
     terminalIOMailboxManager: manager,
     childProcesses: new Map([
-      [processId, { stream, ready: true, type: "ssh2" }],
+      [processId, { stream, ready: true, type: "ssh" }],
     ]),
     _getMainWindow: () => mainWindow,
     connectionManager: { releaseSSHConnection() {} },

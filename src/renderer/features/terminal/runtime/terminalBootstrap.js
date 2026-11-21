@@ -7,7 +7,7 @@ import {
   DEFAULT_TERMINAL_LINE_HEIGHT,
   getTerminalTheme,
 } from "../model/terminalTheme.js";
-import { DEFAULT_TERMINAL_SCROLLBACK_LINES } from "../model/terminalScrollback.js";
+import { DEFAULT_TERMINAL_SCROLLBACK_LINES } from "../../../../shared/domain/terminalScrollback.js";
 import { FIRA_CODE_FONT_FAMILY } from "../../../shared/lib/fonts.js";
 import {
   clearPendingWrappedInputRefresh,

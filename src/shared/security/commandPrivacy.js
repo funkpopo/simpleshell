@@ -1,5 +1,11 @@
+// @ts-check
+
 // Deliberately omit the whole command: redacted commands can still leak data
 // and are unsafe to offer as executable history suggestions.
+/**
+ * @param {unknown} command
+ * @returns {boolean}
+ */
 function isSensitiveCommand(command) {
   if (typeof command !== "string") return true;
   return (
@@ -15,6 +21,11 @@ function isSensitiveCommand(command) {
   );
 }
 
+/**
+ * @template {{ command?: unknown }} T
+ * @param {readonly T[] | null | undefined} history
+ * @returns {T[]}
+ */
 function filterCommandHistory(history) {
   return Array.isArray(history)
     ? history.filter(

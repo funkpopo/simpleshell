@@ -357,7 +357,9 @@ const fileListPositions = new WeakMap();
 const getFileListPositions = (fileList) => {
   let positions = fileListPositions.get(fileList);
   if (!positions) {
-    positions = new Map(fileList.map((item, position) => [item.index, position]));
+    positions = new Map(
+      fileList.map((item, position) => [item.index, position]),
+    );
     fileListPositions.set(fileList, positions);
   }
   return positions;

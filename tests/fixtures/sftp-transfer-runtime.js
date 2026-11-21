@@ -5,11 +5,17 @@ const path = require("node:path");
 function loadTransferRuntime() {
   const children = new Set();
   const logs = [];
-  for (const [name, exports] of [
-    ["logger", { logToFile: (message) => logs.push(message) }],
-    ["crashReporter", { recordCrashMarker: () => {} }],
+  for (const [modulePath, exports] of [
+    [
+      "../../src/main/utils/logger",
+      { logToFile: (message) => logs.push(message) },
+    ],
+    [
+      "../../src/main/diagnostics/crashReporter",
+      { recordCrashMarker: () => {} },
+    ],
   ]) {
-    const filename = require.resolve(`../../src/main/utils/${name}`);
+    const filename = require.resolve(modulePath);
     require.cache[filename] = { id: filename, filename, loaded: true, exports };
   }
   const native = require("../../src/main/native/nativeSftpClient");

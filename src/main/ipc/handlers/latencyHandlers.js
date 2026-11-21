@@ -101,7 +101,7 @@ class LatencyHandlers {
     // 从进程管理器获取SSH连接实例（tabId 对应的 NativeSshClient）
     const processManager = require("../../process/processManager");
     const proc = processManager.getProcess(tabId);
-    if (!proc || proc.type !== "ssh2" || !proc.process) {
+    if (!proc || proc.type !== "ssh" || !proc.process) {
       const { t: mainT, getUiLanguage } = require("../../../shared/mainI18n");
       const configService = require("../../settings/configService");
       throw new Error(

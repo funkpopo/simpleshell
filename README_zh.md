@@ -151,9 +151,12 @@ npm run start
 ```bash
 npm start                 # 按需构建原生服务后，以 Forge 开发模式启动
 npm run lint              # 对整个仓库运行 ESLint
+npm run typecheck         # 检查 src/preload 与 src/shared 的 JSDoc 类型
 npm test                  # 单元、契约与架构测试（Vitest）
+npm run check             # 完整静态与单元测试校验（lint + typecheck + test）
 npm run test:integration  # Electron、原生服务与生产构建集成测试
 npm run format            # Prettier 格式化
+npm run format:check      # Prettier 格式校验
 npm run package           # 为当前平台打包应用
 npm run make              # 构建可分发的安装包
 ```
@@ -162,8 +165,8 @@ npm run make              # 构建可分发的安装包
 `cargo build --locked --manifest-path native-services/Cargo.toml`。
 
 Preload 契约使用 JSDoc 和 `src/shared/contracts/preload.d.ts` 中的共享类型声明。
-`npm run typecheck`（`npm test` 中同样会执行）根据 `tsconfig.preload.json`
-检查全部 `src/preload/**/*.js` 与 `src/shared/contracts/**` 模块；preload 中每个
+`npm run typecheck`（`npm run check` 与 `npm test` 中同样会执行）根据 `tsconfig.preload.json`
+检查全部 `src/preload/**/*.js` 与 `src/shared/**/*.js` 模块；preload 中每个
 `ipcRenderer.invoke` / `send` 都会对照 `src/shared/contracts/ipc/domains/` 下按领域划分的
 通道 schema 检查参数，主进程运行时校验使用的也是同一套 schema，
 并开启完整的 `strict` 检查（包括 `noImplicitAny` 和 `strictFunctionTypes`）。

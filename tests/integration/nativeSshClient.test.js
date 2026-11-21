@@ -3,11 +3,11 @@ import { createRequire } from "node:module";
 import { once } from "node:events";
 
 const require = createRequire(import.meta.url);
-for (const [name, exports] of [
-  ["logger", { logToFile: () => {} }],
-  ["crashReporter", { recordCrashMarker: () => {} }],
+for (const [modulePath, exports] of [
+  ["../../src/main/utils/logger", { logToFile: () => {} }],
+  ["../../src/main/diagnostics/crashReporter", { recordCrashMarker: () => {} }],
 ]) {
-  const filename = require.resolve(`../../src/main/utils/${name}`);
+  const filename = require.resolve(modulePath);
   require.cache[filename] = { id: filename, filename, loaded: true, exports };
 }
 const {

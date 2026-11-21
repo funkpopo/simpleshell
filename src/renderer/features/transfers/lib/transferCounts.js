@@ -67,7 +67,10 @@ const getDisplayCompletedFileCount = (transfer) => {
   }
 
   // 确保已完成数不超过总数
-  return Math.min(Math.max(0, Number(transfer.processedFiles) || 0), totalFiles);
+  return Math.min(
+    Math.max(0, Number(transfer.processedFiles) || 0),
+    totalFiles,
+  );
 };
 
 export {

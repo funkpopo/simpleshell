@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { randomUUID } = require("node:crypto");
-const { getTempDirectory } = require("./appPaths");
+const { getTempDirectory } = require("../utils/appPaths");
 const runtimeFileLifecycle = require("./runtimeFileLifecycle");
 
 const LIFECYCLE_RESOURCE_NAME = "file-cache";

@@ -9,7 +9,7 @@ const {
   getHostCacheKey,
   normalizeSshHostFingerprint,
   setTrustedHostFingerprint,
-} = require("../utils/sshHostKeyTrust");
+} = require("./sshHostKeyTrust");
 
 // Owns authentication queues and host trust independently of IPC/session routing.
 class SSHAuthenticationService {

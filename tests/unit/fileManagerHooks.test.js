@@ -10,7 +10,7 @@ import useConfirmDialog from "../../src/renderer/features/file-manager/hooks/use
 import useDragDrop from "../../src/renderer/features/file-manager/hooks/useDragDrop.js";
 import useTransferTasks from "../../src/renderer/features/file-manager/hooks/useTransferTasks.js";
 import useFileOps from "../../src/renderer/features/file-manager/hooks/useFileOps.js";
-import useTransferHosts from "../../src/renderer/features/file-manager/hooks/useTransferHosts.js";
+import useTransferHosts from "../../src/renderer/features/transfers/hooks/useTransferHosts.js";
 import useFileKeyboard from "../../src/renderer/features/file-manager/hooks/useFileKeyboard.js";
 import FileManager from "../../src/renderer/features/file-manager/index.jsx";
 import CreateFileDialog from "../../src/renderer/features/file-manager/dialogs/CreateFileDialog.jsx";

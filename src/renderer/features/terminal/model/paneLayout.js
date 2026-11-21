@@ -8,6 +8,8 @@
  *   避免触碰主进程的连接别名（childProcesses / 连接池 tab 引用）。
  */
 
+import { getSessionConnectionInfo } from "../../../shared/lib/sessionConnectionInfo.js";
+
 export const MAX_PANES = 4;
 
 /**
@@ -27,16 +29,7 @@ export const isSessionFileManagerOpen = (state, session) =>
   session?.type === "ssh" &&
   Boolean(state.fileManagerOpenByTabId[session.parentTabId]);
 
-export const getSessionConnectionInfo = (session) =>
-  session
-    ? {
-        sessionKey: session.sessionKey,
-        host: session.config?.host ?? session.label,
-        port: session.config?.port,
-        username: session.config?.username,
-        type: session.type.toUpperCase(),
-      }
-    : null;
+export { getSessionConnectionInfo };
 
 // 所有会话入口共享此描述；配置、协议和进程绝不借用宿主会话。
 export const getSessionDescriptor = (

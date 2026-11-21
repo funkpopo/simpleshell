@@ -145,7 +145,11 @@ export default function ApiConfigForm({
               sx={{ mt: 0.25 }}
               aria-label={t("aiSettings.fetchModels")}
             >
-              {fetchingModels ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
+              {fetchingModels ? (
+                <CircularProgress size={18} />
+              ) : (
+                <RefreshIcon fontSize="small" />
+              )}
             </IconButton>
           </span>
         </Tooltip>
@@ -159,7 +163,9 @@ export default function ApiConfigForm({
           />
         }
         label={
-          <Typography variant="body2">{t("aiSettings.streamEnabled")}</Typography>
+          <Typography variant="body2">
+            {t("aiSettings.streamEnabled")}
+          </Typography>
         }
       />
     </Box>

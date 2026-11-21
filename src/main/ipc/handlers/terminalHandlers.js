@@ -160,7 +160,7 @@ class TerminalHandlers {
 
       // 检测是否包含中文字符
       const containsChinese = /[\u4e00-\u9fa5]/.test(input);
-      if (containsChinese && procInfo.type === "ssh2") {
+      if (containsChinese && procInfo.type === "ssh") {
         // 确保中文字符能够正确处理
         // 对于SSH连接，我们需要确保数据是UTF-8编码的
         try {
@@ -179,12 +179,12 @@ class TerminalHandlers {
       // 检测Tab键 (ASCII 9, \t, \x09)
       if (input === "\t" || input === "\x09") {
         // 直接发送到进程
-        if (procInfo.type === "ssh2") {
+        if (procInfo.type === "ssh") {
           if (procInfo.stream) {
             procInfo.stream.write(processedData);
             return true;
           } else {
-            logToFile("SSH2 stream not available", "ERROR");
+            logToFile("SSH stream not available", "ERROR");
             return false;
           }
         } else if (typeof procInfo.process.write === "function") {
@@ -203,7 +203,7 @@ class TerminalHandlers {
       // a second command buffer; editor state comes from the renderer.
 
       // 发送数据到进程
-      if (procInfo.type === "ssh2") {
+      if (procInfo.type === "ssh") {
         if (procInfo.stream) {
           // 修改：对于SSH连接，确保使用UTF-8编码写入数据
           if (containsChinese) {
@@ -214,7 +214,7 @@ class TerminalHandlers {
           }
           return true;
         } else {
-          logToFile("SSH2 stream not available", "ERROR");
+          logToFile("SSH stream not available", "ERROR");
           return false;
         }
       } else if (typeof procInfo.process.write === "function") {
@@ -287,7 +287,7 @@ class TerminalHandlers {
         }
 
         // 如果是SSH连接，释放连接池中的连接引用
-        if (proc.type === "ssh2" && proc.connectionInfo) {
+        if (proc.type === "ssh" && proc.connectionInfo) {
           // 标记为用户主动断开，避免自动重连误触发
           proc.connectionInfo.closeReason = "user";
           proc.connectionInfo.intentionalClose = true;
@@ -350,7 +350,7 @@ class TerminalHandlers {
         }
 
         // 对于SSH连接，关闭stream而不是直接kill SSH客户端
-        if (proc.type === "ssh2" && proc.stream) {
+        if (proc.type === "ssh" && proc.stream) {
           try {
             proc.stream.close();
             logToFile(`关闭SSH stream for processId: ${processId}`, "INFO");
@@ -470,8 +470,8 @@ class TerminalHandlers {
 
     try {
       // 针对不同类型的进程进行不同的处理
-      if (procInfo.type === "ssh2" && procInfo.stream) {
-        // SSH2连接使用stream.setWindow方法调整大小
+      if (procInfo.type === "ssh" && procInfo.stream) {
+        // SSH连接使用stream.setWindow方法调整大小
         if (typeof procInfo.stream.setWindow === "function") {
           procInfo.stream.setWindow(rows, cols);
           return true;

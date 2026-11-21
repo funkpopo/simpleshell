@@ -9,7 +9,7 @@ describe("process registry keys one session record by processId and tabId", () =
   it("lists each aliased session once and still removes every key on cleanup", () => {
     const released = [];
     const session = {
-      type: "ssh2",
+      type: "ssh",
       tabId: "tab-1",
       config: { tabId: "tab-1" },
       connectionInfo: { key: "conn-1" },

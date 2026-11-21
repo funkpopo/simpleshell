@@ -52,7 +52,7 @@ let handlers;
 beforeEach(() => {
   vi.resetAllMocks();
   processManager.getProcess.mockReturnValue({
-    type: "ssh2",
+    type: "ssh",
     config: { host: "example.test" },
     process: {},
   });

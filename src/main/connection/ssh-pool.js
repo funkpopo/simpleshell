@@ -13,8 +13,8 @@ const proxyManager = require("../proxy/proxy-manager");
 const {
   processSSHPrivateKeyAsync,
   buildSshConnectOptions,
-} = require("../utils/ssh-utils");
-const { resolveSshNetworkProfile } = require("../utils/ssh-network-profile");
+} = require("./ssh-utils");
+const { resolveSshNetworkProfile } = require("./ssh-network-profile");
 const { isAuthErrorMessage } = require("../../shared/errorClassification");
 const {
   attachKeyboardInteractiveSupport,

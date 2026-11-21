@@ -6,6 +6,8 @@ Helpers live in `helpers/`; executable renderer/protocol fixtures live in
 `fixtures/` and are shared by integration suites.
 
 ```sh
+npm run check                            # lint + typecheck + vitest unit suites
+npm run format:check                     # Prettier formatting verification
 npm test
 npm run lint
 npx vitest run tests/unit/i18n.test.js   # a single suite
@@ -17,7 +19,7 @@ npx vitest run tests/unit/i18n.test.js   # a single suite
 npm run typecheck   # tsc -p tsconfig.preload.json, must report zero errors
 ```
 
-This covers the IPC contracts (`src/shared/contracts/**`) and the preload bridge
+This covers all cross-runtime modules (`src/shared/**/*.js`, including `src/shared/contracts/**`) and the preload bridge
 (`src/preload/**`) with `strict` plus `noUnusedLocals`/`noUnusedParameters`,
 `noImplicitReturns`, `noFallthroughCasesInSwitch` and `noImplicitOverride`. The
 channel registry (`src/shared/contracts/ipc/domains/*.js`) keeps keys, channel
@@ -28,13 +30,10 @@ constants, wrong argument types/counts and missing required payload fields are
 compile errors. Responses are `unknown` unless the domain module declares them in
 its `*Responses` typedef.
 
-`checkJs` stays off in the config because checked files `require` modules outside
-the scope (e.g. `src/shared/startupTheme.js`), and `checkJs` would check those too.
-The shared modules the preload requires (`src/shared/startupTheme.js`,
-`themeTokens.js`, `constants/zIndex.js`) carry `// @ts-check` themselves, so they
-are checked as part of the program. Each in-scope file opts in with a `// @ts-check` first line instead, and
-`unit/preload-typings.test.js` fails if one is missing. To extend coverage to
-another folder:
+`checkJs` stays off in `tsconfig.preload.json` so files explicitly opt in via
+`// @ts-check` as their first line, and `unit/preload-typings.test.js` fails if
+any file under `src/preload` or `src/shared` is missing `// @ts-check`. To extend
+coverage to another folder:
 
 1. Add its glob to `include` in `tsconfig.preload.json` and to the folder list in
    the `// @ts-check` test in `unit/preload-typings.test.js`.

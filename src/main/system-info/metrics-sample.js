@@ -15,7 +15,7 @@
 
 const os = require("os");
 const { querySystemMetrics } = require("../native/nativeSystemMetrics");
-const { isSshClientUsable } = require("../utils/ssh-utils");
+const { isSshClientUsable } = require("../connection/ssh-utils");
 
 const SECTOR_SIZE = 512;
 // /proc/diskstats 中过滤掉虚拟/重叠设备，避免 dm-/loop 等与底层盘重复计数

@@ -1,6 +1,7 @@
 const { BrowserWindow, Menu, app } = require("electron");
 const configService = require("../settings/configService");
 const { safeSendToRenderer } = require("../window/windowManager");
+const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
 
 const MENU_ACTIONS = Object.freeze({
   ABOUT: "about",
@@ -18,7 +19,7 @@ function getMenuT() {
 }
 
 function sendMenuAction(action) {
-  safeSendToRenderer("app:menu-action", {
+  safeSendToRenderer(IPC_EVENT_CHANNELS.APP_MENU_ACTION, {
     action,
     source: "system-menu",
     timestamp: Date.now(),
@@ -61,21 +62,21 @@ function buildAppMenuItems() {
 function buildEditSubmenu() {
   const { mainT, lng } = getMenuT();
   const isDarwin = process.platform === "darwin";
-  const editItem = (role, labelKey) => ({
+  const editItem = (role, label) => ({
     role,
-    label: mainT(labelKey, { lng }),
+    label,
     // Windows/Linux 隐藏菜单栏仍会注册全局加速键，若不关闭会截获终端 Ctrl+C / Ctrl+A；
     // 输入框由 Chromium 原生处理编辑快捷键，macOS 则需保留 Cmd+* 菜单角色加速键。
     ...(isDarwin ? {} : { registerAccelerator: false }),
   });
   return [
-    editItem("undo", "mainProcess.menu.undo"),
-    editItem("redo", "mainProcess.menu.redo"),
+    editItem("undo", mainT("mainProcess.menu.undo", { lng })),
+    editItem("redo", mainT("mainProcess.menu.redo", { lng })),
     { type: "separator" },
-    editItem("cut", "mainProcess.menu.cut"),
-    editItem("copy", "mainProcess.menu.copy"),
-    editItem("paste", "mainProcess.menu.paste"),
-    editItem("selectAll", "mainProcess.menu.selectAll"),
+    editItem("cut", mainT("mainProcess.menu.cut", { lng })),
+    editItem("copy", mainT("mainProcess.menu.copy", { lng })),
+    editItem("paste", mainT("mainProcess.menu.paste", { lng })),
+    editItem("selectAll", mainT("mainProcess.menu.selectAll", { lng })),
   ];
 }
 

@@ -261,8 +261,8 @@ describe("IPC contract type checking (npm run typecheck)", () => {
   it("受检目录中的每个 JS 文件都以 // @ts-check 开头", () => {
     // tsconfig.preload.json keeps checkJs off so required out-of-scope modules
     // are not checked; coverage therefore depends on this per-file pragma.
-    const roots = ["../../src/preload", "../../src/shared/contracts"].map(
-      (relative) => fileURLToPath(new URL(relative, import.meta.url)),
+    const roots = ["../../src/preload", "../../src/shared"].map((relative) =>
+      fileURLToPath(new URL(relative, import.meta.url)),
     );
     const missing = [];
     const walk = (directory) => {

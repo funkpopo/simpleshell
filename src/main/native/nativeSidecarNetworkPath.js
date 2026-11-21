@@ -1,13 +1,7 @@
+const defaultProxyManager = require("../proxy/proxy-manager");
+
 const SUPPORTED_PROXY_TYPES = new Set(["http", "https", "socks4", "socks5"]);
 let latestNativeSidecarNetworkPath = buildNetworkPath(null, false);
-
-function getConnectionManager() {
-  try {
-    return require("../connection/connectionManager");
-  } catch {
-    return null;
-  }
-}
 
 function normalizeProxyConfig(proxyConfig) {
   if (!proxyConfig || typeof proxyConfig !== "object") {
@@ -110,10 +104,7 @@ async function resolveNativeSidecarNetworkPath(rawConfig, options = {}) {
     };
   }
 
-  const proxyManager =
-    options.proxyManager ||
-    getConnectionManager()?.sshConnectionPool?.proxyManager ||
-    null;
+  const proxyManager = options.proxyManager || defaultProxyManager || null;
 
   if (
     !proxyManager ||

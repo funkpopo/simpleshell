@@ -11,7 +11,7 @@ import { useNotification } from "../../../shared/notifications/NotificationConte
 import {
   exportDiagnostics,
   openFeedbackIssue,
-} from "../../diagnostics/diagnosticsActions.js";
+} from "../../../shared/lib/diagnosticsActions.js";
 import {
   sectionCardSx,
   SectionCardHeader,
@@ -121,9 +121,7 @@ export default function FeedbackSettings({ initialValues, ref }) {
             description={t("settings.feedback.includeDiagnosticsHelper")}
             checked={errorReportingEnabled && includeDiagnosticsInFeedback}
             disabled={!errorReportingEnabled}
-            onChange={(e) =>
-              setIncludeDiagnosticsInFeedback(e.target.checked)
-            }
+            onChange={(e) => setIncludeDiagnosticsInFeedback(e.target.checked)}
           />
           <SettingsToggleRow
             id="settings-feedback-crash-capture"

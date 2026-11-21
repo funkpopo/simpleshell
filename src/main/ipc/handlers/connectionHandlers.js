@@ -2,7 +2,7 @@ const processManager = require("../../process/processManager");
 const {
   IPC_REQUEST_CHANNELS,
 } = require("../../../shared/contracts/ipc/channels");
-const { isSshStreamUsable } = require("../../utils/ssh-utils");
+const { isSshStreamUsable } = require("../../connection/ssh-utils");
 
 /**
  * 连接状态相关的IPC处理器
@@ -32,7 +32,7 @@ class ConnectionHandlers {
       return { success: true, data: null };
     }
 
-    if (processInfo.type === "ssh2") {
+    if (processInfo.type === "ssh") {
       const isConnected = isSshStreamUsable(processInfo.stream);
       const connectionState = {
         isConnected,

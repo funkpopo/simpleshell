@@ -1,7 +1,7 @@
 // Rules shared by the main and renderer bundles. Forge passes `mode`
 // ("development" | "production") to every webpack config factory.
 module.exports = (mode) => [
-  // 特殊处理 pdfjs-dist 的 ES 模块，避免 asset-relocator-loader 错误
+  // 特殊处理 pdfjs-dist 的 ES 模块
   {
     test: /[/\\]node_modules[/\\]pdfjs-dist[/\\].+\.mjs$/,
     exclude: /pdf\.worker\./,

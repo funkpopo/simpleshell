@@ -10,11 +10,17 @@ const BASELINE_FILE = path.join(ROOT, "docs", "perf", "baseline.json");
 // Keep the measured process free of file logging and crash-marker IO. The
 // production modules otherwise run unchanged.
 function stubMainRuntime() {
-  for (const [name, exports] of [
-    ["logger", { logToFile: () => {}, initLogger: () => {} }],
-    ["crashReporter", { recordCrashMarker: () => {} }],
+  for (const [modulePath, exports] of [
+    [
+      "../../src/main/utils/logger",
+      { logToFile: () => {}, initLogger: () => {} },
+    ],
+    [
+      "../../src/main/diagnostics/crashReporter",
+      { recordCrashMarker: () => {} },
+    ],
   ]) {
-    const filename = require.resolve(`../../src/main/utils/${name}`);
+    const filename = require.resolve(modulePath);
     require.cache[filename] = { id: filename, filename, loaded: true, exports };
   }
 }

@@ -153,9 +153,12 @@ This will:
 ```bash
 npm start                 # Build/stage the native host if needed, then run Forge dev mode
 npm run lint              # ESLint for the whole repository
+npm run typecheck         # JSDoc type checking for src/preload and src/shared
 npm test                  # Unit, contract and architecture tests (Vitest)
+npm run check             # Full static + unit verification (lint + typecheck + test)
 npm run test:integration  # Electron, native service and production bundle tests
-npm run format            # Prettier
+npm run format            # Prettier write
+npm run format:check      # Prettier verification
 npm run package           # Package the app for the current platform
 npm run make              # Build distributable installers
 ```
@@ -164,8 +167,8 @@ Integration tests need a compiled native host:
 `cargo build --locked --manifest-path native-services/Cargo.toml`.
 
 Preload contracts use JSDoc and shared declarations in `src/shared/contracts/preload.d.ts`.
-`npm run typecheck` (also exercised by `npm test`) checks all
-`src/preload/**/*.js` and `src/shared/contracts/**` modules using
+`npm run typecheck` (also exercised by `npm run check` and `npm test`) checks all
+`src/preload/**/*.js` and `src/shared/**/*.js` modules using
 `tsconfig.preload.json`. Every `ipcRenderer.invoke` / `send` in the preload is
 checked against the per-domain channel schemas in
 `src/shared/contracts/ipc/domains/`, the same schemas main validates at runtime, with full `strict` checking enabled (including

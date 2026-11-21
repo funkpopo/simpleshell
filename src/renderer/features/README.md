@@ -9,14 +9,15 @@ barrel that eagerly re-exports every feature.
 | terminal     | WebTerminal.jsx; hooks own subscriptions; runtime owns xterm objects; model owns session/pane logic                                                                       |
 | connections  | ConnectionManager.jsx composes connection storage/menus, ConnectionList and ConnectionEditorDialog; useConnectionEditor owns drafts, credentials, validation and autosave |
 | file-manager | index.jsx is the lazy entry; FileManagerContainer composes focused hooks, panels and dialogs                                                                              |
-| transfers    | GlobalTransferBar, GlobalTransferFloat and TransferSidebar share state/globalTransferStore                                                                                |
-| ai           | AIChatWorkspace and AIChatWindow; AI settings, command UI and prompt helpers                                                                                              |
+| transfers    | GlobalTransferBar, GlobalTransferFloat, TransferSidebar and hooks/useTransferHosts share state/globalTransferStore                                                        |
+| ai           | AIChatWorkspace (receiving injected chat view) and AIChatWindow; AI settings, command UI and prompt helpers                                                               |
 | settings     | Settings.jsx owns loading, navigation and committing settings; sections own tab drafts, useConfigSync owns import/export/WebDAV commands                                  |
+| about        | AboutDialog.jsx composes useAppUpdateController, UpdateStatusPanel and lib/aboutHelpers                                                                                   |
 | monitoring   | ResourceMonitor and IPAddressQuery; metric charts and map                                                                                                                 |
 
 Application providers, cross-feature menus and atomic session state live in
-`../app`. Reusable UI primitives, notifications and browser helpers live in
-`../shared`; that directory must not import app or feature implementations.
+`../app`. Reusable UI primitives, notifications, working-directory store and browser
+helpers live in `../shared`; that directory must not import app or feature implementations.
 
 `../app/LazyComponents.jsx` retains the dynamic imports, Suspense boundaries and
 intent preloading. File previews remain dynamically imported by the file-manager

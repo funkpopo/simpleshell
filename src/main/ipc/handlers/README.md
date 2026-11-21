@@ -17,9 +17,13 @@ mailboxes retain their original lifetimes and owner. Channel names and public
 handler signatures are unchanged. Authentication and recovery continue to run
 through the facade's current commands.
 
-SFTP file commands use `nativeSftpClient`. The old session/queue channels are
-deprecated compatibility metadata responses; they do not acquire sessions or
-schedule operations. The connection manager no longer exposes the old stubs.
+`batchInvokeHandlers.js` (`BatchInvokeHandlers`) owns batched IPC invocation, while
+`systemInfoHandlers.js` (`SystemInfoHandlers`) owns remote system info polling.
+
+`fileHandlers.js` delegates directory browsing/watching, remote file mutations,
+dropped upload validation and transfer operations to `file-domains/` helpers.
+SFTP file commands use `nativeSftpClient` (and `sftp/*` helpers); legacy SFTP
+session/queue stub channels have been removed.
 
 `tests/integration/sshAuthentication.test.js` checks real authentication failure,
 cancellation, live configuration changes and production-minified errors.

@@ -70,7 +70,8 @@ async function startStreaming() {
     void hook.current.handleSendMessage();
   });
   await vi.waitFor(() => expect(streamListeners.chunk).toBeTypeOf("function"));
-  const sessionId = window.terminalAPI.sendAPIRequest.mock.calls[0][0].sessionId;
+  const sessionId =
+    window.terminalAPI.sendAPIRequest.mock.calls[0][0].sessionId;
   return sessionId;
 }
 

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * AI 自定义风险规则的校验与规范化（主进程 / 渲染进程共享）
  *
@@ -6,21 +8,26 @@
  * 确保两侧对同一自定义规则判定始终一致。
  */
 
+/** @type {readonly ("critical" | "high" | "medium" | "low")[]} */
 const CUSTOM_RULE_LEVELS = ["critical", "high", "medium", "low"];
 const MAX_CUSTOM_RULES_PER_LEVEL = 50;
 const MAX_CUSTOM_RULE_PATTERN_LENGTH = 200;
 
+/** @param {string} pattern */
 const hasNestedQuantifier = (pattern) =>
   /\((?:[^()\\]|\\.|\[[^\]]*\])*(?:[+*]|\{\d+(?:,\d*)?\})(?:[^()\\]|\\.|\[[^\]]*\])*\)(?:[+*]|\{\d+(?:,\d*)?\})/.test(
     pattern,
   );
 
+/** @param {string} pattern */
 const hasRepeatedWildcard = (pattern) => /(?:\.\*){2,}/.test(pattern);
 
+/** @param {string} pattern */
 const hasControlCharacter = (pattern) => /[\u0000-\u001f\u007f]/.test(pattern);
 
 /**
  * 校验单条自定义风险规则。
+ * @param {unknown} pattern
  * @returns {{valid: boolean, reason?: string, pattern?: string}}
  *          reason 取值：empty | tooLong | controlCharacter | unsafeComplexity | syntax
  */
@@ -57,9 +64,11 @@ function validateCustomRiskPattern(pattern) {
 
 /**
  * 规范化自定义风险规则对象：按级别去重、截断、过滤非法项。
+ * @param {Record<string, unknown> | null | undefined} rules
  * @returns {{critical: string[], high: string[], medium: string[], low: string[]}}
  */
 function normalizeCustomRiskRules(rules) {
+  /** @type {{critical: string[], high: string[], medium: string[], low: string[]}} */
   const normalizedRules = {
     critical: [],
     high: [],
@@ -72,7 +81,9 @@ function normalizeCustomRiskRules(rules) {
   }
 
   for (const level of CUSTOM_RULE_LEVELS) {
-    const patterns = Array.isArray(rules[level]) ? rules[level] : [];
+    const rawLevelRules = rules[level];
+    const patterns = Array.isArray(rawLevelRules) ? rawLevelRules : [];
+    /** @type {Set<string>} */
     const seenPatterns = new Set();
 
     for (const rawPattern of patterns) {
@@ -81,7 +92,11 @@ function normalizeCustomRiskRules(rules) {
       }
 
       const validation = validateCustomRiskPattern(rawPattern);
-      if (!validation.valid || seenPatterns.has(validation.pattern)) {
+      if (
+        !validation.valid ||
+        !validation.pattern ||
+        seenPatterns.has(validation.pattern)
+      ) {
         continue;
       }
 

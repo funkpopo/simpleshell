@@ -49,10 +49,20 @@ export default function ConfirmDialog({
         </Typography>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onCancel} color="inherit" variant="outlined" size="small">
+        <Button
+          onClick={onCancel}
+          color="inherit"
+          variant="outlined"
+          size="small"
+        >
           {t("common.cancel")}
         </Button>
-        <Button onClick={onConfirm} variant="contained" color="error" size="small">
+        <Button
+          onClick={onConfirm}
+          variant="contained"
+          color="error"
+          size="small"
+        >
           {confirmLabel}
         </Button>
       </DialogActions>

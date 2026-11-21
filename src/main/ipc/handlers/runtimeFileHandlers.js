@@ -1,5 +1,5 @@
-const runtimeFileLifecycle = require("../../utils/runtimeFileLifecycle");
-const fileCache = require("../../utils/fileCache");
+const runtimeFileLifecycle = require("../../storage/runtimeFileLifecycle");
+const fileCache = require("../../storage/fileCache");
 const {
   IPC_REQUEST_CHANNELS,
 } = require("../../../shared/contracts/ipc/channels");

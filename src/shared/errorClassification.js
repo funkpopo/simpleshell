@@ -1,3 +1,5 @@
+// @ts-check
+
 const ERROR_NOTIFICATION_LEVELS = Object.freeze({
   RECOVERABLE: "recoverable",
   RETRY: "retry",
@@ -126,6 +128,11 @@ const NETWORK_UNREACHABLE_KEYWORDS = Object.freeze([
   "断网",
 ]);
 
+/**
+ * @param {unknown} message
+ * @param {readonly string[]} keywords
+ * @returns {boolean}
+ */
 function includesAnyKeyword(message, keywords) {
   const lower = String(message || "").toLowerCase();
   if (!lower) {
@@ -134,18 +141,34 @@ function includesAnyKeyword(message, keywords) {
   return keywords.some((keyword) => lower.includes(keyword));
 }
 
+/**
+ * @param {unknown} message
+ * @returns {boolean}
+ */
 function isAuthErrorMessage(message) {
   return includesAnyKeyword(message, AUTH_ERROR_KEYWORDS);
 }
 
+/**
+ * @param {unknown} message
+ * @returns {boolean}
+ */
 function isTimeoutErrorMessage(message) {
   return includesAnyKeyword(message, TIMEOUT_ERROR_KEYWORDS);
 }
 
+/**
+ * @param {unknown} message
+ * @returns {boolean}
+ */
 function isNetworkUnreachableMessage(message) {
   return includesAnyKeyword(message, NETWORK_UNREACHABLE_KEYWORDS);
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string | null}
+ */
 function toUpperCode(value) {
   if (typeof value !== "string" || !value.trim()) {
     return null;
@@ -153,6 +176,10 @@ function toUpperCode(value) {
   return value.trim().toUpperCase();
 }
 
+/**
+ * @param {any} error
+ * @returns {string}
+ */
 function normalizeMessage(error) {
   if (typeof error === "string") {
     return error;
@@ -170,6 +197,10 @@ function normalizeMessage(error) {
   );
 }
 
+/**
+ * @param {any} error
+ * @returns {string | null}
+ */
 function extractCode(error) {
   if (!error || typeof error !== "object") {
     return null;
@@ -184,10 +215,18 @@ function extractCode(error) {
   );
 }
 
+/**
+ * @param {any} error
+ * @returns {string | null}
+ */
 function detectErrorType(error) {
   const explicitCode = extractCode(error);
   if (explicitCode) {
-    if (Object.values(ERROR_TYPES).includes(explicitCode)) {
+    if (
+      /** @type {readonly string[]} */ (Object.values(ERROR_TYPES)).includes(
+        explicitCode,
+      )
+    ) {
       return explicitCode;
     }
     return explicitCode;
@@ -309,6 +348,10 @@ function detectErrorType(error) {
   return null;
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 function normalizeCategory(value) {
   if (typeof value !== "string") {
     return "";
@@ -321,12 +364,20 @@ function normalizeCategory(value) {
   if (normalized === "report" || normalized === "reportable") {
     return ERROR_NOTIFICATION_LEVELS.FEEDBACK;
   }
-  if (Object.values(ERROR_NOTIFICATION_LEVELS).includes(normalized)) {
+  if (
+    /** @type {readonly string[]} */ (
+      Object.values(ERROR_NOTIFICATION_LEVELS)
+    ).includes(normalized)
+  ) {
     return normalized;
   }
   return normalized;
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 function normalizeAction(value) {
   if (typeof value !== "string") {
     return "";
@@ -334,19 +385,30 @@ function normalizeAction(value) {
   const normalized = value.trim().toLowerCase();
   if (normalized === "recoverable") return ERROR_ACTIONS.RECOVER;
   if (normalized === "report") return ERROR_ACTIONS.FEEDBACK;
-  if (Object.values(ERROR_ACTIONS).includes(normalized)) {
+  if (
+    /** @type {readonly string[]} */ (Object.values(ERROR_ACTIONS)).includes(
+      normalized,
+    )
+  ) {
     return normalized;
   }
   return normalized;
 }
 
+/**
+ * @param {string} category
+ * @param {string} reason
+ * @param {Record<string, any>} [details]
+ */
 function buildPolicy(category, reason, details = {}) {
+  /** @type {Record<string, string>} */
   const actionByCategory = {
     [ERROR_NOTIFICATION_LEVELS.RECOVERABLE]: ERROR_ACTIONS.RECOVER,
     [ERROR_NOTIFICATION_LEVELS.RETRY]: ERROR_ACTIONS.RETRY,
     [ERROR_NOTIFICATION_LEVELS.FEEDBACK]: ERROR_ACTIONS.FEEDBACK,
     [ERROR_NOTIFICATION_LEVELS.FATAL]: ERROR_ACTIONS.RESTART,
   };
+  /** @type {Record<string, string>} */
   const severityByCategory = {
     [ERROR_NOTIFICATION_LEVELS.RECOVERABLE]: "warning",
     [ERROR_NOTIFICATION_LEVELS.RETRY]: "warning",
@@ -354,7 +416,13 @@ function buildPolicy(category, reason, details = {}) {
     [ERROR_NOTIFICATION_LEVELS.FATAL]: "error",
   };
 
-  if (!Object.values(ERROR_NOTIFICATION_LEVELS).includes(category)) {
+  if (
+    !(
+      /** @type {readonly string[]} */ (
+        Object.values(ERROR_NOTIFICATION_LEVELS)
+      ).includes(category)
+    )
+  ) {
     throw new Error(`Invalid error notification category: ${category}`);
   }
 
@@ -382,6 +450,10 @@ function buildPolicy(category, reason, details = {}) {
   };
 }
 
+/**
+ * @param {any} error
+ * @param {Record<string, any>} [context]
+ */
 function classifyError(error, context = {}) {
   const source =
     error && typeof error === "object" ? { ...error, ...context } : context;
@@ -463,6 +535,10 @@ function classifyError(error, context = {}) {
   });
 }
 
+/**
+ * @param {any} error
+ * @param {Record<string, any>} [context]
+ */
 function classifyErrorResponse(error, context = {}) {
   const classification = classifyError(error, context);
   return {

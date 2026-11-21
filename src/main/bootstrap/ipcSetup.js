@@ -1,18 +1,11 @@
 const { ipcMain } = require("electron");
-const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
-const configServiceForI18n = require("../settings/configService");
-const systemInfoText = (key) =>
-  translateLocale(key, { lng: getUiLanguage(configServiceForI18n) });
 const { logToFile } = require("../utils/logger");
 const { safeHandle, safeOn } = require("../ipc/ipcResponse");
-const { IPC_REQUEST_CHANNELS } = require("../../shared/contracts/ipc/channels");
 const {
   registerReconnectHandlers,
 } = require("../ipc/handlers/reconnectHandlers");
-const { registerBatchHandlers } = require("../ipc/handlers/batchHandlers");
-const {
-  registerBatchInvokeHandlers,
-} = require("../ipc/handlers/batchInvokeHandlers");
+const BatchInvokeHandlers = require("../ipc/handlers/batchInvokeHandlers");
+const SystemInfoHandlers = require("../ipc/handlers/systemInfoHandlers");
 const LatencyHandlers = require("../ipc/handlers/latencyHandlers");
 const LocalTerminalHandlers = require("../ipc/handlers/localTerminalHandlers");
 const SettingsHandlers = require("../ipc/handlers/settingsHandlers");
@@ -34,13 +27,10 @@ const RuntimeFileHandlers = require("../ipc/handlers/runtimeFileHandlers");
 const PortForwardingHandlers = require("../ipc/handlers/portForwardingHandlers");
 const ConfigTransferHandlers = require("../ipc/handlers/configTransferHandlers");
 const TerminalIOMailboxManager = require("../terminal/terminalIOMailboxManager");
-const configService = require("../settings/configService");
-const { redactConnectionSecrets } = require("../settings/connectionSecrets");
 const processManager = require("../process/processManager");
 const diskAlertService = require("../services/diskAlertService");
 const connectionManager = require("../connection/connectionManager");
 const { getPrimaryWindow } = require("../window/windowManager");
-const { isSshClientUsable } = require("../utils/ssh-utils");
 
 // 关键处理器模块（在窗口创建前由 registerCriticalHandlers 统一注册）
 const CRITICAL_HANDLER_MODULES = [
@@ -51,6 +41,14 @@ const CRITICAL_HANDLER_MODULES = [
   { HandlersClass: AppHandlers, successLog: "App handlers registered" },
   { HandlersClass: DialogHandlers, successLog: "Dialog handlers registered" },
   { HandlersClass: WindowHandlers, successLog: "Window handlers registered" },
+  {
+    HandlersClass: SystemInfoHandlers,
+    successLog: "System info handlers registered",
+  },
+  {
+    HandlersClass: BatchInvokeHandlers,
+    successLog: "Batch invoke handlers registered",
+  },
 ];
 
 // 纯样板处理器模块（new Class → getHandlers().forEach(safeHandle) → 日志）
@@ -162,21 +160,6 @@ class IPCSetup {
   }
 
   /**
-   * 注册批量IPC处理器
-   */
-  registerBatchHandlers() {
-    try {
-      registerBatchHandlers(ipcMain);
-      logToFile("IPC batch handlers registered", "INFO");
-    } catch (error) {
-      logToFile(
-        `Failed to register IPC batch handlers: ${error.message}`,
-        "ERROR",
-      );
-    }
-  }
-
-  /**
    * 将处理器实例的所有handler注册到ipcMain
    */
   _registerHandlerInstance(handlersInstance) {
@@ -228,9 +211,6 @@ class IPCSetup {
         logToFile(successLog, "INFO");
       });
 
-      // 注册基本终端处理器
-      this.registerBasicTerminalHandlers();
-
       logToFile(
         "Critical IPC handlers registered before window creation",
         "INFO",
@@ -241,173 +221,6 @@ class IPCSetup {
         "ERROR",
       );
     }
-  }
-
-  /**
-   * 创建"本地/远程二选一"的系统信息类处理器
-   * TERMINAL_GET_SYSTEM_INFO 与 TERMINAL_GET_PROCESS_LIST 除最终调用的函数外逻辑一致
-   */
-  _createRemoteAwareInfoHandler({
-    getLocal,
-    getRemote,
-    awaitLocal,
-    fallbackTarget,
-    failureSubject,
-    getFailureMessage,
-  }) {
-    // awaitLocal 保持与原实现一致：
-    // TERMINAL_GET_SYSTEM_INFO 原实现 `return await getLocalSystemInfo()`（本地调用的拒绝会被捕获并降级），
-    // TERMINAL_GET_PROCESS_LIST 原实现 `return getProcessList()`（拒绝直接向调用方传播）。
-    return async (event, processId) => {
-      try {
-        const systemInfo = require("../system-info");
-        if (!processId || !processManager.hasProcess(processId)) {
-          return awaitLocal ? await getLocal(systemInfo) : getLocal(systemInfo);
-        } else {
-          const processObj = processManager.getProcess(processId);
-          if (
-            (processObj.type === "ssh2" || processObj.type === "ssh") &&
-            (processObj.process || processObj.client || processObj.channel)
-          ) {
-            const sshClient =
-              processObj.client || processObj.process || processObj.channel;
-            if (!isSshClientUsable(sshClient)) {
-              logToFile(
-                `SSH connection not available for process ${processId}, falling back to ${fallbackTarget}`,
-                "WARN",
-              );
-              return awaitLocal
-                ? await getLocal(systemInfo)
-                : getLocal(systemInfo);
-            }
-            return getRemote(systemInfo, sshClient);
-          } else {
-            return awaitLocal
-              ? await getLocal(systemInfo)
-              : getLocal(systemInfo);
-          }
-        }
-      } catch (error) {
-        logToFile(`Failed to get ${failureSubject}: ${error.message}`, "ERROR");
-        try {
-          const systemInfo = require("../system-info");
-          return awaitLocal ? await getLocal(systemInfo) : getLocal(systemInfo);
-        } catch {
-          return {
-            error:
-              typeof getFailureMessage === "function"
-                ? getFailureMessage()
-                : getFailureMessage,
-            message: error.message,
-          };
-        }
-      }
-    };
-  }
-
-  /**
-   * 注册基本终端处理器
-   */
-  registerBasicTerminalHandlers() {
-    safeHandle(
-      ipcMain,
-      IPC_REQUEST_CHANNELS.TERMINAL_LOAD_CONNECTIONS,
-      async () => {
-        return redactConnectionSecrets(configService.loadConnections());
-      },
-      { category: "terminal" },
-    );
-
-    safeHandle(
-      ipcMain,
-      IPC_REQUEST_CHANNELS.TERMINAL_GET_CONNECTION_PASSWORD,
-      async (event, connectionId) => {
-        void event;
-        return configService.getSavedConnectionPassword(connectionId);
-      },
-      { category: "terminal" },
-    );
-
-    safeHandle(
-      ipcMain,
-      IPC_REQUEST_CHANNELS.TERMINAL_LOAD_TOP_CONNECTIONS,
-      async () => {
-        try {
-          return redactConnectionSecrets(configService.loadLastConnections());
-        } catch {
-          return [];
-        }
-      },
-      { category: "terminal" },
-    );
-
-    safeHandle(
-      ipcMain,
-      IPC_REQUEST_CHANNELS.TERMINAL_GET_SYSTEM_INFO,
-      this._createRemoteAwareInfoHandler({
-        getLocal: (systemInfo) => systemInfo.getLocalSystemInfo(),
-        getRemote: (systemInfo, sshClient) =>
-          systemInfo.getRemoteSystemInfo(sshClient),
-        awaitLocal: true,
-        fallbackTarget: "local system info",
-        failureSubject: "system info",
-        getFailureMessage: () =>
-          systemInfoText("mainProcess.systemInfo.getSystemInfoFailed"),
-      }),
-      { category: "terminal" },
-    );
-
-    safeHandle(
-      ipcMain,
-      IPC_REQUEST_CHANNELS.TERMINAL_GET_METRICS_SAMPLE,
-      this._createRemoteAwareInfoHandler({
-        getLocal: (systemInfo) => systemInfo.getLocalMetricsSample(),
-        getRemote: (systemInfo, sshClient) =>
-          systemInfo.getRemoteMetricsSample(sshClient),
-        awaitLocal: true,
-        fallbackTarget: "local metrics sample",
-        failureSubject: "metrics sample",
-        getFailureMessage: () =>
-          systemInfoText("mainProcess.systemInfo.getSystemInfoFailed"),
-      }),
-      { category: "terminal" },
-    );
-
-    safeHandle(
-      ipcMain,
-      IPC_REQUEST_CHANNELS.TERMINAL_GET_RESOURCE_SNAPSHOT,
-      this._createRemoteAwareInfoHandler({
-        getLocal: (systemInfo) =>
-          Promise.all([
-            systemInfo.getLocalSystemInfo(),
-            systemInfo.getLocalMetricsSample(),
-          ]).then(([info, sample]) => ({ info, sample })),
-        getRemote: (systemInfo, sshClient) =>
-          systemInfo.getRemoteResourceSnapshot(sshClient),
-        awaitLocal: true,
-        fallbackTarget: "local resource snapshot",
-        failureSubject: "resource snapshot",
-        getFailureMessage: () =>
-          systemInfoText("mainProcess.systemInfo.getSystemInfoFailed"),
-      }),
-      { category: "terminal" },
-    );
-
-    safeHandle(
-      ipcMain,
-      IPC_REQUEST_CHANNELS.TERMINAL_GET_PROCESS_LIST,
-      this._createRemoteAwareInfoHandler({
-        getLocal: (systemInfo) => systemInfo.getProcessList(),
-        getRemote: (systemInfo, sshClient) =>
-          systemInfo.getRemoteProcessList(sshClient),
-        awaitLocal: false,
-        fallbackTarget: "local process list",
-        failureSubject: "process list",
-        getFailureMessage: () =>
-          systemInfoText("mainProcess.systemInfo.getProcessListFailed"),
-      }),
-      { category: "terminal" },
-    );
   }
 
   /**
@@ -495,8 +308,6 @@ class IPCSetup {
    */
   initializeBeforeWindow() {
     this.registerReconnectHandlers();
-    this.registerBatchHandlers();
-    registerBatchInvokeHandlers(ipcMain, safeHandle);
     this.initializeLatencyHandlers();
     this.registerCriticalHandlers();
     this.initializeSSHHandlers();

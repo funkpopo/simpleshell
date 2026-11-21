@@ -23,7 +23,7 @@ describe("port-forwarding-service", () => {
     } = require("../../src/main/native/nativePortForwardingClient");
     const {
       setTrustedHostFingerprint,
-    } = require("../../src/main/utils/sshHostKeyTrust");
+    } = require("../../src/main/connection/sshHostKeyTrust");
     const {
       HOST,
       Peer,
@@ -92,7 +92,7 @@ describe("port-forwarding-service", () => {
           fixture.ssh.expectedHostFingerprint,
           "session",
         );
-        const proc = { type: "ssh2", process: client, config };
+        const proc = { type: "ssh", process: client, config };
         processManager.setProcess(processId, proc);
         return proc;
       };
@@ -524,7 +524,7 @@ describe("port-forwarding-delete", () => {
     } = require("../../src/main/native/nativePortForwardingClient");
     const {
       setTrustedHostFingerprint,
-    } = require("../../src/main/utils/sshHostKeyTrust");
+    } = require("../../src/main/connection/sshHostKeyTrust");
     const {
       HOST,
       Peer,
@@ -552,7 +552,7 @@ describe("port-forwarding-delete", () => {
         fixture.ssh.expectedHostFingerprint,
         "session",
       );
-      const proc = { type: "ssh2", process: client, config };
+      const proc = { type: "ssh", process: client, config };
       const processes = new Map([[config.tabId, proc]]);
       let rules = [];
       let writeFails = false;

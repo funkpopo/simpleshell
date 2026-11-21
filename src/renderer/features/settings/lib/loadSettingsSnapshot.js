@@ -1,7 +1,7 @@
 import {
   DEFAULT_TERMINAL_SCROLLBACK_LINES,
   normalizeTerminalScrollbackLines,
-} from "../../terminal/model/terminalScrollback.js";
+} from "../../../../shared/domain/terminalScrollback.js";
 
 export default async function loadSettingsSnapshot() {
   const values = {

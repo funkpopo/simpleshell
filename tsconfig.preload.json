@@ -13,8 +13,13 @@
     "skipLibCheck": true,
     "target": "ES2022",
     "module": "commonjs",
+    "resolveJsonModule": true,
     "types": ["node"],
     "lib": ["ES2022", "DOM"]
   },
-  "include": ["src/preload/**/*.js", "src/shared/contracts/**/*"]
+  "include": [
+    "src/preload/**/*.js",
+    "src/shared/**/*.js",
+    "src/shared/contracts/**/*"
+  ]
 }

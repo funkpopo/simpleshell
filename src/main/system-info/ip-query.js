@@ -467,7 +467,11 @@ function fetchIpInfo(provider, ip, logger, proxyConfig = null) {
   });
 }
 
-async function queryIpAddressLegacy(ip = "", logger = null, proxyConfig = null) {
+async function queryIpAddressLegacy(
+  ip = "",
+  logger = null,
+  proxyConfig = null,
+) {
   try {
     // Input validation and private/special detection when an IP is provided
     if (ip && ip.trim()) {
@@ -607,7 +611,9 @@ const IPQUERY_BACKEND = (() => {
 let nativeIpQueryClient = null;
 const getNativeClient = () => {
   if (!nativeIpQueryClient) {
-    const { nativeIpQueryClient: shared } = require("../native/nativeIpQueryClient");
+    const {
+      nativeIpQueryClient: shared,
+    } = require("../native/nativeIpQueryClient");
     nativeIpQueryClient = shared;
     // 配置过的密钥经 stdin 下发（sidecar 内不落盘不记录）
     const initialKeys = {};
@@ -627,14 +633,24 @@ const getNativeClient = () => {
  * sidecar 不可用或查询失败时回退到保留的 JS 实现（IP 查询非关键路径，
  * 两条路径语义一致；失败不伪装成功，由 legacy 路径给出本地化错误）。
  */
-async function queryIpAddressNative(ip = "", logger = null, proxyConfig = null) {
+async function queryIpAddressNative(
+  ip = "",
+  logger = null,
+  proxyConfig = null,
+) {
   if (ip && ip.trim()) {
     const ver = ipUtils.isIP(ip.trim());
     if (ver === 0) {
-      return { ret: "failed", msg: ipQueryText("mainProcess.ipQuery.invalidIp") };
+      return {
+        ret: "failed",
+        msg: ipQueryText("mainProcess.ipQuery.invalidIp"),
+      };
     }
     if (ipUtils.isPrivateOrSpecial(ip.trim())) {
-      return { ret: "failed", msg: ipQueryText("mainProcess.ipQuery.privateOrReserved") };
+      return {
+        ret: "failed",
+        msg: ipQueryText("mainProcess.ipQuery.privateOrReserved"),
+      };
     }
   }
 
@@ -671,7 +687,10 @@ async function queryIpAddressNative(ip = "", logger = null, proxyConfig = null) 
     if (typeof logger === "function") {
       logger(`IP query failed: ${result?.msg || "unknown"}`, "WARN");
     }
-    return { ret: "failed", msg: ipQueryText("mainProcess.ipQuery.allProvidersFailed") };
+    return {
+      ret: "failed",
+      msg: ipQueryText("mainProcess.ipQuery.allProvidersFailed"),
+    };
   } catch (error) {
     // sidecar 不可用/超时/退出：回退到保留的 JS 实现
     if (typeof logger === "function") {

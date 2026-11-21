@@ -80,10 +80,7 @@ export default function ChatMessageItem({
             {assistantTextContent.trim() ||
             (isStreaming && assistantThinkParts.length === 0) ? (
               <StreamContent isStreaming={isStreaming}>
-                {renderMessageContent(
-                  assistantTextContent,
-                  isStreaming,
-                )}
+                {renderMessageContent(assistantTextContent, isStreaming)}
               </StreamContent>
             ) : null}
           </>

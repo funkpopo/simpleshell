@@ -26,7 +26,6 @@
  */
 
 const {
-  ANY_ARGS_SCHEMA,
   STANDARD_RESPONSE_SCHEMA,
   args,
   arrayArg,
@@ -197,32 +196,6 @@ const FILES_CHANNEL_DEFINITIONS = Object.freeze([
     "directory-watch:event",
     "file",
     args([objectArg()]),
-  ),
-  // Deprecated metadata/queue compatibility channels. Native commands own
-  // their sessions and scheduling; these do not create or close SFTP sessions.
-  defineRequest(
-    "SFTP_GET_SESSION",
-    "getSftpSession",
-    "sftp",
-    args([{}]),
-    STANDARD_RESPONSE_SCHEMA,
-    { permission: "filesystem" },
-  ),
-  defineRequest(
-    "SFTP_ENQUEUE_OPERATION",
-    "enqueueSftpOperation",
-    "sftp",
-    ANY_ARGS_SCHEMA,
-    STANDARD_RESPONSE_SCHEMA,
-    { permission: "filesystem" },
-  ),
-  defineRequest(
-    "SFTP_PROCESS_QUEUE",
-    "processSftpQueue",
-    "sftp",
-    ANY_ARGS_SCHEMA,
-    STANDARD_RESPONSE_SCHEMA,
-    { permission: "filesystem" },
   ),
   defineRequest(
     "SFTP_READ_FILE_CONTENT",

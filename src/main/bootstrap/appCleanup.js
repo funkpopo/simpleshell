@@ -4,10 +4,10 @@ const { logToFile } = require("../utils/logger");
 const { getTempDirectory } = require("../utils/appPaths");
 const {
   mainProcessResourceManager,
-} = require("../utils/mainProcessResourceManager");
+} = require("../diagnostics/mainProcessResourceManager");
 const processManager = require("../process/processManager");
 const connectionManager = require("../connection/connectionManager");
-const runtimeFileLifecycle = require("../utils/runtimeFileLifecycle");
+const runtimeFileLifecycle = require("../storage/runtimeFileLifecycle");
 const configService = require("../settings/configService");
 const configTransferService = require("../settings/configTransferService");
 const commandHistoryService = require("../terminal/command-history");
@@ -93,7 +93,7 @@ class AppCleanup {
    * 释放SSH连接
    */
   releaseSSHConnection(proc) {
-    if (proc.type === "ssh2" && proc.connectionInfo) {
+    if (proc.type === "ssh" && proc.connectionInfo) {
       try {
         proc.connectionInfo.closeReason = "system";
         proc.connectionInfo.intentionalClose = false;
@@ -140,7 +140,7 @@ class AppCleanup {
       }
 
       // 对于SSH连接，关闭stream
-      if (proc.type === "ssh2" && proc.stream) {
+      if (proc.type === "ssh" && proc.stream) {
         try {
           proc.stream.close();
           logToFile(`关闭SSH stream (app quit): ${id}`, "INFO");

@@ -226,7 +226,7 @@ class PortForwardingService extends PortForwardingRuntime {
     const seen = new Set();
     try {
       for (const [id, proc] of this.processManager.getAllProcesses()) {
-        if (!["ssh2", "ssh"].includes(proc?.type)) continue;
+        if (proc?.type !== "ssh") continue;
         const tabId = this._tabId(id, proc);
         if (seen.has(tabId)) continue;
         let resolved;

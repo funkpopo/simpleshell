@@ -162,7 +162,7 @@ function createTerminalOutput(
       }
 
       if (
-        activeProc.type === "ssh2" &&
+        activeProc.type === "ssh" &&
         activeProc.stream &&
         typeof activeProc.stream.setWindow === "function"
       ) {

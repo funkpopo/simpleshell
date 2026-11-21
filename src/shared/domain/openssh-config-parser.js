@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * OpenSSH 客户端配置（~/.ssh/config）解析器
  *
@@ -220,14 +222,60 @@ function isWildcardPattern(pattern) {
 
 /**
  * 解析 OpenSSH 配置文本
+/**
+ * @typedef {object} OpenSSHBlockOption
+ * @property {string} keyword
+ * @property {string[]} valueTokens
+ * @property {number} lineNo
+ *
+ * @typedef {object} OpenSSHBlock
+ * @property {"host" | "match"} type
+ * @property {string[]} patterns
+ * @property {number} lineNo
+ * @property {OpenSSHBlockOption[]} options
+ * @property {boolean} isGlobalDefaults
+ *
+ * @typedef {object} ResolvedHostOptions
+ * @property {string | null} hostName
+ * @property {number | null} port
+ * @property {string | null} user
+ * @property {string | null} identityFile
+ * @property {string[]} identityFiles
+ * @property {boolean | null} forwardAgent
+ * @property {boolean | null} compression
+ * @property {string | null} proxyJump
+ * @property {string | null} proxyCommand
+ * @property {Set<string>} extraKeywords
+ * @property {boolean} hasAnyValue
+ *
+ * @typedef {object} OpenSSHHostEntry
+ * @property {string} alias
+ * @property {string} host
+ * @property {boolean} hasHostName
+ * @property {number | null} port
+ * @property {string} username
+ * @property {"privateKey" | "password"} authType
+ * @property {string} privateKeyPath
+ * @property {string[]} identityFiles
+ * @property {boolean} agentForward
+ * @property {boolean} enableCompression
+ * @property {string} proxyJump
+ * @property {string} proxyCommand
+ * @property {string[]} unsupportedOptions
+ * @property {number} sourceLine
+ */
+
+/**
+ * 解析完整的 OpenSSH 配置文件，返回可导入的主机列表及 warnings
  * @param {string} content 配置文件内容
- * @param {object} [options]
- * @param {string} [options.homeDir] 用于展开 ~/ 与 %d 的用户主目录
- * @returns {{ hosts: Array<object>, warnings: string[] }}
+ * @param {{ homeDir?: string }} [options]
+ * @returns {{ hosts: OpenSSHHostEntry[], warnings: string[] }}
  */
 function parseOpenSSHConfig(content, options = {}) {
   const homeDir = options.homeDir || "";
+  /** @type {string[]} */
   const warnings = [];
+  /** @type {OpenSSHHostEntry[]} */
   const hosts = [];
 
   if (typeof content !== "string" || content.trim() === "") {
@@ -235,7 +283,9 @@ function parseOpenSSHConfig(content, options = {}) {
   }
 
   // 第一遍：切块。首个 Host 之前的顶层选项视作全局默认（等价 Host * 块）
+  /** @type {OpenSSHBlock[]} */
   const blocks = [];
+  /** @type {OpenSSHBlock} */
   let currentBlock = {
     type: "host",
     patterns: ["*"],
@@ -301,6 +351,7 @@ function parseOpenSSHConfig(content, options = {}) {
   blocks.push(currentBlock);
 
   // 第二遍：对每个可导入别名（具体模式），按块序求值（first-obtained-wins）
+  /** @type {Set<string>} */
   const seenAliases = new Set();
 
   for (const block of blocks) {
@@ -343,24 +394,29 @@ function parseOpenSSHConfig(content, options = {}) {
 
 /**
  * 按块序对指定别名求值（模拟 ssh 的配置求值顺序）
- * @param {Array<object>} blocks
+ * @param {OpenSSHBlock[]} blocks
  * @param {string} alias
- * @returns {object} 各关键字的首个匹配值
+ * @returns {ResolvedHostOptions} 各关键字的首个匹配值
  */
 function resolveHostOptions(blocks, alias) {
+  /** @type {ResolvedHostOptions} */
   const result = {
     hostName: null,
     port: null,
     user: null,
     identityFile: null,
+    identityFiles: [],
     forwardAgent: null,
+    compression: null,
     proxyJump: null,
     proxyCommand: null,
     extraKeywords: new Set(),
     hasAnyValue: false,
   };
 
+  /** @type {Set<string>} */
   const seenKeywords = new Set();
+  /** @type {string[]} */
   const identityFiles = [];
 
   for (const block of blocks) {
@@ -434,10 +490,10 @@ function resolveHostOptions(blocks, alias) {
 /**
  * 将解析结果组装为单个可导入主机条目
  * @param {string} alias
- * @param {object} block
- * @param {object} resolved
+ * @param {OpenSSHBlock} block
+ * @param {ResolvedHostOptions} resolved
  * @param {string} homeDir
- * @returns {object}
+ * @returns {OpenSSHHostEntry}
  */
 function buildHostEntry(alias, block, resolved, homeDir) {
   const privateKeyPath = resolved.identityFile
@@ -470,16 +526,16 @@ function buildHostEntry(alias, block, resolved, homeDir) {
 /**
  * 将解析出的主机条目映射为应用连接对象（与 buildConnectionPayloadFromForm 的
  * SSH 连接结构保持一致）。通配别名、ProxyJump/ProxyCommand 主机不生成连接。
- * @param {Array<object>} hosts parseOpenSSHConfig 返回的 hosts
- * @param {object} [options]
- * @param {(prefix?: string) => string} options.generateId 连接 ID 工厂（渲染进程注入）
- * @param {Set<string>} [options.existingNames] 已存在的连接名（大小写不敏感去重）
- * @returns {{ connections: Array<object>, skipped: Array<{alias: string, reason: string}> }}
+ * @param {readonly OpenSSHHostEntry[]} hosts parseOpenSSHConfig 返回的 hosts
+ * @param {{ generateId?: (prefix?: string) => string, existingNames?: Set<string> }} [options]
+ * @returns {{ connections: Array<Record<string, any>>, skipped: Array<{alias: string, reason: string}> }}
  */
 function mapHostsToConnections(hosts, options = {}) {
   const generateId = options.generateId || (() => "");
   const existingNames = options.existingNames || new Set();
+  /** @type {Array<Record<string, any>>} */
   const connections = [];
+  /** @type {Array<{alias: string, reason: string}>} */
   const skipped = [];
 
   for (const entry of Array.isArray(hosts) ? hosts : []) {

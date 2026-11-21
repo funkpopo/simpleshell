@@ -8,11 +8,11 @@ import path from "node:path";
 process.env.SIMPLESHELL_HUB_IDLE_MS = "400";
 
 const require = createRequire(import.meta.url);
-for (const [name, exports] of [
-  ["logger", { logToFile: () => {} }],
-  ["crashReporter", { recordCrashMarker: () => {} }],
+for (const [modulePath, exports] of [
+  ["../../src/main/utils/logger", { logToFile: () => {} }],
+  ["../../src/main/diagnostics/crashReporter", { recordCrashMarker: () => {} }],
 ]) {
-  const filename = require.resolve(`../../src/main/utils/${name}`);
+  const filename = require.resolve(modulePath);
   require.cache[filename] = { id: filename, filename, loaded: true, exports };
 }
 const nativeSftp = require("../../src/main/native/nativeSftpClient");

@@ -1,3 +1,5 @@
+// @ts-check
+
 // src/shared/domain/highlight-configs.js
 const HIGHLIGHT_COLORS = {
   // 现代化配色方案 - 提高可读性和对比度

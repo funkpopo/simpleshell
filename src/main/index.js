@@ -3,11 +3,12 @@
  * 仅包含应用生命周期事件和模块初始化
  */
 const { app, shell } = require("electron");
+const { IPC_EVENT_CHANNELS } = require("../shared/contracts/ipc/channels");
 const { logToFile } = require("./utils/logger");
 const {
   initializeCrashReporter,
   recordCrashMarker,
-} = require("./utils/crashReporter");
+} = require("./diagnostics/crashReporter");
 const {
   AppInitializer,
   AppCleanup,
@@ -121,7 +122,7 @@ process.on("uncaughtException", (error) => {
   const mainWindow = getPrimaryWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     safeSendToRenderer(
-      "app:error",
+      IPC_EVENT_CHANNELS.APP_ERROR,
       buildErrorEvent(error, {
         type: "uncaughtException",
         module: "main",
@@ -150,7 +151,7 @@ process.on("unhandledRejection", (reason) => {
   const mainWindow = getPrimaryWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     safeSendToRenderer(
-      "app:error",
+      IPC_EVENT_CHANNELS.APP_ERROR,
       buildErrorEvent(error, {
         type: "unhandledRejection",
         module: "main",

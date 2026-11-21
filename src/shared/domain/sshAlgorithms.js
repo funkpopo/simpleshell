@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * SSH连接算法配置常量
  * 包含现代SSH服务器兼容的算法列表，特别是支持ssh-ed25519
@@ -48,6 +50,8 @@ const SSH_ALGORITHMS = {
 /**
  * 获取优化的SSH算法配置
  * 根据连接类型和安全要求返回不同的算法配置
+ * @param {{ securityLevel?: "high" | "medium" | "compatible" | string, serverType?: "modern" | "legacy" | string }} [options]
+ * @returns {{ serverHostKey: string[], kex: string[], cipher: string[], hmac: string[] }}
  */
 function getSSHAlgorithms(options = {}) {
   const {
@@ -81,6 +85,7 @@ function getSSHAlgorithms(options = {}) {
 
 /**
  * 获取基础SSH算法配置（用于保持向后兼容）
+ * @returns {{ serverHostKey: string[], kex: string[], cipher: string[], hmac: string[] }}
  */
 function getBasicSSHAlgorithms() {
   return {

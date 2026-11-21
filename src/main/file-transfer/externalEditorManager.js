@@ -2,8 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 const nativeSftpClient = require("../native/nativeSftpClient");
-const runtimeFileLifecycle = require("../utils/runtimeFileLifecycle");
+const runtimeFileLifecycle = require("../storage/runtimeFileLifecycle");
 const { sleep } = require("../../shared/common");
+const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
 
 const FILE_PLACEHOLDER = "%FILE%";
 const DEFAULT_DEBOUNCE_MS = 700;
@@ -292,7 +293,7 @@ async function uploadFile(tabId, remotePath, localPath) {
 
 function emitSyncEvent(status, payload) {
   if (typeof sendToRenderer === "function") {
-    sendToRenderer("external-editor:sync", {
+    sendToRenderer(IPC_EVENT_CHANNELS.EXTERNAL_EDITOR_SYNC, {
       status,
       ...payload,
       timestamp: Date.now(),

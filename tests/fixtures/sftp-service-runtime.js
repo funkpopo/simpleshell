@@ -56,12 +56,12 @@ function loadFileService(root, config) {
   const processManager = require("../../src/main/process/processManager");
   const {
     setTrustedHostFingerprint,
-  } = require("../../src/main/utils/sshHostKeyTrust");
+  } = require("../../src/main/connection/sshHostKeyTrust");
   setTrustedHostFingerprint(config, config.expectedHostFingerprint);
   processManager.setProcess("fixture-service", {
     config,
     ready: true,
-    type: "ssh2",
+    type: "ssh",
     process: {},
   });
   const events = [];

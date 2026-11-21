@@ -139,8 +139,7 @@ export default function PerformanceSettings({ initialValues, open, ref }) {
               title={t("settings.hardwareAcceleration")}
               actions={
                 hardwareAccelerationEnabled !==
-                (originalPerformanceSettings.hardwareAcceleration !==
-                  false) ? (
+                (originalPerformanceSettings.hardwareAcceleration !== false) ? (
                   <Chip
                     label={t("settings.needsRestart")}
                     size="small"

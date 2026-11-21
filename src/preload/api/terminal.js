@@ -309,46 +309,6 @@ function createTerminalAPI(bridge) {
       }
     },
 
-    // 自定义终端管理API
-    /**
-     * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_ADD_CUSTOM 请求主进程。
-     * @param {Record<string, unknown>} terminalConfig
-     * @returns {Promise<unknown>}
-     */
-    addCustomTerminal: (terminalConfig) =>
-      ipcRenderer.invoke(
-        IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_ADD_CUSTOM,
-        terminalConfig,
-      ),
-
-    /**
-     * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_UPDATE_CUSTOM 请求主进程。
-     * @param {string} id
-     * @param {Record<string, unknown>} updates
-     * @returns {Promise<unknown>}
-     */
-    updateCustomTerminal: (id, updates) =>
-      ipcRenderer.invoke(
-        IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_UPDATE_CUSTOM,
-        id,
-        updates,
-      ),
-
-    /**
-     * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_DELETE_CUSTOM 请求主进程。
-     * @param {string} id
-     * @returns {Promise<unknown>}
-     */
-    deleteCustomTerminal: (id) =>
-      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_DELETE_CUSTOM, id),
-
-    /**
-     * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_CUSTOM 请求主进程。
-     * @returns {Promise<unknown>}
-     */
-    getCustomTerminals: () =>
-      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_CUSTOM),
-
     /**
      * 通过 IPC_REQUEST_CHANNELS.LOCAL_TERMINAL_GET_ALL_ACTIVE 请求主进程。
      * @returns {Promise<unknown>}

@@ -107,7 +107,10 @@ const AISettings = ({ open, onClose }) => {
           </IconButton>
         </Tooltip>
       </DialogTitle>
-      <DialogContent dividers sx={{ p: 0, display: "flex", flexDirection: "column" }}>
+      <DialogContent
+        dividers
+        sx={{ p: 0, display: "flex", flexDirection: "column" }}
+      >
         {loading && (
           <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
             <CircularProgress size={28} />
@@ -115,7 +118,14 @@ const AISettings = ({ open, onClose }) => {
         )}
 
         {!loading && (
-          <Box sx={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+              flex: 1,
+            }}
+          >
             {/* 标签页 */}
             <Tabs
               value={tabValue}
@@ -127,7 +137,11 @@ const AISettings = ({ open, onClose }) => {
                 borderColor: "divider",
                 bgcolor: "background.default",
                 flexShrink: 0,
-                "& .MuiTab-root": { minHeight: 40, py: 0.75, fontSize: "0.85rem" },
+                "& .MuiTab-root": {
+                  minHeight: 40,
+                  py: 0.75,
+                  fontSize: "0.85rem",
+                },
               }}
             >
               <Tab label={t("aiSettings.apiManagement")} />
@@ -142,8 +156,7 @@ const AISettings = ({ open, onClose }) => {
                 overflowY: "auto",
                 flex: 1,
                 "& > [data-ai-settings-panel]": {
-                  animation:
-                    "ss-ai-panel-in 180ms cubic-bezier(0.2, 0, 0, 1)",
+                  animation: "ss-ai-panel-in 180ms cubic-bezier(0.2, 0, 0, 1)",
                 },
                 "@keyframes ss-ai-panel-in": {
                   from: { opacity: 0, transform: "translateY(4px)" },
@@ -238,7 +251,11 @@ const AISettings = ({ open, onClose }) => {
             >
               {testing ? t("aiSettings.testing") : t("aiSettings.test")}
             </Button>
-            <Button onClick={handleCancelEdit} disabled={loading} variant="outlined">
+            <Button
+              onClick={handleCancelEdit}
+              disabled={loading}
+              variant="outlined"
+            >
               {t("aiSettings.cancel")}
             </Button>
             <Button onClick={handleSave} disabled={loading} variant="contained">

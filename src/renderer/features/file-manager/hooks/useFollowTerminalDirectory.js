@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import {
   getWorkingDirectoryState,
   subscribeWorkingDirectory,
-} from "../../terminal/model/workingDirectoryStore.js";
-import { isAbsoluteRemotePath } from "../../terminal/model/workingDirectoryTracking.js";
+  isAbsoluteRemotePath,
+} from "../../../shared/state/workingDirectoryStore.js";
 
 export function useFollowTerminalDirectory({
   enabled,

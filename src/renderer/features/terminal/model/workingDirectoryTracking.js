@@ -1,12 +1,9 @@
-import { setTerminalWorkingDirectory } from "./workingDirectoryStore.js";
+import {
+  setTerminalWorkingDirectory,
+  isAbsoluteRemotePath,
+} from "../../../shared/state/workingDirectoryStore.js";
 
-// Do not trim or URL-normalize paths: spaces, percent signs and symlink/..
-// components can all be meaningful to the remote filesystem.
-export const isAbsoluteRemotePath = (path) =>
-  typeof path === "string" &&
-  path.startsWith("/") &&
-  !path.startsWith("//") &&
-  !/[\x00-\x1f\x7f-\x9f]/.test(path);
+export { isAbsoluteRemotePath };
 
 export const parseWorkingDirectoryOsc = (code, data) => {
   if (typeof data !== "string") return null;

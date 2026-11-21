@@ -12,6 +12,7 @@ const configService = require("../settings/configService");
 const { logToFile } = require("../utils/logger");
 const { safeSendToRenderer } = require("../window/windowManager");
 const { MENU_ACTIONS } = require("./systemMenu");
+const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
 
 const PRODUCT_NAME = "SimpleShell";
 const APP_USER_MODEL_ID = "com.funkpopo.simpleshell";
@@ -92,7 +93,7 @@ function getPrimaryWindow() {
 }
 
 function sendDesktopMenuAction(action) {
-  safeSendToRenderer("app:menu-action", {
+  safeSendToRenderer(IPC_EVENT_CHANNELS.APP_MENU_ACTION, {
     action,
     source: "desktop-integration",
     timestamp: Date.now(),
@@ -135,7 +136,7 @@ function sendDesktopOpenFiles(filePaths = []) {
     }).show();
   }
 
-  safeSendToRenderer("app:open-files", {
+  safeSendToRenderer(IPC_EVENT_CHANNELS.APP_OPEN_FILES, {
     filePaths: normalizedPaths,
     source: "desktop-integration",
     timestamp: Date.now(),

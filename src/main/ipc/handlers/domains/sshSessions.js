@@ -198,7 +198,7 @@ function createSshSessions(
             ssh,
             connectionInfo,
             connectionConfig,
-            "ssh2",
+            "ssh",
           );
           this.dependencies._bindConnectionProcess(
             connectionInfo.key,

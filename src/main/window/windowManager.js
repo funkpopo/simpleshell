@@ -3,7 +3,7 @@ const path = require("path");
 const configService = require("../settings/configService");
 const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
 const { logToFile } = require("../utils/logger");
-const { recordCrashMarker } = require("../utils/crashReporter");
+const { recordCrashMarker } = require("../diagnostics/crashReporter");
 const { buildErrorEvent } = require("../utils/errorResponse");
 const {
   buildStartupDarkModeArg,

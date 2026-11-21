@@ -1,6 +1,15 @@
-import React, { useEffect, useState } from "react";
-import { AIChatWindowWithSuspense } from "../../app/LazyComponents.jsx";
-import { getSessionConnectionInfo } from "../terminal/model/paneLayout.js";
+import React, { Suspense, lazy, useEffect, useState } from "react";
+import { getSessionConnectionInfo } from "../../shared/lib/sessionConnectionInfo.js";
+
+const LazyAIChatWindow = lazy(() => import("./AIChatWindow.jsx"));
+
+function DefaultAIChatWindow(props) {
+  return (
+    <Suspense fallback={null}>
+      <LazyAIChatWindow {...props} />
+    </Suspense>
+  );
+}
 
 // 只挂载访问过的 AI 对话。窗格切换保留各自草稿、历史与流式请求；
 // 关闭终端或整个 AI 工作区时才卸载并清理对应请求。
@@ -10,7 +19,7 @@ export default function AIChatWorkspace({
   windowState,
   presetInput,
   onExecuteCommand,
-  chatComponent: Chat = AIChatWindowWithSuspense,
+  chatComponent: Chat = DefaultAIChatWindow,
   ...props
 }) {
   const activeKey = activeSessionKey ?? "welcome";

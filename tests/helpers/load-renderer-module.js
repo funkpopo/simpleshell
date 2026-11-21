@@ -53,9 +53,61 @@ module.exports = function createLoader(globals = {}, mocks = {}) {
               );
             },
             ExportNamedDeclaration(nodePath) {
-              const declaration = nodePath.node.declaration;
+              const { declaration, source, specifiers } = nodePath.node;
+              if (!declaration) {
+                if (source) {
+                  const reexportId =
+                    nodePath.scope.generateUidIdentifier("reexport");
+                  const statements = [
+                    t.variableDeclaration("const", [
+                      t.variableDeclarator(
+                        reexportId,
+                        t.callExpression(t.identifier("require"), [source]),
+                      ),
+                    ]),
+                  ];
+                  for (const specifier of specifiers) {
+                    const exportMember = t.memberExpression(
+                      t.identifier("exports"),
+                      specifier.exported,
+                      !t.isIdentifier(specifier.exported),
+                    );
+                    const rhs = t.isExportNamespaceSpecifier(specifier)
+                      ? reexportId
+                      : t.memberExpression(
+                          reexportId,
+                          specifier.local,
+                          !t.isIdentifier(specifier.local),
+                        );
+                    statements.push(
+                      t.expressionStatement(
+                        t.assignmentExpression("=", exportMember, rhs),
+                      ),
+                    );
+                  }
+                  nodePath.replaceWithMultiple(statements);
+                  return;
+                }
+                nodePath.replaceWithMultiple(
+                  specifiers.map((specifier) =>
+                    t.expressionStatement(
+                      t.assignmentExpression(
+                        "=",
+                        t.memberExpression(
+                          t.identifier("exports"),
+                          specifier.exported,
+                          !t.isIdentifier(specifier.exported),
+                        ),
+                        specifier.local,
+                      ),
+                    ),
+                  ),
+                );
+                return;
+              }
               const names =
-                declaration.type === "FunctionDeclaration"
+                declaration.type === "FunctionDeclaration" ||
+                declaration.type === "ClassDeclaration"
                   ? [declaration.id.name]
                   : declaration.declarations.flatMap((item) =>
                       Object.keys(t.getBindingIdentifiers(item.id)),
@@ -75,6 +127,24 @@ module.exports = function createLoader(globals = {}, mocks = {}) {
                   ),
                 ),
               ]);
+            },
+            ExportAllDeclaration(nodePath) {
+              nodePath.replaceWith(
+                t.expressionStatement(
+                  t.callExpression(
+                    t.memberExpression(
+                      t.identifier("Object"),
+                      t.identifier("assign"),
+                    ),
+                    [
+                      t.identifier("exports"),
+                      t.callExpression(t.identifier("require"), [
+                        nodePath.node.source,
+                      ]),
+                    ],
+                  ),
+                ),
+              );
             },
             ExportDefaultDeclaration(nodePath) {
               const declaration = nodePath.node.declaration;

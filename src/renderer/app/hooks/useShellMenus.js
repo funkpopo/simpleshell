@@ -7,7 +7,7 @@ import {
   openLogDirectory,
   exportDiagnostics,
   openFeedbackIssue,
-} from "../../features/diagnostics/diagnosticsActions.js";
+} from "../../shared/lib/diagnosticsActions.js";
 import { useNotification } from "../../shared/notifications/NotificationContext.jsx";
 import {
   UPDATE_REMINDER_STORAGE_KEY,

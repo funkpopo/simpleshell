@@ -13,9 +13,7 @@ const {
   STANDARD_RESPONSE_SCHEMA,
   args,
   arrayArg,
-  defineEvent,
   defineRequest,
-  objectArg,
 } = require("../schema");
 
 const BATCH_CHANNEL_DEFINITIONS = Object.freeze([
@@ -26,31 +24,6 @@ const BATCH_CHANNEL_DEFINITIONS = Object.freeze([
     args([arrayArg()]),
     STANDARD_RESPONSE_SCHEMA,
     { permission: "high-risk" },
-  ),
-  defineEvent(
-    "IPC_BATCH_FORWARD",
-    "ipc:batch-forward",
-    "ipc",
-    args([objectArg()]),
-    { permission: "high-risk" },
-  ),
-  defineEvent(
-    "TERMINAL_OUTPUT_BATCH",
-    "terminal-output:batch",
-    "ipc",
-    args([arrayArg()]),
-  ),
-  defineEvent(
-    "FILE_CHANGE_BATCH",
-    "file-change:batch",
-    "ipc",
-    args([arrayArg()]),
-  ),
-  defineEvent(
-    "LOG_MESSAGE_BATCH",
-    "log-message:batch",
-    "ipc",
-    args([arrayArg()]),
   ),
 ]);
 

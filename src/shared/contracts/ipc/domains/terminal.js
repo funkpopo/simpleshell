@@ -282,30 +282,6 @@ const TERMINAL_CHANNEL_DEFINITIONS = Object.freeze([
     args([{}]),
   ),
   defineRequest(
-    "LOCAL_TERMINAL_ADD_CUSTOM",
-    "addCustomTerminal",
-    "local-terminal",
-    args([objectArg()]),
-  ),
-  defineRequest(
-    "LOCAL_TERMINAL_UPDATE_CUSTOM",
-    "updateCustomTerminal",
-    "local-terminal",
-    args([{}, objectArg()]),
-  ),
-  defineRequest(
-    "LOCAL_TERMINAL_DELETE_CUSTOM",
-    "deleteCustomTerminal",
-    "local-terminal",
-    args([{}]),
-  ),
-  defineRequest(
-    "LOCAL_TERMINAL_GET_CUSTOM",
-    "getCustomTerminals",
-    "local-terminal",
-    NO_ARGS_SCHEMA,
-  ),
-  defineRequest(
     "LOCAL_TERMINAL_GET_ALL_ACTIVE",
     "getAllActiveLocalTerminals",
     "local-terminal",

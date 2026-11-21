@@ -16,7 +16,7 @@ import {
   clearCompletedTransfersForAllTabs,
 } from "../state/globalTransferStore.js";
 import { useTranslation } from "react-i18next";
-import useTransferHosts from "../../file-manager/hooks/useTransferHosts.js";
+import useTransferHosts from "../hooks/useTransferHosts.js";
 import { sumTransferFileCount } from "../lib/transferCounts.js";
 import { getTransferIcon, getDangerHoverSx } from "../transferStatusStyles.jsx";
 import { useTransferItemDerived } from "../lib/useTransferItemDerived.js";

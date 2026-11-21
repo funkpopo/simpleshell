@@ -1,4 +1,4 @@
-const fileSnapshotStore = require("../../utils/fileSnapshotStore");
+const fileSnapshotStore = require("../../storage/fileSnapshotStore");
 const nativeSftpClient = require("../../native/nativeSftpClient");
 const {
   IPC_REQUEST_CHANNELS,
@@ -11,21 +11,6 @@ const {
 class SftpHandlers {
   getHandlers() {
     return [
-      {
-        channel: IPC_REQUEST_CHANNELS.SFTP_GET_SESSION,
-        category: "sftp",
-        handler: this.getSftpSession.bind(this),
-      },
-      {
-        channel: IPC_REQUEST_CHANNELS.SFTP_ENQUEUE_OPERATION,
-        category: "sftp",
-        handler: this.enqueueSftpOperation.bind(this),
-      },
-      {
-        channel: IPC_REQUEST_CHANNELS.SFTP_PROCESS_QUEUE,
-        category: "sftp",
-        handler: this.processSftpQueue.bind(this),
-      },
       {
         channel: IPC_REQUEST_CHANNELS.SFTP_READ_FILE_CONTENT,
         category: "sftp",
@@ -62,34 +47,6 @@ class SftpHandlers {
         handler: this.restoreFileSnapshot.bind(this),
       },
     ];
-  }
-
-  /** @deprecated Backend metadata only. Native file commands acquire their own session. */
-  async getSftpSession(event, tabId) {
-    void event;
-    return {
-      success: true,
-      session: {
-        tabId,
-        backend: "rust-sidecar",
-        native: true,
-      },
-    };
-  }
-
-  /** @deprecated Native file commands are scheduled by their owning service. */
-  async enqueueSftpOperation(event, tabId, operation) {
-    void event;
-    void tabId;
-    void operation;
-    return { success: true, queued: false, native: true };
-  }
-
-  /** @deprecated There is no renderer-managed SFTP queue. */
-  async processSftpQueue(event, tabId) {
-    void event;
-    void tabId;
-    return { success: true, processed: true, native: true };
   }
 
   async readFileContent(event, tabId, filePath) {

@@ -22,7 +22,7 @@ const { spawn } = require("node:child_process");
 const { EventEmitter } = require("node:events");
 const { Readable, Writable, finished } = require("node:stream");
 const { logToFile } = require("../utils/logger");
-const { recordCrashMarker } = require("../utils/crashReporter");
+const { recordCrashMarker } = require("../diagnostics/crashReporter");
 const { getNativeServicesHostPath } = require("./nativeServices");
 const {
   CORE_SCHEMA_VERSION,

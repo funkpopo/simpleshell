@@ -1,3 +1,5 @@
+// @ts-check
+
 const CONNECTION_FAILURE_KINDS = Object.freeze({
   DNS: "dns",
   PORT: "port",
@@ -11,12 +13,12 @@ const CONNECTION_FAILURE_KINDS = Object.freeze({
   UNKNOWN: "unknown",
 });
 
-function isZhLanguage(language) {
-  return String(language || "zh-CN")
-    .toLowerCase()
-    .startsWith("zh");
-}
+const { t: mainT, normalizeLanguage, isZhLanguage } = require("./mainI18n");
 
+/**
+ * @param {any} value
+ * @returns {string}
+ */
 function normalizeText(value) {
   if (typeof value === "string") {
     return value;
@@ -34,6 +36,10 @@ function normalizeText(value) {
   );
 }
 
+/**
+ * @param {any} error
+ * @returns {string}
+ */
 function normalizeCode(error) {
   if (!error || typeof error !== "object") {
     return "";
@@ -48,6 +54,11 @@ function normalizeCode(error) {
   ).toUpperCase();
 }
 
+/**
+ * @param {Record<string, any> | null | undefined} config
+ * @param {string} message
+ * @returns {boolean}
+ */
 function hasPrivateKeyContext(config, message) {
   return (
     config?.authType === "privateKey" ||
@@ -56,6 +67,11 @@ function hasPrivateKeyContext(config, message) {
   );
 }
 
+/**
+ * @param {any} error
+ * @param {Record<string, any>} [config]
+ * @returns {string}
+ */
 function detectConnectionFailureKind(error, config = {}) {
   const message = normalizeText(error);
   const lower = message.toLowerCase();
@@ -171,6 +187,10 @@ function detectConnectionFailureKind(error, config = {}) {
   return CONNECTION_FAILURE_KINDS.UNKNOWN;
 }
 
+/**
+ * @param {Record<string, any>} [config]
+ * @returns {string}
+ */
 function getEndpoint(config = {}) {
   const host =
     config.host || config.sshConfig?.host || config.telnetConfig?.host;
@@ -185,9 +205,12 @@ function getEndpoint(config = {}) {
   return `${host}:${port}`;
 }
 
+/**
+ * @param {string} kind
+ * @param {{ language?: string, config?: Record<string, any>, code?: string | null }} [options]
+ * @returns {{ schemaVersion: number, kind: string, code: string | null, title: string, message: string, suggestion: string }}
+ */
 function buildAdvice(kind, { language, config = {}, code = null } = {}) {
-  // Lazy require avoids circular init with mainI18n → locales.
-  const { t: mainT, normalizeLanguage } = require("./mainI18n");
   const lng = normalizeLanguage(language || config.language);
   const endpoint = getEndpoint(config);
   const target = endpoint
@@ -267,6 +290,11 @@ function buildAdvice(kind, { language, config = {}, code = null } = {}) {
   };
 }
 
+/**
+ * @param {any} error
+ * @param {Record<string, any>} [config]
+ * @returns {{ schemaVersion: number, kind: string, code: string | null, title: string, message: string, suggestion: string }}
+ */
 function classifyConnectionFailure(error, config = {}) {
   const kind = detectConnectionFailureKind(error, config);
   const code = normalizeCode(error) || null;

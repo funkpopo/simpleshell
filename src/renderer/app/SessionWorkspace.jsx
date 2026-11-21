@@ -1,7 +1,10 @@
 import { memo, useMemo } from "react";
 import TerminalWorkspace from "../features/terminal/components/TerminalWorkspace.jsx";
 import AIChatWorkspace from "../features/ai/AIChatWorkspace.jsx";
-import { WebTerminalWithSuspense as WebTerminal } from "./LazyComponents.jsx";
+import {
+  WebTerminalWithSuspense as WebTerminal,
+  AIChatWindowWithSuspense,
+} from "./LazyComponents.jsx";
 import {
   useShellSelector,
   useTerminalSelector,
@@ -94,5 +97,11 @@ export function SessionWorkspace(props) {
 
 export function SessionAIChatWorkspace(props) {
   const sessions = useLiveTerminalSessions(true);
-  return <AIChatWorkspace {...props} sessions={sessions} />;
+  return (
+    <AIChatWorkspace
+      {...props}
+      sessions={sessions}
+      chatComponent={AIChatWindowWithSuspense}
+    />
+  );
 }

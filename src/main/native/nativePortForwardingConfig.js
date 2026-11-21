@@ -2,8 +2,8 @@ const { createHash } = require("node:crypto");
 const {
   processSSHPrivateKeyAsync,
   resolveSshAgentPath,
-} = require("../utils/ssh-utils");
-const { getTrustedHostFingerprint } = require("../utils/sshHostKeyTrust");
+} = require("../connection/ssh-utils");
+const { getTrustedHostFingerprint } = require("../connection/sshHostKeyTrust");
 const {
   resolveKeyboardInteractiveAnswers,
 } = require("../connection/ssh-interactive-auth");

@@ -6,7 +6,7 @@ const {
   buildDiagnosticSummary,
   buildFeedbackIssueUrl,
   exportDiagnosticPackage,
-} = require("../../utils/diagnostics");
+} = require("../../diagnostics/diagnostics");
 const updateService = require("../../update/updateService");
 const {
   IPC_EVENT_CHANNELS,

@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { getTempDirectory } = require("./appPaths");
+const { getTempDirectory } = require("../utils/appPaths");
 const runtimeFileLifecycle = require("./runtimeFileLifecycle");
 const { generateId } = require("../../shared/common");
 

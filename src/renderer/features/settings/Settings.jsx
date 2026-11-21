@@ -226,7 +226,12 @@ const Settings = memo(({ open, onClose }) => {
               <List
                 dense
                 component="nav"
-                sx={{ p: 1, display: "flex", flexDirection: "column", gap: 0.5 }}
+                sx={{
+                  p: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 0.5,
+                }}
               >
                 {sidebarItems.map((item) => (
                   <ListItemButton

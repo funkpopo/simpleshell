@@ -7,8 +7,8 @@ const { getBasicSSHAlgorithms } = require("../../shared/domain/sshAlgorithms");
 const {
   processSSHPrivateKeyAsync,
   buildSshConnectOptions,
-} = require("../utils/ssh-utils");
-const { resolveSshNetworkProfile } = require("../utils/ssh-network-profile");
+} = require("./ssh-utils");
+const { resolveSshNetworkProfile } = require("./ssh-network-profile");
 const { t: mainT, normalizeLanguage } = require("../../shared/mainI18n");
 const {
   attachKeyboardInteractiveSupport,

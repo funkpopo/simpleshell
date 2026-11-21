@@ -161,12 +161,16 @@ export default function useBackgroundDirectoryRefresh({
         if (typeof resolve === "function") {
           resolve({
             ok: false,
-            error: response?.error || tRef.current("fileManager.errors.listFilesFailed"),
+            error:
+              response?.error ||
+              tRef.current("fileManager.errors.listFilesFailed"),
           });
         }
         return {
           ok: false,
-          error: response?.error || tRef.current("fileManager.errors.listFilesFailed"),
+          error:
+            response?.error ||
+            tRef.current("fileManager.errors.listFilesFailed"),
         };
       }
 
@@ -227,7 +231,9 @@ export default function useBackgroundDirectoryRefresh({
       bg.resolve = null;
       bg.reject = null;
       backgroundListBufferRef.current = [];
-      const protocolError = tRef.current("fileManager.errors.listFilesTokenMissing");
+      const protocolError = tRef.current(
+        "fileManager.errors.listFilesTokenMissing",
+      );
       if (typeof resolve === "function") {
         resolve({ ok: false, error: protocolError });
       }
