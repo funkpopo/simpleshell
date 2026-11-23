@@ -1,4 +1,10 @@
 /** ApplicationSettings: explicit dependencies supplied by the service facade. */
+const {
+  createDefaultLogSettings,
+  createDefaultUISettings,
+  mergeUISettings,
+} = require("../../../shared/settings/uiSettingsDefaults");
+
 function createApplicationSettings(
   dependencies,
   { filterCommandHistory, decompressCommandHistory, compressCommandHistory },
@@ -12,10 +18,10 @@ function createApplicationSettings(
         fallback: () => this._getDefaultUISettings(),
         read: (config) => {
           if (config.uiSettings) {
-            const settings = {
-              ...this._getDefaultUISettings(),
-              ...config.uiSettings,
-            };
+            const settings = mergeUISettings(
+              this._getDefaultUISettings(),
+              config.uiSettings,
+            );
             this.dependencies._validate("uiSettings", settings);
             return settings;
           }
@@ -24,44 +30,16 @@ function createApplicationSettings(
       });
     }
     _getDefaultUISettings() {
-      return {
-        transferIntegrity: false,
-        sftpFollowTerminalDirectory: true,
-        language: "zh-CN",
-        fontSize: 14,
-        editorFont: "system",
-        darkMode: true,
-        sidebarPosition: "right",
-        terminalFont: "Fira Code",
-        terminalFontSize: 14,
-        terminalLineHeight: 1.0,
-        performance: {},
-        externalEditor: {},
-        resourceMonitor: {
-          displayMode: "independent",
-        },
-        desktopIntegration: {
-          trayEnabled: false,
-          closeToTray: false,
-        },
-        onboarding: {
-          completed: false,
-          completedAt: null,
-          version: 1,
-        },
-        ipQueryHistory: [],
-        windowBounds: {},
-        backupRetentionDays: 30,
-      };
+      return createDefaultUISettings();
     }
     saveUISettings(settings) {
       return this.dependencies._saveSection("UI settings", {
         write: (config) => {
-          const mergedSettings = {
-            ...this._getDefaultUISettings(),
-            ...(config.uiSettings || {}),
-            ...settings,
-          };
+          const mergedSettings = mergeUISettings(
+            this._getDefaultUISettings(),
+            config.uiSettings || {},
+            settings,
+          );
 
           delete mergedSettings.networkResilience;
           delete mergedSettings.networkResilienceMode;
@@ -80,9 +58,19 @@ function createApplicationSettings(
         fallback: () => this._getDefaultLogSettings(),
         read: (config) => {
           if (config.logSettings) {
+            const rawLogSettings = { ...config.logSettings };
+            if (
+              rawLogSettings.cleanupIntervalDays === undefined &&
+              typeof rawLogSettings.cleanupInterval === "number" &&
+              Number.isFinite(rawLogSettings.cleanupInterval)
+            ) {
+              rawLogSettings.cleanupIntervalDays =
+                rawLogSettings.cleanupInterval;
+            }
+            delete rawLogSettings.cleanupInterval;
             const settings = {
               ...this._getDefaultLogSettings(),
-              ...config.logSettings,
+              ...rawLogSettings,
             };
             this.dependencies._validate("logSettings", settings);
             return settings;
@@ -92,20 +80,31 @@ function createApplicationSettings(
       });
     }
     _getDefaultLogSettings() {
-      return {
-        level: "INFO",
-        maxFileSize: 5242880,
-        maxFiles: 5,
-        compressOldLogs: true,
-        cleanupInterval: 24,
-      };
+      return createDefaultLogSettings();
     }
     saveLogSettings(settings) {
+      const incoming =
+        settings && typeof settings === "object" ? { ...settings } : settings;
+      if (incoming && typeof incoming === "object") {
+        if (
+          incoming.cleanupIntervalDays === undefined &&
+          typeof incoming.cleanupInterval === "number" &&
+          Number.isFinite(incoming.cleanupInterval)
+        ) {
+          incoming.cleanupIntervalDays = incoming.cleanupInterval;
+        }
+        delete incoming.cleanupInterval;
+      }
       return this.dependencies._saveSection("log settings", {
         // 验证数据（原实现在读取配置前校验）
-        preValidate: () => this.dependencies._validate("logSettings", settings),
+        preValidate: () => this.dependencies._validate("logSettings", incoming),
         write: (config) => {
-          config.logSettings = settings;
+          config.logSettings = {
+            ...this._getDefaultLogSettings(),
+            ...(config.logSettings || {}),
+            ...incoming,
+          };
+          delete config.logSettings.cleanupInterval;
         },
       });
     }

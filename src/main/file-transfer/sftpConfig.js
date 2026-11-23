@@ -147,9 +147,31 @@ function isRetryableTransferError(error) {
   );
 }
 
+const {
+  normalizeSftpSettings,
+} = require("../../shared/settings/uiSettingsDefaults");
+
 // ========================================================================================
 // EXPORTS
 // ========================================================================================
+
+function applySftpSettings(uiSettingsOrSftp = {}) {
+  const source =
+    uiSettingsOrSftp &&
+    typeof uiSettingsOrSftp === "object" &&
+    uiSettingsOrSftp.sftp &&
+    typeof uiSettingsOrSftp.sftp === "object"
+      ? uiSettingsOrSftp
+      : { sftp: uiSettingsOrSftp };
+  const normalized = normalizeSftpSettings(source);
+  TRANSFER_CONFIG.PARALLEL_FILES_UPLOAD = normalized.parallelUploads;
+  TRANSFER_CONFIG.PARALLEL_FILES_DOWNLOAD = normalized.parallelDownloads;
+  RETRY_CONFIG.MAX_RETRIES = normalized.maxRetries;
+  RETRY_CONFIG.MAX_OPERATION_ATTEMPTS = normalized.maxRetries + 1;
+  SESSION_CONFIG.SESSION_IDLE_TIMEOUT =
+    normalized.sessionIdleTimeoutMinutes * 60 * 1000;
+  return normalized;
+}
 
 module.exports = {
   // Configuration objects
@@ -158,6 +180,7 @@ module.exports = {
   RETRY_CONFIG,
 
   // Helper functions
+  applySftpSettings,
   calculateRetryDelay,
   isRetryableTransferError,
 };

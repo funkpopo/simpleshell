@@ -1,8 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DIRECTORY_WATCH_INTERVAL_MS,
   toApiPath,
 } from "../lib/directoryListing.js";
+import { normalizeFileManagerSettings } from "../../../../shared/settings/uiSettingsDefaults.js";
 
 /**
  * Keeps one remote directory watch bound to the visible directory and turns
@@ -24,6 +25,45 @@ export default function useDirectoryWatch({
   const directoryWatchPathRef = useRef(null);
 
   const directoryWatchGenerationRef = useRef(0);
+
+  const [watchIntervalMs, setWatchIntervalMs] = useState(
+    DIRECTORY_WATCH_INTERVAL_MS,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const applyWatchInterval = (settings) => {
+      if (settings?.fileManager?.directoryWatchIntervalMs !== undefined) {
+        const fm = normalizeFileManagerSettings(settings);
+        setWatchIntervalMs(fm.directoryWatchIntervalMs);
+      }
+    };
+
+    const loadWatchInterval = async () => {
+      try {
+        const res = await window.terminalAPI?.loadUISettings?.();
+        const settings = res?.success ? res.settings : res;
+        if (!cancelled && settings) {
+          applyWatchInterval(settings);
+        }
+      } catch {
+        /* intentionally ignored */
+      }
+    };
+
+    const handleSettingsChanged = (event) => {
+      if (event?.detail?.fileManager?.directoryWatchIntervalMs !== undefined) {
+        applyWatchInterval(event.detail);
+      }
+    };
+
+    void loadWatchInterval();
+    window.addEventListener("settingsChanged", handleSettingsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("settingsChanged", handleSettingsChanged);
+    };
+  }, []);
 
   useEffect(() => {
     if (!window.terminalAPI?.onDirectoryWatchEvent || !tabId) {
@@ -110,6 +150,7 @@ export default function useDirectoryWatch({
         !open ||
         !sshConnection ||
         !tabId ||
+        watchIntervalMs <= 0 ||
         !window.terminalAPI?.startDirectoryWatch
       ) {
         return;
@@ -122,7 +163,7 @@ export default function useDirectoryWatch({
           tabId,
           watchPath,
           {
-            intervalMs: DIRECTORY_WATCH_INTERVAL_MS,
+            intervalMs: watchIntervalMs,
           },
         );
 
@@ -190,6 +231,6 @@ export default function useDirectoryWatch({
     toApiPath,
     showNotification,
     t,
-    DIRECTORY_WATCH_INTERVAL_MS,
+    watchIntervalMs,
   ]);
 }

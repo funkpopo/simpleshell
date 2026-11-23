@@ -14,6 +14,9 @@ export function useTerminalClipboard({
       syncTerminalLinkCtrlState(termRef.current, e.ctrlKey);
 
       if (e.button === 1) {
+        if (termRef.current?.__simpleShellMiddleClickPaste === false) {
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -45,6 +48,12 @@ export function useTerminalClipboard({
   const handleMouseUp = useCallback(
     (e) => {
       syncTerminalLinkCtrlState(termRef.current, e.ctrlKey);
+      if (termRef.current?.options?.copyOnSelect === true) {
+        const selectedText = termRef.current.getSelection?.() || "";
+        if (selectedText && window.clipboardAPI?.writeText) {
+          window.clipboardAPI.writeText(selectedText).catch(() => {});
+        }
+      }
     },
     [termRef],
   );

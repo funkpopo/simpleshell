@@ -335,7 +335,13 @@ class AppCleanup {
     try {
       const connectionManager = require("../connection/connectionManager");
       const configService = require("../settings/configService");
-      const lastConnections = connectionManager.getLastConnections(5);
+      const {
+        normalizeRecentConnectionsLimit,
+      } = require("../../shared/settings/uiSettingsDefaults");
+      const limit = normalizeRecentConnectionsLimit(
+        configService.loadUISettings?.(),
+      );
+      const lastConnections = connectionManager.getLastConnections(limit);
       logToFile(
         `App quit: Got ${lastConnections.length} last connections: ${JSON.stringify(lastConnections)}`,
         "DEBUG",

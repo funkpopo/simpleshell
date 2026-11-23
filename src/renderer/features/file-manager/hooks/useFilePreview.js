@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { formatFileSize } from "../../../shared/lib/formatters.js";
 import { useTranslation } from "react-i18next";
+import { getMaxPreviewSizeBytes } from "../../../../shared/settings/uiSettingsDefaults.js";
 
 /** Owns preview identity and external editor subscriptions. */
 export default function useFilePreview({
@@ -19,6 +20,7 @@ export default function useFilePreview({
   const [showPreview, setShowPreview] = useState(false);
   const [externalEditorEnabled, setExternalEditorEnabled] = useState(false);
   const externalEditorEventThrottles = useRef(new Map());
+  const maxPreviewSizeBytesRef = useRef(getMaxPreviewSizeBytes(10));
 
   const [previewLocation, setPreviewLocation] = useState({
     currentPath,
@@ -42,6 +44,9 @@ export default function useFilePreview({
         updated = true;
         setExternalEditorEnabled(enabled);
       }
+      if (event.detail?.fileManager?.maxPreviewSizeMB !== undefined) {
+        maxPreviewSizeBytesRef.current = getMaxPreviewSizeBytes(event.detail);
+      }
     };
     window.addEventListener("settingsChanged", onSettingsChanged);
     const load = async () => {
@@ -50,6 +55,9 @@ export default function useFilePreview({
         const settings = await window.terminalAPI?.loadUISettings?.();
         if (active && !updated)
           setExternalEditorEnabled(settings?.externalEditor?.enabled === true);
+        if (active && settings?.fileManager?.maxPreviewSizeMB !== undefined) {
+          maxPreviewSizeBytesRef.current = getMaxPreviewSizeBytes(settings);
+        }
       } catch {
         // The default remains disabled; a newer settings event takes precedence.
       }
@@ -131,7 +139,7 @@ export default function useFilePreview({
         return false;
       }
 
-      const maxFileSize = 10 * 1024 * 1024;
+      const maxFileSize = maxPreviewSizeBytesRef.current;
       if (file.size && file.size > maxFileSize) {
         showOperationError(
           t("fileManager.messages.fileSizeExceedsLimit", {

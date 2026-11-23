@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { normalizeFileManagerSettings } from "../../../../shared/settings/uiSettingsDefaults.js";
 
 const fileNameCollator = new Intl.Collator(undefined, {
   numeric: true,
@@ -111,7 +112,54 @@ export default function useFileSelection({
 
   const [anchorIndex, setAnchorIndex] = useState(-1);
 
-  const [sortMode, setSortMode] = useState("name");
+  const [sortMode, setSortModeState] = useState("name");
+  const userChangedSortRef = useRef(false);
+  const setSortMode = useCallback((nextMode) => {
+    userChangedSortRef.current = true;
+    setSortModeState(nextMode);
+  }, []);
+  const [showHiddenFiles, setShowHiddenFiles] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadFileManagerUi = async () => {
+      try {
+        const res = await window.terminalAPI?.loadUISettings?.();
+        const settings = res?.success ? res.settings : res;
+        if (!cancelled && settings?.fileManager) {
+          const fm = normalizeFileManagerSettings(settings);
+          setShowHiddenFiles(fm.showHiddenFiles);
+          if (!userChangedSortRef.current) {
+            setSortModeState(fm.defaultSortMode);
+          }
+        }
+      } catch {
+        /* intentionally ignored */
+      }
+    };
+
+    const handleSettingsChanged = (event) => {
+      const fmRaw = event?.detail?.fileManager;
+      if (!fmRaw || typeof fmRaw !== "object") {
+        return;
+      }
+      const fm = normalizeFileManagerSettings(event.detail);
+      if (fmRaw.showHiddenFiles !== undefined) {
+        setShowHiddenFiles(fm.showHiddenFiles);
+      }
+      if (fmRaw.defaultSortMode !== undefined) {
+        userChangedSortRef.current = false;
+        setSortModeState(fm.defaultSortMode);
+      }
+    };
+
+    void loadFileManagerUi();
+    window.addEventListener("settingsChanged", handleSettingsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("settingsChanged", handleSettingsChanged);
+    };
+  }, []);
 
   const selectedFileRef = useRef(selectedFile);
 
@@ -239,9 +287,18 @@ export default function useFileSelection({
 
   const displayFiles = useMemo(() => {
     let processed = files;
+    if (!showHiddenFiles) {
+      processed = processed.filter(
+        (f) =>
+          typeof f?.name !== "string" ||
+          !f.name.startsWith(".") ||
+          f.name === "." ||
+          f.name === "..",
+      );
+    }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      processed = files.filter(
+      processed = processed.filter(
         (f) => f.name && f.name.toLowerCase().includes(term),
       );
     }
@@ -272,7 +329,7 @@ export default function useFileSelection({
     dirs.sort(compareByName);
     regularFiles.sort(compareByName);
     return dirs.concat(regularFiles);
-  }, [files, searchTerm, sortMode, isChunking]);
+  }, [files, searchTerm, sortMode, showHiddenFiles, isChunking]);
 
   const handleFileSelect = useCallback(
     (file, index, event) => {

@@ -17,6 +17,9 @@ import InputAdornment from "@mui/material/InputAdornment";
 import Grid from "@mui/material/Grid";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import BugReportIcon from "@mui/icons-material/BugReport";
+import ClearIcon from "@mui/icons-material/Clear";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import { useTranslation } from "react-i18next";
 import { useNotification } from "../../../shared/notifications/NotificationContext";
 import {
@@ -24,12 +27,18 @@ import {
   exportDiagnostics,
 } from "../../../shared/lib/diagnosticsActions.js";
 import {
+  EDITOR_FONT_OPTIONS,
+  TERMINAL_CURSOR_STYLE_OPTIONS,
+  TERMINAL_FONT_WEIGHT_BOLD_OPTIONS,
+} from "../../../../shared/settings/uiSettingsDefaults.js";
+import {
   sectionCardSx,
   compactFieldSx,
   subSectionLabelSx,
+  SettingsToggleRow,
 } from "../components/SettingsSection.jsx";
 
-export default function TerminalSettings({ initialValues, ref }) {
+export default function TerminalSettings({ initialValues, open, ref }) {
   const { t } = useTranslation();
   const { showError, showSuccess } = useNotification();
   const fontSizes = [
@@ -61,7 +70,9 @@ export default function TerminalSettings({ initialValues, ref }) {
     { value: "WARN", label: t("settings.logLevels.warn") },
     { value: "ERROR", label: t("settings.logLevels.error") },
   ];
-  const [editorFont] = React.useState(initialValues.editorFont);
+  const [editorFont, setEditorFont] = React.useState(
+    initialValues.editorFont || "system",
+  );
   const [terminalFont, setTerminalFont] = React.useState(
     initialValues.terminalFont,
   );
@@ -71,15 +82,59 @@ export default function TerminalSettings({ initialValues, ref }) {
   const [terminalFontWeight, setTerminalFontWeight] = React.useState(
     initialValues.terminalFontWeight,
   );
+  const [terminalFontWeightBold, setTerminalFontWeightBold] = React.useState(
+    initialValues.terminalFontWeightBold,
+  );
   const [terminalLineHeight, setTerminalLineHeight] = React.useState(
     initialValues.terminalLineHeight,
+  );
+  const [terminalLetterSpacing, setTerminalLetterSpacing] = React.useState(
+    initialValues.terminalLetterSpacing,
   );
   const [terminalScrollbackLines, setTerminalScrollbackLines] = React.useState(
     initialValues.terminalScrollbackLines,
   );
+  const [terminalCursorStyle, setTerminalCursorStyle] = React.useState(
+    initialValues.terminalCursorStyle,
+  );
+  const [terminalCursorBlink, setTerminalCursorBlink] = React.useState(
+    initialValues.terminalCursorBlink,
+  );
+  const [terminalCopyOnSelect, setTerminalCopyOnSelect] = React.useState(
+    initialValues.terminalCopyOnSelect,
+  );
+  const [terminalRightClickSelectsWord, setTerminalRightClickSelectsWord] =
+    React.useState(initialValues.terminalRightClickSelectsWord);
+  const [terminalMiddleClickPaste, setTerminalMiddleClickPaste] =
+    React.useState(initialValues.terminalMiddleClickPaste);
+  const [terminalMacOptionIsMeta, setTerminalMacOptionIsMeta] = React.useState(
+    initialValues.terminalMacOptionIsMeta,
+  );
+  const [commandHistoryMaxSize, setCommandHistoryMaxSize] = React.useState(
+    initialValues.commandHistoryMaxSize,
+  );
+  const [commandHistoryMinLength, setCommandHistoryMinLength] = React.useState(
+    initialValues.commandHistoryMinLength,
+  );
+  const [commandSuggestionsEnabled, setCommandSuggestionsEnabled] =
+    React.useState(initialValues.commandSuggestionsEnabled);
+  const [commandSuggestionLimit, setCommandSuggestionLimit] = React.useState(
+    initialValues.commandSuggestionLimit,
+  );
+  const [defaultLocalShell, setDefaultLocalShell] = React.useState(
+    initialValues.defaultLocalShell || "auto",
+  );
+  const [detectedShells, setDetectedShells] = React.useState([]);
+  const [zmodemSaveDirectory, setZmodemSaveDirectory] = React.useState(
+    initialValues.zmodemSaveDirectory || "",
+  );
   const [logLevel, setLogLevel] = React.useState(initialValues.logLevel);
   const [maxFileSize, setMaxFileSize] = React.useState(
     initialValues.maxFileSize,
+  );
+  const [maxFiles, setMaxFiles] = React.useState(initialValues.maxFiles);
+  const [compressOldLogs, setCompressOldLogs] = React.useState(
+    initialValues.compressOldLogs,
   );
   const [cleanupIntervalDays, setCleanupIntervalDays] = React.useState(
     initialValues.cleanupIntervalDays,
@@ -87,6 +142,95 @@ export default function TerminalSettings({ initialValues, ref }) {
   const [backupRetentionDays, setBackupRetentionDays] = React.useState(
     initialValues.backupRetentionDays,
   );
+
+  React.useEffect(() => {
+    if (!open || !window.terminalAPI?.detectLocalTerminals) {
+      return undefined;
+    }
+    let cancelled = false;
+    window.terminalAPI
+      .detectLocalTerminals({ refreshRuntimeStatus: false })
+      .then((terminals) => {
+        if (!cancelled && Array.isArray(terminals)) {
+          setDetectedShells(terminals);
+        }
+      })
+      .catch(() => {
+        /* ignore detection errors in settings UI */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const localShellOptions = React.useMemo(() => {
+    const seen = new Set(["auto"]);
+    const options = [{ value: "auto", label: t("settings.localShellAuto") }];
+    for (const terminal of detectedShells) {
+      if (!terminal) continue;
+      const value = String(
+        terminal.id ||
+          terminal.executable ||
+          terminal.executablePath ||
+          terminal.command ||
+          terminal.name ||
+          "",
+      ).trim();
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      options.push({
+        value,
+        label: terminal.name ? `${terminal.name} (${value})` : value,
+      });
+    }
+    if (defaultLocalShell && !seen.has(defaultLocalShell)) {
+      options.push({ value: defaultLocalShell, label: defaultLocalShell });
+    }
+    return options;
+  }, [detectedShells, defaultLocalShell, t]);
+
+  const getEditorFontLabel = (fontKey) => {
+    switch (fontKey) {
+      case "fira-code":
+        return t("settings.fonts.fira-code");
+      case "consolas":
+        return t("settings.fonts.consolas");
+      case "space-mono":
+        return t("settings.fonts.space-mono");
+      case "system":
+      default:
+        return t("settings.editorFonts.system");
+    }
+  };
+
+  const getCursorStyleLabel = (styleKey) => {
+    switch (styleKey) {
+      case "underline":
+        return t("settings.cursorStyles.underline");
+      case "bar":
+        return t("settings.cursorStyles.bar");
+      case "block":
+      default:
+        return t("settings.cursorStyles.block");
+    }
+  };
+
+  const handleBrowseZmodemDir = async () => {
+    try {
+      const result = await window.dialogAPI?.showOpenDialog?.({
+        properties: ["openDirectory", "createDirectory"],
+      });
+      if (!result || result.canceled) return;
+      const pickedPath = Array.isArray(result.filePaths)
+        ? result.filePaths[0]
+        : null;
+      if (pickedPath) {
+        setZmodemSaveDirectory(pickedPath);
+      }
+    } catch {
+      /* ignore canceled or unavailable dialog */
+    }
+  };
   const handleTerminalFontChange = (event) => {
     setTerminalFont(event.target.value);
   };
@@ -112,10 +256,17 @@ export default function TerminalSettings({ initialValues, ref }) {
     exportDiagnostics({ t, showSuccess, showError });
   React.useImperativeHandle(ref, () => ({
     getUISettings: () => ({
-      editorFont,
+      editorFont: EDITOR_FONT_OPTIONS.includes(editorFont)
+        ? editorFont
+        : "system",
       terminalFont,
       terminalFontSize,
       terminalFontWeight,
+      terminalFontWeightBold: TERMINAL_FONT_WEIGHT_BOLD_OPTIONS.includes(
+        Number(terminalFontWeightBold),
+      )
+        ? Number(terminalFontWeightBold)
+        : 700,
       terminalLineHeight: Math.min(
         1.4,
         Math.max(
@@ -123,20 +274,54 @@ export default function TerminalSettings({ initialValues, ref }) {
           Math.round((Number(terminalLineHeight) || 1.0) * 100) / 100,
         ),
       ),
+      terminalLetterSpacing: Math.min(
+        4,
+        Math.max(-2, Math.round((Number(terminalLetterSpacing) || 0) * 2) / 2),
+      ),
       terminalScrollbackLines: normalizeTerminalScrollbackLines(
         terminalScrollbackLines,
       ),
+      terminalCursorStyle: TERMINAL_CURSOR_STYLE_OPTIONS.includes(
+        terminalCursorStyle,
+      )
+        ? terminalCursorStyle
+        : "block",
+      terminalCursorBlink: Boolean(terminalCursorBlink),
+      terminalCopyOnSelect: Boolean(terminalCopyOnSelect),
+      terminalRightClickSelectsWord: Boolean(terminalRightClickSelectsWord),
+      terminalMiddleClickPaste: Boolean(terminalMiddleClickPaste),
+      terminalMacOptionIsMeta: Boolean(terminalMacOptionIsMeta),
+      commandHistoryMaxSize: Math.min(
+        10000,
+        Math.max(100, Math.round(Number(commandHistoryMaxSize) || 1000)),
+      ),
+      commandHistoryMinLength: Math.min(
+        10,
+        Math.max(1, Math.round(Number(commandHistoryMinLength) || 3)),
+      ),
+      commandSuggestionsEnabled: Boolean(commandSuggestionsEnabled),
+      commandSuggestionLimit: Math.min(
+        30,
+        Math.max(3, Math.round(Number(commandSuggestionLimit) || 10)),
+      ),
+      defaultLocalShell: String(defaultLocalShell || "auto").trim() || "auto",
+      zmodem: {
+        saveDirectory: String(zmodemSaveDirectory || "").trim(),
+      },
       backupRetentionDays,
     }),
     saveLogs: async () => {
       if (window.terminalAPI?.saveLogSettings) {
+        const clampedMaxFiles = Math.min(
+          50,
+          Math.max(1, Math.round(Number(maxFiles) || 5)),
+        );
         const logSettings = {
           level: logLevel,
           // 将MB转换为字节
           maxFileSize: maxFileSize * 1024 * 1024,
-          // 保留其他设置默认值
-          maxFiles: 5,
-          compressOldLogs: true,
+          maxFiles: clampedMaxFiles,
+          compressOldLogs: Boolean(compressOldLogs),
           cleanupIntervalDays: cleanupIntervalDays,
         };
         await window.terminalAPI.saveLogSettings(logSettings);
@@ -232,6 +417,25 @@ export default function TerminalSettings({ initialValues, ref }) {
           </Box>
 
           <Box sx={compactFieldSx}>
+            <FormControl fullWidth variant="outlined" size="small">
+              <InputLabel>{t("settings.fontWeightBoldLabel")}</InputLabel>
+              <Select
+                value={terminalFontWeightBold}
+                onChange={(e) =>
+                  setTerminalFontWeightBold(Number(e.target.value))
+                }
+                label={t("settings.fontWeightBoldLabel")}
+              >
+                {TERMINAL_FONT_WEIGHT_BOLD_OPTIONS.map((weight) => (
+                  <MenuItem key={weight} value={weight}>
+                    {weight}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+
+          <Box sx={compactFieldSx}>
             <Box
               sx={{
                 display: "flex",
@@ -271,6 +475,64 @@ export default function TerminalSettings({ initialValues, ref }) {
             </Box>
           </Box>
 
+          <Box sx={compactFieldSx}>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <Typography variant="subtitle2">
+                {t("settings.terminalLetterSpacingLabel")}
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ fontVariantNumeric: "tabular-nums" }}
+              >
+                {Number(terminalLetterSpacing || 0).toFixed(1)}
+              </Typography>
+            </Box>
+            <Box sx={{ px: 1 }}>
+              <Slider
+                value={Number(terminalLetterSpacing) || 0}
+                onChange={(_event, value) => {
+                  const next = Array.isArray(value) ? value[0] : value;
+                  setTerminalLetterSpacing(Math.round(Number(next) * 2) / 2);
+                }}
+                min={-2}
+                max={4}
+                step={0.5}
+                marks={[
+                  { value: -2, label: "-2" },
+                  { value: 0, label: "0" },
+                  { value: 2, label: "2" },
+                  { value: 4, label: "4" },
+                ]}
+                size="small"
+                valueLabelDisplay="auto"
+              />
+            </Box>
+          </Box>
+
+          <Box sx={compactFieldSx}>
+            <FormControl fullWidth variant="outlined" size="small">
+              <InputLabel>{t("settings.editorFontLabel")}</InputLabel>
+              <Select
+                value={editorFont}
+                onChange={(e) => setEditorFont(e.target.value)}
+                label={t("settings.editorFontLabel")}
+              >
+                {EDITOR_FONT_OPTIONS.map((font) => (
+                  <MenuItem key={font} value={font}>
+                    {getEditorFontLabel(font)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+
           <Box>
             <TextField
               slotProps={{
@@ -294,10 +556,167 @@ export default function TerminalSettings({ initialValues, ref }) {
             />
           </Box>
         </Box>
+
+        <Typography sx={subSectionLabelSx}>
+          {t("settings.terminalInteractionTitle")}
+        </Typography>
+        <Box sx={sectionCardSx}>
+          <Box sx={compactFieldSx}>
+            <FormControl fullWidth variant="outlined" size="small">
+              <InputLabel>{t("settings.cursorStyleLabel")}</InputLabel>
+              <Select
+                value={terminalCursorStyle}
+                onChange={(e) => setTerminalCursorStyle(e.target.value)}
+                label={t("settings.cursorStyleLabel")}
+              >
+                {TERMINAL_CURSOR_STYLE_OPTIONS.map((styleOpt) => (
+                  <MenuItem key={styleOpt} value={styleOpt}>
+                    {getCursorStyleLabel(styleOpt)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+          <SettingsToggleRow
+            id="settings-terminal-cursor-blink"
+            noDivider
+            label={t("settings.cursorBlinkLabel")}
+            checked={terminalCursorBlink}
+            onChange={(e) => setTerminalCursorBlink(e.target.checked)}
+          />
+          <SettingsToggleRow
+            id="settings-terminal-copy-on-select"
+            label={t("settings.copyOnSelectLabel")}
+            checked={terminalCopyOnSelect}
+            onChange={(e) => setTerminalCopyOnSelect(e.target.checked)}
+          />
+          <SettingsToggleRow
+            id="settings-terminal-right-click-word"
+            label={t("settings.rightClickSelectsWordLabel")}
+            checked={terminalRightClickSelectsWord}
+            onChange={(e) => setTerminalRightClickSelectsWord(e.target.checked)}
+          />
+          <SettingsToggleRow
+            id="settings-terminal-middle-click-paste"
+            label={t("settings.middleClickPasteLabel")}
+            checked={terminalMiddleClickPaste}
+            onChange={(e) => setTerminalMiddleClickPaste(e.target.checked)}
+          />
+          <SettingsToggleRow
+            id="settings-terminal-mac-option-meta"
+            label={t("settings.macOptionIsMetaLabel")}
+            checked={terminalMacOptionIsMeta}
+            onChange={(e) => setTerminalMacOptionIsMeta(e.target.checked)}
+          />
+        </Box>
       </Grid>
 
-      {/* Right: Logs */}
+      {/* Right: Command History + Local Shell + Logs */}
       <Grid size={{ xs: 12, md: 6 }}>
+        <Typography sx={subSectionLabelSx}>
+          {t("settings.commandHistorySectionTitle")}
+        </Typography>
+        <Box sx={sectionCardSx}>
+          <Box sx={compactFieldSx}>
+            <TextField
+              slotProps={{ htmlInput: { min: 100, max: 10000, step: 50 } }}
+              fullWidth
+              size="small"
+              type="number"
+              label={t("settings.commandHistoryMaxSizeLabel")}
+              value={commandHistoryMaxSize}
+              onChange={(e) => setCommandHistoryMaxSize(e.target.value)}
+            />
+          </Box>
+          <Box sx={compactFieldSx}>
+            <TextField
+              slotProps={{ htmlInput: { min: 1, max: 10, step: 1 } }}
+              fullWidth
+              size="small"
+              type="number"
+              label={t("settings.commandHistoryMinLengthLabel")}
+              value={commandHistoryMinLength}
+              onChange={(e) => setCommandHistoryMinLength(e.target.value)}
+            />
+          </Box>
+          <SettingsToggleRow
+            id="settings-command-suggestions-enabled"
+            noDivider
+            label={t("settings.commandSuggestionsEnabledLabel")}
+            checked={commandSuggestionsEnabled}
+            onChange={(e) => setCommandSuggestionsEnabled(e.target.checked)}
+          />
+          <Box sx={{ mt: 1 }}>
+            <TextField
+              slotProps={{ htmlInput: { min: 3, max: 30, step: 1 } }}
+              fullWidth
+              size="small"
+              type="number"
+              label={t("settings.commandSuggestionLimitLabel")}
+              value={commandSuggestionLimit}
+              onChange={(e) => setCommandSuggestionLimit(e.target.value)}
+              disabled={!commandSuggestionsEnabled}
+            />
+          </Box>
+        </Box>
+
+        <Typography sx={subSectionLabelSx}>
+          {t("settings.localShellAndTransferTitle")}
+        </Typography>
+        <Box sx={sectionCardSx}>
+          <Box sx={compactFieldSx}>
+            <FormControl fullWidth variant="outlined" size="small">
+              <InputLabel>{t("settings.defaultLocalShellLabel")}</InputLabel>
+              <Select
+                value={defaultLocalShell}
+                onChange={(e) => setDefaultLocalShell(e.target.value)}
+                label={t("settings.defaultLocalShellLabel")}
+              >
+                {localShellOptions.map((opt) => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+          <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
+            <TextField
+              fullWidth
+              size="small"
+              label={t("settings.zmodemSaveDirectoryLabel")}
+              placeholder={t("settings.zmodemSaveDirectoryPlaceholder")}
+              value={zmodemSaveDirectory}
+              onChange={(e) => setZmodemSaveDirectory(e.target.value)}
+              slotProps={{
+                input: {
+                  endAdornment: zmodemSaveDirectory ? (
+                    <InputAdornment position="end">
+                      <Tooltip title={t("settings.clearDirectory")}>
+                        <IconButton
+                          size="small"
+                          aria-label={t("settings.clearDirectory")}
+                          onClick={() => setZmodemSaveDirectory("")}
+                        >
+                          <ClearIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </InputAdornment>
+                  ) : null,
+                },
+              }}
+            />
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleBrowseZmodemDir}
+              sx={{ flexShrink: 0, minHeight: 40 }}
+            >
+              {t("settings.browseDirectory")}
+            </Button>
+          </Box>
+        </Box>
+
         <Typography sx={subSectionLabelSx}>
           {t("settings.logSettingsTitle")}
         </Typography>
@@ -324,7 +743,9 @@ export default function TerminalSettings({ initialValues, ref }) {
               slotProps={{
                 input: {
                   endAdornment: (
-                    <InputAdornment position="end">MB</InputAdornment>
+                    <InputAdornment position="end">
+                      {t("settings.units.megabytesShort")}
+                    </InputAdornment>
                   ),
                 },
                 htmlInput: { min: 1 },
@@ -335,6 +756,28 @@ export default function TerminalSettings({ initialValues, ref }) {
               label={t("settings.logFileSizeLimitLabel")}
               value={maxFileSize}
               onChange={handleMaxFileSizeChange}
+            />
+          </Box>
+
+          <Box sx={compactFieldSx}>
+            <TextField
+              slotProps={{ htmlInput: { min: 1, max: 50, step: 1 } }}
+              fullWidth
+              size="small"
+              type="number"
+              label={t("settings.logMaxFilesLabel")}
+              value={maxFiles}
+              onChange={(e) => setMaxFiles(e.target.value)}
+            />
+          </Box>
+
+          <Box sx={compactFieldSx}>
+            <SettingsToggleRow
+              id="settings-compress-old-logs"
+              noDivider
+              label={t("settings.logCompressOldLogsLabel")}
+              checked={compressOldLogs}
+              onChange={(e) => setCompressOldLogs(e.target.checked)}
             />
           </Box>
 

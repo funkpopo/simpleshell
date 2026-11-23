@@ -1,4 +1,8 @@
 import { Z_INDEX } from "../shared/constants/zIndex.js";
+import {
+  normalizeRecentConnectionsLimit,
+  normalizeUpdatesSettings,
+} from "../../shared/settings/uiSettingsDefaults.js";
 import * as React from "react";
 import { useCallback, useMemo, useRef } from "react";
 import { ThemeProvider } from "@mui/material/styles";
@@ -347,7 +351,44 @@ export default function AppShell() {
     aboutUpdateCheckSignal,
     handleRemindUpdateLater,
     handleCloseSettings,
+    handleCheckForUpdates,
   } = useShellMenus({ open });
+
+  const startupUpdateCheckedRef = useRef(false);
+  React.useEffect(() => {
+    if (!uiSettingsLoaded || startupUpdateCheckedRef.current) {
+      return;
+    }
+    startupUpdateCheckedRef.current = true;
+    const { autoCheckOnStartup } = normalizeUpdatesSettings(uiSettingsSnapshot);
+    if (!autoCheckOnStartup || !window.terminalAPI?.checkForUpdate) {
+      return;
+    }
+    let cancelled = false;
+    window.terminalAPI
+      .checkForUpdate()
+      .then((result) => {
+        if (!cancelled && result?.success && result?.updateInfo?.hasUpdate) {
+          handleCheckForUpdates();
+        }
+      })
+      .catch(() => {
+        /* best-effort silent startup check */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [uiSettingsLoaded, uiSettingsSnapshot, handleCheckForUpdates]);
+
+  const recentConnectionsLimit =
+    normalizeRecentConnectionsLimit(uiSettingsSnapshot);
+  const visibleTopConnections = useMemo(
+    () =>
+      recentConnectionsLimit === 0
+        ? []
+        : topConnections.slice(0, recentConnectionsLimit),
+    [topConnections, recentConnectionsLimit],
+  );
   const { diskAlertsByTabId } = useShellNotices({ liveSessionKeys });
   const {
     handleTabChange,
@@ -705,7 +746,7 @@ export default function AppShell() {
                   >
                     <WelcomePage
                       connections={connections}
-                      topConnections={topConnections}
+                      topConnections={visibleTopConnections}
                       onOpenConnection={handleOpenConnection}
                       onCreateConnection={handleRequestCreateConnection}
                       onConnectionsUpdate={handleConnectionsUpdate}

@@ -7,7 +7,10 @@ import {
   isUsableRect,
 } from "../model/commandSuggestionCursor.js";
 import {
+  DEFAULT_COMMAND_SUGGESTIONS_ENABLED,
+  DEFAULT_COMMAND_SUGGESTION_LIMIT,
   isCursorAtInputEnd,
+  normalizeCommandSuggestionConfig,
   normalizeCommandSuggestionInput,
   resolveCommandSuggestionCompletion,
   shouldRequestCommandSuggestions,
@@ -78,6 +81,56 @@ export const useTerminalSuggestions = ({
   const suggestionSelectedRef = useRef(false);
   // 刚选中的建议命令：其回显（及其前缀）不应再次弹出建议，直到输入偏离它
   const selectionEchoRef = useRef("");
+  const suggestionsEnabledRef = useRef(DEFAULT_COMMAND_SUGGESTIONS_ENABLED);
+  const suggestionLimitRef = useRef(DEFAULT_COMMAND_SUGGESTION_LIMIT);
+
+  useEffect(() => {
+    let cancelled = false;
+    const applyConfig = (uiSettings) => {
+      const cfg = normalizeCommandSuggestionConfig(uiSettings);
+      suggestionsEnabledRef.current = cfg.enabled;
+      suggestionLimitRef.current = cfg.limit;
+      if (!cfg.enabled) {
+        setSuggestions([]);
+        setShowSuggestionsState(false);
+      }
+    };
+
+    const loadConfig = async () => {
+      try {
+        if (typeof window === "undefined") return;
+        const res = await window.terminalAPI?.loadUISettings?.();
+        const settings = res?.success ? res.settings : res;
+        if (!cancelled && settings) {
+          applyConfig(settings);
+        }
+      } catch {
+        /* intentionally ignored */
+      }
+    };
+
+    void loadConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useWindowEvent("settingsChanged", (event) => {
+    const detail = event?.detail;
+    if (
+      detail &&
+      (detail.commandSuggestionsEnabled !== undefined ||
+        detail.commandSuggestionLimit !== undefined)
+    ) {
+      const cfg = normalizeCommandSuggestionConfig(detail);
+      suggestionsEnabledRef.current = cfg.enabled;
+      suggestionLimitRef.current = cfg.limit;
+      if (!cfg.enabled) {
+        setSuggestions([]);
+        setShowSuggestionsState(false);
+      }
+    }
+  });
   const getSuggestionsRef = useRef(null);
   const suggestionRequestIdRef = useRef(0);
   const currentInputRef = useRef("");
@@ -264,6 +317,11 @@ export const useTerminalSuggestions = ({
     async (input) => {
       const requestId = suggestionRequestIdRef.current + 1;
       suggestionRequestIdRef.current = requestId;
+      if (!suggestionsEnabledRef.current) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
       if (
         !input ||
         input.trim() === "" ||
@@ -311,11 +369,13 @@ export const useTerminalSuggestions = ({
         return;
       }
 
+      const effectiveLimit =
+        suggestionLimitRef.current || COMMAND_SUGGESTION_LIMIT;
       try {
         if (window.terminalAPI && window.terminalAPI.getCommandSuggestions) {
           const response = await window.terminalAPI.getCommandSuggestions(
             trimmedInput,
-            COMMAND_SUGGESTION_LIMIT,
+            effectiveLimit,
           );
           const commandSuggestions = response?.success
             ? response.suggestions
@@ -346,7 +406,7 @@ export const useTerminalSuggestions = ({
                 if (!aStartsWith && bStartsWith) return 1;
                 return (b.count || 0) - (a.count || 0);
               })
-              .slice(0, COMMAND_SUGGESTION_LIMIT);
+              .slice(0, effectiveLimit);
 
             if (filteredSuggestions.length > 0) {
               await waitForTerminalLayoutFrame();

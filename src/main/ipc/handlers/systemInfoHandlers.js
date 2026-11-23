@@ -110,7 +110,15 @@ class SystemInfoHandlers {
 
   async loadTopConnections() {
     try {
-      return redactConnectionSecrets(configService.loadLastConnections());
+      const {
+        normalizeRecentConnectionsLimit,
+      } = require("../../../shared/settings/uiSettingsDefaults");
+      const limit = normalizeRecentConnectionsLimit(
+        configService.loadUISettings?.(),
+      );
+      const saved = configService.loadLastConnections();
+      const sliced = Array.isArray(saved) ? saved.slice(0, limit) : [];
+      return redactConnectionSecrets(sliced);
     } catch {
       return [];
     }

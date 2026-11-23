@@ -59,12 +59,6 @@ const SETTINGS_CHANNEL_DEFINITIONS = Object.freeze([
     args([objectArg()]),
   ),
   defineRequest(
-    "SETTINGS_UPDATE_PREFETCH",
-    "settings:updatePrefetchSettings",
-    "settings",
-    args([objectArg()]),
-  ),
-  defineRequest(
     "SETTINGS_GET_CREDENTIAL_SECURITY_STATUS",
     "settings:getCredentialSecurityStatus",
     "settings",

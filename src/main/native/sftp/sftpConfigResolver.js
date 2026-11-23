@@ -1,3 +1,7 @@
+const {
+  resolveSshNetworkProfile,
+} = require("../../connection/ssh-network-profile");
+
 /** SSH config, host-key trust, proxy/network path, and core binary validation for native SFTP. */
 function createSftpConfigResolver({
   processManager,
@@ -110,6 +114,10 @@ function createSftpConfigResolver({
       ]);
     }
 
+    const networkProfile = includeTimeouts
+      ? resolveSshNetworkProfile(rawConfig)
+      : null;
+
     const sshConfig = await processSSHPrivateKeyAsync({
       host: rawConfig.host,
       port: rawConfig.port || 22,
@@ -121,9 +129,12 @@ function createSftpConfigResolver({
       enableCompression: rawConfig.enableCompression === true || undefined,
       ...(includeTimeouts
         ? {
-            readyTimeout: rawConfig.readyTimeout || undefined,
-            keepaliveInterval: rawConfig.keepaliveInterval || undefined,
-            keepaliveCountMax: rawConfig.keepaliveCountMax || undefined,
+            readyTimeout:
+              rawConfig.readyTimeout || networkProfile?.readyTimeout,
+            keepaliveInterval:
+              rawConfig.keepaliveInterval || networkProfile?.keepaliveInterval,
+            keepaliveCountMax:
+              rawConfig.keepaliveCountMax || networkProfile?.keepaliveCountMax,
             expectedHostFingerprint,
           }
         : {}),

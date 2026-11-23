@@ -2,6 +2,10 @@ const { safeHandle } = require("../ipcResponse");
 const { ipcMain: electronIpcMain } = require("electron");
 const TerminalDetector = require("../../local-terminal/terminal-detector");
 const LocalTerminalManager = require("../../local-terminal/local-terminal-manager");
+const configService = require("../../settings/configService");
+const {
+  resolveDefaultLocalShellConfig,
+} = require("../../local-terminal/local-terminal-config");
 const {
   IPC_EVENT_CHANNELS,
   IPC_REQUEST_CHANNELS,
@@ -89,12 +93,53 @@ class LocalTerminalHandlers {
 
   async startEmbeddedLocalTerminal(_event, localConfig = {}) {
     const tabId = localConfig?.tabId;
+    let resolvedConfig = localConfig || {};
+    const hasExplicitShell = Boolean(
+      resolvedConfig.command ||
+      resolvedConfig.executable ||
+      resolvedConfig.executablePath ||
+      resolvedConfig.type,
+    );
+
+    if (!hasExplicitShell || resolvedConfig.useDefaultShell === true) {
+      let preferredShell = "auto";
+      try {
+        preferredShell =
+          configService.loadUISettings?.()?.defaultLocalShell || "auto";
+      } catch {
+        preferredShell = "auto";
+      }
+      let detected = [];
+      try {
+        detected = await this.terminalDetector.detectAllTerminals({
+          refreshRuntimeStatus: false,
+        });
+      } catch {
+        detected = [];
+      }
+      const defaultShellConfig = resolveDefaultLocalShellConfig(
+        preferredShell,
+        detected,
+      );
+      resolvedConfig = {
+        ...defaultShellConfig,
+        ...resolvedConfig,
+        type: defaultShellConfig.type,
+        command: defaultShellConfig.command,
+        executable: defaultShellConfig.executable,
+        executablePath: defaultShellConfig.executablePath,
+        args: defaultShellConfig.args,
+        launchArgs: defaultShellConfig.launchArgs,
+        distribution: defaultShellConfig.distribution,
+      };
+    }
+
     const result = await this.terminalManager.startEmbeddedTerminal(
-      localConfig,
+      resolvedConfig,
       tabId,
       {
-        cols: localConfig?.cols,
-        rows: localConfig?.rows,
+        cols: resolvedConfig?.cols,
+        rows: resolvedConfig?.rows,
       },
     );
 

@@ -16,6 +16,11 @@ const {
   getCheckIntervalForQuality,
   NETWORK_QUALITY_LEVELS,
 } = require("./networkQuality");
+const {
+  normalizeNetworkLatencySettings,
+} = require("../../shared/settings/uiSettingsDefaults");
+
+const activeInstances = new Set();
 
 function nowMs() {
   return Date.now();
@@ -63,7 +68,73 @@ class NetworkLatencyService extends EventEmitter {
       // ignore
     }
 
+    this._applyCheckIntervalFromConfig();
+
     logToFile("Network latency service initialized", "INFO");
+  }
+
+  static applyUiSettings(uiSettings) {
+    for (const instance of activeInstances) {
+      instance.applyUiSettings(uiSettings);
+    }
+  }
+
+  _applyCheckIntervalFromConfig() {
+    try {
+      const uiSettings = configService.loadUISettings?.();
+      if (uiSettings?.networkLatency) {
+        const normalized = normalizeNetworkLatencySettings(uiSettings);
+        this.checkInterval = normalized.checkIntervalSeconds * 1000;
+      }
+    } catch {
+      /* ignore when configService is uninitialized */
+    }
+  }
+
+  setCheckIntervalSeconds(seconds) {
+    const normalized = normalizeNetworkLatencySettings({
+      networkLatency: { checkIntervalSeconds: seconds },
+    });
+    const nextIntervalMs = normalized.checkIntervalSeconds * 1000;
+    this.checkInterval = nextIntervalMs;
+    const now = nowMs();
+
+    for (const data of this.latencyData.values()) {
+      if (data.protocol === "mosh") {
+        continue;
+      }
+      if (nextIntervalMs <= 0) {
+        data.nextCheckAt = Infinity;
+      } else {
+        const candidateDue = (data.lastCheck || now) + nextIntervalMs;
+        data.nextCheckAt = Math.min(candidateDue, now + nextIntervalMs);
+      }
+    }
+
+    if (this.isRunning && nextIntervalMs > 0) {
+      void this._runDueChecks();
+    }
+
+    return nextIntervalMs;
+  }
+
+  applyUiSettings(uiSettings) {
+    const normalized = normalizeNetworkLatencySettings(uiSettings);
+    return this.setCheckIntervalSeconds(normalized.checkIntervalSeconds);
+  }
+
+  _getCheckIntervalForQuality(qualityLevel) {
+    if (this.checkInterval <= 0) {
+      return Infinity;
+    }
+    const defaultGoodInterval =
+      getCheckIntervalForQuality(NETWORK_QUALITY_LEVELS.GOOD) || 60 * 1000;
+    const qualityInterval =
+      getCheckIntervalForQuality(qualityLevel) || defaultGoodInterval;
+    return Math.max(
+      1000,
+      Math.round((this.checkInterval * qualityInterval) / defaultGoodInterval),
+    );
   }
 
   /**
@@ -74,6 +145,8 @@ class NetworkLatencyService extends EventEmitter {
       return;
     }
 
+    this._applyCheckIntervalFromConfig();
+    activeInstances.add(this);
     this.isRunning = true;
     this.serviceGeneration += 1;
     this.schedulerTimer = setInterval(() => {
@@ -91,6 +164,7 @@ class NetworkLatencyService extends EventEmitter {
    * 停止服务
    */
   stop() {
+    activeInstances.delete(this);
     if (!this.isRunning) {
       return;
     }
@@ -157,11 +231,11 @@ class NetworkLatencyService extends EventEmitter {
       lastCheck: null,
       checkCount: 0,
       errors: 0,
-      status: "checking",
+      status: this.checkInterval > 0 ? "checking" : "idle",
       history: [], // 保存最近10次的延迟记录
       lastError: null,
       checkPromise: null,
-      nextCheckAt: nowMs(),
+      nextCheckAt: this.checkInterval > 0 ? nowMs() : Infinity,
       proxyRevision: 1,
       quality: null,
       previousQualityLevel: null,
@@ -169,7 +243,9 @@ class NetworkLatencyService extends EventEmitter {
       reconnectSuccessRate: 1,
     });
 
-    void this._runDueChecks();
+    if (this.checkInterval > 0) {
+      void this._runDueChecks();
+    }
 
     logToFile(
       `Registered SSH latency probe: ${tabId} -> ${host}:${port}`,
@@ -303,7 +379,7 @@ class NetworkLatencyService extends EventEmitter {
   }
 
   async _runDueChecks() {
-    if (!this.isRunning || this.schedulerBusy) {
+    if (!this.isRunning || this.schedulerBusy || this.checkInterval <= 0) {
       return;
     }
 
@@ -483,8 +559,11 @@ class NetworkLatencyService extends EventEmitter {
             } else {
               const qualityLevel =
                 currentData.quality?.level || NETWORK_QUALITY_LEVELS.GOOD;
-              const adaptiveInterval = getCheckIntervalForQuality(qualityLevel);
-              currentData.nextCheckAt = nowMs() + adaptiveInterval;
+              const adaptiveInterval =
+                this._getCheckIntervalForQuality(qualityLevel);
+              currentData.nextCheckAt = Number.isFinite(adaptiveInterval)
+                ? nowMs() + adaptiveInterval
+                : Infinity;
             }
           }
 

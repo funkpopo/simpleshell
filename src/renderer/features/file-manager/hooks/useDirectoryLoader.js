@@ -1,9 +1,14 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { FILE_MANAGER_PATH_HISTORY_LIMIT } from "../fileManagerUtils.js";
 import {
+  CACHE_EXPIRY_TIME,
   getCachedDirectory,
   storeCachedDirectory,
 } from "../lib/directoryListing.js";
+import {
+  normalizeFileManagerSettings,
+  normalizePerformanceSettings,
+} from "../../../../shared/settings/uiSettingsDefaults.js";
 
 /**
  * Foreground directory loading (cache, chunked reads, retries, follow-request
@@ -44,12 +49,70 @@ export default function useDirectoryLoader({
 }) {
   // 重试定时器触发时调用最新渲染的 loadDirectory，避免使用过期的连接/语言闭包。
   const latestLoadDirectoryRef = useRef(null);
+  const directoryCacheConfigRef = useRef({
+    enabled: true,
+    ttlMs: CACHE_EXPIRY_TIME,
+  });
 
-  const getDirectoryFromCache = (path) =>
-    getCachedDirectory(directoryCacheRef.current, path);
+  useEffect(() => {
+    let cancelled = false;
+    const applyCacheConfig = (settings) => {
+      if (!settings || typeof settings !== "object") {
+        return;
+      }
+      const perf = normalizePerformanceSettings(settings);
+      const fm = normalizeFileManagerSettings(settings);
+      const ttlMs = fm.directoryCacheTtlSeconds * 1000;
+      const enabled = perf.cacheEnabled !== false && ttlMs > 0;
+      directoryCacheConfigRef.current = { enabled, ttlMs };
+      if (!enabled) {
+        directoryCacheRef.current?.clear?.();
+      }
+    };
 
-  const updateDirectoryCache = (path, data) =>
-    storeCachedDirectory(directoryCacheRef.current, path, data);
+    const loadCacheConfig = async () => {
+      try {
+        const res = await window.terminalAPI?.loadUISettings?.();
+        const settings = res?.success ? res.settings : res;
+        if (!cancelled && settings) {
+          applyCacheConfig(settings);
+        }
+      } catch {
+        /* intentionally ignored */
+      }
+    };
+
+    const handleSettingsChanged = (event) => {
+      const detail = event?.detail;
+      if (
+        detail &&
+        (detail.performance?.cacheEnabled !== undefined ||
+          detail.fileManager?.directoryCacheTtlSeconds !== undefined)
+      ) {
+        applyCacheConfig(detail);
+      }
+    };
+
+    void loadCacheConfig();
+    window.addEventListener("settingsChanged", handleSettingsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("settingsChanged", handleSettingsChanged);
+    };
+  }, [directoryCacheRef]);
+
+  const getDirectoryFromCache = (path) => {
+    const { enabled, ttlMs } = directoryCacheConfigRef.current;
+    if (!enabled) {
+      return null;
+    }
+    return getCachedDirectory(directoryCacheRef.current, path, ttlMs);
+  };
+
+  const updateDirectoryCache = (path, data) => {
+    const { enabled } = directoryCacheConfigRef.current;
+    storeCachedDirectory(directoryCacheRef.current, path, data, enabled);
+  };
 
   const updateCurrentPath = (newPath, isHistoryNavigation = false) => {
     currentPathRef.current = newPath;

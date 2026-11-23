@@ -34,6 +34,7 @@ import {
 import SidebarPanel from "../../shared/ui/SidebarPanel.jsx";
 import { ResourceMonitorSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
 import MetricHistoryChart from "./MetricHistoryChart.jsx";
+import { normalizeResourceMonitorSettings } from "../../../shared/settings/uiSettingsDefaults.js";
 
 /** 指标历史长度：5 秒采样间隔下约 10 分钟 */
 const METRICS_HISTORY_LIMIT = 120;
@@ -203,6 +204,11 @@ const ResourceMonitorContent = memo(
     const metricsHistoryRef = useRef([]);
     // 资源监控显示模式：independent 独立 CPU/内存卡片 / trend 历史趋势曲线（二选一，设置中调整）
     const [displayMode, setDisplayMode] = useState("independent");
+    const [systemRefreshSeconds, setSystemRefreshSeconds] = useState(5);
+    const [processRefreshSeconds, setProcessRefreshSeconds] = useState(15);
+    const [maxVisibleProcesses, setMaxVisibleProcesses] = useState(
+      MAX_VISIBLE_PROCESSES,
+    );
     const systemInfoIntervalRef = useRef(null);
     const processListIntervalRef = useRef(null);
 
@@ -338,10 +344,23 @@ const ResourceMonitorContent = memo(
       }
     }, []);
 
-    // 加载资源监控显示模式，并监听设置变更实时切换
+    // 加载资源监控设置，并监听设置变更实时切换
     useEffect(() => {
       let cancelled = false;
-      const loadDisplayMode = async () => {
+      const applyResourceMonitorSettings = (settings) => {
+        if (!settings || typeof settings !== "object") {
+          return;
+        }
+        const normalized = normalizeResourceMonitorSettings(settings);
+        setDisplayMode(
+          normalized.displayMode === "trend" ? "trend" : "independent",
+        );
+        setSystemRefreshSeconds(normalized.systemRefreshSeconds);
+        setProcessRefreshSeconds(normalized.processRefreshSeconds);
+        setMaxVisibleProcesses(normalized.maxVisibleProcesses);
+      };
+
+      const loadSettings = async () => {
         try {
           if (!window.terminalAPI?.loadUISettings) return;
           const response = await window.terminalAPI.loadUISettings();
@@ -349,26 +368,18 @@ const ResourceMonitorContent = memo(
             response?.success && response.settings
               ? response.settings
               : response;
-          if (
-            !cancelled &&
-            settings?.resourceMonitor?.displayMode !== undefined
-          ) {
-            setDisplayMode(
-              settings.resourceMonitor.displayMode === "trend"
-                ? "trend"
-                : "independent",
-            );
+          if (!cancelled && settings?.resourceMonitor !== undefined) {
+            applyResourceMonitorSettings(settings);
           }
         } catch {
-          /* 加载失败保持默认独立卡片模式 */
+          /* 加载失败保持默认设置 */
         }
       };
-      loadDisplayMode();
+      loadSettings();
 
       const handleSettingsChanged = (event) => {
-        const mode = event.detail?.resourceMonitor?.displayMode;
-        if (mode) {
-          setDisplayMode(mode === "trend" ? "trend" : "independent");
+        if (event.detail?.resourceMonitor !== undefined) {
+          applyResourceMonitorSettings(event.detail);
         }
       };
       window.addEventListener("settingsChanged", handleSettingsChanged);
@@ -378,7 +389,7 @@ const ResourceMonitorContent = memo(
       };
     }, []);
 
-    // 当侧边栏打开、标签页切换或进程面板展开状态变化时，重建轮询
+    // 当侧边栏打开、标签页切换、进程面板展开状态或采样间隔变化时，重建轮询
     useEffect(() => {
       clearPollingTimers();
 
@@ -400,12 +411,12 @@ const ResourceMonitorContent = memo(
 
       systemInfoIntervalRef.current = setInterval(() => {
         fetchResourceSnapshot(false);
-      }, 5000);
+      }, systemRefreshSeconds * 1000);
 
       if (expanded.processes) {
         processListIntervalRef.current = setInterval(() => {
           fetchProcessList();
-        }, 15000);
+        }, processRefreshSeconds * 1000);
       }
 
       return clearPollingTimers;
@@ -413,6 +424,8 @@ const ResourceMonitorContent = memo(
       open,
       currentTabId,
       expanded.processes,
+      systemRefreshSeconds,
+      processRefreshSeconds,
       fetchResourceSnapshot,
       fetchProcessList,
       clearPollingTimers,
@@ -884,81 +897,79 @@ const ResourceMonitorContent = memo(
                     ) : (
                       <>
                         <List dense disablePadding sx={{ pb: 0.25 }}>
-                          {processes
-                            .slice(0, MAX_VISIBLE_PROCESSES)
-                            .map((p) => (
-                              <ListItem
-                                key={p.pid}
-                                divider
+                          {processes.slice(0, maxVisibleProcesses).map((p) => (
+                            <ListItem
+                              key={p.pid}
+                              divider
+                              sx={{
+                                px: 0.75,
+                                py: 0.6,
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "stretch",
+                                gap: 0.4,
+                                borderRadius: 1,
+                                "&:hover": { bgcolor: "action.hover" },
+                              }}
+                            >
+                              <Box
                                 sx={{
-                                  px: 0.75,
-                                  py: 0.6,
                                   display: "flex",
-                                  flexDirection: "column",
-                                  alignItems: "stretch",
-                                  gap: 0.4,
-                                  borderRadius: 1,
-                                  "&:hover": { bgcolor: "action.hover" },
+                                  alignItems: "baseline",
+                                  gap: 0.75,
+                                  minWidth: 0,
                                 }}
                               >
-                                <Box
-                                  sx={{
-                                    display: "flex",
-                                    alignItems: "baseline",
-                                    gap: 0.75,
-                                    minWidth: 0,
-                                  }}
+                                <Tooltip
+                                  title={`${p.name} (PID: ${p.pid})`}
+                                  placement="top-start"
+                                  enterDelay={400}
                                 >
-                                  <Tooltip
-                                    title={`${p.name} (PID: ${p.pid})`}
-                                    placement="top-start"
-                                    enterDelay={400}
-                                  >
-                                    <Typography
-                                      variant="caption"
-                                      noWrap
-                                      sx={{
-                                        flex: 1,
-                                        minWidth: 0,
-                                        fontSize: "0.75rem",
-                                        lineHeight: 1.4,
-                                        fontWeight: 500,
-                                        color: "text.primary",
-                                      }}
-                                    >
-                                      {p.name}
-                                    </Typography>
-                                  </Tooltip>
                                   <Typography
                                     variant="caption"
+                                    noWrap
                                     sx={{
-                                      flexShrink: 0,
-                                      fontSize: "0.68rem",
+                                      flex: 1,
+                                      minWidth: 0,
+                                      fontSize: "0.75rem",
                                       lineHeight: 1.4,
-                                      color: "text.secondary",
-                                      fontFamily: "ui-monospace, monospace",
-                                      fontVariantNumeric: "tabular-nums",
+                                      fontWeight: 500,
+                                      color: "text.primary",
                                     }}
                                   >
-                                    PID {p.pid}
+                                    {p.name}
                                   </Typography>
-                                </Box>
-                                <Box sx={{ display: "flex", gap: 1 }}>
-                                  <CompactUsageMetric
-                                    label={t("resourceMonitor.cpuShort")}
-                                    value={p.cpu}
-                                    theme={theme}
-                                  />
-                                  <CompactUsageMetric
-                                    label={t("resourceMonitor.memoryShort")}
-                                    value={p.memory}
-                                    theme={theme}
-                                  />
-                                </Box>
-                              </ListItem>
-                            ))}
+                                </Tooltip>
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    flexShrink: 0,
+                                    fontSize: "0.68rem",
+                                    lineHeight: 1.4,
+                                    color: "text.secondary",
+                                    fontFamily: "ui-monospace, monospace",
+                                    fontVariantNumeric: "tabular-nums",
+                                  }}
+                                >
+                                  PID {p.pid}
+                                </Typography>
+                              </Box>
+                              <Box sx={{ display: "flex", gap: 1 }}>
+                                <CompactUsageMetric
+                                  label={t("resourceMonitor.cpuShort")}
+                                  value={p.cpu}
+                                  theme={theme}
+                                />
+                                <CompactUsageMetric
+                                  label={t("resourceMonitor.memoryShort")}
+                                  value={p.memory}
+                                  theme={theme}
+                                />
+                              </Box>
+                            </ListItem>
+                          ))}
                         </List>
-                        {processes.length > MAX_VISIBLE_PROCESSES && (
+                        {processes.length > maxVisibleProcesses && (
                           <Typography
                             variant="caption"
                             color="text.secondary"
@@ -970,7 +981,7 @@ const ResourceMonitorContent = memo(
                             }}
                           >
                             {t("resourceMonitor.topProcessesHint", {
-                              count: MAX_VISIBLE_PROCESSES,
+                              count: maxVisibleProcesses,
                             })}
                           </Typography>
                         )}

@@ -2,6 +2,7 @@
 function createSftpSessionPool({
   NATIVE_SFTP_SCHEMA_VERSION,
   NATIVE_SFTP_SESSION_IDLE_TIMEOUT_MS,
+  getIdleTimeoutMs,
   spawnCoreService,
   logToFile,
   recordNativeSidecarNetworkPath,
@@ -290,10 +291,11 @@ function createSftpSessionPool({
     _armIdleTimer() {
       if (this.idleTimer) clearTimeout(this.idleTimer);
       if (this.pending.size > 0 || this.closeRequested) return;
-      this.idleTimer = setTimeout(
-        () => this.close(),
-        NATIVE_SFTP_SESSION_IDLE_TIMEOUT_MS,
-      );
+      const timeoutMs =
+        typeof getIdleTimeoutMs === "function"
+          ? Number(getIdleTimeoutMs()) || NATIVE_SFTP_SESSION_IDLE_TIMEOUT_MS
+          : NATIVE_SFTP_SESSION_IDLE_TIMEOUT_MS;
+      this.idleTimer = setTimeout(() => this.close(), timeoutMs);
       this.idleTimer.unref?.();
     }
 

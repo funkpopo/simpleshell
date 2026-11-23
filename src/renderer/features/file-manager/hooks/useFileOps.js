@@ -4,6 +4,7 @@ import { joinPath, getParentPath, withSftpRetry } from "../fileManagerUtils.js";
 import useFileNameDialog from "./useFileNameDialog.js";
 import useFileDetails from "./useFileDetails.js";
 import useFilePreview from "./useFilePreview.js";
+import { normalizeSftpSettings } from "../../../../shared/settings/uiSettingsDefaults.js";
 
 /** Composes file commands; each dialog owns its draft, target and request lifecycle. */
 export default function useFileOps({
@@ -27,6 +28,37 @@ export default function useFileOps({
   );
   const [isDeleting, setIsDeleting] = useState(false);
   const isDeletingRef = useRef(false);
+  const sftpMaxRetriesRef = useRef(2);
+  useEffect(() => {
+    let cancelled = false;
+    const applyRetries = (settings) => {
+      if (settings?.sftp) {
+        sftpMaxRetriesRef.current = normalizeSftpSettings(settings).maxRetries;
+      }
+    };
+    const load = async () => {
+      try {
+        const res = await window.terminalAPI?.loadUISettings?.();
+        const settings = res?.success ? res.settings : res;
+        if (!cancelled && settings) {
+          applyRetries(settings);
+        }
+      } catch {
+        /* intentionally ignored */
+      }
+    };
+    const handleSettingsChanged = (event) => {
+      if (event?.detail?.sftp?.maxRetries !== undefined) {
+        applyRetries(event.detail);
+      }
+    };
+    void load();
+    window.addEventListener("settingsChanged", handleSettingsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("settingsChanged", handleSettingsChanged);
+    };
+  }, []);
   const contextRef = useRef({ tabId, currentPath });
   useEffect(() => {
     contextRef.current = { tabId, currentPath };
@@ -140,7 +172,7 @@ export default function useFileOps({
       withSftpRetry(
         () => window.terminalAPI.deleteFile(tabId, targetPath, isDirectory),
         {
-          maxRetries: 3,
+          maxRetries: sftpMaxRetriesRef.current,
           baseDelay: 500,
           fallbackError: t("fileManager.errors.deleteFailed"),
           formatCaughtError: (error) =>
@@ -153,7 +185,7 @@ export default function useFileOps({
   const createFolderWithRetry = useCallback(
     (folderPath) =>
       withSftpRetry(() => window.terminalAPI.createFolder(tabId, folderPath), {
-        maxRetries: 2,
+        maxRetries: sftpMaxRetriesRef.current,
         baseDelay: 300,
         fallbackError: t("fileManager.errors.createFolderFailed"),
         treatErrorAsSuccess: (responseError) =>
@@ -170,7 +202,7 @@ export default function useFileOps({
       withSftpRetry(
         () => window.terminalAPI.moveFile(tabId, sourcePath, targetPath),
         {
-          maxRetries: 2,
+          maxRetries: sftpMaxRetriesRef.current,
           baseDelay: 300,
           fallbackError: t("fileManager.errors.deleteFailed"),
         },

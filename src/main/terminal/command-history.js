@@ -2,18 +2,72 @@ const {
   isSensitiveCommand,
   filterCommandHistory,
 } = require("../../shared/security/commandPrivacy");
+const {
+  normalizeTerminalUiSettings,
+} = require("../../shared/settings/uiSettingsDefaults");
 const MIN_COMMAND_HISTORY_LENGTH = 3;
 const MIN_COMMAND_SUGGESTION_QUERY_LENGTH = 1;
+const DEFAULT_MAX_HISTORY_SIZE = 1000;
+const DEFAULT_SUGGESTION_LIMIT = 10;
 
 class CommandHistoryService {
   constructor() {
     this.history = [];
-    this.maxHistorySize = 1000; // 最大历史记录数量
+    this.maxHistorySize = DEFAULT_MAX_HISTORY_SIZE; // 最大历史记录数量
+    this.minCommandLength = MIN_COMMAND_HISTORY_LENGTH;
+    this.suggestionsEnabled = true;
+    this.defaultSuggestionLimit = DEFAULT_SUGGESTION_LIMIT;
     this.initialized = false;
   }
 
+  configure(options = {}) {
+    if (!options || typeof options !== "object") {
+      return;
+    }
+    const normalized = normalizeTerminalUiSettings(options);
+    if (options.maxHistorySize !== undefined) {
+      const size = Number(options.maxHistorySize);
+      this.maxHistorySize = Number.isFinite(size)
+        ? Math.min(10000, Math.max(100, Math.round(size)))
+        : normalized.commandHistoryMaxSize;
+    } else if (options.commandHistoryMaxSize !== undefined) {
+      this.maxHistorySize = normalized.commandHistoryMaxSize;
+    }
+
+    if (options.minCommandLength !== undefined) {
+      const len = Number(options.minCommandLength);
+      this.minCommandLength = Number.isFinite(len)
+        ? Math.min(10, Math.max(1, Math.round(len)))
+        : normalized.commandHistoryMinLength;
+    } else if (options.commandHistoryMinLength !== undefined) {
+      this.minCommandLength = normalized.commandHistoryMinLength;
+    }
+
+    if (options.suggestionsEnabled !== undefined) {
+      this.suggestionsEnabled = options.suggestionsEnabled !== false;
+    } else if (options.commandSuggestionsEnabled !== undefined) {
+      this.suggestionsEnabled = normalized.commandSuggestionsEnabled;
+    }
+
+    if (options.defaultSuggestionLimit !== undefined) {
+      const limit = Number(options.defaultSuggestionLimit);
+      this.defaultSuggestionLimit = Number.isFinite(limit)
+        ? Math.min(30, Math.max(3, Math.round(limit)))
+        : normalized.commandSuggestionLimit;
+    } else if (options.commandSuggestionLimit !== undefined) {
+      this.defaultSuggestionLimit = normalized.commandSuggestionLimit;
+    }
+
+    if (this.history.length > this.maxHistorySize) {
+      this.history = this.history.slice(0, this.maxHistorySize);
+    }
+  }
+
   initialize(initialHistory = []) {
-    this.history = filterCommandHistory(initialHistory);
+    this.history = filterCommandHistory(initialHistory).slice(
+      0,
+      this.maxHistorySize,
+    );
     this.initialized = true;
   }
 
@@ -28,8 +82,8 @@ class CommandHistoryService {
       return false;
     }
 
-    // 只保存长度大于 2 的命令
-    if (trimmedCommand.length < MIN_COMMAND_HISTORY_LENGTH) {
+    // 只保存满足最小长度要求的命令
+    if (trimmedCommand.length < this.minCommandLength) {
       return false;
     }
 
@@ -174,7 +228,13 @@ class CommandHistoryService {
     return false;
   }
 
-  getSuggestions(input, maxResults = 10) {
+  getSuggestions(input, maxResults) {
+    if (!this.suggestionsEnabled) {
+      return [];
+    }
+    const effectiveLimit = Number.isFinite(Number(maxResults))
+      ? Math.max(1, Math.min(30, Math.floor(Number(maxResults))))
+      : this.defaultSuggestionLimit;
     if (isSensitiveCommand(input)) return [];
     if (!input || typeof input !== "string" || input.trim().length === 0) {
       // 如果没有输入，不返回任何建议
@@ -208,7 +268,7 @@ class CommandHistoryService {
       return b.timestamp - a.timestamp;
     });
 
-    return prefixMatches.slice(0, maxResults).map((item) => ({
+    return prefixMatches.slice(0, effectiveLimit).map((item) => ({
       command: item.command,
       matchType: "prefix",
       count: item.count || 1,

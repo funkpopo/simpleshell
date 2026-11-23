@@ -440,7 +440,13 @@ class SSHHandlers {
 
   _broadcastTopConnections() {
     try {
-      const lastConnections = this.connectionManager.getLastConnections(5);
+      const {
+        normalizeRecentConnectionsLimit,
+      } = require("../../../shared/settings/uiSettingsDefaults");
+      const limit = normalizeRecentConnectionsLimit(
+        configService.loadUISettings?.(),
+      );
+      const lastConnections = this.connectionManager.getLastConnections(limit);
       broadcastToAllWindows(
         IPC_EVENT_CHANNELS.TOP_CONNECTIONS_CHANGED,
         redactConnectionSecrets(lastConnections),

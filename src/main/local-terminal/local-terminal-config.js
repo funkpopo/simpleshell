@@ -271,6 +271,111 @@ function createLocalTerminalTabData(localConfig = {}, options = {}) {
   };
 }
 
+/**
+ * Resolves the user's `uiSettings.defaultLocalShell` preference into a validated,
+ * allowlisted local terminal config. Arbitrary or disallowed shell strings fall
+ * back cleanly to "auto" (first detected terminal or safe platform default).
+ */
+function resolveDefaultLocalShellConfig(
+  preferredShell = "auto",
+  detectedTerminals = [],
+  options = {},
+) {
+  const platform = options.platform || process.platform;
+  const envSource = isPlainObject(options.env) ? options.env : process.env;
+  const requested = normalizeString(preferredShell);
+  const candidates = Array.isArray(detectedTerminals)
+    ? detectedTerminals.filter((item) => isPlainObject(item))
+    : [];
+
+  if (!requested || requested.toLowerCase() === "auto") {
+    return normalizeLocalTerminalConfig(candidates[0] || {}, options);
+  }
+
+  const normalizedRequestedLower = requested.toLowerCase();
+  const matchedCandidate = candidates.find((item) => {
+    const tokens = [
+      item.id,
+      item.executable,
+      item.executablePath,
+      item.systemCommand,
+      item.command,
+      item.name,
+      item.distribution ? `wsl:${item.distribution}` : "",
+    ]
+      .filter(Boolean)
+      .map((token) => String(token).trim().toLowerCase());
+    return tokens.includes(normalizedRequestedLower);
+  });
+
+  if (matchedCandidate) {
+    return normalizeLocalTerminalConfig(matchedCandidate, options);
+  }
+
+  if (platform === "win32") {
+    const winCmd = getWindowsCommandName(requested);
+    if (WINDOWS_POWERSHELL_COMMANDS.has(winCmd)) {
+      return normalizeLocalTerminalConfig(
+        {
+          type: SUPPORTED_LOCAL_TERMINAL_TYPES.WINDOWS_POWERSHELL,
+          command: winCmd,
+          executable: winCmd,
+        },
+        options,
+      );
+    }
+    if (WINDOWS_CMD_COMMANDS.has(winCmd)) {
+      return normalizeLocalTerminalConfig(
+        {
+          type: SUPPORTED_LOCAL_TERMINAL_TYPES.WINDOWS_CMD,
+          command: winCmd,
+          executable: winCmd,
+        },
+        options,
+      );
+    }
+    if (WINDOWS_WSL_COMMANDS.has(winCmd)) {
+      return normalizeLocalTerminalConfig(
+        {
+          type: SUPPORTED_LOCAL_TERMINAL_TYPES.WINDOWS_WSL,
+          command: winCmd,
+          executable: winCmd,
+        },
+        options,
+      );
+    }
+    return normalizeLocalTerminalConfig(candidates[0] || {}, options);
+  }
+
+  const defaultShell = getDefaultPosixShell(envSource);
+  if (isAllowedPosixShell(requested, defaultShell)) {
+    return normalizeLocalTerminalConfig(
+      {
+        type: SUPPORTED_LOCAL_TERMINAL_TYPES.POSIX_SHELL,
+        command: requested,
+        executable: requested,
+      },
+      options,
+    );
+  }
+
+  const posixCandidate = POSIX_SHELL_CANDIDATES.find(
+    (shellPath) => path.posix.basename(shellPath) === normalizedRequestedLower,
+  );
+  if (posixCandidate && isAllowedPosixShell(posixCandidate, defaultShell)) {
+    return normalizeLocalTerminalConfig(
+      {
+        type: SUPPORTED_LOCAL_TERMINAL_TYPES.POSIX_SHELL,
+        command: posixCandidate,
+        executable: posixCandidate,
+      },
+      options,
+    );
+  }
+
+  return normalizeLocalTerminalConfig(candidates[0] || {}, options);
+}
+
 module.exports = {
   LOCAL_TERMINAL_TAB_TYPE,
   POSIX_SHELL_CANDIDATES,
@@ -278,7 +383,9 @@ module.exports = {
   UNSUPPORTED_GUI_TERMINAL_TYPES,
   createLocalTerminalTabData,
   getDefaultPosixShell,
+  isAllowedPosixShell,
   isSupportedLocalTerminalType,
   isUnsupportedGuiTerminalType,
   normalizeLocalTerminalConfig,
+  resolveDefaultLocalShellConfig,
 };

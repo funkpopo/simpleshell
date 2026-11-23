@@ -171,6 +171,35 @@ export default function useShellConnections({
       if (typeof unsubscribe === "function") unsubscribe();
     };
   }, [dispatch]);
+  React.useEffect(() => {
+    const handleSettingsChanged = (event) => {
+      if (
+        event?.detail?.recentConnectionsLimit !== undefined &&
+        !credentialSecurityStatus.loading &&
+        !credentialSecurityStatus.requiresUnlock &&
+        window.terminalAPI?.loadTopConnections
+      ) {
+        window.terminalAPI
+          .loadTopConnections()
+          .then((recentConnections) => {
+            const normalizedRecent = normalizeRecentConnections(
+              Array.isArray(recentConnections) ? recentConnections : [],
+              connectionsRef.current,
+            );
+            dispatch(actions.setTopConnections(normalizedRecent));
+          })
+          .catch(() => {});
+      }
+    };
+    window.addEventListener("settingsChanged", handleSettingsChanged);
+    return () => {
+      window.removeEventListener("settingsChanged", handleSettingsChanged);
+    };
+  }, [
+    credentialSecurityStatus.loading,
+    credentialSecurityStatus.requiresUnlock,
+    dispatch,
+  ]);
   const handleConnectionsUpdate = useCallback(
     (updatedConnections) => {
       dispatch(actions.setConnections(updatedConnections));

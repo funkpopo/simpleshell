@@ -5,9 +5,9 @@ import Chip from "@mui/material/Chip";
 import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
 import Grid from "@mui/material/Grid";
-import ImageIcon from "@mui/icons-material/Image";
 import MemoryIcon from "@mui/icons-material/Memory";
-import CachedIcon from "@mui/icons-material/Cached";
+import SpeedIcon from "@mui/icons-material/Speed";
+import AutoAwesomeMotionIcon from "@mui/icons-material/AutoAwesomeMotion";
 import DisplaySettingsIcon from "@mui/icons-material/DisplaySettings";
 import { useTranslation } from "react-i18next";
 import {
@@ -19,17 +19,17 @@ import {
 export default function PerformanceSettings({ initialValues, open, ref }) {
   const { t } = useTranslation();
 
-  const [imageSupported, setImageSupported] = React.useState(
-    initialValues.imageSupported,
+  const [webglEnabled, setWebglEnabled] = React.useState(
+    initialValues.webglEnabled !== false,
   );
   const [cacheEnabled, setCacheEnabled] = React.useState(
-    initialValues.cacheEnabled,
+    initialValues.cacheEnabled !== false,
   );
-  const [prefetchEnabled, setPrefetchEnabled] = React.useState(
-    initialValues.prefetchEnabled,
+  const [terminalPerfMonitor, setTerminalPerfMonitor] = React.useState(
+    initialValues.terminalPerfMonitor === true,
   );
   const [hardwareAccelerationEnabled, setHardwareAccelerationEnabled] =
-    React.useState(initialValues.hardwareAccelerationEnabled);
+    React.useState(initialValues.hardwareAccelerationEnabled !== false);
   const [gpuInfo, setGpuInfo] = React.useState(initialValues.gpuInfo);
   const [gpuInfoLoading, setGpuInfoLoading] = React.useState(
     initialValues.gpuInfoLoading,
@@ -38,33 +38,25 @@ export default function PerformanceSettings({ initialValues, open, ref }) {
     initialValues.needsRestart,
   );
   const [originalPerformanceSettings] = React.useState(
-    initialValues.originalPerformanceSettings,
+    initialValues.originalPerformanceSettings || {},
   );
   const checkIfRestartNeeded = (newSettings) => {
     const current = {
-      imageSupported,
-      cacheEnabled,
-      prefetchEnabled,
-      webglEnabled: hardwareAccelerationEnabled,
       hardwareAcceleration: hardwareAccelerationEnabled,
       ...newSettings,
     };
 
-    // 图像支持或硬件加速变更需要重启
-    const needsRestartForImage =
-      current.imageSupported !== originalPerformanceSettings.imageSupported;
-    const needsRestartForGpu =
+    return (
       current.hardwareAcceleration !==
-      (originalPerformanceSettings.hardwareAcceleration !== false);
-
-    return needsRestartForImage || needsRestartForGpu;
+      (originalPerformanceSettings.hardwareAcceleration !== false)
+    );
   };
   const handlePerformanceChange = (setting, value) => {
     const newSettings = { [setting]: value };
 
     switch (setting) {
-      case "imageSupported":
-        setImageSupported(value);
+      case "webglEnabled":
+        setWebglEnabled(value);
         break;
       case "cacheEnabled":
         setCacheEnabled(value);
@@ -75,12 +67,8 @@ export default function PerformanceSettings({ initialValues, open, ref }) {
           });
         }
         break;
-      case "prefetchEnabled":
-        setPrefetchEnabled(value);
-        // 预取设置可以实时生效
-        if (window.terminalAPI?.updatePrefetchSettings) {
-          window.terminalAPI.updatePrefetchSettings({ enabled: value });
-        }
+      case "terminalPerfMonitor":
+        setTerminalPerfMonitor(value);
         break;
       case "hardwareAcceleration":
         setHardwareAccelerationEnabled(value);
@@ -113,11 +101,10 @@ export default function PerformanceSettings({ initialValues, open, ref }) {
   React.useImperativeHandle(ref, () => ({
     getUISettings: () => ({
       performance: {
-        imageSupported,
-        cacheEnabled,
-        prefetchEnabled,
-        webglEnabled: hardwareAccelerationEnabled,
-        hardwareAcceleration: hardwareAccelerationEnabled,
+        webglEnabled: Boolean(webglEnabled),
+        cacheEnabled: Boolean(cacheEnabled),
+        terminalPerfMonitor: Boolean(terminalPerfMonitor),
+        hardwareAcceleration: Boolean(hardwareAccelerationEnabled),
       },
     }),
   }));
@@ -263,33 +250,35 @@ export default function PerformanceSettings({ initialValues, open, ref }) {
           </Box>
         </Grid>
 
-        {/* 图像支持 */}
+        {/* 终端 WebGL 渲染 */}
         <Grid size={{ xs: 12 }}>
           <Box sx={{ ...sectionCardSx, height: "100%" }}>
             <SectionCardHeader
-              icon={ImageIcon}
+              icon={AutoAwesomeMotionIcon}
               iconColor="primary.main"
-              title={t("settings.imageSupport")}
+              title={t("settings.webglSupport")}
               actions={
-                needsRestart &&
-                imageSupported !==
-                  originalPerformanceSettings.imageSupported ? (
-                  <Chip
-                    label={t("settings.needsRestart")}
-                    size="small"
-                    color="warning"
-                  />
-                ) : null
+                <Chip
+                  label={t("settings.realTime")}
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                />
               }
             />
             <SettingsToggleRow
-              id="settings-image-support"
+              id="settings-webgl-renderer"
               noDivider
-              label={t("settings.enableImageSupport")}
-              description={t("settings.imageDescription")}
-              checked={imageSupported}
+              label={t("settings.enableWebgl")}
+              description={
+                hardwareAccelerationEnabled
+                  ? t("settings.webglDescription")
+                  : t("settings.webglDisabledByGpu")
+              }
+              checked={hardwareAccelerationEnabled && webglEnabled}
+              disabled={!hardwareAccelerationEnabled}
               onChange={(e) =>
-                handlePerformanceChange("imageSupported", e.target.checked)
+                handlePerformanceChange("webglEnabled", e.target.checked)
               }
             />
           </Box>
@@ -324,13 +313,13 @@ export default function PerformanceSettings({ initialValues, open, ref }) {
           </Box>
         </Grid>
 
-        {/* 智能预取 */}
+        {/* 终端性能监控 */}
         <Grid size={{ xs: 12 }}>
           <Box sx={{ ...sectionCardSx, height: "100%" }}>
             <SectionCardHeader
-              icon={CachedIcon}
-              iconColor="success.main"
-              title={t("settings.smartPrefetch")}
+              icon={SpeedIcon}
+              iconColor="info.main"
+              title={t("settings.terminalPerfMonitor")}
               actions={
                 <Chip
                   label={t("settings.realTime")}
@@ -341,13 +330,13 @@ export default function PerformanceSettings({ initialValues, open, ref }) {
               }
             />
             <SettingsToggleRow
-              id="settings-smart-prefetch"
+              id="settings-terminal-perf-monitor"
               noDivider
-              label={t("settings.enablePrefetch")}
-              description={t("settings.prefetchDescription")}
-              checked={prefetchEnabled}
+              label={t("settings.enableTerminalPerfMonitor")}
+              description={t("settings.terminalPerfMonitorDescription")}
+              checked={terminalPerfMonitor}
               onChange={(e) =>
-                handlePerformanceChange("prefetchEnabled", e.target.checked)
+                handlePerformanceChange("terminalPerfMonitor", e.target.checked)
               }
             />
           </Box>

@@ -40,7 +40,10 @@ export function attachTerminalContainerListeners({
       terminalRef.current,
       "auxclick",
       (e) => {
-        if (e.button === 1) {
+        if (
+          e.button === 1 &&
+          termRef.current?.__simpleShellMiddleClickPaste !== false
+        ) {
           e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();

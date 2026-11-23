@@ -1,9 +1,17 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+} from "react";
 import Snackbar from "@mui/material/Snackbar";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
 import { Z_INDEX } from "../constants/zIndex.js";
+import { normalizeNotificationDurationMs } from "../../../shared/settings/uiSettingsDefaults.js";
 
 const NotificationContext = createContext(null);
 const DEFAULT_AUTO_HIDE_DURATION_MS = 5000;
@@ -24,9 +32,45 @@ export const NotificationProvider = ({ children }) => {
   const [message, setMessage] = useState("");
   const [severity, setSeverity] = useState("info"); // 'success' | 'info' | 'warning' | 'error'
   const [duration, setDuration] = useState(DEFAULT_AUTO_HIDE_DURATION_MS);
+  const defaultDurationRef = useRef(DEFAULT_AUTO_HIDE_DURATION_MS);
   const [anchorOrigin, setAnchorOrigin] = useState(DEFAULT_ANCHOR_ORIGIN);
   const [variant, setVariant] = useState("filled");
   const [action, setAction] = useState(null); // { label, onClick }
+
+  useEffect(() => {
+    let cancelled = false;
+    const applyDuration = (uiSettings) => {
+      if (uiSettings && typeof uiSettings === "object") {
+        defaultDurationRef.current =
+          normalizeNotificationDurationMs(uiSettings);
+      }
+    };
+
+    const loadInitialDuration = async () => {
+      try {
+        const res = await window.terminalAPI?.loadUISettings?.();
+        const settings = res?.success ? res.settings : res;
+        if (!cancelled && settings) {
+          applyDuration(settings);
+        }
+      } catch {
+        /* intentionally ignored */
+      }
+    };
+
+    const handleSettingsChanged = (event) => {
+      if (event?.detail?.notificationDurationSeconds !== undefined) {
+        applyDuration(event.detail);
+      }
+    };
+
+    void loadInitialDuration();
+    window.addEventListener("settingsChanged", handleSettingsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("settingsChanged", handleSettingsChanged);
+    };
+  }, []);
 
   /**
    * 显示通知。
@@ -39,15 +83,19 @@ export const NotificationProvider = ({ children }) => {
    */
   const showNotification = useCallback((msg, type = "info", options = {}) => {
     const {
-      autoHideDuration = DEFAULT_AUTO_HIDE_DURATION_MS,
+      autoHideDuration,
       anchorOrigin: anchorOption = DEFAULT_ANCHOR_ORIGIN,
       variant: variantOption = "filled",
       action: actionOption = null,
     } = options;
+    const resolvedDuration =
+      autoHideDuration !== undefined
+        ? autoHideDuration
+        : defaultDurationRef.current;
 
     setMessage(msg);
     setSeverity(type);
-    setDuration(autoHideDuration);
+    setDuration(resolvedDuration);
     setAnchorOrigin(anchorOption);
     setVariant(variantOption);
     setAction(actionOption);
@@ -56,40 +104,28 @@ export const NotificationProvider = ({ children }) => {
 
   const showError = useCallback(
     (msg, options) => {
-      showNotification(msg, "error", {
-        autoHideDuration: DEFAULT_AUTO_HIDE_DURATION_MS,
-        ...options,
-      });
+      showNotification(msg, "error", options);
     },
     [showNotification],
   );
 
   const showSuccess = useCallback(
     (msg, options) => {
-      showNotification(msg, "success", {
-        autoHideDuration: DEFAULT_AUTO_HIDE_DURATION_MS,
-        ...options,
-      });
+      showNotification(msg, "success", options);
     },
     [showNotification],
   );
 
   const showInfo = useCallback(
     (msg, options) => {
-      showNotification(msg, "info", {
-        autoHideDuration: DEFAULT_AUTO_HIDE_DURATION_MS,
-        ...options,
-      });
+      showNotification(msg, "info", options);
     },
     [showNotification],
   );
 
   const showWarning = useCallback(
     (msg, options) => {
-      showNotification(msg, "warning", {
-        autoHideDuration: DEFAULT_AUTO_HIDE_DURATION_MS,
-        ...options,
-      });
+      showNotification(msg, "warning", options);
     },
     [showNotification],
   );

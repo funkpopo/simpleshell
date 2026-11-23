@@ -9,6 +9,15 @@ import {
 } from "../../../../shared/domain/terminalScrollback.js";
 import { getTerminalFontFamily } from "../../../shared/lib/fonts.js";
 import { terminalCache } from "../runtime/terminalSessionStore.js";
+import {
+  applyTerminalUiOptionsToInstance,
+  ensureTerminalDiagnostics,
+  shouldEnableTerminalPerfMonitor,
+} from "../runtime/terminalBootstrap.js";
+import {
+  normalizePerformanceSettings,
+  normalizeTerminalUiSettings,
+} from "../../../../shared/settings/uiSettingsDefaults.js";
 
 /** Positive integer from a settings value, or null when absent/invalid. */
 const parsePositiveInt = (value) => {
@@ -27,6 +36,7 @@ export function useTerminalSettingsSync({
   termRef,
   fitAddonRef,
   scrollbackUsageTrackerRef,
+  performanceMonitorRef,
   webglRendererEnabledRef,
   setWebglRendererEnabled,
   tryEnableWebglRenderer,
@@ -49,6 +59,8 @@ export function useTerminalSettingsSync({
         const terminalScrollbackLines = normalizeTerminalScrollbackLines(
           settings.terminalScrollbackLines,
         );
+        const terminalUi = normalizeTerminalUiSettings(settings);
+        const perfUi = normalizePerformanceSettings(settings);
         return {
           fontSize: settings.terminalFontSize || 14,
           fontFamily: getTerminalFontFamily(
@@ -57,24 +69,44 @@ export function useTerminalSettingsSync({
           fontWeight: settings.terminalFontWeight || 500,
           lineHeight: normalizeTerminalLineHeight(settings.terminalLineHeight),
           terminalScrollbackLines,
+          cursorStyle: terminalUi.cursorStyle,
+          cursorBlink: terminalUi.cursorBlink,
+          letterSpacing: terminalUi.letterSpacing,
+          fontWeightBold: terminalUi.fontWeightBold,
+          copyOnSelect: terminalUi.copyOnSelect,
+          rightClickSelectsWord: terminalUi.rightClickSelectsWord,
+          middleClickPaste: terminalUi.middleClickPaste,
+          macOptionIsMeta: terminalUi.macOptionIsMeta,
+          terminalPerfMonitor: perfUi.terminalPerfMonitor,
         };
       }
     } catch {
       // Failed to load font settings from config
     }
     setWebglRendererEnabled(true);
+    const defaults = normalizeTerminalUiSettings({});
     return {
       fontSize: 14,
       fontFamily: getTerminalFontFamily("Fira Code"),
       fontWeight: 500,
       lineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
       terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
+      cursorStyle: defaults.cursorStyle,
+      cursorBlink: defaults.cursorBlink,
+      letterSpacing: defaults.letterSpacing,
+      fontWeightBold: defaults.fontWeightBold,
+      copyOnSelect: defaults.copyOnSelect,
+      rightClickSelectsWord: defaults.rightClickSelectsWord,
+      middleClickPaste: defaults.middleClickPaste,
+      macOptionIsMeta: defaults.macOptionIsMeta,
+      terminalPerfMonitor: false,
     };
   }, [setWebglRendererEnabled, webglRendererEnabledRef]);
 
   // 监听设置变更事件
   useEffect(() => {
     const handleSettingsChanged = async (event) => {
+      const detail = event.detail || {};
       const {
         terminalFontSize,
         terminalFont,
@@ -82,7 +114,15 @@ export function useTerminalSettingsSync({
         terminalLineHeight,
         performance,
         terminalScrollbackLines,
-      } = event.detail;
+        terminalCursorStyle,
+        terminalCursorBlink,
+        terminalLetterSpacing,
+        terminalFontWeightBold,
+        terminalCopyOnSelect,
+        terminalRightClickSelectsWord,
+        terminalMiddleClickPaste,
+        terminalMacOptionIsMeta,
+      } = detail;
 
       if (terminalScrollbackLines !== undefined) {
         // 单一来源：与设置项/终端创建共享同一夹取函数，避免漂移
@@ -94,6 +134,31 @@ export function useTerminalSettingsSync({
         }
         if (scrollbackUsageTrackerRef.current) {
           scrollbackUsageTrackerRef.current.maxLines = scrollLines;
+        }
+      }
+
+      if (
+        performance &&
+        Object.prototype.hasOwnProperty.call(performance, "terminalPerfMonitor")
+      ) {
+        const monitorOn = Boolean(performance.terminalPerfMonitor);
+        if (
+          monitorOn &&
+          performanceMonitorRef &&
+          !performanceMonitorRef.current
+        ) {
+          ensureTerminalDiagnostics({
+            performanceMonitorRef,
+            scrollbackUsageTrackerRef,
+            perfMonitorEnabled: true,
+          });
+        } else if (
+          !monitorOn &&
+          !shouldEnableTerminalPerfMonitor(false) &&
+          performanceMonitorRef?.current
+        ) {
+          performanceMonitorRef.current.destroy?.();
+          performanceMonitorRef.current = null;
         }
       }
 
@@ -137,6 +202,47 @@ export function useTerminalSettingsSync({
             normalizeTerminalLineHeight(terminalLineHeight);
         }
 
+        const hasTerminalUiUpdates =
+          terminalCursorStyle !== undefined ||
+          terminalCursorBlink !== undefined ||
+          terminalLetterSpacing !== undefined ||
+          terminalFontWeightBold !== undefined ||
+          terminalCopyOnSelect !== undefined ||
+          terminalRightClickSelectsWord !== undefined ||
+          terminalMiddleClickPaste !== undefined ||
+          terminalMacOptionIsMeta !== undefined;
+        if (hasTerminalUiUpdates) {
+          const normalizedUi = normalizeTerminalUiSettings(detail);
+          if (terminalCursorStyle === undefined) {
+            normalizedUi.cursorStyle = cachedTerminal.options.cursorStyle;
+          }
+          if (terminalCursorBlink === undefined) {
+            normalizedUi.cursorBlink = cachedTerminal.options.cursorBlink;
+          }
+          if (terminalLetterSpacing === undefined) {
+            normalizedUi.letterSpacing = cachedTerminal.options.letterSpacing;
+          }
+          if (terminalFontWeightBold === undefined) {
+            normalizedUi.fontWeightBold = cachedTerminal.options.fontWeightBold;
+          }
+          if (terminalCopyOnSelect === undefined) {
+            normalizedUi.copyOnSelect = cachedTerminal.options.copyOnSelect;
+          }
+          if (terminalRightClickSelectsWord === undefined) {
+            normalizedUi.rightClickSelectsWord =
+              cachedTerminal.options.rightClickSelectsWord;
+          }
+          if (terminalMiddleClickPaste === undefined) {
+            normalizedUi.middleClickPaste =
+              cachedTerminal.__simpleShellMiddleClickPaste !== false;
+          }
+          if (terminalMacOptionIsMeta === undefined) {
+            normalizedUi.macOptionIsMeta =
+              cachedTerminal.options.macOptionIsMeta;
+          }
+          applyTerminalUiOptionsToInstance(cachedTerminal, normalizedUi);
+        }
+
         // 字体选项随时写入缓存终端；重新布局需要已挂载且 fitAddon 就绪
         if (terminalRef.current && fitAddonRef.current) {
           eventManager.setTimeout(() => {
@@ -163,6 +269,7 @@ export function useTerminalSettingsSync({
     fitAddonRef,
     scheduleTerminalLayoutSyncRef,
     scrollbackUsageTrackerRef,
+    performanceMonitorRef,
     setWebglRendererEnabled,
     termRef,
     terminalRef,

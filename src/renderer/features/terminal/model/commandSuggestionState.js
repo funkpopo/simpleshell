@@ -198,7 +198,25 @@ const resolveCommandSuggestionCompletion = ({
   };
 };
 
+const DEFAULT_COMMAND_SUGGESTIONS_ENABLED = true;
+const DEFAULT_COMMAND_SUGGESTION_LIMIT = 10;
+
+const normalizeCommandSuggestionConfig = (uiSettings) => {
+  const enabled =
+    uiSettings && typeof uiSettings === "object"
+      ? uiSettings.commandSuggestionsEnabled !== false
+      : DEFAULT_COMMAND_SUGGESTIONS_ENABLED;
+  const rawLimit = Number(uiSettings?.commandSuggestionLimit);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(30, Math.max(3, Math.round(rawLimit)))
+    : DEFAULT_COMMAND_SUGGESTION_LIMIT;
+  return { enabled, limit };
+};
+
 module.exports = {
+  DEFAULT_COMMAND_SUGGESTIONS_ENABLED,
+  DEFAULT_COMMAND_SUGGESTION_LIMIT,
+  normalizeCommandSuggestionConfig,
   isCursorAtInputEnd,
   resolveCommandSuggestionCompletion,
   resolveCommandSuggestionKeyAction,

@@ -227,7 +227,14 @@ export default function useAppTheme() {
     const pendingUpdates = [];
     let loadingSettings = true;
     const handleSettingsChanged = (event) => {
-      if (loadingSettings) pendingUpdates.push(event.detail);
+      if (loadingSettings) {
+        pendingUpdates.push(event.detail);
+      } else if (event?.detail && typeof event.detail === "object") {
+        setUiSettingsSnapshot((prev) => ({
+          ...(prev || {}),
+          ...event.detail,
+        }));
+      }
       applySettings(event.detail);
     };
     window.addEventListener("settingsChanged", handleSettingsChanged);

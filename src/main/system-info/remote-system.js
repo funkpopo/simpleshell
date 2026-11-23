@@ -6,6 +6,38 @@ const remoteProcessListCache = new WeakMap();
 const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
 const configService = require("../settings/configService");
 const { isSshClientUsable } = require("../connection/ssh-utils");
+const {
+  normalizeResourceMonitorSettings,
+} = require("../../shared/settings/uiSettingsDefaults");
+
+function getRemoteCacheTtls() {
+  try {
+    const resourceSettings = normalizeResourceMonitorSettings(
+      configService.loadUISettings?.(),
+    );
+    return {
+      systemInfoTtlMs: Math.max(
+        500,
+        Math.min(
+          REMOTE_SYSTEM_INFO_CACHE_TTL_MS,
+          resourceSettings.systemRefreshSeconds * 1000 - 1000,
+        ),
+      ),
+      processListTtlMs: Math.max(
+        1000,
+        Math.min(
+          REMOTE_PROCESS_LIST_CACHE_TTL_MS,
+          resourceSettings.processRefreshSeconds * 1000 - 1000,
+        ),
+      ),
+    };
+  } catch {
+    return {
+      systemInfoTtlMs: REMOTE_SYSTEM_INFO_CACHE_TTL_MS,
+      processListTtlMs: REMOTE_PROCESS_LIST_CACHE_TTL_MS,
+    };
+  }
+}
 
 const systemInfoText = (key, params = {}) =>
   translateLocale(key, { lng: getUiLanguage(configService), ...params });
@@ -22,11 +54,9 @@ const cloneSystemInfo = (info) => ({
 });
 
 async function getRemoteSystemInfo(sshClient) {
+  const { systemInfoTtlMs } = getRemoteCacheTtls();
   const cached = remoteSystemInfoCache.get(sshClient);
-  if (
-    cached &&
-    Date.now() - cached.timestamp < REMOTE_SYSTEM_INFO_CACHE_TTL_MS
-  ) {
+  if (cached && Date.now() - cached.timestamp < systemInfoTtlMs) {
     return cloneSystemInfo(cached.data);
   }
 
@@ -560,11 +590,9 @@ const REMOTE_PS_STRATEGIES = [
 ];
 
 async function getRemoteProcessList(sshClient) {
+  const { processListTtlMs } = getRemoteCacheTtls();
   const cached = remoteProcessListCache.get(sshClient);
-  if (
-    cached &&
-    Date.now() - cached.timestamp < REMOTE_PROCESS_LIST_CACHE_TTL_MS
-  ) {
+  if (cached && Date.now() - cached.timestamp < processListTtlMs) {
     return [...cached.data];
   }
 

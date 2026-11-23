@@ -50,12 +50,43 @@ class ZmodemTransferService {
     return getPrimaryWindow();
   }
 
+  _getConfiguredSaveDirectory() {
+    try {
+      const configService = require("../settings/configService");
+      const raw = configService.loadUISettings?.()?.zmodem?.saveDirectory;
+      if (typeof raw === "string") {
+        const trimmed = raw.trim();
+        if (
+          trimmed &&
+          path.isAbsolute(trimmed) &&
+          !/[\u0000\r\n]/.test(trimmed)
+        ) {
+          return path.resolve(trimmed);
+        }
+      }
+    } catch {
+      /* ignore when configService is uninitialized */
+    }
+    return "";
+  }
+
   _getSaveRoot() {
     if (typeof this._options.getSaveRoot === "function") {
       return this._options.getSaveRoot();
     }
-    const { app } = require("electron");
-    return path.join(app.getPath("downloads"), "zmodem");
+    const configured = this._getConfiguredSaveDirectory();
+    if (configured) {
+      return configured;
+    }
+    try {
+      const electron = require("electron");
+      if (typeof electron?.app?.getPath === "function") {
+        return path.join(electron.app.getPath("downloads"), "zmodem");
+      }
+    } catch {
+      // Fallback for Node test environments without Electron app
+    }
+    return path.join(require("os").tmpdir(), "zmodem");
   }
 
   async _ensureSaveRoot() {

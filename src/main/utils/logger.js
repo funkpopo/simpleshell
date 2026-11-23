@@ -51,8 +51,17 @@ function loadLogConfig() {
     const configPath = getConfigPath(appInstance);
     if (fs.existsSync(configPath)) {
       const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-      if (config.logSettings) {
-        logConfig = { ...DEFAULT_LOG_CONFIG, ...config.logSettings };
+      if (config.logSettings && typeof config.logSettings === "object") {
+        const incoming = { ...config.logSettings };
+        if (
+          incoming.cleanupIntervalDays === undefined &&
+          typeof incoming.cleanupInterval === "number" &&
+          Number.isFinite(incoming.cleanupInterval)
+        ) {
+          incoming.cleanupIntervalDays = incoming.cleanupInterval;
+        }
+        delete incoming.cleanupInterval;
+        logConfig = { ...DEFAULT_LOG_CONFIG, ...incoming };
       }
     }
   } catch (error) {
@@ -330,8 +339,17 @@ const logError = (message) => logToFile(message, "ERROR");
 
 function updateLogConfig(newConfig) {
   if (newConfig && typeof newConfig === "object") {
-    logConfig = { ...logConfig, ...newConfig };
-    if (newConfig.flushIntervalMs !== undefined) startFlushTimer();
+    const incoming = { ...newConfig };
+    if (
+      incoming.cleanupIntervalDays === undefined &&
+      typeof incoming.cleanupInterval === "number" &&
+      Number.isFinite(incoming.cleanupInterval)
+    ) {
+      incoming.cleanupIntervalDays = incoming.cleanupInterval;
+    }
+    delete incoming.cleanupInterval;
+    logConfig = { ...logConfig, ...incoming };
+    if (incoming.flushIntervalMs !== undefined) startFlushTimer();
     return true;
   }
   return false;

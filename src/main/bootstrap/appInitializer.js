@@ -250,6 +250,10 @@ class AppInitializer {
     await this.initializeRuntimeFileLifecycle();
     this.initializeConnectionManager();
     this.initializeCommandHistoryService();
+    const {
+      syncRuntimeUISettingsFromConfig,
+    } = require("../settings/runtimeSettingsSync");
+    syncRuntimeUISettingsFromConfig();
     await this.cleanupConsumedUpdateInstaller();
 
     logToFile("Application initialization complete", "INFO");

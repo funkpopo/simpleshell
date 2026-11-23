@@ -225,13 +225,13 @@ describe("webterminal-command-suggestion", () => {
 
     assert.match(
       commandSuggestionHookSource,
-      /const COMMAND_SUGGESTION_LIMIT = 10;/,
-      "Command suggestion lookups must use an explicit numeric result limit.",
+      /const effectiveLimit =\s*suggestionLimitRef\.current \|\| COMMAND_SUGGESTION_LIMIT;/,
+      "Command suggestion lookups must resolve a non-zero numeric result limit.",
     );
     assert.match(
       commandSuggestionHookSource,
-      /getCommandSuggestions\(\s*trimmedInput,\s*COMMAND_SUGGESTION_LIMIT,\s*\)/,
-      "WebTerminal suggestion lookup must pass a numeric maxResults value.",
+      /getCommandSuggestions\(\s*trimmedInput,\s*effectiveLimit,\s*\)/,
+      "WebTerminal suggestion lookup must pass the resolved numeric maxResults value.",
     );
   }
 

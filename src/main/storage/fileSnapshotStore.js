@@ -11,6 +11,7 @@ const DEFAULT_SNAPSHOT_SETTINGS = Object.freeze({
   maxAgeMs: DEFAULT_SNAPSHOT_MAX_AGE_MS,
   maxTotalBytes: 256 * 1024 * 1024,
   cleanupIntervalMs: 30 * 60 * 1000,
+  maxEntries: DEFAULT_MAX_SNAPSHOTS_PER_FILE,
   startupCleanup: "clear",
   protectActive: false,
 });
@@ -22,6 +23,33 @@ class FileSnapshotStore {
     this.logToFile = () => {};
     this.indexCache = new Map();
     this.settings = { ...DEFAULT_SNAPSHOT_SETTINGS };
+  }
+
+  configure(settings = {}) {
+    if (!settings || typeof settings !== "object") {
+      return false;
+    }
+
+    const nextSettings = { ...this.settings };
+    for (const key of [
+      "maxAgeMs",
+      "maxTotalBytes",
+      "cleanupIntervalMs",
+      "maxEntries",
+    ]) {
+      if (settings[key] === undefined) {
+        continue;
+      }
+      const value = Number(settings[key]);
+      if (Number.isFinite(value) && value > 0) {
+        nextSettings[key] =
+          key === "maxEntries" ? Math.max(1, Math.floor(value)) : value;
+      }
+    }
+
+    this.settings = nextSettings;
+    runtimeFileLifecycle.updatePolicy(LIFECYCLE_RESOURCE_NAME, this.settings);
+    return true;
   }
 
   init(logToFile, app = null) {
@@ -218,7 +246,9 @@ class FileSnapshotStore {
     })();
     const maxEntries = Math.max(
       1,
-      Number(options.maxEntries) || DEFAULT_MAX_SNAPSHOTS_PER_FILE,
+      Number(options.maxEntries) ||
+        this.settings?.maxEntries ||
+        DEFAULT_MAX_SNAPSHOTS_PER_FILE,
     );
     const entry = {
       id: snapshotId,

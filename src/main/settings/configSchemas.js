@@ -1,3 +1,16 @@
+const {
+  UPDATE_REMINDER_INTERVAL_OPTIONS,
+  RESOURCE_SYSTEM_REFRESH_OPTIONS,
+  RESOURCE_PROCESS_REFRESH_OPTIONS,
+  RESOURCE_MAX_PROCESSES_OPTIONS,
+  TERMINAL_CURSOR_STYLE_OPTIONS,
+  TERMINAL_FONT_WEIGHT_BOLD_OPTIONS,
+  EDITOR_FONT_OPTIONS,
+  NETWORK_LATENCY_INTERVAL_OPTIONS,
+  FILE_MANAGER_SORT_MODE_OPTIONS,
+  DIRECTORY_WATCH_INTERVAL_OPTIONS,
+} = require("../../shared/settings/uiSettingsDefaults");
+
 const SCHEMA_KEYS = ["connection", "aiSettings", "uiSettings", "logSettings"];
 let cachedCompiled = null;
 
@@ -90,7 +103,11 @@ function compileConfigValidators() {
       sftpFollowTerminalDirectory: { type: "boolean", default: true },
       language: { type: "string", default: "zh-CN" },
       fontSize: { type: "number", minimum: 10, maximum: 30, default: 14 },
-      editorFont: { type: "string", default: "system" },
+      editorFont: {
+        type: "string",
+        enum: EDITOR_FONT_OPTIONS,
+        default: "system",
+      },
       darkMode: { type: "boolean", default: true },
       sidebarPosition: {
         type: "string",
@@ -116,8 +133,291 @@ function compileConfigValidators() {
         maximum: 1.4,
         default: 1.0,
       },
-      performance: { type: "object", default: {} },
-      externalEditor: { type: "object", default: {} },
+      terminalScrollbackLines: {
+        type: "integer",
+        minimum: 1000,
+        maximum: 500000,
+        default: 50000,
+      },
+      terminalCursorStyle: {
+        type: "string",
+        enum: TERMINAL_CURSOR_STYLE_OPTIONS,
+        default: "block",
+      },
+      terminalCursorBlink: { type: "boolean", default: true },
+      terminalLetterSpacing: {
+        type: "number",
+        minimum: -2,
+        maximum: 4,
+        default: 0,
+      },
+      terminalFontWeightBold: {
+        type: "integer",
+        enum: TERMINAL_FONT_WEIGHT_BOLD_OPTIONS,
+        default: 700,
+      },
+      terminalCopyOnSelect: { type: "boolean", default: false },
+      terminalRightClickSelectsWord: { type: "boolean", default: false },
+      terminalMiddleClickPaste: { type: "boolean", default: true },
+      terminalMacOptionIsMeta: { type: "boolean", default: false },
+      commandHistoryMaxSize: {
+        type: "integer",
+        minimum: 100,
+        maximum: 10000,
+        default: 1000,
+      },
+      commandHistoryMinLength: {
+        type: "integer",
+        minimum: 1,
+        maximum: 10,
+        default: 3,
+      },
+      commandSuggestionsEnabled: { type: "boolean", default: true },
+      commandSuggestionLimit: {
+        type: "integer",
+        minimum: 3,
+        maximum: 30,
+        default: 10,
+      },
+      defaultLocalShell: { type: "string", default: "auto" },
+      zmodem: {
+        type: "object",
+        default: {},
+        properties: {
+          saveDirectory: { type: "string", default: "" },
+        },
+      },
+      updates: {
+        type: "object",
+        default: {},
+        properties: {
+          autoCheckOnStartup: { type: "boolean", default: false },
+          reminderIntervalHours: {
+            type: "integer",
+            enum: UPDATE_REMINDER_INTERVAL_OPTIONS,
+            default: 4,
+          },
+        },
+      },
+      notificationDurationSeconds: {
+        type: "integer",
+        minimum: 2,
+        maximum: 15,
+        default: 5,
+      },
+      recentConnectionsLimit: {
+        type: "integer",
+        minimum: 0,
+        maximum: 20,
+        default: 5,
+      },
+      performance: {
+        type: "object",
+        default: {},
+        properties: {
+          hardwareAcceleration: { type: "boolean", default: true },
+          webglEnabled: { type: "boolean", default: true },
+          cacheEnabled: { type: "boolean", default: true },
+          terminalPerfMonitor: { type: "boolean", default: false },
+        },
+      },
+      externalEditor: {
+        type: "object",
+        default: {},
+        properties: {
+          enabled: { type: "boolean", default: false },
+          command: { type: "string", default: "" },
+          autoUploadDebounceMs: {
+            type: "integer",
+            minimum: 200,
+            maximum: 5000,
+            default: 700,
+          },
+        },
+      },
+      resourceMonitor: {
+        type: "object",
+        default: {},
+        properties: {
+          displayMode: { type: "string", default: "independent" },
+          systemRefreshSeconds: {
+            type: "integer",
+            enum: RESOURCE_SYSTEM_REFRESH_OPTIONS,
+            default: 5,
+          },
+          processRefreshSeconds: {
+            type: "integer",
+            enum: RESOURCE_PROCESS_REFRESH_OPTIONS,
+            default: 15,
+          },
+          maxVisibleProcesses: {
+            type: "integer",
+            enum: RESOURCE_MAX_PROCESSES_OPTIONS,
+            default: 50,
+          },
+        },
+      },
+      ssh: {
+        type: "object",
+        default: {},
+        properties: {
+          keepaliveIntervalSeconds: {
+            type: "integer",
+            minimum: 5,
+            maximum: 120,
+            default: 10,
+          },
+          keepaliveCountMax: {
+            type: "integer",
+            minimum: 3,
+            maximum: 30,
+            default: 9,
+          },
+          readyTimeoutSeconds: {
+            type: "integer",
+            minimum: 10,
+            maximum: 180,
+            default: 30,
+          },
+          connectionTimeoutSeconds: {
+            type: "integer",
+            minimum: 5,
+            maximum: 60,
+            default: 15,
+          },
+          idleTimeoutMinutes: {
+            type: "integer",
+            minimum: 5,
+            maximum: 240,
+            default: 30,
+          },
+        },
+      },
+      reconnect: {
+        type: "object",
+        default: {},
+        properties: {
+          maxRetries: {
+            type: "integer",
+            minimum: 0,
+            maximum: 30,
+            default: 10,
+          },
+          initialDelayMs: {
+            type: "integer",
+            minimum: 500,
+            maximum: 10000,
+            default: 1500,
+          },
+          totalTimeCapSeconds: {
+            type: "integer",
+            minimum: 30,
+            maximum: 600,
+            default: 120,
+          },
+          fastReconnectEnabled: { type: "boolean", default: true },
+        },
+      },
+      networkLatency: {
+        type: "object",
+        default: {},
+        properties: {
+          checkIntervalSeconds: {
+            type: "integer",
+            enum: NETWORK_LATENCY_INTERVAL_OPTIONS,
+            default: 60,
+          },
+        },
+      },
+      sftp: {
+        type: "object",
+        default: {},
+        properties: {
+          parallelUploads: {
+            type: "integer",
+            minimum: 1,
+            maximum: 8,
+            default: 4,
+          },
+          parallelDownloads: {
+            type: "integer",
+            minimum: 1,
+            maximum: 8,
+            default: 6,
+          },
+          maxRetries: {
+            type: "integer",
+            minimum: 0,
+            maximum: 5,
+            default: 2,
+          },
+          sessionIdleTimeoutMinutes: {
+            type: "integer",
+            minimum: 1,
+            maximum: 120,
+            default: 10,
+          },
+        },
+      },
+      fileManager: {
+        type: "object",
+        default: {},
+        properties: {
+          defaultSortMode: {
+            type: "string",
+            enum: FILE_MANAGER_SORT_MODE_OPTIONS,
+            default: "name",
+          },
+          showHiddenFiles: { type: "boolean", default: true },
+          directoryWatchIntervalMs: {
+            type: "integer",
+            enum: DIRECTORY_WATCH_INTERVAL_OPTIONS,
+            default: 1500,
+          },
+          directoryCacheTtlSeconds: {
+            type: "integer",
+            minimum: 0,
+            maximum: 300,
+            default: 10,
+          },
+          maxPreviewSizeMB: {
+            type: "integer",
+            minimum: 1,
+            maximum: 50,
+            default: 10,
+          },
+        },
+      },
+      storage: {
+        type: "object",
+        default: {},
+        properties: {
+          fileCacheMaxMB: {
+            type: "integer",
+            minimum: 32,
+            maximum: 2048,
+            default: 128,
+          },
+          fileCacheMaxAgeMinutes: {
+            type: "integer",
+            minimum: 10,
+            maximum: 1440,
+            default: 60,
+          },
+          snapshotMaxPerFile: {
+            type: "integer",
+            minimum: 5,
+            maximum: 200,
+            default: 50,
+          },
+          snapshotRetentionDays: {
+            type: "integer",
+            minimum: 1,
+            maximum: 365,
+            default: 30,
+          },
+        },
+      },
       desktopIntegration: {
         type: "object",
         default: {},
@@ -173,9 +473,15 @@ function compileConfigValidators() {
         default: "INFO",
       },
       maxFileSize: { type: "number", minimum: 1024, default: 5242880 },
-      maxFiles: { type: "number", minimum: 1, default: 5 },
+      maxFiles: { type: "integer", minimum: 1, maximum: 50, default: 5 },
       compressOldLogs: { type: "boolean", default: true },
-      cleanupInterval: { type: "number", minimum: 1, default: 24 },
+      cleanupIntervalDays: {
+        type: "number",
+        minimum: 1,
+        maximum: 365,
+        default: 7,
+      },
+      cleanupInterval: { type: "number", minimum: 1 },
     },
     default: {},
   });

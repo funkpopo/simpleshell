@@ -16,6 +16,11 @@ const {
 } = require("./commandHistoryCodec");
 const { createConfigValidators } = require("./configSchemas");
 const {
+  createDefaultLogSettings,
+  createDefaultUISettings,
+  mergeUISettings,
+} = require("../../shared/settings/uiSettingsDefaults");
+const {
   getConfigBackupDirectory,
   getConfigPath,
   migrateLegacyConfigIfNeeded,
@@ -236,41 +241,12 @@ class ConfigService {
       schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
       security: this.crypto.createSecurityConfig(),
       connections: [],
-      uiSettings: {
-        language: "zh-CN",
-        fontSize: 14,
-        editorFont: "system",
-        darkMode: true,
-        sidebarPosition: "right",
-        terminalFont: "Fira Code",
-        terminalFontSize: 14,
-        terminalLineHeight: 1.0,
-        performance: {},
-        externalEditor: {},
-        desktopIntegration: {
-          trayEnabled: false,
-          closeToTray: false,
-        },
-        onboarding: {
-          completed: false,
-          completedAt: null,
-          version: 1,
-        },
-        ipQueryHistory: [],
-        windowBounds: {},
-        backupRetentionDays: 30,
-      },
+      uiSettings: createDefaultUISettings(),
       aiSettings: {
         configs: [],
         current: null,
       },
-      logSettings: {
-        level: "INFO",
-        maxFileSize: 5242880,
-        maxFiles: 5,
-        compressOldLogs: true,
-        cleanupInterval: 24,
-      },
+      logSettings: createDefaultLogSettings(),
       shortcutCommands: "{}",
       commandHistory: {
         compressed: false,
@@ -285,25 +261,31 @@ class ConfigService {
   _normalizeConfigShape(config) {
     const defaultConfig = this._buildDefaultConfig();
     const source = config && typeof config === "object" ? config : {};
+    const rawLogSettings =
+      source.logSettings && typeof source.logSettings === "object"
+        ? { ...source.logSettings }
+        : {};
+    if (
+      rawLogSettings.cleanupIntervalDays === undefined &&
+      typeof rawLogSettings.cleanupInterval === "number" &&
+      Number.isFinite(rawLogSettings.cleanupInterval)
+    ) {
+      rawLogSettings.cleanupIntervalDays = rawLogSettings.cleanupInterval;
+    }
+    delete rawLogSettings.cleanupInterval;
+
     const normalized = {
       ...defaultConfig,
       ...source,
       schemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
-      uiSettings: {
-        ...defaultConfig.uiSettings,
-        ...(source.uiSettings && typeof source.uiSettings === "object"
-          ? source.uiSettings
-          : {}),
-      },
+      uiSettings: mergeUISettings(defaultConfig.uiSettings, source.uiSettings),
       aiSettings:
         source.aiSettings && typeof source.aiSettings === "object"
           ? source.aiSettings
           : defaultConfig.aiSettings,
       logSettings: {
         ...defaultConfig.logSettings,
-        ...(source.logSettings && typeof source.logSettings === "object"
-          ? source.logSettings
-          : {}),
+        ...rawLogSettings,
       },
       connections: Array.isArray(source.connections)
         ? source.connections

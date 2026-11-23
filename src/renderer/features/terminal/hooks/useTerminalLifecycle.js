@@ -157,6 +157,7 @@ export function useTerminalLifecycle({
     termRef,
     fitAddonRef,
     scrollbackUsageTrackerRef,
+    performanceMonitorRef,
     webglRendererEnabledRef,
     setWebglRendererEnabled,
     tryEnableWebglRenderer,
@@ -343,6 +344,7 @@ export function useTerminalLifecycle({
           term,
           getFontSettings,
           scrollbackUsageTrackerRef,
+          performanceMonitorRef,
           scheduleTerminalLayoutSyncRef,
         });
 

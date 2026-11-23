@@ -20,6 +20,9 @@ const {
   applyDesktopIntegrationSettings,
 } = require("../../bootstrap/desktopIntegration");
 const {
+  applyRuntimeUISettings,
+} = require("../../settings/runtimeSettingsSync");
+const {
   IPC_EVENT_CHANNELS,
   IPC_REQUEST_CHANNELS,
 } = require("../../../shared/contracts/ipc/channels");
@@ -151,11 +154,6 @@ class SettingsHandlers {
         handler: this.saveErrorReportingSettings.bind(this),
       },
       {
-        channel: IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_PREFETCH,
-        category: "settings",
-        handler: this.updatePrefetchSettings.bind(this),
-      },
-      {
         channel: IPC_REQUEST_CHANNELS.SETTINGS_GET_CREDENTIAL_SECURITY_STATUS,
         category: "settings",
         handler: this.getCredentialSecurityStatus.bind(this),
@@ -245,6 +243,7 @@ class SettingsHandlers {
       throw new Error("Failed to save UI settings");
     }
     applyDesktopIntegrationSettings(settings?.desktopIntegration || {});
+    applyRuntimeUISettings(configService.loadUISettings());
     return { success: true };
   }
 
@@ -269,14 +268,6 @@ class SettingsHandlers {
     const status = saveErrorReportingSettings(settings);
     logToFile("Error reporting settings updated", "INFO");
     return status;
-  }
-
-  async updatePrefetchSettings() {
-    // Prefetch settings 可能需要单独的处理逻辑
-    // 暂时注释掉，因为 ConfigService 中没有对应的方法
-    // configService.savePrefetchSettings(settings);
-    logToFile("Prefetch settings updated (not implemented)", "WARN");
-    return { success: true };
   }
 
   async getCredentialSecurityStatus() {
@@ -485,7 +476,7 @@ class SettingsHandlers {
     };
   }
 
-  async getCommandSuggestions(event, input, maxResults = 10) {
+  async getCommandSuggestions(event, input, maxResults) {
     const suggestions = commandHistoryService.getSuggestions(input, maxResults);
     return { success: true, suggestions };
   }

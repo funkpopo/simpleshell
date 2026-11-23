@@ -13,12 +13,47 @@ import {
   UPDATE_REMINDER_STORAGE_KEY,
   UPDATE_REMINDER_DELAY_MS,
 } from "../appShellUtils.js";
+import { normalizeUpdatesSettings } from "../../../shared/settings/uiSettingsDefaults.js";
 
 export default function useShellMenus({ open }) {
   const dispatch = useAppDispatch();
   const { t } = useTranslation();
   const { showError, showInfo, showSuccess } = useNotification();
   const [aboutUpdateCheckSignal, setAboutUpdateCheckSignal] = React.useState(0);
+  const reminderHoursRef = React.useRef(
+    Math.round(UPDATE_REMINDER_DELAY_MS / 60 / 60 / 1000),
+  );
+  React.useEffect(() => {
+    let cancelled = false;
+    const applyUpdateSettings = (settings) => {
+      if (settings && typeof settings === "object") {
+        reminderHoursRef.current =
+          normalizeUpdatesSettings(settings).reminderIntervalHours;
+      }
+    };
+    const load = async () => {
+      try {
+        const res = await window.terminalAPI?.loadUISettings?.();
+        const settings = res?.success ? res.settings : res;
+        if (!cancelled && settings) {
+          applyUpdateSettings(settings);
+        }
+      } catch {
+        /* intentionally ignored */
+      }
+    };
+    const handleSettingsChanged = (event) => {
+      if (event?.detail?.updates !== undefined) {
+        applyUpdateSettings(event.detail);
+      }
+    };
+    void load();
+    window.addEventListener("settingsChanged", handleSettingsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("settingsChanged", handleSettingsChanged);
+    };
+  }, []);
   const [updateReminderAt, setUpdateReminderAt] = React.useState(() => {
     try {
       const storedValue = Number(
@@ -94,7 +129,8 @@ export default function useShellMenus({ open }) {
     setAboutUpdateCheckSignal((value) => value + 1);
   }, [dispatch]);
   const handleRemindUpdateLater = useCallback(() => {
-    const reminderAt = Date.now() + UPDATE_REMINDER_DELAY_MS;
+    const hours = reminderHoursRef.current || 4;
+    const reminderAt = Date.now() + hours * 60 * 60 * 1000;
     try {
       window.localStorage?.setItem(
         UPDATE_REMINDER_STORAGE_KEY,
@@ -107,7 +143,7 @@ export default function useShellMenus({ open }) {
     dispatch(actions.setAboutDialogOpen(false));
     showInfo(
       t("update.reminderScheduled", {
-        hours: Math.round(UPDATE_REMINDER_DELAY_MS / 60 / 60 / 1000),
+        hours,
       }),
     );
   }, [dispatch, showInfo, t]);

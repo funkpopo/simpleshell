@@ -2,12 +2,33 @@ const {
   getNetworkProfileOverridesForQuality,
   NETWORK_QUALITY_LEVELS,
 } = require("../services/networkQuality");
+const configService = require("../settings/configService");
+const {
+  normalizeSshUiSettings,
+} = require("../../shared/settings/uiSettingsDefaults");
 
 const DEFAULT_SSH_NETWORK_PROFILE = Object.freeze({
   keepaliveInterval: 10000,
   keepaliveCountMax: 9,
   readyTimeout: 30000,
 });
+
+function getGlobalSshNetworkProfileDefaults() {
+  try {
+    const uiSettings = configService.loadUISettings?.();
+    if (uiSettings && uiSettings.ssh) {
+      const sshSettings = normalizeSshUiSettings(uiSettings);
+      return {
+        keepaliveInterval: sshSettings.keepaliveIntervalSeconds * 1000,
+        keepaliveCountMax: sshSettings.keepaliveCountMax,
+        readyTimeout: sshSettings.readyTimeoutSeconds * 1000,
+      };
+    }
+  } catch {
+    /* ignore when configService is uninitialized */
+  }
+  return DEFAULT_SSH_NETWORK_PROFILE;
+}
 
 const toBoundedInt = (value, min, max, fallback) => {
   const parsed = Number(value);
@@ -43,10 +64,8 @@ const readProfileValue = (config, profileSource, key) => {
   return undefined;
 };
 
-const resolveSshNetworkProfile = (
-  config = {},
-  defaults = DEFAULT_SSH_NETWORK_PROFILE,
-) => {
+const resolveSshNetworkProfile = (config = {}, defaults) => {
+  const baseDefaults = defaults || getGlobalSshNetworkProfileDefaults();
   const profileSource = getNetworkProfileSource(config);
   const qualityLevel =
     config?.networkQualityLevel ||
@@ -59,14 +78,15 @@ const resolveSshNetworkProfile = (
 
   const effectiveDefaults = qualityOverrides
     ? {
-        ...defaults,
+        ...baseDefaults,
         keepaliveInterval:
-          qualityOverrides.keepaliveInterval ?? defaults.keepaliveInterval,
+          qualityOverrides.keepaliveInterval ?? baseDefaults.keepaliveInterval,
         keepaliveCountMax:
-          qualityOverrides.keepaliveCountMax ?? defaults.keepaliveCountMax,
-        readyTimeout: qualityOverrides.readyTimeout ?? defaults.readyTimeout,
+          qualityOverrides.keepaliveCountMax ?? baseDefaults.keepaliveCountMax,
+        readyTimeout:
+          qualityOverrides.readyTimeout ?? baseDefaults.readyTimeout,
       }
-    : defaults;
+    : baseDefaults;
 
   const keepaliveInterval = toBoundedInt(
     readProfileValue(config, profileSource, "keepaliveInterval"),

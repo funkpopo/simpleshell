@@ -5,9 +5,16 @@
 
 const EventEmitter = require("events");
 const { logToFile } = require("../utils/logger");
+const configService = require("../settings/configService");
 const {
   classifyConnectionFailure,
 } = require("../../shared/connectionErrorAdvice");
+const {
+  normalizeRecentConnectionsLimit,
+  normalizeSshUiSettings,
+} = require("../../shared/settings/uiSettingsDefaults");
+
+const MAX_STORED_RECENT_CONNECTIONS = 20;
 
 const CLOSE_REASON = Object.freeze({
   USER: "user",
@@ -29,6 +36,9 @@ class BaseConnectionPool extends EventEmitter {
   constructor(config = {}) {
     super();
 
+    this._hasExplicitIdleTimeout = config.idleTimeout !== undefined;
+    this._hasExplicitConnectionTimeout = config.connectionTimeout !== undefined;
+
     this.config = {
       maxConnections: config.maxConnections || 50,
       idleTimeout: config.idleTimeout || 30 * 60 * 1000, // 30分钟
@@ -37,6 +47,22 @@ class BaseConnectionPool extends EventEmitter {
       protocolType: config.protocolType || "UNKNOWN",
       ...config,
     };
+
+    try {
+      const uiSettings = configService.loadUISettings?.();
+      if (uiSettings?.ssh) {
+        const sshSettings = normalizeSshUiSettings(uiSettings);
+        if (!this._hasExplicitIdleTimeout) {
+          this.config.idleTimeout = sshSettings.idleTimeoutMinutes * 60 * 1000;
+        }
+        if (!this._hasExplicitConnectionTimeout) {
+          this.config.connectionTimeout =
+            sshSettings.connectionTimeoutSeconds * 1000;
+        }
+      }
+    } catch {
+      /* ignore when configService is uninitialized */
+    }
 
     // 通用数据结构
     this.connections = new Map(); // 所有活跃连接
@@ -50,6 +76,28 @@ class BaseConnectionPool extends EventEmitter {
 
     // 初始化状态
     this.isInitialized = false;
+  }
+
+  /**
+   * 运行时应用全局 UI 设置（空闲超时、连接超时）
+   * @param {object} uiSettings
+   */
+  applyUiSettings(uiSettings) {
+    const sshSettings = normalizeSshUiSettings(uiSettings);
+    this.config.idleTimeout = sshSettings.idleTimeoutMinutes * 60 * 1000;
+    this.config.connectionTimeout = sshSettings.connectionTimeoutSeconds * 1000;
+  }
+
+  _resolveRecentConnectionsLimit(count) {
+    if (count !== undefined && count !== null) {
+      const numeric = Number(count);
+      return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+    }
+    try {
+      return normalizeRecentConnectionsLimit(configService.loadUISettings?.());
+    } catch {
+      return 5;
+    }
   }
 
   /**
@@ -716,7 +764,7 @@ class BaseConnectionPool extends EventEmitter {
     // 最新连接置顶，同时清理历史重复项，再限制列表长度。
     this.lastConnections = [
       ...new Set([connectionId, ...this.lastConnections]),
-    ].slice(0, 10);
+    ].slice(0, MAX_STORED_RECENT_CONNECTIONS);
   }
 
   /**
@@ -724,10 +772,11 @@ class BaseConnectionPool extends EventEmitter {
    * @param {number} count - 返回数量
    * @returns {Array<Object>} 连接配置对象列表
    */
-  getLastConnectionsWithDetails(count = 5) {
+  getLastConnectionsWithDetails(count) {
     const result = [];
+    const limit = this._resolveRecentConnectionsLimit(count);
 
-    for (const serverKey of this.lastConnections.slice(0, count)) {
+    for (const serverKey of this.lastConnections.slice(0, limit)) {
       // 优先从缓存中获取配置
       const cachedConfig = this.lastConnectionConfigs.get(serverKey);
 
@@ -816,8 +865,11 @@ class BaseConnectionPool extends EventEmitter {
       }
     }
 
-    // 限制为最多10个
-    this.lastConnections = this.lastConnections.slice(0, 10);
+    // 限制为最多 MAX_STORED_RECENT_CONNECTIONS 个
+    this.lastConnections = this.lastConnections.slice(
+      0,
+      MAX_STORED_RECENT_CONNECTIONS,
+    );
 
     this._logInfo(
       `Loaded ${this.lastConnections.length} recent connections from config`,
@@ -829,8 +881,9 @@ class BaseConnectionPool extends EventEmitter {
    * @param {number} count - 返回数量
    * @returns {Array<string>} 连接ID列表
    */
-  getLastConnections(count = 5) {
-    return this.lastConnections.slice(0, count);
+  getLastConnections(count) {
+    const limit = this._resolveRecentConnectionsLimit(count);
+    return this.lastConnections.slice(0, limit);
   }
 
   /**
@@ -839,7 +892,10 @@ class BaseConnectionPool extends EventEmitter {
    */
   setLastConnections(connections) {
     if (Array.isArray(connections)) {
-      this.lastConnections = [...new Set(connections)].slice(0, 10);
+      this.lastConnections = [...new Set(connections)].slice(
+        0,
+        MAX_STORED_RECENT_CONNECTIONS,
+      );
     }
   }
 

@@ -51,7 +51,14 @@ export const computeFileListSignature = (list) => {
   return `${list.length}:${(xor >>> 0).toString(16)}:${sum.toString(16)}`;
 };
 
-export const getCachedDirectory = (cache, path) => {
+export const getCachedDirectory = (
+  cache,
+  path,
+  expiryTimeMs = CACHE_EXPIRY_TIME,
+) => {
+  if (!Number.isFinite(expiryTimeMs) || expiryTimeMs <= 0) {
+    return null;
+  }
   const cacheEntry = cache.get(path);
   if (!cacheEntry) {
     return null;
@@ -59,13 +66,16 @@ export const getCachedDirectory = (cache, path) => {
   const now = Date.now();
 
   // 检查缓存是否过期
-  if (now - cacheEntry.timestamp > CACHE_EXPIRY_TIME) {
+  if (now - cacheEntry.timestamp > expiryTimeMs) {
     return null;
   }
   return cacheEntry.data;
 };
 
-export const storeCachedDirectory = (cache, path, data) => {
+export const storeCachedDirectory = (cache, path, data, enabled = true) => {
+  if (!enabled) {
+    return;
+  }
   cache.set(path, {
     data,
     timestamp: Date.now(),

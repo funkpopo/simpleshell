@@ -8,6 +8,10 @@ import {
   getTerminalTheme,
 } from "../model/terminalTheme.js";
 import { DEFAULT_TERMINAL_SCROLLBACK_LINES } from "../../../../shared/domain/terminalScrollback.js";
+import {
+  normalizePerformanceSettings,
+  normalizeTerminalUiSettings,
+} from "../../../../shared/settings/uiSettingsDefaults.js";
 import { FIRA_CODE_FONT_FAMILY } from "../../../shared/lib/fonts.js";
 import {
   clearPendingWrappedInputRefresh,
@@ -17,11 +21,15 @@ import { attachWorkingDirectoryTracking } from "../model/workingDirectoryTrackin
 
 /**
  * P0：终端性能监控器实例化门控。
- * 仅在开发模式（生产构建下被 DefinePlugin 死代码消除）
+ * 仅在开发模式（生产构建下被 DefinePlugin 死代码消除）、
+ * 全局设置 `performance.terminalPerfMonitor` 开启，
  * 或用户显式设置诊断开关（localStorage）时开启。
  */
-function shouldEnableTerminalPerfMonitor() {
+export function shouldEnableTerminalPerfMonitor(perfMonitorEnabled = false) {
   if (process.env.NODE_ENV === "development") {
+    return true;
+  }
+  if (perfMonitorEnabled === true) {
     return true;
   }
   try {
@@ -34,9 +42,38 @@ function shouldEnableTerminalPerfMonitor() {
   }
 }
 
+export function applyTerminalUiOptionsToInstance(term, uiOrFontSettings) {
+  if (!term || !uiOrFontSettings || typeof uiOrFontSettings !== "object") {
+    return;
+  }
+  const defaults = normalizeTerminalUiSettings(uiOrFontSettings);
+  const cursorStyle = uiOrFontSettings.cursorStyle ?? defaults.cursorStyle;
+  const cursorBlink = uiOrFontSettings.cursorBlink ?? defaults.cursorBlink;
+  const letterSpacing =
+    uiOrFontSettings.letterSpacing ?? defaults.letterSpacing;
+  const fontWeightBold =
+    uiOrFontSettings.fontWeightBold ?? defaults.fontWeightBold;
+  const copyOnSelect = uiOrFontSettings.copyOnSelect ?? defaults.copyOnSelect;
+  const rightClickSelectsWord =
+    uiOrFontSettings.rightClickSelectsWord ?? defaults.rightClickSelectsWord;
+  const middleClickPaste =
+    uiOrFontSettings.middleClickPaste ?? defaults.middleClickPaste;
+  const macOptionIsMeta =
+    uiOrFontSettings.macOptionIsMeta ?? defaults.macOptionIsMeta;
+
+  term.options.cursorStyle = cursorStyle;
+  term.options.cursorBlink = cursorBlink;
+  term.options.letterSpacing = letterSpacing;
+  term.options.fontWeightBold = fontWeightBold;
+  term.options.copyOnSelect = copyOnSelect;
+  term.options.rightClickSelectsWord = rightClickSelectsWord;
+  term.options.macOptionIsMeta = macOptionIsMeta;
+  term.__simpleShellMiddleClickPaste = middleClickPaste !== false;
+}
+
 /** Creates a new xterm instance with the fixed-geometry defaults. */
 export function createXtermTerminal(themeMode) {
-  return new Terminal({
+  const term = new Terminal({
     cursorBlink: true,
     cursorStyle: "block",
     theme: getTerminalTheme(themeMode),
@@ -69,13 +106,16 @@ export function createXtermTerminal(themeMode) {
     macOptionIsMeta: false,
     macOptionClickForcesSelection: false,
   });
+  term.__simpleShellMiddleClickPaste = true;
+  return term;
 }
 
-/** Applies persisted font/scrollback settings once they load (fire-and-forget). */
+/** Applies persisted font/scrollback/interaction settings once they load (fire-and-forget). */
 export function applyStoredFontSettings({
   term,
   getFontSettings,
   scrollbackUsageTrackerRef,
+  performanceMonitorRef,
   scheduleTerminalLayoutSyncRef,
 }) {
   (async () => {
@@ -85,12 +125,27 @@ export function applyStoredFontSettings({
       term.options.fontFamily = fontSettings.fontFamily;
       term.options.fontWeight = fontSettings.fontWeight;
       term.options.lineHeight = fontSettings.lineHeight;
+      applyTerminalUiOptionsToInstance(term, fontSettings);
       const scrollLines =
         fontSettings.terminalScrollbackLines ||
         DEFAULT_TERMINAL_SCROLLBACK_LINES;
       term.options.scrollback = scrollLines;
       if (scrollbackUsageTrackerRef.current) {
         scrollbackUsageTrackerRef.current.maxLines = scrollLines;
+      }
+      if (
+        performanceMonitorRef &&
+        normalizePerformanceSettings({
+          performance: {
+            terminalPerfMonitor: fontSettings.terminalPerfMonitor,
+          },
+        }).terminalPerfMonitor
+      ) {
+        ensureTerminalDiagnostics({
+          performanceMonitorRef,
+          scrollbackUsageTrackerRef,
+          perfMonitorEnabled: true,
+        });
       }
       scheduleTerminalLayoutSyncRef.current("font-settings");
     } catch {
@@ -103,8 +158,12 @@ export function applyStoredFontSettings({
 export function ensureTerminalDiagnostics({
   performanceMonitorRef,
   scrollbackUsageTrackerRef,
+  perfMonitorEnabled = false,
 }) {
-  if (!performanceMonitorRef.current && shouldEnableTerminalPerfMonitor()) {
+  if (
+    !performanceMonitorRef.current &&
+    shouldEnableTerminalPerfMonitor(perfMonitorEnabled)
+  ) {
     // P0：性能监控器仅在开发模式或显式诊断开关开启时实例化。
     // 生产构建下 DefinePlugin 将 NODE_ENV 置为 production，
     // 本分支被死代码消除：0 interval、0 定时器、0 开销。

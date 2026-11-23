@@ -6,8 +6,15 @@ import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import Slider from "@mui/material/Slider";
 import TextField from "@mui/material/TextField";
+import InputAdornment from "@mui/material/InputAdornment";
 import Grid from "@mui/material/Grid";
 import { useTranslation } from "react-i18next";
+import {
+  RESOURCE_MAX_PROCESSES_OPTIONS,
+  RESOURCE_PROCESS_REFRESH_OPTIONS,
+  RESOURCE_SYSTEM_REFRESH_OPTIONS,
+  UPDATE_REMINDER_INTERVAL_OPTIONS,
+} from "../../../../shared/settings/uiSettingsDefaults.js";
 import {
   sectionCardSx,
   compactFieldSx,
@@ -68,6 +75,31 @@ export default function GeneralSettings({ initialValues, ref }) {
   );
   const [sftpFollowTerminalDirectory, setSftpFollowTerminalDirectory] =
     React.useState(initialValues.sftpFollowTerminalDirectory);
+  const [updatesAutoCheckOnStartup, setUpdatesAutoCheckOnStartup] =
+    React.useState(initialValues.updatesAutoCheckOnStartup);
+  const [updatesReminderIntervalHours, setUpdatesReminderIntervalHours] =
+    React.useState(initialValues.updatesReminderIntervalHours);
+  const [notificationDurationSeconds, setNotificationDurationSeconds] =
+    React.useState(initialValues.notificationDurationSeconds);
+  const [recentConnectionsLimit, setRecentConnectionsLimit] = React.useState(
+    initialValues.recentConnectionsLimit,
+  );
+  const [
+    externalEditorAutoUploadDebounceMs,
+    setExternalEditorAutoUploadDebounceMs,
+  ] = React.useState(initialValues.externalEditorAutoUploadDebounceMs);
+  const [
+    resourceMonitorSystemRefreshSeconds,
+    setResourceMonitorSystemRefreshSeconds,
+  ] = React.useState(initialValues.resourceMonitorSystemRefreshSeconds);
+  const [
+    resourceMonitorProcessRefreshSeconds,
+    setResourceMonitorProcessRefreshSeconds,
+  ] = React.useState(initialValues.resourceMonitorProcessRefreshSeconds);
+  const [
+    resourceMonitorMaxVisibleProcesses,
+    setResourceMonitorMaxVisibleProcesses,
+  ] = React.useState(initialValues.resourceMonitorMaxVisibleProcesses);
   const handleLanguageChange = (event) => {
     setLanguage(event.target.value);
   };
@@ -94,9 +126,33 @@ export default function GeneralSettings({ initialValues, ref }) {
       transferBarMode,
       transferIntegrity,
       sftpFollowTerminalDirectory,
+      updates: {
+        autoCheckOnStartup: Boolean(updatesAutoCheckOnStartup),
+        reminderIntervalHours: UPDATE_REMINDER_INTERVAL_OPTIONS.includes(
+          Number(updatesReminderIntervalHours),
+        )
+          ? Number(updatesReminderIntervalHours)
+          : 4,
+      },
+      notificationDurationSeconds: Math.min(
+        15,
+        Math.max(2, Math.round(Number(notificationDurationSeconds) || 5)),
+      ),
+      recentConnectionsLimit: (() => {
+        const parsed = Number.parseInt(recentConnectionsLimit, 10);
+        if (!Number.isFinite(parsed)) return 5;
+        return Math.min(20, Math.max(0, parsed));
+      })(),
       externalEditor: {
         enabled: externalEditorEnabled,
         command: externalEditorCommand.trim(),
+        autoUploadDebounceMs: Math.min(
+          5000,
+          Math.max(
+            200,
+            Math.round(Number(externalEditorAutoUploadDebounceMs) || 700),
+          ),
+        ),
       },
       diskAlert: {
         enabled: diskAlertEnabled,
@@ -112,6 +168,21 @@ export default function GeneralSettings({ initialValues, ref }) {
       resourceMonitor: {
         displayMode:
           resourceMonitorDisplayMode === "trend" ? "trend" : "independent",
+        systemRefreshSeconds: RESOURCE_SYSTEM_REFRESH_OPTIONS.includes(
+          Number(resourceMonitorSystemRefreshSeconds),
+        )
+          ? Number(resourceMonitorSystemRefreshSeconds)
+          : 5,
+        processRefreshSeconds: RESOURCE_PROCESS_REFRESH_OPTIONS.includes(
+          Number(resourceMonitorProcessRefreshSeconds),
+        )
+          ? Number(resourceMonitorProcessRefreshSeconds)
+          : 15,
+        maxVisibleProcesses: RESOURCE_MAX_PROCESSES_OPTIONS.includes(
+          Number(resourceMonitorMaxVisibleProcesses),
+        )
+          ? Number(resourceMonitorMaxVisibleProcesses)
+          : 50,
       },
     }),
   }));
@@ -220,6 +291,68 @@ export default function GeneralSettings({ initialValues, ref }) {
             }
           />
         </Box>
+
+        <Typography sx={subSectionLabelSx}>
+          {t("settings.updatesAndNotificationsTitle")}
+        </Typography>
+        <Box sx={sectionCardSx}>
+          <SettingsToggleRow
+            id="settings-updates-auto-check"
+            noDivider
+            label={t("settings.updates.autoCheckOnStartup")}
+            checked={updatesAutoCheckOnStartup}
+            onChange={(e) => setUpdatesAutoCheckOnStartup(e.target.checked)}
+          />
+          <Box sx={{ ...compactFieldSx, mt: 1 }}>
+            <TextField
+              size="small"
+              select
+              fullWidth
+              label={t("settings.updates.reminderInterval")}
+              value={updatesReminderIntervalHours}
+              onChange={(e) =>
+                setUpdatesReminderIntervalHours(Number(e.target.value))
+              }
+            >
+              {UPDATE_REMINDER_INTERVAL_OPTIONS.map((hours) => (
+                <MenuItem key={hours} value={hours}>
+                  {t("settings.units.hours", { count: hours })}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Box>
+          <Box sx={compactFieldSx}>
+            <TextField
+              slotProps={{
+                htmlInput: { min: 2, max: 15, step: 1 },
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      {t("settings.units.secondsShort")}
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              fullWidth
+              size="small"
+              type="number"
+              label={t("settings.notificationDurationLabel")}
+              value={notificationDurationSeconds}
+              onChange={(e) => setNotificationDurationSeconds(e.target.value)}
+            />
+          </Box>
+          <Box>
+            <TextField
+              slotProps={{ htmlInput: { min: 0, max: 20, step: 1 } }}
+              fullWidth
+              size="small"
+              type="number"
+              label={t("settings.recentConnectionsLimitLabel")}
+              value={recentConnectionsLimit}
+              onChange={(e) => setRecentConnectionsLimit(e.target.value)}
+            />
+          </Box>
+        </Box>
       </Grid>
 
       {/* Right: DnD + Desktop + Editor */}
@@ -295,6 +428,28 @@ export default function GeneralSettings({ initialValues, ref }) {
             onChange={(e) => setExternalEditorCommand(e.target.value)}
             disabled={!externalEditorEnabled}
             sx={{ mt: 1 }}
+          />
+          <TextField
+            slotProps={{
+              htmlInput: { min: 200, max: 5000, step: 50 },
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    {t("settings.units.millisecondsShort")}
+                  </InputAdornment>
+                ),
+              },
+            }}
+            fullWidth
+            size="small"
+            type="number"
+            label={t("settings.externalEditor.autoUploadDebounce")}
+            value={externalEditorAutoUploadDebounceMs}
+            onChange={(e) =>
+              setExternalEditorAutoUploadDebounceMs(e.target.value)
+            }
+            disabled={!externalEditorEnabled}
+            sx={{ mt: 1.5 }}
           />
         </Box>
 
@@ -374,6 +529,63 @@ export default function GeneralSettings({ initialValues, ref }) {
           >
             {t("settings.resourceMonitor.modeHint")}
           </Typography>
+          <Box
+            sx={{
+              mt: 1.5,
+              display: "flex",
+              gap: 1.5,
+              flexWrap: "wrap",
+            }}
+          >
+            <TextField
+              size="small"
+              select
+              label={t("settings.resourceMonitor.systemRefreshInterval")}
+              value={resourceMonitorSystemRefreshSeconds}
+              onChange={(e) =>
+                setResourceMonitorSystemRefreshSeconds(Number(e.target.value))
+              }
+              sx={{ flex: "1 1 130px", minWidth: 130 }}
+            >
+              {RESOURCE_SYSTEM_REFRESH_OPTIONS.map((seconds) => (
+                <MenuItem key={seconds} value={seconds}>
+                  {t("settings.units.seconds", { count: seconds })}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              size="small"
+              select
+              label={t("settings.resourceMonitor.processRefreshInterval")}
+              value={resourceMonitorProcessRefreshSeconds}
+              onChange={(e) =>
+                setResourceMonitorProcessRefreshSeconds(Number(e.target.value))
+              }
+              sx={{ flex: "1 1 130px", minWidth: 130 }}
+            >
+              {RESOURCE_PROCESS_REFRESH_OPTIONS.map((seconds) => (
+                <MenuItem key={seconds} value={seconds}>
+                  {t("settings.units.seconds", { count: seconds })}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              size="small"
+              select
+              label={t("settings.resourceMonitor.maxVisibleProcesses")}
+              value={resourceMonitorMaxVisibleProcesses}
+              onChange={(e) =>
+                setResourceMonitorMaxVisibleProcesses(Number(e.target.value))
+              }
+              sx={{ flex: "1 1 130px", minWidth: 130 }}
+            >
+              {RESOURCE_MAX_PROCESSES_OPTIONS.map((count) => (
+                <MenuItem key={count} value={count}>
+                  {count}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Box>
         </Box>
       </Grid>
     </Grid>

@@ -64,6 +64,17 @@ function createConnectionCredentials(
 
         await this.dependencies._assertSSHReachableBeforeAuth(sshConfig);
 
+        const {
+          normalizeSshUiSettings,
+        } = require("../../../../shared/settings/uiSettingsDefaults");
+        const sshUiSettings = normalizeSshUiSettings(
+          configService?.loadUISettings?.(),
+        );
+        const testTimeoutMs = Math.max(
+          5000,
+          sshUiSettings.connectionTimeoutSeconds * 1000,
+        );
+
         let connectionHandle = null;
         try {
           connectionHandle = await createManagedSshConnection(
@@ -71,7 +82,7 @@ function createConnectionCredentials(
               sshConfig,
             ),
             {
-              connectionTimeoutMs: 30000,
+              connectionTimeoutMs: testTimeoutMs,
             },
           );
 

@@ -19,6 +19,7 @@ import TerminalIcon from "@mui/icons-material/Terminal";
 import LockIcon from "@mui/icons-material/Lock";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import CloudSyncIcon from "@mui/icons-material/CloudSync";
+import SettingsEthernetIcon from "@mui/icons-material/SettingsEthernet";
 import { useTranslation } from "react-i18next";
 import { changeLanguage } from "../../i18n/i18n";
 import { SettingsSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
@@ -27,6 +28,7 @@ import loadSettingsSnapshot from "./lib/loadSettingsSnapshot.js";
 import GeneralSettings from "./sections/GeneralSettings.jsx";
 import TerminalSettings from "./sections/TerminalSettings.jsx";
 import PerformanceSettings from "./sections/PerformanceSettings.jsx";
+import ConnectionSftpSettings from "./sections/ConnectionSftpSettings.jsx";
 import SecuritySettings from "./sections/SecuritySettings.jsx";
 import DataSyncSettings from "./sections/DataSyncSettings.jsx";
 import FeedbackSettings from "./sections/FeedbackSettings.jsx";
@@ -77,12 +79,14 @@ const Settings = memo(({ open, onClose }) => {
   const generalRef = React.useRef(null),
     terminalRef = React.useRef(null),
     performanceRef = React.useRef(null),
+    connectionSftpRef = React.useRef(null),
     securityRef = React.useRef(null),
     feedbackRef = React.useRef(null);
   const sectionRefs = [
     generalRef,
     terminalRef,
     performanceRef,
+    connectionSftpRef,
     securityRef,
     null,
     feedbackRef,
@@ -128,17 +132,17 @@ const Settings = memo(({ open, onClose }) => {
       {},
       ...sectionRefs
         .filter(Boolean)
-        .map((section) => section.current.getUISettings()),
+        .map((section) => section.current?.getUISettings?.() || {}),
     );
     savePendingRef.current = request;
     setSaving(true);
     try {
-      if ((await security.save()) === false) return;
+      if ((await security?.save?.()) === false) return;
       const response = await window.terminalAPI?.saveUISettings?.(settings);
       if (response === false || response?.success === false)
         throw new Error(response?.error || t("settings.saveError"));
-      await terminal.saveLogs();
-      await feedback.saveFeedback();
+      await terminal?.saveLogs?.();
+      await feedback?.saveFeedback?.();
       if (settings.language && i18n.language !== settings.language)
         changeLanguage(settings.language);
       window.dispatchEvent(
@@ -174,16 +178,21 @@ const Settings = memo(({ open, onClose }) => {
     },
     {
       id: 3,
+      label: t("settings.connectionSftp.title"),
+      icon: <SettingsEthernetIcon fontSize="small" />,
+    },
+    {
+      id: 4,
       label: t("settings.security.title"),
       icon: <LockIcon fontSize="small" />,
     },
     {
-      id: 4,
+      id: 5,
       label: t("settings.dataSync.title"),
       icon: <CloudSyncIcon fontSize="small" />,
     },
     {
-      id: 5,
+      id: 6,
       label: t("settings.feedback.title"),
       icon: <BugReportIcon fontSize="small" />,
     },
@@ -339,26 +348,35 @@ const Settings = memo(({ open, onClose }) => {
                 />
               </Box>
 
-              {/* Tab 3: Security */}
+              {/* Tab 3: Connection & SFTP */}
               <Box data-settings-panel="3" hidden={activeTab !== 3}>
-                <SecuritySettings
+                <ConnectionSftpSettings
                   initialValues={initialValues}
                   open={open}
                   ref={sectionRefs[3]}
                 />
               </Box>
 
-              {/* Tab 4: Data & Sync */}
+              {/* Tab 4: Security */}
               <Box data-settings-panel="4" hidden={activeTab !== 4}>
+                <SecuritySettings
+                  initialValues={initialValues}
+                  open={open}
+                  ref={sectionRefs[4]}
+                />
+              </Box>
+
+              {/* Tab 5: Data & Sync */}
+              <Box data-settings-panel="5" hidden={activeTab !== 5}>
                 <DataSyncSettings initialValues={initialValues} open={open} />
               </Box>
 
-              {/* Tab 5: Feedback */}
-              <Box data-settings-panel="5" hidden={activeTab !== 5}>
+              {/* Tab 6: Feedback */}
+              <Box data-settings-panel="6" hidden={activeTab !== 6}>
                 <FeedbackSettings
                   initialValues={initialValues}
                   open={open}
-                  ref={sectionRefs[5]}
+                  ref={sectionRefs[6]}
                 />
               </Box>
             </Box>

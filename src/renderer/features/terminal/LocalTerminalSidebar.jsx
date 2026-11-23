@@ -368,16 +368,70 @@ const LocalTerminalSidebar = ({
     };
   }, [open, hasInitialDetection, hasWSLTerminal, autoRefreshTerminals]);
 
-  // 过滤终端列表
+  const [defaultShellPreference, setDefaultShellPreference] = useState("auto");
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadPreferred = async () => {
+      try {
+        const res = await window.terminalAPI?.loadUISettings?.();
+        const settings = res?.success ? res.settings : res;
+        if (!cancelled && settings?.defaultLocalShell) {
+          setDefaultShellPreference(String(settings.defaultLocalShell).trim());
+        }
+      } catch {
+        /* intentionally ignored */
+      }
+    };
+    const handleSettingsChanged = (event) => {
+      if (event?.detail?.defaultLocalShell !== undefined) {
+        setDefaultShellPreference(
+          String(event.detail.defaultLocalShell || "auto").trim(),
+        );
+      }
+    };
+    void loadPreferred();
+    window.addEventListener("settingsChanged", handleSettingsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("settingsChanged", handleSettingsChanged);
+    };
+  }, []);
+
+  // 过滤终端列表（匹配全局默认本地 Shell 的项优先排在最前）
   const filteredTerminals = useMemo(() => {
-    if (!searchQuery) return detectedTerminals;
-    const query = searchQuery.toLowerCase();
-    return detectedTerminals.filter(
-      (terminal) =>
-        terminal.name.toLowerCase().includes(query) ||
-        terminal.type.toLowerCase().includes(query),
-    );
-  }, [detectedTerminals, searchQuery]);
+    const baseList = !searchQuery
+      ? detectedTerminals
+      : detectedTerminals.filter((terminal) => {
+          const query = searchQuery.toLowerCase();
+          return (
+            terminal.name.toLowerCase().includes(query) ||
+            terminal.type.toLowerCase().includes(query)
+          );
+        });
+    const pref = defaultShellPreference.toLowerCase();
+    if (!pref || pref === "auto") {
+      return baseList;
+    }
+    const matchesPreferred = (terminal) => {
+      const tokens = [
+        terminal.id,
+        terminal.executable,
+        terminal.executablePath,
+        terminal.systemCommand,
+        terminal.command,
+        terminal.name,
+      ]
+        .filter(Boolean)
+        .map((token) => String(token).trim().toLowerCase());
+      return tokens.includes(pref);
+    };
+    return [...baseList].sort((a, b) => {
+      const aMatch = matchesPreferred(a) ? 1 : 0;
+      const bMatch = matchesPreferred(b) ? 1 : 0;
+      return bMatch - aMatch;
+    });
+  }, [detectedTerminals, searchQuery, defaultShellPreference]);
 
   // 启动终端
   const handleLaunchTerminal = useCallback(

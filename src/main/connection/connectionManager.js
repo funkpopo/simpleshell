@@ -109,16 +109,25 @@ class ConnectionManager {
     return allConnections.slice(0, count);
   }
 
+  applyUiSettings(uiSettings) {
+    this.sshConnectionPool.applyUiSettings?.(uiSettings);
+    this.telnetConnectionPool.applyUiSettings?.(uiSettings);
+    this.serialConnectionPool.applyUiSettings?.(uiSettings);
+    this.moshConnectionPool.applyUiSettings?.(uiSettings);
+    this.sshConnectionPool.reconnectionManager?.applyUiSettings?.(uiSettings);
+  }
+
   getLastConnections(count) {
+    const limit = this.sshConnectionPool._resolveRecentConnectionsLimit(count);
     // 合并SSH/Telnet/串口/Mosh的最近连接（获取连接对象,而不是连接ID）
     const sshLastConnections =
-      this.sshConnectionPool.getLastConnectionsWithDetails(count);
+      this.sshConnectionPool.getLastConnectionsWithDetails(limit);
     const telnetLastConnections =
-      this.telnetConnectionPool.getLastConnectionsWithDetails(count);
+      this.telnetConnectionPool.getLastConnectionsWithDetails(limit);
     const serialLastConnections =
-      this.serialConnectionPool.getLastConnectionsWithDetails(count);
+      this.serialConnectionPool.getLastConnectionsWithDetails(limit);
     const moshLastConnections =
-      this.moshConnectionPool.getLastConnectionsWithDetails(count);
+      this.moshConnectionPool.getLastConnectionsWithDetails(limit);
 
     // 合并两个列表,保持时间顺序（简单合并,实际使用中可能需要更复杂的合并逻辑）
     const allConnections = [
@@ -127,7 +136,7 @@ class ConnectionManager {
       ...serialLastConnections,
       ...moshLastConnections,
     ];
-    return allConnections.slice(0, count);
+    return allConnections.slice(0, limit);
   }
 
   // 从配置文件加载并初始化最近连接列表

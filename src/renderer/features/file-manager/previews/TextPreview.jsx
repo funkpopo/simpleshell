@@ -12,6 +12,7 @@ import usePreviewSnapshots from "../hooks/usePreviewSnapshots.js";
 import usePreviewContextMenu from "../hooks/usePreviewContextMenu.js";
 import TextPreviewDialog from "./TextPreviewDialog.jsx";
 import TextPreviewContent from "./TextPreviewContent.jsx";
+import { getMaxPreviewSizeBytes } from "../../../../shared/settings/uiSettingsDefaults.js";
 
 export default function TextPreview({ open, onClose, file, path, tabId }) {
   const theme = useTheme();
@@ -137,8 +138,22 @@ export default function TextPreview({ open, onClose, file, path, tabId }) {
       queueTextEditorScrollRestore();
 
       try {
-        // 检查文件大小限制 (10MB = 10 * 1024 * 1024 bytes)
-        const maxFileSize = 10 * 1024 * 1024;
+        // 检查文件大小限制（由全局设置 fileManager.maxPreviewSizeMB 决定）
+        let maxFileSize = getMaxPreviewSizeBytes(10);
+        if (
+          Number(file?.size) > 1024 * 1024 &&
+          window.terminalAPI?.loadUISettings
+        ) {
+          try {
+            const res = await window.terminalAPI.loadUISettings();
+            const settings = res?.success ? res.settings : res;
+            if (settings) {
+              maxFileSize = getMaxPreviewSizeBytes(settings);
+            }
+          } catch {
+            /* fallback to default */
+          }
+        }
         if (file.size && file.size > maxFileSize) {
           setError(
             t("filePreview.errors.fileTooLarge", {

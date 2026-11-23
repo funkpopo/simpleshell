@@ -12,6 +12,7 @@ const {
   resolveNativeSidecarNetworkPath,
 } = require("./nativeSidecarNetworkPath");
 const { normalizeErrorMessage } = require("../utils/errorResponse");
+const { SESSION_CONFIG } = require("../file-transfer/sftpConfig");
 const createSftpProtocol = require("./sftp/sftpProtocol");
 const createSftpConfigResolver = require("./sftp/sftpConfigResolver");
 const createSftpSessionPool = require("./sftp/sftpSessionPool");
@@ -43,6 +44,9 @@ const configResolver = createSftpConfigResolver({
 const sessionPool = createSftpSessionPool({
   NATIVE_SFTP_SCHEMA_VERSION,
   NATIVE_SFTP_SESSION_IDLE_TIMEOUT_MS,
+  getIdleTimeoutMs: () =>
+    Number(SESSION_CONFIG?.SESSION_IDLE_TIMEOUT) ||
+    NATIVE_SFTP_SESSION_IDLE_TIMEOUT_MS,
   spawnCoreService,
   logToFile,
   recordNativeSidecarNetworkPath,

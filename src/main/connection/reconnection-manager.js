@@ -19,6 +19,9 @@ const {
   getUiLanguage,
 } = require("../../shared/mainI18n");
 const configService = require("../settings/configService");
+const {
+  normalizeReconnectUiSettings,
+} = require("../../shared/settings/uiSettingsDefaults");
 const createFailurePolicyMethods = require("./reconnect/failurePolicy");
 const createReconnectExecutionMethods = require("./reconnect/reconnectExecution");
 const createSessionControlsMethods = require("./reconnect/sessionControls");
@@ -49,7 +52,9 @@ function buildMaxRetriesMessage(maxRetries, language) {
 class ReconnectionManager extends EventEmitter {
   constructor(config = {}) {
     super();
-    this.config = buildSshRetryConfig(config);
+    this._explicitKeys = new Set(Object.keys(config || {}));
+    const baseConfig = this._readGlobalReconnectConfig(config);
+    this.config = buildSshRetryConfig(baseConfig);
 
     // 连接会话管理
     this.sessions = new Map();
@@ -238,6 +243,44 @@ class ReconnectionManager extends EventEmitter {
     // 监听connection timeout
     connection.on("timeout", () => {
       this.handleConnectionTimeout(session, connection);
+    });
+  }
+
+  _readGlobalReconnectConfig(overrides = {}) {
+    try {
+      const uiSettings = configService.loadUISettings?.();
+      if (uiSettings?.reconnect) {
+        const normalized = normalizeReconnectUiSettings(uiSettings);
+        return {
+          maxRetries: normalized.maxRetries,
+          initialDelay: normalized.initialDelayMs,
+          totalTimeCapMs: normalized.totalTimeCapSeconds * 1000,
+          fastReconnect: {
+            enabled: normalized.fastReconnectEnabled,
+            ...(overrides.fastReconnect || {}),
+          },
+          ...overrides,
+        };
+      }
+    } catch {
+      /* ignore when configService is uninitialized */
+    }
+    return overrides;
+  }
+
+  /**
+   * 运行时更新重连策略配置（设置页及全局 UI 设置变更）
+   */
+  applyUiSettings(uiSettings) {
+    const normalized = normalizeReconnectUiSettings(uiSettings);
+    return this.updateConfig({
+      maxRetries: normalized.maxRetries,
+      initialDelay: normalized.initialDelayMs,
+      totalTimeCapMs: normalized.totalTimeCapSeconds * 1000,
+      fastReconnect: {
+        ...(this.config?.fastReconnect || {}),
+        enabled: normalized.fastReconnectEnabled,
+      },
     });
   }
 

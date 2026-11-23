@@ -423,17 +423,6 @@ function createTerminalAPI(bridge) {
       return Promise.resolve(true);
     },
 
-    /**
-     * 通过 IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_PREFETCH 请求主进程。
-     * @param {Record<string, unknown>} settings
-     * @returns {Promise<unknown>}
-     */
-    updatePrefetchSettings: (settings) =>
-      ipcRenderer.invoke(
-        IPC_REQUEST_CHANNELS.SETTINGS_UPDATE_PREFETCH,
-        settings,
-      ),
-
     // 新增: 通知主进程编辑器模式变化的API
     /**
      * 通过 IPC_REQUEST_CHANNELS.TERMINAL_NOTIFY_EDITOR_MODE_CHANGE 请求主进程。

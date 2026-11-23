@@ -5,6 +5,9 @@ const nativeSftpClient = require("../native/nativeSftpClient");
 const runtimeFileLifecycle = require("../storage/runtimeFileLifecycle");
 const { sleep } = require("../../shared/common");
 const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
+const {
+  normalizeAutoUploadDebounceMs,
+} = require("../../shared/settings/uiSettingsDefaults");
 
 const FILE_PLACEHOLDER = "%FILE%";
 const DEFAULT_DEBOUNCE_MS = 700;
@@ -343,6 +346,18 @@ function detachAllWatchers() {
   }
 }
 
+function getAutoUploadDebounceMs() {
+  try {
+    const uiSettings = configService?.loadUISettings?.();
+    if (uiSettings) {
+      return normalizeAutoUploadDebounceMs(uiSettings);
+    }
+  } catch {
+    /* ignore when configService is uninitialized */
+  }
+  return DEFAULT_DEBOUNCE_MS;
+}
+
 function scheduleUpload(entry) {
   if (entry.suspended) return;
   if (entry.debounceTimer) {
@@ -356,7 +371,7 @@ function scheduleUpload(entry) {
         "ERROR",
       );
     });
-  }, DEFAULT_DEBOUNCE_MS);
+  }, getAutoUploadDebounceMs());
 }
 
 async function triggerUpload(entry) {

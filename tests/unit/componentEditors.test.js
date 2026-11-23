@@ -100,7 +100,11 @@ it("keeps drafts across tabs and commits settings from every section", async () 
       editorFont: "consolas",
       backupRetentionDays: 45,
       transferIntegrity: true,
-      performance: expect.objectContaining({ imageSupported: true }),
+      performance: expect.objectContaining({
+        cacheEnabled: true,
+        webglEnabled: true,
+        terminalPerfMonitor: false,
+      }),
     }),
   );
   expect(window.terminalAPI.saveLogSettings).toHaveBeenCalledWith(
