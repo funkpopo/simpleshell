@@ -123,6 +123,7 @@ Vitest suites under `tests/unit` cover contracts, architecture boundaries and ap
   - **Windows**: Visual Studio Build Tools (MSVC, "Desktop development with C++")
   - **macOS**: Xcode Command Line Tools
   - **Linux**: build-essential package
+- **Windows installer (`npm run make`)**: [Inno Setup 6](https://jrsoftware.org/isinfo.php) (auto-detected via `ISCC_PATH`, `PATH`, Windows Registry, or standard install folders)
 
 ### **Setup**
 
@@ -189,6 +190,8 @@ npm run make -- --platform=darwin
 npm run make -- --platform=linux
 ```
 
+On Windows, `npm run make` builds/stages `simpleshell-core`, packages the Electron app, and invokes Inno Setup 6 (`ISCC.exe`) via `installer/simpleshell.iss` to produce `installer/SimpleShell-v<version>-Setup-<arch>.exe` directly. If Inno Setup 6 is installed in a custom path not in `PATH` or the Windows Registry, set `ISCC_PATH` before running `npm run make`.
+
 ## **Project Structure**
 
 ```text
@@ -199,8 +202,9 @@ simpleshell/
 │   ├── renderer/            # React UI, terminal views and browser helpers
 │   └── shared/              # Contracts, pure cross-runtime logic and locales
 ├── native-services/         # Rust workspace for simpleshell-core
+├── installer/               # Windows Inno Setup script (simpleshell.iss)
 ├── tests/                   # Unit, contract and integration suites, helpers and fixtures
-├── scripts/                 # Native host staging, install and postinstall helpers
+├── scripts/                 # Native host staging, Forge makers and postinstall helpers
 ├── forge.config.js
 └── webpack.*.config.js
 ```

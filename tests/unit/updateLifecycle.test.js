@@ -519,7 +519,7 @@ describe("update-service", () => {
 
       assert.deepEqual(relaunchOptions, {
         execPath: installerPath,
-        args: ["/S"],
+        args: ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"],
       });
       assert.equal(quitScheduled, true);
       assert.equal(
@@ -564,7 +564,12 @@ describe("update-service", () => {
         path.basename(spawnCall.command).toLowerCase(),
         "powershell.exe",
       );
-      assert.deepEqual(spawnCall.args, ["/S"]);
+      assert.deepEqual(spawnCall.args, [
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        "/SP-",
+      ]);
       assert.equal(spawnCall.options.windowsHide, true);
       assert.equal(spawnCall.options.detached, true);
       assert.equal(spawnCall.options.stdio, "ignore");

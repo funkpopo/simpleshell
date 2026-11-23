@@ -26,6 +26,12 @@ const RPM_CJK_FONT_DEPENDENCIES = ["google-noto-sans-cjk-fonts"];
 const NATIVE_SERVICES_BASENAME =
   process.platform === "win32" ? "simpleshell-core.exe" : "simpleshell-core";
 const WINDOWS_ICON_PATH = path.join(__dirname, "src/renderer/assets/logo.ico");
+const LICENSE_FILE_PATH = path.join(__dirname, "LICENSE");
+const INNO_SETUP_SCRIPT_PATH = path.join(
+  __dirname,
+  "installer/simpleshell.iss",
+);
+const INNO_SETUP_OUTPUT_DIR = path.join(__dirname, "installer");
 const LINUX_ICON_PATH = path.join(
   __dirname,
   "src/renderer/assets/SimpleShell.png",
@@ -375,12 +381,16 @@ module.exports = async () => {
     },
     makers: [
       {
-        name: "@electron-forge/maker-squirrel",
+        name: "./scripts/makers/maker-inno-setup.js",
+        platforms: ["win32"],
         config: {
-          name: PACKAGE_NAME,
-          setupExe: `${PRODUCT_NAME}-Setup.exe`,
-          setupIcon: WINDOWS_ICON_PATH,
-          noMsi: false,
+          projectRoot: __dirname,
+          appName: PRODUCT_NAME,
+          scriptPath: INNO_SETUP_SCRIPT_PATH,
+          outputDir: INNO_SETUP_OUTPUT_DIR,
+          appIcon: WINDOWS_ICON_PATH,
+          licenseFile: LICENSE_FILE_PATH,
+          appCopyright: `Copyright (C) ${new Date().getFullYear()} funkpopo`,
         },
       },
       {
