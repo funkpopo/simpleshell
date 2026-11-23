@@ -2,7 +2,7 @@ use crate::protocol::*;
 use netutil::{direct_network_path, safe_proxy_config, NetworkPath};
 use openssh_sftp_client::{Sftp, SftpOptions};
 use ssh_hub::Lease;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub(crate) fn resolve_network_path(config: &SshConnectionConfig) -> NetworkPath {
     if let Some(proxy) = config.ssh.proxy.as_ref() {
@@ -43,7 +43,8 @@ pub(crate) async fn connect_sftp(
     }
 
     let (reader, writer) = tokio::io::split(channel.into_stream());
-    let sftp = Sftp::new(writer, reader, SftpOptions::default())
+    let options = SftpOptions::new().flush_interval(Duration::ZERO);
+    let sftp = Sftp::new(writer, reader, options)
         .await
         .map_err(|error| format!("failed to initialize openssh-sftp-client: {error}"))?;
     stage("sftpReady");

@@ -8,9 +8,7 @@ const {
 } = require("electron");
 const fs = require("fs");
 const path = require("path");
-const configService = require("../settings/configService");
 const { logToFile } = require("../utils/logger");
-const { safeSendToRenderer } = require("../window/windowManager");
 const { MENU_ACTIONS } = require("./systemMenu");
 const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
 
@@ -93,6 +91,7 @@ function getPrimaryWindow() {
 }
 
 function sendDesktopMenuAction(action) {
+  const { safeSendToRenderer } = require("../window/windowManager");
   safeSendToRenderer(IPC_EVENT_CHANNELS.APP_MENU_ACTION, {
     action,
     source: "desktop-integration",
@@ -116,6 +115,7 @@ function sendDesktopOpenFiles(filePaths = []) {
   }
 
   if (Notification.isSupported()) {
+    const configService = require("../settings/configService");
     const { t: mainT, getUiLanguage } = require("../../shared/mainI18n");
     const lng = getUiLanguage(configService);
     const [firstPath] = normalizedPaths;
@@ -136,6 +136,7 @@ function sendDesktopOpenFiles(filePaths = []) {
     }).show();
   }
 
+  const { safeSendToRenderer } = require("../window/windowManager");
   safeSendToRenderer(IPC_EVENT_CHANNELS.APP_OPEN_FILES, {
     filePaths: normalizedPaths,
     source: "desktop-integration",
@@ -259,6 +260,7 @@ function applyDesktopIntegrationSettings(settings = {}) {
 }
 
 function loadDesktopIntegrationSettings() {
+  const configService = require("../settings/configService");
   const uiSettings = configService.loadUISettings();
   return normalizeDesktopIntegrationSettings(uiSettings.desktopIntegration);
 }

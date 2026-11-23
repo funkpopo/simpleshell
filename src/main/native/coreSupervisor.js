@@ -140,6 +140,7 @@ class CoreSupervisor extends EventEmitter {
     this._process = null;
     this._decoder = null;
     this._inbox = [];
+    this._inboxHead = 0;
     this._draining = false;
     this._inboxPaused = false;
     this._drainTimer = null;
@@ -217,6 +218,7 @@ class CoreSupervisor extends EventEmitter {
     this._process = child;
     this._decoder = new FrameDecoder();
     this._inbox = [];
+    this._inboxHead = 0;
     this._inboxPaused = false;
     this.ready = null;
     if (this._started) this.restarts += 1;
@@ -281,7 +283,10 @@ class CoreSupervisor extends EventEmitter {
   _onFrames(child, chunk) {
     if (child !== this._process) return;
     try {
-      this._inbox.push(...this._decoder.push(chunk));
+      const frames = this._decoder.push(chunk);
+      for (let i = 0; i < frames.length; i += 1) {
+        this._inbox.push(frames[i]);
+      }
     } catch (error) {
       this._log(
         `Core(${this.role}) sent an invalid frame: ${error.message}`,
@@ -301,18 +306,29 @@ class CoreSupervisor extends EventEmitter {
     if (this._draining || child !== this._process) return;
     this._draining = true;
     try {
-      while (this._inbox.length && child === this._process) {
+      while (this._inboxHead < this._inbox.length && child === this._process) {
         if (this._turnBudgetSpent()) {
           this._deferDrain(child);
           return;
         }
-        if (!this._dispatchFrame(child, this._inbox.shift())) return;
+        const frame = this._inbox[this._inboxHead];
+        this._inbox[this._inboxHead] = undefined;
+        this._inboxHead += 1;
+        if (!this._dispatchFrame(child, frame)) return;
+      }
+      if (this._inboxHead >= this._inbox.length) {
+        this._inbox.length = 0;
+        this._inboxHead = 0;
       }
       if (this._inboxPaused && child === this._process) {
         this._inboxPaused = false;
         child.stdout.resume();
       }
     } finally {
+      if (this._inboxHead > 1024 && this._inboxHead * 2 >= this._inbox.length) {
+        this._inbox = this._inbox.slice(this._inboxHead);
+        this._inboxHead = 0;
+      }
       this._draining = false;
     }
   }
@@ -452,6 +468,7 @@ class CoreSupervisor extends EventEmitter {
     this._process = null;
     this._decoder = null;
     this._inbox = [];
+    this._inboxHead = 0;
     this._pendingWrites = [];
     if (this._awaitingPong) clearTimeout(this._awaitingPong.timer);
     this._awaitingPong = null;

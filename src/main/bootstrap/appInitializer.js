@@ -1,16 +1,13 @@
 const { session } = require("electron");
 const { logToFile, initLogger, updateLogConfig } = require("../utils/logger");
-const configService = require("../settings/configService");
-const configTransferService = require("../settings/configTransferService");
-const externalEditorManager = require("../file-transfer/externalEditorManager");
-const fileCache = require("../storage/fileCache");
-const fileSnapshotStore = require("../storage/fileSnapshotStore");
-const runtimeFileLifecycle = require("../storage/runtimeFileLifecycle");
-const connectionManager = require("../connection/connectionManager");
-const commandHistoryService = require("../terminal/command-history");
-const { safeSendToRenderer } = require("../window/windowManager");
-const updateService = require("../update/updateService");
-const { migrateLegacyConfigIfNeeded } = require("../utils/appPaths");
+
+let cachedConfigService = null;
+const getConfigService = () => {
+  if (!cachedConfigService) {
+    cachedConfigService = require("../settings/configService");
+  }
+  return cachedConfigService;
+};
 
 /**
  * 应用初始化模块
@@ -48,11 +45,13 @@ class AppInitializer {
    * 初始化配置服务
    */
   initializeConfigService() {
+    const configService = getConfigService();
     configService.init(this.app, { logToFile }, require("../utils/crypto"));
     configService.initializeMainConfig();
 
     // 启动 WebDAV 自动同步调度器（未启用时为空操作）
     try {
+      const configTransferService = require("../settings/configTransferService");
       configTransferService.startAutoSyncScheduler();
     } catch (autoSyncError) {
       logToFile(
@@ -71,10 +70,12 @@ class AppInitializer {
    */
   initializeExternalEditorManager(shell) {
     try {
+      const externalEditorManager = require("../file-transfer/externalEditorManager");
+      const { safeSendToRenderer } = require("../window/windowManager");
       externalEditorManager.init({
         app: this.app,
         logger: { logToFile },
-        configService,
+        configService: getConfigService(),
         sftpCore: null,
         shell,
         sendToRenderer: (channel, payload) =>
@@ -93,6 +94,8 @@ class AppInitializer {
    * 初始化文件缓存
    */
   initializeFileCache() {
+    const fileCache = require("../storage/fileCache");
+    const fileSnapshotStore = require("../storage/fileSnapshotStore");
     fileCache.init(logToFile, this.app);
     fileSnapshotStore.init(logToFile, this.app);
     logToFile("Runtime file stores initialized", "INFO");
@@ -103,6 +106,7 @@ class AppInitializer {
    */
   async initializeRuntimeFileLifecycle() {
     try {
+      const runtimeFileLifecycle = require("../storage/runtimeFileLifecycle");
       const recoveryResult = await runtimeFileLifecycle.recoverFromPreviousExit(
         {
           recreate: true,
@@ -125,6 +129,8 @@ class AppInitializer {
    * 初始化连接管理器
    */
   initializeConnectionManager() {
+    const connectionManager = require("../connection/connectionManager");
+    const configService = getConfigService();
     connectionManager.initialize();
 
     try {
@@ -189,6 +195,8 @@ class AppInitializer {
    */
   initializeCommandHistoryService() {
     try {
+      const configService = getConfigService();
+      const commandHistoryService = require("../terminal/command-history");
       const commandHistory = configService.loadCommandHistory();
       commandHistoryService.initialize(commandHistory);
       // Persist the filtered legacy history so recognized secrets do not stay
@@ -211,6 +219,7 @@ class AppInitializer {
    */
   async cleanupConsumedUpdateInstaller() {
     try {
+      const updateService = require("../update/updateService");
       await updateService.cleanupConsumedInstaller();
       logToFile("Consumed update installer cleanup completed", "INFO");
     } catch (error) {
@@ -227,6 +236,7 @@ class AppInitializer {
   async initialize(shell) {
     // 日志/配置初始化前先迁移旧版 exe 旁 config，避免首启读空配置
     try {
+      const { migrateLegacyConfigIfNeeded } = require("../utils/appPaths");
       migrateLegacyConfigIfNeeded(this.app);
     } catch {
       /* best-effort; configService 仍会再尝试一次 */

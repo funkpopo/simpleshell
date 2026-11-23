@@ -1,7 +1,12 @@
 import { scanTerminalSearchMatches } from "../model/searchResults.js";
 
-const SCAN_BUDGET_MS = 4;
+const SCAN_BUDGET_MS = 3.5;
 const HIGHLIGHT_LIMIT = 1000;
+
+const shouldYieldWithMessageChannel = () =>
+  typeof MessageChannel === "function" &&
+  typeof globalThis.vi === "undefined" &&
+  !Object.prototype.hasOwnProperty.call(setTimeout, "clock");
 
 /** Search the complete xterm buffer in cancellable slices, retaining positions
  * rather than a second copy of the terminal text. Navigation reuses the index. */
@@ -22,6 +27,16 @@ export class TerminalSearchAddon {
   activate(term) {
     this.term = term;
     const invalidate = () => {
+      if (
+        !this.job &&
+        !this.cacheKey &&
+        !this.lastSearch &&
+        this.matches.length === 0 &&
+        this.activeDecorations.length === 0 &&
+        !this.refreshTimer
+      ) {
+        return;
+      }
       this.cancelScan();
       this.cacheKey = null;
       this.matches = [];
@@ -59,11 +74,26 @@ export class TerminalSearchAddon {
     this.listeners.forEach((listener) => listener(result));
   }
 
+  closeJobYield(job) {
+    if (!job) return;
+    if (job.timer !== null) {
+      clearTimeout(job.timer);
+      job.timer = null;
+    }
+    if (job.channel) {
+      job.channel.port1.onmessage = null;
+      job.channel.port1.close();
+      job.channel.port2.close();
+      job.channel = null;
+    }
+  }
+
   cancelScan() {
     if (!this.job) return;
-    clearTimeout(this.job.timer);
-    this.job.resolve(null);
+    const job = this.job;
     this.job = null;
+    this.closeJobYield(job);
+    job.resolve(null);
   }
 
   getMatches(term, options) {
@@ -80,42 +110,55 @@ export class TerminalSearchAddon {
     this.matches = [];
     this.cacheKey = null;
     const scanner = scanTerminalSearchMatches(this.term, term, options);
-    const job = { key, matches: [], timer: null };
+    const channel = shouldYieldWithMessageChannel()
+      ? new MessageChannel()
+      : null;
+    const job = { key, matches: [], timer: null, channel };
     job.promise = new Promise((resolve, reject) => {
       job.resolve = resolve;
       job.reject = reject;
     });
     this.job = job;
+    const scheduleNext = (stepFn) => {
+      if (job.channel) {
+        job.channel.port2.postMessage(null);
+      } else {
+        job.timer = setTimeout(stepFn, 0);
+      }
+    };
     const step = () => {
       if (this.job !== job) return;
       try {
         const start = performance.now();
-        let iterations = 0;
         while (true) {
           const item = scanner.next();
           if (item.done) {
             this.job = null;
+            this.closeJobYield(job);
             this.matches = job.matches;
             this.cacheKey = key;
             this.renderHighlights(options.decorations);
             job.resolve(this.matches);
             return;
           }
-          if (item.value) job.matches.push(item.value);
-          if (
-            ++iterations % 32 === 0 &&
-            performance.now() - start >= SCAN_BUDGET_MS
-          )
+          if (item.value) {
+            job.matches.push(item.value);
+          } else if (performance.now() - start >= SCAN_BUDGET_MS) {
             break;
+          }
         }
-        job.timer = setTimeout(step, 0);
+        scheduleNext(step);
       } catch (error) {
         this.job = null;
+        this.closeJobYield(job);
         this.cacheKey = null;
         job.reject(error);
       }
     };
-    job.timer = setTimeout(step, 0);
+    if (job.channel) {
+      job.channel.port1.onmessage = step;
+    }
+    scheduleNext(step);
     return job.promise;
   }
 

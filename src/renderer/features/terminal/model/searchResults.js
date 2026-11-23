@@ -48,14 +48,19 @@ const translateBufferLineToStringWithWrap = function* (
   buffer,
   startRow,
   trimRight,
+  initialLine,
+  initialNextLine,
 ) {
   const strings = [];
   const lineOffsets = [0];
+  const lines = [];
   let row = startRow;
-  let line = buffer.getLine(row);
+  let line = initialLine !== undefined ? initialLine : buffer.getLine(row);
+  let nextLine =
+    initialNextLine !== undefined ? initialNextLine : buffer.getLine(row + 1);
 
   while (line) {
-    const nextLine = buffer.getLine(row + 1);
+    lines.push(line);
     const lineWrapsToNext = Boolean(nextLine && nextLine.isWrapped);
     let text = line.translateToString(!lineWrapsToNext && trimRight);
 
@@ -82,24 +87,27 @@ const translateBufferLineToStringWithWrap = function* (
     lineOffsets.push(lineOffsets[lineOffsets.length - 1] + text.length);
     row += 1;
     line = nextLine;
+    nextLine = line ? buffer.getLine(row + 1) : undefined;
   }
 
   return {
     text: strings.join(""),
     lineCount: strings.length,
     lineOffsets,
+    lines,
+    afterLastLine: nextLine,
   };
 };
 
-const stringLengthToBufferSize = (buffer, row, stringLength) => {
-  const line = buffer.getLine(row);
-  if (!line) {
+const stringLengthToBufferSize = (buffer, row, stringLength, cachedLine) => {
+  const line = cachedLine !== undefined ? cachedLine : buffer.getLine(row);
+  if (!line || stringLength <= 0) {
     return 0;
   }
 
   let bufferSize = stringLength;
+  let cell = line.getCell(0);
   for (let index = 0; index < bufferSize; index += 1) {
-    const cell = line.getCell(index);
     if (!cell) {
       break;
     }
@@ -113,6 +121,7 @@ const stringLengthToBufferSize = (buffer, row, stringLength) => {
     if (nextCell && nextCell.getWidth() === 0) {
       bufferSize += 1;
     }
+    cell = nextCell;
   }
 
   return bufferSize;
@@ -155,20 +164,115 @@ const scanTerminalSearchMatches = function* (term, rawTerm, options = {}) {
 
   const terminalCols = Number.isFinite(term?.cols) ? term.cols : 0;
   const searchableBufferLength = getSearchableBufferLength(term, buffer);
+  const literalCaseSensitive =
+    !searchOptions.regex && searchOptions.caseSensitive;
+  let currentLine = searchableBufferLength > 0 ? buffer.getLine(0) : undefined;
 
-  for (let row = 0; row < searchableBufferLength; row += 1) {
-    const line = buffer.getLine(row);
-    yield null;
+  let rowIterations = 0;
+  for (let row = 0; row < searchableBufferLength;) {
+    const line = currentLine;
+    if ((rowIterations++ & 31) === 0) {
+      yield null;
+    }
     if (!line) {
+      row += 1;
+      currentLine =
+        row < searchableBufferLength ? buffer.getLine(row) : undefined;
       continue;
     }
 
     if (row > 0 && line.isWrapped) {
+      row += 1;
+      currentLine =
+        row < searchableBufferLength ? buffer.getLine(row) : undefined;
       continue;
     }
 
-    const { text, lineCount, lineOffsets } =
-      yield* translateBufferLineToStringWithWrap(buffer, row, true);
+    const nextLine = buffer.getLine(row + 1);
+    if (!nextLine || !nextLine.isWrapped) {
+      const text = line.translateToString(true);
+      if (text) {
+        if (literalCaseSensitive) {
+          let searchFrom = 0;
+          let foundIndex;
+          while ((foundIndex = text.indexOf(searchTerm, searchFrom)) !== -1) {
+            yield null;
+            searchFrom = foundIndex + searchTerm.length;
+            if (
+              searchOptions.wholeWord &&
+              !isWholeWordMatch(text, foundIndex, searchTerm.length)
+            ) {
+              continue;
+            }
+            const startCol = stringLengthToBufferSize(
+              buffer,
+              row,
+              foundIndex,
+              line,
+            );
+            const endCol = stringLengthToBufferSize(
+              buffer,
+              row,
+              foundIndex + searchTerm.length,
+              line,
+            );
+            yield {
+              term: rawTerm,
+              row,
+              col: startCol,
+              size: endCol - startCol,
+            };
+          }
+        } else {
+          regex.lastIndex = 0;
+          let result;
+          while ((result = regex.exec(text)) !== null) {
+            yield null;
+            const resultIndex = result.index;
+            const matchLength = result[0].length;
+            if (!matchLength) {
+              regex.lastIndex++;
+              continue;
+            }
+            if (
+              searchOptions.wholeWord &&
+              !isWholeWordMatch(text, resultIndex, matchLength)
+            )
+              continue;
+            const startCol = stringLengthToBufferSize(
+              buffer,
+              row,
+              resultIndex,
+              line,
+            );
+            const endCol = stringLengthToBufferSize(
+              buffer,
+              row,
+              resultIndex + matchLength,
+              line,
+            );
+            yield {
+              term: rawTerm,
+              row,
+              col: startCol,
+              size: endCol - startCol,
+            };
+          }
+        }
+      }
+      row += 1;
+      currentLine = nextLine;
+      continue;
+    }
+
+    const { text, lineCount, lineOffsets, lines, afterLastLine } =
+      yield* translateBufferLineToStringWithWrap(
+        buffer,
+        row,
+        true,
+        line,
+        nextLine,
+      );
 
     regex.lastIndex = 0;
     let result;
@@ -208,11 +312,13 @@ const scanTerminalSearchMatches = function* (term, rawTerm, options = {}) {
         buffer,
         row + startRowOffset,
         startColOffset,
+        lines[startRowOffset],
       );
       const endCol = stringLengthToBufferSize(
         buffer,
         row + endRowOffset,
         endColOffset,
+        lines[endRowOffset],
       );
 
       yield {
@@ -226,7 +332,8 @@ const scanTerminalSearchMatches = function* (term, rawTerm, options = {}) {
       };
     }
 
-    row += lineCount - 1;
+    row += lineCount;
+    currentLine = afterLastLine;
   }
 };
 

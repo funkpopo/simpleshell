@@ -85,6 +85,7 @@ export class RendererTerminalIOMailbox {
     this.lastResize = null;
     this.resizeTimer = null;
     this.pendingWriteChunks = [];
+    this.pendingWriteHead = 0;
     this.pendingWriteBytes = 0;
     this.activeWrite = null;
     this.writeEpoch = 0;
@@ -247,12 +248,61 @@ export class RendererTerminalIOMailbox {
       this.destroyed ||
       this.activeWrite !== null ||
       !this.term ||
-      this.pendingWriteChunks.length === 0
+      this.pendingWriteHead >= this.pendingWriteChunks.length
     ) {
       return;
     }
 
-    const nextWrite = this.pendingWriteChunks.shift();
+    const firstWrite = this.pendingWriteChunks[this.pendingWriteHead];
+    this.pendingWriteChunks[this.pendingWriteHead] = undefined;
+    this.pendingWriteHead += 1;
+
+    let writeData = firstWrite.data;
+    let writeBytes = firstWrite.byteLength;
+    const processId = firstWrite.processId;
+
+    if (writeData.length < MAX_TERMINAL_WRITE_CHARS) {
+      let parts = null;
+      let totalChars = writeData.length;
+      while (this.pendingWriteHead < this.pendingWriteChunks.length) {
+        const nextChunk = this.pendingWriteChunks[this.pendingWriteHead];
+        if (
+          nextChunk.processId !== processId ||
+          totalChars + nextChunk.data.length > MAX_TERMINAL_WRITE_CHARS
+        ) {
+          break;
+        }
+        if (!parts) {
+          parts = [writeData];
+        }
+        parts.push(nextChunk.data);
+        totalChars += nextChunk.data.length;
+        writeBytes += nextChunk.byteLength;
+        this.pendingWriteChunks[this.pendingWriteHead] = undefined;
+        this.pendingWriteHead += 1;
+      }
+      if (parts) {
+        writeData = parts.join("");
+      }
+    }
+
+    if (this.pendingWriteHead >= this.pendingWriteChunks.length) {
+      this.pendingWriteChunks.length = 0;
+      this.pendingWriteHead = 0;
+    } else if (
+      this.pendingWriteHead > 256 &&
+      this.pendingWriteHead * 2 >= this.pendingWriteChunks.length
+    ) {
+      this.pendingWriteChunks = this.pendingWriteChunks.slice(
+        this.pendingWriteHead,
+      );
+      this.pendingWriteHead = 0;
+    }
+
+    const nextWrite =
+      writeData === firstWrite.data
+        ? firstWrite
+        : { data: writeData, byteLength: writeBytes, processId };
     this.pendingWriteBytes = Math.max(
       0,
       this.pendingWriteBytes - nextWrite.byteLength,
@@ -386,6 +436,7 @@ export class RendererTerminalIOMailbox {
 
     this.writeQueue.clear();
     this.pendingWriteChunks = [];
+    this.pendingWriteHead = 0;
     this.pendingWriteBytes = 0;
     this.activeWrite = null;
     this.writeEpoch += 1;

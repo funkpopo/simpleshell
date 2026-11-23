@@ -1,10 +1,15 @@
-import { memo, useMemo } from "react";
-import TerminalWorkspace from "../features/terminal/components/TerminalWorkspace.jsx";
-import AIChatWorkspace from "../features/ai/AIChatWorkspace.jsx";
+import { Suspense, lazy, memo, useMemo } from "react";
 import {
   WebTerminalWithSuspense as WebTerminal,
   AIChatWindowWithSuspense,
 } from "./LazyComponents.jsx";
+
+const TerminalWorkspace = lazy(
+  () => import("../features/terminal/components/TerminalWorkspace.jsx"),
+);
+const AIChatWorkspace = lazy(
+  () => import("../features/ai/AIChatWorkspace.jsx"),
+);
 import {
   useShellSelector,
   useTerminalSelector,
@@ -85,23 +90,30 @@ const renderTerminal = (session, options) => (
 export function SessionWorkspace(props) {
   const sessions = useLiveTerminalSessions();
   const paneDragOverId = useDragSelector((state) => state.paneDragOverId);
+  if (sessions.length === 0) {
+    return null;
+  }
   return (
-    <TerminalWorkspace
-      {...props}
-      paneDragOverId={paneDragOverId}
-      sessions={sessions}
-      renderTerminal={renderTerminal}
-    />
+    <Suspense fallback={null}>
+      <TerminalWorkspace
+        {...props}
+        paneDragOverId={paneDragOverId}
+        sessions={sessions}
+        renderTerminal={renderTerminal}
+      />
+    </Suspense>
   );
 }
 
 export function SessionAIChatWorkspace(props) {
   const sessions = useLiveTerminalSessions(true);
   return (
-    <AIChatWorkspace
-      {...props}
-      sessions={sessions}
-      chatComponent={AIChatWindowWithSuspense}
-    />
+    <Suspense fallback={null}>
+      <AIChatWorkspace
+        {...props}
+        sessions={sessions}
+        chatComponent={AIChatWindowWithSuspense}
+      />
+    </Suspense>
   );
 }

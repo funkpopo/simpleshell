@@ -20,9 +20,14 @@ import {
 import { useTranslation } from "react-i18next";
 import { Z_INDEX } from "../../shared/constants/zIndex.js";
 import { useCleanupManager } from "../../shared/hooks/useAutoCleanup.js";
-import GlobalTransferFloat from "../../features/transfers/GlobalTransferFloat.jsx";
-import TransferSidebar from "../../features/transfers/TransferSidebar.jsx";
 import useAIPanel from "../hooks/useAIPanel.js";
+
+const GlobalTransferFloat = React.lazy(
+  () => import("../../features/transfers/GlobalTransferFloat.jsx"),
+);
+const TransferSidebar = React.lazy(
+  () => import("../../features/transfers/TransferSidebar.jsx"),
+);
 import {
   notifyTerminalResize,
   areFileManagerHistoryStatesEqual,
@@ -782,25 +787,31 @@ export default function SidebarWorkspace({
         />
       )}
       {/* 所有显示模式均可打开传输面板，恢复重启后保留的任务。 */}
-      {
-        <TransferSidebar
-          open={transferSidebarOpen}
-          onRecoveryCount={setResumableTransferCount}
-          onClose={() => setTransferSidebarOpen(false)}
-          zIndex={
-            lastActiveFloatWindow === "transfer"
-              ? Z_INDEX.floatWindowActive
-              : Z_INDEX.floatWindow
-          }
-          onFocus={() => setLastActiveFloatWindow("transfer")}
-          anchorEl={transferSidebarButtonRef.current}
-        />
-      }
-      <GlobalTransferFloat
-        open={transferFloatOpen}
-        onClose={handleCloseTransferFloat}
-        initialTransfer={transferFloatInitialTransfer}
-      />
+      {transferSidebarOpen && (
+        <React.Suspense fallback={null}>
+          <TransferSidebar
+            open={transferSidebarOpen}
+            onRecoveryCount={setResumableTransferCount}
+            onClose={() => setTransferSidebarOpen(false)}
+            zIndex={
+              lastActiveFloatWindow === "transfer"
+                ? Z_INDEX.floatWindowActive
+                : Z_INDEX.floatWindow
+            }
+            onFocus={() => setLastActiveFloatWindow("transfer")}
+            anchorEl={transferSidebarButtonRef.current}
+          />
+        </React.Suspense>
+      )}
+      {transferFloatOpen && (
+        <React.Suspense fallback={null}>
+          <GlobalTransferFloat
+            open={transferFloatOpen}
+            onClose={handleCloseTransferFloat}
+            initialTransfer={transferFloatInitialTransfer}
+          />
+        </React.Suspense>
+      )}
     </SidebarPositionContext.Provider>
   );
 }

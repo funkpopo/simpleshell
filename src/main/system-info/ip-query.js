@@ -1,9 +1,17 @@
 const https = require("https");
 const http = require("http");
-const { SocksProxyAgent } = require("socks-proxy-agent");
-const { HttpsProxyAgent } = require("https-proxy-agent");
-const { HttpProxyAgent } = require("http-proxy-agent");
 const ipUtils = require("../../shared/domain/ip");
+
+let cachedProxyAgents = null;
+function getProxyAgentClasses() {
+  if (!cachedProxyAgents) {
+    const { SocksProxyAgent } = require("socks-proxy-agent");
+    const { HttpsProxyAgent } = require("https-proxy-agent");
+    const { HttpProxyAgent } = require("http-proxy-agent");
+    cachedProxyAgents = { SocksProxyAgent, HttpsProxyAgent, HttpProxyAgent };
+  }
+  return cachedProxyAgents;
+}
 const { t: translateLocale, getUiLanguage } = require("../../shared/mainI18n");
 const configService = require("../settings/configService");
 const ipQueryText = (key, params = {}) =>
@@ -354,10 +362,12 @@ async function getPublicIp(proxyConfig = null) {
         if (proxyConfig.type === "socks4" || proxyConfig.type === "socks5") {
           // SOCKS代理
           const socksUrl = `${proxyConfig.type}://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ""}${proxyConfig.host}:${proxyConfig.port}`;
+          const { SocksProxyAgent } = getProxyAgentClasses();
           options.agent = new SocksProxyAgent(socksUrl);
         } else {
           // HTTP/HTTPS代理
           const proxyUrl = `http://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ""}${proxyConfig.host}:${proxyConfig.port}`;
+          const { HttpsProxyAgent } = getProxyAgentClasses();
           options.agent = new HttpsProxyAgent(proxyUrl);
         }
       } catch (proxyError) {
@@ -414,10 +424,12 @@ function fetchIpInfo(provider, ip, logger, proxyConfig = null) {
         if (proxyConfig.type === "socks4" || proxyConfig.type === "socks5") {
           // SOCKS代理
           const socksUrl = `${proxyConfig.type}://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ""}${proxyConfig.host}:${proxyConfig.port}`;
+          const { SocksProxyAgent } = getProxyAgentClasses();
           options.agent = new SocksProxyAgent(socksUrl);
         } else {
           // HTTP/HTTPS代理
           const proxyUrl = `http://${proxyConfig.username ? `${proxyConfig.username}:${proxyConfig.password}@` : ""}${proxyConfig.host}:${proxyConfig.port}`;
+          const { HttpsProxyAgent, HttpProxyAgent } = getProxyAgentClasses();
           if (parsedUrl.protocol === "https:") {
             options.agent = new HttpsProxyAgent(proxyUrl);
           } else {

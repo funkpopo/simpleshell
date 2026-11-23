@@ -1,19 +1,6 @@
 const path = require("path");
 const fs = require("fs");
 const { logToFile } = require("../utils/logger");
-const { getTempDirectory } = require("../utils/appPaths");
-const {
-  mainProcessResourceManager,
-} = require("../diagnostics/mainProcessResourceManager");
-const processManager = require("../process/processManager");
-const connectionManager = require("../connection/connectionManager");
-const runtimeFileLifecycle = require("../storage/runtimeFileLifecycle");
-const configService = require("../settings/configService");
-const configTransferService = require("../settings/configTransferService");
-const commandHistoryService = require("../terminal/command-history");
-const filemanagementService = require("../file-transfer/filemanagementService");
-const portForwardingService = require("../services/port-forwarding-service");
-const { shutdownCoreSupervisors } = require("../native/coreSupervisor");
 
 /**
  * 应用清理模块
@@ -30,6 +17,9 @@ class AppCleanup {
    */
   async cleanupResourceManager() {
     try {
+      const {
+        mainProcessResourceManager,
+      } = require("../diagnostics/mainProcessResourceManager");
       await mainProcessResourceManager.cleanup();
       logToFile("资源管理器清理完成", "INFO");
     } catch (error) {
@@ -42,6 +32,7 @@ class AppCleanup {
    */
   async cleanupMemoryFile() {
     try {
+      const { getTempDirectory } = require("../utils/appPaths");
       const memFilePath = path.join(getTempDirectory(this.app), "mem.json");
       await fs.promises.unlink(memFilePath);
       logToFile("记忆文件已清理", "INFO");
@@ -56,6 +47,7 @@ class AppCleanup {
    * 清理单个进程的SFTP资源
    */
   async cleanupProcessSftp(id, proc) {
+    const filemanagementService = require("../file-transfer/filemanagementService");
     if (
       filemanagementService &&
       typeof filemanagementService.cleanupTransfersForTab === "function"
@@ -95,6 +87,7 @@ class AppCleanup {
   releaseSSHConnection(proc) {
     if (proc.type === "ssh" && proc.connectionInfo) {
       try {
+        const connectionManager = require("../connection/connectionManager");
         proc.connectionInfo.closeReason = "system";
         proc.connectionInfo.intentionalClose = false;
         connectionManager.releaseSSHConnection(
@@ -167,6 +160,7 @@ class AppCleanup {
    * 清理所有进程
    */
   async cleanupAllProcesses() {
+    const processManager = require("../process/processManager");
     for (const [id, proc] of processManager.getUniqueProcessEntries()) {
       try {
         await this.cleanupProcessSftp(id, proc);
@@ -183,6 +177,9 @@ class AppCleanup {
    * 清理连接管理器
    */
   async cleanupConnectionManager() {
+    const configTransferService = require("../settings/configTransferService");
+    const portForwardingService = require("../services/port-forwarding-service");
+    const connectionManager = require("../connection/connectionManager");
     // 停止自动同步调度器，避免退出时残留定时器
     try {
       configTransferService.stopAutoSyncScheduler();
@@ -201,6 +198,9 @@ class AppCleanup {
   }
 
   buildCleanupSnapshot(stage) {
+    const connectionManager = require("../connection/connectionManager");
+    const processManager = require("../process/processManager");
+    const filemanagementService = require("../file-transfer/filemanagementService");
     const sshPool = connectionManager.sshConnectionPool;
     const telnetPool = connectionManager.telnetConnectionPool;
     const serialPool = connectionManager.serialConnectionPool;
@@ -268,6 +268,7 @@ class AppCleanup {
   }
 
   async cleanupGlobalSftpResources() {
+    const filemanagementService = require("../file-transfer/filemanagementService");
     if (
       filemanagementService &&
       typeof filemanagementService.cleanup === "function"
@@ -280,6 +281,7 @@ class AppCleanup {
    * 清理运行时文件生命周期资源
    */
   async cleanupRuntimeFiles() {
+    const runtimeFileLifecycle = require("../storage/runtimeFileLifecycle");
     const resources = ["file-cache", "file-snapshots", "external-editor-temp"];
     const result = {};
 
@@ -310,6 +312,8 @@ class AppCleanup {
    */
   saveCommandHistory() {
     try {
+      const commandHistoryService = require("../terminal/command-history");
+      const configService = require("../settings/configService");
       const historyToSave = commandHistoryService.exportHistory();
       configService.saveCommandHistory(historyToSave);
       logToFile(
@@ -329,6 +333,8 @@ class AppCleanup {
    */
   saveLastConnections() {
     try {
+      const connectionManager = require("../connection/connectionManager");
+      const configService = require("../settings/configService");
       const lastConnections = connectionManager.getLastConnections(5);
       logToFile(
         `App quit: Got ${lastConnections.length} last connections: ${JSON.stringify(lastConnections)}`,
@@ -359,6 +365,7 @@ class AppCleanup {
   /** 关闭常驻 simpleshell-core 进程（各服务流已在前面的清理中结束）。 */
   async shutdownNativeCore() {
     try {
+      const { shutdownCoreSupervisors } = require("../native/coreSupervisor");
       await shutdownCoreSupervisors();
     } catch (error) {
       logToFile(`Error shutting down native core: ${error.message}`, "ERROR");

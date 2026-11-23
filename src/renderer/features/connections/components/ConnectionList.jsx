@@ -109,7 +109,8 @@ function ConnectionList({
     [filteredItems],
   );
   const useVirtualizedConnectionList =
-    visibleItemCount >= CONNECTION_LIST_VIRTUALIZATION_THRESHOLD;
+    visibleItemCount >= CONNECTION_LIST_VIRTUALIZATION_THRESHOLD ||
+    (searchQuery.length > 0 && visibleItemCount > 0);
   const dragDisabled = searchQuery.length > 0 || useVirtualizedConnectionList;
   const handleDragEnd = useCallback(
     ({ active, over }) => {
@@ -361,6 +362,9 @@ function ConnectionList({
       disabled: dragDisabled,
     });
   const connectionsList = useMemo(() => {
+    if (isLoading || useVirtualizedConnectionList) {
+      return null;
+    }
     return (
       <SortableContext
         id={ROOT_CONTAINER_ID}
@@ -401,6 +405,8 @@ function ConnectionList({
       </SortableContext>
     );
   }, [
+    isLoading,
+    useVirtualizedConnectionList,
     filteredItems,
     theme,
     dragDisabled,

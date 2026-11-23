@@ -1,115 +1,94 @@
 const { ipcMain } = require("electron");
 const { logToFile } = require("../utils/logger");
 const { safeHandle, safeOn } = require("../ipc/ipcResponse");
-const {
-  registerReconnectHandlers,
-} = require("../ipc/handlers/reconnectHandlers");
-const BatchInvokeHandlers = require("../ipc/handlers/batchInvokeHandlers");
-const SystemInfoHandlers = require("../ipc/handlers/systemInfoHandlers");
-const LatencyHandlers = require("../ipc/handlers/latencyHandlers");
-const LocalTerminalHandlers = require("../ipc/handlers/localTerminalHandlers");
-const SettingsHandlers = require("../ipc/handlers/settingsHandlers");
-const AppHandlers = require("../ipc/handlers/appHandlers");
-const DialogHandlers = require("../ipc/handlers/dialogHandlers");
-const WindowHandlers = require("../ipc/handlers/windowHandlers");
-const SSHHandlers = require("../ipc/handlers/sshHandlers");
-const TerminalHandlers = require("../ipc/handlers/terminalHandlers");
-const AIHandlers = require("../ipc/handlers/aiHandlers");
-const FileHandlers = require("../ipc/handlers/fileHandlers");
-const SftpHandlers = require("../ipc/handlers/sftpHandlers");
-const UtilityHandlers = require("../ipc/handlers/utilityHandlers");
-const ConnectionHandlers = require("../ipc/handlers/connectionHandlers");
-const SshKeyHandlers = require("../ipc/handlers/sshKeyHandlers");
-const SshConfigHandlers = require("../ipc/handlers/sshConfigHandlers");
-const MemoryHandlers = require("../ipc/handlers/memoryHandlers");
-const ExternalEditorHandlers = require("../ipc/handlers/externalEditorHandlers");
-const RuntimeFileHandlers = require("../ipc/handlers/runtimeFileHandlers");
-const PortForwardingHandlers = require("../ipc/handlers/portForwardingHandlers");
-const ConfigTransferHandlers = require("../ipc/handlers/configTransferHandlers");
-const TerminalIOMailboxManager = require("../terminal/terminalIOMailboxManager");
-const processManager = require("../process/processManager");
-const diskAlertService = require("../services/diskAlertService");
-const connectionManager = require("../connection/connectionManager");
-const { getPrimaryWindow } = require("../window/windowManager");
 
-// 关键处理器模块（在窗口创建前由 registerCriticalHandlers 统一注册）
+// 关键处理器模块（在窗口创建前由 registerCriticalHandlers 统一注册，按需加载）
 const CRITICAL_HANDLER_MODULES = [
   {
-    HandlersClass: SettingsHandlers,
+    load: () => require("../ipc/handlers/settingsHandlers"),
     successLog: "Settings handlers registered",
   },
-  { HandlersClass: AppHandlers, successLog: "App handlers registered" },
-  { HandlersClass: DialogHandlers, successLog: "Dialog handlers registered" },
-  { HandlersClass: WindowHandlers, successLog: "Window handlers registered" },
   {
-    HandlersClass: SystemInfoHandlers,
+    load: () => require("../ipc/handlers/appHandlers"),
+    successLog: "App handlers registered",
+  },
+  {
+    load: () => require("../ipc/handlers/dialogHandlers"),
+    successLog: "Dialog handlers registered",
+  },
+  {
+    load: () => require("../ipc/handlers/windowHandlers"),
+    successLog: "Window handlers registered",
+  },
+  {
+    load: () => require("../ipc/handlers/systemInfoHandlers"),
     successLog: "System info handlers registered",
   },
   {
-    HandlersClass: BatchInvokeHandlers,
+    load: () => require("../ipc/handlers/batchInvokeHandlers"),
     successLog: "Batch invoke handlers registered",
   },
 ];
 
-// 纯样板处理器模块（new Class → getHandlers().forEach(safeHandle) → 日志）
+// 纯样板处理器模块（按需加载 → new Class → getHandlers().forEach(safeHandle) → 日志）
 const BOILERPLATE_HANDLER_MODULES = [
   {
-    HandlersClass: AIHandlers,
+    load: () => require("../ipc/handlers/aiHandlers"),
     successLog: "AI handlers registered",
     errorLabel: "Failed to initialize AI handlers",
   },
   {
-    HandlersClass: FileHandlers,
+    load: () => require("../ipc/handlers/fileHandlers"),
     successLog: "File handlers registered",
     errorLabel: "Failed to initialize file handlers",
   },
   {
-    HandlersClass: SftpHandlers,
+    load: () => require("../ipc/handlers/sftpHandlers"),
     successLog: "SFTP handlers registered",
     errorLabel: "Failed to initialize SFTP handlers",
   },
   {
-    HandlersClass: UtilityHandlers,
+    load: () => require("../ipc/handlers/utilityHandlers"),
     successLog: "Utility handlers registered",
     errorLabel: "Failed to initialize utility handlers",
   },
   {
-    HandlersClass: ConnectionHandlers,
+    load: () => require("../ipc/handlers/connectionHandlers"),
     successLog: "Connection handlers registered",
     errorLabel: "Failed to initialize connection status handlers",
   },
   {
-    HandlersClass: SshKeyHandlers,
+    load: () => require("../ipc/handlers/sshKeyHandlers"),
     successLog: "SSH key handlers registered",
     errorLabel: "Failed to initialize SSH key handlers",
   },
   {
-    HandlersClass: SshConfigHandlers,
+    load: () => require("../ipc/handlers/sshConfigHandlers"),
     successLog: "SSH config import handlers registered",
     errorLabel: "Failed to initialize SSH config import handlers",
   },
   {
-    HandlersClass: MemoryHandlers,
+    load: () => require("../ipc/handlers/memoryHandlers"),
     successLog: "Memory handlers registered",
     errorLabel: "Failed to initialize memory handlers",
   },
   {
-    HandlersClass: ExternalEditorHandlers,
+    load: () => require("../ipc/handlers/externalEditorHandlers"),
     successLog: "External editor handlers registered",
     errorLabel: "Failed to initialize external editor handlers",
   },
   {
-    HandlersClass: RuntimeFileHandlers,
+    load: () => require("../ipc/handlers/runtimeFileHandlers"),
     successLog: "Runtime file lifecycle handlers registered",
     errorLabel: "Failed to initialize runtime file lifecycle handlers",
   },
   {
-    HandlersClass: PortForwardingHandlers,
+    load: () => require("../ipc/handlers/portForwardingHandlers"),
     successLog: "Port forwarding handlers registered",
     errorLabel: "Failed to initialize port forwarding handlers",
   },
   {
-    HandlersClass: ConfigTransferHandlers,
+    load: () => require("../ipc/handlers/configTransferHandlers"),
     successLog: "Config transfer handlers registered",
     errorLabel: "Failed to initialize config transfer handlers",
   },
@@ -125,9 +104,18 @@ class IPCSetup {
     this.localTerminalHandlers = null;
     this.sshHandlers = null;
     this.terminalHandlers = null;
-    this.terminalIOMailboxManager = new TerminalIOMailboxManager({
-      getMainWindow: () => getPrimaryWindow(),
-    });
+    this._terminalIOMailboxManager = null;
+  }
+
+  get terminalIOMailboxManager() {
+    if (!this._terminalIOMailboxManager) {
+      const TerminalIOMailboxManager = require("../terminal/terminalIOMailboxManager");
+      const { getPrimaryWindow } = require("../window/windowManager");
+      this._terminalIOMailboxManager = new TerminalIOMailboxManager({
+        getMainWindow: () => getPrimaryWindow(),
+      });
+    }
+    return this._terminalIOMailboxManager;
   }
 
   /**
@@ -149,6 +137,10 @@ class IPCSetup {
    */
   registerReconnectHandlers() {
     try {
+      const {
+        registerReconnectHandlers,
+      } = require("../ipc/handlers/reconnectHandlers");
+      const connectionManager = require("../connection/connectionManager");
       registerReconnectHandlers(connectionManager.sshConnectionPool);
       logToFile("Reconnect handlers registered", "INFO");
     } catch (error) {
@@ -171,8 +163,9 @@ class IPCSetup {
   /**
    * 通用样板处理器模块初始化（new → 注册 → 日志）
    */
-  initializeHandlerModule({ HandlersClass, successLog, errorLabel }) {
+  initializeHandlerModule({ load, successLog, errorLabel }) {
     try {
+      const HandlersClass = load();
       this._registerHandlerInstance(new HandlersClass());
       logToFile(successLog, "INFO");
     } catch (error) {
@@ -185,6 +178,7 @@ class IPCSetup {
    */
   initializeLatencyHandlers() {
     try {
+      const LatencyHandlers = require("../ipc/handlers/latencyHandlers");
       this.latencyHandlers = new LatencyHandlers();
       const handlers = this.latencyHandlers.getHandlers();
 
@@ -206,7 +200,8 @@ class IPCSetup {
    */
   registerCriticalHandlers() {
     try {
-      CRITICAL_HANDLER_MODULES.forEach(({ HandlersClass, successLog }) => {
+      CRITICAL_HANDLER_MODULES.forEach(({ load, successLog }) => {
+        const HandlersClass = load();
         this._registerHandlerInstance(new HandlersClass());
         logToFile(successLog, "INFO");
       });
@@ -234,6 +229,8 @@ class IPCSetup {
       return;
     }
     try {
+      const LocalTerminalHandlers = require("../ipc/handlers/localTerminalHandlers");
+      const processManager = require("../process/processManager");
       this.localTerminalHandlers = new LocalTerminalHandlers(
         mainWindow,
         ipcMain,
@@ -257,6 +254,9 @@ class IPCSetup {
    */
   initializeSSHHandlers() {
     try {
+      const SSHHandlers = require("../ipc/handlers/sshHandlers");
+      const processManager = require("../process/processManager");
+      const connectionManager = require("../connection/connectionManager");
       this.sshHandlers = new SSHHandlers({
         childProcesses: processManager.getProcessMap(),
         connectionManager,
@@ -279,6 +279,9 @@ class IPCSetup {
    */
   initializeTerminalHandlers() {
     try {
+      const TerminalHandlers = require("../ipc/handlers/terminalHandlers");
+      const processManager = require("../process/processManager");
+      const connectionManager = require("../connection/connectionManager");
       this.terminalHandlers = new TerminalHandlers({
         processManager,
         connectionManager,
@@ -316,7 +319,7 @@ class IPCSetup {
       this.initializeHandlerModule(module);
     });
     // 磁盘空间告警（内部有启动延迟，不阻塞窗口创建）
-    diskAlertService.start();
+    require("../services/diskAlertService").start();
   }
 
   /**
@@ -358,7 +361,7 @@ class IPCSetup {
    */
   async cleanup() {
     try {
-      diskAlertService.stop();
+      require("../services/diskAlertService").stop();
     } catch (error) {
       logToFile(`Failed to stop disk alert service: ${error.message}`, "WARN");
     }

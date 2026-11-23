@@ -22,6 +22,25 @@ export default function useTransferPanels() {
     [],
   );
 
+  // 启动时查询可恢复传输任务数量，避免未打开传输侧栏时预先挂载整个侧栏组件
+  useEffect(() => {
+    let active = true;
+    const loadRecoveryCount = async () => {
+      try {
+        const result = await window.terminalAPI?.listResumableTransfers?.();
+        if (active && result?.success && Array.isArray(result.tasks)) {
+          setResumableTransferCount(result.tasks.length);
+        }
+      } catch {
+        /* ignore startup recovery probe errors */
+      }
+    };
+    loadRecoveryCount();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // 打开全局传输浮动窗口（与传输侧栏定位重叠，互斥打开）
   const handleOpenTransferFloat = useCallback((transfer) => {
     setTransferSidebarOpen(false);

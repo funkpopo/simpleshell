@@ -170,14 +170,27 @@ pub(crate) fn parse_style(style: Option<&str>) -> (&'static str, String) {
 
 // --- `requires` prefilter -------------------------------------------------
 
-const TRACKED_CHARS: &str = ".:-\"~/\\=$";
+fn tracked_bit_byte(b: u8) -> u16 {
+    match b {
+        b'.' => 1 << 0,
+        b':' => 1 << 1,
+        b'-' => 1 << 2,
+        b'"' => 1 << 3,
+        b'~' => 1 << 4,
+        b'/' => 1 << 5,
+        b'\\' => 1 << 6,
+        b'=' => 1 << 7,
+        b'$' => 1 << 8,
+        _ => 0,
+    }
+}
 
 fn tracked_bit(c: char) -> u16 {
-    TRACKED_CHARS
-        .chars()
-        .position(|tracked| tracked == c)
-        .map(|index| 1u16 << index)
-        .unwrap_or(0)
+    if c.is_ascii() {
+        tracked_bit_byte(c as u8)
+    } else {
+        0
+    }
 }
 
 const DIGIT_BIT: u16 = 1 << 9;
@@ -202,22 +215,21 @@ pub(crate) fn scan_features(text: &str) -> Features {
     let mut max_mac_chain = 0usize;
     let mut double_colon = false;
     let mut previous_was_colon = false;
-    let mut previous: Option<char> = None;
+    let mut previous = 0u8;
 
-    for c in text.chars() {
-        let is_hex_letter = c.is_ascii_hexdigit() && !c.is_ascii_digit();
-        if is_hex_letter || c.is_ascii_digit() {
-            if c.is_ascii_digit() {
+    for &b in text.as_bytes() {
+        if b.is_ascii_hexdigit() {
+            if b.is_ascii_digit() {
                 features.char_mask |= DIGIT_BIT;
             }
             run += 1;
             previous_was_colon = false;
-            previous = Some(c);
+            previous = b;
             continue;
         }
         features.max_hex_run = features.max_hex_run.max(run);
-        if c == ':' || c == '-' {
-            features.char_mask |= tracked_bit(c);
+        if b == b':' || b == b'-' {
+            features.char_mask |= tracked_bit_byte(b);
             if run >= 2 {
                 mac_chain = if run == 2 && mac_chain > 0 {
                     mac_chain + 1
@@ -228,7 +240,7 @@ pub(crate) fn scan_features(text: &str) -> Features {
             } else {
                 mac_chain = 0;
             }
-            if c == ':' {
+            if b == b':' {
                 if previous_was_colon {
                     double_colon = true;
                 }
@@ -249,12 +261,13 @@ pub(crate) fn scan_features(text: &str) -> Features {
                 previous_was_colon = false;
             }
         } else {
-            let bit = tracked_bit(c);
+            let bit = tracked_bit_byte(b);
             if bit != 0 {
                 features.char_mask |= bit;
-                if c == '=' && !features.upper_assign {
-                    features.upper_assign = previous
-                        .is_some_and(|p| p.is_ascii_uppercase() || p.is_ascii_digit() || p == '_');
+                if b == b'=' && !features.upper_assign {
+                    features.upper_assign = previous.is_ascii_uppercase()
+                        || previous.is_ascii_digit()
+                        || previous == b'_';
                 }
             }
             mac_chain = 0;
@@ -262,7 +275,7 @@ pub(crate) fn scan_features(text: &str) -> Features {
             previous_was_colon = false;
         }
         run = 0;
-        previous = Some(c);
+        previous = b;
     }
     features.max_hex_run = features.max_hex_run.max(run);
     features.ipv6_shape = double_colon || max_group_chain >= 6;
@@ -282,6 +295,26 @@ pub(crate) struct CompiledRequirements {
 }
 
 impl CompiledRequirements {
+    /// Fast SIMD byte check for single required characters before running a full
+    /// feature scan over `text`.
+    #[inline]
+    pub(crate) fn quick_possible(&self, bytes: &[u8]) -> bool {
+        if self.ipv6_shape && !bytes.contains(&b':') {
+            return false;
+        }
+        if self.upper_assign && !bytes.contains(&b'=') {
+            return false;
+        }
+        // Single-char any_char_mask checks (e.g. "$" or "\\")
+        if self.any_char_mask != 0 && self.any_char_mask.is_power_of_two() {
+            let idx = self.any_char_mask.trailing_zeros() as usize;
+            const CHARS: [u8; 9] = [b'.', b':', b'-', b'"', b'~', b'/', b'\\', b'=', b'$'];
+            if idx < CHARS.len() && !bytes.contains(&CHARS[idx]) {
+                return false;
+            }
+        }
+        true
+    }
     fn compile(requires: &Requirements) -> Option<Self> {
         let any_char_mask = requires
             .any_char
@@ -335,12 +368,42 @@ pub(crate) enum RuleKind {
     Keyword {
         colors: Vec<(String, &'static str)>,
         prefilter: aho_corasick::AhoCorasick,
+        /// Fast word-boundary Aho-Corasick matcher when every keyword is pure ASCII `\w+`.
+        exact_ac: Option<(aho_corasick::AhoCorasick, Vec<&'static str>)>,
     },
     Regex {
         color: &'static str,
         format: String,
         group_index: Option<usize>,
+        exact_ac: Option<aho_corasick::AhoCorasick>,
     },
+}
+
+fn try_compile_word_alternation_ac(
+    pattern: &str,
+    case_insensitive: bool,
+) -> Option<aho_corasick::AhoCorasick> {
+    let inner = pattern
+        .strip_prefix(r"(?:\b(?:")
+        .and_then(|s| s.strip_suffix(r")\b)"))
+        .or_else(|| {
+            pattern
+                .strip_prefix(r"\b(?:")
+                .and_then(|s| s.strip_suffix(r")\b"))
+        })?;
+    let words: Vec<&str> = inner.split('|').collect();
+    if words.is_empty()
+        || !words
+            .iter()
+            .all(|w| !w.is_empty() && w.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+    {
+        return None;
+    }
+    aho_corasick::AhoCorasick::builder()
+        .ascii_case_insensitive(case_insensitive)
+        .match_kind(aho_corasick::MatchKind::LeftmostLongest)
+        .build(&words)
+        .ok()
 }
 
 pub(crate) struct CompiledRule {
@@ -349,6 +412,7 @@ pub(crate) struct CompiledRule {
     pub requires: Option<CompiledRequirements>,
     pub priority: f64,
     pub order: usize,
+    pub in_set: bool,
 }
 
 fn number(value: &serde_json::Value) -> Option<f64> {
@@ -386,6 +450,26 @@ fn compile_rule(
                 .ascii_case_insensitive(true)
                 .build(&keywords)
                 .map_err(|error| error.to_string())?;
+            let pattern_colors: Vec<&'static str> = items
+                .values()
+                .map(|color| resolve_ansi_color(color.as_str().unwrap_or_default()))
+                .collect();
+            let all_ascii_word = keywords.iter().all(|keyword| {
+                !keyword.is_empty()
+                    && keyword
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            });
+            let exact_ac = if all_ascii_word {
+                aho_corasick::AhoCorasick::builder()
+                    .ascii_case_insensitive(true)
+                    .match_kind(aho_corasick::MatchKind::LeftmostLongest)
+                    .build(&keywords)
+                    .ok()
+                    .map(|ac| (ac, pattern_colors))
+            } else {
+                None
+            };
             let colors = items
                 .iter()
                 .map(|(keyword, color)| {
@@ -395,12 +479,18 @@ fn compile_rule(
                     )
                 })
                 .collect();
+            let in_set = regex.set_pattern().is_some();
             Ok(Some(CompiledRule {
                 regex,
-                kind: RuleKind::Keyword { colors, prefilter },
+                kind: RuleKind::Keyword {
+                    colors,
+                    prefilter,
+                    exact_ac,
+                },
                 requires: None,
                 priority,
                 order,
+                in_set,
             }))
         }
         Some("regex") => {
@@ -419,12 +509,19 @@ fn compile_rule(
                 .and_then(number)
                 .filter(|index| index.fract() == 0.0 && *index > 0.0)
                 .map(|index| index as usize);
+            let exact_ac = if group_index.is_none() {
+                try_compile_word_alternation_ac(pattern, flags.contains('i'))
+            } else {
+                None
+            };
+            let in_set = regex.set_pattern().is_some();
             Ok(Some(CompiledRule {
                 regex,
                 kind: RuleKind::Regex {
                     color,
                     format,
                     group_index,
+                    exact_ac,
                 },
                 requires: rule
                     .requires
@@ -432,6 +529,7 @@ fn compile_rule(
                     .and_then(CompiledRequirements::compile),
                 priority,
                 order,
+                in_set,
             }))
         }
         _ => Ok(None),

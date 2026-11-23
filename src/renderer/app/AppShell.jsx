@@ -1,6 +1,4 @@
 import { Z_INDEX } from "../shared/constants/zIndex.js";
-import AppMenu from "./components/AppMenu.jsx";
-import SessionContextMenu from "./components/SessionContextMenu.jsx";
 import * as React from "react";
 import { useCallback, useMemo, useRef } from "react";
 import { ThemeProvider } from "@mui/material/styles";
@@ -35,8 +33,32 @@ import WindowControls from "./components/WindowControls.jsx";
 import { useTranslation } from "react-i18next";
 import { findGroupByTab } from "../features/terminal/model/syncInputGroups";
 import { useCleanupManager } from "../shared/hooks/useAutoCleanup.js";
-import GlobalTransferBar from "../features/transfers/GlobalTransferBar.jsx";
+import { useAllGlobalTransfers } from "../features/transfers/state/globalTransferStore.js";
 import { processCache as sessionProcessCache } from "../features/terminal/runtime/terminalSessionStore.js";
+
+const AppMenu = React.lazy(() => import("./components/AppMenu.jsx"));
+const SessionContextMenu = React.lazy(
+  () => import("./components/SessionContextMenu.jsx"),
+);
+const GlobalTransferBar = React.lazy(
+  () => import("../features/transfers/GlobalTransferBar.jsx"),
+);
+
+function GlobalTransferBarGate({ onOpenFloat, onToggleFloat, isFloatOpen }) {
+  const allTransfers = useAllGlobalTransfers();
+  if (!allTransfers || allTransfers.length === 0) {
+    return null;
+  }
+  return (
+    <React.Suspense fallback={null}>
+      <GlobalTransferBar
+        onOpenFloat={onOpenFloat}
+        onToggleFloat={onToggleFloat}
+        isFloatOpen={isFloatOpen}
+      />
+    </React.Suspense>
+  );
+}
 import useCredentialSecurity from "./hooks/useCredentialSecurity.js";
 import useReconnect from "./hooks/useReconnect.js";
 import useAppTheme from "./hooks/useAppTheme.js";
@@ -480,18 +502,22 @@ export default function AppShell() {
                     </IconButton>
                   </Tooltip>
                 )}
-                <AppMenu
-                  anchorEl={anchorEl}
-                  open={open}
-                  handleClose={handleClose}
-                  handleOpenSettings={handleOpenSettings}
-                  t={t}
-                  handleOpenLogDirectory={handleOpenLogDirectory}
-                  handleExportDiagnostics={handleExportDiagnostics}
-                  handleOpenFeedbackIssue={handleOpenFeedbackIssue}
-                  handleOpenAbout={handleOpenAbout}
-                  handleExit={handleExit}
-                />
+                {open && (
+                  <React.Suspense fallback={null}>
+                    <AppMenu
+                      anchorEl={anchorEl}
+                      open={open}
+                      handleClose={handleClose}
+                      handleOpenSettings={handleOpenSettings}
+                      t={t}
+                      handleOpenLogDirectory={handleOpenLogDirectory}
+                      handleExportDiagnostics={handleExportDiagnostics}
+                      handleOpenFeedbackIssue={handleOpenFeedbackIssue}
+                      handleOpenAbout={handleOpenAbout}
+                      handleExit={handleExit}
+                    />
+                  </React.Suspense>
+                )}
                 <Box
                   sx={{
                     flexGrow: 1,
@@ -595,22 +621,26 @@ export default function AppShell() {
             </Box>
 
             {/* 标签页右键菜单 */}
-            <SessionContextMenu
-              tabContextMenu={tabContextMenu}
-              handleTabContextMenuClose={handleTabContextMenuClose}
-              handleRefreshTerminal={handleRefreshTerminal}
-              t={t}
-              handleCloseConnection={handleCloseConnection}
-              contextMenuTab={contextMenuTab}
-              splitLayouts={splitLayouts}
-              handleUnsplitTab={handleUnsplitTab}
-              handlePauseReconnect={handlePauseReconnect}
-              handleResumeReconnect={handleResumeReconnect}
-              syncGroups={syncGroups}
-              handleJoinGroup={handleJoinGroup}
-              handleRemoveFromGroup={handleRemoveFromGroup}
-              handleCreateGroup={handleCreateGroup}
-            />
+            {Boolean(tabContextMenu) && (
+              <React.Suspense fallback={null}>
+                <SessionContextMenu
+                  tabContextMenu={tabContextMenu}
+                  handleTabContextMenuClose={handleTabContextMenuClose}
+                  handleRefreshTerminal={handleRefreshTerminal}
+                  t={t}
+                  handleCloseConnection={handleCloseConnection}
+                  contextMenuTab={contextMenuTab}
+                  splitLayouts={splitLayouts}
+                  handleUnsplitTab={handleUnsplitTab}
+                  handlePauseReconnect={handlePauseReconnect}
+                  handleResumeReconnect={handleResumeReconnect}
+                  syncGroups={syncGroups}
+                  handleJoinGroup={handleJoinGroup}
+                  handleRemoveFromGroup={handleRemoveFromGroup}
+                  handleCreateGroup={handleCreateGroup}
+                />
+              </React.Suspense>
+            )}
           </AppBar>
           <Box
             sx={{
@@ -724,7 +754,7 @@ export default function AppShell() {
 
             {/* 全局传输底部栏 - 仅在bottom模式下显示 */}
             {transferBarMode === "bottom" && (
-              <GlobalTransferBar
+              <GlobalTransferBarGate
                 onOpenFloat={handleOpenTransferFloat}
                 onToggleFloat={handleToggleTransferFloat}
                 isFloatOpen={transferFloatOpen}

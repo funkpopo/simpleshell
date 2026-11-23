@@ -32,18 +32,21 @@ const ConnectionItem = memo(function ConnectionItem({
   index,
   style,
   flattenedItems,
+  rowSxByVariant,
   selectedItem,
   onToggleGroup,
   onSelectConnection,
   onDoubleClick,
   onItemContextMenu,
 }) {
-  const theme = useTheme();
   const item = flattenedItems[index];
   if (!item) return null;
 
   const isGroup = item.type === "group";
   const depth = item.depth || 0;
+  const selected = selectedItem?.id === item.id;
+  const variantKey =
+    (isGroup ? 4 : 0) | (depth > 0 ? 2 : 0) | (selected ? 1 : 0);
 
   const handleRowContextMenu = (event) => {
     if (!onItemContextMenu) {
@@ -57,15 +60,17 @@ const ConnectionItem = memo(function ConnectionItem({
 
   return (
     <div style={style}>
-      <Box sx={{ pl: `${depth * CONNECTION_LIST_DEPTH_INDENT_PX}px` }}>
+      <div
+        style={
+          depth > 0
+            ? { paddingLeft: `${depth * CONNECTION_LIST_DEPTH_INDENT_PX}px` }
+            : undefined
+        }
+      >
         <ListItem
           disablePadding
           onContextMenu={handleRowContextMenu}
-          sx={getConnectionRowSx(theme, {
-            isGroup,
-            nested: depth > 0,
-            selected: selectedItem?.id === item.id,
-          })}
+          sx={rowSxByVariant[variantKey]}
         >
           <ConnectionDragHandle dragDisabled />
           {isGroup ? (
@@ -83,7 +88,7 @@ const ConnectionItem = memo(function ConnectionItem({
             />
           )}
         </ListItem>
-      </Box>
+      </div>
     </div>
   );
 });
@@ -91,22 +96,26 @@ const ConnectionItem = memo(function ConnectionItem({
 ConnectionItem.displayName = "ConnectionItem";
 
 // 展开的分组把子项摊平到同一列表中，并记录层级与所属分组
-const flattenConnections = (connections, parentGroup = null, depth = 0) => {
-  const flattened = [];
-
-  connections.forEach((item) => {
-    flattened.push({
+const flattenConnections = (
+  connections,
+  parentGroup = null,
+  depth = 0,
+  out = [],
+) => {
+  for (let i = 0; i < connections.length; i += 1) {
+    const item = connections[i];
+    out.push({
       ...item,
       depth,
       parentGroup,
     });
 
     if (item.type === "group" && item.expanded && item.items) {
-      flattened.push(...flattenConnections(item.items, item, depth + 1));
+      flattenConnections(item.items, item, depth + 1, out);
     }
-  });
+  }
 
-  return flattened;
+  return out;
 };
 
 const getRowHeight = (index, { flattenedItems }) =>
@@ -128,6 +137,53 @@ const VirtualizedConnectionList = ({
   className,
 }) => {
   const { t } = useTranslation();
+  const theme = useTheme();
+
+  const rowSxByVariant = useMemo(
+    () => [
+      getConnectionRowSx(theme, {
+        isGroup: false,
+        nested: false,
+        selected: false,
+      }),
+      getConnectionRowSx(theme, {
+        isGroup: false,
+        nested: false,
+        selected: true,
+      }),
+      getConnectionRowSx(theme, {
+        isGroup: false,
+        nested: true,
+        selected: false,
+      }),
+      getConnectionRowSx(theme, {
+        isGroup: false,
+        nested: true,
+        selected: true,
+      }),
+      getConnectionRowSx(theme, {
+        isGroup: true,
+        nested: false,
+        selected: false,
+      }),
+      getConnectionRowSx(theme, {
+        isGroup: true,
+        nested: false,
+        selected: true,
+      }),
+      getConnectionRowSx(theme, {
+        isGroup: true,
+        nested: true,
+        selected: false,
+      }),
+      getConnectionRowSx(theme, {
+        isGroup: true,
+        nested: true,
+        selected: true,
+      }),
+    ],
+    [theme],
+  );
 
   const handleToggleGroup = useCallback(
     (groupId) => {
@@ -144,6 +200,7 @@ const VirtualizedConnectionList = ({
   const rowProps = useMemo(
     () => ({
       flattenedItems,
+      rowSxByVariant,
       selectedItem,
       onToggleGroup: handleToggleGroup,
       onSelectConnection,
@@ -152,6 +209,7 @@ const VirtualizedConnectionList = ({
     }),
     [
       flattenedItems,
+      rowSxByVariant,
       selectedItem,
       handleToggleGroup,
       onSelectConnection,

@@ -1,11 +1,16 @@
-const Ajv = require("ajv");
-const addFormats = require("ajv-formats");
-
-const ajv = new Ajv({
-  allErrors: true,
-  strict: false,
-});
-addFormats(ajv);
+let ajvInstance = null;
+function getAjv() {
+  if (!ajvInstance) {
+    const Ajv = require("ajv");
+    const addFormats = require("ajv-formats");
+    ajvInstance = new Ajv({
+      allErrors: true,
+      strict: false,
+    });
+    addFormats(ajvInstance);
+  }
+  return ajvInstance;
+}
 
 const compiledSchemas = new WeakMap();
 
@@ -15,7 +20,7 @@ function compileSchema(schema) {
   }
 
   if (!compiledSchemas.has(schema)) {
-    compiledSchemas.set(schema, ajv.compile(schema));
+    compiledSchemas.set(schema, getAjv().compile(schema));
   }
 
   return compiledSchemas.get(schema);
@@ -26,7 +31,7 @@ function formatValidationErrors(validate) {
     return "schema validation failed";
   }
 
-  return ajv.errorsText(validate.errors, {
+  return getAjv().errorsText(validate.errors, {
     dataVar: "payload",
     separator: "; ",
   });

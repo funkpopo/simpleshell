@@ -5,6 +5,80 @@ const fileNameCollator = new Intl.Collator(undefined, {
   sensitivity: "base",
 });
 
+const compareFileNamesFast = (a, b) => {
+  if (a === b) return 0;
+  const alen = a.length;
+  const blen = b.length;
+  let i = 0;
+  while (i < alen && i < blen) {
+    const ca = a.charCodeAt(i);
+    const cb = b.charCodeAt(i);
+    if (ca >= 128 || cb >= 128) return fileNameCollator.compare(a, b);
+    if (ca === cb) {
+      i += 1;
+      continue;
+    }
+    const fa = ca >= 65 && ca <= 90 ? ca + 32 : ca;
+    const fb = cb >= 65 && cb <= 90 ? cb + 32 : cb;
+    if (fa === fb) {
+      i += 1;
+      continue;
+    }
+    const da = ca >= 48 && ca <= 57;
+    const db = cb >= 48 && cb <= 57;
+    if (da && db) {
+      let start = i;
+      while (
+        start > 0 &&
+        a.charCodeAt(start - 1) >= 48 &&
+        a.charCodeAt(start - 1) <= 57
+      ) {
+        start -= 1;
+      }
+      let pa = start;
+      let pb = start;
+      let na = 0;
+      let nb = 0;
+      while (pa < alen) {
+        const ch = a.charCodeAt(pa);
+        if (ch < 48 || ch > 57) break;
+        na = na * 10 + (ch - 48);
+        if (na > 900719925474099) return fileNameCollator.compare(a, b);
+        pa += 1;
+      }
+      while (pb < blen) {
+        const ch = b.charCodeAt(pb);
+        if (ch < 48 || ch > 57) break;
+        nb = nb * 10 + (ch - 48);
+        if (nb > 900719925474099) return fileNameCollator.compare(a, b);
+        pb += 1;
+      }
+      if (na !== nb) return na < nb ? -1 : 1;
+      if (pa === pb) {
+        i = pa;
+        continue;
+      }
+      return fileNameCollator.compare(a, b);
+    }
+    if (
+      i > 0 &&
+      a.charCodeAt(i - 1) >= 48 &&
+      a.charCodeAt(i - 1) <= 57 &&
+      (da || db)
+    ) {
+      return fileNameCollator.compare(a, b);
+    }
+    if (fa >= 97 && fa <= 122 && fb >= 97 && fb <= 122) {
+      const nextA = i + 1 < alen ? a.charCodeAt(i + 1) : 0;
+      const nextB = i + 1 < blen ? b.charCodeAt(i + 1) : 0;
+      if (nextA >= 128 || nextB >= 128) return fileNameCollator.compare(a, b);
+      return fa < fb ? -1 : 1;
+    }
+    return fileNameCollator.compare(a, b);
+  }
+  return fileNameCollator.compare(a, b);
+};
+
 /** Owns search, sorting and selection; exposes selection commands instead of individual setters. */
 export default function useFileSelection({
   files,
@@ -67,6 +141,10 @@ export default function useFileSelection({
 
   const reconcileSelectionWithNextList = useCallback(
     (nextList) => {
+      if (!selectedFileRef.current && selectedFilesRef.current.length === 0) {
+        return;
+      }
+
       if (!Array.isArray(nextList) || nextList.length === 0) {
         clearSelection();
         return;
@@ -168,8 +246,8 @@ export default function useFileSelection({
       );
     }
     if (isChunking) return processed;
-    return [...processed].sort((a, b) => {
-      if (sortMode === "time") {
+    if (sortMode === "time") {
+      return [...processed].sort((a, b) => {
         const aTime = Number.isFinite(a?.mtimeMs)
           ? a.mtimeMs
           : new Date(a?.modifyTime || 0).getTime();
@@ -177,10 +255,23 @@ export default function useFileSelection({
           ? b.mtimeMs
           : new Date(b?.modifyTime || 0).getTime();
         return bTime - aTime;
+      });
+    }
+    const dirs = [];
+    const regularFiles = [];
+    for (let i = 0; i < processed.length; i += 1) {
+      const item = processed[i];
+      if (item.isDirectory) {
+        dirs.push(item);
+      } else {
+        regularFiles.push(item);
       }
-      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-      return fileNameCollator.compare(a.name || "", b.name || "");
-    });
+    }
+    const compareByName = (a, b) =>
+      compareFileNamesFast(a.name || "", b.name || "");
+    dirs.sort(compareByName);
+    regularFiles.sort(compareByName);
+    return dirs.concat(regularFiles);
   }, [files, searchTerm, sortMode, isChunking]);
 
   const handleFileSelect = useCallback(

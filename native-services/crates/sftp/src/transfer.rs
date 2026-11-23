@@ -1,11 +1,42 @@
 use crate::ops::*;
 use crate::protocol::*;
-use openssh_sftp_client::file::{OpenOptions, TokioCompatFile};
+use futures_util::stream::{FuturesOrdered, StreamExt};
+use openssh_sftp_client::file::{File, OpenOptions, TokioCompatFile};
 use openssh_sftp_client::Sftp;
 use std::cmp::min;
+use std::io::SeekFrom;
 use std::path::Path;
 use tokio::fs::OpenOptions as TokioOpenOptions;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+
+const DOWNLOAD_CHUNK_BYTES: usize = 64 * 1024;
+const DOWNLOAD_MAX_IN_FLIGHT: usize = 24;
+const PROGRESS_EMIT_INTERVAL_BYTES: u64 = 256 * 1024;
+
+async fn read_remote_chunk(remote_file: File, offset: u64, len: usize) -> Result<Vec<u8>, String> {
+    let compat = TokioCompatFile::new(remote_file);
+    futures_util::pin_mut!(compat);
+    compat
+        .as_mut()
+        .seek(SeekFrom::Start(offset))
+        .await
+        .map_err(|error| format!("seek remote file failed: {error}"))?;
+
+    let mut buffer = vec![0u8; len];
+    let mut read_so_far = 0usize;
+    while read_so_far < len {
+        let bytes_read = compat
+            .as_mut()
+            .read(&mut buffer[read_so_far..])
+            .await
+            .map_err(|error| format!("read remote file failed: {error}"))?;
+        if bytes_read == 0 {
+            return Err("unexpected EOF while downloading remote file".to_string());
+        }
+        read_so_far += bytes_read;
+    }
+    Ok(buffer)
+}
 
 pub(crate) fn resolve_transfer_window(
     total_size: u64,
@@ -201,15 +232,6 @@ pub(crate) async fn download_remote_file(
         .open(remote_path)
         .await
         .map_err(|error| format!("open remote file failed: {error}"))?;
-    let remote_file = TokioCompatFile::new(remote_file);
-    futures_util::pin_mut!(remote_file);
-    if offset > 0 {
-        remote_file
-            .as_mut()
-            .seek(std::io::SeekFrom::Start(offset))
-            .await
-            .map_err(|error| format!("seek remote file failed: {error}"))?;
-    }
 
     let mut local_file = local_download_open_options(local_write_flags)
         .open(local_path)
@@ -217,31 +239,42 @@ pub(crate) async fn download_remote_file(
         .map_err(|error| format!("open local file failed: {error}"))?;
     if offset > 0 {
         local_file
-            .seek(std::io::SeekFrom::Start(offset))
+            .seek(SeekFrom::Start(offset))
             .await
             .map_err(|error| format!("seek local file failed: {error}"))?;
     }
 
     let mut transferred = 0u64;
-    let mut buffer = vec![0u8; 256 * 1024];
-    while transferred < total_bytes {
-        let remaining = (total_bytes - transferred) as usize;
-        let read_len = min(buffer.len(), remaining);
-        let bytes_read = remote_file
-            .as_mut()
-            .read(&mut buffer[..read_len])
-            .await
-            .map_err(|error| format!("read remote file failed: {error}"))?;
-        if bytes_read == 0 {
-            return Err("unexpected EOF while downloading remote file".to_string());
+    let mut next_offset = offset;
+    let end_offset = offset + total_bytes;
+    let mut pending_progress = 0u64;
+    let mut in_flight = FuturesOrdered::new();
+
+    while in_flight.len() < DOWNLOAD_MAX_IN_FLIGHT && next_offset < end_offset {
+        let len = min(DOWNLOAD_CHUNK_BYTES as u64, end_offset - next_offset) as usize;
+        in_flight.push_back(read_remote_chunk(remote_file.clone(), next_offset, len));
+        next_offset += len as u64;
+    }
+
+    while let Some(chunk_result) = in_flight.next().await {
+        let buffer = chunk_result?;
+        if next_offset < end_offset {
+            let len = min(DOWNLOAD_CHUNK_BYTES as u64, end_offset - next_offset) as usize;
+            in_flight.push_back(read_remote_chunk(remote_file.clone(), next_offset, len));
+            next_offset += len as u64;
         }
 
         local_file
-            .write_all(&buffer[..bytes_read])
+            .write_all(&buffer)
             .await
             .map_err(|error| format!("write local file failed: {error}"))?;
-        transferred += bytes_read as u64;
-        emit_progress(request_id, bytes_read as u64, transferred, total_bytes)?;
+        let chunk_bytes = buffer.len() as u64;
+        transferred += chunk_bytes;
+        pending_progress += chunk_bytes;
+        if pending_progress >= PROGRESS_EMIT_INTERVAL_BYTES || transferred >= total_bytes {
+            emit_progress(request_id, pending_progress, transferred, total_bytes)?;
+            pending_progress = 0;
+        }
     }
 
     local_file

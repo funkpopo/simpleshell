@@ -1,6 +1,13 @@
-const Ajv = require("ajv");
-const addFormats = require("ajv-formats");
-function createConfigValidators() {
+const SCHEMA_KEYS = ["connection", "aiSettings", "uiSettings", "logSettings"];
+let cachedCompiled = null;
+
+function compileConfigValidators() {
+  if (cachedCompiled) {
+    return cachedCompiled;
+  }
+
+  const Ajv = require("ajv");
+  const addFormats = require("ajv-formats");
   const validators = {};
 
   const ajv = new Ajv({ allErrors: true, useDefaults: true, strict: false });
@@ -173,6 +180,22 @@ function createConfigValidators() {
     default: {},
   });
 
-  return { ajv, validators };
+  cachedCompiled = { ajv, validators };
+  return cachedCompiled;
+}
+
+function createConfigValidators() {
+  const validators = {};
+  for (const key of SCHEMA_KEYS) {
+    const validate = (data) => {
+      const compiled = compileConfigValidators().validators[key];
+      const ok = compiled(data);
+      validate.errors = compiled.errors;
+      return ok;
+    };
+    validate.errors = null;
+    validators[key] = validate;
+  }
+  return { ajv: null, validators };
 }
 module.exports = { createConfigValidators };

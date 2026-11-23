@@ -1,11 +1,4 @@
-import React, {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { memo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
@@ -46,80 +39,75 @@ const OverflowTooltipText = memo(
     ...typographyProps
   }) => {
     const textRef = useRef(null);
-    const [open, setOpen] = useState(false);
-    const title = useMemo(
-      () => getPrimitiveText(tooltipTitle) || getPrimitiveText(children),
-      [children, tooltipTitle],
-    );
+    const [openTitle, setOpenTitle] = useState(null);
+    const title = getPrimitiveText(tooltipTitle) || getPrimitiveText(children);
+    const open = Boolean(title && openTitle === title);
 
-    const isOverflowing = useCallback(() => {
+    const openIfOverflowing = () => {
       const node = textRef.current;
-      return Boolean(title && node && node.scrollWidth > node.clientWidth + 1);
-    }, [title]);
+      const overflowing = Boolean(
+        title && node && node.scrollWidth > node.clientWidth + 1,
+      );
+      if (overflowing) {
+        setOpenTitle(title);
+      }
+    };
 
-    const openIfOverflowing = useCallback(() => {
-      setOpen(isOverflowing());
-    }, [isOverflowing]);
+    const handleMouseEnter = (event) => {
+      openIfOverflowing();
+      onMouseEnter?.(event);
+    };
 
-    const handleMouseEnter = useCallback(
-      (event) => {
-        openIfOverflowing();
-        onMouseEnter?.(event);
-      },
-      [onMouseEnter, openIfOverflowing],
+    const handleMouseLeave = (event) => {
+      if (openTitle !== null) {
+        setOpenTitle(null);
+      }
+      onMouseLeave?.(event);
+    };
+
+    const handleFocus = (event) => {
+      openIfOverflowing();
+      onFocus?.(event);
+    };
+
+    const handleBlur = (event) => {
+      if (openTitle !== null) {
+        setOpenTitle(null);
+      }
+      onBlur?.(event);
+    };
+
+    const textNode = (
+      <Typography
+        {...typographyProps}
+        ref={textRef}
+        component={component}
+        variant={variant}
+        noWrap
+        sx={[DEFAULT_TEXT_SX, ...(Array.isArray(sx) ? sx : [sx])]}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+      >
+        {children}
+      </Typography>
     );
 
-    const handleMouseLeave = useCallback(
-      (event) => {
-        setOpen(false);
-        onMouseLeave?.(event);
-      },
-      [onMouseLeave],
-    );
-
-    const handleFocus = useCallback(
-      (event) => {
-        openIfOverflowing();
-        onFocus?.(event);
-      },
-      [onFocus, openIfOverflowing],
-    );
-
-    const handleBlur = useCallback(
-      (event) => {
-        setOpen(false);
-        onBlur?.(event);
-      },
-      [onBlur],
-    );
-
-    useEffect(() => {
-      setOpen(false);
-    }, [title]);
+    if (!open || !title) {
+      return textNode;
+    }
 
     return (
       <Tooltip
         {...tooltipProps}
         title={title}
-        open={Boolean(open && title)}
+        open
         disableHoverListener
         disableFocusListener
         disableTouchListener
       >
-        <Typography
-          {...typographyProps}
-          ref={textRef}
-          component={component}
-          variant={variant}
-          noWrap
-          sx={[DEFAULT_TEXT_SX, ...(Array.isArray(sx) ? sx : [sx])]}
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-        >
-          {children}
-        </Typography>
+        {textNode}
       </Tooltip>
     );
   },

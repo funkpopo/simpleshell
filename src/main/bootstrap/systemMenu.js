@@ -1,6 +1,4 @@
 const { BrowserWindow, Menu, app } = require("electron");
-const configService = require("../settings/configService");
-const { safeSendToRenderer } = require("../window/windowManager");
 const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
 
 const MENU_ACTIONS = Object.freeze({
@@ -14,11 +12,13 @@ const MENU_ACTIONS = Object.freeze({
 
 // 获取当前 UI 语言下的 mainT 与语言码（惰性加载以避免初始化顺序耦合）。
 function getMenuT() {
+  const configService = require("../settings/configService");
   const { t: mainT, getUiLanguage } = require("../../shared/mainI18n");
   return { mainT, lng: getUiLanguage(configService) };
 }
 
 function sendMenuAction(action) {
+  const { safeSendToRenderer } = require("../window/windowManager");
   safeSendToRenderer(IPC_EVENT_CHANNELS.APP_MENU_ACTION, {
     action,
     source: "system-menu",

@@ -8,12 +8,19 @@ import {
   SettingsWithSuspense as Settings,
 } from "../LazyComponents.jsx";
 import { shallowEqual } from "../state/subscriptionStore.js";
-import SSHAuthDialog from "../../features/connections/SSHAuthDialog.jsx";
-import MasterPasswordOverlay from "../../features/security/MasterPasswordOverlay.jsx";
 import { useTranslation } from "react-i18next";
-import ErrorNotification from "../../shared/ui/ErrorNotification.jsx";
 import { useNotification } from "../../shared/notifications/NotificationContext.jsx";
 import useSSHAuthentication from "../hooks/useSSHAuthentication.js";
+
+const SSHAuthDialog = React.lazy(
+  () => import("../../features/connections/SSHAuthDialog.jsx"),
+);
+const MasterPasswordOverlay = React.lazy(
+  () => import("../../features/security/MasterPasswordOverlay.jsx"),
+);
+const ErrorNotification = React.lazy(
+  () => import("../../shared/ui/ErrorNotification.jsx"),
+);
 
 export default function DialogsLayer({
   connectionsRef,
@@ -97,32 +104,45 @@ export default function DialogsLayer({
         />
       )}
       {/* SSH 认证对话框 */}
-      <SSHAuthDialog
-        open={sshAuthDialogOpen}
-        onClose={handleSSHAuthClose}
-        onConfirm={handleSSHAuthConfirm}
-        authData={sshAuthData}
-        connectionConfig={sshAuthConnectionConfig}
-      />
+      {sshAuthDialogOpen && (
+        <React.Suspense fallback={null}>
+          <SSHAuthDialog
+            open={sshAuthDialogOpen}
+            onClose={handleSSHAuthClose}
+            onConfirm={handleSSHAuthConfirm}
+            authData={sshAuthData}
+            connectionConfig={sshAuthConnectionConfig}
+          />
+        </React.Suspense>
+      )}
       {/* 设置对话框 */}
       <Settings open={settingsDialogOpen} onClose={handleCloseSettings} />
-      <MasterPasswordOverlay
-        open={
-          credentialSecurityStatus.loading ||
-          credentialSecurityStatus.requiresUnlock
-        }
-        loading={credentialSecurityStatus.loading}
-        isSubmitting={unlockingCredentialStore}
-        error={masterPasswordError}
-        onUnlock={handleUnlockCredentialStore}
-        onClose={handleExit}
-      />
+      {(credentialSecurityStatus.loading ||
+        credentialSecurityStatus.requiresUnlock) && (
+        <React.Suspense fallback={null}>
+          <MasterPasswordOverlay
+            open={
+              credentialSecurityStatus.loading ||
+              credentialSecurityStatus.requiresUnlock
+            }
+            loading={credentialSecurityStatus.loading}
+            isSubmitting={unlockingCredentialStore}
+            error={masterPasswordError}
+            onUnlock={handleUnlockCredentialStore}
+            onClose={handleExit}
+          />
+        </React.Suspense>
+      )}
       {/* 错误通知 */}
-      <ErrorNotification
-        error={appError}
-        open={errorNotificationOpen}
-        onClose={handleCloseErrorNotification}
-      />
+      {errorNotificationOpen && (
+        <React.Suspense fallback={null}>
+          <ErrorNotification
+            error={appError}
+            open={errorNotificationOpen}
+            onClose={handleCloseErrorNotification}
+          />
+        </React.Suspense>
+      )}
     </>
   );
 }

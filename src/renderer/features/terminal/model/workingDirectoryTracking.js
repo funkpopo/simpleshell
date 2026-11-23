@@ -82,6 +82,9 @@ const readPromptAtCursor = (term) => {
   const parts = [];
   for (let index = start; index <= end; index += 1) {
     const line = buffer.getLine(index);
+    if (start === end) {
+      return line?.translateToString(true) || "";
+    }
     // Wide characters can wrap before the last column, leaving a null cell.
     // Trim unused cells without removing real spaces in the directory name.
     let endColumn = term.cols;
@@ -160,7 +163,16 @@ export const attachWorkingDirectoryTracking = (
   }
 
   const readPrompt = () => {
+    if (term.buffer?.active?.type === "alternate") return;
     const line = readPromptAtCursor(term);
+    if (!line.includes("@") || line.length > 512) {
+      if (reportedSinceWrite) {
+        reportedSinceWrite = false;
+        explicitPromptLine = line;
+        pendingTitleDirectory = null;
+      }
+      return;
+    }
     const contextHost = line.match(
       /^(?:\([^()\r\n]*\)\s*)*\[?[\w.-]+@([\w.-]+)/,
     )?.[1];
