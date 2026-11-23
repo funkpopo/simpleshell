@@ -16,7 +16,11 @@
     "test": "vitest run",
     "check": "npm run lint && npm run typecheck && npm test",
     "test:integration": "vitest run --config vitest.integration.config.mjs",
-    "test:perf": "vitest run --config vitest.perf.config.mjs"
+    "test:perf": "vitest run --config vitest.perf.config.mjs",
+    "bench": "node benchmarks/run.js",
+    "bench:quick": "node benchmarks/run.js --quick",
+    "bench:baseline": "node benchmarks/run.js --save-baseline",
+    "bench:compare": "node benchmarks/run.js --compare .cache/benchmarks/baseline.json"
   },
   "keywords": [],
   "author": {
