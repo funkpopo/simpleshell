@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useCallback, useRef } from "react";
+import { useState, useEffect, memo, useCallback, useMemo, useRef } from "react";
 import Dialog from "../../shared/ui/AccessibleDialog.jsx";
 import {
   Box,
@@ -10,6 +10,8 @@ import {
   DialogActions,
   MenuItem,
   Menu,
+  TextField,
+  Chip,
 } from "@mui/material";
 import { compactContextMenuPaperSx } from "../../shared/ui/contextMenuStyles";
 import FolderIcon from "@mui/icons-material/Folder";
@@ -17,6 +19,11 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import StarRoundedIcon from "@mui/icons-material/StarRounded";
+import StarBorderRoundedIcon from "@mui/icons-material/StarBorderRounded";
+import BoltIcon from "@mui/icons-material/Bolt";
+import BookmarkAddOutlinedIcon from "@mui/icons-material/BookmarkAddOutlined";
+import FileCopyOutlinedIcon from "@mui/icons-material/FileCopyOutlined";
 import { useTranslation } from "react-i18next";
 import { useNotification } from "../../shared/notifications/NotificationContext";
 import SidebarPanel from "../../shared/ui/SidebarPanel.jsx";
@@ -26,9 +33,20 @@ import useSidebarPanel from "../../shared/hooks/useSidebarPanel";
 import useContextMenuRetarget from "../../shared/hooks/useContextMenuRetarget";
 import {
   areConnectionListsEqual,
+  collectAllConnectionTags,
   CONNECTION_MANAGER_ROW_DATA_ATTR,
   getHostForClipboard,
 } from "./lib/connectionTree.js";
+import { buildDuplicateConnectionPayload } from "./lib/connectionForm.js";
+import {
+  buildTransientQuickConnectConnection,
+  dismissTransientQuickConnect,
+  getQuickConnectErrorText,
+  getTransientQuickConnects,
+  parseQuickConnectTarget,
+  recordTransientQuickConnect,
+  resolveQuickConnectDetail,
+} from "./lib/quickConnect.js";
 import ConnectionList from "./components/ConnectionList.jsx";
 import ConnectionEditorDialog from "./components/ConnectionEditorDialog.jsx";
 import useConnectionEditor from "./hooks/useConnectionEditor.js";
@@ -62,6 +80,13 @@ const ConnectionManager = memo(
     const [connections, setConnections] = useState(initialConnections);
     const [isLoading, setIsLoading] = useState(!initialConnections.length);
     const [searchQuery, setSearchQuery] = useState("");
+    const [onlyPinned, setOnlyPinned] = useState(false);
+    const [selectedTag, setSelectedTag] = useState("");
+    const [quickConnectTarget, setQuickConnectTarget] = useState("");
+    const [quickConnectError, setQuickConnectError] = useState("");
+    const [transientQuickConnects, setTransientQuickConnects] = useState(() =>
+      getTransientQuickConnects(initialConnections),
+    );
     const searchInputRef = useRef(null);
     const sidebarRootRef = useRef(null);
     const [connectionListContextMenu, setConnectionListContextMenu] =
@@ -118,7 +143,12 @@ const ConnectionManager = memo(
       createConnectionSignal,
       onCreateConnectionSignalConsumed,
     });
-    const { handleAddConnection, handleAddGroup, handleEdit } = editor; // 标记是否正在保存，用于忽略自己触发的变更事件
+    const {
+      handleAddConnection,
+      handleAddFromPreset,
+      handleAddGroup,
+      handleEdit,
+    } = editor; // 标记是否正在保存，用于忽略自己触发的变更事件
 
     useEffect(() => {
       connectionsStateRef.current = connections;
@@ -243,6 +273,26 @@ const ConnectionManager = memo(
       [connections],
     );
 
+    const persistConnections = useCallback(
+      (nextConnections) => {
+        setConnections(nextConnections);
+        if (window.terminalAPI && window.terminalAPI.saveConnections) {
+          isSavingRef.current = true;
+          window.terminalAPI
+            .saveConnections(nextConnections)
+            .catch(() => {
+              showError(t("connectionManager.saveFailed"));
+            })
+            .finally(() => {
+              setTimeout(() => {
+                isSavingRef.current = false;
+              }, 100);
+            });
+        }
+      },
+      [showError, t],
+    );
+
     const handleConfirmDelete = useCallback(() => {
       if (!deleteItem) return;
 
@@ -262,27 +312,79 @@ const ConnectionManager = memo(
         newConnections = connections.filter((item) => item.id !== itemId);
       }
 
-      setConnections(newConnections);
-
-      if (window.terminalAPI && window.terminalAPI.saveConnections) {
-        isSavingRef.current = true;
-        window.terminalAPI
-          .saveConnections(newConnections)
-          .catch(() => {
-            showError(t("connectionManager.saveFailed"));
-          })
-          .finally(() => {
-            setTimeout(() => {
-              isSavingRef.current = false;
-            }, 100);
-          });
-      }
+      persistConnections(newConnections);
 
       setDeleteConfirmOpen(false);
       setDeleteItem(null);
 
       showSuccess(t("connectionManager.deleteSuccess"));
-    }, [deleteItem, connections, t, showError, showSuccess]);
+    }, [deleteItem, connections, persistConnections, t, showSuccess]);
+
+    const handleTogglePin = useCallback(
+      (connection, parentGroup = null) => {
+        if (!connection?.id) {
+          return;
+        }
+        const nextPinned = connection.pinned !== true;
+        const nextConnections = parentGroup
+          ? connections.map((group) =>
+              group.id === parentGroup.id
+                ? {
+                    ...group,
+                    items: (group.items || []).map((item) =>
+                      item.id === connection.id
+                        ? { ...item, pinned: nextPinned }
+                        : item,
+                    ),
+                  }
+                : group,
+            )
+          : connections.map((item) =>
+              item.id === connection.id
+                ? { ...item, pinned: nextPinned }
+                : item,
+            );
+        persistConnections(nextConnections);
+      },
+      [connections, persistConnections],
+    );
+
+    const handleDuplicateConnection = useCallback(
+      (connection, parentGroup = null) => {
+        if (!connection || connection.type !== "connection") {
+          return;
+        }
+        const duplicated = buildDuplicateConnectionPayload(
+          connection,
+          connections,
+          t("connections.duplicate.copySuffix"),
+        );
+
+        const insertAfter = (list) => {
+          const idx = list.findIndex((item) => item.id === connection.id);
+          if (idx === -1) {
+            return [...list, duplicated];
+          }
+          return [
+            ...list.slice(0, idx + 1),
+            duplicated,
+            ...list.slice(idx + 1),
+          ];
+        };
+
+        const nextConnections = parentGroup
+          ? connections.map((group) =>
+              group.id === parentGroup.id
+                ? { ...group, items: insertAfter(group.items || []) }
+                : group,
+            )
+          : insertAfter(connections);
+
+        persistConnections(nextConnections);
+        showSuccess(t("connections.duplicate.success"));
+      },
+      [connections, persistConnections, showSuccess, t],
+    );
 
     const handleCancelDelete = useCallback(() => {
       setDeleteConfirmOpen(false);
@@ -410,6 +512,106 @@ const ConnectionManager = memo(
       [onOpenConnection],
     );
 
+    const launchQuickConnect = useCallback(
+      (rawTarget) => {
+        const parsed = parseQuickConnectTarget(rawTarget);
+        if (!parsed.ok) {
+          setQuickConnectError(getQuickConnectErrorText(t, parsed.errorCode));
+          return false;
+        }
+        const transientConnection = buildTransientQuickConnectConnection(
+          parsed.value,
+        );
+        recordTransientQuickConnect(transientConnection);
+        setTransientQuickConnects(getTransientQuickConnects(connections));
+        setQuickConnectError("");
+        setQuickConnectTarget("");
+        onOpenConnection?.(transientConnection);
+        return true;
+      },
+      [connections, onOpenConnection, t],
+    );
+
+    const handleQuickConnectSubmit = useCallback(
+      (event) => {
+        event?.preventDefault?.();
+        launchQuickConnect(quickConnectTarget);
+      },
+      [launchQuickConnect, quickConnectTarget],
+    );
+
+    useEffect(() => {
+      setTransientQuickConnects(getTransientQuickConnects(connections));
+    }, [connections]);
+
+    const allTags = useMemo(
+      () => collectAllConnectionTags(connections),
+      [connections],
+    );
+
+    useEffect(() => {
+      if (selectedTag && !allTags.includes(selectedTag)) {
+        setSelectedTag("");
+      }
+    }, [allTags, selectedTag]);
+
+    useEffect(() => {
+      const handleTransientChanged = () => {
+        setTransientQuickConnects(
+          getTransientQuickConnects(connectionsStateRef.current),
+        );
+      };
+      const handleExternalQuickConnect = (event) => {
+        if (event.defaultPrevented || typeof onOpenConnection !== "function") {
+          return;
+        }
+        const resolved = resolveQuickConnectDetail(event.detail);
+        if (!resolved.ok) {
+          showError(getQuickConnectErrorText(t, resolved.errorCode));
+          return;
+        }
+        event.preventDefault();
+        recordTransientQuickConnect(resolved.connection);
+        setTransientQuickConnects(
+          getTransientQuickConnects(connectionsStateRef.current),
+        );
+        onOpenConnection(resolved.connection);
+      };
+      const handleSaveAsConnectionEvent = (event) => {
+        const preset = event?.detail;
+        if (preset && typeof preset === "object" && preset.host) {
+          handleAddFromPreset(preset);
+        }
+      };
+
+      window.addEventListener(
+        "simpleshell:transientQuickConnectsChanged",
+        handleTransientChanged,
+      );
+      window.addEventListener(
+        "simpleshell:quickConnect",
+        handleExternalQuickConnect,
+      );
+      window.addEventListener(
+        "simpleshell:saveAsConnection",
+        handleSaveAsConnectionEvent,
+      );
+      return () => {
+        window.removeEventListener(
+          "simpleshell:transientQuickConnectsChanged",
+          handleTransientChanged,
+        );
+        window.removeEventListener(
+          "simpleshell:quickConnect",
+          handleExternalQuickConnect,
+        );
+        window.removeEventListener(
+          "simpleshell:saveAsConnection",
+          handleSaveAsConnectionEvent,
+        );
+      };
+    }, [handleAddFromPreset, onOpenConnection, showError, t]);
+
     return (
       <SidebarPanel
         open={open}
@@ -451,6 +653,80 @@ const ConnectionManager = memo(
               {t("connectionManager.newGroup")}
             </Button>
           </Box>
+          <Box
+            component="form"
+            onSubmit={handleQuickConnectSubmit}
+            sx={{ display: "flex", gap: 0.75, alignItems: "flex-start" }}
+          >
+            <TextField
+              size="small"
+              fullWidth
+              value={quickConnectTarget}
+              onChange={(e) => {
+                setQuickConnectTarget(e.target.value);
+                if (quickConnectError) {
+                  setQuickConnectError("");
+                }
+              }}
+              placeholder={t("connections.quickConnect.placeholder")}
+              error={Boolean(quickConnectError)}
+              helperText={quickConnectError || undefined}
+              slotProps={{
+                htmlInput: {
+                  "aria-label": t("connections.quickConnect.inputLabel"),
+                },
+              }}
+              sx={{ flexGrow: 1, minWidth: 0 }}
+            />
+            <Button
+              type="submit"
+              variant="contained"
+              size="small"
+              startIcon={<BoltIcon />}
+              sx={{
+                height: 36,
+                flexShrink: 0,
+                fontSize: "0.75rem",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t("connections.quickConnect.connect")}
+            </Button>
+          </Box>
+          {transientQuickConnects.length > 0 && (
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 0.5,
+                p: 0.75,
+                borderRadius: 1,
+                border: "1px dashed",
+                borderColor: "divider",
+                bgcolor: "action.hover",
+              }}
+            >
+              <Typography variant="caption" color="text.secondary">
+                {t("connections.quickConnect.unsavedNotice")}
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                {transientQuickConnects.slice(0, 2).map((item) => (
+                  <Chip
+                    key={item.id}
+                    size="small"
+                    icon={<BookmarkAddOutlinedIcon />}
+                    label={`${item.name} · ${t("connections.quickConnect.saveAsConnection")}`}
+                    onClick={() => handleAddFromPreset(item)}
+                    onDelete={() => dismissTransientQuickConnect(item)}
+                    color="primary"
+                    variant="outlined"
+                    clickable
+                    sx={{ maxWidth: "100%" }}
+                  />
+                ))}
+              </Box>
+            </Box>
+          )}
           <SidebarSearchField
             inputRef={searchInputRef}
             placeholder={t("connectionManager.search")}
@@ -459,11 +735,45 @@ const ConnectionManager = memo(
             onClear={() => setSearchQuery("")}
             enableScale
           />
+          <Box
+            sx={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 0.5,
+            }}
+          >
+            <Chip
+              size="small"
+              icon={<StarRoundedIcon />}
+              label={t("connections.pinned.filterLabel")}
+              clickable
+              color={onlyPinned ? "warning" : "default"}
+              variant={onlyPinned ? "filled" : "outlined"}
+              onClick={() => setOnlyPinned((prev) => !prev)}
+            />
+            {allTags.map((tag) => {
+              const active = selectedTag === tag;
+              return (
+                <Chip
+                  key={tag}
+                  size="small"
+                  label={tag}
+                  clickable
+                  color={active ? "primary" : "default"}
+                  variant={active ? "filled" : "outlined"}
+                  onClick={() => setSelectedTag(active ? "" : tag)}
+                />
+              );
+            })}
+          </Box>
         </Box>
 
         {/* 连接列表区域 */}
         <ConnectionList
           searchQuery={searchQuery}
+          onlyPinned={onlyPinned}
+          selectedTag={selectedTag}
           connections={connections}
           setConnections={setConnections}
           isSavingRef={isSavingRef}
@@ -473,6 +783,7 @@ const ConnectionManager = memo(
             openConnectionContextMenuFromEvent
           }
           handleOpenConnection={handleOpenConnection}
+          onTogglePin={handleTogglePin}
           connectionListContextMenu={connectionListContextMenu}
           connectionManagerListRootRef={connectionManagerListRootRef}
           handleBlankContextMenu={handleBlankContextMenu}
@@ -504,6 +815,46 @@ const ConnectionManager = memo(
         >
           {connectionListContextMenu?.kind === "connection" && (
             <>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "connection") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const { connection, parentGroup } = ctx;
+                  handleConnectionListContextMenuClose();
+                  handleTogglePin(connection, parentGroup ?? null);
+                }}
+              >
+                <ListItemIcon>
+                  {connectionListContextMenu.connection?.pinned ? (
+                    <StarRoundedIcon fontSize="small" color="warning" />
+                  ) : (
+                    <StarBorderRoundedIcon fontSize="small" />
+                  )}
+                </ListItemIcon>
+                {connectionListContextMenu.connection?.pinned
+                  ? t("connections.pinned.unpin")
+                  : t("connections.pinned.pin")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  const ctx = connectionListContextMenu;
+                  if (!ctx || ctx.kind !== "connection") {
+                    handleConnectionListContextMenuClose();
+                    return;
+                  }
+                  const { connection, parentGroup } = ctx;
+                  handleConnectionListContextMenuClose();
+                  handleDuplicateConnection(connection, parentGroup ?? null);
+                }}
+              >
+                <ListItemIcon>
+                  <FileCopyOutlinedIcon fontSize="small" />
+                </ListItemIcon>
+                {t("connections.duplicate.action")}
+              </MenuItem>
               <MenuItem
                 disabled={
                   !getHostForClipboard(connectionListContextMenu.connection)

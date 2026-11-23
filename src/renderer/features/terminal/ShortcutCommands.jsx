@@ -28,6 +28,9 @@ import {
   Select,
   Tabs,
   Tab,
+  Chip,
+  ToggleButton,
+  ToggleButtonGroup,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { compactContextMenuPaperSx } from "../../shared/ui/contextMenuStyles";
@@ -65,6 +68,19 @@ import SidebarEmptyState from "../../shared/ui/SidebarEmptyState.jsx";
 import { SidebarListSkeleton } from "../../shared/ui/SkeletonLoader.jsx";
 import useSidebarPanel from "../../shared/hooks/useSidebarPanel";
 import useContextMenuRetarget from "../../shared/hooks/useContextMenuRetarget";
+import {
+  getWorkingDirectoryState,
+  subscribeWorkingDirectory,
+} from "../../shared/state/workingDirectoryStore.js";
+import {
+  buildSessionTemplateContext,
+  collectAllCommandTags,
+  formatTagsInput,
+  normalizeCommandTags,
+  parseCommandTemplate,
+  prepareCommandExecution,
+  resolveCommandTemplate,
+} from "./model/commandTemplates.js";
 import { generateId } from "../../../shared/common";
 import { useNotification } from "../../shared/notifications/NotificationContext";
 
@@ -105,7 +121,7 @@ const CommandItem = React.memo(function CommandItem({
       data-shortcut-menu-target="true"
       data-shortcut-menu-id={cmd.id}
       data-shortcut-menu-type="command"
-      onClick={() => onSend(cmd.command, { execute: false })}
+      onClick={() => onSend(cmd, { execute: false })}
       onContextMenu={(e) => onMenuOpen(e, cmd.id, "command")}
       actions={
         <>
@@ -114,7 +130,7 @@ const CommandItem = React.memo(function CommandItem({
               size="small"
               onClick={(e) => {
                 e.stopPropagation();
-                onSend(cmd.command);
+                onSend(cmd, { execute: true });
               }}
               sx={sidebarRowActionSx.primary}
               aria-label={t("shortcutCommands.sendAndExecute")}
@@ -127,7 +143,7 @@ const CommandItem = React.memo(function CommandItem({
               size="small"
               onClick={(e) => {
                 e.stopPropagation();
-                onCopy(cmd.command);
+                onCopy(cmd);
               }}
               sx={sidebarRowActionSx.secondary}
               aria-label={t("shortcutCommands.copyCommand")}
@@ -234,6 +250,8 @@ function ShortcutCommands({
   onClose,
   onSendCommand,
   sessionContext = null,
+  sessionKey = null,
+  activeSession = null,
 }) {
   const theme = useTheme();
   const { t } = useTranslation();
@@ -243,9 +261,37 @@ function ShortcutCommands({
   const [searchTerm, setSearchTerm] = useState("");
   const searchInputRef = useRef(null);
   const [selectedCategory] = useState("all");
+  const [selectedTag, setSelectedTag] = useState("all");
   const [tabValue, setTabValue] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState({});
   const sidebarRootRef = useRef(null);
+  const [sessionCwd, setSessionCwd] = useState(() =>
+    sessionKey ? getWorkingDirectoryState(sessionKey)?.path || "" : "",
+  );
+  const [tagsInput, setTagsInput] = useState("");
+  const [paramPrompt, setParamPrompt] = useState(null);
+  const paramFirstInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!sessionKey) {
+      setSessionCwd("");
+      return undefined;
+    }
+    setSessionCwd(getWorkingDirectoryState(sessionKey)?.path || "");
+    return subscribeWorkingDirectory(sessionKey, () => {
+      setSessionCwd(getWorkingDirectoryState(sessionKey)?.path || "");
+    });
+  }, [sessionKey]);
+
+  const templateContext = useMemo(
+    () =>
+      buildSessionTemplateContext({
+        activeSession,
+        sessionContext,
+        cwd: sessionCwd,
+      }),
+    [activeSession, sessionContext, sessionCwd],
+  );
 
   useSidebarPanel({
     open,
@@ -391,6 +437,7 @@ function ShortcutCommands({
   };
 
   const handleAddCommand = () => {
+    setTagsInput("");
     openEntityDialog(
       setCurrentCommand,
       {
@@ -410,6 +457,7 @@ function ShortcutCommands({
   const handleEditCommand = (commandId) => {
     const command = commands.find((cmd) => cmd.id === commandId);
     if (command) {
+      setTagsInput(formatTagsInput(command.tags));
       openEntityDialog(setCurrentCommand, { ...command }, "command", "edit");
     } else {
       handleMenuClose();
@@ -486,16 +534,22 @@ function ShortcutCommands({
   // 处理保存命令
   const handleSaveCommand = async () => {
     let newCommands = [...commands];
+    const parsed = parseCommandTemplate(currentCommand?.command || "");
+    const normalizedCommand = {
+      ...currentCommand,
+      tags: normalizeCommandTags(tagsInput),
+      params: parsed.variables.map((v) => v.name),
+    };
 
     if (dialogAction === "add") {
       const newCommand = {
-        ...currentCommand,
+        ...normalizedCommand,
         id: generateId("cmd"),
       };
       newCommands.push(newCommand);
     } else {
       newCommands = commands.map((cmd) =>
-        cmd.id === currentCommand.id ? { ...currentCommand } : cmd,
+        cmd.id === currentCommand.id ? normalizedCommand : cmd,
       );
     }
 
@@ -578,35 +632,129 @@ function ShortcutCommands({
     [onSendCommand, showGlobalNotification, t],
   );
 
-  // 处理复制命令
-  const handleCopyCommand = useCallback((command) => {
-    window.clipboardAPI.writeText(command).catch(() => {});
+  // 处理触发命令（静态命令或内置变量完整解析时直接发送；存在自定义/缺失参数时弹出参数框）
+  const handleTriggerCommand = useCallback(
+    (cmdOrCommand, options = {}) => {
+      const rawCommand =
+        typeof cmdOrCommand === "string"
+          ? cmdOrCommand
+          : cmdOrCommand?.command || "";
+      const prep = prepareCommandExecution(rawCommand, templateContext);
+      if (!prep.needsPrompt) {
+        handleSendCommand(prep.preview.resolved, options);
+        return;
+      }
+
+      const cmdObj =
+        typeof cmdOrCommand === "string"
+          ? { id: "", name: "", command: cmdOrCommand }
+          : cmdOrCommand;
+      setParamPrompt({
+        command: cmdObj,
+        values: prep.initialValues,
+        parsed: prep.parsed,
+        promptVariables: prep.promptVariables,
+        mode: options.execute === false ? "insert" : "run",
+        attempted: false,
+      });
+    },
+    [handleSendCommand, templateContext],
+  );
+
+  const handleCloseParamPrompt = useCallback(() => {
+    setParamPrompt(null);
   }, []);
+
+  const handleParamValueChange = useCallback((name, value) => {
+    setParamPrompt((prev) =>
+      prev
+        ? {
+            ...prev,
+            values: {
+              ...prev.values,
+              [name]: value,
+            },
+          }
+        : null,
+    );
+  }, []);
+
+  const handleParamModeChange = useCallback((_event, nextMode) => {
+    if (!nextMode) return;
+    setParamPrompt((prev) => (prev ? { ...prev, mode: nextMode } : null));
+  }, []);
+
+  const paramResolved = useMemo(() => {
+    if (!paramPrompt) return null;
+    return resolveCommandTemplate(
+      paramPrompt.command?.command || "",
+      paramPrompt.values,
+      templateContext,
+    );
+  }, [paramPrompt, templateContext]);
+
+  const handleConfirmParamPrompt = useCallback(() => {
+    if (!paramPrompt || !paramResolved) return;
+    if (!paramResolved.valid) {
+      setParamPrompt((prev) => (prev ? { ...prev, attempted: true } : null));
+      return;
+    }
+    const execute = paramPrompt.mode !== "insert";
+    handleSendCommand(paramResolved.resolved, { execute });
+    setParamPrompt(null);
+  }, [handleSendCommand, paramPrompt, paramResolved]);
+
+  // 处理复制命令
+  const handleCopyCommand = useCallback(
+    (cmdOrCommand) => {
+      const rawCommand =
+        typeof cmdOrCommand === "string"
+          ? cmdOrCommand
+          : cmdOrCommand?.command || "";
+      const prep = prepareCommandExecution(rawCommand, templateContext);
+      const textToCopy = prep.needsPrompt ? rawCommand : prep.preview.resolved;
+      window.clipboardAPI.writeText(textToCopy).catch(() => {});
+    },
+    [templateContext],
+  );
+
+  const allTags = useMemo(() => collectAllCommandTags(commands), [commands]);
+
+  useEffect(() => {
+    if (selectedTag !== "all" && !allTags.includes(selectedTag)) {
+      setSelectedTag("all");
+    }
+  }, [allTags, selectedTag]);
 
   // 过滤命令；过滤使用延迟值，命令很多时输入仍保持流畅
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const filteredCommands = useMemo(() => {
     const query = deferredSearchTerm.toLowerCase();
     return commands.filter((cmd) => {
+      const cmdTags = normalizeCommandTags(cmd.tags);
       // 根据搜索词过滤
       const matchesSearch =
         query === "" ||
         (cmd.name || "").toLowerCase().includes(query) ||
-        (cmd.command || "").toLowerCase().includes(query);
+        (cmd.command || "").toLowerCase().includes(query) ||
+        cmdTags.some((tag) => tag.toLowerCase().includes(query));
 
-      // 根据选定分类过滤
+      // 根据选定分类与标签过滤
       const matchesCategory =
         selectedCategory === "all" || cmd.category === selectedCategory;
+      const matchesTag =
+        selectedTag === "all" ||
+        cmdTags.some((tag) => tag.toLowerCase() === selectedTag.toLowerCase());
 
-      return matchesSearch && matchesCategory;
+      return matchesSearch && matchesCategory && matchesTag;
     });
-  }, [commands, deferredSearchTerm, selectedCategory]);
+  }, [commands, deferredSearchTerm, selectedCategory, selectedTag]);
 
   const renderCommandItem = (cmd) => (
     <CommandItem
       cmd={cmd}
       highlighted={dialogType === "command" && menuTargetId === cmd.id}
-      onSend={handleSendCommand}
+      onSend={handleTriggerCommand}
       onCopy={handleCopyCommand}
       onMenuOpen={handleMenuOpen}
     />
@@ -734,6 +882,15 @@ function ShortcutCommands({
   };
 
   // 渲染命令对话框
+  const commandTemplatePreview = useMemo(
+    () => parseCommandTemplate(currentCommand?.command || ""),
+    [currentCommand?.command],
+  );
+  const editorTagPreview = useMemo(
+    () => normalizeCommandTags(tagsInput),
+    [tagsInput],
+  );
+
   const renderCommandDialog = () => (
     <Dialog
       open={dialogOpen && dialogType === "command"}
@@ -759,13 +916,48 @@ function ShortcutCommands({
         <TextField
           margin="dense"
           label={t("shortcutCommands.command")}
+          helperText={t("shortcutCommands.templateSyntaxHint")}
           fullWidth
           multiline
           rows={2}
           value={currentCommand?.command || ""}
           onChange={(e) => handleCommandFormChange("command", e.target.value)}
-          sx={{ mb: 2 }}
+          sx={{ mb: 1.5 }}
         />
+        {commandTemplatePreview.hasVariables && (
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 0.5,
+              mb: 2,
+            }}
+          >
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ mr: 0.5 }}
+            >
+              {t("shortcutCommands.templateDetectedParams")}:
+            </Typography>
+            {commandTemplatePreview.variables.map((variable) => (
+              <Chip
+                key={variable.name}
+                size="small"
+                color={variable.isBuiltin ? "info" : "primary"}
+                variant="outlined"
+                label={
+                  variable.isBuiltin
+                    ? `${variable.name} (${t("shortcutCommands.templateBuiltinTag")})`
+                    : variable.hasDefault
+                      ? `${variable.name}=${variable.defaultValue}`
+                      : variable.name
+                }
+              />
+            ))}
+          </Box>
+        )}
         <FormControl fullWidth sx={{ mb: 2 }}>
           <InputLabel>{t("shortcutCommands.category")}</InputLabel>
           <Select
@@ -783,6 +975,30 @@ function ShortcutCommands({
             ))}
           </Select>
         </FormControl>
+        <TextField
+          margin="dense"
+          label={t("shortcutCommands.tagsLabel")}
+          placeholder={t("shortcutCommands.tagsPlaceholder")}
+          fullWidth
+          value={tagsInput}
+          onChange={(e) => setTagsInput(e.target.value)}
+          sx={{ mb: editorTagPreview.length > 0 ? 1 : 0 }}
+        />
+        {editorTagPreview.length > 0 && (
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+            {editorTagPreview.map((tag) => (
+              <Chip
+                key={tag}
+                size="small"
+                label={tag}
+                onDelete={() => {
+                  const remaining = editorTagPreview.filter((x) => x !== tag);
+                  setTagsInput(formatTagsInput(remaining));
+                }}
+              />
+            ))}
+          </Box>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={handleDialogClose}>{t("common.cancel")}</Button>
@@ -792,6 +1008,155 @@ function ShortcutCommands({
       </DialogActions>
     </Dialog>
   );
+
+  // 渲染参数填写对话框
+  const renderParamPromptDialog = () => {
+    const promptVariables = paramPrompt?.promptVariables || [];
+    const missingSet = new Set(paramResolved?.missingVariables || []);
+    const isInsertMode = paramPrompt?.mode === "insert";
+
+    return (
+      <Dialog
+        open={Boolean(paramPrompt)}
+        onClose={handleCloseParamPrompt}
+        initialFocusRef={paramFirstInputRef}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {paramPrompt?.command?.name
+            ? `${t("shortcutCommands.templateDialogTitle")}: ${paramPrompt.command.name}`
+            : t("shortcutCommands.templateDialogTitle")}
+        </DialogTitle>
+        <Box
+          component="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleConfirmParamPrompt();
+          }}
+        >
+          <DialogContent sx={{ pt: 1 }}>
+            {promptVariables.map((variable, index) => {
+              const value = paramPrompt?.values?.[variable.name] ?? "";
+              const isError =
+                Boolean(paramPrompt?.attempted) &&
+                missingSet.has(variable.name);
+              const helperText = isError
+                ? t("shortcutCommands.templateRequired")
+                : variable.hasDefault
+                  ? t("shortcutCommands.templateDefaultHint", {
+                      value: variable.defaultValue,
+                    })
+                  : variable.isBuiltin
+                    ? t("shortcutCommands.templateBuiltinTag")
+                    : t("shortcutCommands.templateRequired");
+              return (
+                <TextField
+                  key={variable.name}
+                  slotProps={
+                    index === 0
+                      ? { htmlInput: { ref: paramFirstInputRef } }
+                      : undefined
+                  }
+                  autoFocus={index === 0}
+                  margin="dense"
+                  size="small"
+                  fullWidth
+                  required={!variable.hasDefault}
+                  error={isError}
+                  label={variable.name}
+                  value={value}
+                  helperText={helperText}
+                  onChange={(e) =>
+                    handleParamValueChange(variable.name, e.target.value)
+                  }
+                  sx={{ mb: 1.5 }}
+                />
+              );
+            })}
+
+            <Box sx={{ mt: 1, mb: 1.5 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mb: 0.5 }}
+              >
+                {t("shortcutCommands.templatePreviewLabel")}
+              </Typography>
+              <Box
+                sx={{
+                  px: 1.25,
+                  py: 1,
+                  borderRadius: 1,
+                  border: `1px solid ${theme.palette.divider}`,
+                  bgcolor: "action.hover",
+                  fontFamily: "monospace",
+                  fontSize: "0.82rem",
+                  wordBreak: "break-all",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {paramResolved?.resolved || ""}
+              </Box>
+              {paramPrompt?.attempted && !paramResolved?.valid && (
+                <Typography
+                  variant="caption"
+                  color="error"
+                  sx={{ display: "block", mt: 0.5 }}
+                >
+                  {t("shortcutCommands.templateMissingRequired", {
+                    names: (paramResolved?.missingVariables || []).join(", "),
+                  })}
+                </Typography>
+              )}
+            </Box>
+
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1,
+                flexWrap: "wrap",
+              }}
+            >
+              <Typography variant="caption" color="text.secondary">
+                {t("shortcutCommands.templateModeLabel")}
+              </Typography>
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={paramPrompt?.mode || "run"}
+                onChange={handleParamModeChange}
+              >
+                <ToggleButton value="run">
+                  {t("shortcutCommands.templateModeRun")}
+                </ToggleButton>
+                <ToggleButton value="insert">
+                  {t("shortcutCommands.templateModeInsert")}
+                </ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseParamPrompt}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              color="primary"
+              disabled={!paramResolved?.valid}
+            >
+              {isInsertMode
+                ? t("shortcutCommands.templateConfirmInsert")
+                : t("shortcutCommands.templateConfirmRun")}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+    );
+  };
 
   // 渲染分类对话框
   const renderCategoryDialog = () => (
@@ -913,7 +1278,7 @@ function ShortcutCommands({
         </Tooltip>
       }
     >
-      {/* 搜索框 */}
+      {/* 搜索框与标签筛选 */}
       <Box sx={sidebarSectionSx(theme)}>
         <SidebarSearchField
           inputRef={searchInputRef}
@@ -922,6 +1287,39 @@ function ShortcutCommands({
           onChange={handleSearchChange}
           onClear={() => setSearchTerm("")}
         />
+        {allTags.length > 0 && (
+          <Box
+            sx={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 0.5,
+              mt: 0.75,
+            }}
+          >
+            <Chip
+              size="small"
+              label={t("shortcutCommands.tagsAll")}
+              color={selectedTag === "all" ? "primary" : "default"}
+              variant={selectedTag === "all" ? "filled" : "outlined"}
+              onClick={() => setSelectedTag("all")}
+              sx={{ height: 22, fontSize: "0.72rem" }}
+            />
+            {allTags.map((tag) => {
+              const active = selectedTag === tag;
+              return (
+                <Chip
+                  key={tag}
+                  size="small"
+                  label={tag}
+                  color={active ? "primary" : "default"}
+                  variant={active ? "filled" : "outlined"}
+                  onClick={() => setSelectedTag(active ? "all" : tag)}
+                  sx={{ height: 22, fontSize: "0.72rem" }}
+                />
+              );
+            })}
+          </Box>
+        )}
       </Box>
 
       {/* 标签页 */}
@@ -1002,6 +1400,7 @@ function ShortcutCommands({
 
       {/* 对话框 */}
       {renderCommandDialog()}
+      {renderParamPromptDialog()}
       {renderCategoryDialog()}
 
       {/* 菜单 */}

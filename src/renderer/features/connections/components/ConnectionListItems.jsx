@@ -7,6 +7,8 @@ import {
   ListItemIcon,
   ListItemButton,
   Collapse,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
 import ComputerIcon from "@mui/icons-material/Computer";
 import UsbIcon from "@mui/icons-material/Usb";
@@ -14,6 +16,8 @@ import NetworkPingIcon from "@mui/icons-material/NetworkPing";
 import FolderIcon from "@mui/icons-material/Folder";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import StarRoundedIcon from "@mui/icons-material/StarRounded";
+import StarBorderRoundedIcon from "@mui/icons-material/StarBorderRounded";
 import { useDroppable } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -85,7 +89,7 @@ export const ConnectionDragHandle = React.forwardRef(
   },
 );
 
-/** 连接行主体：协议图标 + 名称 / user@host，超长时悬停显示完整内容 */
+/** 连接行主体：协议图标 + 色标圆点 + 名称 / 标签 / user@host，超长时悬停显示完整内容 */
 export const ConnectionRowButton = memo(function ConnectionRowButton({
   connection,
   onClick,
@@ -93,6 +97,10 @@ export const ConnectionRowButton = memo(function ConnectionRowButton({
 }) {
   const primaryContent = connection.name || connection.host;
   const secondaryText = getConnectionSecondaryText(connection);
+  const tags = Array.isArray(connection.tags) ? connection.tags : [];
+  const colorTag =
+    typeof connection.colorTag === "string" ? connection.colorTag.trim() : "";
+
   return (
     <ListItemButton
       {...{ [CONNECTION_MANAGER_ROW_DATA_ATTR]: "true" }}
@@ -109,13 +117,34 @@ export const ConnectionRowButton = memo(function ConnectionRowButton({
         disableTypography
         sx={viewStyles.listItemTextSx}
         primary={
-          <OverflowTooltipText
-            variant="body2"
-            sx={viewStyles.primaryTextSx}
-            tooltipProps={viewStyles.tooltipProps}
-          >
-            {primaryContent}
-          </OverflowTooltipText>
+          <Box sx={viewStyles.primaryRowSx}>
+            {colorTag ? (
+              <Box
+                component="span"
+                aria-hidden="true"
+                sx={{
+                  ...viewStyles.colorDotSx,
+                  bgcolor: colorTag,
+                }}
+              />
+            ) : null}
+            <OverflowTooltipText
+              variant="body2"
+              sx={viewStyles.primaryTextSx}
+              tooltipProps={viewStyles.tooltipProps}
+            >
+              {primaryContent}
+            </OverflowTooltipText>
+            {tags.length > 0 ? (
+              <Box
+                component="span"
+                sx={viewStyles.inlineTagSx}
+                title={tags.join(", ")}
+              >
+                {tags.length > 1 ? `${tags[0]} +${tags.length - 1}` : tags[0]}
+              </Box>
+            ) : null}
+          </Box>
         }
         secondary={
           <OverflowTooltipText
@@ -129,6 +158,47 @@ export const ConnectionRowButton = memo(function ConnectionRowButton({
         }
       />
     </ListItemButton>
+  );
+});
+
+export const ConnectionPinButton = memo(function ConnectionPinButton({
+  connection,
+  parentGroup = null,
+  onTogglePin,
+}) {
+  const { t } = useTranslation();
+  if (!onTogglePin || !connection) {
+    return null;
+  }
+  const isPinned = connection.pinned === true;
+
+  return (
+    <Tooltip
+      title={
+        isPinned ? t("connections.pinned.unpin") : t("connections.pinned.pin")
+      }
+    >
+      <IconButton
+        size="small"
+        aria-label={
+          isPinned ? t("connections.pinned.unpin") : t("connections.pinned.pin")
+        }
+        aria-pressed={isPinned}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onTogglePin(connection, parentGroup);
+        }}
+        sx={isPinned ? viewStyles.pinButtonActiveSx : viewStyles.pinButtonSx}
+      >
+        {isPinned ? (
+          <StarRoundedIcon sx={viewStyles.pinIconSx} />
+        ) : (
+          <StarBorderRoundedIcon sx={viewStyles.pinIconSx} />
+        )}
+      </IconButton>
+    </Tooltip>
   );
 });
 
@@ -209,6 +279,7 @@ export const ConnectionListItem = memo(function ConnectionListItem({
   parentGroup,
   onOpenRowContextMenu,
   onOpen,
+  onTogglePin,
   dragDisabled,
   isContextMenuTarget = false,
 }) {
@@ -266,6 +337,11 @@ export const ConnectionListItem = memo(function ConnectionListItem({
         connection={connection}
         onClick={() => onOpen(connection)}
       />
+      <ConnectionPinButton
+        connection={connection}
+        parentGroup={parentGroup}
+        onTogglePin={onTogglePin}
+      />
     </ListItem>
   );
 });
@@ -278,6 +354,7 @@ export const GroupListItem = memo(function GroupListItem({
   onOpenGroupRowContextMenu,
   onOpenConnectionRowContextMenu,
   onOpenConnection,
+  onTogglePin,
   contextMenuTarget = null,
 }) {
   const { t } = useTranslation();
@@ -393,6 +470,7 @@ export const GroupListItem = memo(function GroupListItem({
                     parentGroup={group}
                     onOpenRowContextMenu={onOpenConnectionRowContextMenu}
                     onOpen={onOpenConnection}
+                    onTogglePin={onTogglePin}
                     dragDisabled={dragDisabled}
                     isContextMenuTarget={
                       contextMenuTarget?.kind === "connection" &&
@@ -464,10 +542,59 @@ const viewStyles = {
   listItemIconSx: { minWidth: 28, ml: -0.5 },
   listItemTextSx: { my: 0, minWidth: 0 },
   // 双行合计 ≤ 36px，保证 44px 固定行高（虚拟化）下不被裁切
+  primaryRowSx: {
+    display: "flex",
+    alignItems: "center",
+    gap: 0.5,
+    minWidth: 0,
+  },
+  colorDotSx: {
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    flexShrink: 0,
+  },
+  inlineTagSx: {
+    flexShrink: 0,
+    maxWidth: 74,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    fontSize: "0.625rem",
+    lineHeight: 1.25,
+    px: 0.5,
+    py: 0.1,
+    borderRadius: 0.75,
+    bgcolor: "action.selected",
+    color: "text.secondary",
+  },
+  pinButtonSx: {
+    mr: 0.5,
+    p: 0.35,
+    flexShrink: 0,
+    color: "text.disabled",
+    opacity: 0.55,
+    "&:hover": {
+      color: "warning.main",
+      opacity: 1,
+    },
+  },
+  pinButtonActiveSx: {
+    mr: 0.5,
+    p: 0.35,
+    flexShrink: 0,
+    color: "warning.main",
+    opacity: 1,
+  },
+  pinIconSx: {
+    fontSize: 16,
+  },
   primaryTextSx: {
     fontWeight: 500,
     fontSize: "0.85rem",
     lineHeight: 1.35,
+    minWidth: 0,
+    flex: "1 1 auto",
   },
   secondaryTextSx: {
     lineHeight: 1.4,

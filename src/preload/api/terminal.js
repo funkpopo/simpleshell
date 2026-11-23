@@ -2,7 +2,7 @@
 /**
  * Preload 运行于隔离上下文；类型检查由 tests/helpers/preloadAnalysis.js 执行。
  * 主进程尚未细化的响应使用 unknown，调用方应先缩窄类型。
- * @import { ProcessId, Unsubscribe, PayloadCallback, IpcCallback, TerminalMailboxMessage, TerminalMailboxPayload } from "../../shared/contracts/preload"
+ * @import { ProcessId, Unsubscribe, PayloadCallback, IpcCallback, TerminalMailboxMessage, TerminalMailboxPayload, TerminalScrollbackExportPayload } from "../../shared/contracts/preload"
  */
 
 /** @type {TextDecoder | undefined} */
@@ -435,6 +435,17 @@ function createTerminalAPI(bridge) {
         IPC_REQUEST_CHANNELS.TERMINAL_NOTIFY_EDITOR_MODE_CHANGE,
         processId,
         isEditorMode,
+      ),
+
+    /**
+     * 通过 IPC_REQUEST_CHANNELS.TERMINAL_EXPORT_SCROLLBACK 导出终端输出到文件。
+     * @param {TerminalScrollbackExportPayload} payload
+     * @returns {Promise<unknown>}
+     */
+    exportScrollback: (payload) =>
+      ipcRenderer.invoke(
+        IPC_REQUEST_CHANNELS.TERMINAL_EXPORT_SCROLLBACK,
+        payload,
       ),
 
     // 命令历史相关API

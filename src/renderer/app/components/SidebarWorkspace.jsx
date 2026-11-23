@@ -58,6 +58,12 @@ export default function SidebarWorkspace({
   handleSendCommand,
   toggleTheme,
   transfers,
+  onOpenCommandPalette,
+  onToggleBroadcastBar,
+  onSelectTabIndex,
+  onReopenClosedTab,
+  requiresUnlock = false,
+  commandPaletteOpen = false,
   ref,
 }) {
   const dispatch = useAppDispatch();
@@ -565,10 +571,40 @@ export default function SidebarWorkspace({
       document.documentElement.style.removeProperty("--ss-floating-right");
     };
   }, [sidebarPosition, activeSidebarContentWidth]);
+  const shortcutStateRef = useRef({});
+  shortcutStateRef.current = {
+    tabsCount: Array.isArray(tabs) ? tabs.length : 0,
+    currentTabIndex: Math.max(
+      0,
+      Array.isArray(tabs)
+        ? tabs.findIndex(
+            (tab) => tab.id === (activeSession?.parentTabId || "welcome"),
+          )
+        : 0,
+    ),
+    requiresUnlock,
+    commandPaletteOpen,
+    onOpenCommandPalette,
+    onSelectTabIndex,
+    onReopenClosedTab,
+    onToggleBroadcastBar,
+    handleToggleGlobalAiChatWindow,
+    toggleConnectionManager,
+    toggleFileManager,
+    toggleShortcutCommands,
+    toggleCommandHistory,
+    toggleResourceMonitor,
+    toggleIpAddressQuery,
+    toggleSecurityTools,
+    togglePortForwarding,
+    toggleLocalTerminalSidebar,
+    handleToggleTransferSidebar,
+  };
+
   React.useEffect(() => {
     // 处理欢迎页AI按钮点击事件
     const handleToggleGlobalAI = () => {
-      handleToggleGlobalAiChatWindow();
+      shortcutStateRef.current.handleToggleGlobalAiChatWindow();
     };
 
     // 监听发送到AI助手事件
@@ -585,25 +621,120 @@ export default function SidebarWorkspace({
       handleSendToAI(event.detail.text);
     };
 
-    // Alt+F1 全局快捷键唤醒AI助手；Ctrl+Shift+W 关闭聚焦窗格
-    // （分屏创建统一由拖拽标签页合并触发，无快捷键分屏入口）
+    // 全局工作区快捷键（捕获阶段拦截，避免 xterm 向 PTY 泄漏控制序列；保留 Ctrl+K 给 shell）
     const handleGlobalKeyDown = (event) => {
-      if (event.altKey && event.key === "F1") {
-        event.preventDefault();
-        handleToggleGlobalAiChatWindow();
+      const ctx = shortcutStateRef.current;
+      if (ctx.requiresUnlock) {
         return;
       }
-      if (event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey) {
-        const key = event.key.toLowerCase();
+
+      if (event.altKey && !event.ctrlKey && !event.metaKey) {
+        if (event.key === "F1") {
+          event.preventDefault();
+          event.stopPropagation();
+          ctx.handleToggleGlobalAiChatWindow();
+          return;
+        }
+        const directionMap = {
+          ArrowLeft: "left",
+          ArrowRight: "right",
+          ArrowUp: "up",
+          ArrowDown: "down",
+        };
+        const focusDir = !event.shiftKey ? directionMap[event.key] : null;
+        if (
+          focusDir &&
+          !ctx.commandPaletteOpen &&
+          !document.querySelector('[role="dialog"]')
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          handlePaneShortcutRef.current("focusDirection", {
+            direction: focusDir,
+          });
+          return;
+        }
+      }
+
+      const key = String(event.key || "").toLowerCase();
+      const hasCtrlOrMeta = Boolean(
+        (event.ctrlKey || event.metaKey) && !event.altKey,
+      );
+
+      if (hasCtrlOrMeta && event.shiftKey && key === "p") {
+        event.preventDefault();
+        event.stopPropagation();
+        ctx.onOpenCommandPalette?.();
+        return;
+      }
+
+      if (ctx.commandPaletteOpen || document.querySelector('[role="dialog"]')) {
+        return;
+      }
+
+      if (hasCtrlOrMeta && event.shiftKey) {
         if (key === "w") {
           event.preventDefault();
+          event.stopPropagation();
           handlePaneShortcutRef.current("close");
+          return;
+        }
+        if (key === "e") {
+          event.preventDefault();
+          event.stopPropagation();
+          handlePaneShortcutRef.current("splitRight");
+          return;
+        }
+        if (key === "h") {
+          event.preventDefault();
+          event.stopPropagation();
+          handlePaneShortcutRef.current("splitBottom");
+          return;
+        }
+        if (key === "t") {
+          event.preventDefault();
+          event.stopPropagation();
+          ctx.onReopenClosedTab?.();
+          return;
+        }
+      }
+
+      if (
+        event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        event.key === "Tab"
+      ) {
+        const count = ctx.tabsCount;
+        if (count > 1 && ctx.onSelectTabIndex) {
+          event.preventDefault();
+          event.stopPropagation();
+          const currentIdx = ctx.currentTabIndex;
+          const nextIndex = event.shiftKey
+            ? (currentIdx - 1 + count) % count
+            : (currentIdx + 1) % count;
+          ctx.onSelectTabIndex(nextIndex);
+        }
+        return;
+      }
+
+      if (hasCtrlOrMeta && !event.shiftKey) {
+        const codeMatch = String(event.code || "").match(/^Digit([1-9])$/);
+        const digitStr = /^[1-9]$/.test(String(event.key || ""))
+          ? event.key
+          : codeMatch?.[1];
+        if (digitStr) {
+          const digit = Number(digitStr);
+          const count = ctx.tabsCount;
+          const targetIndex = digit === 9 ? count - 1 : digit - 1;
+          if (targetIndex >= 0 && targetIndex < count && ctx.onSelectTabIndex) {
+            event.preventDefault();
+            event.stopPropagation();
+            ctx.onSelectTabIndex(targetIndex);
+          }
         }
       }
     };
-
-    // 使用 useWindowEvents Hook 统一管理多个 window 事件监听
-    // 注意：为了避免在 useEffect 中再使用 Hook，我们继续使用 eventManager
 
     const removeToggleListener = eventManager.addEventListener(
       window,
@@ -619,9 +750,8 @@ export default function SidebarWorkspace({
       window,
       "keydown",
       handleGlobalKeyDown,
+      { capture: true },
     );
-
-    // 初始化应用设置
 
     return () => {
       smartPreload.cancelAllScheduled();
@@ -629,7 +759,7 @@ export default function SidebarWorkspace({
       removeSendToAIListener();
       removeKeyDownListener();
     };
-  }, [darkMode, dispatch, aiChatStatus]);
+  }, [dispatch, eventManager]);
   React.useEffect(() => {
     const keys = new Set(liveSessionKeys);
     setFileManagerHistoryByTabId((previous) =>
@@ -642,6 +772,52 @@ export default function SidebarWorkspace({
       if (appStore.getState().fileManagerOpenByTabId[tabId]) {
         dispatch(actions.setFileManagerOpenForTab(tabId, false));
         if (fileManagerOpen) setFallbackSidebarAfterClose("file");
+      }
+    },
+    togglePanel: (panelKey) => {
+      const ctx = shortcutStateRef.current;
+      switch (panelKey) {
+        case "connection":
+          ctx.toggleConnectionManager?.();
+          break;
+        case "file":
+          ctx.toggleFileManager?.();
+          break;
+        case "shortcut":
+          ctx.toggleShortcutCommands?.();
+          break;
+        case "history":
+          ctx.toggleCommandHistory?.();
+          break;
+        case "resource":
+          ctx.toggleResourceMonitor?.();
+          break;
+        case "ipquery":
+          ctx.toggleIpAddressQuery?.();
+          break;
+        case "password":
+          ctx.toggleSecurityTools?.();
+          break;
+        case "forwarding":
+          ctx.togglePortForwarding?.();
+          break;
+        case "localTerminal":
+          ctx.toggleLocalTerminalSidebar?.();
+          break;
+        case "transfer":
+          ctx.handleToggleTransferSidebar?.();
+          break;
+        case "ai":
+          ctx.handleToggleGlobalAiChatWindow?.();
+          break;
+        case "broadcast":
+          ctx.onToggleBroadcastBar?.();
+          break;
+        case "settings":
+          dispatch(actions.setSettingsDialogOpen(true));
+          break;
+        default:
+          break;
       }
     },
   }));

@@ -13,22 +13,35 @@ const getConnectionTimestamp = (connection) => {
   );
 };
 
-const getConnectionVersion = (connection) => {
+export const getConnectionVersion = (connection) => {
   if (!connection) {
     return "";
   }
 
-  const timestamp = getConnectionTimestamp(connection);
-  if (timestamp) {
-    return String(timestamp);
-  }
-
   if (connection.type === "group") {
+    const timestamp = getConnectionTimestamp(connection);
+    if (timestamp) {
+      return String(timestamp);
+    }
     return [
       connection.name || "",
       connection.expanded ? "1" : "0",
       (connection.items || []).length,
     ].join("|");
+  }
+
+  const tagsSignature = Array.isArray(connection.tags)
+    ? connection.tags.join(",")
+    : "";
+  const metadataSignature = [
+    connection.pinned ? "1" : "0",
+    tagsSignature,
+    connection.colorTag || "",
+  ].join("|");
+
+  const timestamp = getConnectionTimestamp(connection);
+  if (timestamp) {
+    return `${String(timestamp)}|${metadataSignature}`;
   }
 
   const proxySignature = connection.proxy
@@ -59,6 +72,7 @@ const getConnectionVersion = (connection) => {
     connection.password || "",
     connection.hasPassword ? "1" : "0",
     connection.credentialRevision || "",
+    metadataSignature,
     proxySignature,
   ].join("|");
 };
@@ -117,6 +131,10 @@ const cloneConnectionNode = (node) => {
   const cloned = {
     ...node,
   };
+
+  if (Array.isArray(node.tags)) {
+    cloned.tags = [...node.tags];
+  }
 
   if (node.proxy && typeof node.proxy === "object") {
     cloned.proxy = { ...node.proxy };
@@ -323,6 +341,13 @@ export const sortConnectionsByIp = (connections) => {
     if (a.type === "group") return -1;
     if (b.type === "group") return 1;
 
+    // 收藏/置顶连接排在普通连接之前
+    const aPinned = a.pinned === true;
+    const bPinned = b.pinned === true;
+    if (aPinned !== bPinned) {
+      return aPinned ? -1 : 1;
+    }
+
     // 对于连接，按IP地址排序
     const ipA = parseIpAddress(a.host);
     const ipB = parseIpAddress(b.host);
@@ -358,4 +383,117 @@ export const countVisibleItems = (items = []) => {
 
     return total + 1;
   }, 0);
+};
+
+export const collectAllConnectionTags = (connections = []) => {
+  const tags = new Set();
+  const walk = (items) => {
+    for (const item of Array.isArray(items) ? items : []) {
+      if (!item || typeof item !== "object") continue;
+      if (item.type === "group") {
+        walk(item.items || []);
+        continue;
+      }
+      if (item.type === "connection" && Array.isArray(item.tags)) {
+        for (const tag of item.tags) {
+          const trimmed = typeof tag === "string" ? tag.trim() : "";
+          if (trimmed) tags.add(trimmed);
+        }
+      }
+    }
+  };
+  walk(connections);
+  return [...tags].sort((a, b) => a.localeCompare(b));
+};
+
+export const matchesConnectionFilter = (
+  connection,
+  { searchQuery = "", onlyPinned = false, selectedTag = "" } = {},
+) => {
+  if (!connection || connection.type !== "connection") {
+    return false;
+  }
+  if (onlyPinned && connection.pinned !== true) {
+    return false;
+  }
+  if (selectedTag) {
+    const tags = Array.isArray(connection.tags) ? connection.tags : [];
+    if (!tags.includes(selectedTag)) {
+      return false;
+    }
+  }
+  const normalizedQuery = String(searchQuery || "")
+    .trim()
+    .toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+  const haystacks = [
+    connection.name,
+    connection.host,
+    connection.username,
+    ...(Array.isArray(connection.tags) ? connection.tags : []),
+  ];
+  return haystacks.some(
+    (value) =>
+      typeof value === "string" &&
+      value.toLowerCase().includes(normalizedQuery),
+  );
+};
+
+export const filterConnectionTree = (
+  connections = [],
+  { searchQuery = "", onlyPinned = false, selectedTag = "" } = {},
+) => {
+  const normalizedQuery = String(searchQuery || "")
+    .trim()
+    .toLowerCase();
+  const hasFilter = Boolean(normalizedQuery || onlyPinned || selectedTag);
+  if (!hasFilter) {
+    return connections;
+  }
+
+  return (Array.isArray(connections) ? connections : []).reduce((acc, item) => {
+    if (!item || typeof item !== "object") {
+      return acc;
+    }
+    if (item.type === "group") {
+      const childItems = Array.isArray(item.items) ? item.items : [];
+      const isGroupNameMatch =
+        Boolean(normalizedQuery) &&
+        !onlyPinned &&
+        !selectedTag &&
+        String(item.name || "")
+          .toLowerCase()
+          .includes(normalizedQuery);
+      const matchingConnections = isGroupNameMatch
+        ? childItems
+        : childItems.filter((child) =>
+            matchesConnectionFilter(child, {
+              searchQuery: normalizedQuery,
+              onlyPinned,
+              selectedTag,
+            }),
+          );
+      if (isGroupNameMatch || matchingConnections.length > 0) {
+        acc.push({
+          ...item,
+          expanded: matchingConnections.length > 0 ? true : item.expanded,
+          items: matchingConnections,
+        });
+      }
+      return acc;
+    }
+
+    if (
+      matchesConnectionFilter(item, {
+        searchQuery: normalizedQuery,
+        onlyPinned,
+        selectedTag,
+      })
+    ) {
+      acc.push(item);
+    }
+    return acc;
+  }, []);
 };

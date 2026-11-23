@@ -79,7 +79,8 @@ export default function SessionTab({
   const label =
     index === 0
       ? t("terminal.welcome")
-      : mergedPaneLabel ||
+      : tab.customTitle ||
+        mergedPaneLabel ||
         persistedLabel ||
         (tab.type === "local"
           ? t("common.componentNames.localTerminal")
@@ -95,6 +96,17 @@ export default function SessionTab({
         .map((m) => `${m.mount} ${m.usedPercent}%`)
         .join(", ")
     : "";
+  const tabColorTag =
+    index > 0
+      ? [
+          tab.colorTag,
+          tabConfig.colorTag,
+          ...configs.map((cfg) => cfg?.colorTag),
+        ].find(
+          (candidate) =>
+            typeof candidate === "string" && candidate.trim().length > 0,
+        ) || null
+      : null;
 
   return (
     <CustomTab
@@ -104,6 +116,7 @@ export default function SessionTab({
       tabId={tab.id}
       label={label}
       mergedLabel={isSplitHost}
+      colorTag={tabColorTag}
       statusColor={tabReconnectColor || tabDiskAlertColor || null}
       statusTooltip={
         tabReconnectTooltip ||

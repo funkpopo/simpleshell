@@ -17,6 +17,9 @@ import NoteAddIcon from "@mui/icons-material/NoteAdd";
 import SortByAlphaIcon from "@mui/icons-material/SortByAlpha";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import TerminalIcon from "@mui/icons-material/Terminal";
 import { useTranslation } from "react-i18next";
 import { getSearchFieldMotionSx } from "../../../shared/lib/searchFieldStyles";
 import LastRefreshTimeLabel from "./LastRefreshTimeLabel.jsx";
@@ -42,6 +45,10 @@ export default function FileToolbar({
   toggleSearch,
   handleSortMenuOpen,
   sortMode,
+  showHiddenFiles = true,
+  handleToggleHiddenFiles,
+  handleCdTerminalHere,
+  canCdTerminalHere = false,
 }) {
   const theme = useTheme();
   const { t } = useTranslation();
@@ -185,6 +192,47 @@ export default function FileToolbar({
             >
               <UploadFileIcon fontSize="small" />
             </IconButton>
+          </Tooltip>
+
+          <Tooltip
+            title={
+              showHiddenFiles
+                ? t("fileManager.hideHiddenFiles")
+                : t("fileManager.showHiddenFiles")
+            }
+          >
+            <IconButton
+              size="small"
+              color={showHiddenFiles ? "primary" : "default"}
+              onClick={handleToggleHiddenFiles}
+              aria-pressed={Boolean(showHiddenFiles)}
+              aria-label={
+                showHiddenFiles
+                  ? t("fileManager.hideHiddenFiles")
+                  : t("fileManager.showHiddenFiles")
+              }
+              data-testid="file-manager-toggle-hidden"
+            >
+              {showHiddenFiles ? (
+                <VisibilityIcon fontSize="small" />
+              ) : (
+                <VisibilityOffIcon fontSize="small" />
+              )}
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title={t("fileManager.cdTerminalHere")}>
+            <span>
+              <IconButton
+                size="small"
+                onClick={handleCdTerminalHere}
+                disabled={!canCdTerminalHere}
+                aria-label={t("fileManager.cdTerminalHere")}
+                data-testid="file-manager-cd-terminal"
+              >
+                <TerminalIcon fontSize="small" />
+              </IconButton>
+            </span>
           </Tooltip>
         </Box>
 

@@ -5,6 +5,8 @@ const {
   RESOURCE_MAX_PROCESSES_OPTIONS,
   TERMINAL_CURSOR_STYLE_OPTIONS,
   TERMINAL_FONT_WEIGHT_BOLD_OPTIONS,
+  DEFAULT_TERMINAL_THEME,
+  TERMINAL_THEME_OPTIONS,
   EDITOR_FONT_OPTIONS,
   NETWORK_LATENCY_INTERVAL_OPTIONS,
   FILE_MANAGER_SORT_MODE_OPTIONS,
@@ -39,6 +41,12 @@ function compileConfigValidators() {
       username: { type: "string" },
       password: { type: "string" },
       privateKeyPath: { type: "string" },
+      pinned: { type: "boolean" },
+      tags: {
+        type: "array",
+        items: { type: "string" },
+      },
+      colorTag: { type: "string" },
       items: { type: "array" },
     },
   });
@@ -132,6 +140,11 @@ function compileConfigValidators() {
         minimum: 1.0,
         maximum: 1.4,
         default: 1.0,
+      },
+      terminalTheme: {
+        type: "string",
+        enum: TERMINAL_THEME_OPTIONS,
+        default: DEFAULT_TERMINAL_THEME,
       },
       terminalScrollbackLines: {
         type: "integer",
@@ -459,6 +472,7 @@ function compileConfigValidators() {
           updatedAt: { type: "number" },
         },
       },
+      restoreSessionOnStartup: { type: "boolean", default: true },
     },
     default: {},
   });

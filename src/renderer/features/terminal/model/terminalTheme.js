@@ -1,7 +1,63 @@
 /**
- * WebTerminal xterm theme builder.
- * Keeps the pre-existing GitHub/VS Code–inspired palette (no surface redesign).
+ * WebTerminal xterm theme builder and curated high-contrast ANSI 16-color presets.
  */
+import {
+  DEFAULT_TERMINAL_THEME,
+  TERMINAL_THEME_OPTIONS,
+  normalizeTerminalThemeId,
+  FIXED_PRESET_PALETTES,
+  TERMINAL_THEME_PRESETS,
+  getTerminalThemePreset,
+} from "../../../../shared/settings/terminalThemePresets.js";
+
+// Historical GitHub/VSCode-inspired palettes for default-auto
+const DEFAULT_LIGHT_PALETTE = {
+  background: "#f6f8fa",
+  foreground: "#24292f",
+  cursor: "#0969da",
+  cursorAccent: "#f3f4f6",
+  selectionBackground: "rgba(79, 126, 255, 0.43)",
+  black: "#24292f",
+  red: "#cf222e",
+  green: "#116329",
+  yellow: "#9a6700",
+  blue: "#0969da",
+  magenta: "#8250df",
+  cyan: "#1b7c83",
+  white: "#6e7781",
+  brightBlack: "#57606a",
+  brightRed: "#d1242f",
+  brightGreen: "#1a7f37",
+  brightYellow: "#bf8700",
+  brightBlue: "#218bff",
+  brightMagenta: "#a371f7",
+  brightCyan: "#3192aa",
+  brightWhite: "#8c959f",
+};
+
+const DEFAULT_DARK_PALETTE = {
+  background: "#1e1e1e",
+  foreground: "#e6edf3",
+  cursor: "#58a6ff",
+  cursorAccent: "#0d1117",
+  selectionBackground: "rgba(212, 253, 62, 0.49)",
+  black: "#484f58",
+  red: "#ff7b72",
+  green: "#3fb950",
+  yellow: "#d29922",
+  blue: "#58a6ff",
+  magenta: "#bc8cff",
+  cyan: "#39c5cf",
+  white: "#b1bac4",
+  brightBlack: "#6e7681",
+  brightRed: "#ffa198",
+  brightGreen: "#56d364",
+  brightYellow: "#e3b341",
+  brightBlue: "#79c0ff",
+  brightMagenta: "#d2a8ff",
+  brightCyan: "#56d4dd",
+  brightWhite: "#f0f6fc",
+};
 
 export const DEFAULT_TERMINAL_LINE_HEIGHT = 1.0;
 // 行高夹取范围（仅 normalizeTerminalLineHeight 内部使用）
@@ -22,63 +78,81 @@ export const normalizeTerminalLineHeight = (value) => {
     MAX_TERMINAL_LINE_HEIGHT,
     Math.max(MIN_TERMINAL_LINE_HEIGHT, raw),
   );
-  // Keep one decimal place for stable xterm geometry.
+  // Keep two decimal places for stable xterm geometry.
   return Math.round(clamped * 100) / 100;
 };
 
+const SCROLLBAR_DARK = {
+  scrollbarSliderBackground: "rgba(180, 180, 180, 0.34)",
+  scrollbarSliderHoverBackground: "rgba(200, 200, 200, 0.55)",
+  scrollbarSliderActiveBackground: "rgba(216, 216, 216, 0.68)",
+};
+
+const SCROLLBAR_LIGHT = {
+  scrollbarSliderBackground: "rgba(96, 96, 96, 0.3)",
+  scrollbarSliderHoverBackground: "rgba(96, 96, 96, 0.48)",
+  scrollbarSliderActiveBackground: "rgba(96, 96, 96, 0.64)",
+};
+
+const buildThemeSurface = (palette, isLight) => ({
+  ...palette,
+  selectionForeground: undefined,
+  ...(isLight ? SCROLLBAR_LIGHT : SCROLLBAR_DARK),
+  overviewRulerBorder: "transparent",
+});
+
 /**
- * Build an xterm.js theme object for the given mode.
- * Colors match the historical WebTerminal palette (before d52c38e surface redesign).
- * @param {"light"|"dark"} mode
+ * Build an xterm.js theme object for the given app mode ("light"|"dark") and
+ * optional curated terminal theme preset ID. Unknown preset IDs fall back to
+ * `default-auto`.
+ * @param {"light"|"dark"|string} [mode]
+ * @param {string} [presetId]
  * @returns {Record<string, string|undefined>}
  */
-export const getTerminalTheme = (mode = "dark") => {
-  const isLight = mode === "light";
+export const getTerminalTheme = (
+  mode = "dark",
+  presetId = DEFAULT_TERMINAL_THEME,
+) => {
+  let effectiveMode = mode === "light" ? "light" : "dark";
+  let effectivePreset = presetId;
 
-  return {
-    // 现代化背景色 - 深色更深，浅色更柔和
-    background: isLight ? "#f6f8fa" : "#1e1e1e",
-    // 文本颜色 - 提高对比度
-    foreground: isLight ? "#24292f" : "#e6edf3",
-    // 光标颜色 - 更醒目
-    cursor: isLight ? "#0969da" : "#58a6ff",
-    cursorAccent: isLight ? "#f3f4f6" : "#0d1117",
-    // 选择高亮 - 优化可见度，日间和夜间模式下都有足够的对比度
-    selectionBackground: isLight
-      ? "rgba(79, 126, 255, 0.43)"
-      : "rgba(212, 253, 62, 0.49)",
-    selectionForeground: undefined,
-    // xterm generates its own slider rules on creation and every theme update.
-    // Match scrollbar.css explicitly instead of deriving them from foreground.
-    scrollbarSliderBackground: isLight
-      ? "rgba(96, 96, 96, 0.3)"
-      : "rgba(180, 180, 180, 0.34)",
-    scrollbarSliderHoverBackground: isLight
-      ? "rgba(96, 96, 96, 0.48)"
-      : "rgba(200, 200, 200, 0.55)",
-    scrollbarSliderActiveBackground: isLight
-      ? "rgba(96, 96, 96, 0.64)"
-      : "rgba(216, 216, 216, 0.68)",
-    // The ruler shares the scrollbar track; a permanent edge looks like a gap
-    // between the terminal and the sidebar even while the scrollbar is hidden.
-    overviewRulerBorder: "transparent",
-    // ANSI颜色 - 现代化配色方案（参考GitHub/VSCode主题）
-    black: isLight ? "#24292f" : "#484f58",
-    red: isLight ? "#cf222e" : "#ff7b72",
-    green: isLight ? "#116329" : "#3fb950",
-    yellow: isLight ? "#9a6700" : "#d29922",
-    blue: isLight ? "#0969da" : "#58a6ff",
-    magenta: isLight ? "#8250df" : "#bc8cff",
-    cyan: isLight ? "#1b7c83" : "#39c5cf",
-    white: isLight ? "#6e7781" : "#b1bac4",
-    // 亮色版本 - 更高饱和度
-    brightBlack: isLight ? "#57606a" : "#6e7681",
-    brightRed: isLight ? "#d1242f" : "#ffa198",
-    brightGreen: isLight ? "#1a7f37" : "#56d364",
-    brightYellow: isLight ? "#bf8700" : "#e3b341",
-    brightBlue: isLight ? "#218bff" : "#79c0ff",
-    brightMagenta: isLight ? "#a371f7" : "#d2a8ff",
-    brightCyan: isLight ? "#3192aa" : "#56d4dd",
-    brightWhite: isLight ? "#8c959f" : "#f0f6fc",
-  };
+  // Allow single-arg calls like getTerminalTheme("dracula") while preserving
+  // historical getTerminalTheme("light" | "dark") calls.
+  if (
+    presetId === DEFAULT_TERMINAL_THEME &&
+    typeof mode === "string" &&
+    mode !== "light" &&
+    mode !== "dark"
+  ) {
+    effectivePreset = mode;
+    effectiveMode = "dark";
+  }
+
+  const normalizedId = normalizeTerminalThemeId(effectivePreset);
+  if (normalizedId === DEFAULT_TERMINAL_THEME) {
+    const isLight = effectiveMode === "light";
+    return buildThemeSurface(
+      isLight ? DEFAULT_LIGHT_PALETTE : DEFAULT_DARK_PALETTE,
+      isLight,
+    );
+  }
+
+  const preset = FIXED_PRESET_PALETTES[normalizedId];
+  if (!preset) {
+    const isLight = effectiveMode === "light";
+    return buildThemeSurface(
+      isLight ? DEFAULT_LIGHT_PALETTE : DEFAULT_DARK_PALETTE,
+      isLight,
+    );
+  }
+
+  return buildThemeSurface(preset.palette, preset.isLight);
+};
+
+export {
+  DEFAULT_TERMINAL_THEME,
+  TERMINAL_THEME_OPTIONS,
+  normalizeTerminalThemeId,
+  TERMINAL_THEME_PRESETS,
+  getTerminalThemePreset,
 };

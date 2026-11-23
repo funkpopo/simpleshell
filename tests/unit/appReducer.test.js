@@ -374,4 +374,115 @@ describe("AI 与连接状态", () => {
     state = appReducer(state, actions.setSettingsDialogOpen(true));
     expect(state.settingsDialogOpen).toBe(true);
   });
+
+  it("splitPane 与 focusAdjacentPane 支持 4 窗格上限和几何导航", () => {
+    const baseTab = { id: "tab-1", type: "ssh", label: "prod-1" };
+    let state = appReducer(initialState, actions.setTabs([baseTab]));
+
+    state = appReducer(
+      state,
+      actions.splitPane("tab-1", "pane-2", "right", {
+        paneType: "ssh",
+        label: "prod-2",
+        config: { host: "10.0.0.2" },
+      }),
+    );
+    expect(state.splitLayouts["tab-1"].panes).toEqual(["tab-1", "pane-2"]);
+    expect(state.splitLayouts["tab-1"].focusedPaneId).toBe("pane-2");
+    expect(state.terminalInstances["pane-2"]).toBe(true);
+    expect(state.terminalInstances["pane-2-config"].host).toBe("10.0.0.2");
+
+    state = appReducer(state, actions.focusAdjacentPane("tab-1", "left"));
+    expect(state.splitLayouts["tab-1"].focusedPaneId).toBe("tab-1");
+
+    state = appReducer(state, actions.splitPane("tab-1", "pane-3", "bottom"));
+    state = appReducer(state, actions.splitPane("tab-1", "pane-4", "right"));
+    expect(state.splitLayouts["tab-1"].panes).toHaveLength(4);
+
+    const capped = appReducer(
+      state,
+      actions.splitPane("tab-1", "pane-5", "right"),
+    );
+    expect(capped).toBe(state);
+  });
+
+  it("renameTab 设置与清除自定义标题并保留 originalLabel", () => {
+    const baseTab = { id: "tab-1", type: "ssh", label: "web-01" };
+    let state = appReducer(initialState, actions.setTabs([baseTab]));
+
+    state = appReducer(
+      state,
+      actions.renameTab("tab-1", "  Bastion Primary  "),
+    );
+    expect(state.tabs[0].label).toBe("Bastion Primary");
+    expect(state.tabs[0].customTitle).toBe("Bastion Primary");
+    expect(state.tabs[0].originalLabel).toBe("web-01");
+
+    state = appReducer(state, actions.renameTab("tab-1", "   "));
+    expect(state.tabs[0].label).toBe("web-01");
+    expect(state.tabs[0].customTitle).toBeUndefined();
+  });
+
+  it("closeOtherTabs 与 closeTabsToRight 保留 welcome 并正确清理资源", () => {
+    const tabs = [
+      { id: "welcome", type: "welcome", label: "Welcome" },
+      { id: "t1", type: "ssh", label: "S1" },
+      { id: "t2", type: "ssh", label: "S2" },
+      { id: "t3", type: "ssh", label: "S3" },
+    ];
+    let state = {
+      ...initialState,
+      tabs,
+      currentTab: 3,
+      terminalInstances: {
+        t1: true,
+        t2: true,
+        t3: true,
+      },
+      fileManagerOpenByTabId: { t1: true, t2: true, t3: true },
+    };
+
+    const afterRight = appReducer(state, actions.closeTabsToRight("t1"));
+    expect(afterRight.tabs.map((t) => t.id)).toEqual(["welcome", "t1"]);
+    expect(afterRight.currentTab).toBe(1);
+    expect(afterRight.terminalInstances.t2).toBeUndefined();
+    expect(afterRight.terminalInstances.t3).toBeUndefined();
+
+    const afterOthers = appReducer(state, actions.closeOtherTabs("t2"));
+    expect(afterOthers.tabs.map((t) => t.id)).toEqual(["welcome", "t2"]);
+    expect(afterOthers.currentTab).toBe(1);
+    expect(afterOthers.terminalInstances.t1).toBeUndefined();
+    expect(afterOthers.terminalInstances.t2).toBe(true);
+  });
+
+  it("closedTabsStack 上限 20 与 popClosedTab / restoreWorkspace", () => {
+    let state = initialState;
+    for (let i = 1; i <= 25; i += 1) {
+      state = appReducer(
+        state,
+        actions.pushClosedTab({ label: `Tab ${i}`, host: `h${i}` }),
+      );
+    }
+    expect(state.closedTabsStack).toHaveLength(20);
+    expect(state.closedTabsStack[0].label).toBe("Tab 25");
+
+    state = appReducer(state, actions.popClosedTab());
+    expect(state.closedTabsStack).toHaveLength(19);
+    expect(state.closedTabsStack[0].label).toBe("Tab 24");
+
+    const restored = appReducer(
+      state,
+      actions.restoreWorkspace({
+        tabs: [
+          { id: "welcome", type: "welcome", label: "Welcome" },
+          { id: "r1", type: "ssh", label: "Restored 1" },
+        ],
+        currentTab: 1,
+        terminalInstances: { r1: true },
+      }),
+    );
+    expect(restored.tabs.map((t) => t.id)).toEqual(["welcome", "r1"]);
+    expect(restored.currentTab).toBe(1);
+    expect(restored.terminalInstances.r1).toBe(true);
+  });
 });

@@ -1,9 +1,22 @@
 import { aiClassName } from "./lib/aiClassName.js";
-import React, { useState, useEffect, useRef, memo, useTransition } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  memo,
+  useTransition,
+} from "react";
+import { useTranslation } from "react-i18next";
 import { createFloatingDialog } from "../../shared/ui/styledDialogs.jsx";
 import { DialogContent, Alert } from "@mui/material";
 import AISettings from "./AISettings";
 import { createAnchoredTransition } from "../../shared/lib/launchAnimation.js";
+import {
+  readTerminalContext,
+  subscribeTerminalContext,
+  consumeTerminalContextAttachRequest,
+} from "../../shared/state/workingDirectoryStore.js";
 import {
   DEFAULT_HEIGHT,
   DEFAULT_WIDTH,
@@ -57,14 +70,56 @@ const AIChatWindow = ({
   onFocus,
   anchorEl,
 }) => {
+  const { t } = useTranslation();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const [showThinking, setShowThinking] = useState(true);
   const [expandedThinking, setExpandedThinking] = useState({});
+  const [attachTerminalContext, setAttachTerminalContext] = useState(() =>
+    Boolean(connectionInfo),
+  );
+  const [terminalContext, setTerminalContext] = useState(() =>
+    connectionInfo ? readTerminalContext(sessionKey) : null,
+  );
   const inputRef = useRef(null);
   const dialogRef = useRef(null);
+
+  const refreshTerminalContext = useCallback(() => {
+    if (!connectionInfo) {
+      setTerminalContext(null);
+      return null;
+    }
+    const snapshot = readTerminalContext(sessionKey);
+    setTerminalContext(snapshot);
+    return snapshot;
+  }, [connectionInfo, sessionKey]);
+
+  useEffect(() => {
+    if (!connectionInfo) {
+      setAttachTerminalContext(false);
+      setTerminalContext(null);
+      return undefined;
+    }
+    const syncContext = () => {
+      if (consumeTerminalContextAttachRequest(sessionKey)) {
+        setAttachTerminalContext(true);
+      }
+      setTerminalContext(readTerminalContext(sessionKey));
+    };
+    syncContext();
+    return subscribeTerminalContext(sessionKey, syncContext);
+  }, [connectionInfo, sessionKey]);
+
+  useEffect(() => {
+    if (windowState === "visible" && connectionInfo) {
+      if (consumeTerminalContextAttachRequest(sessionKey)) {
+        setAttachTerminalContext(true);
+      }
+      refreshTerminalContext();
+    }
+  }, [connectionInfo, refreshTerminalContext, sessionKey, windowState]);
 
   // 副作用顺序与拆分前一致：滚动 → 视口钳制 → 加载设置 → 聚焦 → 预设输入 → 卸载清理。
   const {
@@ -106,17 +161,31 @@ const AIChatWindow = ({
   useEffect(() => {
     if (presetInput && windowState === "visible") {
       setInput(presetInput);
+      if (connectionInfo) {
+        if (consumeTerminalContextAttachRequest(sessionKey)) {
+          setAttachTerminalContext(true);
+        }
+        refreshTerminalContext();
+      }
       onInputPresetUsed();
       if (inputRef.current) {
         inputRef.current.focus();
       }
     }
-  }, [presetInput, windowState, onInputPresetUsed]);
+  }, [
+    connectionInfo,
+    onInputPresetUsed,
+    presetInput,
+    refreshTerminalContext,
+    sessionKey,
+    windowState,
+  ]);
 
   const {
     abortController,
     cancelActiveRequest,
     handleSendMessage,
+    handleSendQuickPrompt,
     handleEditMessage,
     handleRetryMessage,
     handleAbortRequest,
@@ -124,6 +193,8 @@ const AIChatWindow = ({
   } = useChatRequest({
     sessionKey,
     connectionInfo,
+    attachTerminalContext,
+    getTerminalContext: refreshTerminalContext,
     currentApi,
     messages,
     setMessages,
@@ -134,6 +205,45 @@ const AIChatWindow = ({
     startTransition,
     inputRef,
   });
+
+  const handleToggleTerminalContext = useCallback(() => {
+    if (!connectionInfo) {
+      return;
+    }
+    setAttachTerminalContext((prev) => {
+      const next = !prev;
+      if (next) {
+        refreshTerminalContext();
+      }
+      return next;
+    });
+  }, [connectionInfo, refreshTerminalContext]);
+
+  const handleQuickAction = useCallback(
+    async (action) => {
+      if (!connectionInfo || isPending || abortController) {
+        return;
+      }
+      setAttachTerminalContext(true);
+      const freshContext = refreshTerminalContext();
+      const prompt =
+        action === "suggestCommand"
+          ? t("ai.quickActions.suggestCommandPrompt")
+          : t("ai.quickActions.explainOutputPrompt");
+      await handleSendQuickPrompt(prompt, {
+        attachTerminalContext: true,
+        terminalContext: freshContext,
+      });
+    },
+    [
+      abortController,
+      connectionInfo,
+      handleSendQuickPrompt,
+      isPending,
+      refreshTerminalContext,
+      t,
+    ],
+  );
 
   // 处理关闭窗口（清空对话内容并删除记忆文件）
   const handleClose = async () => {
@@ -176,7 +286,10 @@ const AIChatWindow = ({
       customheight={windowHeight}
       customzindex={zIndex}
       ref={dialogRef}
-      onMouseDown={onFocus}
+      onMouseDown={() => {
+        refreshTerminalContext();
+        onFocus?.();
+      }}
       {...createAnchoredTransition(anchorEl, {
         paper: {
           className: aiClassName("ai-chat-paper"),
@@ -190,6 +303,7 @@ const AIChatWindow = ({
       <ChatHeader
         sessionKey={sessionKey}
         connectionInfo={connectionInfo}
+        terminalContext={attachTerminalContext ? terminalContext : null}
         zIndex={zIndex}
         currentApi={currentApi}
         availableApis={availableApis}
@@ -246,6 +360,11 @@ const AIChatWindow = ({
           currentApi={currentApi}
           showThinking={showThinking}
           setShowThinking={setShowThinking}
+          hasSessionContext={Boolean(connectionInfo)}
+          attachTerminalContext={attachTerminalContext}
+          terminalContext={terminalContext}
+          onToggleTerminalContext={handleToggleTerminalContext}
+          onQuickAction={handleQuickAction}
           onSend={handleSendMessage}
           onAbort={handleAbortRequest}
         />

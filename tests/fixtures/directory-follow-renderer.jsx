@@ -122,7 +122,9 @@ export async function runDirectoryFollowChecks({
     initialSettings = null;
     await until(() => loaded("/srv/a b"), "OSC directory was not followed");
     assert(
-      !container.querySelector("button[aria-pressed]"),
+      !container.querySelector(
+        'button[aria-pressed]:not([data-testid="file-manager-toggle-hidden"])',
+      ),
       "file sidebar still owns a follow toggle",
     );
     await setPreference(false);

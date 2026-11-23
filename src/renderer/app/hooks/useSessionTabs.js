@@ -2,17 +2,27 @@ import { useCallback, useRef } from "react";
 import { useAppStore, useAppDispatch } from "../state/AppContext.jsx";
 import { actions } from "../state/appReducer.js";
 import { sendCommandToActiveSession } from "../../features/terminal/model/activeSessionActions.js";
-import { getParentTabId } from "../../features/terminal/model/paneLayout.js";
+import {
+  MAX_PANES,
+  createPaneId,
+  getParentTabId,
+} from "../../features/terminal/model/paneLayout.js";
 import { useTranslation } from "react-i18next";
+import { useNotification } from "../../shared/notifications/NotificationContext.jsx";
 import {
   disposeTerminalSession,
   getTerminalSessionDiagnostics,
   processCache as sessionProcessCache,
 } from "../../features/terminal/runtime/terminalSessionStore.js";
 import {
+  findConnectionById,
   notifyTerminalResize,
   resolveRecentConnection,
 } from "../appShellUtils.js";
+import {
+  buildTabSnapshot,
+  resolveWorkspaceRestorePlan,
+} from "../lib/workspaceSnapshot.js";
 
 export default function useSessionTabs({
   tabs,
@@ -28,7 +38,6 @@ export default function useSessionTabs({
   markSessionConnecting,
   connections,
   currentPanelTab,
-  splitLayouts,
   currentTab,
   sessionActionStateRef,
   sidebarRef,
@@ -36,6 +45,7 @@ export default function useSessionTabs({
   const dispatch = useAppDispatch();
   const appStore = useAppStore();
   const { t } = useTranslation();
+  const { showWarning } = useNotification();
   const handleTabChange = useCallback(
     (event, newValue) => {
       dispatch(actions.setCurrentTab(newValue));
@@ -140,8 +150,10 @@ export default function useSessionTabs({
   ]);
   const handleCreateSSHConnection = useCallback(
     (connection) => {
+      const currentState = appStore.getState();
+      const latestTabs = currentState.tabs || tabs;
       // 创建唯一的标签页ID
-      const terminalId = `${connection.protocol || "ssh"}-${Date.now()}`;
+      const terminalId = `${connection.protocol || "ssh"}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
       // 创建标签名（使用连接配置中的名称）
       const protocol =
@@ -159,7 +171,7 @@ export default function useSessionTabs({
         id: terminalId,
         label: tabName,
         type: connection.protocol || "ssh",
-        connectionId: connection.id, // 存储连接ID以便后续使用
+        connectionId: connection.connectionId || connection.id, // 存储连接ID以便后续使用
       };
 
       // 为连接添加tabId以便在main进程中识别
@@ -171,7 +183,7 @@ export default function useSessionTabs({
       // 为新标签页创建终端实例缓存，并包含连接配置
       dispatch(
         actions.setTerminalInstances({
-          ...appStore.getState().terminalInstances,
+          ...currentState.terminalInstances,
           [terminalId]: true,
           [`${terminalId}-config`]: connectionConfigWithTabId,
           // 将完整的连接配置存储在缓存中
@@ -180,17 +192,73 @@ export default function useSessionTabs({
       );
 
       // 添加标签并立即切换到新标签（使用当前tabs长度作为新索引）
-      const newTabs = [...tabs, newTab];
+      const newTabs = [...latestTabs, newTab];
       dispatch(actions.setTabs(newTabs));
       dispatch(actions.setCurrentTab(newTabs.length - 1));
       if ((connection.protocol || "ssh") === "ssh") {
         markSessionConnecting(terminalId, connection);
       }
+      return newTab;
     },
-    [tabs, appStore, dispatch],
+    [tabs, appStore, dispatch, markSessionConnecting],
+  );
+  const handleOpenLocalTerminalTab = useCallback(
+    (terminalConfig = { useDefaultShell: true }) => {
+      const currentState = appStore.getState();
+      const latestTabs = currentState.tabs || tabs;
+      const terminalId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const baseLabel =
+        terminalConfig?.name ||
+        terminalConfig?.executable ||
+        t("sidebar.localTerminal");
+      const sameLabelCount = latestTabs.filter(
+        (tab) => tab.type === "local" && tab.label?.startsWith(baseLabel),
+      ).length;
+      const tabLabel =
+        sameLabelCount > 0 ? `${baseLabel} ${sameLabelCount + 1}` : baseLabel;
+      const completeConfig = {
+        useDefaultShell: terminalConfig?.useDefaultShell === true,
+        name: tabLabel,
+        type: terminalConfig?.type || "local",
+        executablePath: terminalConfig?.executablePath,
+        executable: terminalConfig?.executable,
+        command: terminalConfig?.command,
+        args: terminalConfig?.args || terminalConfig?.launchArgs || [],
+        launchArgs: terminalConfig?.launchArgs || terminalConfig?.args || [],
+        cwd: terminalConfig?.cwd,
+        env: terminalConfig?.env,
+        distribution: terminalConfig?.distribution,
+        availableDistributions: terminalConfig?.availableDistributions || [],
+        tabId: terminalId,
+      };
+      const newTab = {
+        id: terminalId,
+        label: tabLabel,
+        type: "local",
+        localConfig: completeConfig,
+      };
+      dispatch(
+        actions.setTerminalInstances({
+          ...currentState.terminalInstances,
+          [terminalId]: true,
+          [`${terminalId}-config`]: completeConfig,
+          [`${terminalId}-processId`]: null,
+        }),
+      );
+      const newTabs = [...latestTabs, newTab];
+      dispatch(actions.setTabs(newTabs));
+      dispatch(actions.setCurrentTab(newTabs.length - 1));
+      notifyTerminalResize();
+      return newTab;
+    },
+    [appStore, dispatch, t, tabs],
   );
   const handleOpenConnection = useCallback(
     (connection) => {
+      if (connection?.isTransient) {
+        handleCreateSSHConnection(connection);
+        return;
+      }
       const resolvedConnection = resolveRecentConnection(
         connection,
         connections,
@@ -206,84 +274,25 @@ export default function useSessionTabs({
     // 不能关闭欢迎页
     if (tabs[index].id === "welcome") return;
     const tabToRemove = tabs[index];
-
-    // 关闭SSH/Telnet连接 - 在清理缓存之前先断开连接
-    const processId = sessionProcessCache[tabToRemove.id];
-    if (
-      processId &&
-      (tabToRemove.type === "ssh" ||
-        tabToRemove.type === "telnet" ||
-        tabToRemove.type === "serial" ||
-        tabToRemove.type === "mosh" ||
-        tabToRemove.type === "local")
-    ) {
-      window.terminalAPI.killProcess(processId).catch((err) => {
-        console.warn(`关闭连接时出错: ${err.message}`);
-      });
-    } else if (tabToRemove.type === "local") {
-      window.terminalAPI.closeLocalTerminal?.(tabToRemove.id).catch((err) => {
-        console.warn(`关闭本地终端时出错: ${err.message}`);
-      });
+    const currentState = appStore.getState();
+    const closedEntry = buildTabSnapshot(tabToRemove, currentState);
+    if (closedEntry) {
+      dispatch(actions.pushClosedTab(closedEntry));
     }
 
-    // Release renderer-owned xterm/addon/listener/mailbox caches immediately.
-    // The WebTerminal unmount cleanup calls the same idempotent path as a
-    // safety net, but doing it here prevents output from reaching a closed tab
-    // while React is committing the state update.
-    const diagnosticsBeforeClose =
-      process.env.NODE_ENV === "development"
-        ? getTerminalSessionDiagnostics()
-        : null;
-    disposeTerminalSession(tabToRemove.id);
-    if (process.env.NODE_ENV === "development") {
-      const diagnosticsAfterClose = getTerminalSessionDiagnostics();
-      const hadCachedTerminal = diagnosticsBeforeClose.terminalIds.includes(
-        tabToRemove.id,
-      );
-      console.assert(
-        !diagnosticsAfterClose.terminalIds.includes(tabToRemove.id) &&
-          (!hadCachedTerminal ||
-            diagnosticsAfterClose.terminalCount <
-              diagnosticsBeforeClose.terminalCount),
-        `[App] terminal cache count did not decrease after closing tabId=${tabToRemove.id}`,
-        diagnosticsAfterClose,
-      );
-    }
+    disposeClosedTabResources(
+      tabToRemove,
+      {
+        appStore,
+        dispatch,
+        currentPanelTabId: currentPanelTab?.id,
+        sidebarRef,
+        clearReconnectStatus,
+        clearReconnectAction,
+      },
+      { forget: true },
+    );
 
-    sidebarRef.current?.closeFileManagerForTab(tabToRemove.id);
-    if (
-      appStore.getState().resourceMonitorOpen &&
-      currentPanelTab?.id === tabToRemove.id
-    )
-      dispatch(actions.setResourceMonitorOpen(false));
-    // 分屏窗格：整组窗格随 tab 一并关闭（逐个结束会话并清理实例缓存）。
-    // 被拖入的窗格（adoptedFromTab）的 sessionKey 是原 tabId，同理清理。
-    const closingLayout = splitLayouts[tabToRemove.id];
-    if (closingLayout?.panes) {
-      closingLayout.panes.forEach((paneId) => {
-        if (paneId === tabToRemove.id) return;
-        const paneProcessId = sessionProcessCache[paneId];
-        if (paneProcessId && window.terminalAPI?.killProcess) {
-          window.terminalAPI.killProcess(paneProcessId).catch((err) => {
-            console.warn(`关闭窗格会话时出错: ${err.message}`);
-          });
-        }
-        disposeTerminalSession(paneId);
-        // 同步分组中的窗格成员一并移除
-        dispatch(actions.removeTabFromSyncGroups(paneId));
-      });
-      dispatch(actions.resetTabLayout(tabToRemove.id));
-    }
-    dispatch(actions.forgetSessions(closingLayout?.panes ?? [tabToRemove.id]));
-    // 注：进程缓存（terminalSessionStore.processCache）已由上方
-    // disposeTerminalSession(tabToRemove.id) 统一清理，无需在此重复处理。
-
-    clearReconnectStatus(tabToRemove.id);
-    clearReconnectAction(tabToRemove.id);
-
-    // 同步输入分组：将该标签从所属分组中移除；若为组内最后一个成员，
-    // 分组自动回收（由 reducer 完成）
-    dispatch(actions.removeTabFromSyncGroups(tabToRemove.id));
     const newTabs = tabs.filter((_, i) => i !== index);
     dispatch(actions.setTabs(newTabs));
 
@@ -322,6 +331,250 @@ export default function useSessionTabs({
       handleCloseTabRef.current(index);
     }
   }, []);
+  const splitPane = useCallback(
+    (tabId, paneId, direction = "right", mode = "duplicate") => {
+      const currentState = appStore.getState();
+      const targetTabId =
+        tabId ||
+        currentState.tabs[currentState.currentTab]?.id ||
+        currentPanelTab?.id;
+      if (!targetTabId || targetTabId === "welcome") return false;
+      const layout = currentState.splitLayouts[targetTabId] || null;
+      const currentPanes = layout?.panes || [targetTabId];
+      if (currentPanes.length >= MAX_PANES) {
+        showWarning(t("terminal.pane.maxReached"));
+        return false;
+      }
+      const sourceSessionKey = paneId || layout?.focusedPaneId || targetTabId;
+      const newPaneId = createPaneId(targetTabId, currentPanes);
+      const sourceTab =
+        currentState.panes[sourceSessionKey]?.tab ||
+        currentState.tabs.find((item) => item.id === sourceSessionKey);
+      const sourceConfig =
+        currentState.terminalInstances[`${sourceSessionKey}-config`] || null;
+
+      let paneType = "local";
+      let label = t("sidebar.localTerminal");
+      let config = {
+        useDefaultShell: true,
+        name: label,
+        type: "local",
+        tabId: newPaneId,
+      };
+
+      if (mode !== "local" && sourceTab?.type !== "local" && sourceConfig) {
+        paneType = sourceTab?.type || sourceConfig.protocol || "ssh";
+        label =
+          sourceTab?.originalLabel ||
+          sourceTab?.label ||
+          sourceConfig.name ||
+          sourceConfig.host ||
+          newPaneId;
+        config = {
+          ...sourceConfig,
+          tabId: newPaneId,
+          splitReconnect: false,
+        };
+      } else if (mode !== "local" && sourceTab?.type === "local") {
+        paneType = "local";
+        label =
+          sourceTab?.originalLabel ||
+          sourceTab?.label ||
+          sourceConfig?.name ||
+          t("sidebar.localTerminal");
+        config = {
+          ...(sourceConfig ||
+            sourceTab.localConfig || { useDefaultShell: true }),
+          name: label,
+          type: sourceConfig?.type || "local",
+          tabId: newPaneId,
+        };
+      }
+
+      dispatch(
+        actions.splitPane(targetTabId, newPaneId, direction, {
+          paneType,
+          label,
+          tab: {
+            id: newPaneId,
+            type: paneType,
+            label,
+            ...(config.connectionId || config.id
+              ? { connectionId: config.connectionId || config.id }
+              : {}),
+            ...(paneType === "local" ? { localConfig: config } : {}),
+          },
+          config,
+        }),
+      );
+      if (paneType === "ssh") {
+        markSessionConnecting(newPaneId, config);
+      }
+      notifyTerminalResize();
+      return true;
+    },
+    [
+      appStore,
+      currentPanelTab?.id,
+      dispatch,
+      markSessionConnecting,
+      showWarning,
+      t,
+    ],
+  );
+  const focusAdjacentPane = useCallback(
+    (tabId, direction) => {
+      const currentState = appStore.getState();
+      const targetTabId =
+        tabId || currentState.tabs[currentState.currentTab]?.id;
+      if (!targetTabId || targetTabId === "welcome") return false;
+      if (!currentState.splitLayouts[targetTabId]) return false;
+      dispatch(actions.focusAdjacentPane(targetTabId, direction));
+      return true;
+    },
+    [appStore, dispatch],
+  );
+  const duplicateTab = useCallback(
+    (tabId) => {
+      const currentState = appStore.getState();
+      const targetTabId =
+        tabId || currentState.tabs[currentState.currentTab]?.id;
+      const sourceTab = currentState.tabs.find(
+        (item) => item.id === targetTabId,
+      );
+      if (!sourceTab || sourceTab.id === "welcome") return false;
+      const sourceConfig =
+        currentState.terminalInstances[`${sourceTab.id}-config`] || null;
+      if (sourceTab.type === "local") {
+        handleOpenLocalTerminalTab({
+          ...(sourceConfig ||
+            sourceTab.localConfig || { useDefaultShell: true }),
+          name: sourceTab.originalLabel || sourceTab.label,
+        });
+        return true;
+      }
+      if (sourceConfig) {
+        handleCreateSSHConnection({ ...sourceConfig, splitReconnect: false });
+        return true;
+      }
+      if (sourceTab.connectionId) {
+        const resolved = findConnectionById(
+          currentState.connections,
+          sourceTab.connectionId,
+        );
+        if (resolved) {
+          handleCreateSSHConnection(resolved);
+          return true;
+        }
+      }
+      return false;
+    },
+    [appStore, handleCreateSSHConnection, handleOpenLocalTerminalTab],
+  );
+  const renameTab = useCallback(
+    (tabId, customTitle) => {
+      if (!tabId || tabId === "welcome") return;
+      dispatch(actions.renameTab(tabId, customTitle));
+    },
+    [dispatch],
+  );
+  const teardownTabResources = useCallback(
+    (tabToRemove, options) =>
+      disposeClosedTabResources(
+        tabToRemove,
+        {
+          appStore,
+          dispatch,
+          currentPanelTabId: currentPanelTab?.id,
+          sidebarRef,
+          clearReconnectStatus,
+          clearReconnectAction,
+        },
+        options,
+      ),
+    [
+      appStore,
+      clearReconnectAction,
+      clearReconnectStatus,
+      currentPanelTab?.id,
+      dispatch,
+      sidebarRef,
+    ],
+  );
+  const closeOtherTabs = useCallback(
+    (tabId) => {
+      const currentState = appStore.getState();
+      const targetTabId =
+        tabId || currentState.tabs[currentState.currentTab]?.id;
+      if (!targetTabId) return;
+      const closingTabs = currentState.tabs.filter(
+        (item) => item.id !== "welcome" && item.id !== targetTabId,
+      );
+      if (closingTabs.length === 0) return;
+      closingTabs.forEach((tab) =>
+        teardownTabResources(tab, { forget: false }),
+      );
+      dispatch(actions.closeOtherTabs(targetTabId));
+      notifyTerminalResize();
+    },
+    [appStore, dispatch, teardownTabResources],
+  );
+  const closeTabsToRight = useCallback(
+    (tabId) => {
+      const currentState = appStore.getState();
+      const targetTabId =
+        tabId || currentState.tabs[currentState.currentTab]?.id;
+      const targetIndex = currentState.tabs.findIndex(
+        (item) => item.id === targetTabId,
+      );
+      if (targetIndex < 0) return;
+      const closingTabs = currentState.tabs
+        .slice(targetIndex + 1)
+        .filter((item) => item.id !== "welcome");
+      if (closingTabs.length === 0) return;
+      closingTabs.forEach((tab) =>
+        teardownTabResources(tab, { forget: false }),
+      );
+      dispatch(actions.closeTabsToRight(targetTabId));
+      notifyTerminalResize();
+    },
+    [appStore, dispatch, teardownTabResources],
+  );
+  const reopenLastClosedTab = useCallback(() => {
+    const currentState = appStore.getState();
+    const stack = currentState.closedTabsStack || [];
+    if (stack.length === 0) return false;
+    const entry = stack[0];
+    dispatch(actions.popClosedTab());
+
+    const plan = resolveWorkspaceRestorePlan(
+      { version: 1, activeTabIndex: 1, tabs: [entry] },
+      currentState.connections,
+      {
+        welcomeTab: currentState.tabs[0],
+        idPrefix: `reopen-${Date.now()}`,
+      },
+    );
+    if (!plan || plan.tabs.length <= 1) {
+      return false;
+    }
+    const reopenedTabs = plan.tabs.slice(1);
+    const nextTabs = [...currentState.tabs, ...reopenedTabs];
+    dispatch(
+      actions.restoreWorkspace({
+        tabs: nextTabs,
+        currentTab: currentState.tabs.length,
+        splitLayouts: plan.splitLayouts,
+        panes: plan.panes,
+        terminalInstances: plan.terminalInstances,
+      }),
+    );
+    plan.sshSessions.forEach(({ tabId: sessionId, config }) => {
+      markSessionConnecting(sessionId, config);
+    });
+    notifyTerminalResize();
+    return true;
+  }, [appStore, dispatch, markSessionConnecting]);
   const handleSendCommand = useCallback(
     (command, options = {}) => {
       const result = sendCommandToActiveSession(
@@ -350,8 +603,105 @@ export default function useSessionTabs({
     handleCloseConnection,
     handleUnsplitTab,
     handleOpenConnection,
+    handleOpenLocalTerminalTab,
     handleSendCommand,
     handleCloseTabRef,
     refreshTerminalSession,
+    splitPane,
+    focusAdjacentPane,
+    duplicateTab,
+    renameTab,
+    closeOtherTabs,
+    closeTabsToRight,
+    reopenLastClosedTab,
   };
+}
+
+function disposeClosedTabResources(
+  tabToRemove,
+  {
+    appStore,
+    dispatch,
+    currentPanelTabId,
+    sidebarRef,
+    clearReconnectStatus,
+    clearReconnectAction,
+  },
+  { forget = true } = {},
+) {
+  if (!tabToRemove || tabToRemove.id === "welcome") return;
+  const currentState = appStore.getState();
+
+  const processId = sessionProcessCache[tabToRemove.id];
+  if (
+    processId &&
+    (tabToRemove.type === "ssh" ||
+      tabToRemove.type === "telnet" ||
+      tabToRemove.type === "serial" ||
+      tabToRemove.type === "mosh" ||
+      tabToRemove.type === "local")
+  ) {
+    window.terminalAPI?.killProcess?.(processId).catch((err) => {
+      console.warn(`关闭连接时出错: ${err.message}`);
+    });
+  } else if (tabToRemove.type === "local") {
+    window.terminalAPI?.closeLocalTerminal?.(tabToRemove.id).catch((err) => {
+      console.warn(`关闭本地终端时出错: ${err.message}`);
+    });
+  }
+
+  const diagnosticsBeforeClose =
+    process.env.NODE_ENV === "development"
+      ? getTerminalSessionDiagnostics()
+      : null;
+  disposeTerminalSession(tabToRemove.id);
+  if (process.env.NODE_ENV === "development" && diagnosticsBeforeClose) {
+    const diagnosticsAfterClose = getTerminalSessionDiagnostics();
+    const hadCachedTerminal = diagnosticsBeforeClose.terminalIds.includes(
+      tabToRemove.id,
+    );
+    console.assert(
+      !diagnosticsAfterClose.terminalIds.includes(tabToRemove.id) &&
+        (!hadCachedTerminal ||
+          diagnosticsAfterClose.terminalCount <
+            diagnosticsBeforeClose.terminalCount),
+      `[App] terminal cache count did not decrease after closing tabId=${tabToRemove.id}`,
+      diagnosticsAfterClose,
+    );
+  }
+
+  sidebarRef.current?.closeFileManagerForTab(tabToRemove.id);
+  if (
+    currentState.resourceMonitorOpen &&
+    currentPanelTabId === tabToRemove.id
+  ) {
+    dispatch(actions.setResourceMonitorOpen(false));
+  }
+
+  const closingLayout = currentState.splitLayouts[tabToRemove.id];
+  if (closingLayout?.panes) {
+    closingLayout.panes.forEach((paneId) => {
+      if (paneId === tabToRemove.id) return;
+      const paneProcessId = sessionProcessCache[paneId];
+      if (paneProcessId && window.terminalAPI?.killProcess) {
+        window.terminalAPI.killProcess(paneProcessId).catch((err) => {
+          console.warn(`关闭窗格会话时出错: ${err.message}`);
+        });
+      }
+      disposeTerminalSession(paneId);
+      if (forget) {
+        dispatch(actions.removeTabFromSyncGroups(paneId));
+      }
+    });
+    if (forget) {
+      dispatch(actions.resetTabLayout(tabToRemove.id));
+    }
+  }
+  if (forget) {
+    dispatch(actions.forgetSessions(closingLayout?.panes ?? [tabToRemove.id]));
+    dispatch(actions.removeTabFromSyncGroups(tabToRemove.id));
+  }
+
+  clearReconnectStatus(tabToRemove.id);
+  clearReconnectAction(tabToRemove.id);
 }

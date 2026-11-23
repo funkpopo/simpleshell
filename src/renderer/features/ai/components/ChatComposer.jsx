@@ -6,15 +6,24 @@ import {
   Tooltip,
   FormControlLabel,
   Switch,
+  Chip,
 } from "@mui/material";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import StopIcon from "@mui/icons-material/Stop";
+import TerminalIcon from "@mui/icons-material/Terminal";
+import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
+import PlaylistPlayIcon from "@mui/icons-material/PlaylistPlay";
 import { useTranslation } from "react-i18next";
 import { aiClassName } from "../lib/aiClassName.js";
 import { isApiConfigReady } from "../lib/aiKeyUtils.js";
 
-// 底部输入区：多行输入（Enter 发送 / Shift+Enter 换行）、思考显示开关、
-// 发送 / 停止按钮。
+const formatShortCwd = (cwd) => {
+  if (typeof cwd !== "string" || !cwd) return "";
+  return cwd.length > 26 ? `...${cwd.slice(-23)}` : cwd;
+};
+
+// 底部输入区：终端上下文开关/快捷动作、多行输入（Enter 发送 / Shift+Enter 换行）、
+// 思考显示开关、发送 / 停止按钮。
 export default function ChatComposer({
   input,
   setInput,
@@ -24,13 +33,115 @@ export default function ChatComposer({
   currentApi,
   showThinking,
   setShowThinking,
+  hasSessionContext = false,
+  attachTerminalContext = false,
+  terminalContext = null,
+  onToggleTerminalContext = null,
+  onQuickAction = null,
   onSend,
   onAbort,
 }) {
   const { t } = useTranslation();
+  const requestBusy = Boolean(isPending || abortController);
+  const cwd = terminalContext?.cwd || "";
+  const lineCount = Number.isFinite(terminalContext?.lineCount)
+    ? terminalContext.lineCount
+    : 0;
+
+  const contextChipLabel = (() => {
+    if (!attachTerminalContext) {
+      return t("ai.terminalContext.chipDetached");
+    }
+    const shortCwd = formatShortCwd(cwd);
+    if (shortCwd && lineCount > 0) {
+      return t("ai.terminalContext.chipCwdLines", {
+        cwd: shortCwd,
+        count: lineCount,
+      });
+    }
+    if (shortCwd) {
+      return t("ai.terminalContext.chipCwdOnly", { cwd: shortCwd });
+    }
+    if (lineCount > 0) {
+      return t("ai.terminalContext.chipLinesOnly", { count: lineCount });
+    }
+    return t("ai.terminalContext.chipActive");
+  })();
+
+  const contextTooltip = (() => {
+    if (!attachTerminalContext) {
+      return t("ai.terminalContext.tooltipDisabled");
+    }
+    const details = [t("ai.terminalContext.tooltipEnabled")];
+    if (cwd) {
+      details.push(t("ai.terminalContext.tooltipCwd", { cwd }));
+    }
+    if (terminalContext?.lastCommand) {
+      details.push(
+        t("ai.terminalContext.tooltipLastCommand", {
+          command: terminalContext.lastCommand,
+        }),
+      );
+    }
+    if (lineCount > 0) {
+      details.push(t("ai.terminalContext.tooltipLines", { count: lineCount }));
+    }
+    return details.join(" · ");
+  })();
 
   return (
     <Box className={aiClassName("ai-chat-footer")}>
+      {hasSessionContext && (
+        <Box className={aiClassName("ai-chat-context-bar")}>
+          <Tooltip title={contextTooltip}>
+            <Chip
+              size="small"
+              clickable
+              icon={<TerminalIcon />}
+              label={contextChipLabel}
+              onClick={() => onToggleTerminalContext?.()}
+              onMouseDown={(event) => event.stopPropagation()}
+              aria-pressed={Boolean(attachTerminalContext)}
+              className={aiClassName(
+                `ai-context-chip ${
+                  attachTerminalContext ? "is-attached" : "is-detached"
+                }`,
+              )}
+              data-testid="ai-terminal-context-chip"
+            />
+          </Tooltip>
+          <Tooltip title={t("ai.quickActions.explainOutputTooltip")}>
+            <span>
+              <Chip
+                size="small"
+                clickable
+                disabled={requestBusy}
+                icon={<AutoFixHighIcon />}
+                label={t("ai.quickActions.explainOutput")}
+                onClick={() => onQuickAction?.("explainOutput")}
+                onMouseDown={(event) => event.stopPropagation()}
+                className={aiClassName("ai-quick-chip")}
+                data-testid="ai-quick-explain-chip"
+              />
+            </span>
+          </Tooltip>
+          <Tooltip title={t("ai.quickActions.suggestCommandTooltip")}>
+            <span>
+              <Chip
+                size="small"
+                clickable
+                disabled={requestBusy}
+                icon={<PlaylistPlayIcon />}
+                label={t("ai.quickActions.suggestCommand")}
+                onClick={() => onQuickAction?.("suggestCommand")}
+                onMouseDown={(event) => event.stopPropagation()}
+                className={aiClassName("ai-quick-chip")}
+                data-testid="ai-quick-suggest-chip"
+              />
+            </span>
+          </Tooltip>
+        </Box>
+      )}
       <Box
         className={aiClassName("ai-chat-composer")}
         onClick={() => inputRef.current?.focus()}

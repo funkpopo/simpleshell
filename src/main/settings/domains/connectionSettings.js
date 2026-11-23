@@ -1,6 +1,30 @@
 // 与 utils/crypto.js 的密文版本前缀保持一致（ssv2 / ssv3s / ssv3m）
 const ENCRYPTED_PAYLOAD_PATTERN = /^ssv(?:2|3s|3m):/;
 
+function normalizeConnectionTags(tags) {
+  if (!Array.isArray(tags)) {
+    return [];
+  }
+  const seen = new Set();
+  const normalized = [];
+  for (const tag of tags) {
+    const trimmed = typeof tag === "string" ? tag.trim() : "";
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+  return normalized;
+}
+
+function normalizeConnectionMetadata(source, target) {
+  target.pinned = source.pinned === true;
+  target.tags = normalizeConnectionTags(source.tags);
+  target.colorTag =
+    typeof source.colorTag === "string" ? source.colorTag.trim() : "";
+}
+
 /** ConnectionSettings: explicit dependencies supplied by the service facade. */
 function createConnectionSettings(dependencies) {
   return new (class ConnectionSettings {
@@ -64,6 +88,7 @@ function createConnectionSettings(dependencies) {
               item.privateKeyPath,
             );
           }
+          normalizeConnectionMetadata(item, result);
         }
         if (item.type === "group" && Array.isArray(item.items)) {
           result.items = this._processConnectionsForSave(item.items);
@@ -173,6 +198,7 @@ function createConnectionSettings(dependencies) {
               ),
             };
           }
+          normalizeConnectionMetadata(item, result);
         }
         if (item.type === "group" && Array.isArray(item.items)) {
           result.items = this._processConnectionsForLoad(item.items);

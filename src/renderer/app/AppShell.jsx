@@ -22,9 +22,14 @@ import IconButton from "@mui/material/IconButton";
 import Tabs from "@mui/material/Tabs";
 import AppsIcon from "@mui/icons-material/Apps";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import SearchIcon from "@mui/icons-material/Search";
+import CampaignIcon from "@mui/icons-material/Campaign";
 import Tooltip from "@mui/material/Tooltip";
 import WelcomePage from "../features/welcome/WelcomePage.jsx";
-import { SessionWorkspace } from "./SessionWorkspace.jsx";
+import {
+  SessionWorkspace,
+  useBroadcastSessionSnapshot,
+} from "./SessionWorkspace.jsx";
 import SessionTab from "./SessionTab.jsx";
 import PaneDropOverlay from "./PaneDropOverlay.jsx";
 import { shallowEqual } from "./state/subscriptionStore.js";
@@ -38,7 +43,11 @@ import { useTranslation } from "react-i18next";
 import { findGroupByTab } from "../features/terminal/model/syncInputGroups";
 import { useCleanupManager } from "../shared/hooks/useAutoCleanup.js";
 import { useAllGlobalTransfers } from "../features/transfers/state/globalTransferStore.js";
-import { processCache as sessionProcessCache } from "../features/terminal/runtime/terminalSessionStore.js";
+import {
+  processCache as sessionProcessCache,
+  terminalCache,
+} from "../features/terminal/runtime/terminalSessionStore.js";
+import { notifyTerminalResize } from "./appShellUtils.js";
 
 const AppMenu = React.lazy(() => import("./components/AppMenu.jsx"));
 const SessionContextMenu = React.lazy(
@@ -47,6 +56,29 @@ const SessionContextMenu = React.lazy(
 const GlobalTransferBar = React.lazy(
   () => import("../features/transfers/GlobalTransferBar.jsx"),
 );
+const CommandPaletteDialog = React.lazy(
+  () => import("./components/CommandPaletteDialog.jsx"),
+);
+const BroadcastCommandBar = React.lazy(
+  () => import("./components/BroadcastCommandBar.jsx"),
+);
+const RenameTabDialog = React.lazy(
+  () => import("./components/RenameTabDialog.jsx"),
+);
+
+function BroadcastCommandBarGate({ onClose, activeSessionKey }) {
+  const snapshot = useBroadcastSessionSnapshot();
+  return (
+    <React.Suspense fallback={null}>
+      <BroadcastCommandBar
+        open={true}
+        onClose={onClose}
+        activeSessionKey={activeSessionKey}
+        {...snapshot}
+      />
+    </React.Suspense>
+  );
+}
 
 function GlobalTransferBarGate({ onOpenFloat, onToggleFloat, isFloatOpen }) {
   const allTransfers = useAllGlobalTransfers();
@@ -74,6 +106,7 @@ import useShellMenus from "./hooks/useShellMenus.js";
 import useShellNotices from "./hooks/useShellNotices.js";
 import useSessionTabs from "./hooks/useSessionTabs.js";
 import useSessionDragDrop from "./hooks/useSessionDragDrop.js";
+import useWorkspaceRestore from "./hooks/useWorkspaceRestore.js";
 import SidebarWorkspace from "./components/SidebarWorkspace.jsx";
 import DialogsLayer from "./components/DialogsLayer.jsx";
 
@@ -397,9 +430,17 @@ export default function AppShell() {
     handleCloseConnection,
     handleUnsplitTab,
     handleOpenConnection,
+    handleOpenLocalTerminalTab,
     handleSendCommand,
     handleCloseTabRef,
     refreshTerminalSession,
+    splitPane,
+    focusAdjacentPane,
+    duplicateTab,
+    renameTab,
+    closeOtherTabs,
+    closeTabsToRight,
+    reopenLastClosedTab,
   } = useSessionTabs({
     tabs,
     liveSessionKeysRef,
@@ -443,8 +484,218 @@ export default function AppShell() {
     currentTab,
     paneRegistryRef,
     refreshTerminalSession,
+    splitPane,
+    focusAdjacentPane,
     tabs,
   });
+
+  useWorkspaceRestore({
+    tabs,
+    currentTab,
+    splitLayouts,
+    panes: paneRegistry,
+    connections,
+    connectionsLoaded,
+    uiSettingsLoaded,
+    uiSettingsSnapshot,
+    credentialSecurityStatus,
+    markSessionConnecting,
+  });
+
+  const closedTabsCount = useShellSelector(
+    (s) => s.closedTabsStack?.length || 0,
+  );
+  const [commandPaletteOpen, setCommandPaletteOpen] = React.useState(false);
+  const [broadcastBarOpen, setBroadcastBarOpen] = React.useState(false);
+  const [renameDialogTab, setRenameDialogTab] = React.useState(null);
+  const broadcastResizeMountedRef = useRef(false);
+
+  React.useEffect(() => {
+    if (!broadcastResizeMountedRef.current) {
+      broadcastResizeMountedRef.current = true;
+      return;
+    }
+    notifyTerminalResize(30);
+  }, [broadcastBarOpen]);
+
+  const handleOpenCommandPalette = useCallback(() => {
+    if (credentialSecurityStatus.requiresUnlock) return;
+    setCommandPaletteOpen((prev) => !prev);
+  }, [credentialSecurityStatus.requiresUnlock]);
+
+  const handleCloseCommandPalette = useCallback(
+    (reason) => {
+      setCommandPaletteOpen(false);
+      if (reason === "escape" || reason === "dismiss") {
+        window.setTimeout(() => {
+          if (activeSessionKey && terminalCache[activeSessionKey]?.focus) {
+            terminalCache[activeSessionKey].focus();
+          }
+        }, 0);
+      }
+    },
+    [activeSessionKey],
+  );
+
+  const handleSelectTabIndex = useCallback(
+    (index) => {
+      handleTabChange(null, index);
+    },
+    [handleTabChange],
+  );
+
+  const handleRequestRenameTab = useCallback(
+    (tabId) => {
+      const target = tabs.find((item) => item.id === tabId);
+      if (!target || target.id === "welcome") return;
+      setRenameDialogTab({
+        id: target.id,
+        title: target.customTitle || target.label || "",
+      });
+    },
+    [tabs],
+  );
+
+  const handleExecutePaletteItem = useCallback(
+    (item) => {
+      const payload = item?.payload;
+      if (!payload) return;
+      switch (payload.kind) {
+        case "focusTab": {
+          const idx = tabs.findIndex((tItem) => tItem.id === payload.tabId);
+          if (idx >= 0) handleTabChange(null, idx);
+          break;
+        }
+        case "focusPane": {
+          const idx = tabs.findIndex((tItem) => tItem.id === payload.tabId);
+          if (idx >= 0) handleTabChange(null, idx);
+          dispatch(actions.focusPane(payload.tabId, payload.paneId));
+          break;
+        }
+        case "openConnection":
+          handleOpenConnection(payload.connection);
+          break;
+        case "openLocalTerminal":
+          handleOpenLocalTerminalTab(payload.terminalConfig);
+          break;
+        case "quickConnect": {
+          const parsed = payload.parsed;
+          if (!parsed) break;
+          const quickEvent = new CustomEvent("simpleshell:quickConnect", {
+            detail: {
+              target: parsed.raw,
+              host: parsed.host,
+              port: parsed.port,
+              username: parsed.username,
+              protocol: parsed.protocol,
+            },
+            cancelable: true,
+          });
+          const notHandled = window.dispatchEvent(quickEvent);
+          if (notHandled) {
+            handleOpenConnection({
+              id: `quick-${Date.now()}`,
+              type: "connection",
+              name: parsed.label,
+              host: parsed.host,
+              port: parsed.port,
+              username: parsed.username || "",
+              protocol: parsed.protocol || "ssh",
+              authType: "password",
+              isTransient: true,
+            });
+          }
+          break;
+        }
+        case "togglePanel":
+          sidebarRef.current?.togglePanel?.(payload.panel);
+          break;
+        case "runSnippet":
+          handleSendCommand(payload.command, { execute: true });
+          break;
+        case "splitPane":
+          splitPane(
+            currentPanelTab?.id,
+            activeSessionKey,
+            payload.direction || "right",
+            payload.mode || "duplicate",
+          );
+          break;
+        case "unsplitTab":
+          dispatch(actions.unsplitTab(payload.tabId));
+          notifyTerminalResize();
+          break;
+        case "duplicateTab":
+          duplicateTab(payload.tabId);
+          break;
+        case "renameTab":
+          handleRequestRenameTab(payload.tabId);
+          break;
+        case "closeActivePane":
+          handlePaneShortcutRef.current?.("close");
+          break;
+        case "closeOtherTabs":
+          closeOtherTabs(payload.tabId);
+          break;
+        case "reopenClosedTab":
+          reopenLastClosedTab();
+          break;
+        case "exportScrollback":
+          window.dispatchEvent(
+            new CustomEvent("simpleshell:exportScrollback", {
+              detail: {
+                sessionKey: activeSessionKey,
+                action: payload.action || "export",
+              },
+            }),
+          );
+          break;
+        case "terminalZoom":
+          window.dispatchEvent(
+            new CustomEvent("simpleshell:terminalZoom", {
+              detail: { action: payload.action },
+            }),
+          );
+          break;
+        case "toggleDarkMode":
+          toggleTheme();
+          break;
+        case "setTerminalTheme":
+          window.dispatchEvent(
+            new CustomEvent("simpleshell:setTerminalTheme", {
+              detail: {
+                themeId: payload.themeId,
+                terminalTheme: payload.themeId,
+              },
+            }),
+          );
+          window.dispatchEvent(
+            new CustomEvent("settingsChanged", {
+              detail: { terminalTheme: payload.themeId },
+            }),
+          );
+          break;
+        default:
+          break;
+      }
+    },
+    [
+      activeSessionKey,
+      closeOtherTabs,
+      currentPanelTab?.id,
+      dispatch,
+      duplicateTab,
+      handleOpenConnection,
+      handleOpenLocalTerminalTab,
+      handleRequestRenameTab,
+      handleSendCommand,
+      handleTabChange,
+      reopenLastClosedTab,
+      splitPane,
+      tabs,
+      toggleTheme,
+    ],
+  );
 
   const handlePauseReconnect = () =>
     handlePauseReconnectForTab(tabContextMenu.tabId).then((done) => {
@@ -543,6 +794,26 @@ export default function AppShell() {
                     </IconButton>
                   </Tooltip>
                 )}
+                <Tooltip
+                  title={t("sidebar.withShortcut", {
+                    label: t("commandPalette.title"),
+                    shortcut: "Ctrl+Shift+P",
+                  })}
+                >
+                  <IconButton
+                    color="inherit"
+                    size="small"
+                    aria-label={t("commandPalette.open")}
+                    data-command-palette-trigger="true"
+                    disabled={credentialSecurityStatus.requiresUnlock}
+                    sx={{
+                      WebkitAppRegion: "no-drag",
+                    }}
+                    onClick={() => setCommandPaletteOpen(true)}
+                  >
+                    <SearchIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
                 {open && (
                   <React.Suspense fallback={null}>
                     <AppMenu
@@ -651,6 +922,23 @@ export default function AppShell() {
                   </Tabs>
                 </Box>
 
+                {tabs.length > 1 && (
+                  <Tooltip title={t("broadcastBar.toggle")}>
+                    <IconButton
+                      size="small"
+                      color={broadcastBarOpen ? "primary" : "inherit"}
+                      aria-label={t("broadcastBar.toggle")}
+                      data-broadcast-bar-trigger="true"
+                      sx={{
+                        WebkitAppRegion: "no-drag",
+                      }}
+                      onClick={() => setBroadcastBarOpen((prev) => !prev)}
+                    >
+                      <CampaignIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+
                 {/* 网络延迟指示器（自带占位容器，不可见时不渲染） */}
                 <NetworkLatencyIndicator
                   currentTab={currentTab}
@@ -679,6 +967,23 @@ export default function AppShell() {
                   handleJoinGroup={handleJoinGroup}
                   handleRemoveFromGroup={handleRemoveFromGroup}
                   handleCreateGroup={handleCreateGroup}
+                  tabs={tabs}
+                  closedTabsCount={closedTabsCount}
+                  broadcastBarOpen={broadcastBarOpen}
+                  onDuplicateTab={duplicateTab}
+                  onRenameTab={handleRequestRenameTab}
+                  onCloseOtherTabs={closeOtherTabs}
+                  onCloseTabsToRight={closeTabsToRight}
+                  onReopenClosedTab={reopenLastClosedTab}
+                  onSplitTabRight={(tabId) =>
+                    splitPane(tabId, null, "right", "duplicate")
+                  }
+                  onSplitTabBottom={(tabId) =>
+                    splitPane(tabId, null, "bottom", "duplicate")
+                  }
+                  onToggleBroadcastBar={() =>
+                    setBroadcastBarOpen((prev) => !prev)
+                  }
                 />
               </React.Suspense>
             )}
@@ -722,50 +1027,69 @@ export default function AppShell() {
                   position: "relative",
                 }}
               >
-                {/* 拖拽标签页到终端区时的投隆区高亮 */}
-                <PaneDropOverlay />
-                {/* 欢迎页 - 使用条件渲染优化性能 */}
-                {currentTab === 0 && (
-                  <Box
-                    sx={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      height: "100%",
-                      zIndex: Z_INDEX.raised,
-                      animation: "ss-fade-in 160ms cubic-bezier(0.2, 0, 0, 1)",
-                      "@keyframes ss-fade-in": {
-                        from: { opacity: 0 },
-                        to: { opacity: 1 },
-                      },
-                      "@media (prefers-reduced-motion: reduce)": {
-                        animation: "none",
-                      },
-                    }}
-                  >
-                    <WelcomePage
-                      connections={connections}
-                      topConnections={visibleTopConnections}
-                      onOpenConnection={handleOpenConnection}
-                      onCreateConnection={handleRequestCreateConnection}
-                      onConnectionsUpdate={handleConnectionsUpdate}
-                    />
-                  </Box>
-                )}
+                <Box
+                  sx={{
+                    position: "relative",
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  {/* 拖拽标签页到终端区时的投隆区高亮 */}
+                  <PaneDropOverlay />
+                  {/* 欢迎页 - 使用条件渲染优化性能 */}
+                  {currentTab === 0 && (
+                    <Box
+                      sx={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        zIndex: Z_INDEX.raised,
+                        animation:
+                          "ss-fade-in 160ms cubic-bezier(0.2, 0, 0, 1)",
+                        "@keyframes ss-fade-in": {
+                          from: { opacity: 0 },
+                          to: { opacity: 1 },
+                        },
+                        "@media (prefers-reduced-motion: reduce)": {
+                          animation: "none",
+                        },
+                      }}
+                    >
+                      <WelcomePage
+                        connections={connections}
+                        topConnections={visibleTopConnections}
+                        onOpenConnection={handleOpenConnection}
+                        onCreateConnection={handleRequestCreateConnection}
+                        onConnectionsUpdate={handleConnectionsUpdate}
+                      />
+                    </Box>
+                  )}
 
-                <SessionWorkspace
-                  tabs={tabs.slice(1)}
-                  layouts={splitLayouts}
-                  activeTabId={currentPanelTab?.id}
-                  onFocusPane={handleFocusPane}
-                  onClosePane={handleClosePane}
-                  onSetRatios={handleSetRatios}
-                  onPaneDragStart={handlePaneDragStart}
-                  onPaneDragOver={handlePaneDragOver}
-                  onPaneDrop={handlePaneDrop}
-                  onPaneDragEnd={handlePaneDragEnd}
-                />
+                  <SessionWorkspace
+                    tabs={tabs.slice(1)}
+                    layouts={splitLayouts}
+                    activeTabId={currentPanelTab?.id}
+                    onFocusPane={handleFocusPane}
+                    onClosePane={handleClosePane}
+                    onSetRatios={handleSetRatios}
+                    onPaneDragStart={handlePaneDragStart}
+                    onPaneDragOver={handlePaneDragOver}
+                    onPaneDrop={handlePaneDrop}
+                    onPaneDragEnd={handlePaneDragEnd}
+                  />
+                </Box>
+
+                {broadcastBarOpen && (
+                  <BroadcastCommandBarGate
+                    onClose={() => setBroadcastBarOpen(false)}
+                    activeSessionKey={activeSessionKey}
+                  />
+                )}
               </Box>
 
               {/* 可切换位置的侧边栏容器 */}
@@ -789,6 +1113,14 @@ export default function AppShell() {
                 handleSendCommand={handleSendCommand}
                 toggleTheme={toggleTheme}
                 transfers={transfers}
+                onOpenCommandPalette={handleOpenCommandPalette}
+                onToggleBroadcastBar={() =>
+                  setBroadcastBarOpen((prev) => !prev)
+                }
+                onSelectTabIndex={handleSelectTabIndex}
+                onReopenClosedTab={reopenLastClosedTab}
+                requiresUnlock={credentialSecurityStatus.requiresUnlock}
+                commandPaletteOpen={commandPaletteOpen}
                 ref={sidebarRef}
               />
             </Box>
@@ -824,6 +1156,45 @@ export default function AppShell() {
         handleUnlockCredentialStore={handleUnlockCredentialStore}
         handleExit={handleExit}
       />
+
+      {commandPaletteOpen && (
+        <React.Suspense fallback={null}>
+          <CommandPaletteDialog
+            open={commandPaletteOpen}
+            onClose={handleCloseCommandPalette}
+            onExecuteItem={handleExecutePaletteItem}
+            tabs={tabs}
+            panes={paneRegistry}
+            splitLayouts={splitLayouts}
+            connections={connections}
+            activeSession={activeSession}
+            broadcastBarOpen={broadcastBarOpen}
+            darkMode={darkMode}
+            canMonitorCurrentSession={
+              !activeSession ||
+              activeSession.type === "local" ||
+              (activeSession.type === "ssh" && Boolean(activeSession.processId))
+            }
+            isSshConnected={
+              activeSession?.type === "ssh" &&
+              activeSession?.status?.isConnected === true &&
+              activeSession?.status?.isConnecting !== true
+            }
+            closedTabsCount={closedTabsCount}
+          />
+        </React.Suspense>
+      )}
+
+      {renameDialogTab && (
+        <React.Suspense fallback={null}>
+          <RenameTabDialog
+            open={Boolean(renameDialogTab)}
+            initialTitle={renameDialogTab.title}
+            onClose={() => setRenameDialogTab(null)}
+            onConfirm={(nextTitle) => renameTab(renameDialogTab.id, nextTitle)}
+          />
+        </React.Suspense>
+      )}
     </ThemeProvider>
   );
 }

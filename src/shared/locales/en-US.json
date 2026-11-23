@@ -213,7 +213,39 @@
         "disableHint": "Master password is currently disabled. Sensitive fields are encrypted with the random key only.",
         "passwordRequired": "Please set a master password first",
         "passwordMismatch": "The two master password entries do not match",
-        "updateFailed": "Failed to update master password settings"
+        "updateFailed": "Failed to update master password settings",
+        "knownHosts": {
+          "title": "Trusted SSH Hosts (known_hosts)",
+          "description": "Inspect, search, or revoke trusted SSH host fingerprints stored by SimpleShell. Entries from ~/.ssh/known_hosts are shown as read-only system entries.",
+          "refresh": "Refresh",
+          "clearAll": "Clear All",
+          "searchPlaceholder": "Search by host, port, or SHA-256 fingerprint...",
+          "loading": "Loading trusted SSH hosts...",
+          "empty": "No trusted SSH hosts recorded yet.",
+          "noMatches": "No trusted hosts match your search.",
+          "loadFailed": "Failed to load trusted SSH hosts",
+          "colHost": "Host:Port",
+          "colFingerprint": "SHA-256 Fingerprint",
+          "colTrustedAt": "Trusted At",
+          "colSource": "Source",
+          "colActions": "Actions",
+          "sourceApp": "SimpleShell",
+          "sourceSystem": "system",
+          "copyFingerprint": "Copy fingerprint",
+          "copySuccess": "Fingerprint copied to clipboard",
+          "copyFailed": "Failed to copy fingerprint",
+          "readOnly": "Read-only",
+          "systemReadOnlyHint": "Managed in ~/.ssh/known_hosts outside SimpleShell",
+          "revoke": "Revoke",
+          "revokeConfirmTitle": "Revoke Trusted Host",
+          "revokeConfirmMessage": "Revoke trust for {{host}}? The next SSH connection will prompt to verify its host key again.",
+          "revokeSuccess": "Revoked trust for {{host}}",
+          "revokeFailed": "Failed to revoke trusted host",
+          "clearConfirmTitle": "Clear All Trusted Hosts",
+          "clearConfirmMessage": "Remove all {{count}} SimpleShell-trusted host fingerprints? System ~/.ssh/known_hosts entries are not modified.",
+          "clearSuccess": "Cleared all SimpleShell-trusted host fingerprints",
+          "clearFailed": "Failed to clear trusted hosts"
+        }
       },
       "dataSync": {
         "title": "Data & Sync",
@@ -355,10 +387,31 @@
       "sftpFollowTerminalDirectory": "SFTP follows terminal directory",
       "sftpFollowTerminalDirectoryHelp": "Applies to all SSH sessions as soon as settings are saved. Navigate when the terminal directory changes; custom prompts may need shell path reporting.",
       "transferIntegrityHelp": "Read remote files over SFTP to verify integrity. Large files require additional reading time; a mismatch triggers one full file retransmission.",
+      "restoreSessionOnStartup": "Restore open tabs and split layouts on startup",
+      "restoreSessionOnStartupHelp": "Reopens previous session tabs and pane splits after startup (and after Master Password unlock when enabled). Passwords and keys are never written to snapshots.",
       "historyPrivacy": {
         "title": "Command history privacy",
         "description": "History records visible terminal commands and filters common sensitive arguments. Local history is compressed, not encrypted; filtering cannot recognize every secret. Unlabelled passwords recorded by older versions may need to be cleared here. IP query history can be cleared in the IP lookup panel.",
         "clearCommands": "Clear command history"
+      },
+      "terminalThemeSectionTitle": "Color Scheme",
+      "terminalThemeLabel": "Terminal Color Scheme",
+      "terminalThemeModes": {
+        "auto": "Auto",
+        "dark": "Dark",
+        "light": "Light"
+      },
+      "terminalThemePresets": {
+        "defaultAuto": "SimpleShell (Auto)",
+        "oneDark": "One Dark",
+        "dracula": "Dracula",
+        "nord": "Nord",
+        "tokyoNight": "Tokyo Night",
+        "catppuccinMocha": "Catppuccin Mocha",
+        "catppuccinLatte": "Catppuccin Latte",
+        "gruvboxDark": "Gruvbox Dark",
+        "solarizedDark": "Solarized Dark",
+        "solarizedLight": "Solarized Light"
       }
     },
     "masterPassword": {
@@ -488,7 +541,8 @@
       "sessionConnected": "Connected",
       "sessionConnecting": "Connecting",
       "sessionDisconnected": "Disconnected",
-      "sessionLocal": "Local"
+      "sessionLocal": "Local",
+      "withShortcut": "{{label}} ({{shortcut}})"
     },
     "portForwarding": {
       "errors": {
@@ -605,23 +659,35 @@
       "emptyHint": "The sample address is not saved. Use your own server host, port, username, and authentication method.",
       "consoleLabel": "Remote operations console",
       "secureAccess": "Secure remote access",
-      "systemReady": "SYS / READY"
+      "systemReady": "SYS / READY",
+      "localTerminal": "Local Terminal"
     },
     "terminal": {
       "welcome": "Welcome",
+      "explainRecentOutput": "Explain Recent Output with AI",
+      "explainRecentOutputPrompt": "Please explain the recent terminal output and help diagnose any errors.",
       "pane": {
         "splitSourceBlocked": "A split tab cannot be merged into another tab. Restore its panes to separate tabs first.",
+        "splitRight": "Split Right",
+        "splitBottom": "Split Down",
         "closePane": "Close Pane",
         "closeOtherPanes": "Close Other Panes",
         "maxReached": "Up to 4 panes are supported",
         "default": "Pane {{n}}"
-      }
+      },
+      "copyAllOutput": "Copy All Output",
+      "copyAllOutputSuccess": "Copied all terminal output",
+      "exportScrollback": "Export Scrollback...",
+      "exportScrollbackEmpty": "Terminal buffer is empty",
+      "exportScrollbackSuccess": "Terminal scrollback exported",
+      "exportScrollbackFailed": "Failed to export scrollback: {{error}}"
     },
     "webTerminal": {
       "contextMenu": {
         "copy": "Copy",
         "paste": "Paste",
-        "pasteShortcut": "Ctrl+' / Middle click",
+        "pasteShortcut": "Ctrl+' / Ctrl+Shift+V / Middle click",
+        "selectAll": "Select All",
         "sendToAI": "Send to AI Assistant",
         "search": "Search",
         "clear": "Clear"
@@ -908,7 +974,23 @@
       "totalCommands_other": "{{count}} commands total",
       "commandSent": "Command sent: {{command}}",
       "sendCommandFailed": "Send command failed: {{error}}",
-      "sendCommandHandlerMissing": "Send command handler not provided"
+      "sendCommandHandlerMissing": "Send command handler not provided",
+      "tagsLabel": "Tags",
+      "tagsPlaceholder": "Comma-separated, e.g. docker, logs",
+      "tagsAll": "All",
+      "templateSyntaxHint": "Supports {{var}}, {{var=default}}, and session vars {{host}}, {{user}}, {{port}}, {{cwd}}",
+      "templateDetectedParams": "Parameters",
+      "templateBuiltinTag": "Session",
+      "templateDialogTitle": "Run Command Parameters",
+      "templateDefaultHint": "Default: {{value}}",
+      "templateRequired": "Required",
+      "templatePreviewLabel": "Resolved Command Preview",
+      "templateModeLabel": "Execution Mode",
+      "templateModeRun": "Run (Enter)",
+      "templateModeInsert": "Insert to Prompt",
+      "templateMissingRequired": "Fill required parameters: {{names}}",
+      "templateConfirmRun": "Run Command",
+      "templateConfirmInsert": "Insert Command"
     },
     "commandHistory": {
       "title": "Command History",
@@ -1089,7 +1171,11 @@
           "withConnection": "Current connection: {{host}} ({{type}})",
           "noConnection": "No active connection",
           "unknownHost": "Unknown host",
-          "defaultType": "SSH"
+          "defaultType": "SSH",
+          "username": "User: {{username}}",
+          "cwd": "Current working directory (CWD): {{cwd}}",
+          "lastCommand": "Last executed command: {{command}}",
+          "recentOutputHeader": "Recent terminal output (redacted):"
         },
         "responsibilities": {
           "header": "## Core Responsibilities",
@@ -1137,6 +1223,29 @@
         "pendingLine": "Pending tasks: {{tasks}}",
         "none": "None",
         "listJoiner": ", "
+      },
+      "terminalContext": {
+        "chipDetached": "Attach Terminal Context",
+        "chipActive": "Terminal context attached",
+        "chipCwdOnly": "cwd: {{cwd}}",
+        "chipCwdLines_one": "cwd: {{cwd}} · {{count}} line",
+        "chipCwdLines_other": "cwd: {{cwd}} · {{count}} lines",
+        "chipLinesOnly_one": "{{count}} line",
+        "chipLinesOnly_other": "{{count}} lines",
+        "tooltipEnabled": "Terminal context attached (redacted)",
+        "tooltipDisabled": "Terminal context detached (no CWD or output sent)",
+        "tooltipCwd": "CWD: {{cwd}}",
+        "tooltipLastCommand": "Last command: {{command}}",
+        "tooltipLines_one": "{{count}} output line",
+        "tooltipLines_other": "{{count}} output lines"
+      },
+      "quickActions": {
+        "explainOutput": "Explain recent output/error",
+        "explainOutputTooltip": "Analyze recent redacted terminal output and errors",
+        "explainOutputPrompt": "Explain the recent terminal output and help troubleshoot any errors.",
+        "suggestCommand": "Suggest next command for CWD",
+        "suggestCommandTooltip": "Suggest next commands based on active working directory and context",
+        "suggestCommandPrompt": "Suggest the next useful shell commands for my current working directory and recent context."
       }
     },
     "randomPassword": {
@@ -1365,6 +1474,12 @@
       "sort": "Sort",
       "sortByName": "Sort by Name",
       "sortByTime": "Sort by Modified Time",
+      "showHiddenFiles": "Show Hidden Files",
+      "hideHiddenFiles": "Hide Hidden Files",
+      "cdTerminalHere": "cd Terminal Here",
+      "cdTerminalHereSuccess": "Terminal switched to {{path}}",
+      "cdTerminalHereUnavailable": "No active SSH terminal session is available",
+      "cdTerminalHereInvalidPath": "Invalid remote path for terminal cd",
       "createFolder": "New Folder",
       "createFile": "New File",
       "createFileOrFolder": "New File or Folder",
@@ -2248,6 +2363,114 @@
         "title": "Connection failed",
         "message": "Connection failed{{target}}",
         "suggestion": "Check host, port, authentication, proxy, and network policy."
+      }
+    },
+    "commandPalette": {
+      "title": "Command Palette",
+      "open": "Open Command Palette",
+      "placeholder": "Search commands, connections, tabs, or type user@host[:port]...",
+      "empty": "No matching commands or targets",
+      "pinnedBadge": "Pinned",
+      "paneSubtitle": "Split Pane {{n}}",
+      "panelSubtitle": "Toggle panel",
+      "actionSubtitle": "Action",
+      "themeSubtitle": "Terminal color preset",
+      "quickConnectPrefix": "Quick Connect",
+      "quickConnectHint": "Open transient session",
+      "categories": {
+        "all": "All",
+        "tabs": "Tabs & Panes",
+        "connections": "Connections",
+        "shells": "Local Shells",
+        "panels": "Panels",
+        "snippets": "Snippets",
+        "actions": "Actions"
+      },
+      "items": {
+        "newLocalTerminal": "New Local Terminal",
+        "toggleTransfers": "Toggle Transfer Panel",
+        "splitLocalRight": "Split Right (Local Shell)",
+        "exportScrollback": "Export Scrollback...",
+        "copyAllOutput": "Copy All Output",
+        "zoomIn": "Terminal Zoom In",
+        "zoomOut": "Terminal Zoom Out",
+        "zoomReset": "Reset Terminal Font Size",
+        "switchToLightMode": "Switch to Light Mode",
+        "switchToDarkMode": "Switch to Dark Mode",
+        "terminalThemePrefix": "Terminal Theme"
+      }
+    },
+    "broadcastBar": {
+      "title": "Broadcast Command",
+      "toggle": "Toggle Broadcast Command Bar",
+      "show": "Show Broadcast Command Bar",
+      "hide": "Hide Broadcast Command Bar",
+      "targetMode": "Broadcast target",
+      "allConnected": "All Connected Sessions",
+      "syncGroupOption": "Sync Group {{groupId}} ({{count}})",
+      "targetSummary_one": "Broadcasting to {{count}} session",
+      "targetSummary_other": "Broadcasting to {{count}} sessions",
+      "excludedCount": "({{count}} offline excluded)",
+      "placeholder": "Enter command to broadcast (Ctrl+Enter to send)...",
+      "appendNewline": "Send Enter (\\n)",
+      "send": "Send"
+    },
+    "tabs": {
+      "duplicate": "Duplicate Tab",
+      "rename": "Rename Tab",
+      "closeOthers": "Close Other Tabs",
+      "closeRight": "Close Tabs to Right",
+      "reopenClosed": "Reopen Closed Tab",
+      "renameDialogTitle": "Rename Tab",
+      "renamePlaceholder": "Custom tab title",
+      "renameResetHint": "Leave empty to restore the default session title."
+    },
+    "workspaceRestore": {
+      "title": "Workspace & Session Restore"
+    },
+    "connections": {
+      "quickConnect": {
+        "title": "Quick Connect",
+        "placeholder": "user@host[:port], ssh://..., or telnet://...",
+        "inputLabel": "Quick connect target",
+        "connect": "Connect",
+        "unsavedNotice": "Unsaved quick-connect sessions",
+        "saveAsConnection": "Save as Connection",
+        "errorUnsupportedScheme": "Only ssh:// and telnet:// protocols are supported",
+        "errorInvalidPort": "Port must be an integer between 1 and 65535",
+        "errorInvalidIpv6": "Invalid IPv6 address (use [ipv6]:port when specifying a port)",
+        "errorInvalidUsername": "Invalid username in quick connect target",
+        "errorWhitespace": "Quick connect target cannot contain spaces",
+        "errorEmpty": "Enter a host or user@host target",
+        "errorInvalidTarget": "Invalid quick connect target"
+      },
+      "pinned": {
+        "label": "Pin to favorites (show at top)",
+        "pin": "Pin to favorites",
+        "unpin": "Unpin from favorites",
+        "filterLabel": "Favorites"
+      },
+      "tags": {
+        "label": "Tags",
+        "placeholder": "Add tag (press Enter or comma)",
+        "add": "Add"
+      },
+      "colorTag": {
+        "label": "Color Badge",
+        "none": "None",
+        "red": "Red",
+        "orange": "Orange",
+        "amber": "Amber",
+        "green": "Green",
+        "teal": "Teal",
+        "blue": "Blue",
+        "purple": "Purple",
+        "pink": "Pink"
+      },
+      "duplicate": {
+        "action": "Duplicate Connection",
+        "copySuffix": "Copy",
+        "success": "Connection duplicated"
       }
     }
   }

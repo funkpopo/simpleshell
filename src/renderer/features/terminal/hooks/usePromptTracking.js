@@ -39,6 +39,7 @@ export function usePromptTracking({
   sendInputToProcess,
   enqueueInputToProcess,
   suggestionApi,
+  onCommandExecuted = null,
 }) {
   const [inEditorMode, setInEditorMode] = useState(false);
   const [, setIsCommandExecuting] = useState(false);
@@ -49,6 +50,9 @@ export function usePromptTracking({
     command: "",
     capturedAt: 0,
   });
+
+  const onCommandExecutedRef = useRef(onCommandExecuted);
+  onCommandExecutedRef.current = onCommandExecuted;
 
   // Always read the latest suggestion API from a ref so long-lived onData
   // listeners never capture a stale object identity from render N.
@@ -235,6 +239,7 @@ export function usePromptTracking({
 
     isCommandExecutingRef.current = false;
     setIsCommandExecuting(false);
+    onCommandExecutedRef.current?.(null);
     resetCommandDetectionRef.current?.();
   }, [cancelInputUiRefresh, termRef]);
 
@@ -276,6 +281,7 @@ export function usePromptTracking({
 
     lastExecutedCommandRef.current = command;
     lastExecutedCommandTimeRef.current = now;
+    onCommandExecutedRef.current?.(command);
 
     const selectedSuggestionCommand =
       typeof suggestionApiRef.current.suggestionSelectedRef?.current ===

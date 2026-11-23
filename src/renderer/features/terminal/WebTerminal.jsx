@@ -1,6 +1,15 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Box from "@mui/material/Box";
 import { useTheme } from "@mui/material/styles";
+import { useTranslation } from "react-i18next";
+import NotificationContext from "../../shared/notifications/NotificationContext.jsx";
 import "@xterm/xterm/css/xterm.css";
 import "./WebTerminal.css";
 import PropTypes from "prop-types";
@@ -29,6 +38,11 @@ import { useTerminalContextMenu } from "./hooks/useTerminalContextMenu.js";
 import { useTerminalLifecycle } from "./hooks/useTerminalLifecycle.js";
 import { useTerminalSessionEvents } from "./hooks/useTerminalSessionEvents.js";
 import useZmodemTransfer from "./hooks/useZmodemTransfer.js";
+import { collectTerminalContext } from "./lib/terminalContextCollector.js";
+import {
+  registerTerminalContextProvider,
+  setTerminalLastCommand,
+} from "../../shared/state/workingDirectoryStore.js";
 
 // A tab hidden by switching keeps its WebGL renderer for a while, so quick
 // back-and-forth switching does not rebuild the GL context and glyph atlas
@@ -91,8 +105,23 @@ const WebTerminal = ({
   }, []);
 
   const theme = useTheme();
+  const { t } = useTranslation();
+  const notification = useContext(NotificationContext);
   const eventManager = useCleanupManager();
   const lifecycleEventManager = useCleanupManager();
+
+  const exportMetadata = useMemo(
+    () => ({
+      sessionKey,
+      protocol: terminalType,
+      host:
+        sshConfig?.host || localConfig?.name || localConfig?.executable || "",
+      username: sshConfig?.username || "",
+      port: sshConfig?.port ?? "",
+      label: sshConfig?.name || localConfig?.name || "",
+    }),
+    [localConfig, sessionKey, sshConfig, terminalType],
+  );
 
   // 分屏窗格上下文：布局/同步分组订阅（选择器稳定，避免重渲染风暴）
   const paneLayoutSelector = useCallback(
@@ -325,6 +354,13 @@ const WebTerminal = ({
     updateCursorPosition,
   };
 
+  const handleCommandExecuted = useCallback(
+    (command) => {
+      setTerminalLastCommand(sessionKey, command);
+    },
+    [sessionKey],
+  );
+
   const {
     inEditorMode,
     resetPromptTracking,
@@ -346,6 +382,7 @@ const WebTerminal = ({
     sendInputToProcess,
     enqueueInputToProcess,
     suggestionApi,
+    onCommandExecuted: handleCommandExecuted,
   });
 
   const recoverTerminalInteractionStateBound = useCallback(
@@ -445,6 +482,23 @@ const WebTerminal = ({
       handlePasteText: handleGroupPasteText,
     });
 
+  const getTerminalContext = useCallback(
+    (options = {}) =>
+      collectTerminalContext({
+        sessionKey,
+        term: termRef.current,
+        connectionInfo: sshConfig || localConfig || { type: terminalType },
+        lastCommand: lastExecutedCommandRef.current || null,
+        ...options,
+      }),
+    [localConfig, sessionKey, sshConfig, terminalType],
+  );
+
+  useEffect(() => {
+    if (!sessionKey) return undefined;
+    return registerTerminalContextProvider(sessionKey, getTerminalContext);
+  }, [getTerminalContext, sessionKey]);
+
   const {
     contextMenu,
     selectedText,
@@ -452,9 +506,12 @@ const WebTerminal = ({
     handleClose,
     handleCopy,
     handlePaste,
+    handleSelectAll,
     handleSendToAI,
     handleClear,
     handleSearchFromMenu,
+    handleCopyAllOutput,
+    handleExportScrollback,
   } = useTerminalContextMenu({
     sessionKey,
     termRef,
@@ -465,7 +522,32 @@ const WebTerminal = ({
     openSearchBar,
     setShowSuggestions,
     setSuggestions,
+    getTerminalContext,
+    sessionMetadata: exportMetadata,
+    t,
+    notification,
   });
+
+  useEffect(() => {
+    const handleExportScrollbackEvent = (event) => {
+      const detail = event?.detail || {};
+      const targetKey = detail.sessionKey;
+      if (targetKey ? targetKey !== sessionKey : !isActiveRef.current) {
+        return;
+      }
+      if (detail.action === "copyAll") {
+        void handleCopyAllOutput();
+      } else {
+        void handleExportScrollback();
+      }
+    };
+
+    return eventManager.addEventListener(
+      window,
+      "simpleshell:exportScrollback",
+      handleExportScrollbackEvent,
+    );
+  }, [eventManager, handleCopyAllOutput, handleExportScrollback, sessionKey]);
 
   useTerminalLifecycle({
     sessionKey,
@@ -633,6 +715,20 @@ const WebTerminal = ({
         onCloseOtherPanes={() =>
           dispatchPaneAction({ action: "closeOtherPanes", sessionKey })
         }
+        onSplitRight={() =>
+          dispatchPaneAction({
+            action: "splitPane",
+            sessionKey,
+            direction: "right",
+          })
+        }
+        onSplitBottom={() =>
+          dispatchPaneAction({
+            action: "splitPane",
+            sessionKey,
+            direction: "bottom",
+          })
+        }
         onCreateSyncGroup={() =>
           dispatchPaneAction({ action: "createSyncGroup", sessionKey })
         }
@@ -644,7 +740,10 @@ const WebTerminal = ({
         }
         onClose={handleClose}
         onCopy={handleCopy}
+        onCopyAllOutput={handleCopyAllOutput}
+        onExportScrollback={handleExportScrollback}
         onPaste={handlePaste}
+        onSelectAll={handleSelectAll}
         onSendToAI={handleSendToAI}
         onSearch={handleSearchFromMenu}
         onClear={handleClear}

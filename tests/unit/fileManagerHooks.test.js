@@ -13,6 +13,9 @@ import useFileOps from "../../src/renderer/features/file-manager/hooks/useFileOp
 import useTransferHosts from "../../src/renderer/features/transfers/hooks/useTransferHosts.js";
 import useFileKeyboard from "../../src/renderer/features/file-manager/hooks/useFileKeyboard.js";
 import FileManager from "../../src/renderer/features/file-manager/index.jsx";
+import FileToolbar from "../../src/renderer/features/file-manager/panels/FileToolbar.jsx";
+import FileContextMenus from "../../src/renderer/features/file-manager/panels/FileContextMenus.jsx";
+import { buildCdCommand } from "../../src/renderer/features/file-manager/lib/directoryListing.js";
 import CreateFileDialog from "../../src/renderer/features/file-manager/dialogs/CreateFileDialog.jsx";
 import CreateFolderDialog from "../../src/renderer/features/file-manager/dialogs/CreateFolderDialog.jsx";
 import RenameDialog from "../../src/renderer/features/file-manager/dialogs/RenameDialog.jsx";
@@ -806,4 +809,191 @@ it("mounts the real FileManager and shows its drop overlay only during a drag", 
     await act(() => root.unmount());
     host.remove();
   }
+});
+
+describe("P1-6 SFTP two-way cd and hidden dotfiles toggle", () => {
+  it("quotes POSIX paths safely in buildCdCommand and rejects control characters", () => {
+    expect(buildCdCommand("/etc/nginx")).toBe("cd '/etc/nginx'");
+    expect(buildCdCommand("/")).toBe("cd '/'");
+    expect(buildCdCommand("/srv/my folder/it's $HOME `id`")).toBe(
+      "cd '/srv/my folder/it'\\''s $HOME `id`'",
+    );
+    expect(buildCdCommand("~")).toBe("cd ~");
+    expect(buildCdCommand("~/docs/a'b")).toBe("cd ~/'docs/a'\\''b'");
+    expect(buildCdCommand("-weird")).toBe("cd './-weird'");
+
+    expect(buildCdCommand("")).toBeNull();
+    expect(buildCdCommand("   ")).toBeNull();
+    expect(buildCdCommand(null)).toBeNull();
+    expect(buildCdCommand(undefined)).toBeNull();
+    expect(buildCdCommand("/tmp\nrm -rf /")).toBeNull();
+    expect(buildCdCommand("/tmp\rwhoami")).toBeNull();
+    expect(buildCdCommand("/tmp/\x00null")).toBeNull();
+    expect(buildCdCommand("/tmp/\x1b[31m")).toBeNull();
+  });
+
+  it("toggles dotfiles live in useFileSelection without extra SFTP calls or settings race", async () => {
+    const lateSettings = deferred();
+    window.terminalAPI = {
+      loadUISettings: vi.fn(() => lateSettings.promise),
+    };
+    const files = [
+      file(".env"),
+      file(".gitignore"),
+      file("index.js"),
+      { name: ".hidden-dir", size: 0, isDirectory: true },
+    ];
+    const hook = await mount(useFileSelection, {
+      files,
+      isChunking: false,
+      selectionResetKey: 0,
+    });
+
+    expect(hook.current.showHiddenFiles).toBe(true);
+    expect(hook.current.displayFiles.map((entry) => entry.name)).toEqual([
+      ".hidden-dir",
+      ".env",
+      ".gitignore",
+      "index.js",
+    ]);
+
+    // Session toggle before late settings arrive must not be clobbered.
+    await act(() => hook.current.toggleShowHiddenFiles());
+    expect(hook.current.showHiddenFiles).toBe(false);
+    expect(hook.current.displayFiles.map((entry) => entry.name)).toEqual([
+      "index.js",
+    ]);
+
+    await act(async () => {
+      lateSettings.resolve({ fileManager: { showHiddenFiles: true } });
+      await lateSettings.promise;
+    });
+    expect(hook.current.showHiddenFiles).toBe(false);
+
+    // Explicit settingsChanged event updates the live state cleanly.
+    await act(() =>
+      window.dispatchEvent(
+        new CustomEvent("settingsChanged", {
+          detail: { fileManager: { showHiddenFiles: true } },
+        }),
+      ),
+    );
+    expect(hook.current.showHiddenFiles).toBe(true);
+    expect(hook.current.displayFiles).toHaveLength(4);
+  });
+
+  it("wires dotfiles toggle and cd Terminal Here across FileToolbar, FileContextMenus, and FileManager", async () => {
+    const onToggleHiddenFiles = vi.fn();
+    const onToolbarCd = vi.fn();
+    const onContextCd = vi.fn();
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    try {
+      await act(() =>
+        root.render(
+          createElement(FileToolbar, {
+            historyIndex: 0,
+            pathHistory: ["/"],
+            currentPath: "/etc/nginx",
+            showHiddenFiles: false,
+            handleToggleHiddenFiles: onToggleHiddenFiles,
+            handleCdTerminalHere: onToolbarCd,
+            canCdTerminalHere: true,
+          }),
+        ),
+      );
+      const hiddenBtn = host.querySelector(
+        '[data-testid="file-manager-toggle-hidden"]',
+      );
+      const cdBtn = host.querySelector(
+        '[data-testid="file-manager-cd-terminal"]',
+      );
+      expect(hiddenBtn.getAttribute("aria-pressed")).toBe("false");
+      await act(() => hiddenBtn.click());
+      expect(onToggleHiddenFiles).toHaveBeenCalledOnce();
+      await act(() => cdBtn.click());
+      expect(onToolbarCd).toHaveBeenCalledOnce();
+
+      await act(() =>
+        root.render(
+          createElement(FileContextMenus, {
+            contextMenu: { mouseX: 12, mouseY: 12 },
+            menuItems: {
+              isSingleSelection: true,
+              isDirectorySelected: true,
+              hasFiles: false,
+              hasFolders: true,
+              fileCount: 0,
+              folderCount: 1,
+              isDeleting: false,
+            },
+            handleContextMenuClose: () => {},
+            handleCdTerminalHere: onContextCd,
+            canCdTerminalHere: true,
+            selectedFiles: [{ name: "sites-enabled", isDirectory: true }],
+            closeMenus: () => {},
+          }),
+        ),
+      );
+      const cdMenuItem = [
+        ...document.querySelectorAll('[role="menuitem"]'),
+      ].find((item) => item.textContent.includes("fileManager.cdTerminalHere"));
+      expect(cdMenuItem).toBeDefined();
+      await act(() => cdMenuItem.click());
+      expect(onContextCd).toHaveBeenCalledOnce();
+
+      const onSendCommand = vi.fn(() => ({ success: true }));
+      window.terminalAPI = {
+        listFiles: vi.fn(async () => ({
+          success: true,
+          data: [
+            file(".secret"),
+            file("app.conf"),
+            { name: "sites-enabled", size: 0, isDirectory: true },
+          ],
+        })),
+      };
+      await act(async () => {
+        root.render(
+          createElement(FileManager, {
+            open: true,
+            tabId: "ssh-pane-1",
+            sshConnection: { host: "prod" },
+            initialPath: "/etc/it's nginx",
+            onSendCommand,
+          }),
+        );
+      });
+      await vi.waitFor(() =>
+        expect(host.textContent).toContain("sites-enabled"),
+      );
+      expect(host.textContent).toContain(".secret");
+
+      // Click toolbar hidden toggle -> hides .secret with zero extra listFiles calls.
+      const listCallsBeforeToggle =
+        window.terminalAPI.listFiles.mock.calls.length;
+      await act(() =>
+        host
+          .querySelector('[data-testid="file-manager-toggle-hidden"]')
+          .click(),
+      );
+      expect(host.textContent).not.toContain(".secret");
+      expect(window.terminalAPI.listFiles).toHaveBeenCalledTimes(
+        listCallsBeforeToggle,
+      );
+
+      // Click toolbar cd Terminal Here -> dispatches escaped command to active SSH pane.
+      await act(() =>
+        host.querySelector('[data-testid="file-manager-cd-terminal"]').click(),
+      );
+      expect(onSendCommand).toHaveBeenCalledWith("cd '/etc/it'\\''s nginx'", {
+        expectedSessionKey: "ssh-pane-1",
+      });
+    } finally {
+      await act(() => root.unmount());
+      host.remove();
+    }
+  });
 });

@@ -20,12 +20,20 @@ import BugReportIcon from "@mui/icons-material/BugReport";
 import ClearIcon from "@mui/icons-material/Clear";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
+import ButtonBase from "@mui/material/ButtonBase";
+import CheckIcon from "@mui/icons-material/Check";
+import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import { useNotification } from "../../../shared/notifications/NotificationContext";
 import {
   openLogDirectory,
   exportDiagnostics,
 } from "../../../shared/lib/diagnosticsActions.js";
+import {
+  DEFAULT_TERMINAL_THEME,
+  TERMINAL_THEME_PRESETS,
+  normalizeTerminalThemeId,
+} from "../../../../shared/settings/terminalThemePresets.js";
 import {
   EDITOR_FONT_OPTIONS,
   TERMINAL_CURSOR_STYLE_OPTIONS,
@@ -39,6 +47,7 @@ import {
 } from "../components/SettingsSection.jsx";
 
 export default function TerminalSettings({ initialValues, open, ref }) {
+  const muiTheme = useTheme();
   const { t } = useTranslation();
   const { showError, showSuccess } = useNotification();
   const fontSizes = [
@@ -87,6 +96,9 @@ export default function TerminalSettings({ initialValues, open, ref }) {
   );
   const [terminalLineHeight, setTerminalLineHeight] = React.useState(
     initialValues.terminalLineHeight,
+  );
+  const [terminalTheme, setTerminalTheme] = React.useState(
+    normalizeTerminalThemeId(initialValues.terminalTheme),
   );
   const [terminalLetterSpacing, setTerminalLetterSpacing] = React.useState(
     initialValues.terminalLetterSpacing,
@@ -215,6 +227,44 @@ export default function TerminalSettings({ initialValues, open, ref }) {
     }
   };
 
+  const getTerminalThemeLabel = (presetId) => {
+    switch (presetId) {
+      case "one-dark":
+        return t("settings.terminalThemePresets.oneDark");
+      case "dracula":
+        return t("settings.terminalThemePresets.dracula");
+      case "nord":
+        return t("settings.terminalThemePresets.nord");
+      case "tokyo-night":
+        return t("settings.terminalThemePresets.tokyoNight");
+      case "catppuccin-mocha":
+        return t("settings.terminalThemePresets.catppuccinMocha");
+      case "catppuccin-latte":
+        return t("settings.terminalThemePresets.catppuccinLatte");
+      case "gruvbox-dark":
+        return t("settings.terminalThemePresets.gruvboxDark");
+      case "solarized-dark":
+        return t("settings.terminalThemePresets.solarizedDark");
+      case "solarized-light":
+        return t("settings.terminalThemePresets.solarizedLight");
+      case "default-auto":
+      default:
+        return t("settings.terminalThemePresets.defaultAuto");
+    }
+  };
+
+  const getTerminalThemeModeLabel = (appearance) => {
+    switch (appearance) {
+      case "light":
+        return t("settings.terminalThemeModes.light");
+      case "dark":
+        return t("settings.terminalThemeModes.dark");
+      case "auto":
+      default:
+        return t("settings.terminalThemeModes.auto");
+    }
+  };
+
   const handleBrowseZmodemDir = async () => {
     try {
       const result = await window.dialogAPI?.showOpenDialog?.({
@@ -273,6 +323,9 @@ export default function TerminalSettings({ initialValues, open, ref }) {
           1.0,
           Math.round((Number(terminalLineHeight) || 1.0) * 100) / 100,
         ),
+      ),
+      terminalTheme: normalizeTerminalThemeId(
+        terminalTheme || DEFAULT_TERMINAL_THEME,
       ),
       terminalLetterSpacing: Math.min(
         4,
@@ -554,6 +607,166 @@ export default function TerminalSettings({ initialValues, open, ref }) {
                 }
               }}
             />
+          </Box>
+        </Box>
+
+        <Typography sx={subSectionLabelSx}>
+          {t("settings.terminalThemeSectionTitle")}
+        </Typography>
+        <Box sx={sectionCardSx}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: "block", mb: 1 }}
+          >
+            {t("settings.terminalThemeLabel")}
+          </Typography>
+          <Box
+            role="radiogroup"
+            aria-label={t("settings.terminalThemeLabel")}
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 1,
+            }}
+          >
+            {TERMINAL_THEME_PRESETS.map((preset) => {
+              const selected = terminalTheme === preset.id;
+              const activeSwatch =
+                preset.id === DEFAULT_TERMINAL_THEME &&
+                muiTheme.palette.mode === "light" &&
+                preset.swatchLight
+                  ? preset.swatchLight
+                  : preset.swatch;
+              const label = getTerminalThemeLabel(preset.id);
+              return (
+                <ButtonBase
+                  key={preset.id}
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setTerminalTheme(preset.id)}
+                  sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "stretch",
+                    textAlign: "left",
+                    p: 0.75,
+                    borderRadius: 1,
+                    border: "1.5px solid",
+                    borderColor: selected ? "primary.main" : "divider",
+                    bgcolor: selected ? "action.selected" : "background.paper",
+                    transition:
+                      "border-color 140ms ease, background-color 140ms ease",
+                    "&:hover": {
+                      borderColor: selected ? "primary.main" : "text.secondary",
+                    },
+                  }}
+                >
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      px: 0.75,
+                      py: 0.625,
+                      mb: 0.5,
+                      borderRadius: 0.75,
+                      bgcolor: activeSwatch.background,
+                      border: "1px solid rgba(128,128,128,0.22)",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 0.4,
+                      }}
+                    >
+                      <Typography
+                        component="span"
+                        sx={{
+                          fontFamily: "monospace",
+                          fontSize: "0.7rem",
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          color: activeSwatch.foreground,
+                        }}
+                      >
+                        ~ $
+                      </Typography>
+                      <Box
+                        component="span"
+                        sx={{
+                          width: 4,
+                          height: 10,
+                          borderRadius: 0.25,
+                          bgcolor: activeSwatch.cursor,
+                        }}
+                      />
+                    </Box>
+                    <Box
+                      sx={{ display: "flex", alignItems: "center", gap: 0.3 }}
+                    >
+                      {activeSwatch.ansi.map((hex, idx) => (
+                        <Box
+                          key={idx}
+                          component="span"
+                          sx={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            bgcolor: hex,
+                          }}
+                        />
+                      ))}
+                    </Box>
+                  </Box>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 0.5,
+                      minWidth: 0,
+                    }}
+                  >
+                    <Typography
+                      variant="caption"
+                      noWrap
+                      sx={{
+                        fontWeight: selected ? 600 : 500,
+                        color: "text.primary",
+                      }}
+                    >
+                      {label}
+                    </Typography>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 0.25,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontSize: "0.62rem",
+                          color: "text.secondary",
+                        }}
+                      >
+                        {getTerminalThemeModeLabel(preset.appearance)}
+                      </Typography>
+                      {selected && (
+                        <CheckIcon
+                          sx={{ fontSize: 13, color: "primary.main" }}
+                        />
+                      )}
+                    </Box>
+                  </Box>
+                </ButtonBase>
+              );
+            })}
           </Box>
         </Box>
 

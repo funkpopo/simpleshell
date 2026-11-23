@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import Dialog from "../../../shared/ui/AccessibleDialog.jsx";
 import {
   Box,
@@ -5,6 +6,7 @@ import {
   IconButton,
   TextField,
   Button,
+  ButtonBase,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -20,17 +22,45 @@ import {
   Alert,
   CircularProgress,
   Collapse,
+  Chip,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
 import ErrorOutlinedIcon from "@mui/icons-material/ErrorOutlined";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import CheckIcon from "@mui/icons-material/Check";
+import BlockIcon from "@mui/icons-material/Block";
 import { useTranslation } from "react-i18next";
 import {
+  CONNECTION_COLOR_TAG_OPTIONS,
   SERIAL_BAUD_RATES,
+  normalizeConnectionTags,
   squareIconButtonSx,
 } from "../lib/connectionForm.js";
+
+const getColorTagLabel = (t, id) => {
+  switch (id) {
+    case "red":
+      return t("connections.colorTag.red");
+    case "orange":
+      return t("connections.colorTag.orange");
+    case "amber":
+      return t("connections.colorTag.amber");
+    case "green":
+      return t("connections.colorTag.green");
+    case "teal":
+      return t("connections.colorTag.teal");
+    case "blue":
+      return t("connections.colorTag.blue");
+    case "purple":
+      return t("connections.colorTag.purple");
+    case "pink":
+      return t("connections.colorTag.pink");
+    default:
+      return t("connections.colorTag.none");
+  }
+};
 
 export default function ConnectionEditorDialog({ editor }) {
   const { t } = useTranslation();
@@ -57,6 +87,30 @@ export default function ConnectionEditorDialog({ editor }) {
     testingConnection,
     handleSave,
   } = editor;
+  const [tagDraft, setTagDraft] = useState("");
+  useEffect(() => {
+    if (dialogOpen) {
+      setTagDraft("");
+    }
+  }, [dialogOpen]);
+  const commitTagDraft = (rawValue = tagDraft) => {
+    const incoming = normalizeConnectionTags(rawValue);
+    if (incoming.length === 0) {
+      setTagDraft("");
+      return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      tags: normalizeConnectionTags([...(prev.tags || []), ...incoming]),
+    }));
+    setTagDraft("");
+  };
+  const handleRemoveTag = (tagToRemove) => {
+    setFormData((prev) => ({
+      ...prev,
+      tags: (prev.tags || []).filter((tag) => tag !== tagToRemove),
+    }));
+  };
   const groupOptions = groups.map((group) => (
     <MenuItem key={group.id} value={group.id}>
       {group.name}
@@ -704,6 +758,146 @@ export default function ConnectionEditorDialog({ editor }) {
                   <MenuItem value="Other">{t("common.other")}</MenuItem>
                 </Select>
               </FormControl>
+
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.pinned === true}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        pinned: e.target.checked,
+                      }))
+                    }
+                    size="small"
+                  />
+                }
+                label={t("connections.pinned.label")}
+              />
+
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+                <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                  <TextField
+                    label={t("connections.tags.label")}
+                    placeholder={t("connections.tags.placeholder")}
+                    value={tagDraft}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.includes(",")) {
+                        commitTagDraft(val);
+                      } else {
+                        setTagDraft(val);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitTagDraft();
+                      }
+                    }}
+                    onBlur={() => commitTagDraft()}
+                    size="small"
+                    fullWidth
+                    sx={{ flexGrow: 1, minWidth: 0 }}
+                  />
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => commitTagDraft()}
+                    disabled={!tagDraft.trim()}
+                    sx={{ flexShrink: 0 }}
+                  >
+                    {t("connections.tags.add")}
+                  </Button>
+                </Box>
+                {Array.isArray(formData.tags) && formData.tags.length > 0 && (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {formData.tags.map((tag) => (
+                      <Chip
+                        key={tag}
+                        size="small"
+                        label={tag}
+                        onDelete={() => handleRemoveTag(tag)}
+                      />
+                    ))}
+                  </Box>
+                )}
+              </Box>
+
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                <Typography variant="caption" color="text.secondary">
+                  {t("connections.colorTag.label")}
+                </Typography>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.75,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Tooltip title={t("connections.colorTag.none")}>
+                    <IconButton
+                      size="small"
+                      aria-label={t("connections.colorTag.none")}
+                      onClick={() =>
+                        setFormData((prev) => ({ ...prev, colorTag: "" }))
+                      }
+                      sx={{
+                        width: 26,
+                        height: 26,
+                        border: "1px solid",
+                        borderColor: !formData.colorTag
+                          ? "primary.main"
+                          : "divider",
+                        bgcolor: "transparent",
+                      }}
+                    >
+                      <BlockIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  </Tooltip>
+                  {CONNECTION_COLOR_TAG_OPTIONS.map((option) => {
+                    const selected = formData.colorTag === option.color;
+                    const label = getColorTagLabel(t, option.id);
+                    return (
+                      <Tooltip key={option.id} title={label}>
+                        <ButtonBase
+                          aria-label={label}
+                          aria-pressed={selected}
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              colorTag: selected ? "" : option.color,
+                            }))
+                          }
+                          sx={{
+                            width: 26,
+                            height: 26,
+                            borderRadius: "50%",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            bgcolor: option.color,
+                            color: "#fff",
+                            border: "2px solid",
+                            borderColor: selected
+                              ? "text.primary"
+                              : "transparent",
+                            "&:hover": {
+                              bgcolor: option.color,
+                              opacity: 0.9,
+                            },
+                          }}
+                        >
+                          {selected ? (
+                            <CheckIcon sx={{ fontSize: 14 }} />
+                          ) : null}
+                        </ButtonBase>
+                      </Tooltip>
+                    );
+                  })}
+                </Box>
+              </Box>
 
               {/* 代理配置分割线 */}
               <Divider sx={{ my: 1 }}>

@@ -213,7 +213,39 @@
         "disableHint": "当前未启用主密码，敏感字段仅使用随机密钥加密保存。",
         "passwordRequired": "请先设置主密码",
         "passwordMismatch": "两次输入的主密码不一致",
-        "updateFailed": "更新主密码设置失败"
+        "updateFailed": "更新主密码设置失败",
+        "knownHosts": {
+          "title": "受信任的 SSH 主机 (known_hosts)",
+          "description": "查看、搜索或撤销 SimpleShell 保存的 SSH 主机指纹；来自 ~/.ssh/known_hosts 的条目仅作只读展示。",
+          "refresh": "刷新",
+          "clearAll": "全部清除",
+          "searchPlaceholder": "按主机、端口或 SHA-256 指纹搜索...",
+          "loading": "正在加载受信任的 SSH 主机...",
+          "empty": "暂无已记录的受信任 SSH 主机。",
+          "noMatches": "没有匹配搜索条件的受信任主机。",
+          "loadFailed": "加载受信任的 SSH 主机失败",
+          "colHost": "主机:端口",
+          "colFingerprint": "SHA-256 指纹",
+          "colTrustedAt": "信任时间",
+          "colSource": "来源",
+          "colActions": "操作",
+          "sourceApp": "SimpleShell",
+          "sourceSystem": "系统 (system)",
+          "copyFingerprint": "复制指纹",
+          "copySuccess": "指纹已复制到剪贴板",
+          "copyFailed": "复制指纹失败",
+          "readOnly": "只读",
+          "systemReadOnlyHint": "由 ~/.ssh/known_hosts 管理，应用内仅只读显示",
+          "revoke": "撤销",
+          "revokeConfirmTitle": "撤销主机信任",
+          "revokeConfirmMessage": "确定要撤销对 {{host}} 的信任吗？下次 SSH 连接时将重新提示验证主机指纹。",
+          "revokeSuccess": "已撤销对 {{host}} 的信任",
+          "revokeFailed": "撤销主机信任失败",
+          "clearConfirmTitle": "清空所有受信任主机",
+          "clearConfirmMessage": "确定要清空全部 {{count}} 条 SimpleShell 保存的主机指纹吗？系统 ~/.ssh/known_hosts 中的只读条目不受影响。",
+          "clearSuccess": "已清空所有 SimpleShell 保存的受信任主机指纹",
+          "clearFailed": "清空受信任主机失败"
+        }
       },
       "dataSync": {
         "title": "数据与同步",
@@ -355,10 +387,31 @@
       "sftpFollowTerminalDirectory": "SFTP 跟随终端目录",
       "sftpFollowTerminalDirectoryHelp": "所有 SSH 会话共用此设置，保存后立即生效。识别到终端目录变化时自动跳转；自定义提示符可能需要配置 Shell 上报路径。",
       "transferIntegrityHelp": "通过 SFTP 读取远端文件进行完整性校验。大文件需要额外读取时间；校验不一致时整文件重传一次。",
+      "restoreSessionOnStartup": "启动时恢复上次打开的标签页与分屏布局",
+      "restoreSessionOnStartupHelp": "应用启动后（若启用主密码则在解锁后）自动恢复会话标签与分屏布局；快照绝不保存密码或私钥。",
       "historyPrivacy": {
         "title": "命令历史隐私",
         "description": "命令历史仅记录终端可见的命令，并过滤常见敏感参数。其本地存储使用压缩而非加密；过滤无法识别所有敏感信息。旧版本误记的无提示密码可能无法自动识别，可在此清空。IP 查询历史可在 IP 查询面板中清空。",
         "clearCommands": "清空命令历史"
+      },
+      "terminalThemeSectionTitle": "终端配色方案",
+      "terminalThemeLabel": "终端配色预设",
+      "terminalThemeModes": {
+        "auto": "跟随主题",
+        "dark": "深色",
+        "light": "浅色"
+      },
+      "terminalThemePresets": {
+        "defaultAuto": "SimpleShell（跟随主题）",
+        "oneDark": "One Dark",
+        "dracula": "Dracula",
+        "nord": "Nord",
+        "tokyoNight": "Tokyo Night",
+        "catppuccinMocha": "Catppuccin Mocha",
+        "catppuccinLatte": "Catppuccin Latte",
+        "gruvboxDark": "Gruvbox Dark",
+        "solarizedDark": "Solarized Dark",
+        "solarizedLight": "Solarized Light"
       }
     },
     "masterPassword": {
@@ -486,7 +539,8 @@
       "sessionConnected": "已连接",
       "sessionConnecting": "连接中",
       "sessionDisconnected": "未连接",
-      "sessionLocal": "本机"
+      "sessionLocal": "本机",
+      "withShortcut": "{{label}} ({{shortcut}})"
     },
     "portForwarding": {
       "errors": {
@@ -603,23 +657,35 @@
       "emptyHint": "示例地址不会被保存；请填写自己的服务器地址、端口、用户名和认证方式。",
       "consoleLabel": "远程控制台",
       "secureAccess": "安全远程访问",
-      "systemReady": "系统 / 就绪"
+      "systemReady": "系统 / 就绪",
+      "localTerminal": "本地终端"
     },
     "terminal": {
       "welcome": "欢迎",
+      "explainRecentOutput": "用 AI 解释近期输出",
+      "explainRecentOutputPrompt": "请解释最近的终端输出并协助排查可能的错误。",
       "pane": {
         "splitSourceBlocked": "已分屏的标签不能并入其他标签，请先还原为独立标签。",
+        "splitRight": "向右分屏",
+        "splitBottom": "向下分屏",
         "closePane": "关闭当前窗格",
         "closeOtherPanes": "关闭其他窗格",
         "maxReached": "最多支持 4 个窗格",
         "default": "窗格 {{n}}"
-      }
+      },
+      "copyAllOutput": "复制全部输出",
+      "copyAllOutputSuccess": "已复制全部终端输出",
+      "exportScrollback": "导出终端记录...",
+      "exportScrollbackEmpty": "终端输出为空",
+      "exportScrollbackSuccess": "终端输出已导出",
+      "exportScrollbackFailed": "导出终端输出失败：{{error}}"
     },
     "webTerminal": {
       "contextMenu": {
         "copy": "复制",
         "paste": "粘贴",
-        "pasteShortcut": "Ctrl+' / 中键",
+        "pasteShortcut": "Ctrl+' / Ctrl+Shift+V / 中键",
+        "selectAll": "全选",
         "sendToAI": "发送到 AI 助手",
         "search": "搜索",
         "clear": "清空"
@@ -905,7 +971,23 @@
       "totalCommands": "共 {{count}} 条命令",
       "commandSent": "已发送命令：{{command}}",
       "sendCommandFailed": "发送命令失败：{{error}}",
-      "sendCommandHandlerMissing": "未提供发送命令处理函数"
+      "sendCommandHandlerMissing": "未提供发送命令处理函数",
+      "tagsLabel": "标签",
+      "tagsPlaceholder": "逗号分隔，例如 docker, logs",
+      "tagsAll": "全部",
+      "templateSyntaxHint": "支持 {{var}}、{{var=默认值}} 及会话变量 {{host}}、{{user}}、{{port}}、{{cwd}}",
+      "templateDetectedParams": "检测到参数",
+      "templateBuiltinTag": "会话",
+      "templateDialogTitle": "填写命令参数",
+      "templateDefaultHint": "默认值：{{value}}",
+      "templateRequired": "必填",
+      "templatePreviewLabel": "解析后命令预览",
+      "templateModeLabel": "发送模式",
+      "templateModeRun": "运行 (Enter)",
+      "templateModeInsert": "填入命令行",
+      "templateMissingRequired": "请填写必填参数：{{names}}",
+      "templateConfirmRun": "运行命令",
+      "templateConfirmInsert": "填入命令"
     },
     "commandHistory": {
       "title": "命令历史",
@@ -1084,7 +1166,11 @@
           "withConnection": "当前连接: {{host}} ({{type}})",
           "noConnection": "当前无活动连接",
           "unknownHost": "未知主机",
-          "defaultType": "SSH"
+          "defaultType": "SSH",
+          "username": "用户: {{username}}",
+          "cwd": "当前工作目录 (CWD): {{cwd}}",
+          "lastCommand": "最近执行命令: {{command}}",
+          "recentOutputHeader": "近期终端输出（已脱敏）:"
         },
         "responsibilities": {
           "header": "## 核心职责",
@@ -1132,6 +1218,26 @@
         "pendingLine": "待处理：{{tasks}}",
         "none": "无",
         "listJoiner": "、"
+      },
+      "terminalContext": {
+        "chipDetached": "附加终端上下文",
+        "chipActive": "已附加终端上下文",
+        "chipCwdOnly": "cwd: {{cwd}}",
+        "chipCwdLines": "cwd: {{cwd}} · {{count}} 行",
+        "chipLinesOnly": "{{count}} 行",
+        "tooltipEnabled": "已附加终端上下文（已脱敏）",
+        "tooltipDisabled": "已关闭终端上下文（不发送工作目录与输出）",
+        "tooltipCwd": "工作目录: {{cwd}}",
+        "tooltipLastCommand": "最近命令: {{command}}",
+        "tooltipLines": "{{count}} 行输出"
+      },
+      "quickActions": {
+        "explainOutput": "解释近期输出/报错",
+        "explainOutputTooltip": "分析已脱敏的近期终端输出与错误信息",
+        "explainOutputPrompt": "请解释最近的终端输出并协助排查可能的错误。",
+        "suggestCommand": "基于 CWD 推荐命令",
+        "suggestCommandTooltip": "根据当前工作目录和近期上下文推荐下一步命令",
+        "suggestCommandPrompt": "请结合当前工作目录和近期上下文推荐下一步常用的 Shell 命令。"
       }
     },
     "randomPassword": {
@@ -1360,6 +1466,12 @@
       "sort": "排序",
       "sortByName": "按名称排序",
       "sortByTime": "按修改时间排序",
+      "showHiddenFiles": "显示隐藏文件",
+      "hideHiddenFiles": "隐藏隐藏文件",
+      "cdTerminalHere": "在终端中进入此目录",
+      "cdTerminalHereSuccess": "终端已切换至 {{path}}",
+      "cdTerminalHereUnavailable": "当前没有可用的 SSH 终端会话",
+      "cdTerminalHereInvalidPath": "无效的远程目录路径，无法切换终端",
       "createFolder": "新建文件夹",
       "createFile": "新建文件",
       "createFileOrFolder": "新建文件或文件夹",
@@ -2224,6 +2336,113 @@
         "title": "连接失败",
         "message": "连接失败{{target}}",
         "suggestion": "检查主机、端口、认证、代理和网络策略。"
+      }
+    },
+    "commandPalette": {
+      "title": "命令面板",
+      "open": "打开命令面板",
+      "placeholder": "搜索命令、连接、标签页，或直接输入 user@host[:port]...",
+      "empty": "没有匹配的命令或连接目标",
+      "pinnedBadge": "置顶",
+      "paneSubtitle": "分屏窗格 {{n}}",
+      "panelSubtitle": "切换侧边栏面板",
+      "actionSubtitle": "操作",
+      "themeSubtitle": "终端配色方案",
+      "quickConnectPrefix": "快速连接",
+      "quickConnectHint": "打开临时会话",
+      "categories": {
+        "all": "全部",
+        "tabs": "标签与窗格",
+        "connections": "已保存连接",
+        "shells": "本地终端",
+        "panels": "面板",
+        "snippets": "快捷命令",
+        "actions": "操作"
+      },
+      "items": {
+        "newLocalTerminal": "新建本地终端",
+        "toggleTransfers": "切换传输面板",
+        "splitLocalRight": "向右分屏（本地终端）",
+        "exportScrollback": "导出回滚日志...",
+        "copyAllOutput": "复制全部输出",
+        "zoomIn": "放大终端字体",
+        "zoomOut": "缩小终端字体",
+        "zoomReset": "重置终端字号",
+        "switchToLightMode": "切换到浅色模式",
+        "switchToDarkMode": "切换到深色模式",
+        "terminalThemePrefix": "终端主题"
+      }
+    },
+    "broadcastBar": {
+      "title": "广播命令",
+      "toggle": "切换广播命令栏",
+      "show": "显示广播命令栏",
+      "hide": "隐藏广播命令栏",
+      "targetMode": "广播目标",
+      "allConnected": "全部已连接会话",
+      "syncGroupOption": "同步分组 {{groupId}} ({{count}})",
+      "targetSummary": "将发送到 {{count}} 个会话",
+      "excludedCount": "（已排除 {{count}} 个离线会话）",
+      "placeholder": "输入要广播的命令（Ctrl+Enter 发送）...",
+      "appendNewline": "发送回车 (\\n)",
+      "send": "发送"
+    },
+    "tabs": {
+      "duplicate": "复制标签页",
+      "rename": "重命名标签页",
+      "closeOthers": "关闭其他标签页",
+      "closeRight": "关闭右侧标签页",
+      "reopenClosed": "重新打开已关闭标签页",
+      "renameDialogTitle": "重命名标签页",
+      "renamePlaceholder": "自定义标签页标题",
+      "renameResetHint": "留空将恢复为默认会话标题。"
+    },
+    "workspaceRestore": {
+      "title": "工作区与会话恢复"
+    },
+    "connections": {
+      "quickConnect": {
+        "title": "快速连接",
+        "placeholder": "user@host[:port]、ssh://... 或 telnet://...",
+        "inputLabel": "快速连接目标",
+        "connect": "连接",
+        "unsavedNotice": "未保存的快速连接会话",
+        "saveAsConnection": "保存为连接",
+        "errorUnsupportedScheme": "仅支持 ssh:// 和 telnet:// 协议",
+        "errorInvalidPort": "端口必须是 1 到 65535 的整数",
+        "errorInvalidIpv6": "无效的 IPv6 地址（指定端口时请使用 [ipv6]:port 格式）",
+        "errorInvalidUsername": "快速连接目标中的用户名无效",
+        "errorWhitespace": "快速连接目标不能包含空格",
+        "errorEmpty": "请输入主机地址或 user@host 目标",
+        "errorInvalidTarget": "无效的快速连接目标"
+      },
+      "pinned": {
+        "label": "收藏 / 置顶显示",
+        "pin": "置顶收藏",
+        "unpin": "取消置顶",
+        "filterLabel": "收藏"
+      },
+      "tags": {
+        "label": "标签",
+        "placeholder": "输入标签（按回车或逗号添加）",
+        "add": "添加"
+      },
+      "colorTag": {
+        "label": "颜色标识",
+        "none": "无",
+        "red": "红色",
+        "orange": "橙色",
+        "amber": "琥珀",
+        "green": "绿色",
+        "teal": "青色",
+        "blue": "蓝色",
+        "purple": "紫色",
+        "pink": "粉色"
+      },
+      "duplicate": {
+        "action": "复制连接",
+        "copySuffix": "副本",
+        "success": "连接已复制"
       }
     }
   }

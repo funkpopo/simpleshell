@@ -248,7 +248,7 @@ export const useTerminalInputSync = ({
         return;
       }
 
-      if (shouldDropForConcurrentInput()) {
+      if (!event.detail?.broadcast && shouldDropForConcurrentInput()) {
         return;
       }
 

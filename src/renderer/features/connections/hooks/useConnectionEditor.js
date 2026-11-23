@@ -5,9 +5,18 @@ import {
   SAVED_PASSWORD_MASK,
   DEFAULT_SERIAL_FORM,
   DEFAULT_MOSH_FORM,
+  normalizeConnectionTags,
+  normalizeColorTag,
   buildConnectionPayloadFromForm,
   getConnectionValidationSteps,
 } from "../lib/connectionForm.js";
+import { dismissTransientQuickConnect } from "../lib/quickConnect.js";
+
+const INITIAL_METADATA_FIELDS = {
+  pinned: false,
+  tags: [],
+  colorTag: "",
+};
 
 export default function useConnectionEditor({
   connections,
@@ -38,6 +47,7 @@ export default function useConnectionEditor({
     os: "",
     connectionType: "",
     protocol: "ssh", // 默认为SSH
+    ...INITIAL_METADATA_FIELDS,
     ...DEFAULT_SERIAL_FORM,
     ...DEFAULT_MOSH_FORM,
     passwordTouched: false,
@@ -66,7 +76,9 @@ export default function useConnectionEditor({
   const flushEditSaveRef = useRef(null);
   const [serialPorts, setSerialPorts] = useState([]);
   const [serialPortsLoading, setSerialPortsLoading] = useState(false);
+  const transientPresetRef = useRef(null);
   const handleAddConnection = useCallback((parentGroupId = null) => {
+    transientPresetRef.current = null;
     setSelectedItem(null);
     setDialogType("connection");
     setDialogMode("add");
@@ -87,12 +99,60 @@ export default function useConnectionEditor({
       os: "",
       connectionType: "",
       protocol: "ssh", // 默认为SSH
+      ...INITIAL_METADATA_FIELDS,
       ...DEFAULT_SERIAL_FORM,
       ...DEFAULT_MOSH_FORM,
       passwordTouched: false,
       passwordRevealed: false,
       passwordMasked: false,
       // 代理配置（保持字段完整，避免 undefined）
+      enableProxy: false,
+      proxyType: "http",
+      proxyHost: "",
+      proxyPort: 8080,
+      proxyUsername: "",
+      proxyPassword: "",
+      proxyPasswordTouched: false,
+      proxyUseDefault: true,
+    });
+    setShowPassword(false);
+    setDialogOpen(true);
+  }, []);
+  const handleAddFromPreset = useCallback((preset, parentGroupId = null) => {
+    if (!preset || typeof preset !== "object") {
+      return;
+    }
+    const protocol = preset.protocol || "ssh";
+    const defaultPort = protocol === "telnet" ? 23 : 22;
+    transientPresetRef.current = preset;
+    setSelectedItem(null);
+    setDialogType("connection");
+    setDialogMode("add");
+    setPrivateKeyCheck({ status: "idle", message: "", permissions: null });
+    setConnectionTestResult(null);
+    setFormData({
+      name: preset.name || preset.host || "",
+      host: preset.host || "",
+      port: protocol === "serial" ? null : preset.port || defaultPort,
+      username: preset.username || "",
+      password: "",
+      authType: preset.authType || "password",
+      privateKeyPath: preset.privateKeyPath || "",
+      agentPath: preset.agentPath || "",
+      agentForward: preset.agentForward === true,
+      enableCompression: preset.enableCompression === true,
+      parentGroup: parentGroupId || "",
+      os: preset.os || "",
+      connectionType: preset.connectionType || "",
+      protocol,
+      pinned: preset.pinned === true,
+      tags: normalizeConnectionTags(preset.tags),
+      colorTag: normalizeColorTag(preset.colorTag),
+      ...DEFAULT_SERIAL_FORM,
+      ...DEFAULT_MOSH_FORM,
+      passwordTouched: false,
+      passwordRevealed: false,
+      passwordMasked: false,
       enableProxy: false,
       proxyType: "http",
       proxyHost: "",
@@ -167,6 +227,9 @@ export default function useConnectionEditor({
         os: item.os || "",
         connectionType: item.connectionType || "",
         protocol: item.protocol || "ssh",
+        pinned: item.pinned === true,
+        tags: normalizeConnectionTags(item.tags),
+        colorTag: normalizeColorTag(item.colorTag),
         // 串口参数（仅 protocol 为 serial 时使用）
         ...DEFAULT_SERIAL_FORM,
         ...(item.protocol === "serial"
@@ -729,6 +792,10 @@ export default function useConnectionEditor({
       }
 
       setConnections(newConnections);
+      if (dialogMode === "add" && transientPresetRef.current) {
+        dismissTransientQuickConnect(transientPresetRef.current);
+        transientPresetRef.current = null;
+      }
       if (dialogMode === "edit") {
         setSelectedItem({
           ...connectionData,
@@ -792,6 +859,7 @@ export default function useConnectionEditor({
   );
   return {
     handleAddConnection,
+    handleAddFromPreset,
     handleAddGroup,
     handleEdit,
     dialogOpen,

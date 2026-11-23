@@ -14,6 +14,10 @@ import {
   createPaneId,
   getTargetPaneCount,
   clampRatio,
+  canSplitLayout,
+  splitPaneInLayout,
+  getAdjacentPaneId,
+  focusAdjacentPane,
 } from "../../src/renderer/features/terminal/model/paneLayout.js";
 
 const makeState = (overrides = {}) => ({
@@ -281,5 +285,80 @@ describe("getTargetPaneCount / clampRatio / MAX_PANES", () => {
     expect(clampRatio(50)).toBe(50);
     expect(clampRatio(95)).toBe(85);
     expect(clampRatio(10, 20, 80)).toBe(20);
+  });
+});
+
+describe("splitPaneInLayout & geometric focusAdjacentPane", () => {
+  it("supports H/V splits up to MAX_PANES=4 and caps further splits", () => {
+    expect(canSplitLayout(null)).toBe(true);
+    let layout = splitPaneInLayout(null, "tab-1", "tab-1::p2", "right");
+    expect(layout.direction).toBe("row");
+    expect(layout.panes).toEqual(["tab-1", "tab-1::p2"]);
+    expect(layout.focusedPaneId).toBe("tab-1::p2");
+
+    layout = splitPaneInLayout(layout, "tab-1", "tab-1::p3", "bottom");
+    expect(layout.direction).toBe("grid");
+    expect(layout.panes).toEqual(["tab-1", "tab-1::p2", "tab-1::p3"]);
+
+    layout = splitPaneInLayout(layout, "tab-1", "tab-1::p4", "right");
+    expect(layout.panes).toHaveLength(4);
+    expect(canSplitLayout(layout)).toBe(false);
+
+    const capped = splitPaneInLayout(layout, "tab-1", "tab-1::p5", "right");
+    expect(capped).toBe(layout);
+    expect(capped.panes).toHaveLength(4);
+  });
+
+  it("navigates row and column layouts geometrically", () => {
+    const rowLayout = {
+      direction: "row",
+      panes: ["p1", "p2"],
+      ratios: [50, 50],
+      focusedPaneId: "p1",
+    };
+    expect(getAdjacentPaneId(rowLayout, "ArrowRight")).toBe("p2");
+    expect(getAdjacentPaneId(rowLayout, "ArrowUp")).toBeNull();
+    const movedRow = focusAdjacentPane(rowLayout, "right");
+    expect(movedRow.focusedPaneId).toBe("p2");
+    expect(getAdjacentPaneId(movedRow, "left")).toBe("p1");
+
+    const colLayout = {
+      direction: "column",
+      panes: ["p1", "p2"],
+      ratios: [40, 60],
+      focusedPaneId: "p1",
+    };
+    expect(getAdjacentPaneId(colLayout, "down")).toBe("p2");
+    expect(getAdjacentPaneId(colLayout, "left")).toBeNull();
+    expect(focusAdjacentPane(colLayout, "down").focusedPaneId).toBe("p2");
+  });
+
+  it("navigates 3-pane and 4-pane grid layouts accurately", () => {
+    const grid3 = {
+      direction: "grid",
+      panes: ["p1", "p2", "p3"],
+      ratios: [50, 50],
+      focusedPaneId: "p2",
+    };
+    expect(getAdjacentPaneId(grid3, "left")).toBe("p1");
+    expect(getAdjacentPaneId(grid3, "down")).toBe("p3");
+    expect(getAdjacentPaneId({ ...grid3, focusedPaneId: "p3" }, "up")).toBe(
+      "p1",
+    );
+
+    const grid4 = {
+      direction: "grid",
+      panes: ["p1", "p2", "p3", "p4"],
+      ratios: [35, 65],
+      focusedPaneId: "p1",
+    };
+    const atP2 = focusAdjacentPane(grid4, "ArrowRight");
+    expect(atP2.focusedPaneId).toBe("p2");
+    const atP4 = focusAdjacentPane(atP2, "ArrowDown");
+    expect(atP4.focusedPaneId).toBe("p4");
+    const atP3 = focusAdjacentPane(atP4, "ArrowLeft");
+    expect(atP3.focusedPaneId).toBe("p3");
+    const backP1 = focusAdjacentPane(atP3, "ArrowUp");
+    expect(backP1.focusedPaneId).toBe("p1");
   });
 });

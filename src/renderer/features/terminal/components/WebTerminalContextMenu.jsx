@@ -8,6 +8,8 @@ import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import CopyAllIcon from "@mui/icons-material/CopyAll";
+import SaveAltIcon from "@mui/icons-material/SaveAlt";
 import PasteIcon from "@mui/icons-material/ContentPaste";
 import ClearAllIcon from "@mui/icons-material/ClearAll";
 import SearchIcon from "@mui/icons-material/Search";
@@ -16,9 +18,14 @@ import CloseIcon from "@mui/icons-material/Close";
 import CloseOtherPanesIcon from "@mui/icons-material/CallToAction";
 import AddCircleOutlinedIcon from "@mui/icons-material/AddCircleOutlined";
 import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircle";
+import SelectAllIcon from "@mui/icons-material/SelectAll";
+import VerticalSplitIcon from "@mui/icons-material/VerticalSplit";
+import HorizontalSplitIcon from "@mui/icons-material/HorizontalSplit";
 import Box from "@mui/material/Box";
 import { useTranslation } from "react-i18next";
 import { getWebTerminalContextMenuPaperSx } from "../../../shared/ui/contextMenuStyles";
+
+const MAX_PANES = 4;
 
 const WebTerminalContextMenu = ({
   contextMenu,
@@ -27,12 +34,17 @@ const WebTerminalContextMenu = ({
   paneMenu = null,
   onClosePane,
   onCloseOtherPanes,
+  onSplitRight,
+  onSplitBottom,
   onCreateSyncGroup,
   onJoinSyncGroup,
   onLeaveSyncGroup,
   onClose,
   onCopy,
+  onCopyAllOutput,
+  onExportScrollback,
   onPaste,
+  onSelectAll,
   onSendToAI,
   onSearch,
   onClear,
@@ -74,7 +86,7 @@ const WebTerminalContextMenu = ({
         </ListItemIcon>
         <ListItemText>{t("webTerminal.contextMenu.copy")}</ListItemText>
         <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-          Ctrl+;
+          Ctrl+; / Ctrl+Shift+C
         </Typography>
       </MenuItem>
       <MenuItem onClick={onPaste}>
@@ -86,11 +98,23 @@ const WebTerminalContextMenu = ({
           {t("webTerminal.contextMenu.pasteShortcut")}
         </Typography>
       </MenuItem>
-      <MenuItem onClick={onSendToAI} disabled={!selectedText}>
+      {onSelectAll && (
+        <MenuItem onClick={onSelectAll}>
+          <ListItemIcon>
+            <SelectAllIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t("webTerminal.contextMenu.selectAll")}</ListItemText>
+        </MenuItem>
+      )}
+      <MenuItem onClick={onSendToAI}>
         <ListItemIcon>
           <SmartToyIcon fontSize="small" />
         </ListItemIcon>
-        <ListItemText>{t("webTerminal.contextMenu.sendToAI")}</ListItemText>
+        <ListItemText>
+          {selectedText
+            ? t("webTerminal.contextMenu.sendToAI")
+            : t("terminal.explainRecentOutput")}
+        </ListItemText>
       </MenuItem>
       <Divider />
       {isActive && (
@@ -114,11 +138,48 @@ const WebTerminalContextMenu = ({
           Ctrl+L
         </Typography>
       </MenuItem>
+      {/* P1-5: Copy All Output & Scrollback Export */}
+      <MenuItem onClick={onCopyAllOutput}>
+        <ListItemIcon>
+          <CopyAllIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>{t("terminal.copyAllOutput")}</ListItemText>
+      </MenuItem>
+      <MenuItem onClick={onExportScrollback}>
+        <ListItemIcon>
+          <SaveAltIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>{t("terminal.exportScrollback")}</ListItemText>
+      </MenuItem>
 
-      {/* 窗格管理（分屏由拖拽标签页合并触发） */}
+      {/* 窗格管理（支持快捷键/右键分屏与关闭） */}
+      <Divider />
+      <MenuItem
+        onClick={runAndClose(() => onSplitRight?.())}
+        disabled={paneCount >= MAX_PANES || !onSplitRight}
+      >
+        <ListItemIcon>
+          <VerticalSplitIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>{t("terminal.pane.splitRight")}</ListItemText>
+        <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+          Ctrl+Shift+E
+        </Typography>
+      </MenuItem>
+      <MenuItem
+        onClick={runAndClose(() => onSplitBottom?.())}
+        disabled={paneCount >= MAX_PANES || !onSplitBottom}
+      >
+        <ListItemIcon>
+          <HorizontalSplitIcon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>{t("terminal.pane.splitBottom")}</ListItemText>
+        <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+          Ctrl+Shift+H
+        </Typography>
+      </MenuItem>
       {paneMenu?.isInSplit ? (
         <>
-          <Divider />
           <MenuItem
             onClick={runAndClose(() => onCloseOtherPanes?.())}
             disabled={paneCount <= 1}
@@ -133,6 +194,9 @@ const WebTerminalContextMenu = ({
               <CloseIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>{t("terminal.pane.closePane")}</ListItemText>
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+              Ctrl+Shift+W
+            </Typography>
           </MenuItem>
         </>
       ) : null}
@@ -192,12 +256,17 @@ WebTerminalContextMenu.propTypes = {
   }),
   onClosePane: PropTypes.func,
   onCloseOtherPanes: PropTypes.func,
+  onSplitRight: PropTypes.func,
+  onSplitBottom: PropTypes.func,
   onCreateSyncGroup: PropTypes.func,
   onJoinSyncGroup: PropTypes.func,
   onLeaveSyncGroup: PropTypes.func,
   onClose: PropTypes.func.isRequired,
   onCopy: PropTypes.func.isRequired,
+  onCopyAllOutput: PropTypes.func,
+  onExportScrollback: PropTypes.func,
   onPaste: PropTypes.func.isRequired,
+  onSelectAll: PropTypes.func,
   onSendToAI: PropTypes.func.isRequired,
   onSearch: PropTypes.func.isRequired,
   onClear: PropTypes.func.isRequired,

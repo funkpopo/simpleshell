@@ -5,6 +5,7 @@ import { RendererTerminalIOMailbox } from "../io/RendererTerminalIOMailbox.js";
 import { registerTerminalIOMailbox } from "./terminalSessionStore.js";
 import {
   DEFAULT_TERMINAL_LINE_HEIGHT,
+  DEFAULT_TERMINAL_THEME,
   getTerminalTheme,
 } from "../model/terminalTheme.js";
 import { DEFAULT_TERMINAL_SCROLLBACK_LINES } from "../../../../shared/domain/terminalScrollback.js";
@@ -72,11 +73,14 @@ export function applyTerminalUiOptionsToInstance(term, uiOrFontSettings) {
 }
 
 /** Creates a new xterm instance with the fixed-geometry defaults. */
-export function createXtermTerminal(themeMode) {
+export function createXtermTerminal(
+  themeMode,
+  terminalTheme = DEFAULT_TERMINAL_THEME,
+) {
   const term = new Terminal({
     cursorBlink: true,
     cursorStyle: "block",
-    theme: getTerminalTheme(themeMode),
+    theme: getTerminalTheme(themeMode, terminalTheme),
     fontFamily: FIRA_CODE_FONT_FAMILY,
     fontSize: 14,
     fontWeight: 500,
@@ -117,6 +121,8 @@ export function applyStoredFontSettings({
   scrollbackUsageTrackerRef,
   performanceMonitorRef,
   scheduleTerminalLayoutSyncRef,
+  themeModeRef,
+  terminalThemeRef,
 }) {
   (async () => {
     try {
@@ -125,6 +131,15 @@ export function applyStoredFontSettings({
       term.options.fontFamily = fontSettings.fontFamily;
       term.options.fontWeight = fontSettings.fontWeight;
       term.options.lineHeight = fontSettings.lineHeight;
+      if (fontSettings.terminalTheme) {
+        if (terminalThemeRef) {
+          terminalThemeRef.current = fontSettings.terminalTheme;
+        }
+        term.options.theme = getTerminalTheme(
+          themeModeRef?.current || "dark",
+          fontSettings.terminalTheme,
+        );
+      }
       applyTerminalUiOptionsToInstance(term, fontSettings);
       const scrollLines =
         fontSettings.terminalScrollbackLines ||

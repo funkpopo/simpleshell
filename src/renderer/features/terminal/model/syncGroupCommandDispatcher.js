@@ -1,5 +1,6 @@
 import { findGroupByTab } from "./syncInputGroups";
 import { processCache } from "../runtime/terminalSessionStore.js";
+import { getLiveSessionKeys, getSessionDescriptor } from "./paneLayout.js";
 
 /**
  * 分组命令分发器：统一负责将命令同步到分组内所有终端。
@@ -70,4 +71,149 @@ export function dispatchCommandToGroup(
       }),
     );
   }
+}
+
+/**
+ * Resolves live, connected target sessions for the Broadcast Command Bar.
+ * Explicitly excludes the welcome tab and any disconnected / processless sessions.
+ */
+export function resolveBroadcastTargets({
+  mode = "all",
+  groupId = null,
+  tabs = [],
+  splitLayouts = {},
+  panes = {},
+  syncGroups = [],
+  terminalInstances = {},
+  connectionStatusByTabId = {},
+  processRegistry = processCache,
+} = {}) {
+  const liveKeys = getLiveSessionKeys(tabs, splitLayouts);
+  const liveKeySet = new Set(liveKeys);
+
+  let candidateKeys = liveKeys;
+  let activeGroup = null;
+
+  if (mode === "group") {
+    activeGroup =
+      (groupId
+        ? syncGroups.find((group) => group.groupId === groupId)
+        : syncGroups[0]) || null;
+    candidateKeys = activeGroup?.members
+      ? activeGroup.members.filter((key) => liveKeySet.has(key))
+      : [];
+  }
+
+  const targets = [];
+  let excludedCount = 0;
+
+  for (const sessionKey of candidateKeys) {
+    const processId = processRegistry?.[sessionKey];
+    const status = connectionStatusByTabId?.[sessionKey];
+    const explicitlyDisconnected =
+      status && status.isConnected === false && status.isConnecting !== true;
+
+    if (!processId || explicitlyDisconnected) {
+      excludedCount += 1;
+      continue;
+    }
+
+    const descriptor = getSessionDescriptor(
+      { tabs, panes, splitLayouts, terminalInstances },
+      sessionKey,
+      connectionStatusByTabId,
+      processRegistry,
+    );
+
+    if (!descriptor || descriptor.type === "welcome") {
+      excludedCount += 1;
+      continue;
+    }
+
+    const config =
+      descriptor.config || terminalInstances?.[`${sessionKey}-config`];
+    const hostBadge =
+      descriptor.type === "local"
+        ? descriptor.label || sessionKey
+        : config?.host
+          ? `${config.username ? `${config.username}@` : ""}${config.host}`
+          : descriptor.label || sessionKey;
+
+    const groupForSession = findGroupByTab(syncGroups, sessionKey);
+    targets.push({
+      sessionKey,
+      label: descriptor.customTitle || descriptor.label || hostBadge,
+      hostBadge,
+      protocol: descriptor.type || config?.protocol || "ssh",
+      groupId: groupForSession?.groupId || null,
+      groupColor: groupForSession?.color || null,
+    });
+  }
+
+  return {
+    targets,
+    excludedCount,
+    activeGroupId: activeGroup?.groupId || null,
+  };
+}
+
+/**
+ * Dispatches a broadcast command across explicit target session keys using the
+ * shared `syncTerminalCommand` per-terminal pipeline.
+ */
+export function dispatchBroadcastCommand({
+  command,
+  targetSessionKeys = [],
+  appendNewline = true,
+  sourceTabId = null,
+  groupId = null,
+  processRegistry = processCache,
+} = {}) {
+  if (
+    typeof command !== "string" ||
+    !Array.isArray(targetSessionKeys) ||
+    targetSessionKeys.length === 0
+  ) {
+    return {
+      sentCount: 0,
+      sentSessionKeys: [],
+      unreachableSessionKeys: [],
+    };
+  }
+
+  const execute = appendNewline !== false;
+  const sentSessionKeys = [];
+  const unreachableSessionKeys = [];
+
+  for (const targetTabId of targetSessionKeys) {
+    if (!processRegistry?.[targetTabId]) {
+      unreachableSessionKeys.push(targetTabId);
+      continue;
+    }
+
+    if (
+      typeof window !== "undefined" &&
+      typeof window.dispatchEvent === "function"
+    ) {
+      window.dispatchEvent(
+        new CustomEvent("syncTerminalCommand", {
+          detail: {
+            sourceTabId,
+            targetTabId,
+            groupId: groupId ?? null,
+            command,
+            execute,
+            broadcast: true,
+          },
+        }),
+      );
+    }
+    sentSessionKeys.push(targetTabId);
+  }
+
+  return {
+    sentCount: sentSessionKeys.length,
+    sentSessionKeys,
+    unreachableSessionKeys,
+  };
 }

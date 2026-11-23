@@ -14,8 +14,9 @@ import {
   SectionCardHeader,
   SettingsToggleRow,
 } from "../components/SettingsSection.jsx";
+import KnownHostsSection from "./KnownHostsSection.jsx";
 
-export default function SecuritySettings({ initialValues, ref }) {
+export default function SecuritySettings({ initialValues, open = true, ref }) {
   const { t } = useTranslation();
   const { showError, showSuccess } = useNotification();
   const [masterPasswordEnabled, setMasterPasswordEnabled] = React.useState(
@@ -174,6 +175,7 @@ export default function SecuritySettings({ initialValues, ref }) {
           </Typography>
         ) : null}
       </Box>
+      <KnownHostsSection open={open} />
     </Box>
   );
 }

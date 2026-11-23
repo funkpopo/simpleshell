@@ -11,6 +11,7 @@ import {
 import SidebarEmptyState from "../../shared/ui/SidebarEmptyState.jsx";
 import {
   ConnectionDragHandle,
+  ConnectionPinButton,
   ConnectionRowButton,
   GroupRowButton,
   focusConnectionRow,
@@ -37,6 +38,7 @@ const ConnectionItem = memo(function ConnectionItem({
   onToggleGroup,
   onSelectConnection,
   onDoubleClick,
+  onTogglePin,
   onItemContextMenu,
 }) {
   const item = flattenedItems[index];
@@ -79,13 +81,20 @@ const ConnectionItem = memo(function ConnectionItem({
               onClick={() => onToggleGroup(item.id)}
             />
           ) : (
-            <ConnectionRowButton
-              connection={item}
-              onClick={() => onSelectConnection(item)}
-              onDoubleClick={
-                onDoubleClick ? () => onDoubleClick(item) : undefined
-              }
-            />
+            <>
+              <ConnectionRowButton
+                connection={item}
+                onClick={() => onSelectConnection(item)}
+                onDoubleClick={
+                  onDoubleClick ? () => onDoubleClick(item) : undefined
+                }
+              />
+              <ConnectionPinButton
+                connection={item}
+                parentGroup={item.parentGroup || null}
+                onTogglePin={onTogglePin}
+              />
+            </>
           )}
         </ListItem>
       </div>
@@ -131,6 +140,7 @@ const VirtualizedConnectionList = ({
   onToggleGroup,
   onSelectConnection,
   onDoubleClick,
+  onTogglePin,
   onItemContextMenu,
   onBlankContextMenu,
   emptyMessage,
@@ -205,6 +215,7 @@ const VirtualizedConnectionList = ({
       onToggleGroup: handleToggleGroup,
       onSelectConnection,
       onDoubleClick,
+      onTogglePin,
       onItemContextMenu,
     }),
     [
@@ -214,6 +225,7 @@ const VirtualizedConnectionList = ({
       handleToggleGroup,
       onSelectConnection,
       onDoubleClick,
+      onTogglePin,
       onItemContextMenu,
     ],
   );

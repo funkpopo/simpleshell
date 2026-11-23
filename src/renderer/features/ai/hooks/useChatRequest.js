@@ -19,6 +19,8 @@ import { deleteChatMemory } from "../lib/chatMemory.js";
 export default function useChatRequest({
   sessionKey,
   connectionInfo,
+  attachTerminalContext = false,
+  getTerminalContext = null,
   currentApi,
   messages,
   setMessages,
@@ -142,9 +144,24 @@ export default function useChatRequest({
         return;
 
       // 生成系统提示词
+      const shouldAttachContext =
+        options.attachTerminalContext !== undefined
+          ? Boolean(options.attachTerminalContext)
+          : Boolean(attachTerminalContext);
+      const resolvedTerminalContext =
+        shouldAttachContext && connectionInfo
+          ? (options.terminalContext ??
+            (typeof getTerminalContext === "function"
+              ? getTerminalContext()
+              : null))
+          : null;
       let systemPrompt = generateSystemPrompt({
         language: i18n.language,
         connectionInfo: connectionInfo,
+        terminalContext: resolvedTerminalContext,
+        attachTerminalContext: Boolean(
+          shouldAttachContext && resolvedTerminalContext,
+        ),
       });
 
       // 如果有记忆，注入到系统提示词开头
@@ -317,6 +334,25 @@ export default function useChatRequest({
     await sendMessageContent(input, messages, { clearInput: true });
   };
 
+  // 一键快捷操作发送（未配置 API 时回填输入框并提示配置）
+  const handleSendQuickPrompt = async (promptText, options = {}) => {
+    const trimmed = typeof promptText === "string" ? promptText.trim() : "";
+    if (!trimmed || isPending || activeRequestRef.current) {
+      return;
+    }
+    if (
+      !currentApi ||
+      !currentApi.apiUrl ||
+      !hasConfiguredApiKey(currentApi) ||
+      !currentApi.model
+    ) {
+      setInput(trimmed);
+      setError(t("ai.noApiConfigured"));
+      return;
+    }
+    await sendMessageContent(trimmed, messages, options);
+  };
+
   const clearMemoryAfterTruncate = deleteChatMemory;
 
   const handleEditMessage = async (message) => {
@@ -391,6 +427,7 @@ export default function useChatRequest({
     abortController,
     cancelActiveRequest,
     handleSendMessage,
+    handleSendQuickPrompt,
     handleEditMessage,
     handleRetryMessage,
     handleAbortRequest,

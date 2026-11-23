@@ -10,6 +10,19 @@ const RESOURCE_PROCESS_REFRESH_OPTIONS = [5, 10, 15, 30, 60];
 const RESOURCE_MAX_PROCESSES_OPTIONS = [25, 50, 100, 200];
 const TERMINAL_CURSOR_STYLE_OPTIONS = ["block", "underline", "bar"];
 const TERMINAL_FONT_WEIGHT_BOLD_OPTIONS = [500, 600, 700, 800, 900];
+const DEFAULT_TERMINAL_THEME = "default-auto";
+const TERMINAL_THEME_OPTIONS = [
+  "default-auto",
+  "one-dark",
+  "dracula",
+  "nord",
+  "tokyo-night",
+  "catppuccin-mocha",
+  "catppuccin-latte",
+  "gruvbox-dark",
+  "solarized-dark",
+  "solarized-light",
+];
 const EDITOR_FONT_OPTIONS = ["system", "fira-code", "consolas", "space-mono"];
 const NETWORK_LATENCY_INTERVAL_OPTIONS = [0, 15, 30, 60, 120, 300];
 const FILE_MANAGER_SORT_MODE_OPTIONS = ["name", "time"];
@@ -71,6 +84,7 @@ function createDefaultUISettings() {
     terminalFont: "Fira Code",
     terminalFontSize: 14,
     terminalLineHeight: 1.0,
+    terminalTheme: DEFAULT_TERMINAL_THEME,
     terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
     terminalCursorStyle: "block",
     terminalCursorBlink: true,
@@ -158,6 +172,7 @@ function createDefaultUISettings() {
     ipQueryHistory: [],
     windowBounds: {},
     backupRetentionDays: 30,
+    restoreSessionOnStartup: true,
   };
 }
 
@@ -409,8 +424,21 @@ function normalizePerformanceSettings(uiSettings) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function normalizeTerminalThemeId(value) {
+  return pickEnum(
+    typeof value === "string" ? value.trim() : value,
+    TERMINAL_THEME_OPTIONS,
+    DEFAULT_TERMINAL_THEME,
+  );
+}
+
+/**
  * @param {unknown} uiSettings
  * @returns {{
+ *   terminalTheme: string,
  *   cursorStyle: "block" | "underline" | "bar",
  *   cursorBlink: boolean,
  *   letterSpacing: number,
@@ -440,6 +468,7 @@ function normalizeTerminalUiSettings(uiSettings) {
   const zmodem = isPlainObject(source.zmodem) ? source.zmodem : {};
 
   return {
+    terminalTheme: normalizeTerminalThemeId(source.terminalTheme),
     cursorStyle: /** @type {"block" | "underline" | "bar"} */ (
       pickEnum(
         source.terminalCursorStyle,
@@ -740,6 +769,20 @@ function getMaxPreviewSizeBytes(source) {
   return safeMb * 1024 * 1024;
 }
 
+/**
+ * @param {unknown} uiSettings
+ * @returns {boolean}
+ */
+function normalizeRestoreSessionOnStartup(uiSettings) {
+  const defaults = createDefaultUISettings();
+  if (!isPlainObject(uiSettings)) {
+    return defaults.restoreSessionOnStartup;
+  }
+  return typeof uiSettings.restoreSessionOnStartup === "boolean"
+    ? uiSettings.restoreSessionOnStartup
+    : defaults.restoreSessionOnStartup;
+}
+
 module.exports = {
   UPDATE_REMINDER_INTERVAL_OPTIONS,
   RESOURCE_SYSTEM_REFRESH_OPTIONS,
@@ -747,6 +790,8 @@ module.exports = {
   RESOURCE_MAX_PROCESSES_OPTIONS,
   TERMINAL_CURSOR_STYLE_OPTIONS,
   TERMINAL_FONT_WEIGHT_BOLD_OPTIONS,
+  DEFAULT_TERMINAL_THEME,
+  TERMINAL_THEME_OPTIONS,
   EDITOR_FONT_OPTIONS,
   NETWORK_LATENCY_INTERVAL_OPTIONS,
   FILE_MANAGER_SORT_MODE_OPTIONS,
@@ -763,6 +808,7 @@ module.exports = {
   normalizeRecentConnectionsLimit,
   normalizeAutoUploadDebounceMs,
   normalizePerformanceSettings,
+  normalizeTerminalThemeId,
   normalizeTerminalUiSettings,
   normalizeSshUiSettings,
   normalizeReconnectUiSettings,
@@ -770,5 +816,6 @@ module.exports = {
   normalizeSftpSettings,
   normalizeFileManagerSettings,
   normalizeStorageSettings,
+  normalizeRestoreSessionOnStartup,
   getMaxPreviewSizeBytes,
 };

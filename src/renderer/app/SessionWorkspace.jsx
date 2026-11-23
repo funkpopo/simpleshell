@@ -1,4 +1,4 @@
-import { Suspense, lazy, memo, useMemo } from "react";
+import { Suspense, lazy, memo, useEffect, useMemo, useState } from "react";
 import {
   WebTerminalWithSuspense as WebTerminal,
   AIChatWindowWithSuspense,
@@ -21,6 +21,7 @@ import {
   getLiveSessionKeys,
   getSessionDescriptor,
 } from "../features/terminal/model/paneLayout.js";
+import { processCache } from "../features/terminal/runtime/terminalSessionStore.js";
 
 const selectSessionLayout = ({ tabs, panes, splitLayouts }) => ({
   tabs,
@@ -103,6 +104,41 @@ export function SessionWorkspace(props) {
       />
     </Suspense>
   );
+}
+
+export function useBroadcastSessionSnapshot() {
+  const layout = useShellSelector(
+    ({ tabs, panes, splitLayouts, syncGroups }) => ({
+      tabs,
+      panes,
+      splitLayouts,
+      syncGroups,
+    }),
+    shallowEqual,
+  );
+  const terminalInstances = useTerminalSelector(
+    (instances) => instances,
+    shallowEqual,
+  );
+  const connectionStatusByTabId = useReconnectSelector(
+    (state) => state.connectionStatusByTabId,
+    shallowEqual,
+  );
+  const [, setProcessTick] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setProcessTick((v) => v + 1);
+    window.addEventListener("terminalProcessIdUpdated", refresh);
+    return () =>
+      window.removeEventListener("terminalProcessIdUpdated", refresh);
+  }, []);
+
+  return {
+    ...layout,
+    terminalInstances,
+    connectionStatusByTabId,
+    processRegistry: processCache,
+  };
 }
 
 export function SessionAIChatWorkspace(props) {

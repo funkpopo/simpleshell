@@ -58,12 +58,12 @@ export default function useShellConnections({
     }
   }, [dispatch]);
   React.useEffect(() => {
+    if (credentialSecurityStatus.requiresUnlock) {
+      setConnectionsLoaded(false);
+      return undefined;
+    }
     // 仅在主密码锁定或安全状态仍在加载时推迟；无主密码时必须立即加载 config 中的连接
-    if (
-      credentialSecurityStatus.loading ||
-      credentialSecurityStatus.requiresUnlock ||
-      !window.terminalAPI
-    ) {
+    if (credentialSecurityStatus.loading || !window.terminalAPI) {
       return undefined;
     }
     let cancelled = false;

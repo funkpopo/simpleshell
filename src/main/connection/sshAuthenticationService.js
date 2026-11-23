@@ -3,13 +3,355 @@ const {
   SSH_AUTH_FIELDS,
 } = require("../../shared/connectionConfigSync");
 const crypto = require("crypto");
+const fs = require("fs").promises;
+const os = require("os");
+const path = require("path");
 const { generateId } = require("../../shared/common");
+const { isIP } = require("../../shared/domain/ip");
 const { IPC_EVENT_CHANNELS } = require("../../shared/contracts/ipc/channels");
 const {
   getHostCacheKey,
   normalizeSshHostFingerprint,
   setTrustedHostFingerprint,
 } = require("./sshHostKeyTrust");
+
+const MAX_SYSTEM_KNOWN_HOSTS_BYTES = 1024 * 1024;
+const MAX_SYSTEM_KNOWN_HOSTS_LINES = 5000;
+const activeAuthServiceRefs = new Set();
+
+function registerActiveAuthService(service) {
+  const ref = new WeakRef(service);
+  activeAuthServiceRefs.add(ref);
+  return ref;
+}
+
+function forEachActiveAuthService(callback) {
+  for (const ref of activeAuthServiceRefs) {
+    const instance = ref.deref();
+    if (!instance) {
+      activeAuthServiceRefs.delete(ref);
+      continue;
+    }
+    callback(instance);
+  }
+}
+
+function parseHostAndPortFromKey(hostKey) {
+  const raw = String(hostKey || "").trim();
+  if (!raw) {
+    return { host: "", port: 22 };
+  }
+  if (raw.startsWith("[")) {
+    const closeIdx = raw.indexOf("]");
+    if (closeIdx > 1) {
+      const host = raw.slice(1, closeIdx);
+      const rest = raw.slice(closeIdx + 1);
+      if (rest.startsWith(":")) {
+        const parsedPort = Number.parseInt(rest.slice(1), 10);
+        return {
+          host,
+          port:
+            Number.isInteger(parsedPort) &&
+            parsedPort > 0 &&
+            parsedPort <= 65535
+              ? parsedPort
+              : 22,
+        };
+      }
+      return { host, port: 22 };
+    }
+  }
+  if (isIP(raw) === 6) {
+    return { host: raw, port: 22 };
+  }
+  const colonMatches = raw.match(/:/g);
+  const lastColon = raw.lastIndexOf(":");
+  if (lastColon > 0) {
+    const hostCandidate = raw.slice(0, lastColon);
+    const maybePort = raw.slice(lastColon + 1);
+    const parsedPort = Number.parseInt(maybePort, 10);
+    if (
+      /^\d+$/.test(maybePort) &&
+      parsedPort > 0 &&
+      parsedPort <= 65535 &&
+      ((colonMatches && colonMatches.length === 1) || isIP(hostCandidate) === 6)
+    ) {
+      return {
+        host: hostCandidate,
+        port: parsedPort,
+      };
+    }
+  }
+  return { host: raw, port: 22 };
+}
+
+function computeOpenSshSha256Fingerprint(base64Key) {
+  const trimmed = String(base64Key || "").trim();
+  if (!trimmed || !/^[A-Za-z0-9+/=]+$/.test(trimmed)) {
+    return null;
+  }
+  const decoded = Buffer.from(trimmed, "base64");
+  if (!decoded.length) {
+    return null;
+  }
+  const digest = crypto
+    .createHash("sha256")
+    .update(decoded)
+    .digest("base64")
+    .replace(/=+$/, "");
+  return `SHA256:${digest}`;
+}
+
+function parseSystemKnownHostToken(token) {
+  const cleaned = String(token || "").trim();
+  if (!cleaned || cleaned.startsWith("!")) {
+    return null;
+  }
+  if (cleaned.startsWith("|")) {
+    return {
+      hostKey: cleaned,
+      host: cleaned,
+      port: 22,
+    };
+  }
+  const { host, port } = parseHostAndPortFromKey(cleaned);
+  if (!host) {
+    return null;
+  }
+  return {
+    hostKey: port !== 22 ? `${host}:${port}` : `${host}:22`,
+    host,
+    port,
+  };
+}
+
+function parseSystemKnownHostsContent(content, updatedAt = null) {
+  if (typeof content !== "string" || !content.trim()) {
+    return [];
+  }
+  const entries = [];
+  const lines = content.split(/\r?\n/);
+  const limit = Math.min(lines.length, MAX_SYSTEM_KNOWN_HOSTS_LINES);
+
+  for (let i = 0; i < limit; i += 1) {
+    const line = lines[i].trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const parts = line.split(/\s+/);
+    let offset = 0;
+    if (parts[0]?.startsWith("@")) {
+      const marker = parts[0].toLowerCase();
+      if (marker === "@revoked") {
+        continue;
+      }
+      offset = 1;
+    }
+
+    const hostsField = parts[offset];
+    const keyType = parts[offset + 1];
+    const base64Key = parts[offset + 2];
+    if (!hostsField || !keyType || !base64Key) {
+      continue;
+    }
+
+    const fingerprint = computeOpenSshSha256Fingerprint(base64Key);
+    if (!fingerprint) {
+      continue;
+    }
+
+    const tokens = hostsField.split(",");
+    tokens.forEach((token, tokenIndex) => {
+      const parsedHost = parseSystemKnownHostToken(token);
+      if (!parsedHost) {
+        return;
+      }
+      entries.push({
+        id: `system:${i + 1}:${tokenIndex}:${parsedHost.hostKey}`,
+        hostKey: parsedHost.hostKey,
+        host: parsedHost.host,
+        port: parsedHost.port,
+        fingerprint,
+        keyType,
+        updatedAt,
+        source: "system",
+        editable: false,
+      });
+    });
+  }
+
+  return entries;
+}
+
+async function readSystemKnownHosts(systemKnownHostsPath) {
+  if (systemKnownHostsPath === null) {
+    return [];
+  }
+  const targetPath =
+    systemKnownHostsPath || path.join(os.homedir(), ".ssh", "known_hosts");
+
+  try {
+    const stats = await fs.stat(targetPath);
+    if (!stats.isFile()) {
+      return [];
+    }
+
+    let content = "";
+    if (stats.size > MAX_SYSTEM_KNOWN_HOSTS_BYTES) {
+      const handle = await fs.open(targetPath, "r");
+      try {
+        const buffer = Buffer.alloc(MAX_SYSTEM_KNOWN_HOSTS_BYTES);
+        const { bytesRead } = await handle.read(
+          buffer,
+          0,
+          MAX_SYSTEM_KNOWN_HOSTS_BYTES,
+          0,
+        );
+        content = buffer.toString("utf8", 0, bytesRead);
+      } finally {
+        await handle.close();
+      }
+    } else {
+      content = await fs.readFile(targetPath, "utf8");
+    }
+
+    const updatedAt = stats.mtime ? stats.mtime.toISOString() : null;
+    return parseSystemKnownHostsContent(content, updatedAt);
+  } catch (error) {
+    if (
+      error &&
+      (error.code === "ENOENT" ||
+        error.code === "EISDIR" ||
+        error.code === "ENOTDIR" ||
+        error.code === "EACCES" ||
+        error.code === "EPERM")
+    ) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function listStoredKnownHosts(configService) {
+  const storedHosts = configService?.get?.("sshKnownHosts");
+  if (!storedHosts || typeof storedHosts !== "object") {
+    return [];
+  }
+
+  return Object.entries(storedHosts)
+    .map(([hostKey, entry]) => {
+      const rawFingerprint =
+        typeof entry === "string" ? entry : entry?.fingerprint;
+      const fingerprint = normalizeSshHostFingerprint(rawFingerprint);
+      if (!fingerprint) {
+        return null;
+      }
+      const { host, port } = parseHostAndPortFromKey(hostKey);
+      const updatedAt =
+        typeof entry === "object" && entry?.updatedAt ? entry.updatedAt : null;
+      return {
+        id: `simpleshell:${hostKey}`,
+        hostKey,
+        host: host || hostKey,
+        port,
+        fingerprint,
+        updatedAt,
+        source: "simpleshell",
+        editable: true,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      const timeA = a.updatedAt ? Date.parse(a.updatedAt) || 0 : 0;
+      const timeB = b.updatedAt ? Date.parse(b.updatedAt) || 0 : 0;
+      if (timeB !== timeA) {
+        return timeB - timeA;
+      }
+      return a.hostKey.localeCompare(b.hostKey);
+    });
+}
+
+async function listKnownHosts({ configService, systemKnownHostsPath } = {}) {
+  const stored = listStoredKnownHosts(configService);
+  const system = await readSystemKnownHosts(systemKnownHostsPath);
+  return {
+    success: true,
+    hosts: [...stored, ...system],
+    systemHostsCount: system.length,
+  };
+}
+
+function removeStoredKnownHost({ configService, hostKey } = {}) {
+  const normalizedKey = String(hostKey || "").trim();
+  if (!normalizedKey) {
+    throw new Error("Host key is required");
+  }
+
+  const parsed = parseHostAndPortFromKey(normalizedKey);
+  const canonicalKey = parsed.host
+    ? getHostCacheKey(parsed.host, parsed.port)
+    : normalizedKey;
+
+  const currentStored = configService?.get?.("sshKnownHosts");
+  const nextHosts =
+    currentStored && typeof currentStored === "object"
+      ? { ...currentStored }
+      : {};
+
+  let removed = false;
+  if (Object.prototype.hasOwnProperty.call(nextHosts, normalizedKey)) {
+    delete nextHosts[normalizedKey];
+    removed = true;
+  }
+  if (
+    canonicalKey !== normalizedKey &&
+    Object.prototype.hasOwnProperty.call(nextHosts, canonicalKey)
+  ) {
+    delete nextHosts[canonicalKey];
+    removed = true;
+  }
+
+  if (removed && typeof configService?.set === "function") {
+    const saved = configService.set("sshKnownHosts", nextHosts);
+    if (saved === false) {
+      throw new Error("Failed to persist known SSH hosts");
+    }
+  }
+
+  forEachActiveAuthService((service) => {
+    service.evictKnownHost(normalizedKey);
+  });
+
+  return {
+    success: true,
+    removed,
+  };
+}
+
+function clearStoredKnownHosts({ configService } = {}) {
+  const currentStored = configService?.get?.("sshKnownHosts");
+  const existingKeys =
+    currentStored && typeof currentStored === "object"
+      ? Object.keys(currentStored)
+      : [];
+
+  if (typeof configService?.set === "function") {
+    const saved = configService.set("sshKnownHosts", {});
+    if (saved === false) {
+      throw new Error("Failed to clear known SSH hosts");
+    }
+  }
+
+  forEachActiveAuthService((service) => {
+    service.clearKnownHostsMemory(existingKeys);
+  });
+
+  return {
+    success: true,
+    clearedCount: existingKeys.length,
+  };
+}
 
 // Owns authentication queues and host trust independently of IPC/session routing.
 class SSHAuthenticationService {
@@ -23,6 +365,7 @@ class SSHAuthenticationService {
     this.knownHostsLoaded = false;
     this.pendingHostVerifications = new Map();
     this.sessionTrustedHosts = new Map();
+    this._instanceRef = registerActiveAuthService(this);
   }
   /** 连接凭据发生变化时取消对应的待处理认证。 */
   cancelForChangedConnections(previousConnections, connections) {
@@ -512,5 +855,85 @@ class SSHAuthenticationService {
       this._createKeyboardInteractiveResponder(connectionConfig);
     return connectionConfig;
   }
+
+  /**
+   * 仅从内存缓存（knownHostsCache 与 sessionTrustedHosts）驱逐指定主机指纹，
+   * 用于撤销信任后立即失效当前会话信任。
+   */
+  evictKnownHost(hostKey) {
+    const normalizedKey = String(hostKey || "").trim();
+    if (!normalizedKey) {
+      return false;
+    }
+
+    const parsed = parseHostAndPortFromKey(normalizedKey);
+    const canonicalKey = parsed.host
+      ? this._getHostCacheKey(parsed.host, parsed.port)
+      : normalizedKey;
+
+    const deletedKnown =
+      this.knownHostsCache.delete(normalizedKey) ||
+      this.knownHostsCache.delete(canonicalKey);
+    const deletedSession =
+      this.sessionTrustedHosts.delete(normalizedKey) ||
+      this.sessionTrustedHosts.delete(canonicalKey);
+    return Boolean(deletedKnown || deletedSession);
+  }
+
+  /**
+   * 清空持久化已知主机在内存中的缓存（保留纯临时 session scope 信任，同时确保任何已清除条目失效）
+   */
+  clearKnownHostsMemory(clearedKeys = []) {
+    this.knownHostsCache.clear();
+    if (Array.isArray(clearedKeys)) {
+      clearedKeys.forEach((hostKey) => {
+        const normalizedKey = String(hostKey || "").trim();
+        if (!normalizedKey) {
+          return;
+        }
+        const parsed = parseHostAndPortFromKey(normalizedKey);
+        const canonicalKey = parsed.host
+          ? this._getHostCacheKey(parsed.host, parsed.port)
+          : normalizedKey;
+        this.sessionTrustedHosts.delete(normalizedKey);
+        this.sessionTrustedHosts.delete(canonicalKey);
+      });
+    }
+    for (const [key, entry] of this.sessionTrustedHosts.entries()) {
+      if (typeof entry === "string" || entry?.scope !== "session") {
+        this.sessionTrustedHosts.delete(key);
+      }
+    }
+  }
+
+  async listKnownHosts(options = {}) {
+    return listKnownHosts({
+      configService: this.configService,
+      systemKnownHostsPath: options.systemKnownHostsPath,
+    });
+  }
+
+  removeKnownHost(hostKey) {
+    return removeStoredKnownHost({
+      configService: this.configService,
+      hostKey,
+    });
+  }
+
+  clearKnownHosts() {
+    return clearStoredKnownHosts({
+      configService: this.configService,
+    });
+  }
 }
+
+SSHAuthenticationService.parseHostAndPortFromKey = parseHostAndPortFromKey;
+SSHAuthenticationService.computeOpenSshSha256Fingerprint =
+  computeOpenSshSha256Fingerprint;
+SSHAuthenticationService.parseSystemKnownHostsContent =
+  parseSystemKnownHostsContent;
+SSHAuthenticationService.listKnownHosts = listKnownHosts;
+SSHAuthenticationService.removeStoredKnownHost = removeStoredKnownHost;
+SSHAuthenticationService.clearStoredKnownHosts = clearStoredKnownHosts;
+
 module.exports = SSHAuthenticationService;

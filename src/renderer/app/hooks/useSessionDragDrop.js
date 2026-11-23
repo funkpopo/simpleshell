@@ -22,6 +22,8 @@ export default function useSessionDragDrop({
   currentTab,
   paneRegistryRef,
   refreshTerminalSession,
+  splitPane,
+  focusAdjacentPane,
   tabs,
 }) {
   const dispatch = useAppDispatch();
@@ -210,13 +212,19 @@ export default function useSessionDragDrop({
     setPaneDragOverId(null);
   }, []);
   const handlePaneShortcutRef = useRef(() => {});
-  handlePaneShortcutRef.current = (action) => {
+  handlePaneShortcutRef.current = (action, payload = {}) => {
     const tab = latestTabsForActionsRef.current[currentTab];
     if (!tab || tab.id === "welcome") return;
     const layout = splitLayoutsRef.current[tab.id];
     const sessionKey = layout?.focusedPaneId || tab.id;
     if (action === "close") {
       handleClosePane(tab.id, sessionKey);
+    } else if (action === "splitRight") {
+      splitPane?.(tab.id, sessionKey, "right", payload.mode || "duplicate");
+    } else if (action === "splitBottom") {
+      splitPane?.(tab.id, sessionKey, "bottom", payload.mode || "duplicate");
+    } else if (action === "focusDirection" && payload.direction) {
+      focusAdjacentPane?.(tab.id, payload.direction);
     }
   };
   const paneActionHandlerRef = useRef(() => {});
@@ -224,6 +232,14 @@ export default function useSessionDragDrop({
     if (!detail?.sessionKey) return;
     const tabId = getParentTabId(detail.sessionKey, paneRegistryRef.current);
     switch (detail.action) {
+      case "splitPane":
+        splitPane?.(
+          tabId,
+          detail.sessionKey,
+          detail.direction || "right",
+          detail.mode || "duplicate",
+        );
+        break;
       case "closePane":
         handleClosePane(tabId, detail.sessionKey);
         break;

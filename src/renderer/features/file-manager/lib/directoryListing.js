@@ -87,3 +87,33 @@ export const storeCachedDirectory = (cache, path, data, enabled = true) => {
     cache.delete(oldestPath);
   }
 };
+
+const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f-\x9f]/;
+
+const quotePosixSingle = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
+
+/**
+ * Build a POSIX-safe `cd` command for the active terminal from a remote path.
+ * Returns `null` for empty/non-string inputs or paths containing control characters/newlines.
+ * @param {unknown} remotePath
+ * @returns {string | null}
+ */
+export const buildCdCommand = (remotePath) => {
+  if (typeof remotePath !== "string") {
+    return null;
+  }
+  if (!remotePath.trim() || CONTROL_CHAR_PATTERN.test(remotePath)) {
+    return null;
+  }
+  if (remotePath === "~") {
+    return "cd ~";
+  }
+  if (remotePath.startsWith("~/")) {
+    const subPath = remotePath.slice(2);
+    return subPath ? `cd ~/${quotePosixSingle(subPath)}` : "cd ~";
+  }
+  const safeTarget = remotePath.startsWith("-")
+    ? `./${remotePath}`
+    : remotePath;
+  return `cd ${quotePosixSingle(safeTarget)}`;
+};

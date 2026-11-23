@@ -21,6 +21,37 @@ const isPortValid = (value) => {
 const hasWhitespace = (value) => /\s/.test(String(value || ""));
 export const SAVED_PASSWORD_MASK = "********";
 
+export const CONNECTION_COLOR_TAG_OPTIONS = Object.freeze([
+  { id: "red", color: "#ef4444" },
+  { id: "orange", color: "#f97316" },
+  { id: "amber", color: "#eab308" },
+  { id: "green", color: "#22c55e" },
+  { id: "teal", color: "#14b8a6" },
+  { id: "blue", color: "#3b82f6" },
+  { id: "purple", color: "#a855f7" },
+  { id: "pink", color: "#ec4899" },
+]);
+
+export const normalizeConnectionTags = (input) => {
+  const rawList = Array.isArray(input)
+    ? input
+    : typeof input === "string"
+      ? input.split(",")
+      : [];
+  const seen = new Set();
+  const result = [];
+  for (const raw of rawList) {
+    const trimmed = typeof raw === "string" ? raw.trim() : "";
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+};
+
+export const normalizeColorTag = (value) =>
+  typeof value === "string" ? value.trim() : "";
+
 // 串口常用波特率
 export const SERIAL_BAUD_RATES = [
   300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200, 230400,
@@ -63,6 +94,10 @@ export const buildConnectionPayloadFromForm = ({
     (formData.passwordMasked === true || formData.passwordTouched !== true) &&
     formData.passwordRevealed !== true;
 
+  const pinned = formData.pinned === true;
+  const tags = normalizeConnectionTags(formData.tags);
+  const colorTag = normalizeColorTag(formData.colorTag);
+
   // 串口连接：host 字段存端口路径（如 COM3 / /dev/ttyUSB0），无端口/认证概念
   if (protocol === "serial") {
     return {
@@ -85,6 +120,9 @@ export const buildConnectionPayloadFromForm = ({
       flowControl: formData.flowControl || DEFAULT_SERIAL_FORM.flowControl,
       os: formData.os,
       connectionType: formData.connectionType,
+      pinned,
+      tags,
+      colorTag,
       proxy: null,
     };
   }
@@ -111,6 +149,9 @@ export const buildConnectionPayloadFromForm = ({
       moshServerPort: String(formData.moshServerPort || "").trim(),
       os: formData.os,
       connectionType: formData.connectionType,
+      pinned,
+      tags,
+      colorTag,
       proxy: null,
     };
   }
@@ -154,6 +195,9 @@ export const buildConnectionPayloadFromForm = ({
     os: formData.os,
     connectionType: formData.connectionType,
     protocol,
+    pinned,
+    tags,
+    colorTag,
     proxy: formData.enableProxy
       ? {
           type: formData.proxyType,
@@ -169,6 +213,72 @@ export const buildConnectionPayloadFromForm = ({
           useDefault: formData.proxyUseDefault,
         }
       : null,
+  };
+};
+
+const collectExistingConnectionNames = (items, names = new Set()) => {
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || typeof item !== "object") continue;
+    if (item.type === "group") {
+      collectExistingConnectionNames(item.items || [], names);
+      continue;
+    }
+    if (item.type === "connection" && item.name) {
+      names.add(String(item.name).trim().toLowerCase());
+    }
+  }
+  return names;
+};
+
+export const buildDuplicateConnectionPayload = (
+  connection,
+  existingConnections = [],
+  copyLabel = "Copy",
+) => {
+  const existingNames = collectExistingConnectionNames(existingConnections);
+  const baseName = String(
+    connection?.name || connection?.host || "Connection",
+  ).trim();
+  const suffix = String(copyLabel || "Copy").trim() || "Copy";
+  let candidateName = `${baseName} (${suffix})`;
+  let counter = 2;
+  while (existingNames.has(candidateName.toLowerCase())) {
+    candidateName = `${baseName} (${suffix} ${counter})`;
+    counter += 1;
+  }
+
+  const clonedProxy =
+    connection?.proxy && typeof connection.proxy === "object"
+      ? {
+          ...connection.proxy,
+          password: "",
+          hasPassword: false,
+        }
+      : null;
+
+  const cleanConnection = { ...(connection || {}) };
+  delete cleanConnection.depth;
+  delete cleanConnection.parentGroup;
+  delete cleanConnection.parentGroupId;
+  delete cleanConnection.isTransient;
+  delete cleanConnection.createdAt;
+  delete cleanConnection.updatedAt;
+  delete cleanConnection.lastUsedAt;
+  delete cleanConnection._passwordAlreadyEncrypted;
+
+  return {
+    ...cleanConnection,
+    id: generateId("conn"),
+    type: "connection",
+    name: candidateName,
+    password: "",
+    hasPassword: false,
+    credentialRevision: "",
+    _preservePassword: false,
+    pinned: connection?.pinned === true,
+    tags: normalizeConnectionTags(connection?.tags),
+    colorTag: normalizeColorTag(connection?.colorTag),
+    proxy: clonedProxy,
   };
 };
 

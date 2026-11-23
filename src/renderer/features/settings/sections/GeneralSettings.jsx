@@ -100,6 +100,9 @@ export default function GeneralSettings({ initialValues, ref }) {
     resourceMonitorMaxVisibleProcesses,
     setResourceMonitorMaxVisibleProcesses,
   ] = React.useState(initialValues.resourceMonitorMaxVisibleProcesses);
+  const [restoreSessionOnStartup, setRestoreSessionOnStartup] = React.useState(
+    initialValues.restoreSessionOnStartup !== false,
+  );
   const handleLanguageChange = (event) => {
     setLanguage(event.target.value);
   };
@@ -126,6 +129,7 @@ export default function GeneralSettings({ initialValues, ref }) {
       transferBarMode,
       transferIntegrity,
       sftpFollowTerminalDirectory,
+      restoreSessionOnStartup: Boolean(restoreSessionOnStartup),
       updates: {
         autoCheckOnStartup: Boolean(updatesAutoCheckOnStartup),
         reminderIntervalHours: UPDATE_REMINDER_INTERVAL_OPTIONS.includes(
@@ -406,6 +410,20 @@ export default function GeneralSettings({ initialValues, ref }) {
             checked={closeToTray}
             disabled={!trayEnabled}
             onChange={(e) => setCloseToTray(e.target.checked)}
+          />
+        </Box>
+
+        <Typography sx={subSectionLabelSx}>
+          {t("workspaceRestore.title")}
+        </Typography>
+        <Box sx={sectionCardSx}>
+          <SettingsToggleRow
+            id="settings-restore-session-on-startup"
+            noDivider
+            label={t("settings.restoreSessionOnStartup")}
+            description={t("settings.restoreSessionOnStartupHelp")}
+            checked={restoreSessionOnStartup}
+            onChange={(e) => setRestoreSessionOnStartup(e.target.checked)}
           />
         </Box>
 

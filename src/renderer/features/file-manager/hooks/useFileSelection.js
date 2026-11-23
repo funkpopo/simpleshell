@@ -118,7 +118,19 @@ export default function useFileSelection({
     userChangedSortRef.current = true;
     setSortModeState(nextMode);
   }, []);
-  const [showHiddenFiles, setShowHiddenFiles] = useState(true);
+  const [showHiddenFiles, setShowHiddenFilesState] = useState(true);
+  const userChangedHiddenRef = useRef(false);
+  const setShowHiddenFiles = useCallback((nextValue) => {
+    userChangedHiddenRef.current = true;
+    setShowHiddenFilesState((previous) =>
+      typeof nextValue === "function"
+        ? Boolean(nextValue(previous))
+        : Boolean(nextValue),
+    );
+  }, []);
+  const toggleShowHiddenFiles = useCallback(() => {
+    setShowHiddenFiles((previous) => !previous);
+  }, [setShowHiddenFiles]);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,7 +140,9 @@ export default function useFileSelection({
         const settings = res?.success ? res.settings : res;
         if (!cancelled && settings?.fileManager) {
           const fm = normalizeFileManagerSettings(settings);
-          setShowHiddenFiles(fm.showHiddenFiles);
+          if (!userChangedHiddenRef.current) {
+            setShowHiddenFilesState(fm.showHiddenFiles);
+          }
           if (!userChangedSortRef.current) {
             setSortModeState(fm.defaultSortMode);
           }
@@ -145,7 +159,8 @@ export default function useFileSelection({
       }
       const fm = normalizeFileManagerSettings(event.detail);
       if (fmRaw.showHiddenFiles !== undefined) {
-        setShowHiddenFiles(fm.showHiddenFiles);
+        userChangedHiddenRef.current = false;
+        setShowHiddenFilesState(fm.showHiddenFiles);
       }
       if (fmRaw.defaultSortMode !== undefined) {
         userChangedSortRef.current = false;
@@ -487,6 +502,9 @@ export default function useFileSelection({
     selectedFiles,
     sortMode,
     setSortMode,
+    showHiddenFiles,
+    setShowHiddenFiles,
+    toggleShowHiddenFiles,
     clearSelection,
     handleSearchChange,
     toggleSearch,

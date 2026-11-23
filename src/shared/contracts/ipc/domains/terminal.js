@@ -42,6 +42,7 @@ const {
   objectArg,
   objectPayloadArgs,
   optionalObjectArg,
+  stringArg,
 } = require("../schema");
 
 const TERMINAL_CHANNEL_DEFINITIONS = Object.freeze([
@@ -102,6 +103,17 @@ const TERMINAL_CHANNEL_DEFINITIONS = Object.freeze([
     "terminal:notifyEditorModeChange",
     "terminal",
     args([{}, booleanArg()]),
+  ),
+  defineRequest(
+    "TERMINAL_EXPORT_SCROLLBACK",
+    "terminal:exportScrollback",
+    "terminal",
+    objectPayloadArgs(["content"], {
+      content: stringArg(),
+      defaultFilename: stringArg(),
+    }),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "filesystem" },
   ),
   defineRequest(
     "TERMINAL_LOAD_CONNECTIONS",

@@ -7,9 +7,12 @@ import {
 } from "../../features/terminal/model/syncInputGroups.js";
 import {
   addPaneToLayout,
+  focusAdjacentPane,
   getSinglePaneLayout,
   removePaneFromLayout,
+  splitPaneInLayout,
 } from "../../features/terminal/model/paneLayout.js";
+import { buildTabSnapshot } from "../lib/workspaceSnapshot.js";
 
 // Action Types
 // Action 类型常量（模块内部使用）
@@ -20,9 +23,16 @@ const ActionTypes = {
   REMOVE_TAB: "REMOVE_TAB",
   UPDATE_TAB: "UPDATE_TAB",
   SET_CURRENT_TAB: "SET_CURRENT_TAB",
+  RENAME_TAB: "RENAME_TAB",
+  CLOSE_OTHER_TABS: "CLOSE_OTHER_TABS",
+  CLOSE_TABS_TO_RIGHT: "CLOSE_TABS_TO_RIGHT",
+  PUSH_CLOSED_TAB: "PUSH_CLOSED_TAB",
+  POP_CLOSED_TAB: "POP_CLOSED_TAB",
+  RESTORE_WORKSPACE: "RESTORE_WORKSPACE",
 
   // Split Terminal Panes
   ADD_PANE: "ADD_PANE",
+  SPLIT_PANE: "SPLIT_PANE",
   ADOPT_TAB: "ADOPT_TAB",
   UNSPLIT_TAB: "UNSPLIT_TAB",
   FORGET_SESSIONS: "FORGET_SESSIONS",
@@ -30,6 +40,7 @@ const ActionTypes = {
   SET_LAYOUT_DIRECTION: "SET_LAYOUT_DIRECTION",
   SET_RATIOS: "SET_RATIOS",
   FOCUS_PANE: "FOCUS_PANE",
+  FOCUS_ADJACENT_PANE: "FOCUS_ADJACENT_PANE",
   SWAP_PANES: "SWAP_PANES",
   RESET_TAB_LAYOUT: "RESET_TAB_LAYOUT",
 
@@ -112,6 +123,7 @@ export const initialState = {
   paneDragId: null,
   paneDragOverId: null,
   tabHistoryStack: [],
+  closedTabsStack: [],
 
   // Sidebar State
   connectionManagerOpen: false,
@@ -165,6 +177,57 @@ export const initialState = {
 
 // 分屏终端：单 tab 最多 4 窗格
 const MAX_TARGET_PANES = 4;
+const MAX_CLOSED_TABS = 20;
+
+function cleanupClosedTabsState(state, closingTabs, keptTabs, nextCurrentTab) {
+  const splitLayouts = { ...state.splitLayouts };
+  const panes = { ...state.panes };
+  const terminalInstances = { ...state.terminalInstances };
+  const fileManagerPaths = { ...state.fileManagerPaths };
+  const fileManagerOpenByTabId = { ...state.fileManagerOpenByTabId };
+  let syncGroups = state.syncGroups;
+  const closedEntries = [];
+
+  for (const closingTab of closingTabs) {
+    const snap = buildTabSnapshot(closingTab, state);
+    if (snap) {
+      closedEntries.push(snap);
+    }
+    const layout = splitLayouts[closingTab.id];
+    const sessionKeys = layout?.panes?.length ? layout.panes : [closingTab.id];
+    delete splitLayouts[closingTab.id];
+    for (const sessionKey of sessionKeys) {
+      if (sessionKey !== closingTab.id) {
+        delete panes[sessionKey];
+      }
+      for (const suffix of ["", "-config", "-processId", "-refresh"]) {
+        delete terminalInstances[`${sessionKey}${suffix}`];
+      }
+      delete fileManagerPaths[sessionKey];
+      delete fileManagerOpenByTabId[sessionKey];
+      syncGroups = removeTabFromSyncGroups(syncGroups, sessionKey);
+    }
+  }
+
+  const nextClosedStack = [
+    ...closedEntries.reverse(),
+    ...(state.closedTabsStack || []),
+  ].slice(0, MAX_CLOSED_TABS);
+
+  return {
+    ...state,
+    tabs: keptTabs,
+    currentTab: nextCurrentTab,
+    splitLayouts,
+    panes,
+    terminalInstances,
+    fileManagerPaths,
+    fileManagerOpenByTabId,
+    syncGroups,
+    tabHistoryStack: [],
+    closedTabsStack: nextClosedStack,
+  };
+}
 
 // Reducer Function
 export function appReducer(state = initialState, action) {
@@ -189,6 +252,111 @@ export function appReducer(state = initialState, action) {
 
     case ActionTypes.SET_CURRENT_TAB:
       return { ...state, currentTab: action.payload };
+
+    case ActionTypes.RENAME_TAB: {
+      const { tabId, customTitle } = action.payload || {};
+      if (!tabId || tabId === "welcome") return state;
+      const index = state.tabs.findIndex((tab) => tab.id === tabId);
+      if (index < 0) return state;
+      const targetTab = state.tabs[index];
+      const trimmed = typeof customTitle === "string" ? customTitle.trim() : "";
+      const originalLabel = targetTab.originalLabel ?? targetTab.label;
+      const nextTab = {
+        ...targetTab,
+        originalLabel,
+        label: trimmed || originalLabel,
+      };
+      if (trimmed) {
+        nextTab.customTitle = trimmed;
+      } else {
+        delete nextTab.customTitle;
+      }
+      const tabs = [...state.tabs];
+      tabs[index] = nextTab;
+      return { ...state, tabs };
+    }
+
+    case ActionTypes.PUSH_CLOSED_TAB: {
+      if (!action.payload) return state;
+      const stack = [action.payload, ...(state.closedTabsStack || [])].slice(
+        0,
+        MAX_CLOSED_TABS,
+      );
+      return { ...state, closedTabsStack: stack };
+    }
+
+    case ActionTypes.POP_CLOSED_TAB: {
+      const stack = state.closedTabsStack || [];
+      if (stack.length === 0) return state;
+      return { ...state, closedTabsStack: stack.slice(1) };
+    }
+
+    case ActionTypes.CLOSE_OTHER_TABS: {
+      const tabId = action.payload?.tabId ?? action.payload;
+      if (!tabId || !state.tabs.some((tab) => tab.id === tabId)) return state;
+      const closingTabs = state.tabs.filter(
+        (tab) => tab.id !== "welcome" && tab.id !== tabId,
+      );
+      if (closingTabs.length === 0) return state;
+      const keptTabs = state.tabs.filter(
+        (tab) => tab.id === "welcome" || tab.id === tabId,
+      );
+      const nextCurrentTab = Math.max(
+        0,
+        keptTabs.findIndex((tab) => tab.id === tabId),
+      );
+      return cleanupClosedTabsState(
+        state,
+        closingTabs,
+        keptTabs,
+        nextCurrentTab,
+      );
+    }
+
+    case ActionTypes.CLOSE_TABS_TO_RIGHT: {
+      const tabId = action.payload?.tabId ?? action.payload;
+      const targetIndex = state.tabs.findIndex((tab) => tab.id === tabId);
+      if (targetIndex < 0) return state;
+      const closingTabs = state.tabs
+        .slice(targetIndex + 1)
+        .filter((tab) => tab.id !== "welcome");
+      if (closingTabs.length === 0) return state;
+      const keptTabs = state.tabs.filter(
+        (tab, index) => index <= targetIndex || tab.id === "welcome",
+      );
+      const nextCurrentTab =
+        state.currentTab > targetIndex
+          ? Math.max(
+              0,
+              keptTabs.findIndex((tab) => tab.id === tabId),
+            )
+          : state.currentTab;
+      return cleanupClosedTabsState(
+        state,
+        closingTabs,
+        keptTabs,
+        nextCurrentTab,
+      );
+    }
+
+    case ActionTypes.RESTORE_WORKSPACE: {
+      const { tabs, currentTab, splitLayouts, panes, terminalInstances } =
+        action.payload || {};
+      if (!Array.isArray(tabs) || tabs.length === 0) return state;
+      return {
+        ...state,
+        tabs,
+        currentTab: Number.isInteger(currentTab)
+          ? Math.min(tabs.length - 1, Math.max(0, currentTab))
+          : 0,
+        splitLayouts: { ...state.splitLayouts, ...(splitLayouts || {}) },
+        panes: { ...state.panes, ...(panes || {}) },
+        terminalInstances: {
+          ...state.terminalInstances,
+          ...(terminalInstances || {}),
+        },
+      };
+    }
 
     // Split Terminal Pane Actions
     case ActionTypes.ADOPT_TAB: {
@@ -334,6 +502,65 @@ export function appReducer(state = initialState, action) {
       };
     }
 
+    case ActionTypes.SPLIT_PANE: {
+      const {
+        tabId,
+        paneId,
+        direction = "right",
+        paneType = "ssh",
+        label = null,
+        tab = null,
+        config = undefined,
+        adoptedFromTab = false,
+      } = action.payload || {};
+      if (!tabId || !paneId || tabId === "welcome") return state;
+      if (!state.tabs.some((item) => item.id === tabId)) return state;
+      const existingLayout = state.splitLayouts[tabId] || null;
+      const existingPanes = existingLayout ? existingLayout.panes : [tabId];
+      if (
+        existingPanes.includes(paneId) ||
+        existingPanes.length >= MAX_TARGET_PANES
+      ) {
+        return state;
+      }
+      const nextLayout = splitPaneInLayout(
+        existingLayout,
+        tabId,
+        paneId,
+        direction,
+      );
+      const nextPanes = {
+        ...state.panes,
+        [paneId]: {
+          id: paneId,
+          parentTabId: tabId,
+          type: paneType,
+          label,
+          tab: tab || { id: paneId, type: paneType, label: label || paneId },
+          adoptedFromTab: Boolean(adoptedFromTab),
+          createdAt: Date.now(),
+        },
+      };
+      const nextInstances =
+        config !== undefined
+          ? {
+              ...state.terminalInstances,
+              [paneId]: true,
+              [`${paneId}-config`]: { ...config, tabId: paneId },
+              [`${paneId}-processId`]: null,
+            }
+          : state.terminalInstances;
+      return {
+        ...state,
+        panes: nextPanes,
+        terminalInstances: nextInstances,
+        splitLayouts: {
+          ...state.splitLayouts,
+          [tabId]: nextLayout,
+        },
+      };
+    }
+
     case ActionTypes.REMOVE_PANE: {
       const { tabId, paneId } = action.payload || {};
       if (!tabId || !paneId) return state;
@@ -423,6 +650,21 @@ export function appReducer(state = initialState, action) {
         splitLayouts: {
           ...state.splitLayouts,
           [tabId]: { ...layout, focusedPaneId: paneId },
+        },
+      };
+    }
+
+    case ActionTypes.FOCUS_ADJACENT_PANE: {
+      const { tabId, direction } = action.payload || {};
+      const layout = state.splitLayouts[tabId];
+      if (!layout) return state;
+      const nextLayout = focusAdjacentPane(layout, direction);
+      if (!nextLayout || nextLayout === layout) return state;
+      return {
+        ...state,
+        splitLayouts: {
+          ...state.splitLayouts,
+          [tabId]: nextLayout,
         },
       };
     }
@@ -672,6 +914,27 @@ export const actions = {
     type: ActionTypes.SET_CURRENT_TAB,
     payload: index,
   }),
+  renameTab: (tabId, customTitle) => ({
+    type: ActionTypes.RENAME_TAB,
+    payload: { tabId, customTitle },
+  }),
+  pushClosedTab: (entry) => ({
+    type: ActionTypes.PUSH_CLOSED_TAB,
+    payload: entry,
+  }),
+  popClosedTab: () => ({ type: ActionTypes.POP_CLOSED_TAB }),
+  closeOtherTabs: (tabId) => ({
+    type: ActionTypes.CLOSE_OTHER_TABS,
+    payload: tabId,
+  }),
+  closeTabsToRight: (tabId) => ({
+    type: ActionTypes.CLOSE_TABS_TO_RIGHT,
+    payload: tabId,
+  }),
+  restoreWorkspace: (payload) => ({
+    type: ActionTypes.RESTORE_WORKSPACE,
+    payload,
+  }),
 
   // Split Terminal Pane Actions
   adoptTab: (tabId, sourceTabId, zone) => ({
@@ -694,6 +957,10 @@ export const actions = {
     type: ActionTypes.ADD_PANE,
     payload: { tabId, paneId, direction, paneType, label, adoptedFromTab },
   }),
+  splitPane: (tabId, paneId, direction = "right", options = {}) => ({
+    type: ActionTypes.SPLIT_PANE,
+    payload: { tabId, paneId, direction, ...options },
+  }),
   removePane: (tabId, paneId) => ({
     type: ActionTypes.REMOVE_PANE,
     payload: { tabId, paneId },
@@ -709,6 +976,10 @@ export const actions = {
   focusPane: (tabId, paneId) => ({
     type: ActionTypes.FOCUS_PANE,
     payload: { tabId, paneId },
+  }),
+  focusAdjacentPane: (tabId, direction) => ({
+    type: ActionTypes.FOCUS_ADJACENT_PANE,
+    payload: { tabId, direction },
   }),
   swapPanes: (tabId, paneA, paneB) => ({
     type: ActionTypes.SWAP_PANES,

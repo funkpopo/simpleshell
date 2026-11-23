@@ -2,7 +2,7 @@
 /**
  * Preload 运行于隔离上下文；类型检查由 tests/helpers/preloadAnalysis.js 执行。
  * 主进程尚未细化的响应使用 unknown，调用方应先缩窄类型。
- * @import { ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback } from "../../shared/contracts/preload"
+ * @import { ProcessId, Unsubscribe, PayloadCallback, IpcCallback, ReconnectCallback, IpcResult, KnownHostsListResult, KnownHostMutationResult } from "../../shared/contracts/preload"
  * @import { TabRequest } from "../../shared/contracts/ipc/domains/connection"
  */
 
@@ -527,6 +527,30 @@ function createConnectionsAPI(bridge) {
         connectionId,
         credentials,
       ),
+
+    /**
+     * 通过 IPC_REQUEST_CHANNELS.SSH_KNOWN_HOSTS_LIST 获取已信任主机列表。
+     * @returns {Promise<IpcResult<KnownHostsListResult>>}
+     */
+    listKnownHosts: () =>
+      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SSH_KNOWN_HOSTS_LIST),
+
+    /**
+     * 通过 IPC_REQUEST_CHANNELS.SSH_KNOWN_HOSTS_REMOVE 移除指定已信任主机。
+     * @param {string} hostKey
+     * @returns {Promise<IpcResult<KnownHostMutationResult>>}
+     */
+    removeKnownHost: (hostKey) =>
+      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SSH_KNOWN_HOSTS_REMOVE, {
+        hostKey,
+      }),
+
+    /**
+     * 通过 IPC_REQUEST_CHANNELS.SSH_KNOWN_HOSTS_CLEAR 清空应用内保存的所有已信任主机。
+     * @returns {Promise<IpcResult<KnownHostMutationResult>>}
+     */
+    clearKnownHosts: () =>
+      ipcRenderer.invoke(IPC_REQUEST_CHANNELS.SSH_KNOWN_HOSTS_CLEAR),
   };
 }
 module.exports = { createConnectionsAPI };

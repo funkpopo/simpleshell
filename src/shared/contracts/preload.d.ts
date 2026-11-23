@@ -40,6 +40,18 @@ export interface ExternalOpenResult {
   error?: string;
 }
 
+export type TerminalScrollbackExportPayload = {
+  content: string;
+  defaultFilename?: string;
+};
+
+export interface TerminalScrollbackExportResult {
+  success: boolean;
+  cancelled?: boolean;
+  filePath?: string;
+  error?: string;
+}
+
 /** safeHandle resolves handler/validation failures to this envelope. */
 export interface IpcFailure {
   success: false;
@@ -128,3 +140,29 @@ export type UploadDroppedProgressCallback = (
   operationComplete: boolean,
   fileList: unknown[] | null,
 ) => void;
+
+export type KnownHostSource = "simpleshell" | "system";
+
+export interface KnownHostEntry {
+  id: string;
+  hostKey: string;
+  host: string;
+  port: number;
+  fingerprint: string;
+  keyType?: string;
+  updatedAt?: string | null;
+  source: KnownHostSource;
+  editable: boolean;
+}
+
+export interface KnownHostsListResult {
+  success: true;
+  hosts: KnownHostEntry[];
+  systemHostsCount?: number;
+}
+
+export interface KnownHostMutationResult {
+  success: true;
+  removed?: boolean;
+  clearedCount?: number;
+}

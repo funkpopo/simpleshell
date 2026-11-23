@@ -9,6 +9,33 @@ import { useTranslation } from "react-i18next";
 // 拖拽指示器与重连动画的 keyframes 定义在 styles/global.css 中
 // （indicatorGlassIn / indicatorGlowPulse / reconnectPulse）
 
+const NAMED_CONNECTION_COLOR_TAGS = Object.freeze({
+  red: "#ef4444",
+  orange: "#f97316",
+  amber: "#f59e0b",
+  yellow: "#eab308",
+  green: "#22c55e",
+  emerald: "#10b981",
+  teal: "#14b8a6",
+  cyan: "#06b6d4",
+  blue: "#3b82f6",
+  indigo: "#6366f1",
+  purple: "#a855f7",
+  pink: "#ec4899",
+  gray: "#64748b",
+  slate: "#64748b",
+});
+
+const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+export function resolveConnectionColorTag(colorTag) {
+  if (typeof colorTag !== "string") return null;
+  const trimmed = colorTag.trim();
+  if (!trimmed) return null;
+  if (HEX_COLOR_RE.test(trimmed)) return trimmed;
+  return NAMED_CONNECTION_COLOR_TAGS[trimmed.toLowerCase()] || null;
+}
+
 // 自定义比较函数
 const areEqual = (prevProps, nextProps) => {
   return (
@@ -31,6 +58,7 @@ const areEqual = (prevProps, nextProps) => {
     prevProps.onDragEnd === nextProps.onDragEnd &&
     prevProps.statusColor === nextProps.statusColor &&
     prevProps.statusTooltip === nextProps.statusTooltip &&
+    prevProps.colorTag === nextProps.colorTag &&
     prevProps.isDraggedOver === nextProps.isDraggedOver &&
     prevProps.dragInsertPosition === nextProps.dragInsertPosition &&
     prevProps.isDragSource === nextProps.isDragSource &&
@@ -58,6 +86,7 @@ const CustomTab = memo((props) => {
     tabId, // 每个Tab需传递tabId
     statusColor = null,
     statusTooltip = null,
+    colorTag = null,
     isDraggedOver = false, // 是否被拖拽悬停
     dragInsertPosition = null, // 插入位置 ('before' | 'after')
     isDragSource = false, // 当前标签是否为被拖动的源（原位占位）
@@ -195,6 +224,8 @@ const CustomTab = memo((props) => {
     [tabId, index, label, onDragStart],
   );
 
+  const resolvedColorTag = resolveConnectionColorTag(colorTag);
+
   return (
     <>
       <Tab
@@ -243,6 +274,23 @@ const CustomTab = memo((props) => {
                   {group.groupId.replace("G", "")}
                 </Box>
               </Tooltip>
+            )}
+            {resolvedColorTag && (
+              <Box
+                component="span"
+                data-connection-color-tag={resolvedColorTag}
+                aria-hidden="true"
+                sx={{
+                  width: 7,
+                  height: 7,
+                  minWidth: 7,
+                  minHeight: 7,
+                  borderRadius: "50%",
+                  bgcolor: resolvedColorTag,
+                  boxShadow: "0 0 0 1px rgba(128,128,128,0.28)",
+                  flexShrink: 0,
+                }}
+              />
             )}
             <Box
               component="span"
@@ -461,6 +509,7 @@ CustomTab.propTypes = {
   tabId: PropTypes.string,
   statusColor: PropTypes.string,
   statusTooltip: PropTypes.string,
+  colorTag: PropTypes.string,
   isDraggedOver: PropTypes.bool,
   dragInsertPosition: PropTypes.oneOf(["before", "after", "merge", null]),
   isDragSource: PropTypes.bool,

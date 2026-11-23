@@ -4,7 +4,7 @@
  * probes, SSH keys/config import and port forwarding
  * (categories: ssh, reconnect, connection, latency, ssh-key, port-forward).
  *
- * @import { IpcResult, ProcessId, MoshTransportStatus } from "../../preload"
+ * @import { IpcResult, ProcessId, MoshTransportStatus, KnownHostsListResult, KnownHostMutationResult } from "../../preload"
  */
 
 /**
@@ -42,6 +42,9 @@
  * channels resolve to unknown.
  * @typedef {object} ConnectionResponses
  * @property {IpcResult<{ success: boolean }>} LATENCY_REPORT_MOSH_STATUS
+ * @property {IpcResult<KnownHostsListResult>} SSH_KNOWN_HOSTS_LIST
+ * @property {IpcResult<KnownHostMutationResult>} SSH_KNOWN_HOSTS_REMOVE
+ * @property {IpcResult<KnownHostMutationResult>} SSH_KNOWN_HOSTS_CLEAR
  */
 
 const {
@@ -238,6 +241,32 @@ const CONNECTION_CHANNEL_DEFINITIONS = Object.freeze([
     "ssh-key",
     args([optionalObjectArg()]),
     STANDARD_RESPONSE_SCHEMA,
+  ),
+  defineRequest(
+    "SSH_KNOWN_HOSTS_LIST",
+    "ssh-known-hosts:list",
+    "ssh-key",
+    NO_ARGS_SCHEMA,
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "credentials" },
+  ),
+  defineRequest(
+    "SSH_KNOWN_HOSTS_REMOVE",
+    "ssh-known-hosts:remove",
+    "ssh-key",
+    objectPayloadArgs(["hostKey"], {
+      hostKey: { type: "string", minLength: 1 },
+    }),
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "credentials" },
+  ),
+  defineRequest(
+    "SSH_KNOWN_HOSTS_CLEAR",
+    "ssh-known-hosts:clear",
+    "ssh-key",
+    NO_ARGS_SCHEMA,
+    STANDARD_RESPONSE_SCHEMA,
+    { permission: "credentials" },
   ),
   defineRequest(
     "PF_GET_RULES",

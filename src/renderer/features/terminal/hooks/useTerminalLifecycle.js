@@ -16,7 +16,10 @@ import {
   terminalCache,
   unregisterTerminalIOMailbox,
 } from "../runtime/terminalSessionStore.js";
-import { getTerminalTheme } from "../model/terminalTheme.js";
+import {
+  DEFAULT_TERMINAL_THEME,
+  getTerminalTheme,
+} from "../model/terminalTheme.js";
 import { setTerminalWorkingDirectory } from "../model/workingDirectoryStore.js";
 import { attachMoshTransportStatus } from "../model/moshTransportStatus.js";
 import {
@@ -30,7 +33,11 @@ import {
   createTerminalLinkProvider,
 } from "../runtime/terminalLinkProvider.js";
 import { startTerminalSession } from "../runtime/terminalSessionConnect.js";
-import { attachTerminalShortcutHandlers } from "../runtime/terminalShortcuts.js";
+import {
+  attachTerminalShortcutHandlers,
+  computeNextTerminalFontSize,
+  shouldXtermHandleKeyEvent,
+} from "../runtime/terminalShortcuts.js";
 import { attachTerminalContainerListeners } from "../runtime/terminalContainerListeners.js";
 import { useTerminalCacheInvalidation } from "./useTerminalCacheInvalidation.js";
 import { useTerminalSettingsSync } from "./useTerminalSettingsSync.js";
@@ -110,6 +117,7 @@ export function useTerminalLifecycle({
   // Keep theme/i18n readable from the long-lived lifecycle effect without
   // putting freshly-allocated objects into the effect dependency list.
   const themeModeRef = useRef(theme.palette.mode);
+  const terminalThemeRef = useRef(DEFAULT_TERMINAL_THEME);
   const tRef = useRef(t);
   const languageRef = useRef(i18n.language);
   themeModeRef.current = theme.palette.mode;
@@ -133,6 +141,22 @@ export function useTerminalLifecycle({
     setSuggestionsSuppressedUntilEnter,
     suppressionContextRef,
     currentInput,
+    onZoom: (zoomAction) => {
+      const currentSize = termRef.current?.options?.fontSize;
+      const nextSize = computeNextTerminalFontSize(currentSize, zoomAction);
+      if (termRef.current?.options) {
+        termRef.current.options.fontSize = nextSize;
+      }
+      scheduleTerminalLayoutSyncRef.current?.("zoom", { immediate: true });
+      window.dispatchEvent(
+        new CustomEvent("settingsChanged", {
+          detail: { terminalFontSize: nextSize },
+        }),
+      );
+      window.terminalAPI
+        ?.saveUISettings?.({ terminalFontSize: nextSize })
+        .catch?.(() => {});
+    },
   };
 
   // Closing a tab unmounts WebTerminal. Keep this cleanup separate from the
@@ -164,6 +188,8 @@ export function useTerminalLifecycle({
     disableWebglRenderer,
     eventManager,
     scheduleTerminalLayoutSyncRef,
+    themeModeRef,
+    terminalThemeRef,
   });
 
   // Stable refs for callbacks used inside the long-lived lifecycle effect
@@ -291,7 +317,10 @@ export function useTerminalLifecycle({
           `[WebTerminal] Reusing cached terminal for sessionKey=${sessionKey}, processId=${processCache[sessionKey]}`,
         );
 
-        term.options.theme = getTerminalTheme(themeModeRef.current);
+        term.options.theme = getTerminalTheme(
+          themeModeRef.current,
+          terminalThemeRef.current,
+        );
 
         searchAddon = new SearchAddon();
         term.loadAddon(searchAddon);
@@ -299,12 +328,9 @@ export function useTerminalLifecycle({
         attachTerminalToContainer(term);
         syncTerminalLinkCtrlState(term, false);
 
-        term.attachCustomKeyEventHandler((event) => {
-          if (event.altKey && event.key === "F1") {
-            return false;
-          }
-          return true;
-        });
+        term.attachCustomKeyEventHandler((event) =>
+          shouldXtermHandleKeyEvent(event),
+        );
         if (webglRendererEnabledRef.current) {
           tryEnableWebglRenderer(term);
         } else {
@@ -338,7 +364,10 @@ export function useTerminalLifecycle({
         }
       } else {
         setTerminalWorkingDirectory(sessionKey, null);
-        term = createXtermTerminal(themeModeRef.current);
+        term = createXtermTerminal(
+          themeModeRef.current,
+          terminalThemeRef.current,
+        );
 
         applyStoredFontSettings({
           term,
@@ -346,6 +375,8 @@ export function useTerminalLifecycle({
           scrollbackUsageTrackerRef,
           performanceMonitorRef,
           scheduleTerminalLayoutSyncRef,
+          themeModeRef,
+          terminalThemeRef,
         });
 
         fitAddon = new FitAddon();
@@ -361,12 +392,9 @@ export function useTerminalLifecycle({
         term.open(terminalRef.current);
         syncTerminalLinkCtrlState(term, false);
 
-        term.attachCustomKeyEventHandler((event) => {
-          if (event.altKey && event.key === "F1") {
-            return false;
-          }
-          return true;
-        });
+        term.attachCustomKeyEventHandler((event) =>
+          shouldXtermHandleKeyEvent(event),
+        );
 
         ensureTerminalDiagnostics({
           performanceMonitorRef,
@@ -534,7 +562,27 @@ export function useTerminalLifecycle({
     if (terminalCache[sessionKey]) {
       terminalCache[sessionKey].options.theme = getTerminalTheme(
         theme.palette.mode,
+        terminalThemeRef.current,
       );
     }
   }, [theme.palette.mode, sessionKey]);
+
+  // Allow Command Palette / external controls to zoom the active terminal cleanly.
+  useEffect(() => {
+    const handleZoomEvent = (event) => {
+      if (!isActiveRef.current) return;
+      const action = event?.detail?.action;
+      if (action === "in" || action === "out" || action === "reset") {
+        shortcutUiRef.current?.onZoom?.(action);
+      } else if (action === "selectAll") {
+        termRef.current?.selectAll?.();
+      }
+    };
+    const remove = eventManager.addEventListener(
+      window,
+      "simpleshell:terminalZoom",
+      handleZoomEvent,
+    );
+    return () => remove();
+  }, [eventManager, isActiveRef, termRef]);
 }

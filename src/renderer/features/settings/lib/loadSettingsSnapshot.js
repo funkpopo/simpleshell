@@ -18,6 +18,7 @@ import {
   normalizeStorageSettings,
   normalizeTerminalUiSettings,
   normalizeUpdatesSettings,
+  normalizeRestoreSessionOnStartup,
 } from "../../../../shared/settings/uiSettingsDefaults.js";
 
 export default async function loadSettingsSnapshot() {
@@ -30,6 +31,7 @@ export default async function loadSettingsSnapshot() {
     terminalFontSize: uiDefaults.terminalFontSize,
     terminalFontWeight: 500,
     terminalLineHeight: uiDefaults.terminalLineHeight,
+    terminalTheme: uiDefaults.terminalTheme,
     terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
     terminalCursorStyle: uiDefaults.terminalCursorStyle,
     terminalCursorBlink: uiDefaults.terminalCursorBlink,
@@ -70,6 +72,7 @@ export default async function loadSettingsSnapshot() {
     compressOldLogs: true,
     cleanupIntervalDays: 7,
     backupRetentionDays: uiDefaults.backupRetentionDays,
+    restoreSessionOnStartup: uiDefaults.restoreSessionOnStartup,
     errorReportingEnabled: false,
     includeDiagnosticsInFeedback: false,
     crashCaptureEnabled: true,
@@ -168,6 +171,7 @@ export default async function loadSettingsSnapshot() {
         values.terminalScrollbackLines = normalizeTerminalScrollbackLines(
           settings.terminalScrollbackLines,
         );
+        values.terminalTheme = terminalOpts.terminalTheme;
         values.terminalCursorStyle = terminalOpts.cursorStyle;
         values.terminalCursorBlink = terminalOpts.cursorBlink;
         values.terminalLetterSpacing = terminalOpts.letterSpacing;
@@ -255,6 +259,8 @@ export default async function loadSettingsSnapshot() {
         if (settings.backupRetentionDays !== undefined) {
           values.backupRetentionDays = settings.backupRetentionDays;
         }
+        values.restoreSessionOnStartup =
+          normalizeRestoreSessionOnStartup(settings);
 
         // 性能设置
         values.hardwareAccelerationEnabled = perfOpts.hardwareAcceleration;

@@ -1,4 +1,6 @@
-const { dialog } = require("electron");
+const fs = require("node:fs");
+const path = require("node:path");
+const { BrowserWindow, dialog } = require("electron");
 const { logToFile } = require("../../utils/logger");
 const { broadcastToAllWindows } = require("../../window/windowManager");
 const configService = require("../../settings/configService");
@@ -70,6 +72,11 @@ class TerminalHandlers {
         channel: IPC_REQUEST_CHANNELS.TERMINAL_NOTIFY_EDITOR_MODE_CHANGE,
         category: "terminal",
         handler: this.notifyEditorModeChange.bind(this),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.TERMINAL_EXPORT_SCROLLBACK,
+        category: "terminal",
+        handler: this.exportScrollback.bind(this),
       },
     ];
   }
@@ -612,6 +619,81 @@ class TerminalHandlers {
     }
 
     return true;
+  }
+
+  /**
+   * Sanitize renderer-supplied scrollback export default filename to a safe
+   * `.log` or `.txt` basename.
+   */
+  _sanitizeExportFilename(rawName) {
+    const base = path.basename(
+      typeof rawName === "string" ? rawName.trim() : "",
+    );
+    const cleaned = base
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "-")
+      .replace(/\s+/g, "-")
+      .replace(/^\.+/, "")
+      .slice(0, 96);
+    if (!cleaned) {
+      return "terminal-scrollback.log";
+    }
+    const ext = path.extname(cleaned).toLowerCase();
+    if (ext === ".log" || ext === ".txt") {
+      return cleaned;
+    }
+    return `${cleaned}.log`;
+  }
+
+  /**
+   * 导出终端回滚缓冲区内容到用户选择的本地文件（.log / .txt）
+   */
+  async exportScrollback(event, payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new Error("Invalid scrollback export payload");
+    }
+    if (typeof payload.content !== "string") {
+      throw new Error("Scrollback content must be a string");
+    }
+    const MAX_EXPORT_BYTES = 128 * 1024 * 1024;
+    if (Buffer.byteLength(payload.content, "utf8") > MAX_EXPORT_BYTES) {
+      throw new Error("Scrollback content exceeds maximum export size");
+    }
+    if (
+      payload.defaultFilename !== undefined &&
+      typeof payload.defaultFilename !== "string"
+    ) {
+      throw new Error("Invalid defaultFilename");
+    }
+
+    const safeFilename = this._sanitizeExportFilename(payload.defaultFilename);
+    const senderWindow = event?.sender
+      ? BrowserWindow?.fromWebContents?.(event.sender)
+      : null;
+    const parentWindow =
+      senderWindow ||
+      BrowserWindow?.getFocusedWindow?.() ||
+      BrowserWindow?.getAllWindows?.()?.[0] ||
+      null;
+
+    const dialogOptions = {
+      defaultPath: safeFilename,
+      filters: [
+        { name: "Log Files", extensions: ["log"] },
+        { name: "Text Files", extensions: ["txt"] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    };
+
+    const result = parentWindow
+      ? await dialog.showSaveDialog(parentWindow, dialogOptions)
+      : await dialog.showSaveDialog(dialogOptions);
+
+    if (result?.canceled || !result?.filePath) {
+      return { success: false, cancelled: true };
+    }
+
+    await fs.promises.writeFile(result.filePath, payload.content, "utf8");
+    return { success: true, filePath: result.filePath };
   }
 }
 

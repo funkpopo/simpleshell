@@ -201,6 +201,7 @@ export default function SidebarPanels({
             onNavigationStateChange={updateFileManagerHistory}
             sessionContext={sidebarSessionContext}
             followTerminalDirectory={sftpFollowTerminalDirectory}
+            onSendCommand={handleSendCommand}
           />
         )}
       </Box>
@@ -225,6 +226,8 @@ export default function SidebarPanels({
             onClose={handleCloseShortcutCommands}
             onSendCommand={handleSendCommand}
             sessionContext={sidebarSessionContext}
+            sessionKey={activeSessionKey}
+            activeSession={activeSession}
           />
         )}
       </Box>

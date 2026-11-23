@@ -2,6 +2,9 @@ import { useCallback, useEffect } from "react";
 import {
   normalizeTerminalLineHeight,
   DEFAULT_TERMINAL_LINE_HEIGHT,
+  DEFAULT_TERMINAL_THEME,
+  getTerminalTheme,
+  normalizeTerminalThemeId,
 } from "../model/terminalTheme.js";
 import {
   DEFAULT_TERMINAL_SCROLLBACK_LINES,
@@ -43,6 +46,8 @@ export function useTerminalSettingsSync({
   disableWebglRenderer,
   eventManager,
   scheduleTerminalLayoutSyncRef,
+  themeModeRef,
+  terminalThemeRef,
 }) {
   const getFontSettings = useCallback(async () => {
     try {
@@ -61,6 +66,9 @@ export function useTerminalSettingsSync({
         );
         const terminalUi = normalizeTerminalUiSettings(settings);
         const perfUi = normalizePerformanceSettings(settings);
+        if (terminalThemeRef) {
+          terminalThemeRef.current = terminalUi.terminalTheme;
+        }
         return {
           fontSize: settings.terminalFontSize || 14,
           fontFamily: getTerminalFontFamily(
@@ -68,6 +76,7 @@ export function useTerminalSettingsSync({
           ),
           fontWeight: settings.terminalFontWeight || 500,
           lineHeight: normalizeTerminalLineHeight(settings.terminalLineHeight),
+          terminalTheme: terminalUi.terminalTheme,
           terminalScrollbackLines,
           cursorStyle: terminalUi.cursorStyle,
           cursorBlink: terminalUi.cursorBlink,
@@ -90,6 +99,7 @@ export function useTerminalSettingsSync({
       fontFamily: getTerminalFontFamily("Fira Code"),
       fontWeight: 500,
       lineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
+      terminalTheme: DEFAULT_TERMINAL_THEME,
       terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
       cursorStyle: defaults.cursorStyle,
       cursorBlink: defaults.cursorBlink,
@@ -112,6 +122,7 @@ export function useTerminalSettingsSync({
         terminalFont,
         terminalFontWeight,
         terminalLineHeight,
+        terminalTheme,
         performance,
         terminalScrollbackLines,
         terminalCursorStyle,
@@ -201,6 +212,16 @@ export function useTerminalSettingsSync({
           cachedTerminal.options.lineHeight =
             normalizeTerminalLineHeight(terminalLineHeight);
         }
+        if (terminalTheme !== undefined) {
+          const nextTheme = normalizeTerminalThemeId(terminalTheme);
+          if (terminalThemeRef) {
+            terminalThemeRef.current = nextTheme;
+          }
+          cachedTerminal.options.theme = getTerminalTheme(
+            themeModeRef?.current || "dark",
+            nextTheme,
+          );
+        }
 
         const hasTerminalUiUpdates =
           terminalCursorStyle !== undefined ||
@@ -252,14 +273,39 @@ export function useTerminalSettingsSync({
       }
     };
 
+    const handleSetTerminalTheme = (event) => {
+      const detail = event?.detail || {};
+      const rawTheme = detail.terminalTheme ?? detail.themeId;
+      if (!rawTheme) {
+        return;
+      }
+      const nextTheme = normalizeTerminalThemeId(rawTheme);
+      if (terminalThemeRef) {
+        terminalThemeRef.current = nextTheme;
+      }
+      const cachedTerminal = terminalCache[sessionKey];
+      if (cachedTerminal) {
+        cachedTerminal.options.theme = getTerminalTheme(
+          themeModeRef?.current || "dark",
+          nextTheme,
+        );
+      }
+    };
+
     const removeSettingsChangedListener = eventManager.addEventListener(
       window,
       "settingsChanged",
       handleSettingsChanged,
     );
+    const removeTerminalThemeListener = eventManager.addEventListener(
+      window,
+      "simpleshell:setTerminalTheme",
+      handleSetTerminalTheme,
+    );
 
     return () => {
       removeSettingsChangedListener();
+      removeTerminalThemeListener();
     };
   }, [
     sessionKey,
@@ -274,6 +320,8 @@ export function useTerminalSettingsSync({
     termRef,
     terminalRef,
     webglRendererEnabledRef,
+    themeModeRef,
+    terminalThemeRef,
   ]);
 
   return getFontSettings;

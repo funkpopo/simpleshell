@@ -5,6 +5,124 @@ import {
 } from "../model/systemShortcutRecovery.js";
 import { syncTerminalLinkCtrlState } from "./terminalDom.js";
 
+export const DEFAULT_TERMINAL_FONT_SIZE = 14;
+export const MIN_TERMINAL_FONT_SIZE = 10;
+export const MAX_TERMINAL_FONT_SIZE = 30;
+
+const isCtrlOrMetaOnly = (event) =>
+  Boolean((event?.ctrlKey || event?.metaKey) && !event?.altKey);
+
+const isCtrlShiftChord = (event, targetKey) =>
+  Boolean(
+    isCtrlOrMetaOnly(event) &&
+    event?.shiftKey &&
+    String(event?.key || "").toLowerCase() === targetKey,
+  );
+
+export function getTerminalZoomAction(event) {
+  if (!event || !isCtrlOrMetaOnly(event)) {
+    return null;
+  }
+  const key = event.key;
+  const code = event.code || "";
+  if (key === "=" || key === "+" || code === "Equal" || code === "NumpadAdd") {
+    return "in";
+  }
+  if (
+    !event.shiftKey &&
+    (key === "-" || code === "Minus" || code === "NumpadSubtract")
+  ) {
+    return "out";
+  }
+  if (
+    !event.shiftKey &&
+    (key === "0" || code === "Digit0" || code === "Numpad0")
+  ) {
+    return "reset";
+  }
+  return null;
+}
+
+export function computeNextTerminalFontSize(currentSize, action) {
+  const base = Number.isFinite(Number(currentSize))
+    ? Number(currentSize)
+    : DEFAULT_TERMINAL_FONT_SIZE;
+  if (action === "reset") {
+    return DEFAULT_TERMINAL_FONT_SIZE;
+  }
+  const delta = action === "in" ? 1 : action === "out" ? -1 : 0;
+  return Math.min(
+    MAX_TERMINAL_FONT_SIZE,
+    Math.max(MIN_TERMINAL_FONT_SIZE, Math.round(base + delta)),
+  );
+}
+
+/**
+ * Determines whether xterm.js should process a key event and emit PTY bytes.
+ * Returns false for host/application shortcuts (Command Palette, Tab/Split/Focus
+ * navigation, Ctrl+Shift+C/V, Zoom, Alt+F1) while explicitly returning true for
+ * shell editing chords such as Ctrl+K (kill-line) and Ctrl+C (SIGINT).
+ */
+export function shouldXtermHandleKeyEvent(event) {
+  if (!event) return true;
+
+  if (event.altKey && event.key === "F1") {
+    return false;
+  }
+
+  // Explicitly preserve Ctrl+K (kill-line) and unshifted Ctrl+C (SIGINT) for shells.
+  if (
+    event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    ["k", "c"].includes(String(event.key || "").toLowerCase())
+  ) {
+    return true;
+  }
+
+  if (
+    isCtrlShiftChord(event, "p") ||
+    isCtrlShiftChord(event, "c") ||
+    isCtrlShiftChord(event, "v") ||
+    isCtrlShiftChord(event, "t") ||
+    isCtrlShiftChord(event, "e") ||
+    isCtrlShiftChord(event, "h") ||
+    isCtrlShiftChord(event, "w")
+  ) {
+    return false;
+  }
+
+  if (event.ctrlKey && !event.altKey && !event.metaKey && event.key === "Tab") {
+    return false;
+  }
+
+  if (
+    isCtrlOrMetaOnly(event) &&
+    !event.shiftKey &&
+    (/^[1-9]$/.test(String(event.key || "")) ||
+      /^Digit[1-9]$/.test(String(event.code || "")))
+  ) {
+    return false;
+  }
+
+  if (
+    event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.shiftKey &&
+    ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+  ) {
+    return false;
+  }
+
+  if (getTerminalZoomAction(event) !== null) {
+    return false;
+  }
+
+  return true;
+}
+
 /**
  * Document/window keyboard shortcuts for a terminal (copy/paste/clear/search,
  * suggestion dismissal), link Ctrl state, and focus/visibility/IME driven
@@ -170,14 +288,43 @@ export function attachTerminalShortcutHandlers({
         (e.key === "." && e.ctrlKey) ||
         (e.key === ";" && e.ctrlKey) ||
         (e.key === "'" && e.ctrlKey) ||
-        (e.key.toLowerCase?.() === "l" && e.ctrlKey);
+        (e.key.toLowerCase?.() === "l" && e.ctrlKey) ||
+        isCtrlShiftChord(e, "c") ||
+        isCtrlShiftChord(e, "v") ||
+        getTerminalZoomAction(e) !== null;
 
       if (!isAllowedKey) {
         return;
       }
     }
 
-    if (e.ctrlKey && e.key === ";") {
+    const zoomAction = getTerminalZoomAction(e);
+    if (zoomAction) {
+      if (!isActiveTerminalClipboardContext(e.target)) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof shortcutUiRef.current?.onZoom === "function") {
+        shortcutUiRef.current.onZoom(zoomAction);
+      } else {
+        const nextSize = computeNextTerminalFontSize(
+          term?.options?.fontSize,
+          zoomAction,
+        );
+        if (term?.options) {
+          term.options.fontSize = nextSize;
+        }
+        window.dispatchEvent(
+          new CustomEvent("settingsChanged", {
+            detail: { terminalFontSize: nextSize },
+          }),
+        );
+      }
+      return;
+    }
+
+    if ((e.ctrlKey && e.key === ";") || isCtrlShiftChord(e, "c")) {
       if (!isActiveTerminalClipboardContext(e.target)) {
         return;
       }
@@ -188,7 +335,7 @@ export function attachTerminalShortcutHandlers({
           () => {},
         );
       }
-    } else if (e.ctrlKey && e.key === "'") {
+    } else if ((e.ctrlKey && e.key === "'") || isCtrlShiftChord(e, "v")) {
       if (!isActiveTerminalClipboardContext(e.target)) {
         return;
       }

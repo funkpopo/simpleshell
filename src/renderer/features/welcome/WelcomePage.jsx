@@ -1,10 +1,41 @@
 import { Z_INDEX } from "../../shared/constants/zIndex.js";
-import React, { memo, useCallback } from "react";
-import { Box, Button, Typography } from "@mui/material";
+import React, { memo, useCallback, useEffect, useState } from "react";
+import {
+  Box,
+  Button,
+  Chip,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  TextField,
+  Typography,
+} from "@mui/material";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import TerminalRoundedIcon from "@mui/icons-material/TerminalRounded";
+import BoltIcon from "@mui/icons-material/Bolt";
+import BookmarkAddOutlinedIcon from "@mui/icons-material/BookmarkAddOutlined";
+import StarRoundedIcon from "@mui/icons-material/StarRounded";
 import { alpha } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
+import Dialog from "../../shared/ui/AccessibleDialog.jsx";
+import { useNotification } from "../../shared/notifications/NotificationContext";
+import { generateId } from "../../../shared/common";
+import {
+  buildTransientQuickConnectConnection,
+  parseQuickConnectTarget,
+  resolveQuickConnectDetail,
+} from "../../../shared/domain/quickConnect";
+import {
+  dismissTransientQuickConnect,
+  getQuickConnectErrorText,
+  getTransientQuickConnects,
+  recordTransientQuickConnect,
+} from "../../shared/lib/quickConnectSession.js";
 
 const MONO_FONT =
   '"Space Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace';
@@ -139,17 +170,191 @@ const dayRouteVars = (route) => ({
 });
 
 const WelcomePage = ({
+  connections = [],
   topConnections,
   onOpenConnection,
   onCreateConnection,
+  onConnectionsUpdate,
+  onOpenLocalTerminal,
 }) => {
   const { t } = useTranslation();
+  const { showError, showSuccess } = useNotification();
   const hasConnections = Boolean(topConnections?.length);
+  const [quickConnectInput, setQuickConnectInput] = useState("");
+  const [quickConnectError, setQuickConnectError] = useState("");
+  const [transientQuickConnects, setTransientQuickConnects] = useState(() =>
+    getTransientQuickConnects(connections),
+  );
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [savePreset, setSavePreset] = useState(null);
+  const [saveName, setSaveName] = useState("");
+  const [saveGroupId, setSaveGroupId] = useState("");
+
+  useEffect(() => {
+    setTransientQuickConnects(getTransientQuickConnects(connections));
+  }, [connections]);
 
   const handleOpenConnection = useCallback(
     (connection) => onOpenConnection?.(connection),
     [onOpenConnection],
   );
+
+  const handleOpenLocalTerminal = useCallback(() => {
+    if (typeof onOpenLocalTerminal === "function") {
+      onOpenLocalTerminal();
+      return;
+    }
+    const customEvent = new CustomEvent("simpleshell:openLocalTerminal", {
+      cancelable: true,
+    });
+    window.dispatchEvent(customEvent);
+    if (!customEvent.defaultPrevented && typeof document !== "undefined") {
+      const railLabel = t("sidebar.localTerminal");
+      const buttons = document.querySelectorAll("button[aria-label]");
+      for (const button of buttons) {
+        if (button.getAttribute("aria-label") === railLabel) {
+          button.click();
+          break;
+        }
+      }
+    }
+  }, [onOpenLocalTerminal, t]);
+
+  const handleQuickConnectSubmit = useCallback(
+    (event) => {
+      event?.preventDefault?.();
+      const parsed = parseQuickConnectTarget(quickConnectInput);
+      if (!parsed.ok) {
+        setQuickConnectError(getQuickConnectErrorText(t, parsed.errorCode));
+        return;
+      }
+      const transientConnection = buildTransientQuickConnectConnection(
+        parsed.value,
+      );
+      recordTransientQuickConnect(transientConnection);
+      setTransientQuickConnects(getTransientQuickConnects(connections));
+      setQuickConnectError("");
+      setQuickConnectInput("");
+      onOpenConnection?.(transientConnection);
+    },
+    [connections, onOpenConnection, quickConnectInput, t],
+  );
+
+  useEffect(() => {
+    const handleTransientChanged = () => {
+      setTransientQuickConnects(getTransientQuickConnects(connections));
+    };
+    const handleExternalQuickConnect = (event) => {
+      if (event.defaultPrevented || typeof onOpenConnection !== "function") {
+        return;
+      }
+      const resolved = resolveQuickConnectDetail(event.detail);
+      if (!resolved.ok) {
+        showError(getQuickConnectErrorText(t, resolved.errorCode));
+        return;
+      }
+      event.preventDefault();
+      recordTransientQuickConnect(resolved.connection);
+      setTransientQuickConnects(getTransientQuickConnects(connections));
+      onOpenConnection(resolved.connection);
+    };
+    window.addEventListener(
+      "simpleshell:transientQuickConnectsChanged",
+      handleTransientChanged,
+    );
+    window.addEventListener(
+      "simpleshell:quickConnect",
+      handleExternalQuickConnect,
+    );
+    return () => {
+      window.removeEventListener(
+        "simpleshell:transientQuickConnectsChanged",
+        handleTransientChanged,
+      );
+      window.removeEventListener(
+        "simpleshell:quickConnect",
+        handleExternalQuickConnect,
+      );
+    };
+  }, [connections, onOpenConnection, showError, t]);
+
+  const openSavePresetDialog = useCallback((preset) => {
+    if (!preset) return;
+    setSavePreset(preset);
+    setSaveName(preset.name || preset.host || "");
+    setSaveGroupId("");
+    setSaveDialogOpen(true);
+  }, []);
+
+  const handleConfirmSavePreset = useCallback(
+    async (event) => {
+      event?.preventDefault?.();
+      if (!savePreset) return;
+      const trimmedName = saveName.trim();
+      if (!trimmedName) {
+        showError(t("connectionManager.nameRequired"));
+        return;
+      }
+      const newConnection = {
+        id: generateId("conn"),
+        type: "connection",
+        name: trimmedName,
+        host: savePreset.host,
+        port: savePreset.port || (savePreset.protocol === "telnet" ? 23 : 22),
+        username: savePreset.username || "",
+        password: "",
+        authType: "password",
+        privateKeyPath: "",
+        agentPath: "",
+        agentForward: false,
+        enableCompression: false,
+        os: "",
+        connectionType: "",
+        protocol: savePreset.protocol || "ssh",
+        pinned: false,
+        tags: [],
+        colorTag: "",
+        proxy: null,
+      };
+      const baseList = Array.isArray(connections) ? connections : [];
+      const nextConnections = saveGroupId
+        ? baseList.map((item) =>
+            item.id === saveGroupId && item.type === "group"
+              ? { ...item, items: [...(item.items || []), newConnection] }
+              : item,
+          )
+        : [...baseList, newConnection];
+
+      try {
+        if (typeof onConnectionsUpdate === "function") {
+          onConnectionsUpdate(nextConnections);
+        } else if (window.terminalAPI?.saveConnections) {
+          await window.terminalAPI.saveConnections(nextConnections);
+        }
+        dismissTransientQuickConnect(savePreset);
+        setTransientQuickConnects(getTransientQuickConnects(nextConnections));
+        setSaveDialogOpen(false);
+        setSavePreset(null);
+        showSuccess(t("connectionManager.createSuccess"));
+      } catch {
+        showError(t("connectionManager.saveFailed"));
+      }
+    },
+    [
+      connections,
+      onConnectionsUpdate,
+      saveGroupId,
+      saveName,
+      savePreset,
+      showError,
+      showSuccess,
+      t,
+    ],
+  );
+
+  const availableGroups = Array.isArray(connections)
+    ? connections.filter((item) => item?.type === "group")
+    : [];
 
   return (
     <Box
@@ -803,20 +1008,127 @@ const WelcomePage = ({
                 Shell
               </Box>
             </Typography>
-            <Button
-              variant="contained"
-              onClick={onCreateConnection}
-              startIcon={<AddRoundedIcon />}
+            <Box
               sx={{
-                minWidth: 190,
-                minHeight: 42,
-                justifyContent: "space-between",
-                px: 2,
-                borderRadius: "var(--radius-sm, 3px)",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 1.25,
+                mb: 2.5,
               }}
             >
-              {t("welcome.newConnection")}
-            </Button>
+              <Button
+                variant="contained"
+                onClick={onCreateConnection}
+                startIcon={<AddRoundedIcon />}
+                sx={{
+                  minWidth: 170,
+                  minHeight: 42,
+                  justifyContent: "space-between",
+                  px: 2,
+                  borderRadius: "var(--radius-sm, 3px)",
+                }}
+              >
+                {t("welcome.newConnection")}
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={handleOpenLocalTerminal}
+                startIcon={<TerminalRoundedIcon />}
+                sx={{
+                  minWidth: 160,
+                  minHeight: 42,
+                  justifyContent: "space-between",
+                  px: 2,
+                  borderRadius: "var(--radius-sm, 3px)",
+                }}
+              >
+                {t("welcome.localTerminal")}
+              </Button>
+            </Box>
+
+            <Box
+              component="form"
+              onSubmit={handleQuickConnectSubmit}
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 0.75,
+              }}
+            >
+              <Typography
+                variant="caption"
+                sx={{
+                  fontFamily: MONO_FONT,
+                  color: "text.secondary",
+                  fontSize: "0.7rem",
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                }}
+              >
+                {t("connections.quickConnect.title")}
+              </Typography>
+              <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  value={quickConnectInput}
+                  onChange={(e) => {
+                    setQuickConnectInput(e.target.value);
+                    if (quickConnectError) {
+                      setQuickConnectError("");
+                    }
+                  }}
+                  placeholder={t("connections.quickConnect.placeholder")}
+                  error={Boolean(quickConnectError)}
+                  helperText={quickConnectError || undefined}
+                  slotProps={{
+                    htmlInput: {
+                      "aria-label": t("connections.quickConnect.inputLabel"),
+                      style: { fontFamily: MONO_FONT, fontSize: "0.8125rem" },
+                    },
+                  }}
+                />
+                <Button
+                  type="submit"
+                  variant="outlined"
+                  startIcon={<BoltIcon />}
+                  sx={{
+                    height: 40,
+                    px: 2,
+                    flexShrink: 0,
+                    whiteSpace: "nowrap",
+                    borderRadius: "var(--radius-sm, 3px)",
+                  }}
+                >
+                  {t("connections.quickConnect.connect")}
+                </Button>
+              </Box>
+              {transientQuickConnects.length > 0 && (
+                <Box
+                  sx={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    gap: 0.75,
+                    mt: 0.25,
+                  }}
+                >
+                  {transientQuickConnects.slice(0, 2).map((item) => (
+                    <Chip
+                      key={item.id}
+                      size="small"
+                      icon={<BookmarkAddOutlinedIcon />}
+                      label={`${item.name} · ${t("connections.quickConnect.saveAsConnection")}`}
+                      onClick={() => openSavePresetDialog(item)}
+                      onDelete={() => dismissTransientQuickConnect(item)}
+                      variant="outlined"
+                      color="primary"
+                      clickable
+                    />
+                  ))}
+                </Box>
+              )}
+            </Box>
           </Box>
 
           <Box
@@ -911,18 +1223,49 @@ const WelcomePage = ({
                         {String(index + 1).padStart(2, "0")}
                       </Typography>
                       <Box sx={{ minWidth: 0 }}>
-                        <Typography
-                          variant="body2"
+                        <Box
                           sx={{
-                            fontSize: "0.9375rem",
-                            fontWeight: 650,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.75,
+                            minWidth: 0,
                           }}
                         >
-                          {connection.name || connection.host}
-                        </Typography>
+                          {connection.colorTag ? (
+                            <Box
+                              component="span"
+                              aria-hidden="true"
+                              sx={{
+                                width: 7,
+                                height: 7,
+                                borderRadius: "50%",
+                                bgcolor: connection.colorTag,
+                                flexShrink: 0,
+                              }}
+                            />
+                          ) : null}
+                          {connection.pinned ? (
+                            <StarRoundedIcon
+                              sx={{
+                                fontSize: 14,
+                                color: "warning.main",
+                                flexShrink: 0,
+                              }}
+                            />
+                          ) : null}
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontSize: "0.9375rem",
+                              fontWeight: 650,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {connection.name || connection.host}
+                          </Typography>
+                        </Box>
                         <Typography
                           variant="caption"
                           sx={{
@@ -1055,6 +1398,59 @@ const WelcomePage = ({
           </Typography>
         </Box>
       </Box>
+
+      <Dialog
+        open={saveDialogOpen}
+        onClose={() => setSaveDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>
+          {t("connections.quickConnect.saveAsConnection")}
+        </DialogTitle>
+        <Box component="form" onSubmit={handleConfirmSavePreset}>
+          <DialogContent
+            sx={{ display: "flex", flexDirection: "column", gap: 1.5, pt: 1 }}
+          >
+            <TextField
+              label={t("common.name")}
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              size="small"
+              fullWidth
+              required
+              autoFocus
+            />
+            {availableGroups.length > 0 && (
+              <FormControl size="small" fullWidth>
+                <InputLabel>{t("connectionManager.group")}</InputLabel>
+                <Select
+                  value={saveGroupId}
+                  label={t("connectionManager.group")}
+                  onChange={(e) => setSaveGroupId(e.target.value)}
+                >
+                  <MenuItem value="">
+                    <em>{t("connectionManager.noGroup")}</em>
+                  </MenuItem>
+                  {availableGroups.map((group) => (
+                    <MenuItem key={group.id} value={group.id}>
+                      {group.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSaveDialogOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="submit" variant="contained">
+              {t("common.save")}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
     </Box>
   );
 };

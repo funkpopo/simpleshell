@@ -26,6 +26,7 @@ import {
   cloneConnectionList,
   createConnectionStabilizer,
   dedupeConnectionsById,
+  filterConnectionTree,
   ROOT_CONTAINER_ID,
   getGroupContainerId,
   CONNECTION_LIST_VIRTUALIZATION_THRESHOLD,
@@ -36,6 +37,8 @@ import { ConnectionListItem, GroupListItem } from "./ConnectionListItems.jsx";
 
 function ConnectionList({
   searchQuery,
+  onlyPinned = false,
+  selectedTag = "",
   connections,
   setConnections,
   isSavingRef,
@@ -43,6 +46,7 @@ function ConnectionList({
   openGroupContextMenuFromEvent,
   openConnectionContextMenuFromEvent,
   handleOpenConnection,
+  onTogglePin,
   connectionListContextMenu,
   connectionManagerListRootRef,
   handleBlankContextMenu,
@@ -59,35 +63,15 @@ function ConnectionList({
   }
   // 过滤使用延迟值：连接很多时输入框保持即时响应，列表在空闲时跟上
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  const hasActiveFilter = Boolean(
+    deferredSearchQuery || onlyPinned || selectedTag,
+  );
   const filteredItems = useMemo(() => {
-    let items;
-    if (!deferredSearchQuery) {
-      items = connections;
-    } else {
-      const lowercasedQuery = deferredSearchQuery.toLowerCase();
-      items = connections.reduce((acc, item) => {
-        if (item.type === "group") {
-          const isGroupNameMatch = item.name
-            .toLowerCase()
-            .includes(lowercasedQuery);
-          const matchingConnections = item.items.filter((c) =>
-            c.name.toLowerCase().includes(lowercasedQuery),
-          );
-
-          if (isGroupNameMatch || matchingConnections.length > 0) {
-            acc.push({
-              ...item,
-              items: isGroupNameMatch ? item.items : matchingConnections,
-            });
-          }
-        } else {
-          if (item.name.toLowerCase().includes(lowercasedQuery)) {
-            acc.push(item);
-          }
-        }
-        return acc;
-      }, []);
-    }
+    const items = filterConnectionTree(connections, {
+      searchQuery: deferredSearchQuery,
+      onlyPinned,
+      selectedTag,
+    });
 
     const dedupedItems = dedupeConnectionsById(items);
 
@@ -103,15 +87,20 @@ function ConnectionList({
     });
 
     return stabilizerRef.current(sortedItems);
-  }, [connections, deferredSearchQuery]);
+  }, [connections, deferredSearchQuery, onlyPinned, selectedTag]);
   const visibleItemCount = useMemo(
     () => countVisibleItems(filteredItems),
     [filteredItems],
   );
   const useVirtualizedConnectionList =
     visibleItemCount >= CONNECTION_LIST_VIRTUALIZATION_THRESHOLD ||
-    (searchQuery.length > 0 && visibleItemCount > 0);
-  const dragDisabled = searchQuery.length > 0 || useVirtualizedConnectionList;
+    ((searchQuery.length > 0 || onlyPinned || Boolean(selectedTag)) &&
+      visibleItemCount > 0);
+  const dragDisabled =
+    searchQuery.length > 0 ||
+    onlyPinned ||
+    Boolean(selectedTag) ||
+    useVirtualizedConnectionList;
   const handleDragEnd = useCallback(
     ({ active, over }) => {
       if (!over || dragDisabled) {
@@ -384,6 +373,7 @@ function ConnectionList({
                 openConnectionContextMenuFromEvent
               }
               onOpenConnection={handleOpenConnection}
+              onTogglePin={onTogglePin}
               contextMenuTarget={connectionListContextMenu}
             />
           ) : (
@@ -394,6 +384,7 @@ function ConnectionList({
               parentGroup={null}
               onOpenRowContextMenu={openConnectionContextMenuFromEvent}
               onOpen={handleOpenConnection}
+              onTogglePin={onTogglePin}
               dragDisabled={dragDisabled}
               isContextMenuTarget={
                 connectionListContextMenu?.kind === "connection" &&
@@ -414,6 +405,7 @@ function ConnectionList({
     openConnectionContextMenuFromEvent,
     openGroupContextMenuFromEvent,
     handleOpenConnection,
+    onTogglePin,
     connectionListContextMenu,
   ]);
   return (
@@ -445,9 +437,14 @@ function ConnectionList({
           }
           onToggleGroup={handleToggleGroup}
           onSelectConnection={handleOpenConnection}
+          onTogglePin={onTogglePin}
           onItemContextMenu={handleVirtualizedItemContextMenu}
           onBlankContextMenu={handleBlankContextMenu}
-          emptyMessage={t("connectionManager.noConnections")}
+          emptyMessage={
+            hasActiveFilter
+              ? t("connectionManager.noMatchingConnections")
+              : t("connectionManager.noConnections")
+          }
         />
       ) : (
         <DndContext
@@ -476,7 +473,7 @@ function ConnectionList({
                 <SidebarEmptyState
                   icon={<ComputerIcon />}
                   message={
-                    deferredSearchQuery
+                    hasActiveFilter
                       ? t("connectionManager.noMatchingConnections")
                       : t("connectionManager.noConnections")
                   }

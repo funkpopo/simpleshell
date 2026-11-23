@@ -24,6 +24,7 @@ import { Z_INDEX } from "../../../shared/constants/zIndex.js";
 export default function ChatHeader({
   sessionKey,
   connectionInfo,
+  terminalContext = null,
   zIndex,
   currentApi,
   availableApis,
@@ -47,6 +48,13 @@ export default function ChatHeader({
 
   const apiMenuZIndex = (Number(zIndex) || Z_INDEX.modal) + Z_INDEX.popupOffset;
   const showModelChip = Boolean(currentApi) || availableApis.length > 0;
+  const connectionSummary = connectionInfo
+    ? `${connectionInfo.type} · ${connectionInfo.username ? `${connectionInfo.username}@` : ""}${connectionInfo.host}${connectionInfo.port ? `:${connectionInfo.port}` : ""}`
+    : "";
+  const subtitleText =
+    terminalContext?.cwd && connectionSummary
+      ? `${connectionSummary} · ${terminalContext.cwd}`
+      : connectionSummary;
 
   return (
     <DialogTitle
@@ -85,9 +93,9 @@ export default function ChatHeader({
               variant="caption"
               color="text.secondary"
               noWrap
-              title={`${connectionInfo.type} · ${connectionInfo.host}`}
+              title={subtitleText}
             >
-              {`${connectionInfo.type} · ${connectionInfo.username ? `${connectionInfo.username}@` : ""}${connectionInfo.host}${connectionInfo.port ? `:${connectionInfo.port}` : ""}`}
+              {subtitleText}
             </Typography>
           )}
         </Box>

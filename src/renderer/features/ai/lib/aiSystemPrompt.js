@@ -240,20 +240,88 @@ function assessCommandRisk(command) {
 }
 
 /**
- * Build connection environment line for the system prompt.
- * @param {(key: string, params?: object) => string} t
- * @param {Object|null} connectionInfo
+ * Build connection environment block for the system prompt.
+ * Supports either `(t, connectionInfo, terminalContext)` or an options object
+ * `{ language, connectionInfo, terminalContext, attachTerminalContext }`.
+ * @param {((key: string, params?: object) => string) | object} tOrOptions
+ * @param {Object|null} [connectionInfo]
+ * @param {Object|null} [terminalContext]
  * @returns {string}
  */
-function buildConnectionContext(t, connectionInfo) {
+export function buildConnectionContext(
+  tOrOptions,
+  connectionInfo = null,
+  terminalContext = null,
+) {
+  if (typeof tOrOptions !== "function") {
+    const options =
+      tOrOptions && typeof tOrOptions === "object" ? tOrOptions : {};
+    const lng = normalizePromptLanguage(options.language);
+    const t = createPromptT(lng);
+    const attach =
+      options.attachTerminalContext === undefined
+        ? Boolean(options.terminalContext)
+        : Boolean(options.attachTerminalContext);
+    return buildConnectionContext(
+      t,
+      options.connectionInfo || null,
+      attach ? options.terminalContext || null : null,
+    );
+  }
+
+  const t = tOrOptions;
   if (!connectionInfo) {
     return t("ai.systemPrompt.environment.noConnection");
   }
 
-  return t("ai.systemPrompt.environment.withConnection", {
-    host: connectionInfo.host || t("ai.systemPrompt.environment.unknownHost"),
-    type: connectionInfo.type || t("ai.systemPrompt.environment.defaultType"),
-  });
+  const lines = [
+    t("ai.systemPrompt.environment.withConnection", {
+      host: connectionInfo.host || t("ai.systemPrompt.environment.unknownHost"),
+      type: connectionInfo.type || t("ai.systemPrompt.environment.defaultType"),
+    }),
+  ];
+
+  if (terminalContext && typeof terminalContext === "object") {
+    const username =
+      (typeof terminalContext.username === "string" &&
+        terminalContext.username.trim()) ||
+      (typeof connectionInfo.username === "string" &&
+        connectionInfo.username.trim()) ||
+      "";
+    if (username) {
+      lines.push(t("ai.systemPrompt.environment.username", { username }));
+    }
+    if (typeof terminalContext.cwd === "string" && terminalContext.cwd.trim()) {
+      lines.push(
+        t("ai.systemPrompt.environment.cwd", {
+          cwd: terminalContext.cwd.trim(),
+        }),
+      );
+    }
+    if (
+      typeof terminalContext.lastCommand === "string" &&
+      terminalContext.lastCommand.trim()
+    ) {
+      lines.push(
+        t("ai.systemPrompt.environment.lastCommand", {
+          command: terminalContext.lastCommand.trim(),
+        }),
+      );
+    }
+    if (
+      typeof terminalContext.recentOutput === "string" &&
+      terminalContext.recentOutput.trim()
+    ) {
+      const output = terminalContext.recentOutput;
+      const fence = output.includes("```") ? "````" : "```";
+      lines.push(t("ai.systemPrompt.environment.recentOutputHeader"));
+      lines.push(`${fence}text`);
+      lines.push(output);
+      lines.push(fence);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 /**
@@ -261,14 +329,29 @@ function buildConnectionContext(t, connectionInfo) {
  * @param {Object} options - 配置选项
  * @param {string} options.language - 语言 ('zh-CN' 或 'en-US')
  * @param {Object} options.connectionInfo - 当前连接信息
+ * @param {Object|null} [options.terminalContext] - 脱敏后的终端上下文
+ * @param {boolean} [options.attachTerminalContext] - 是否附加终端上下文
  * @returns {string} 系统提示词
  */
 export function generateSystemPrompt(options = {}) {
-  const { language = "zh-CN", connectionInfo = null } = options;
+  const {
+    language = "zh-CN",
+    connectionInfo = null,
+    terminalContext = null,
+    attachTerminalContext,
+  } = options;
   const lng = normalizePromptLanguage(language);
   const t = createPromptT(lng);
 
-  const connectionContext = buildConnectionContext(t, connectionInfo);
+  const shouldAttachContext =
+    attachTerminalContext === undefined
+      ? Boolean(terminalContext)
+      : Boolean(attachTerminalContext);
+  const connectionContext = buildConnectionContext(
+    t,
+    connectionInfo,
+    shouldAttachContext ? terminalContext : null,
+  );
   const riskPlaceholder = t(
     "ai.systemPrompt.commandFormat.templateRiskPlaceholder",
   );
@@ -413,6 +496,7 @@ export function requiresConfirmation(risk) {
 export default {
   RISK_LEVELS,
   assessCommandRisk,
+  buildConnectionContext,
   generateSystemPrompt,
   generateMemoryContext,
   parseCommandsFromResponse,

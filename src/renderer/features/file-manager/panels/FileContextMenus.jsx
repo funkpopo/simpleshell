@@ -15,6 +15,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LinkIcon from "@mui/icons-material/Link";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import LockIcon from "@mui/icons-material/Lock";
+import TerminalIcon from "@mui/icons-material/Terminal";
 import { useTranslation } from "react-i18next";
 export default function FileContextMenus({
   contextMenu,
@@ -24,6 +25,8 @@ export default function FileContextMenus({
   handleDownloadFolder,
   handleUploadFile,
   handleUploadFolder,
+  handleCdTerminalHere,
+  canCdTerminalHere = false,
   handleCopyAbsolutePath,
   handleRename,
   handleOpenProperties,
@@ -143,6 +146,21 @@ export default function FileContextMenus({
               <CreateNewFolderIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>{t("fileManager.uploadFolder")}</ListItemText>
+          </MenuItem>
+        ),
+        menuItems.isSingleSelection && menuItems.isDirectorySelected && (
+          <MenuItem
+            key="cd-terminal-here"
+            disabled={!canCdTerminalHere}
+            onClick={() => {
+              closeMenus();
+              return handleCdTerminalHere?.();
+            }}
+          >
+            <ListItemIcon>
+              <TerminalIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{t("fileManager.cdTerminalHere")}</ListItemText>
           </MenuItem>
         ),
         menuItems.isSingleSelection && <Divider key="divider-1" />,

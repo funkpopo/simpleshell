@@ -1,4 +1,4 @@
-import { memo, useRef } from "react";
+import { memo, useCallback, useRef } from "react";
 import useAutoCleanup from "../../shared/hooks/useAutoCleanup";
 import { Box, Paper } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
@@ -21,6 +21,8 @@ import useFileMenus from "./hooks/useFileMenus.js";
 import useFileKeyboard from "./hooks/useFileKeyboard.js";
 import useFileManagerClose from "./hooks/useFileManagerClose.js";
 import useDragDrop from "./hooks/useDragDrop.js";
+import { buildCdCommand } from "./lib/directoryListing.js";
+import { getParentPath, joinPath } from "./fileManagerUtils.js";
 import FileToolbar from "./panels/FileToolbar.jsx";
 import Breadcrumbs from "./panels/Breadcrumbs.jsx";
 import FileContextMenus from "./panels/FileContextMenus.jsx";
@@ -45,6 +47,7 @@ const FileManagerContainer = memo(
     onNavigationStateChange,
     sessionContext = null,
     followTerminalDirectory = false,
+    onSendCommand = null,
   }) => {
     const theme = useTheme();
     const { t } = useTranslation();
@@ -111,6 +114,8 @@ const FileManagerContainer = memo(
       selectedFiles,
       sortMode,
       setSortMode,
+      showHiddenFiles,
+      toggleShowHiddenFiles,
       clearSelection,
       handleSearchChange,
       toggleSearch,
@@ -249,6 +254,56 @@ const FileManagerContainer = memo(
       setNotification,
       handleDroppedItems,
     });
+    const canCdTerminalHere = Boolean(
+      typeof onSendCommand === "function" &&
+      sshConnection &&
+      currentPath &&
+      buildCdCommand(currentPath),
+    );
+
+    const handleCdTerminalHere = useCallback(
+      (targetPath = currentPath) => {
+        const command = buildCdCommand(targetPath);
+        if (!command) {
+          showNotification(
+            t("fileManager.cdTerminalHereInvalidPath"),
+            "warning",
+          );
+          return;
+        }
+        if (typeof onSendCommand !== "function") {
+          showNotification(t("fileManager.cdTerminalHereUnavailable"), "error");
+          return;
+        }
+        const result = onSendCommand(command, { expectedSessionKey: tabId });
+        if (!result?.success) {
+          showNotification(
+            result?.error || t("fileManager.cdTerminalHereUnavailable"),
+            "error",
+          );
+          return;
+        }
+        showNotification(
+          t("fileManager.cdTerminalHereSuccess", { path: targetPath }),
+          "success",
+        );
+      },
+      [currentPath, onSendCommand, showNotification, t, tabId],
+    );
+
+    const handleCdSelectedFolderHere = useCallback(() => {
+      if (!selectedFile?.isDirectory) {
+        return;
+      }
+      const targetPath =
+        selectedFile.name === "."
+          ? currentPath
+          : selectedFile.name === ".."
+            ? getParentPath(currentPath)
+            : joinPath(currentPath, selectedFile.name);
+      handleCdTerminalHere(targetPath);
+    }, [currentPath, handleCdTerminalHere, selectedFile]);
+
     const focusSidebarRoot = (event) => {
       if (!(event.target instanceof Element)) {
         return;
@@ -357,6 +412,10 @@ const FileManagerContainer = memo(
             toggleSearch={toggleSearch}
             handleSortMenuOpen={handleSortMenuOpen}
             sortMode={sortMode}
+            showHiddenFiles={showHiddenFiles}
+            handleToggleHiddenFiles={toggleShowHiddenFiles}
+            handleCdTerminalHere={() => handleCdTerminalHere(currentPath)}
+            canCdTerminalHere={canCdTerminalHere}
           />
 
           <Breadcrumbs
@@ -418,6 +477,10 @@ const FileManagerContainer = memo(
           handleDownloadFolder={handleDownloadFolder}
           handleUploadFile={handleUploadFile}
           handleUploadFolder={handleUploadFolder}
+          handleCdTerminalHere={handleCdSelectedFolderHere}
+          canCdTerminalHere={Boolean(
+            typeof onSendCommand === "function" && sshConnection && currentPath,
+          )}
           handleCopyAbsolutePath={handleCopyAbsolutePath}
           handleRename={handleRename}
           handleOpenProperties={handleOpenProperties}

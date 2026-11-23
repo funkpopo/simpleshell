@@ -110,7 +110,10 @@ export default function SidebarRail({
     >
       {/* 上：会话 / 连接 / 文件 / 历史 */}
       <SidebarTooltip
-        title={t("sidebar.connections")}
+        title={t("sidebar.withShortcut", {
+          label: t("sidebar.connections"),
+          shortcut: "Ctrl+Shift+P",
+        })}
         placement={sidebarTooltipPlacement}
       >
         <IconButton
@@ -127,7 +130,10 @@ export default function SidebarRail({
         title={
           isFileManagerButtonDisabled
             ? t("fileManager.errors.connectionNotReady")
-            : t("sidebar.files")
+            : t("sidebar.withShortcut", {
+                label: t("sidebar.files"),
+                shortcut: "Ctrl+Shift+P",
+              })
         }
         placement={sidebarTooltipPlacement}
       >
@@ -143,7 +149,10 @@ export default function SidebarRail({
       </SidebarTooltip>
 
       <SidebarTooltip
-        title={t("sidebar.shortcutCommands")}
+        title={t("sidebar.withShortcut", {
+          label: t("sidebar.shortcutCommands"),
+          shortcut: "Ctrl+Shift+P",
+        })}
         placement={sidebarTooltipPlacement}
       >
         <IconButton
@@ -158,7 +167,10 @@ export default function SidebarRail({
       </SidebarTooltip>
 
       <SidebarTooltip
-        title={t("sidebar.history")}
+        title={t("sidebar.withShortcut", {
+          label: t("sidebar.history"),
+          shortcut: "Ctrl+Shift+P",
+        })}
         placement={sidebarTooltipPlacement}
       >
         <IconButton
@@ -175,7 +187,10 @@ export default function SidebarRail({
 
       {/* 中：工具 — 监控 / IP / 安全 / 本地 / 传输 */}
       <SidebarTooltip
-        title={t("sidebar.monitor")}
+        title={t("sidebar.withShortcut", {
+          label: t("sidebar.monitor"),
+          shortcut: "Ctrl+Shift+P",
+        })}
         placement={sidebarTooltipPlacement}
       >
         <IconButton
@@ -190,7 +205,10 @@ export default function SidebarRail({
       </SidebarTooltip>
 
       <SidebarTooltip
-        title={t("sidebar.ipQuery")}
+        title={t("sidebar.withShortcut", {
+          label: t("sidebar.ipQuery"),
+          shortcut: "Ctrl+Shift+P",
+        })}
         placement={sidebarTooltipPlacement}
       >
         <IconButton
@@ -204,7 +222,10 @@ export default function SidebarRail({
       </SidebarTooltip>
 
       <SidebarTooltip
-        title={t("sidebar.securityTool")}
+        title={t("sidebar.withShortcut", {
+          label: t("sidebar.securityTool"),
+          shortcut: "Ctrl+Shift+P",
+        })}
         placement={sidebarTooltipPlacement}
       >
         <IconButton
@@ -218,7 +239,10 @@ export default function SidebarRail({
       </SidebarTooltip>
 
       <SidebarTooltip
-        title={t("sidebar.portForwarding")}
+        title={t("sidebar.withShortcut", {
+          label: t("sidebar.portForwarding"),
+          shortcut: "Ctrl+Shift+P",
+        })}
         placement={sidebarTooltipPlacement}
       >
         <IconButton
@@ -232,7 +256,10 @@ export default function SidebarRail({
       </SidebarTooltip>
 
       <SidebarTooltip
-        title={t("sidebar.localTerminal")}
+        title={t("sidebar.withShortcut", {
+          label: t("sidebar.localTerminal"),
+          shortcut: "Ctrl+Shift+P",
+        })}
         placement={sidebarTooltipPlacement}
       >
         <IconButton
@@ -262,7 +289,10 @@ export default function SidebarRail({
         title={
           aiPanelOpen && aiApiReachable === false
             ? t("sidebar.aiApiUnreachable")
-            : t("sidebar.ai")
+            : t("sidebar.withShortcut", {
+                label: t("sidebar.ai"),
+                shortcut: "Alt+F1",
+              })
         }
         placement={sidebarTooltipPlacement}
       >

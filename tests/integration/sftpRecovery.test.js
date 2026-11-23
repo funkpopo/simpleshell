@@ -658,83 +658,53 @@ describe("sftp-resume", () => {
               control,
               tabId,
             } = fixture;
-            selections.save = path.join(root, "service-opt-in.bin");
-            let enabled = false;
-            control.onEvent = (channel, payload) => {
-              if (
-                channel === "sftp:transfer-state" &&
-                !enabled &&
-                payload.transferredBytes > 0
-              ) {
-                enabled = true;
-                void service.setTransferIntegrity(
-                  event,
-                  tabId,
-                  payload.transferKey,
-                  "md5",
-                );
-              }
-            };
-            assert.ok(
-              (
-                await service.downloadFile(
-                  event,
-                  tabId,
-                  "/source.bin",
-                  data.length,
-                )
-              ).success,
-            );
-            assert.ok(enabled);
-            assert.ok(
-              events.some(
-                (entry) =>
-                  entry.status === "validating" && entry.progress < 100,
-              ),
-            );
-            assert.ok(
-              events.some(
-                (entry) =>
-                  entry.status === "completed" &&
-                  entry.verified &&
-                  entry.algorithm === "md5",
-              ),
-            );
-            settings.transferIntegrity = true;
-            selections.save = path.join(root, "service-pause.bin");
-            let paused = false;
-            control.onEvent = (channel, payload) => {
-              if (
-                channel === "sftp:transfer-state" &&
-                !paused &&
-                payload.transferredBytes > 0
-              ) {
-                paused = true;
-                void service.cancelTransfer(event, tabId, payload.transferKey);
-              }
-            };
-            const pause = await service.downloadFile(
-              event,
-              tabId,
-              "/source.bin",
-              data.length,
-            );
-            assert.ok(pause.cancelled);
-            control.onEvent = null;
-            let tasks = (await service.listResumableTransfers()).tasks;
-            const task = tasks.find(
-              (item) => item.localPath === selections.save,
-            );
-            assert.equal(task.tabId, tabId);
-            assert.ok(
-              (await service.resumeTransfer(event, tabId, task.id)).success,
-            );
-            assert.deepEqual(await fsp.readFile(selections.save), data);
-            tasks = (await service.listResumableTransfers()).tasks;
-            assert.ok(!tasks.some((item) => item.id === task.id));
-            const pauseAgain = async (name) => {
-              paused = false;
-              selections.save = path.join(root, name);
+            server.control.readDelay = 150;
+            try {
+              selections.save = path.join(root, "service-opt-in.bin");
+              let enabled = false;
+              control.onEvent = (channel, payload) => {
+                if (
+                  channel === "sftp:transfer-state" &&
+                  !enabled &&
+                  payload.transferredBytes > 0
+                ) {
+                  enabled = true;
+                  void service.setTransferIntegrity(
+                    event,
+                    tabId,
+                    payload.transferKey,
+                    "md5",
+                  );
+                }
+              };
+              assert.ok(
+                (
+                  await service.downloadFile(
+                    event,
+                    tabId,
+                    "/source.bin",
+                    data.length,
+                  )
+                ).success,
+              );
+              assert.ok(enabled);
+              assert.ok(
+                events.some(
+                  (entry) =>
+                    entry.status === "validating" && entry.progress < 100,
+                ),
+              );
+              assert.ok(
+                events.some(
+                  (entry) =>
+                    entry.status === "completed" &&
+                    entry.verified &&
+                    entry.algorithm === "md5",
+                ),
+              );
+              settings.transferIntegrity = true;
+              selections.save = path.join(root, "service-pause.bin");
+              let paused = false;
               control.onEvent = (channel, payload) => {
                 if (
                   channel === "sftp:transfer-state" &&
@@ -749,62 +719,103 @@ describe("sftp-resume", () => {
                   );
                 }
               };
-              assert.ok(
-                (
-                  await service.downloadFile(
-                    event,
-                    tabId,
-                    "/source.bin",
-                    data.length,
-                  )
-                ).cancelled,
+              const pause = await service.downloadFile(
+                event,
+                tabId,
+                "/source.bin",
+                data.length,
               );
+              assert.ok(pause.cancelled);
               control.onEvent = null;
-              return (await service.listResumableTransfers()).tasks.find(
+              let tasks = (await service.listResumableTransfers()).tasks;
+              const task = tasks.find(
                 (item) => item.localPath === selections.save,
               );
-            };
-            const invalid = await pauseAgain("service-invalid.bin");
-            const invalidRecord = await service.resumeStore.getRecord(
-              invalid.id,
-            );
-            await fsp.writeFile(invalidRecord.manifestPath, "{broken");
-            assert.ok(
-              (
-                await service.resumeTransfer(event, tabId, invalid.id, {
-                  restart: true,
-                })
-              ).success,
-            );
-            // Listing removes retained state that can no longer be resumed.
-            const orphan = await pauseAgain("service-orphan.bin");
-            const orphanRecord = await service.resumeStore.getRecord(orphan.id);
-            await fsp.rm(orphanRecord.partPath);
-            assert.ok(
-              !(await service.listResumableTransfers()).tasks.some(
-                (item) => item.id === orphan.id,
-              ),
-            );
-            assert.ok(!fs.existsSync(orphanRecord.manifestPath));
-            await assert.rejects(service.resumeStore.getRecord(orphan.id), {
-              errorKind: "resume-missing",
-            });
-            const disposable = await pauseAgain("service-cleanup.bin");
-            assert.ok(
-              (
-                await service.discardResumableTransfer(
-                  event,
-                  tabId,
-                  disposable.id,
-                )
-              ).success,
-            );
-            assert.ok(
-              !(await service.listResumableTransfers()).tasks.some(
-                (item) => item.id === disposable.id,
-              ),
-            );
-            service.cleanup();
+              assert.equal(task.tabId, tabId);
+              assert.ok(
+                (await service.resumeTransfer(event, tabId, task.id)).success,
+              );
+              assert.deepEqual(await fsp.readFile(selections.save), data);
+              tasks = (await service.listResumableTransfers()).tasks;
+              assert.ok(!tasks.some((item) => item.id === task.id));
+              const pauseAgain = async (name) => {
+                paused = false;
+                selections.save = path.join(root, name);
+                control.onEvent = (channel, payload) => {
+                  if (
+                    channel === "sftp:transfer-state" &&
+                    !paused &&
+                    payload.transferredBytes > 0
+                  ) {
+                    paused = true;
+                    void service.cancelTransfer(
+                      event,
+                      tabId,
+                      payload.transferKey,
+                    );
+                  }
+                };
+                assert.ok(
+                  (
+                    await service.downloadFile(
+                      event,
+                      tabId,
+                      "/source.bin",
+                      data.length,
+                    )
+                  ).cancelled,
+                );
+                control.onEvent = null;
+                return (await service.listResumableTransfers()).tasks.find(
+                  (item) => item.localPath === selections.save,
+                );
+              };
+              const invalid = await pauseAgain("service-invalid.bin");
+              const invalidRecord = await service.resumeStore.getRecord(
+                invalid.id,
+              );
+              await fsp.writeFile(invalidRecord.manifestPath, "{broken");
+              assert.ok(
+                (
+                  await service.resumeTransfer(event, tabId, invalid.id, {
+                    restart: true,
+                  })
+                ).success,
+              );
+              // Listing removes retained state that can no longer be resumed.
+              const orphan = await pauseAgain("service-orphan.bin");
+              const orphanRecord = await service.resumeStore.getRecord(
+                orphan.id,
+              );
+              await fsp.rm(orphanRecord.partPath);
+              assert.ok(
+                !(await service.listResumableTransfers()).tasks.some(
+                  (item) => item.id === orphan.id,
+                ),
+              );
+              assert.ok(!fs.existsSync(orphanRecord.manifestPath));
+              await assert.rejects(service.resumeStore.getRecord(orphan.id), {
+                errorKind: "resume-missing",
+              });
+              const disposable = await pauseAgain("service-cleanup.bin");
+              assert.ok(
+                (
+                  await service.discardResumableTransfer(
+                    event,
+                    tabId,
+                    disposable.id,
+                  )
+                ).success,
+              );
+              assert.ok(
+                !(await service.listResumableTransfers()).tasks.some(
+                  (item) => item.id === disposable.id,
+                ),
+              );
+              service.cleanup();
+            } finally {
+              server.control.readDelay = 0;
+            }
           },
         );
 

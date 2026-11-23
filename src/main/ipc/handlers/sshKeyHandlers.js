@@ -1,19 +1,37 @@
 const { dialog } = require("electron");
 const crypto = require("crypto");
+const os = require("os");
+const path = require("path");
 const util = require("util");
 const fs = require("fs").promises;
 const {
   IPC_REQUEST_CHANNELS,
 } = require("../../../shared/contracts/ipc/channels");
+const SSHAuthenticationService = require("../../connection/sshAuthenticationService");
 
 const generateKeyPairAsync = util.promisify(crypto.generateKeyPair);
 
 /**
- * SSH密钥相关的IPC处理器
+ * SSH密钥与已知主机管理相关的IPC处理器
  * 错误统一由 safeHandle/wrapIpcHandler 捕获并生成标准错误响应,处理器内直接 throw
  * （用户取消保存对话框返回 success:false，不视为异常）
  */
 class SshKeyHandlers {
+  constructor(options = {}) {
+    this.configService = options.configService || null;
+    this.systemKnownHostsPath =
+      options.systemKnownHostsPath !== undefined
+        ? options.systemKnownHostsPath
+        : path.join(os.homedir(), ".ssh", "known_hosts");
+  }
+
+  _getConfigService() {
+    if (!this.configService) {
+      this.configService = require("../../settings/configService");
+    }
+    return this.configService;
+  }
+
   getHandlers() {
     return [
       {
@@ -26,7 +44,48 @@ class SshKeyHandlers {
         category: "sshKey",
         handler: this.saveSSHKey.bind(this),
       },
+      {
+        channel: IPC_REQUEST_CHANNELS.SSH_KNOWN_HOSTS_LIST,
+        category: "sshKey",
+        handler: this.listKnownHosts.bind(this),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.SSH_KNOWN_HOSTS_REMOVE,
+        category: "sshKey",
+        handler: this.removeKnownHost.bind(this),
+      },
+      {
+        channel: IPC_REQUEST_CHANNELS.SSH_KNOWN_HOSTS_CLEAR,
+        category: "sshKey",
+        handler: this.clearKnownHosts.bind(this),
+      },
     ];
+  }
+
+  async listKnownHosts() {
+    return SSHAuthenticationService.listKnownHosts({
+      configService: this._getConfigService(),
+      systemKnownHostsPath: this.systemKnownHostsPath,
+    });
+  }
+
+  async removeKnownHost(_event, payload) {
+    const hostKey =
+      typeof payload === "string" ? payload : payload && payload.hostKey;
+    if (typeof hostKey !== "string" || !hostKey.trim()) {
+      throw new Error("Host key is required");
+    }
+
+    return SSHAuthenticationService.removeStoredKnownHost({
+      configService: this._getConfigService(),
+      hostKey: hostKey.trim(),
+    });
+  }
+
+  async clearKnownHosts() {
+    return SSHAuthenticationService.clearStoredKnownHosts({
+      configService: this._getConfigService(),
+    });
   }
 
   async generateSSHKeyPair(event, options) {

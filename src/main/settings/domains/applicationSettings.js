@@ -3,6 +3,7 @@ const {
   createDefaultLogSettings,
   createDefaultUISettings,
   mergeUISettings,
+  normalizeTerminalThemeId,
 } = require("../../../shared/settings/uiSettingsDefaults");
 
 function createApplicationSettings(
@@ -21,6 +22,9 @@ function createApplicationSettings(
             const settings = mergeUISettings(
               this._getDefaultUISettings(),
               config.uiSettings,
+            );
+            settings.terminalTheme = normalizeTerminalThemeId(
+              settings.terminalTheme,
             );
             this.dependencies._validate("uiSettings", settings);
             return settings;

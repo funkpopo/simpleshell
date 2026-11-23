@@ -82,8 +82,8 @@ it("assembles the public APIs and isolates batched terminal output by session", 
           .length,
       0,
     ),
-    // 229 = 全量 API 方法数（移除未使用的 custom terminal IPC 及未实现 prefetch IPC 后）
-  ).toBe(229);
+    // 233 = 全量 API 方法数（在 229 基础上新增 knownHosts list/remove/clear 3 个方法 + terminal:export-scrollback 1 个方法）
+  ).toBe(233);
   const first = vi.fn();
   const second = vi.fn();
   const observer = vi.fn();
