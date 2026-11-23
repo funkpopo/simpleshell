@@ -19,11 +19,13 @@ function compileSchema(schema) {
     return null;
   }
 
-  if (!compiledSchemas.has(schema)) {
-    compiledSchemas.set(schema, getAjv().compile(schema));
+  let compiled = compiledSchemas.get(schema);
+  if (compiled === undefined) {
+    compiled = getAjv().compile(schema);
+    compiledSchemas.set(schema, compiled);
   }
 
-  return compiledSchemas.get(schema);
+  return compiled;
 }
 
 function formatValidationErrors(validate) {

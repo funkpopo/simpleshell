@@ -164,6 +164,12 @@ function compileConfigValidators() {
         maximum: 4,
         default: 0,
       },
+      terminalFontWeight: {
+        type: "integer",
+        minimum: 300,
+        maximum: 1000,
+        default: 400,
+      },
       terminalFontWeightBold: {
         type: "integer",
         enum: TERMINAL_FONT_WEIGHT_BOLD_OPTIONS,
@@ -507,8 +513,11 @@ function compileConfigValidators() {
 function createConfigValidators() {
   const validators = {};
   for (const key of SCHEMA_KEYS) {
+    let compiled = null;
     const validate = (data) => {
-      const compiled = compileConfigValidators().validators[key];
+      if (!compiled) {
+        compiled = compileConfigValidators().validators[key];
+      }
       const ok = compiled(data);
       validate.errors = compiled.errors;
       return ok;

@@ -29,7 +29,7 @@ export default async function loadSettingsSnapshot() {
     editorFont: uiDefaults.editorFont,
     terminalFont: uiDefaults.terminalFont,
     terminalFontSize: uiDefaults.terminalFontSize,
-    terminalFontWeight: 500,
+    terminalFontWeight: uiDefaults.terminalFontWeight,
     terminalLineHeight: uiDefaults.terminalLineHeight,
     terminalTheme: uiDefaults.terminalTheme,
     terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
@@ -163,7 +163,7 @@ export default async function loadSettingsSnapshot() {
         values.editorFont = settings.editorFont || "system";
         values.terminalFont = settings.terminalFont || "Fira Code";
         values.terminalFontSize = settings.terminalFontSize || 14;
-        values.terminalFontWeight = settings.terminalFontWeight || 500;
+        values.terminalFontWeight = terminalOpts.fontWeight;
         const rawLineHeight = Number(settings.terminalLineHeight);
         values.terminalLineHeight = Number.isFinite(rawLineHeight)
           ? Math.min(1.4, Math.max(1.0, Math.round(rawLineHeight * 100) / 100))

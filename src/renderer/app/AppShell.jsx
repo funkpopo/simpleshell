@@ -1,6 +1,7 @@
 import { Z_INDEX } from "../shared/constants/zIndex.js";
 import {
   normalizeRecentConnectionsLimit,
+  normalizeTerminalThemeId,
   normalizeUpdatesSettings,
 } from "../../shared/settings/uiSettingsDefaults.js";
 import * as React from "react";
@@ -48,6 +49,11 @@ import {
   terminalCache,
 } from "../features/terminal/runtime/terminalSessionStore.js";
 import { notifyTerminalResize } from "./appShellUtils.js";
+import {
+  buildSessionTemplateContext,
+  prepareCommandExecution,
+} from "../features/terminal/model/commandTemplates.js";
+import { getWorkingDirectoryState } from "../shared/state/workingDirectoryStore.js";
 
 const AppMenu = React.lazy(() => import("./components/AppMenu.jsx"));
 const SessionContextMenu = React.lazy(
@@ -64,6 +70,10 @@ const BroadcastCommandBar = React.lazy(
 );
 const RenameTabDialog = React.lazy(
   () => import("./components/RenameTabDialog.jsx"),
+);
+const CommandTemplateParamDialog = React.lazy(
+  () =>
+    import("../features/terminal/components/CommandTemplateParamDialog.jsx"),
 );
 
 function BroadcastCommandBarGate({ onClose, activeSessionKey }) {
@@ -508,6 +518,7 @@ export default function AppShell() {
   const [commandPaletteOpen, setCommandPaletteOpen] = React.useState(false);
   const [broadcastBarOpen, setBroadcastBarOpen] = React.useState(false);
   const [renameDialogTab, setRenameDialogTab] = React.useState(null);
+  const [snippetParamPrompt, setSnippetParamPrompt] = React.useState(null);
   const broadcastResizeMountedRef = useRef(false);
 
   React.useEffect(() => {
@@ -610,9 +621,33 @@ export default function AppShell() {
         case "togglePanel":
           sidebarRef.current?.togglePanel?.(payload.panel);
           break;
-        case "runSnippet":
-          handleSendCommand(payload.command, { execute: true });
+        case "runSnippet": {
+          const cwd = activeSessionKey
+            ? getWorkingDirectoryState(activeSessionKey)?.path || ""
+            : "";
+          const templateContext = buildSessionTemplateContext({
+            activeSession,
+            cwd,
+          });
+          const rawCommand = payload.command || "";
+          const prep = prepareCommandExecution(rawCommand, templateContext);
+          if (!prep.needsPrompt) {
+            handleSendCommand(prep.preview.resolved, { execute: true });
+          } else {
+            setSnippetParamPrompt({
+              command: {
+                id: payload.id || "",
+                name: payload.name || item.title || "",
+                command: rawCommand,
+              },
+              initialValues: prep.initialValues,
+              promptVariables: prep.promptVariables,
+              templateContext,
+              mode: "run",
+            });
+          }
           break;
+        }
         case "splitPane":
           splitPane(
             currentPanelTab?.id,
@@ -660,26 +695,36 @@ export default function AppShell() {
         case "toggleDarkMode":
           toggleTheme();
           break;
-        case "setTerminalTheme":
+        case "setTerminalTheme": {
+          const themeId = normalizeTerminalThemeId(payload.themeId);
           window.dispatchEvent(
             new CustomEvent("simpleshell:setTerminalTheme", {
               detail: {
-                themeId: payload.themeId,
-                terminalTheme: payload.themeId,
+                themeId,
+                terminalTheme: themeId,
               },
             }),
           );
           window.dispatchEvent(
             new CustomEvent("settingsChanged", {
-              detail: { terminalTheme: payload.themeId },
+              detail: { terminalTheme: themeId },
             }),
           );
+          try {
+            Promise.resolve(
+              window.terminalAPI?.saveUISettings?.({ terminalTheme: themeId }),
+            ).catch(() => {});
+          } catch {
+            // ignore persistence errors
+          }
           break;
+        }
         default:
           break;
       }
     },
     [
+      activeSession,
       activeSessionKey,
       closeOtherTabs,
       currentPanelTab?.id,
@@ -1192,6 +1237,24 @@ export default function AppShell() {
             initialTitle={renameDialogTab.title}
             onClose={() => setRenameDialogTab(null)}
             onConfirm={(nextTitle) => renameTab(renameDialogTab.id, nextTitle)}
+          />
+        </React.Suspense>
+      )}
+
+      {snippetParamPrompt && (
+        <React.Suspense fallback={null}>
+          <CommandTemplateParamDialog
+            open={true}
+            command={snippetParamPrompt.command}
+            promptVariables={snippetParamPrompt.promptVariables}
+            initialValues={snippetParamPrompt.initialValues}
+            templateContext={snippetParamPrompt.templateContext}
+            defaultMode={snippetParamPrompt.mode}
+            onClose={() => setSnippetParamPrompt(null)}
+            onConfirm={(resolvedCommand, options) => {
+              handleSendCommand(resolvedCommand, options);
+              setSnippetParamPrompt(null);
+            }}
           />
         </React.Suspense>
       )}

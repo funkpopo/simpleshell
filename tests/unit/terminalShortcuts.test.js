@@ -4,6 +4,7 @@ import {
   attachTerminalShortcutHandlers,
   shouldXtermHandleKeyEvent,
 } from "../../src/renderer/features/terminal/runtime/terminalShortcuts.js";
+import { isEditableNonXtermTarget } from "../../src/renderer/shared/lib/keyboardTarget.js";
 
 function attach({
   isActive = true,
@@ -232,5 +233,123 @@ describe("terminal zoom and PTY interception boundaries", () => {
     for (const chord of intercepted) {
       expect(shouldXtermHandleKeyEvent(chord)).toBe(false);
     }
+  });
+
+  it("ignores terminal shortcuts inside editable fields outside .xterm-helper-textarea", () => {
+    const toggleSearchBar = vi.fn();
+    const closeSearchBar = vi.fn();
+    const setShowSuggestions = vi.fn();
+    const clearTerminal = vi.fn();
+
+    const listeners = new Map();
+    const container = document.createElement("div");
+    const termElement = document.createElement("div");
+    const xtermTextarea = document.createElement("textarea");
+    xtermTextarea.className = "xterm-helper-textarea";
+    termElement.appendChild(xtermTextarea);
+    container.appendChild(termElement);
+    document.body.appendChild(container);
+
+    const ui = {
+      showSearchBar: true,
+      showSuggestions: true,
+      searchTerm: "needle",
+      toggleSearchBar,
+      closeSearchBar,
+      setShowSuggestions,
+      handleSearch: vi.fn(),
+      handleSearchPrevious: vi.fn(),
+    };
+
+    attachTerminalShortcutHandlers({
+      term: { element: termElement, options: { fontSize: 14 } },
+      terminalRef: { current: container },
+      lifecycleManager: {
+        addEventListener: (target, type, handler) => {
+          if (target === document) listeners.set(type, handler);
+        },
+        setTimeout: () => {},
+      },
+      isActiveRef: { current: true },
+      searchAddonRef: { current: {} },
+      shortcutUiRef: { current: ui },
+      pendingSystemShortcutRecoveryRef: { current: false },
+      recoverTerminalInteractionStateRef: { current: () => {} },
+      recoverTerminalAfterActivation: () => {},
+      imeCompositionActiveRef: { current: false },
+      markPasteIfAllowedRef: { current: () => true },
+      handlePasteTextRef: { current: () => {} },
+      clearTerminalRef: { current: clearTerminal },
+    });
+
+    const pressOn = (init, target) => {
+      const event = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      });
+      Object.defineProperty(event, "target", { value: target });
+      listeners.get("keydown")(event);
+      return event;
+    };
+
+    const inputEl = document.createElement("input");
+    const textareaEl = document.createElement("textarea");
+    const selectEl = document.createElement("select");
+    const editableDiv = document.createElement("div");
+    Object.defineProperty(editableDiv, "isContentEditable", { value: true });
+    document.body.append(inputEl, textareaEl, selectEl, editableDiv);
+
+    expect(isEditableNonXtermTarget(inputEl)).toBe(true);
+    expect(isEditableNonXtermTarget(textareaEl)).toBe(true);
+    expect(isEditableNonXtermTarget(selectEl)).toBe(true);
+    expect(isEditableNonXtermTarget(editableDiv)).toBe(true);
+    expect(isEditableNonXtermTarget(xtermTextarea)).toBe(false);
+
+    for (const target of [inputEl, textareaEl, selectEl, editableDiv]) {
+      expect(
+        pressOn({ key: "l", ctrlKey: true }, target).defaultPrevented,
+      ).toBe(false);
+      expect(
+        pressOn({ key: "/", ctrlKey: true }, target).defaultPrevented,
+      ).toBe(false);
+      expect(pressOn({ key: "Escape" }, target).defaultPrevented).toBe(false);
+      expect(pressOn({ key: "F3" }, target).defaultPrevented).toBe(false);
+      expect(
+        pressOn({ key: "g", ctrlKey: true }, target).defaultPrevented,
+      ).toBe(false);
+      expect(
+        pressOn({ key: ".", ctrlKey: true }, target).defaultPrevented,
+      ).toBe(false);
+      expect(
+        pressOn({ key: ",", ctrlKey: true }, target).defaultPrevented,
+      ).toBe(false);
+    }
+
+    expect(clearTerminal).not.toHaveBeenCalled();
+    expect(toggleSearchBar).not.toHaveBeenCalled();
+    expect(closeSearchBar).not.toHaveBeenCalled();
+    expect(ui.handleSearch).not.toHaveBeenCalled();
+    expect(ui.handleSearchPrevious).not.toHaveBeenCalled();
+
+    // Still works inside .xterm-helper-textarea
+    expect(
+      pressOn({ key: "l", ctrlKey: true }, xtermTextarea).defaultPrevented,
+    ).toBe(true);
+    expect(clearTerminal).toHaveBeenCalledTimes(1);
+    expect(
+      pressOn({ key: "/", ctrlKey: true }, xtermTextarea).defaultPrevented,
+    ).toBe(true);
+    expect(toggleSearchBar).toHaveBeenCalledTimes(1);
+    expect(pressOn({ key: "F3" }, xtermTextarea).defaultPrevented).toBe(true);
+    expect(ui.handleSearch).toHaveBeenCalledTimes(1);
+    expect(
+      pressOn({ key: ",", ctrlKey: true }, xtermTextarea).defaultPrevented,
+    ).toBe(true);
+    expect(ui.handleSearchPrevious).toHaveBeenCalledTimes(1);
+    expect(pressOn({ key: "Escape" }, xtermTextarea).defaultPrevented).toBe(
+      true,
+    );
+    expect(closeSearchBar).toHaveBeenCalledTimes(1);
   });
 });

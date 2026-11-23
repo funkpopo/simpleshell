@@ -55,6 +55,8 @@ function ConnectionList({
 }) {
   const theme = useTheme();
   const { t } = useTranslation();
+  const pinLabel = t("connections.pinned.pin");
+  const unpinLabel = t("connections.pinned.unpin");
   // 对象身份稳定器：内容未变的节点跨次计算复用同一身份，
   // 使分组展开/收起时 memo 过的行可以跳过重渲染
   const stabilizerRef = useRef(null);
@@ -94,8 +96,7 @@ function ConnectionList({
   );
   const useVirtualizedConnectionList =
     visibleItemCount >= CONNECTION_LIST_VIRTUALIZATION_THRESHOLD ||
-    ((searchQuery.length > 0 || onlyPinned || Boolean(selectedTag)) &&
-      visibleItemCount > 0);
+    (hasActiveFilter && visibleItemCount > 0);
   const dragDisabled =
     searchQuery.length > 0 ||
     onlyPinned ||
@@ -374,6 +375,8 @@ function ConnectionList({
               }
               onOpenConnection={handleOpenConnection}
               onTogglePin={onTogglePin}
+              pinLabel={pinLabel}
+              unpinLabel={unpinLabel}
               contextMenuTarget={connectionListContextMenu}
             />
           ) : (
@@ -385,6 +388,8 @@ function ConnectionList({
               onOpenRowContextMenu={openConnectionContextMenuFromEvent}
               onOpen={handleOpenConnection}
               onTogglePin={onTogglePin}
+              pinLabel={pinLabel}
+              unpinLabel={unpinLabel}
               dragDisabled={dragDisabled}
               isContextMenuTarget={
                 connectionListContextMenu?.kind === "connection" &&
@@ -406,6 +411,8 @@ function ConnectionList({
     openGroupContextMenuFromEvent,
     handleOpenConnection,
     onTogglePin,
+    pinLabel,
+    unpinLabel,
     connectionListContextMenu,
   ]);
   return (

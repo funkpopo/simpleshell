@@ -147,6 +147,16 @@ describe("Goal 4 global settings schema, persistence & wiring", () => {
 
     // Invalid bounds must fail AJV validation and leave disk untouched
     const beforeInvalid = fs.readFileSync(configService.mainConfigPath, "utf8");
+    expect(loadedUi.terminalFontWeight).toBe(400);
+    expect(configService.saveUISettings({ terminalFontWeight: 250 })).toBe(
+      false,
+    );
+    expect(configService.saveUISettings({ terminalFontWeight: 1100 })).toBe(
+      false,
+    );
+    expect(configService.saveUISettings({ terminalFontWeight: 450.5 })).toBe(
+      false,
+    );
     expect(
       configService.saveUISettings({ notificationDurationSeconds: 1 }),
     ).toBe(false);

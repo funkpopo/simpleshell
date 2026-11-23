@@ -170,6 +170,22 @@ describe("commandPalette pure helpers", () => {
     });
     expect(quick[0].payload.kind).toBe("quickConnect");
     expect(quick[0].payload.parsed.port).toBe(2222);
+
+    // Localized theme preset labels via t("settings.terminalThemePresets.*")
+    const nordTheme = items.find((item) => item.id === "theme:nord");
+    expect(nordTheme).toBeTruthy();
+    expect(nordTheme.title).toBe(
+      "commandPalette.items.terminalThemePrefix: settings.terminalThemePresets.nord",
+    );
+
+    // Snippet payload preserves metadata for template parameter prompts
+    const snippetItem = items.find((item) => item.id === "snippet:s1");
+    expect(snippetItem.payload).toEqual({
+      kind: "runSnippet",
+      id: "s1",
+      name: "Tail Nginx",
+      command: "tail -f /var/log/nginx/error.log",
+    });
   });
 });
 

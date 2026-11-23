@@ -339,6 +339,39 @@ function getTerminalThemePreset(presetId) {
   );
 }
 
+/**
+ * Resolve localized display label for a terminal theme preset ID.
+ * Uses static i18n keys so strict static translation checks can verify every key.
+ * @param {(key: string) => string} t
+ * @param {unknown} presetId
+ * @returns {string}
+ */
+function getTerminalThemePresetLabel(t, presetId) {
+  switch (normalizeTerminalThemeId(presetId)) {
+    case "one-dark":
+      return t("settings.terminalThemePresets.oneDark");
+    case "dracula":
+      return t("settings.terminalThemePresets.dracula");
+    case "nord":
+      return t("settings.terminalThemePresets.nord");
+    case "tokyo-night":
+      return t("settings.terminalThemePresets.tokyoNight");
+    case "catppuccin-mocha":
+      return t("settings.terminalThemePresets.catppuccinMocha");
+    case "catppuccin-latte":
+      return t("settings.terminalThemePresets.catppuccinLatte");
+    case "gruvbox-dark":
+      return t("settings.terminalThemePresets.gruvboxDark");
+    case "solarized-dark":
+      return t("settings.terminalThemePresets.solarizedDark");
+    case "solarized-light":
+      return t("settings.terminalThemePresets.solarizedLight");
+    case "default-auto":
+    default:
+      return t("settings.terminalThemePresets.defaultAuto");
+  }
+}
+
 module.exports = {
   DEFAULT_TERMINAL_THEME,
   TERMINAL_THEME_OPTIONS,
@@ -346,4 +379,5 @@ module.exports = {
   FIXED_PRESET_PALETTES,
   TERMINAL_THEME_PRESETS,
   getTerminalThemePreset,
+  getTerminalThemePresetLabel,
 };

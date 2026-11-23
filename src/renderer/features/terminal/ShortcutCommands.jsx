@@ -29,9 +29,8 @@ import {
   Tabs,
   Tab,
   Chip,
-  ToggleButton,
-  ToggleButtonGroup,
 } from "@mui/material";
+import CommandTemplateParamDialog from "./components/CommandTemplateParamDialog.jsx";
 import { useTheme } from "@mui/material/styles";
 import { compactContextMenuPaperSx } from "../../shared/ui/contextMenuStyles";
 import AddIcon from "@mui/icons-material/Add";
@@ -79,7 +78,6 @@ import {
   normalizeCommandTags,
   parseCommandTemplate,
   prepareCommandExecution,
-  resolveCommandTemplate,
 } from "./model/commandTemplates.js";
 import { generateId } from "../../../shared/common";
 import { useNotification } from "../../shared/notifications/NotificationContext";
@@ -270,7 +268,6 @@ function ShortcutCommands({
   );
   const [tagsInput, setTagsInput] = useState("");
   const [paramPrompt, setParamPrompt] = useState(null);
-  const paramFirstInputRef = useRef(null);
 
   useEffect(() => {
     if (!sessionKey) {
@@ -651,11 +648,9 @@ function ShortcutCommands({
           : cmdOrCommand;
       setParamPrompt({
         command: cmdObj,
-        values: prep.initialValues,
-        parsed: prep.parsed,
+        initialValues: prep.initialValues,
         promptVariables: prep.promptVariables,
         mode: options.execute === false ? "insert" : "run",
-        attempted: false,
       });
     },
     [handleSendCommand, templateContext],
@@ -665,44 +660,13 @@ function ShortcutCommands({
     setParamPrompt(null);
   }, []);
 
-  const handleParamValueChange = useCallback((name, value) => {
-    setParamPrompt((prev) =>
-      prev
-        ? {
-            ...prev,
-            values: {
-              ...prev.values,
-              [name]: value,
-            },
-          }
-        : null,
-    );
-  }, []);
-
-  const handleParamModeChange = useCallback((_event, nextMode) => {
-    if (!nextMode) return;
-    setParamPrompt((prev) => (prev ? { ...prev, mode: nextMode } : null));
-  }, []);
-
-  const paramResolved = useMemo(() => {
-    if (!paramPrompt) return null;
-    return resolveCommandTemplate(
-      paramPrompt.command?.command || "",
-      paramPrompt.values,
-      templateContext,
-    );
-  }, [paramPrompt, templateContext]);
-
-  const handleConfirmParamPrompt = useCallback(() => {
-    if (!paramPrompt || !paramResolved) return;
-    if (!paramResolved.valid) {
-      setParamPrompt((prev) => (prev ? { ...prev, attempted: true } : null));
-      return;
-    }
-    const execute = paramPrompt.mode !== "insert";
-    handleSendCommand(paramResolved.resolved, { execute });
-    setParamPrompt(null);
-  }, [handleSendCommand, paramPrompt, paramResolved]);
+  const handleConfirmParamPrompt = useCallback(
+    (resolvedCommand, options) => {
+      handleSendCommand(resolvedCommand, options);
+      setParamPrompt(null);
+    },
+    [handleSendCommand],
+  );
 
   // 处理复制命令
   const handleCopyCommand = useCallback(
@@ -1009,155 +973,6 @@ function ShortcutCommands({
     </Dialog>
   );
 
-  // 渲染参数填写对话框
-  const renderParamPromptDialog = () => {
-    const promptVariables = paramPrompt?.promptVariables || [];
-    const missingSet = new Set(paramResolved?.missingVariables || []);
-    const isInsertMode = paramPrompt?.mode === "insert";
-
-    return (
-      <Dialog
-        open={Boolean(paramPrompt)}
-        onClose={handleCloseParamPrompt}
-        initialFocusRef={paramFirstInputRef}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          {paramPrompt?.command?.name
-            ? `${t("shortcutCommands.templateDialogTitle")}: ${paramPrompt.command.name}`
-            : t("shortcutCommands.templateDialogTitle")}
-        </DialogTitle>
-        <Box
-          component="form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleConfirmParamPrompt();
-          }}
-        >
-          <DialogContent sx={{ pt: 1 }}>
-            {promptVariables.map((variable, index) => {
-              const value = paramPrompt?.values?.[variable.name] ?? "";
-              const isError =
-                Boolean(paramPrompt?.attempted) &&
-                missingSet.has(variable.name);
-              const helperText = isError
-                ? t("shortcutCommands.templateRequired")
-                : variable.hasDefault
-                  ? t("shortcutCommands.templateDefaultHint", {
-                      value: variable.defaultValue,
-                    })
-                  : variable.isBuiltin
-                    ? t("shortcutCommands.templateBuiltinTag")
-                    : t("shortcutCommands.templateRequired");
-              return (
-                <TextField
-                  key={variable.name}
-                  slotProps={
-                    index === 0
-                      ? { htmlInput: { ref: paramFirstInputRef } }
-                      : undefined
-                  }
-                  autoFocus={index === 0}
-                  margin="dense"
-                  size="small"
-                  fullWidth
-                  required={!variable.hasDefault}
-                  error={isError}
-                  label={variable.name}
-                  value={value}
-                  helperText={helperText}
-                  onChange={(e) =>
-                    handleParamValueChange(variable.name, e.target.value)
-                  }
-                  sx={{ mb: 1.5 }}
-                />
-              );
-            })}
-
-            <Box sx={{ mt: 1, mb: 1.5 }}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ display: "block", mb: 0.5 }}
-              >
-                {t("shortcutCommands.templatePreviewLabel")}
-              </Typography>
-              <Box
-                sx={{
-                  px: 1.25,
-                  py: 1,
-                  borderRadius: 1,
-                  border: `1px solid ${theme.palette.divider}`,
-                  bgcolor: "action.hover",
-                  fontFamily: "monospace",
-                  fontSize: "0.82rem",
-                  wordBreak: "break-all",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {paramResolved?.resolved || ""}
-              </Box>
-              {paramPrompt?.attempted && !paramResolved?.valid && (
-                <Typography
-                  variant="caption"
-                  color="error"
-                  sx={{ display: "block", mt: 0.5 }}
-                >
-                  {t("shortcutCommands.templateMissingRequired", {
-                    names: (paramResolved?.missingVariables || []).join(", "),
-                  })}
-                </Typography>
-              )}
-            </Box>
-
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 1,
-                flexWrap: "wrap",
-              }}
-            >
-              <Typography variant="caption" color="text.secondary">
-                {t("shortcutCommands.templateModeLabel")}
-              </Typography>
-              <ToggleButtonGroup
-                size="small"
-                exclusive
-                value={paramPrompt?.mode || "run"}
-                onChange={handleParamModeChange}
-              >
-                <ToggleButton value="run">
-                  {t("shortcutCommands.templateModeRun")}
-                </ToggleButton>
-                <ToggleButton value="insert">
-                  {t("shortcutCommands.templateModeInsert")}
-                </ToggleButton>
-              </ToggleButtonGroup>
-            </Box>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseParamPrompt}>
-              {t("common.cancel")}
-            </Button>
-            <Button
-              type="submit"
-              variant="contained"
-              color="primary"
-              disabled={!paramResolved?.valid}
-            >
-              {isInsertMode
-                ? t("shortcutCommands.templateConfirmInsert")
-                : t("shortcutCommands.templateConfirmRun")}
-            </Button>
-          </DialogActions>
-        </Box>
-      </Dialog>
-    );
-  };
-
   // 渲染分类对话框
   const renderCategoryDialog = () => (
     <Dialog
@@ -1400,7 +1215,16 @@ function ShortcutCommands({
 
       {/* 对话框 */}
       {renderCommandDialog()}
-      {renderParamPromptDialog()}
+      <CommandTemplateParamDialog
+        open={Boolean(paramPrompt)}
+        command={paramPrompt?.command || null}
+        promptVariables={paramPrompt?.promptVariables || []}
+        initialValues={paramPrompt?.initialValues || {}}
+        templateContext={templateContext}
+        defaultMode={paramPrompt?.mode || "run"}
+        onClose={handleCloseParamPrompt}
+        onConfirm={handleConfirmParamPrompt}
+      />
       {renderCategoryDialog()}
 
       {/* 菜单 */}

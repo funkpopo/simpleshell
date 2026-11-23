@@ -1,3 +1,10 @@
+import {
+  TERMINAL_THEME_PRESETS,
+  getTerminalThemePresetLabel,
+} from "../../../shared/settings/terminalThemePresets.js";
+
+export { TERMINAL_THEME_PRESETS };
+
 export const COMMAND_PALETTE_MRU_STORAGE_KEY =
   "simpleshell.commandPalette.mru.v1";
 export const MAX_COMMAND_PALETTE_MRU = 20;
@@ -10,19 +17,6 @@ export const COMMAND_PALETTE_CATEGORIES = [
   "panels",
   "snippets",
   "actions",
-];
-
-export const TERMINAL_THEME_PRESETS = [
-  { id: "default-auto", label: "Default (Auto)" },
-  { id: "one-dark", label: "One Dark" },
-  { id: "dracula", label: "Dracula" },
-  { id: "nord", label: "Nord" },
-  { id: "tokyo-night", label: "Tokyo Night" },
-  { id: "catppuccin-mocha", label: "Catppuccin Mocha" },
-  { id: "catppuccin-latte", label: "Catppuccin Latte" },
-  { id: "gruvbox-dark", label: "Gruvbox Dark" },
-  { id: "solarized-dark", label: "Solarized Dark" },
-  { id: "solarized-light", label: "Solarized Light" },
 ];
 
 const IPV4_OR_HOST_RE =
@@ -367,7 +361,15 @@ export function buildCommandPaletteItems({
         protocol,
         groupPath,
         ...tagList,
-        connection.pinned ? "pinned favorite star" : "",
+        ...(connection.pinned
+          ? [
+              "pinned",
+              "favorite",
+              "star",
+              t("commandPalette.pinnedBadge"),
+              t("connections.pinned.filterLabel"),
+            ]
+          : []),
       ],
       badge: connection.pinned ? t("commandPalette.pinnedBadge") : undefined,
       priority: connection.pinned ? 92 : 70,
@@ -534,7 +536,12 @@ export function buildCommandPaletteItems({
         ],
         disabled: !activeSession,
         priority: 50,
-        payload: { kind: "runSnippet", command: cmd.command },
+        payload: {
+          kind: "runSnippet",
+          command: cmd.command,
+          name: cmd.name || "",
+          id: cmd.id || "",
+        },
       });
     });
   }
@@ -683,11 +690,12 @@ export function buildCommandPaletteItems({
 
   // Terminal Color Scheme Presets (cross-track integration via simpleshell:setTerminalTheme)
   TERMINAL_THEME_PRESETS.forEach((preset) => {
+    const label = getTerminalThemePresetLabel(t, preset.id);
     items.push({
       id: `theme:${preset.id}`,
       category: "actions",
       categoryLabel: t("commandPalette.categories.actions"),
-      title: `${t("commandPalette.items.terminalThemePrefix")}: ${preset.label}`,
+      title: `${t("commandPalette.items.terminalThemePrefix")}: ${label}`,
       subtitle: t("commandPalette.themeSubtitle"),
       keywords: [
         "terminal",
@@ -696,7 +704,7 @@ export function buildCommandPaletteItems({
         "scheme",
         "preset",
         preset.id,
-        preset.label,
+        label,
       ],
       priority: 30,
       payload: { kind: "setTerminalTheme", themeId: preset.id },

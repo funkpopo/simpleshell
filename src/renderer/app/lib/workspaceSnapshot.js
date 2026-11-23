@@ -1,3 +1,5 @@
+import i18n from "../../i18n/i18n.js";
+
 export const WORKSPACE_SNAPSHOT_STORAGE_KEY =
   "simpleshell.workspaceSnapshot.v1";
 export const WORKSPACE_SNAPSHOT_VERSION = 1;
@@ -327,7 +329,7 @@ export function resolveWorkspaceRestorePlan(
   const baseId = idPrefix || `restore-${Date.now()}`;
   const baseWelcome = welcomeTab || {
     id: "welcome",
-    label: "Welcome",
+    label: i18n.t("terminal.welcome"),
     type: "welcome",
   };
   const restoredTabs = [baseWelcome];

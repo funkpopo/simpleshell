@@ -495,6 +495,10 @@ describe("Quick Connect UI integration", () => {
     await act(async () => {
       saveChip.click();
     });
+    await act(async () => {
+      await import("../../src/renderer/features/welcome/QuickConnectSaveDialog.jsx");
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
 
     const saveBtn = [...document.querySelectorAll("button")].find(
       (btn) => btn.textContent === "common.save",

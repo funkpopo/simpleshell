@@ -4,6 +4,7 @@ import {
   shouldArmSystemShortcutRecovery,
 } from "../model/systemShortcutRecovery.js";
 import { syncTerminalLinkCtrlState } from "./terminalDom.js";
+import { isEditableNonXtermTarget } from "../../../shared/lib/keyboardTarget.js";
 
 export const DEFAULT_TERMINAL_FONT_SIZE = 14;
 export const MIN_TERMINAL_FONT_SIZE = 10;
@@ -356,12 +357,12 @@ export function attachTerminalShortcutHandlers({
       !e.shiftKey &&
       e.key.toLowerCase() === "l"
     ) {
-      if (!isActiveRef.current) return;
+      if (!isActiveRef.current || isEditableNonXtermTarget(e.target)) return;
       e.preventDefault();
       e.stopPropagation();
       clearTerminalRef.current();
     } else if (e.ctrlKey && e.key === "/") {
-      if (!isActiveRef.current) return;
+      if (!isActiveRef.current || isEditableNonXtermTarget(e.target)) return;
 
       e.preventDefault();
       e.stopPropagation();
@@ -369,10 +370,11 @@ export function attachTerminalShortcutHandlers({
     } else if (e.key === "Escape") {
       const ui = shortcutUiRef.current;
       if (ui.showSearchBar) {
-        if (!isActiveRef.current) return;
+        if (!isActiveRef.current || isEditableNonXtermTarget(e.target)) return;
         e.preventDefault();
         ui.closeSearchBar?.();
       } else if (ui.showSuggestions) {
+        if (isEditableNonXtermTarget(e.target)) return;
         e.preventDefault();
         ui.setShowSuggestions?.(false);
         ui.setSuggestions?.([]);
@@ -392,14 +394,14 @@ export function attachTerminalShortcutHandlers({
     ) {
       const ui = shortcutUiRef.current;
       if (searchAddonRef.current && ui.searchTerm) {
-        if (!isActiveRef.current) return;
+        if (!isActiveRef.current || isEditableNonXtermTarget(e.target)) return;
         e.preventDefault();
         ui.handleSearch?.();
       }
     } else if ((e.shiftKey && e.key === "F3") || (e.ctrlKey && e.key === ",")) {
       const ui = shortcutUiRef.current;
       if (searchAddonRef.current && ui.searchTerm) {
-        if (!isActiveRef.current) return;
+        if (!isActiveRef.current || isEditableNonXtermTarget(e.target)) return;
         e.preventDefault();
         ui.handleSearchPrevious?.();
       }

@@ -39,6 +39,8 @@ const ConnectionItem = memo(function ConnectionItem({
   onSelectConnection,
   onDoubleClick,
   onTogglePin,
+  pinLabel,
+  unpinLabel,
   onItemContextMenu,
 }) {
   const item = flattenedItems[index];
@@ -89,11 +91,15 @@ const ConnectionItem = memo(function ConnectionItem({
                   onDoubleClick ? () => onDoubleClick(item) : undefined
                 }
               />
-              <ConnectionPinButton
-                connection={item}
-                parentGroup={item.parentGroup || null}
-                onTogglePin={onTogglePin}
-              />
+              {onTogglePin ? (
+                <ConnectionPinButton
+                  connection={item}
+                  parentGroup={item.parentGroup || null}
+                  onTogglePin={onTogglePin}
+                  pinLabel={pinLabel}
+                  unpinLabel={unpinLabel}
+                />
+              ) : null}
             </>
           )}
         </ListItem>
@@ -148,6 +154,8 @@ const VirtualizedConnectionList = ({
 }) => {
   const { t } = useTranslation();
   const theme = useTheme();
+  const pinLabel = t("connections.pinned.pin");
+  const unpinLabel = t("connections.pinned.unpin");
 
   const rowSxByVariant = useMemo(
     () => [
@@ -216,6 +224,8 @@ const VirtualizedConnectionList = ({
       onSelectConnection,
       onDoubleClick,
       onTogglePin,
+      pinLabel,
+      unpinLabel,
       onItemContextMenu,
     }),
     [
@@ -226,6 +236,8 @@ const VirtualizedConnectionList = ({
       onSelectConnection,
       onDoubleClick,
       onTogglePin,
+      pinLabel,
+      unpinLabel,
       onItemContextMenu,
     ],
   );

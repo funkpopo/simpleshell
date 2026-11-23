@@ -37,6 +37,7 @@ import {
 import SidebarRail from "./SidebarRail.jsx";
 import SidebarPanels from "./SidebarPanels.jsx";
 import { SidebarPositionContext } from "../../shared/ui/sidebarPositionContext.js";
+import { isEditableNonXtermTarget } from "../../shared/lib/keyboardTarget.js";
 
 export default function SidebarWorkspace({
   activeSession,
@@ -645,6 +646,7 @@ export default function SidebarWorkspace({
         if (
           focusDir &&
           !ctx.commandPaletteOpen &&
+          !isEditableNonXtermTarget(event.target) &&
           !document.querySelector('[role="dialog"]')
         ) {
           event.preventDefault();
@@ -718,7 +720,11 @@ export default function SidebarWorkspace({
         return;
       }
 
-      if (hasCtrlOrMeta && !event.shiftKey) {
+      if (
+        hasCtrlOrMeta &&
+        !event.shiftKey &&
+        !isEditableNonXtermTarget(event.target)
+      ) {
         const codeMatch = String(event.code || "").match(/^Digit([1-9])$/);
         const digitStr = /^[1-9]$/.test(String(event.key || ""))
           ? event.key

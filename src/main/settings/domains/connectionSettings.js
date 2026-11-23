@@ -2,8 +2,12 @@
 const ENCRYPTED_PAYLOAD_PATTERN = /^ssv(?:2|3s|3m):/;
 
 function normalizeConnectionTags(tags) {
-  if (!Array.isArray(tags)) {
+  if (!Array.isArray(tags) || tags.length === 0) {
     return [];
+  }
+  if (tags.length === 1) {
+    const single = typeof tags[0] === "string" ? tags[0].trim() : "";
+    return single ? [single] : [];
   }
   const seen = new Set();
   const normalized = [];
@@ -20,7 +24,10 @@ function normalizeConnectionTags(tags) {
 
 function normalizeConnectionMetadata(source, target) {
   target.pinned = source.pinned === true;
-  target.tags = normalizeConnectionTags(source.tags);
+  target.tags =
+    Array.isArray(source.tags) && source.tags.length > 0
+      ? normalizeConnectionTags(source.tags)
+      : [];
   target.colorTag =
     typeof source.colorTag === "string" ? source.colorTag.trim() : "";
 }

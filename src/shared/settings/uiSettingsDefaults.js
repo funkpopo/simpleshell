@@ -89,6 +89,7 @@ function createDefaultUISettings() {
     terminalCursorStyle: "block",
     terminalCursorBlink: true,
     terminalLetterSpacing: 0,
+    terminalFontWeight: 400,
     terminalFontWeightBold: 700,
     terminalCopyOnSelect: false,
     terminalRightClickSelectsWord: false,
@@ -442,6 +443,7 @@ function normalizeTerminalThemeId(value) {
  *   cursorStyle: "block" | "underline" | "bar",
  *   cursorBlink: boolean,
  *   letterSpacing: number,
+ *   fontWeight: number,
  *   fontWeightBold: number,
  *   copyOnSelect: boolean,
  *   rightClickSelectsWord: boolean,
@@ -481,6 +483,12 @@ function normalizeTerminalUiSettings(uiSettings) {
         ? source.terminalCursorBlink
         : defaults.terminalCursorBlink,
     letterSpacing,
+    fontWeight: clampInt(
+      source.terminalFontWeight,
+      300,
+      1000,
+      defaults.terminalFontWeight,
+    ),
     fontWeightBold: pickEnum(
       Number(source.terminalFontWeightBold),
       TERMINAL_FONT_WEIGHT_BOLD_OPTIONS,

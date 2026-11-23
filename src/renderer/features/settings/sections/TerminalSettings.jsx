@@ -32,6 +32,7 @@ import {
 import {
   DEFAULT_TERMINAL_THEME,
   TERMINAL_THEME_PRESETS,
+  getTerminalThemePresetLabel,
   normalizeTerminalThemeId,
 } from "../../../../shared/settings/terminalThemePresets.js";
 import {
@@ -227,31 +228,8 @@ export default function TerminalSettings({ initialValues, open, ref }) {
     }
   };
 
-  const getTerminalThemeLabel = (presetId) => {
-    switch (presetId) {
-      case "one-dark":
-        return t("settings.terminalThemePresets.oneDark");
-      case "dracula":
-        return t("settings.terminalThemePresets.dracula");
-      case "nord":
-        return t("settings.terminalThemePresets.nord");
-      case "tokyo-night":
-        return t("settings.terminalThemePresets.tokyoNight");
-      case "catppuccin-mocha":
-        return t("settings.terminalThemePresets.catppuccinMocha");
-      case "catppuccin-latte":
-        return t("settings.terminalThemePresets.catppuccinLatte");
-      case "gruvbox-dark":
-        return t("settings.terminalThemePresets.gruvboxDark");
-      case "solarized-dark":
-        return t("settings.terminalThemePresets.solarizedDark");
-      case "solarized-light":
-        return t("settings.terminalThemePresets.solarizedLight");
-      case "default-auto":
-      default:
-        return t("settings.terminalThemePresets.defaultAuto");
-    }
-  };
+  const getTerminalThemeLabel = (presetId) =>
+    getTerminalThemePresetLabel(t, presetId);
 
   const getTerminalThemeModeLabel = (appearance) => {
     switch (appearance) {

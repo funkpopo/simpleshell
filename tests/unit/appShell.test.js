@@ -10,6 +10,11 @@ import {
 import { actions } from "../../src/renderer/app/state/appReducer.js";
 import AppShell from "../../src/renderer/app/AppShell.jsx";
 import { deferred } from "../helpers/reactHarness.js";
+import { processCache } from "../../src/renderer/features/terminal/runtime/terminalSessionStore.js";
+import {
+  clearWorkingDirectorySession,
+  setTerminalWorkingDirectory,
+} from "../../src/renderer/shared/state/workingDirectoryStore.js";
 
 const { translate, notifications, language, welcomeRender } = vi.hoisted(
   () => ({
@@ -243,6 +248,261 @@ it("renders AppShell across startup, theme changes and credential lock events", 
     );
     expect(document.body.textContent).toContain("masterPassword");
   } finally {
+    await act(() => root.unmount());
+    host.remove();
+  }
+});
+
+it("persists Command Palette terminal themes, resolves snippet templates, and guards workspace shortcuts in inputs", async () => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const saveUISettings = vi.fn(async () => ({ success: true }));
+  const sendToProcess = vi.fn();
+  const themeEvents = [];
+  const syncCommandEvents = [];
+  const onThemeEvent = (e) => themeEvents.push(e.detail);
+  const onSyncCommand = (e) => syncCommandEvents.push(e.detail);
+  window.addEventListener("simpleshell:setTerminalTheme", onThemeEvent);
+  window.addEventListener("syncTerminalCommand", onSyncCommand);
+
+  window.terminalAPI = {
+    loadUISettings: vi.fn(async () => ({
+      darkMode: true,
+      onboarding: { completed: true },
+    })),
+    saveUISettings,
+    getCredentialSecurityStatus: vi.fn(async () => ({
+      success: true,
+      status: { requiresUnlock: false },
+    })),
+    loadConnections: vi.fn(async () => []),
+    getTopConnections: vi.fn(async () => []),
+    detectLocalTerminals: vi.fn(async () => []),
+    getShortcutCommands: vi.fn(async () => ({
+      success: true,
+      data: {
+        commands: [
+          {
+            id: "snip-builtin",
+            name: "Inspect CWD",
+            command: "cd {{cwd}} && echo {{host}}:{{port}} {{user}}",
+          },
+          {
+            id: "snip-param",
+            name: "Restart Service",
+            command: "systemctl restart {{service}}",
+          },
+        ],
+      },
+    })),
+    sendToProcess,
+    onSftpTransferState: vi.fn(() => () => {}),
+  };
+
+  processCache["ssh-1"] = 101;
+  setTerminalWorkingDirectory("ssh-1", "/srv/app");
+
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  let store;
+  function Commands() {
+    store = useAppStore();
+    return null;
+  }
+
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          AppProvider,
+          null,
+          createElement(Commands),
+          createElement(AppShell),
+        ),
+      ),
+    );
+
+    await act(() => {
+      store.dispatch(
+        actions.setTabs([
+          store.getState().tabs[0],
+          { id: "ssh-1", type: "ssh", label: "Prod-1" },
+          { id: "ssh-2", type: "ssh", label: "Prod-2" },
+        ]),
+      );
+      store.dispatch(
+        actions.setTerminalInstances({
+          "ssh-1-config": {
+            host: "prod-1.internal",
+            username: "ops",
+            port: 2222,
+          },
+          "ssh-1-processId": 101,
+        }),
+      );
+      store.dispatch(actions.setCurrentTab(1));
+    });
+
+    // Workspace Ctrl+2 and Alt+ArrowRight must be ignored inside external inputs
+    const externalInput = document.createElement("input");
+    document.body.appendChild(externalInput);
+    const ctrl2Event = new KeyboardEvent("keydown", {
+      key: "2",
+      code: "Digit2",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(ctrl2Event, "target", { value: externalInput });
+    await act(async () => {
+      window.dispatchEvent(ctrl2Event);
+    });
+    expect(ctrl2Event.defaultPrevented).toBe(false);
+    expect(store.getState().currentTab).toBe(1);
+
+    const altArrowEvent = new KeyboardEvent("keydown", {
+      key: "ArrowRight",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(altArrowEvent, "target", { value: externalInput });
+    await act(async () => {
+      window.dispatchEvent(altArrowEvent);
+    });
+    expect(altArrowEvent.defaultPrevented).toBe(false);
+    externalInput.remove();
+
+    // Ctrl+2 on .xterm-helper-textarea still switches tabs
+    const xtermHelper = document.createElement("textarea");
+    xtermHelper.className = "xterm-helper-textarea";
+    document.body.appendChild(xtermHelper);
+    const xtermCtrl2 = new KeyboardEvent("keydown", {
+      key: "2",
+      code: "Digit2",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(xtermCtrl2, "target", { value: xtermHelper });
+    await act(async () => {
+      window.dispatchEvent(xtermCtrl2);
+    });
+    expect(xtermCtrl2.defaultPrevented).toBe(true);
+    expect(store.getState().currentTab).toBe(1);
+    xtermHelper.remove();
+
+    // Open Command Palette via Ctrl+Shift+P and switch terminal theme to Nord
+    const openPalette = async () => {
+      host.querySelector("button")?.focus();
+      await act(async () => {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "P",
+            ctrlKey: true,
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      });
+      await act(async () => {
+        await import("../../src/renderer/app/components/CommandPaletteDialog.jsx");
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      });
+    };
+
+    const setPaletteQuery = async (value) => {
+      const input = document.body.querySelector(
+        'input[placeholder="commandPalette.placeholder"]',
+      );
+      expect(input).toBeTruthy();
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        ).set.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      return input;
+    };
+
+    await openPalette();
+    const themeInput = await setPaletteQuery("nord");
+    await act(async () => {
+      themeInput.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    expect(saveUISettings).toHaveBeenCalledWith({ terminalTheme: "nord" });
+    expect(themeEvents).toContainEqual({
+      themeId: "nord",
+      terminalTheme: "nord",
+    });
+
+    // Execute snippet with only built-in session vars -> substitutes & sends immediately
+    await openPalette();
+    const builtinInput = await setPaletteQuery("Inspect CWD");
+    await act(async () => {
+      builtinInput.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    expect(syncCommandEvents).toContainEqual(
+      expect.objectContaining({
+        targetTabId: "ssh-1",
+        command: "cd /srv/app && echo prod-1.internal:2222 ops",
+        execute: true,
+      }),
+    );
+
+    // Execute snippet with custom {{service}} -> opens CommandTemplateParamDialog
+    await openPalette();
+    const paramPaletteInput = await setPaletteQuery("Restart Service");
+    await act(async () => {
+      paramPaletteInput.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    await act(async () => {
+      await import("../../src/renderer/features/terminal/components/CommandTemplateParamDialog.jsx");
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+
+    const serviceInput = [...document.querySelectorAll("input")].find((input) =>
+      input
+        .closest(".MuiFormControl-root")
+        ?.querySelector("label")
+        ?.textContent?.includes("service"),
+    );
+    expect(serviceInput).toBeTruthy();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      ).set.call(serviceInput, "nginx");
+      serviceInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const confirmRunBtn = [...document.querySelectorAll("button")].find(
+      (btn) => btn.textContent === "shortcutCommands.templateConfirmRun",
+    );
+    expect(confirmRunBtn).toBeTruthy();
+    await act(async () => {
+      confirmRunBtn.click();
+    });
+    expect(syncCommandEvents).toContainEqual(
+      expect.objectContaining({
+        targetTabId: "ssh-1",
+        command: "systemctl restart nginx",
+        execute: true,
+      }),
+    );
+  } finally {
+    window.removeEventListener("simpleshell:setTerminalTheme", onThemeEvent);
+    window.removeEventListener("syncTerminalCommand", onSyncCommand);
+    delete processCache["ssh-1"];
+    clearWorkingDirectorySession("ssh-1");
     await act(() => root.unmount());
     host.remove();
   }

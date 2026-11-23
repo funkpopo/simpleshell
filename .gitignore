@@ -24,7 +24,7 @@ todo.md
 config.json
 config.json.tmp-*
 config-backups/
-diagnostics/
+/diagnostics/
 temp/
 
 # vscode

@@ -153,6 +153,12 @@ button,
   outline-offset: 2px;
 }
 
+.ss-conn-pin-btn:hover {
+  opacity: 1 !important;
+  color: #ed6c02 !important;
+  background-color: rgba(128, 128, 128, 0.12) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
