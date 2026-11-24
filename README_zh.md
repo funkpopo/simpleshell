@@ -121,7 +121,7 @@ curl -fsSL https://raw.githubusercontent.com/funkpopo/simpleshell/master/scripts
   - **Windows**：Visual Studio Build Tools（MSVC，“使用 C++ 的桌面开发”）
   - **macOS**：Xcode Command Line Tools
   - **Linux**：build-essential 包
-- **Windows 安装包构建（`npm run make`）**：[Inno Setup 6](https://jrsoftware.org/isinfo.php)（会自动通过 `ISCC_PATH`、`PATH`、Windows 注册表或常见安装目录查找 `ISCC.exe`）
+- **Windows 安装包构建（`npm run make`）**：内置基于 `electron-builder` 的 NSIS 打包流程（无需额外安装 Inno Setup）
 
 ### **设置**
 
@@ -187,7 +187,7 @@ npm run make -- --platform=darwin
 npm run make -- --platform=linux
 ```
 
-在 Windows 上执行 `npm run make` 会直接完成 `simpleshell-core` 准备、Electron 应用打包，并通过 `installer/simpleshell.iss` 调用 Inno Setup 6（`ISCC.exe`）在一步内输出 `installer/SimpleShell-v<version>-Setup-<arch>.exe`。若 Inno Setup 6 安装在自定义目录且不在 `PATH` 或注册表中，可在运行前设置环境变量 `ISCC_PATH`。
+在 Windows 上执行 `npm run make` 会直接完成 `simpleshell-core` 准备、Electron 应用打包，并通过内置 NSIS Forge Maker（`scripts/makers/maker-nsis.js` 调用 `electron-builder`）在一步内输出 `installer/SimpleShell-v<version>-Setup-<arch>.exe`，无需依赖外部 Inno Setup。
 
 ## **项目结构**
 
@@ -199,7 +199,7 @@ simpleshell/
 │   ├── renderer/            # React UI, terminal views and browser helpers
 │   └── shared/              # Contracts, pure cross-runtime logic and locales
 ├── native-services/         # simpleshell-core 的 Rust workspace
-├── installer/               # Windows Inno Setup 脚本 (simpleshell.iss)
+├── installer/               # 生成的 Windows NSIS 安装包输出目录
 ├── tests/                   # 单元/契约/集成测试、辅助函数与测试页面
 ├── scripts/                 # 原生服务预构建、Forge Maker 与 postinstall 辅助脚本
 ├── forge.config.js

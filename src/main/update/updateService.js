@@ -30,12 +30,7 @@ const INSTALLER_META_FILE = "latest-installer-meta.json";
 const UPDATE_ERROR_FILE = "latest-update-error.json";
 const INSTALLER_LOG_FILE = "latest-install.log";
 const LEGACY_INSTALLER_SCRIPT_FILE = "install-and-restart.ps1";
-const WINDOWS_INSTALLER_ARGS = [
-  "/VERYSILENT",
-  "/SUPPRESSMSGBOXES",
-  "/NORESTART",
-  "/SP-",
-];
+const WINDOWS_INSTALLER_ARGS = ["/S"];
 const TRUSTED_DOWNLOAD_HOSTS = new Set([
   "github.com",
   "objects.githubusercontent.com",

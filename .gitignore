@@ -34,9 +34,8 @@ temp/
 .webpack/
 .webpack_cache/
 
-# Inno Setup scripts should stay in repo; generated installers should not.
+# Generated installers should not be committed.
 installer/*
-!installer/*.iss
 
 # Native-services source stays in repo; build outputs do not.
 native-services/bin/*

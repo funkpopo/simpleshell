@@ -27,11 +27,7 @@ const NATIVE_SERVICES_BASENAME =
   process.platform === "win32" ? "simpleshell-core.exe" : "simpleshell-core";
 const WINDOWS_ICON_PATH = path.join(__dirname, "src/renderer/assets/logo.ico");
 const LICENSE_FILE_PATH = path.join(__dirname, "LICENSE");
-const INNO_SETUP_SCRIPT_PATH = path.join(
-  __dirname,
-  "installer/simpleshell.iss",
-);
-const INNO_SETUP_OUTPUT_DIR = path.join(__dirname, "installer");
+const WINDOWS_INSTALLER_OUTPUT_DIR = path.join(__dirname, "installer");
 const LINUX_ICON_PATH = path.join(
   __dirname,
   "src/renderer/assets/SimpleShell.png",
@@ -381,13 +377,14 @@ module.exports = async () => {
     },
     makers: [
       {
-        name: "./scripts/makers/maker-inno-setup.js",
+        name: "./scripts/makers/maker-nsis.js",
         platforms: ["win32"],
         config: {
           projectRoot: __dirname,
+          appId: APP_BUNDLE_ID,
           appName: PRODUCT_NAME,
-          scriptPath: INNO_SETUP_SCRIPT_PATH,
-          outputDir: INNO_SETUP_OUTPUT_DIR,
+          executableName: PRODUCT_NAME,
+          outputDir: WINDOWS_INSTALLER_OUTPUT_DIR,
           appIcon: WINDOWS_ICON_PATH,
           licenseFile: LICENSE_FILE_PATH,
           appCopyright: `Copyright (C) ${new Date().getFullYear()} funkpopo`,

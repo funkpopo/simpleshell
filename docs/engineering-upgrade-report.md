@@ -11,7 +11,7 @@
 
 | Goal       | Commit           | Scope                            | Key Outcome                                                                                                                                                                                                                                                           |
 | ---------- | ---------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Goal 1** | `3ad1513`        | Windows Installer Packaging      | Single-step `npm run make` directly builds Inno Setup installer (`installer/SimpleShell-v0.6.0-Setup-x64.exe`, 97.77 MB) via custom `maker-inno-setup.js` and `installer/simpleshell.iss`.                                                                            |
+| **Goal 1** | `3ad1513`        | Windows Installer Packaging      | Single-step `npm run make` directly builds Windows installer (`installer/SimpleShell-v0.6.0-Setup-x64.exe`), later migrated off Inno Setup to NSIS via custom `maker-nsis.js` + `electron-builder`.                                                                   |
 | **Goal 2** | `5d1084f`        | Development Benchmark Suite      | Added dev-only `benchmarks/` framework (4 suites, 82 metrics) with production leak guards (`benchmarkIsolation.test.js`).                                                                                                                                             |
 | **Goal 3** | `8cb346d`        | Performance & 500k Scrollback    | Optimized Rust `sftp` / `term-pipe`, main cold-require startup, IPC validation, 500k scrollback search, connection list rendering, and renderer initial JS bundle without truncating output or scrollback.                                                            |
 | **Goal 4** | `8e8e12e`        | Global Settings Exposure         | Modeled and wired hardcoded timeouts, intervals, limits, terminal options, and file-manager/storage/log defaults across `uiSettingsDefaults.js`, `configSchemas.js`, `runtimeSettingsSync.js`, and 7 tabs in `Settings.jsx`.                                          |
@@ -23,11 +23,11 @@
 
 ## 2. Goal-by-Goal Technical Summary
 
-### Goal 1 — Single-Step Windows Installer (`3ad1513`)
+### Goal 1 — Single-Step Windows Installer (`3ad1513`, migrated to NSIS)
 
-- Replaced legacy vendor Squirrel packaging (`scripts/prepare-winstaller-vendor.js` removed) with `scripts/makers/maker-inno-setup.js`, `scripts/lib/inno-setup.js`, and `installer/simpleshell.iss`, wired directly into `forge.config.js` (`npm run make`).
-- Updated `src/main/update/updateService.js`, `README.md`, `README_zh.md`, and unit tests (`tests/unit/innoSetupMaker.test.js`, `tests/unit/updateLifecycle.test.js`).
-- Audited build output on `master` (`8069ae0`): `installer/SimpleShell-v0.6.0-Setup-x64.exe` (97,773,448 B) and `out/SimpleShell-win32-x64/resources/app.asar` (8,217,155 B, 95 files, zero `benchmarks/` or `.map` leaks, locales trimmed to `en-US.pak` + `zh-CN.pak`).
+- Replaced legacy vendor Squirrel packaging (`scripts/prepare-winstaller-vendor.js` removed) and initial Inno Setup maker (`maker-inno-setup.js` / `simpleshell.iss` removed) with `scripts/makers/maker-nsis.js` and `scripts/lib/nsis-builder.js` (`electron-builder` NSIS `--prepackaged`), wired directly into `forge.config.js` (`npm run make`).
+- Updated `src/main/update/updateService.js` (`/S`), `README.md`, `README_zh.md`, and unit tests (`tests/unit/nsisMaker.test.js`, `tests/unit/updateLifecycle.test.js`).
+- Audited build output on `master` (`8069ae0` prior to NSIS migration): `out/SimpleShell-win32-x64/resources/app.asar` (8,217,155 B, 95 files, zero `benchmarks/` or `.map` leaks, locales trimmed to `en-US.pak` + `zh-CN.pak`); NSIS `npm run make` verification replaces the `.exe` without Inno Setup.
 
 ### Goal 2 — Development-Only Benchmark Suite (`5d1084f`)
 

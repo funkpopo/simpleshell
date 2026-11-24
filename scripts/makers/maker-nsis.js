@@ -2,14 +2,13 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const {
-  buildInnoSetupArgs,
-  compileInnoSetup,
-  findIsccPath,
+  buildNsisBuilderConfig,
+  buildNsisInstaller,
   formatInstallerFilename,
-  formatOutputBaseFilename,
-} = require("../lib/inno-setup");
+  normalizeArch,
+  prepareStagingLicenseFile,
+} = require("../lib/nsis-builder");
 
-const DEFAULT_SCRIPT_RELATIVE_PATH = path.join("installer", "simpleshell.iss");
 const DEFAULT_OUTPUT_RELATIVE_DIR = "installer";
 const DEFAULT_ICON_RELATIVE_PATH = path.join(
   "src",
@@ -19,9 +18,9 @@ const DEFAULT_ICON_RELATIVE_PATH = path.join(
 );
 const DEFAULT_LICENSE_RELATIVE_PATH = "LICENSE";
 
-class MakerInnoSetup {
+class MakerNsis {
   constructor(configOrConfigFetcher = {}, platformsToMakeOn) {
-    this.name = "inno-setup";
+    this.name = "nsis";
     this.defaultPlatforms = ["win32"];
     this.requiredExternalBinaries = [];
     this.configOrConfigFetcher = configOrConfigFetcher;
@@ -78,6 +77,7 @@ class MakerInnoSetup {
 
   async make({
     dir,
+    makeDir,
     appName,
     targetPlatform,
     targetArch,
@@ -86,7 +86,7 @@ class MakerInnoSetup {
   }) {
     if (targetPlatform && targetPlatform !== "win32") {
       throw new Error(
-        `MakerInnoSetup only supports win32 targets, received "${targetPlatform}"`,
+        `MakerNsis only supports win32 targets, received "${targetPlatform}"`,
       );
     }
 
@@ -101,13 +101,26 @@ class MakerInnoSetup {
       packageJSON?.productName ||
       packageJSON?.name ||
       "SimpleShell";
+    const resolvedExecutableName =
+      config.executableName ||
+      forgeConfig?.packagerConfig?.executableName ||
+      resolvedAppName;
+    const resolvedAppId =
+      config.appId ||
+      forgeConfig?.packagerConfig?.appBundleId ||
+      "com.funkpopo.simpleshell";
     const resolvedVersion = config.appVersion || packageJSON?.version;
-    const resolvedArch = config.appArch || targetArch || process.arch;
-
-    const scriptPath = path.resolve(
-      projectRoot,
-      config.scriptPath || DEFAULT_SCRIPT_RELATIVE_PATH,
+    const resolvedArch = normalizeArch(
+      config.appArch || targetArch || process.arch,
     );
+    const resolvedElectronVersion =
+      config.electronVersion ||
+      String(packageJSON?.devDependencies?.electron || "").replace(
+        /^[^\d]*/,
+        "",
+      ) ||
+      undefined;
+
     const outputDir = path.resolve(
       projectRoot,
       config.outputDir || DEFAULT_OUTPUT_RELATIVE_DIR,
@@ -128,9 +141,6 @@ class MakerInnoSetup {
     if (!dir || !fs.existsSync(dir)) {
       throw new Error(`Packaged application directory not found: ${dir}`);
     }
-    if (!fs.existsSync(scriptPath)) {
-      throw new Error(`Inno Setup script not found: ${scriptPath}`);
-    }
     if (!fs.existsSync(appIcon)) {
       throw new Error(`Windows installer icon not found: ${appIcon}`);
     }
@@ -138,51 +148,69 @@ class MakerInnoSetup {
       throw new Error(`License file not found: ${licenseFile}`);
     }
 
-    const outputBaseFilename = formatOutputBaseFilename({
-      appName: resolvedAppName,
-      version: resolvedVersion,
-      arch: resolvedArch,
-    });
     const installerFilename = formatInstallerFilename({
       appName: resolvedAppName,
       version: resolvedVersion,
       arch: resolvedArch,
     });
     const outputExePath = path.join(outputDir, installerFilename);
+    const stagingBaseDir = makeDir
+      ? path.resolve(makeDir)
+      : path.join(projectRoot, "out", "make");
+    const stagingDir = path.join(stagingBaseDir, "nsis", resolvedArch);
 
-    const isccPath = config.isccPath
-      ? findIsccPath({
-          env: { ...process.env, ISCC_PATH: config.isccPath },
-        })
-      : findIsccPath();
-
+    await this.ensureDirectory(stagingDir);
     await this.ensureFile(outputExePath);
 
-    const args = buildInnoSetupArgs({
-      scriptPath,
-      quiet: config.quiet ?? true,
+    const stagedLicensePath = await prepareStagingLicenseFile(
+      licenseFile,
+      stagingDir,
+    );
+
+    const builderConfig = buildNsisBuilderConfig({
+      appId: resolvedAppId,
       appName: resolvedAppName,
+      executableName: resolvedExecutableName,
       appVersion: resolvedVersion,
       appArch: resolvedArch,
-      sourceDir: path.resolve(dir),
-      outputDir,
-      outputBaseFilename,
-      appIcon,
-      licenseFile,
       appCopyright,
-      extraDefines: config.defines || {},
+      outputDir: stagingDir,
+      appIcon,
+      licenseFile: stagedLicensePath,
+      artifactName: installerFilename,
+      electronVersion: resolvedElectronVersion,
     });
 
-    await compileInnoSetup({
-      isccPath,
-      args,
-      cwd: path.dirname(scriptPath),
+    const artifacts = await buildNsisInstaller({
+      prepackagedDir: path.resolve(dir),
+      targetArch: resolvedArch,
+      config: builderConfig,
+      electronBuilder: config.electronBuilder,
     });
+
+    const expectedStagedExe = path.join(stagingDir, installerFilename);
+    const matchedArtifact = Array.isArray(artifacts)
+      ? artifacts.find(
+          (item) =>
+            typeof item === "string" && item.toLowerCase().endsWith(".exe"),
+        )
+      : null;
+    const stagedExePath = fs.existsSync(expectedStagedExe)
+      ? expectedStagedExe
+      : matchedArtifact;
+
+    if (!stagedExePath || !fs.existsSync(stagedExePath)) {
+      throw new Error(
+        `NSIS build finished but did not produce expected installer: ${expectedStagedExe}`,
+      );
+    }
+
+    await fsp.copyFile(stagedExePath, outputExePath);
 
     const stats = await fsp.stat(outputExePath).catch(() => null);
     if (!stats || !stats.isFile() || stats.size === 0) {
       throw new Error(
-        `Inno Setup finished but did not produce expected installer: ${outputExePath}`,
+        `NSIS installer copy failed or produced an empty file: ${outputExePath}`,
       );
     }
 
@@ -190,6 +218,6 @@ class MakerInnoSetup {
   }
 }
 
-module.exports = MakerInnoSetup;
-module.exports.MakerInnoSetup = MakerInnoSetup;
-module.exports.default = MakerInnoSetup;
+module.exports = MakerNsis;
+module.exports.MakerNsis = MakerNsis;
+module.exports.default = MakerNsis;

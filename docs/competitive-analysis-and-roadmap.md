@@ -11,7 +11,7 @@
 Inspection of `src/`, `native-services/`, `benchmarks/`, `installer/`, `README_zh.md`, and `todo.md` confirms SimpleShell already ships a strong foundation:
 
 - **Packaging, Benchmarking & Performance (Goals 1–3 on `master`)**:
-  - **Goal 1 (`3ad1513`)**: Single-step Windows Inno Setup installer generation via `npm run make` (`forge.config.js`, `scripts/makers/maker-inno-setup.js`, `installer/simpleshell.iss`).
+  - **Goal 1 (`3ad1513`, migrated to NSIS)**: Single-step Windows installer generation via `npm run make` (`forge.config.js`, `scripts/makers/maker-nsis.js` via `electron-builder` prepackaged NSIS, replacing earlier Inno Setup).
   - **Goal 2 (`5d1084f`)**: Development-only `benchmarks/` suite across startup/bundle, terminal pipeline, WebTerminal 50k/500k renderer, and SFTP/UI.
   - **Goal 3 (`8cb346d`)**: Optimized Rust `sftp` / `term-pipe`, main cold-require startup, IPC validation, 500k scrollback search, and virtualized/non-virtualized connection lists while preserving full 50k default / 500k max scrollback (`docs/perf/benchmark-optimization.md`).
 - **Global Settings Exposure (Goal 4 `8e8e12e` on `master`)**:
@@ -48,7 +48,7 @@ Inspection of `src/`, `native-services/`, `benchmarks/`, `installer/`, `README_z
 ## 3. Scope Guardrails (Excluded from Goals 5 & 6)
 
 - **Already completed on `master` (Goals 1–4)**:
-  - Goal 1 (`3ad1513`): Single-step `npm run make` Inno Setup installer.
+  - Goal 1 (`3ad1513`, migrated to NSIS): Single-step `npm run make` NSIS installer (via `electron-builder`, no Inno Setup).
   - Goal 2 (`5d1084f`): Dev-only `benchmarks/` suite.
   - Goal 3 (`8cb346d`): Production performance optimizations.
   - Goal 4 (`8e8e12e`): Global Settings exposure for existing hardcoded timeouts, limits, intervals, cursor/interaction options, and `uiSettings.fileManager.showHiddenFiles`.
